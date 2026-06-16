@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "Resonance",
+    "slug": "resonance-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.resonance.mobile"
+    },
+    "android": {
+      "package": "com.resonance.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-dev-client",
+      "./plugins/withAndroidAuto",
+      [
+        "react-native-google-cast",
+        {
+          "receiverAppId": "CC1AD845"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#388bfd"
+        }
+      ],
+      "expo-image"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "016a5e6a-4436-4774-b54a-fd959a9e7cff"
+      }
+    }
+  }
+}

@@ -1,0 +1,271 @@
+diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
+index 13a6c60..7ad01e6 100644
+--- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
++++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
+@@ -561,6 +561,18 @@ class MusicModule(reactContext: ReactApplicationContext) : NativeTrackPlayerSpec
+         callback.resolve(musicService.onStartCommandIntentValid)
+     }
+ 
++    // Android Auto browse tree (resonance patch). Receives the full content
++    // hierarchy from JS and hands it to the service, which serves it to the
++    // media3 MediaLibrarySession callbacks.
++    override fun setBrowseTree(data: ReadableMap?, callback: Promise) = launchInScope {
++        if (verifyServiceBoundOrReject(callback)) return@launchInScope
++        if (data == null) {
++            callback.resolve("")
++            return@launchInScope
++        }
++        callback.resolve(musicService.setBrowseTree(data))
++    }
++
+     // Bridgeless interop layer tries to pass the `Job` from `scope.launch` to the JS side
+     // which causes an exception. We can work around this using a wrapper.
+     private fun launchInScope(block: suspend () -> Unit) {
+diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
+index b495b5a..7abeb40 100644
+--- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
++++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
+@@ -19,7 +19,9 @@ import androidx.media3.common.Player
+ import androidx.media3.common.util.UnstableApi
+ import androidx.media3.session.CacheBitmapLoader
+ import androidx.media3.session.LibraryResult
++import androidx.media3.session.MediaLibraryService
+ import androidx.media3.common.MediaItem
++import androidx.media3.common.MediaMetadata
+ import androidx.media3.common.Rating
+ import androidx.media3.common.util.BitmapLoader
+ import androidx.media3.exoplayer.ExoPlayer
+@@ -45,6 +47,8 @@ import com.doublesymmetry.trackplayer.utils.BundleUtils
+ import com.doublesymmetry.trackplayer.utils.BundleUtils.setRating
+ import com.doublesymmetry.trackplayer.utils.CoilBitmapLoader
+ import com.facebook.react.bridge.Arguments
++import com.facebook.react.bridge.ReadableArray
++import com.facebook.react.bridge.ReadableMap
+ import com.facebook.react.jstasks.HeadlessJsTaskConfig
+ import com.google.common.collect.ImmutableList
+ import com.google.common.util.concurrent.Futures
+@@ -64,6 +68,12 @@ class MusicService : HeadlessJsMediaService() {
+     private lateinit var fakePlayer: ExoPlayer
+     private lateinit var mediaSession: MediaLibrarySession
+     private var progressUpdateJob: Job? = null
++
++    // Android Auto browse tree (resonance patch). parentId -> ordered children,
++    // plus a flat mediaId -> item index for onGetItem lookups. JS pushes the full
++    // (lazily-expanded) tree via setBrowseTree; we serve it from the media3 callbacks.
++    private val browseTree = java.util.concurrent.ConcurrentHashMap<String, List<MediaItem>>()
++    private val browseIndex = java.util.concurrent.ConcurrentHashMap<String, MediaItem>()
+     private var sessionCommands: SessionCommands? = null
+     private var playerCommands: Player.Commands? = null
+     private var customLayout: List<CommandButton> = listOf()
+@@ -677,6 +687,87 @@ class MusicService : HeadlessJsMediaService() {
+         reactContext?.emitDeviceEvent(event, data?.let { Arguments.fromBundle(it) })
+     }
+ 
++    // ── Android Auto browse tree (resonance patch) ───────────────────────────────
++
++    // Builds one media3 MediaItem from the JS payload. `playable == "1"` marks a
++    // browsable folder; anything else is a playable leaf whose mediaId is used by
++    // the JS `remote-play-id` handler to start RNTP playback.
++    private fun buildBrowseMediaItem(map: ReadableMap): MediaItem? {
++        val mediaId = if (map.hasKey("mediaId")) map.getString("mediaId") else null
++        if (mediaId.isNullOrEmpty()) return null
++        val isBrowsable = map.hasKey("playable") && map.getString("playable") == "1"
++        val title = if (map.hasKey("title")) map.getString("title") else null
++        val subtitle = if (map.hasKey("subtitle")) map.getString("subtitle") else null
++        val iconUri = if (map.hasKey("iconUri")) map.getString("iconUri") else null
++
++        val metadata = MediaMetadata.Builder()
++            .setTitle(title)
++            .setSubtitle(subtitle)
++            .setIsBrowsable(isBrowsable)
++            .setIsPlayable(!isBrowsable)
++            .setMediaType(
++                if (isBrowsable) MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
++                else MediaMetadata.MEDIA_TYPE_MUSIC
++            )
++            .apply { if (!iconUri.isNullOrEmpty()) setArtworkUri(Uri.parse(iconUri)) }
++            .build()
++
++        val builder = MediaItem.Builder()
++            .setMediaId(mediaId)
++            .setMediaMetadata(metadata)
++        // Carry the stream URL when present so the media3 player can resolve the
++        // item even though JS drives actual playback via `remote-play-id`.
++        if (map.hasKey("mediaUri")) {
++            map.getString("mediaUri")?.let { if (it.isNotEmpty()) builder.setUri(it) }
++        }
++        return builder.build()
++    }
++
++    @MainThread
++    fun setBrowseTree(data: ReadableMap): String {
++        val newTree = HashMap<String, List<MediaItem>>()
++        val newIndex = HashMap<String, MediaItem>()
++
++        val keys = data.keySetIterator()
++        while (keys.hasNextKey()) {
++            val parentId = keys.nextKey()
++            val arr: ReadableArray = data.getArray(parentId) ?: continue
++            val children = ArrayList<MediaItem>(arr.size())
++            for (i in 0 until arr.size()) {
++                val childMap = arr.getMap(i) ?: continue
++                val item = buildBrowseMediaItem(childMap) ?: continue
++                children.add(item)
++                newIndex[item.mediaId] = item
++            }
++            newTree[parentId] = children
++        }
++
++        browseTree.clear(); browseTree.putAll(newTree)
++        browseIndex.clear(); browseIndex.putAll(newIndex)
++
++        // Tell connected controllers (Android Auto) to re-request the nodes that
++        // changed so freshly-loaded children become visible.
++        if (::mediaSession.isInitialized) {
++            for ((parentId, children) in newTree) {
++                mediaSession.notifyChildrenChanged(parentId, children.size, null)
++            }
++        }
++        return "ok:${newTree.size}"
++    }
++
++    private val browseRootItem: MediaItem
++        get() = MediaItem.Builder()
++            .setMediaId(BROWSE_ROOT_ID)
++            .setMediaMetadata(
++                MediaMetadata.Builder()
++                    .setIsBrowsable(true)
++                    .setIsPlayable(false)
++                    .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
++                    .setTitle("Resonance")
++                    .build()
++            )
++            .build()
++
+     @SuppressLint("VisibleForTests")
+     @MainThread
+     private fun emitList(event: String, data: List<Bundle> = emptyList()) {
+@@ -976,6 +1067,66 @@ class MusicService : HeadlessJsMediaService() {
+             }
+             return super.onSetRating(session, controller, rating)
+         }
++
++        // ── Android Auto content browsing (resonance patch) ──────────────────────
++
++        override fun onGetLibraryRoot(
++            session: MediaLibrarySession,
++            browser: MediaSession.ControllerInfo,
++            params: MediaLibraryService.LibraryParams?
++        ): ListenableFuture<LibraryResult<MediaItem>> {
++            return Futures.immediateFuture(LibraryResult.ofItem(browseRootItem, params))
++        }
++
++        override fun onGetChildren(
++            session: MediaLibrarySession,
++            browser: MediaSession.ControllerInfo,
++            parentId: String,
++            page: Int,
++            pageSize: Int,
++            params: MediaLibraryService.LibraryParams?
++        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
++            val children = browseTree[parentId]
++            // Not loaded yet — ask JS to populate this node, then return what we
++            // have (often empty). JS will push the expanded tree and trigger a
++            // notifyChildrenChanged, prompting Android Auto to re-request.
++            if (children == null) {
++                emit(MusicEvents.BUTTON_BROWSE, Bundle().apply { putString("mediaId", parentId) })
++            }
++            return Futures.immediateFuture(
++                LibraryResult.ofItemList(ImmutableList.copyOf(children ?: emptyList()), params)
++            )
++        }
++
++        override fun onGetItem(
++            session: MediaLibrarySession,
++            browser: MediaSession.ControllerInfo,
++            mediaId: String
++        ): ListenableFuture<LibraryResult<MediaItem>> {
++            val item = browseIndex[mediaId]
++                ?: return Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE))
++            return Futures.immediateFuture(LibraryResult.ofItem(item, null))
++        }
++
++        // When the user taps a playable item in the car, route it to JS so RNTP's
++        // queue/player stays authoritative (matches the `remote-play-id` contract).
++        // We still return resolved items so media3's size contract is satisfied.
++        override fun onAddMediaItems(
++            mediaSession: MediaSession,
++            controller: MediaSession.ControllerInfo,
++            mediaItems: MutableList<MediaItem>
++        ): ListenableFuture<MutableList<MediaItem>> {
++            val resolved = mediaItems.map { requested ->
++                browseIndex[requested.mediaId] ?: requested
++            }.toMutableList()
++
++            resolved.firstOrNull { it.mediaMetadata.isPlayable == true }?.let { playable ->
++                emit(MusicEvents.BUTTON_PLAY_FROM_ID, Bundle().apply {
++                    putString("id", playable.mediaId)
++                })
++            }
++            return Futures.immediateFuture(resolved)
++        }
+     }
+ 
+     private fun getPendingIntentFlags(): Int {
+@@ -1029,5 +1180,8 @@ class MusicService : HeadlessJsMediaService() {
+ 
+         const val DEFAULT_JUMP_INTERVAL = 15.0
+         const val DEFAULT_STOP_FOREGROUND_GRACE_PERIOD = 5
++
++        // Android Auto browse tree root (resonance patch)
++        const val BROWSE_ROOT_ID = "/"
+     }
+ }
+diff --git a/node_modules/react-native-track-player/lib/module/trackPlayer.js b/node_modules/react-native-track-player/lib/module/trackPlayer.js
+index 4039139..5e5da59 100644
+--- a/node_modules/react-native-track-player/lib/module/trackPlayer.js
++++ b/node_modules/react-native-track-player/lib/module/trackPlayer.js
+@@ -404,4 +404,13 @@ export async function validateOnStartCommandIntent() {
+   if (!isAndroid) return true;
+   return TrackPlayer.validateOnStartCommandIntent();
+ }
++
++/**
++ * Sets the Android Auto content hierarchy (Android only, resonance patch).
++ * Keys are parent mediaIds (root is "/"), values are arrays of MediaItem.
++ */
++export async function setBrowseTree(browseTree) {
++  if (!isAndroid) return '';
++  return TrackPlayer.setBrowseTree(browseTree);
++}
+ //# sourceMappingURL=trackPlayer.js.map
+\ No newline at end of file
+diff --git a/node_modules/react-native-track-player/lib/typescript/src/trackPlayer.d.ts b/node_modules/react-native-track-player/lib/typescript/src/trackPlayer.d.ts
+index 07d1fa8..c70edce 100644
+--- a/node_modules/react-native-track-player/lib/typescript/src/trackPlayer.d.ts
++++ b/node_modules/react-native-track-player/lib/typescript/src/trackPlayer.d.ts
+@@ -235,4 +235,9 @@ export declare function abandonWakeLock(): Promise<void>;
+  * if musicservice is restarted or not.
+  */
+ export declare function validateOnStartCommandIntent(): Promise<boolean>;
++/**
++ * Sets the Android Auto content hierarchy (Android only, resonance patch).
++ * Keys are parent mediaIds (root is "/"), values are arrays of MediaItem.
++ */
++export declare function setBrowseTree(browseTree: Record<string, Array<Record<string, unknown>>>): Promise<string>;
+ //# sourceMappingURL=trackPlayer.d.ts.map
+\ No newline at end of file
+diff --git a/node_modules/react-native-track-player/src/NativeTrackPlayer.ts b/node_modules/react-native-track-player/src/NativeTrackPlayer.ts
+index a5dcd75..7e0eb01 100644
+--- a/node_modules/react-native-track-player/src/NativeTrackPlayer.ts
++++ b/node_modules/react-native-track-player/src/NativeTrackPlayer.ts
+@@ -100,6 +100,9 @@ export interface Spec extends TurboModule {
+   acquireWakeLock(): Promise<void>;
+   abandonWakeLock(): Promise<void>;
+   validateOnStartCommandIntent(): Promise<boolean>;
++
++  // android auto browse tree (resonance patch)
++  setBrowseTree(browseTree: UnsafeObject): Promise<string>;
+ }
+ 
+ const module = TurboModuleRegistry.getEnforcing<Spec>('TrackPlayer');

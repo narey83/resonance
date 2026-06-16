@@ -1,0 +1,218 @@
+.queue-panel {
+  width: 280px;
+  min-width: 280px;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.queue-panel--drop {
+  outline: 2px dashed var(--accent);
+  outline-offset: -4px;
+}
+
+/* ── Header ─────────────────────────────────────────────────────── */
+.queue-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 14px 10px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.queue-panel-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.queue-panel-count {
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--surface-hover);
+  border-radius: 10px;
+  padding: 1px 7px;
+  margin-right: auto;
+}
+
+.queue-panel-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 4px;
+  transition: color 0.12s, background 0.12s;
+}
+
+.queue-panel-close:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+/* ── Body ───────────────────────────────────────────────────────── */
+.queue-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 40px;
+}
+
+/* ── Now Playing ────────────────────────────────────────────────── */
+.queue-now {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(var(--accent-rgb, 108, 92, 231), 0.06);
+  border-left: 3px solid var(--accent);
+}
+
+.queue-now-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+
+.queue-now-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Up Next label ──────────────────────────────────────────────── */
+.queue-up-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 10px 14px 4px;
+}
+
+/* ── Track rows ─────────────────────────────────────────────────── */
+.queue-track {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px 5px 6px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+
+.queue-track:hover {
+  background: var(--surface-hover);
+}
+
+.queue-track--drag-over {
+  background: rgba(var(--accent-rgb, 108, 92, 231), 0.15) !important;
+  border-top: 2px solid var(--accent);
+}
+
+/* Drag handle — hidden until hover */
+.queue-drag-handle {
+  color: var(--text-dim);
+  cursor: grab;
+  flex-shrink: 0;
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  transition: opacity 0.12s;
+}
+
+.queue-track:hover .queue-drag-handle {
+  opacity: 1;
+}
+
+/* Track info */
+.queue-track-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.queue-track-title {
+  font-size: 12.5px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.queue-track-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
+}
+
+/* Remove button — hidden until hover */
+.queue-remove-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border-radius: 3px;
+  opacity: 0;
+  flex-shrink: 0;
+  transition: opacity 0.12s, color 0.12s;
+}
+
+.queue-track:hover .queue-remove-btn {
+  opacity: 1;
+}
+
+.queue-remove-btn:hover {
+  color: var(--color-red, #e05555);
+}
+
+/* ── Empty state ────────────────────────────────────────────────── */
+.queue-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 24px 16px;
+}
+
+/* ── External drop hint ─────────────────────────────────────────── */
+.queue-drop-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--accent);
+  padding: 12px 14px;
+  margin: 6px 8px;
+  border: 1px dashed var(--accent);
+  border-radius: 6px;
+  opacity: 0.85;
+}
+
+.queue-meta-link {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11.5px;
+  padding: 0;
+  transition: color 0.12s;
+}
+.queue-meta-link:hover { color: var(--accent); text-decoration: underline; }
+.queue-meta-sep { color: var(--text-dim); font-size: 11.5px; }

@@ -1,0 +1,116 @@
+/* ── User detail body ────────────────────────────────────────────── */
+
+.usr-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  overflow-y: auto;
+  padding: 20px 20px 40px;
+}
+
+/* ── Avatar ──────────────────────────────────────────────────────── */
+
+.usr-avatar-wrap {
+  align-self: flex-start;
+}
+
+.usr-avatar {
+  border-radius: 8px;
+  display: block;
+  max-height: 160px;
+  max-width: 160px;
+  object-fit: cover;
+}
+
+.usr-avatar-placeholder {
+  align-items: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-dim);
+  display: flex;
+  height: 80px;
+  justify-content: center;
+  width: 80px;
+}
+
+/* ── Presence dot ────────────────────────────────────────────────── */
+
+.usr-presence-dot {
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* ── Stats grid ──────────────────────────────────────────────────── */
+
+.usr-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.usr-stat {
+  align-items: baseline;
+  display: flex;
+  gap: 10px;
+}
+
+.usr-stat-label {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-size: 12px;
+  width: 130px;
+}
+
+.usr-stat-value {
+  align-items: center;
+  color: var(--text-primary);
+  display: flex;
+  font-size: 13px;
+  gap: 5px;
+}
+
+.usr-stat-presence {
+  gap: 7px;
+}
+
+.usr-stat-mono {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.usr-stat--yes {
+  align-items: center;
+  color: #48bb78;
+  display: flex;
+  gap: 5px;
+}
+
+.usr-stat--no {
+  align-items: center;
+  color: var(--danger);
+  display: flex;
+  gap: 5px;
+}
+
+/* ── Description ─────────────────────────────────────────────────── */
+
+.usr-description {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 600px;
+}
+
+.usr-description-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.usr-description-body {
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}

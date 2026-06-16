@@ -1,0 +1,106 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  color: #1a202c;
+  background: #fff;
+  width: 320px;
+  min-height: 100px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f7fafc;
+}
+
+.header-title {
+  font-weight: 700;
+  font-size: 14px;
+  flex: 1;
+}
+
+.header-subtitle {
+  font-size: 11px;
+  color: #718096;
+}
+
+.body { padding: 14px; }
+
+.field { margin-bottom: 12px; }
+
+.field label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #4a5568;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.field input[type='text'],
+.field input[type='password'],
+.field input[type='url'] {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid #cbd5e0;
+  border-radius: 5px;
+  font-size: 13px;
+  color: #1a202c;
+}
+
+.field input:focus { outline: none; border-color: #4299e1; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 14px;
+  border: 1px solid #cbd5e0;
+  border-radius: 5px;
+  background: #fff;
+  color: #1a202c;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.btn:hover { background: #edf2f7; }
+.btn:disabled { opacity: 0.5; cursor: default; }
+
+.btn--primary { background: #4299e1; border-color: #4299e1; color: #fff; }
+.btn--primary:hover { background: #3182ce; }
+
+.btn-row { display: flex; gap: 8px; margin-top: 4px; }
+
+.status {
+  padding: 8px 10px;
+  border-radius: 5px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+
+.status--ok { background: #f0fff4; border: 1px solid #9ae6b4; color: #276749; }
+.status--error { background: #fff5f5; border: 1px solid #fc8181; color: #c53030; }
+.status--info { background: #ebf8ff; border: 1px solid #90cdf4; color: #2b6cb0; }
+
+.link {
+  color: #4299e1;
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: 12px;
+}
+
+.footer {
+  padding: 8px 14px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 11px;
+  color: #a0aec0;
+  text-align: center;
+}

@@ -1,0 +1,676 @@
+/* ── Layout ─────────────────────────────────────────────── */
+
+.te-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.te-root {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+
+.te-sidebar {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.te-divider {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: var(--border);
+  transition: background 0.15s;
+  position: relative;
+}
+
+.te-divider:hover,
+.te-divider:active {
+  background: var(--accent);
+}
+
+.te-sidebar-header {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.te-sidebar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Mode toggle ─────────────────────────────────────────────── */
+
+.te-mode-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.te-mode-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 4px 10px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.te-mode-btn:hover:not(.te-mode-btn--active) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.te-mode-btn--active {
+  background: var(--accent);
+  color: #fff;
+  cursor: default;
+}
+
+.te-badge {
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.te-sidebar-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.te-search {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  padding: 4px 8px;
+  outline: none;
+}
+
+.te-search:focus {
+  border-color: var(--accent);
+}
+
+.te-icon-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.te-icon-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.te-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.te-saved-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  padding: 5px 12px;
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--success);
+  border-bottom: 1px solid rgba(34, 197, 94, 0.2);
+  flex-shrink: 0;
+}
+
+.te-error-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  padding: 5px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.2);
+  flex-shrink: 0;
+}
+
+/* ── File list ─────────────────────────────────────────────── */
+
+.te-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.te-list-loading,
+.te-list-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.te-list-empty p {
+  margin: 0;
+}
+
+.te-group {
+  border-bottom: 1px solid var(--border);
+}
+
+.te-group-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px 4px 4px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+}
+
+.te-group-header:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.te-group-header--selected {
+  background: var(--surface-active);
+  color: var(--text-primary);
+}
+
+.te-group-header svg {
+  flex-shrink: 0;
+}
+
+.te-group-chevron {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.te-group-name-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+  border-radius: 4px;
+  text-align: left;
+  transition: color 0.1s;
+}
+
+.te-group-name-btn:hover {
+  color: var(--accent);
+}
+
+.te-group-folder-icon {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.te-group-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.te-group-count {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.te-group-autofill,
+.te-group-rename {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  padding: 2px 4px;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.te-group-header:hover .te-group-autofill,
+.te-group-header:hover .te-group-rename {
+  opacity: 1;
+}
+
+.te-group-autofill:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.te-group-rename:hover {
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.te-group-autofill:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+/* ── Rename inline edit ─────────────────────────────────────────────── */
+
+.te-rename-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.te-rename-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 0.72rem;
+  font-weight: 500;
+  outline: none;
+  padding: 2px 6px;
+}
+
+.te-rename-confirm,
+.te-rename-cancel {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 2px 4px;
+  flex-shrink: 0;
+}
+
+.te-rename-confirm {
+  color: var(--success);
+}
+
+.te-rename-confirm:hover {
+  border-color: var(--success);
+}
+
+.te-rename-cancel {
+  color: var(--text-muted);
+}
+
+.te-rename-cancel:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.te-rename-spinner {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.te-rename-error {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.68rem;
+  padding: 4px 10px 4px 22px;
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+/* ── Folder editor note ─────────────────────────────────────────────── */
+
+.te-folder-note {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.te-item {
+  width: 100%;
+  display: block;
+  background: none;
+  border: none;
+  border-left: 3px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.76rem;
+  overflow: hidden;
+  padding: 4px 10px 4px 20px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.te-item:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.te-item--active {
+  background: var(--surface-active);
+  border-left-color: var(--accent);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* ── Main edit panel ─────────────────────────────────────────────── */
+
+.te-main {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.te-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex: 1;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.te-empty p {
+  margin: 0;
+}
+
+/* ── Form shell ─────────────────────────────────────────────── */
+
+.te-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 24px 28px;
+  max-width: 680px;
+}
+
+/* ── Path breadcrumb ─────────────────────────────────────────────── */
+
+.te-form-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px;
+  margin-bottom: 20px;
+  padding: 10px 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.te-form-dir {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.te-form-sep {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.te-form-file {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.te-form-ext {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ── Section cards ─────────────────────────────────────────────── */
+
+.te-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.te-section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.te-section-title {
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 8px 14px;
+  text-transform: uppercase;
+}
+
+.te-section-body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Field rows ─────────────────────────────────────────────── */
+
+.te-field {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  gap: 0 16px;
+  grid-template-columns: 120px 1fr;
+  padding: 8px 14px;
+}
+
+.te-field:last-child {
+  border-bottom: none;
+}
+
+.te-field-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  user-select: none;
+}
+
+.te-field-input {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  padding: 6px 9px;
+  transition: border-color 0.15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.te-field-input:focus {
+  border-color: var(--accent);
+}
+
+.te-field-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.te-field-input--short {
+  width: 110px;
+}
+
+/* hide number spinners */
+.te-field-input[type="number"]::-webkit-inner-spin-button,
+.te-field-input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.te-field-textarea {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  padding: 6px 9px;
+  resize: vertical;
+  transition: border-color 0.15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.te-field-textarea:focus {
+  border-color: var(--accent);
+}
+
+.te-field-textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.te-field--full {
+  grid-column: 1 / -1;
+}
+
+/* ── Action bar ─────────────────────────────────────────────── */
+
+.te-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.te-form-actions-right {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* ── Buttons ─────────────────────────────────────────────── */
+
+.te-btn {
+  align-items: center;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.8rem;
+  font-weight: 500;
+  gap: 6px;
+  padding: 6px 12px;
+  transition: background 0.15s, color 0.15s, opacity 0.15s, border-color 0.15s;
+}
+
+.te-btn--ghost {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.te-btn--ghost:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.te-btn--primary {
+  background: var(--accent);
+  border: 1px solid transparent;
+  color: #fff;
+}
+
+.te-btn--primary:hover:not(:disabled) {
+  opacity: 0.87;
+}
+
+.te-btn--primary:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.te-btn--loading {
+  opacity: 0.7;
+  cursor: default;
+}
+
+/* ── Spinner ─────────────────────────────────────────────── */
+
+@keyframes te-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.te-spin {
+  animation: te-spin 0.8s linear infinite;
+}

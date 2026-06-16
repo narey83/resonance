@@ -1,0 +1,266 @@
+/* ── Root ──────────────────────────────────────────────────────────────────── */
+
+.ts-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+/* ── Stats bar ─────────────────────────────────────────────────────────────── */
+
+.ts-stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  flex-shrink: 0;
+}
+
+.ts-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 52px;
+}
+
+.ts-stat-value {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+
+.ts-stat-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.ts-stat--sanitized .ts-stat-value { color: var(--success); }
+.ts-stat--skipped   .ts-stat-value { color: var(--text-muted); }
+.ts-stat--failed    .ts-stat-value { color: var(--error, #e55); }
+
+.ts-spacer { flex: 1; }
+
+/* ── Settings panel ────────────────────────────────────────────────────────── */
+
+.ts-settings {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.ts-settings-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ts-settings-label {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.ts-settings input[type='range'] {
+  width: 80px;
+  accent-color: var(--accent, #5c8cf7);
+}
+
+.ts-settings-val {
+  min-width: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ts-toggle {
+  position: relative;
+  display: inline-flex;
+  width: 32px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.ts-toggle input { opacity: 0; width: 0; height: 0; }
+
+.ts-toggle-track {
+  position: absolute;
+  inset: 0;
+  background: var(--border);
+  border-radius: 9px;
+  transition: background 0.2s;
+}
+
+.ts-toggle input:checked ~ .ts-toggle-track {
+  background: var(--accent, #5c8cf7);
+}
+
+.ts-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.2s;
+}
+
+.ts-toggle input:checked ~ .ts-toggle-thumb { left: 16px; }
+
+/* ── Progress bar ──────────────────────────────────────────────────────────── */
+
+.ts-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  flex-shrink: 0;
+}
+
+.ts-progress-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.ts-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent, #5c8cf7);
+  transition: width 0.3s ease;
+}
+
+.ts-progress-pct {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 34px;
+  text-align: right;
+}
+
+/* ── Action bar (start / cancel button) ────────────────────────────────────── */
+
+.ts-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.ts-btn {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.ts-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.ts-btn--primary {
+  background: var(--accent, #5c8cf7);
+  color: #fff;
+}
+
+.ts-btn--cancel {
+  background: var(--border);
+  color: var(--text-primary);
+}
+
+.ts-btn--primary:hover:not(:disabled) { opacity: 0.85; }
+.ts-btn--cancel:hover:not(:disabled)  { opacity: 0.75; }
+
+.ts-dry-run-badge {
+  font-size: 11px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 7px;
+  color: var(--text-muted);
+}
+
+/* ── Results list ──────────────────────────────────────────────────────────── */
+
+.ts-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.ts-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 120px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.ts-result-row {
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ts-result-row:last-child { border-bottom: none; }
+
+.ts-result-filename {
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 3px;
+  word-break: break-all;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 6px;
+}
+
+.ts-result-folder {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ts-result-changes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ts-change-chip {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-secondary, var(--text-primary));
+}
+
+.ts-change-chip--error {
+  border-color: var(--error, #e55);
+  color: var(--error, #e55);
+}

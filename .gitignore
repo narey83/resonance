@@ -1,0 +1,39 @@
+.vs
+.vscode
+.idea/
+.DS_Store
+.claude
+.fake
+global.json
+coverage.json
+/dist/
+/TestResults/
+
+# Backend build output and runtime data
+/backend/bin/
+/backend/obj/
+/backend/wwwroot/
+/backend/resonance.csproj.user
+/backend/tools/ffmpeg
+/backend/data/
+/backend/downloads/
+/backend/incomplete/
+/backend/logs/
+/backend/resonance.pid
+/backend/resonance.yml
+/backend/resonance.yml.bak
+/backend/config.yml
+/backend/config.yml.bak
+/backend/scripts/
+
+# Frontend build output
+/frontend/build/
+
+# Runtime data directory
+/app/
+
+# Build caches
+backend/resonance.csproj.lscache
+
+# Generated knowledge-graph output
+graphify-out/

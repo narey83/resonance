@@ -1,0 +1,262 @@
+/* ── Backdrop ───────────────────────────────────────────────────────────────── */
+.nc-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 499;
+}
+
+/* ── Panel ──────────────────────────────────────────────────────────────────── */
+.nc-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 320px;
+  height: 100vh;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border);
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.12);
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────────── */
+.nc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.nc-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+
+.nc-icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+}
+.nc-icon-btn:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+/* ── Tabs ───────────────────────────────────────────────────────────────────── */
+.nc-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.nc-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 9px 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  margin-bottom: -1px;
+}
+.nc-tab:hover { color: var(--text-primary); }
+.nc-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ── Feed ───────────────────────────────────────────────────────────────────── */
+.nc-feed {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.nc-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  opacity: 0.55;
+}
+
+.nc-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.nc-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 16px;
+  transition: background 0.12s;
+  position: relative;
+}
+.nc-item:hover { background: var(--surface-hover); }
+.nc-item.unread { background: rgba(var(--accent-rgb), 0.04); }
+.nc-item.unread:hover { background: rgba(var(--accent-rgb), 0.07); }
+
+.nc-item-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.nc-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.nc-item-message {
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.nc-item-time {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.nc-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  margin-top: 5px;
+}
+
+.nc-feed-footer {
+  border-top: 1px solid var(--border);
+  padding: 8px 16px;
+  flex-shrink: 0;
+}
+
+.nc-clear-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 0;
+  transition: color 0.15s;
+}
+.nc-clear-btn:hover { color: var(--danger); }
+
+/* ── Settings ───────────────────────────────────────────────────────────────── */
+.nc-settings {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.nc-setting-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.nc-setting-row:last-child { border-bottom: none; }
+
+.nc-setting-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.nc-setting-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.nc-setting-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.nc-setting-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+/* ── Toggle ─────────────────────────────────────────────────────────────────── */
+.nc-toggle {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.nc-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.nc-toggle-track {
+  display: block;
+  width: 30px;
+  height: 17px;
+  background: var(--border);
+  border-radius: 9px;
+  position: relative;
+  transition: background 0.2s;
+}
+
+.nc-toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 2.5px;
+  left: 2.5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s;
+}
+
+.nc-toggle input:checked ~ .nc-toggle-track {
+  background: var(--accent);
+}
+
+.nc-toggle input:checked ~ .nc-toggle-track::after {
+  transform: translateX(13px);
+}

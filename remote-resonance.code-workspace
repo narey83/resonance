@@ -1,0 +1,9 @@
+{
+	"folders": [
+		{
+			"uri": "vscode-remote://ssh-remote+microserver/home/narey/projects/resonance"
+		}
+	],
+	"remoteAuthority": "ssh-remote+microserver",
+	"settings": {}
+}

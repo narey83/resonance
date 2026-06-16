@@ -1,0 +1,42 @@
+.tag-manager {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.tag-manager-tabs {
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-shrink: 0;
+  padding: 0 16px;
+}
+
+.tag-manager-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  margin-bottom: -1px;
+  padding: 10px 16px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tag-manager-tab:hover {
+  color: var(--text-primary);
+}
+
+.tag-manager-tab--active {
+  border-bottom-color: var(--accent, #5c8cf7);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.tag-manager-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
