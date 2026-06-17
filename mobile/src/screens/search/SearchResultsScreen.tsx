@@ -108,6 +108,7 @@ function searchFileToTrack(username: string, file: SearchFile): MusicTrack {
     trackNumber: null,
     discNumber:  null,
     hasArtwork:  false,
+    coverPath:   null,
     genre:       null,
     bpm:         null,
     key:         null,

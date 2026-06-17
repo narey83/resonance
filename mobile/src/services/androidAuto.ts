@@ -96,6 +96,7 @@ const playRecordToTrack = (r: PlayRecord): MusicTrack => ({
   trackNumber: null,
   discNumber: null,
   hasArtwork: true, // best-effort; artwork endpoint resolves by path
+  coverPath: null,
   genre: null,
   bpm: null,
   key: null,

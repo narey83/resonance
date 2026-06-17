@@ -157,6 +157,7 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
       album:       meta?.studio   ?? null,
       duration:    info.streamDuration ?? null,
       hasArtwork:  false,
+      coverPath:   null,
       albumArtist: null,
       year:        null,
       trackNumber: null,

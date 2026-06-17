@@ -37,6 +37,11 @@ import {
   renameFolder as renameFolderApi, renameTrack as renameTrackApi,
   MusicAlbum, MusicArtist, MusicFolder, MusicGenre, MusicTrack, MusicYear,
 } from '../../api/musicLibrary';
+import {
+  getLocalTracks, getLocalAlbums, getLocalArtists, getLocalAlbumTracks,
+  getAllLocalTracks, getLocalFolders, getLocalFolderTracks,
+  isLocalPath, isLocalFolderPath,
+} from '../../services/localMusicLibrary';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { getArtworkCacheKey } from '../../services/artworkCache';
@@ -56,8 +61,8 @@ import { usePlayerUI } from '../../store/playerUIStore';
 type LibraryStackParamList = {
   LibraryHome:    undefined;
   Artist:         { artistName: string };
-  Album:          { album: MusicAlbum };
-  FolderDetail:   { folderPath: string; folderName: string };
+  Album:          { album: MusicAlbum; localAlbumTitle?: string };
+  FolderDetail:   { folderPath: string; folderName: string; isLocal?: boolean };
   GenreDetail:    { genre: string; trackCount: number };
   YearDetail:     { year: number; trackCount: number };
   PlaylistDetail: { playlistId: string };
@@ -81,6 +86,7 @@ const mixtapeTrackToMusicTrack = (t: MixtapeTrack): MusicTrack => ({
   trackNumber: null,
   discNumber: null,
   hasArtwork: true,
+  coverPath: null,
   genre: null,
   bpm: null,
   key: null,
@@ -116,8 +122,9 @@ function useKeyboardHeight() {
 
 // ── ArtworkBox ────────────────────────────────────────────────────────────────
 
-const ArtworkBox = ({ path, size, overrideUrl, overrideCacheKey }: {
+const ArtworkBox = ({ path, size, overrideUrl, overrideCacheKey, source }: {
   path: string | null; size: number; overrideUrl?: string | null; overrideCacheKey?: string;
+  source?: 'local' | 'server';
 }) => {
   const { s, c } = useLibStyles();
   const [error, setError] = React.useState(false);
@@ -127,18 +134,37 @@ const ArtworkBox = ({ path, size, overrideUrl, overrideCacheKey }: {
   const url = overrideUrl ?? downloadUrl;
   const cacheKey = overrideUrl ? overrideCacheKey : (path ? getArtworkCacheKey(path, px) : undefined);
 
+  const badge = source ? (
+    <View style={{
+      position: 'absolute', bottom: 1, right: 1,
+      width: 14, height: 14, borderRadius: 7,
+      backgroundColor: source === 'local' ? '#e08030' : c.accent,
+      alignItems: 'center', justifyContent: 'center',
+    }}>
+      <Ionicons
+        name={source === 'local' ? 'phone-portrait' : 'cloud'}
+        size={8}
+        color="#fff"
+      />
+    </View>
+  ) : null;
+
   if (url && !error) {
     return (
-      <Image
-        source={{ uri: url, cacheKey }}
-        style={[s.artwork, { width: size, height: size, borderRadius: size / 8 }]}
-        onError={() => setError(true)}
-      />
+      <View style={{ width: size, height: size }}>
+        <Image
+          source={{ uri: url, cacheKey }}
+          style={[s.artwork, { width: size, height: size, borderRadius: size / 8 }]}
+          onError={() => setError(true)}
+        />
+        {badge}
+      </View>
     );
   }
   return (
     <View style={[s.artworkPlaceholder, { width: size, height: size, borderRadius: size / 8 }]}>
       <Ionicons name="musical-note" size={size * 0.4} color={c.textDim} />
+      {badge}
     </View>
   );
 };
@@ -837,7 +863,11 @@ function TrackActionSheet({
 
 function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { s, c } = useLibStyles();
-  const { visibleTabs, setVisibleTabs } = useLibrarySettings();
+  const {
+    visibleTabs, setVisibleTabs,
+    includeLocalLibrary, setIncludeLocalLibrary,
+    mergeLocalAndServer, setMergeLocalAndServer,
+  } = useLibrarySettings();
 
   const toggle = (tab: LibraryTab) => {
     if (visibleTabs.includes(tab)) {
@@ -858,26 +888,83 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
         <View style={s.sheet}>
           <View style={s.sheetHandle} />
           <Text style={s.sheetTitle}>Library Options</Text>
-          <Text style={s.sheetMeta}>Choose which tabs to show</Text>
+
           <View style={s.sheetDivider} />
-          {ALL_TABS.map((tab) => {
-            const on = visibleTabs.includes(tab);
-            return (
-              <Pressable
-                key={tab}
-                onPress={() => toggle(tab)}
-                style={[s.sheetBtn, { justifyContent: 'space-between' }]}
-              >
-                <Text style={s.sheetBtnText}>{tab}</Text>
-                <Switch
-                  value={on}
-                  onValueChange={() => toggle(tab)}
-                  thumbColor={on ? c.accent : c.textMuted}
-                  trackColor={{ false: c.bgElevated, true: `${c.accent}88` }}
-                />
-              </Pressable>
-            );
-          })}
+          <Pressable
+            onPress={() => setIncludeLocalLibrary(!includeLocalLibrary)}
+            style={[s.sheetBtn, { justifyContent: 'space-between' }]}
+          >
+            <View>
+              <Text style={s.sheetBtnText}>Include Local Music</Text>
+              <Text style={s.sheetMetaSub}>Scan music from your device storage</Text>
+            </View>
+            <Switch
+              value={includeLocalLibrary}
+              onValueChange={setIncludeLocalLibrary}
+              thumbColor={includeLocalLibrary ? c.accent : c.textMuted}
+              trackColor={{ false: c.bgElevated, true: `${c.accent}88` }}
+            />
+          </Pressable>
+
+          {includeLocalLibrary && (
+            <Pressable
+              onPress={() => setMergeLocalAndServer(!mergeLocalAndServer)}
+              style={[s.sheetBtn, { justifyContent: 'space-between' }]}
+            >
+              <View>
+                <Text style={s.sheetBtnText}>Merge with Server Library</Text>
+                <Text style={s.sheetMetaSub}>Show local and server tracks in one list</Text>
+              </View>
+              <Switch
+                value={mergeLocalAndServer}
+                onValueChange={setMergeLocalAndServer}
+                thumbColor={mergeLocalAndServer ? c.accent : c.textMuted}
+                trackColor={{ false: c.bgElevated, true: `${c.accent}88` }}
+              />
+            </Pressable>
+          )}
+
+          {includeLocalLibrary && mergeLocalAndServer && (
+            <View style={[s.sheetBtn, { flexDirection: 'row', gap: Spacing.lg }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: c.accent, alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="cloud" size={10} color="#fff" />
+                </View>
+                <Text style={s.sheetMetaSub}>Server</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#e08030', alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="phone-portrait" size={10} color="#fff" />
+                </View>
+                <Text style={s.sheetMetaSub}>Device</Text>
+              </View>
+            </View>
+          )}
+
+          <View style={s.sheetDivider} />
+          <Text style={[s.sheetMeta, { paddingHorizontal: Spacing.md, paddingTop: Spacing.xs }]}>
+            Tabs to show
+          </Text>
+          <ScrollView style={{ maxHeight: 300 }}>
+            {ALL_TABS.map((tab) => {
+              const on = visibleTabs.includes(tab);
+              return (
+                <Pressable
+                  key={tab}
+                  onPress={() => toggle(tab)}
+                  style={[s.sheetBtn, { justifyContent: 'space-between' }]}
+                >
+                  <Text style={s.sheetBtnText}>{tab}</Text>
+                  <Switch
+                    value={on}
+                    onValueChange={() => toggle(tab)}
+                    thumbColor={on ? c.accent : c.textMuted}
+                    trackColor={{ false: c.bgElevated, true: `${c.accent}88` }}
+                  />
+                </Pressable>
+              );
+            })}
+          </ScrollView>
           <Pressable style={s.sheetCancel} onPress={onClose}>
             <Text style={s.sheetCancelText}>Done</Text>
           </Pressable>
@@ -897,13 +984,47 @@ function ArtistsTab() {
   const [search, setSearch] = useState('');
   const { sortBy, sortDir, onSort } = useSort('artist');
   const libraryRevision = useLibraryActivityStore((s) => s.libraryRevision);
+  const { includeLocalLibrary, mergeLocalAndServer } = useLibrarySettings();
 
   useEffect(() => {
-    getArtists()
-      .then((d) => setArtists(d ?? []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [libraryRevision]);
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        let serverArtists: MusicArtist[] = [];
+        let localArtists: MusicArtist[] = [];
+
+        if (!includeLocalLibrary || mergeLocalAndServer) {
+          serverArtists = await getArtists().catch(() => []);
+        }
+
+        if (includeLocalLibrary) {
+          localArtists = await getLocalArtists().catch(() => []);
+        }
+
+        if (includeLocalLibrary && !mergeLocalAndServer) {
+          setArtists(localArtists);
+        } else if (includeLocalLibrary && mergeLocalAndServer) {
+          // Merge and deduplicate by artist name
+          const merged = new Map<string, MusicArtist>();
+          [...serverArtists, ...localArtists].forEach((a) => {
+            const existing = merged.get(a.artist);
+            if (existing) {
+              existing.albumCount += a.albumCount;
+              existing.trackCount += a.trackCount;
+            } else {
+              merged.set(a.artist, { ...a });
+            }
+          });
+          setArtists(Array.from(merged.values()));
+        } else {
+          setArtists(serverArtists);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, [libraryRevision, includeLocalLibrary, mergeLocalAndServer]);
 
   const filtered = useMemo(() => {
     let list = artists;
@@ -931,6 +1052,17 @@ function ArtistsTab() {
       <Ionicons name="chevron-forward" size={16} color={c.textMuted} />
     </Pressable>
   ), [navigation, s, c]);
+
+  if (!loading && includeLocalLibrary && !mergeLocalAndServer && filtered.length === 0) {
+    return (
+      <View style={[s.flex, { justifyContent: 'center', alignItems: 'center', padding: Spacing.xl }]}>
+        <Ionicons name="phone-portrait-outline" size={48} color={c.textDim} />
+        <Text style={[s.rowMeta, { marginTop: 12, textAlign: 'center' }]}>
+          {'Artist info isn\'t available for device music.\nBrowse your local tracks via Albums or Tracks.'}
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={s.flex}>
@@ -964,22 +1096,47 @@ function ArtistsTab() {
 
 // ── Tab: Albums ───────────────────────────────────────────────────────────────
 
+type AlbumWithSource = MusicAlbum & { _local?: boolean };
+
 function AlbumsTab() {
   const { s, c } = useLibStyles();
   const navigation = useNavigation<LibraryNav>();
-  const [albums, setAlbums] = useState<MusicAlbum[]>([]);
+  const [albums, setAlbums] = useState<AlbumWithSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [actionAlbum, setActionAlbum] = useState<MusicAlbum | null>(null);
   const { sortBy, sortDir, onSort } = useSort('album');
   const libraryRevision = useLibraryActivityStore((s) => s.libraryRevision);
+  const { includeLocalLibrary, mergeLocalAndServer } = useLibrarySettings();
 
   useEffect(() => {
-    getAlbums()
-      .then((d) => setAlbums(d ?? []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [libraryRevision]);
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        let serverAlbums: AlbumWithSource[] = [];
+        let localAlbums: AlbumWithSource[] = [];
+
+        if (!includeLocalLibrary || mergeLocalAndServer) {
+          serverAlbums = await getAlbums().catch(() => []);
+        }
+
+        if (includeLocalLibrary) {
+          localAlbums = (await getLocalAlbums().catch(() => [])).map(a => ({ ...a, _local: true }));
+        }
+
+        if (includeLocalLibrary && !mergeLocalAndServer) {
+          setAlbums(localAlbums);
+        } else if (includeLocalLibrary && mergeLocalAndServer) {
+          setAlbums([...serverAlbums, ...localAlbums]);
+        } else {
+          setAlbums(serverAlbums);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, [libraryRevision, includeLocalLibrary, mergeLocalAndServer]);
 
   const filtered = useMemo(() => {
     let list = albums;
@@ -992,24 +1149,37 @@ function AlbumsTab() {
     return sortList(list, sortBy, sortDir, (a, f) => a[f as keyof MusicAlbum]);
   }, [albums, search, sortBy, sortDir]);
 
-  const renderItem = useCallback(({ item }: { item: MusicAlbum }) => (
+  const showBadge = includeLocalLibrary && mergeLocalAndServer;
+
+  const renderItem = useCallback(({ item }: { item: AlbumWithSource }) => (
     <Pressable
-      onPress={() => navigation.push('Album', { album: item })}
-      onLongPress={() => setActionAlbum(item)}
+      onPress={() => item._local
+        ? navigation.push('Album', { album: item, localAlbumTitle: item.album ?? undefined })
+        : navigation.push('Album', { album: item })}
+      onLongPress={() => !item._local && setActionAlbum(item)}
       style={({ pressed }) => [s.row, pressed && s.rowPressed]}
     >
-      <ArtworkBox path={item.coverPath} size={48} />
+      <ArtworkBox
+        path={item.coverPath}
+        size={48}
+        source={showBadge ? (item._local ? 'local' : 'server') : undefined}
+      />
       <View style={s.rowInfo}>
         <Text style={s.rowTitle} numberOfLines={1}>{item.album || '(Untitled)'}</Text>
         <Text style={s.rowMeta} numberOfLines={1}>
           {[item.artist, item.year?.toString()].filter(Boolean).join(' · ')}
+          {item._local && !showBadge && (
+            <Text style={{ color: '#e08030' }}> · device</Text>
+          )}
         </Text>
       </View>
-      <Pressable onPress={() => setActionAlbum(item)} hitSlop={8} style={s.moreBtn}>
-        <Ionicons name="ellipsis-horizontal" size={18} color={c.textMuted} />
-      </Pressable>
+      {!item._local && (
+        <Pressable onPress={() => setActionAlbum(item)} hitSlop={8} style={s.moreBtn}>
+          <Ionicons name="ellipsis-horizontal" size={18} color={c.textMuted} />
+        </Pressable>
+      )}
     </Pressable>
-  ), [navigation, s, c]);
+  ), [navigation, s, c, showBadge]);
 
   return (
     <View style={s.flex}>
@@ -1057,7 +1227,14 @@ function TracksTab() {
   const [renameTarget, setRenameTarget] = useState<MusicTrack | null>(null);
   const { sortBy, sortDir, onSort } = useSort('artist');
   const libraryRevision = useLibraryActivityStore((s) => s.libraryRevision);
+  const { includeLocalLibrary, mergeLocalAndServer } = useLibrarySettings();
 
+  // Client-side mode: used when local library is enabled (local-only or merged)
+  // We load everything upfront and sort/filter in memory.
+  const clientMode = includeLocalLibrary;
+  const [allTracks, setAllTracks] = useState<MusicTrack[]>([]);
+
+  // Server-side paginated mode (only when clientMode === false)
   const fetchingRef = useRef(false);
   const tracksRef   = useRef<MusicTrack[]>([]);
   const totalRef    = useRef(0);
@@ -1069,6 +1246,7 @@ function TracksTab() {
   useEffect(() => { sortRef.current = { sortBy, sortDir }; }, [sortBy, sortDir]);
 
   const loadPage = useCallback(async (reset: boolean, query: string) => {
+    if (clientMode) return;
     if (fetchingRef.current) return;
     const offset = reset ? 0 : tracksRef.current.length;
     if (!reset && totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return;
@@ -1087,35 +1265,94 @@ function TracksTab() {
       totalRef.current = result.total;
     } catch {}
     finally { fetchingRef.current = false; setFetching(false); }
-  }, []);
+  }, [clientMode]);
 
+  // Server-side mode: reload on search/sort/revision change
   useEffect(() => {
+    if (clientMode) return;
     const t = setTimeout(() => loadPage(true, search), search ? 300 : 0);
     return () => clearTimeout(t);
-  }, [search, libraryRevision, sortBy, sortDir]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, libraryRevision, sortBy, sortDir, clientMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Client-side mode: load all tracks when settings change
+  useEffect(() => {
+    if (!clientMode) return;
+    let cancelled = false;
+    const loadAll = async () => {
+      setFetching(true);
+      try {
+        const localTracks = await getAllLocalTracks().catch(() => [] as MusicTrack[]);
+        if (cancelled) return;
+        if (mergeLocalAndServer) {
+          const result = await getTracks({ limit: 5000 }).catch(() => ({ tracks: [] as MusicTrack[], total: 0 }));
+          if (cancelled) return;
+          setAllTracks([...result.tracks, ...localTracks]);
+        } else {
+          setAllTracks(localTracks);
+        }
+      } finally {
+        if (!cancelled) setFetching(false);
+      }
+    };
+    loadAll();
+    return () => { cancelled = true; };
+  }, [clientMode, mergeLocalAndServer, libraryRevision]);
+
+  // Client-mode filtered + sorted list
+  const clientTracks = useMemo(() => {
+    if (!clientMode) return [];
+    let list = allTracks;
+    if (search) {
+      const q = search.toLowerCase();
+      list = list.filter((t) =>
+        getTrackTitle(t).toLowerCase().includes(q) ||
+        t.artist?.toLowerCase().includes(q) ||
+        t.album?.toLowerCase().includes(q),
+      );
+    }
+    return sortList(list, sortBy, sortDir, (t, f) =>
+      f === 'title' ? getTrackTitle(t) : t[f as keyof MusicTrack]);
+  }, [clientMode, allTracks, search, sortBy, sortDir]);
+
+  const displayTracks = clientMode ? clientTracks : tracks;
+  const displayRef    = useRef<MusicTrack[]>([]);
+  useEffect(() => { displayRef.current = displayTracks; }, [displayTracks]);
+
+  const showBadge = clientMode && mergeLocalAndServer;
 
   const navigateToPlayer = useCallback(() => {
     usePlayerUI.getState().expand();
   }, [navigation]);
 
-  const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => (
-    <Pressable
-      onPress={() => { playQueue(tracksRef.current, index); navigateToPlayer(); }}
-      style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
-    >
-      <ArtworkBox path={item.hasArtwork ? item.path : null} size={42} />
-      <View style={s.rowInfo}>
-        <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
-        <Text style={s.rowMeta} numberOfLines={1}>
-          {[item.artist, item.album].filter(Boolean).join(' · ')}
-        </Text>
-      </View>
-      <Text style={s.trackDur}>{formatDuration(item.duration)}</Text>
-      <Pressable onPress={() => setActionTrack(item)} hitSlop={8} style={s.moreBtn}>
-        <Ionicons name="ellipsis-horizontal" size={18} color={c.textMuted} />
+  const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => {
+    const local = isLocalPath(item.path);
+    return (
+      <Pressable
+        onPress={() => { playQueue(displayRef.current, index); navigateToPlayer(); }}
+        style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
+      >
+        <ArtworkBox
+          path={item.hasArtwork && !local ? item.path : null}
+          overrideUrl={local && item.hasArtwork ? item.coverPath : undefined}
+          size={42}
+          source={showBadge ? (local ? 'local' : 'server') : undefined}
+        />
+        <View style={s.rowInfo}>
+          <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
+          <Text style={s.rowMeta} numberOfLines={1}>
+            {[item.artist, item.album].filter(Boolean).join(' · ')}
+            {clientMode && !mergeLocalAndServer && local && (
+              <Text style={{ color: '#e08030' }}> · device</Text>
+            )}
+          </Text>
+        </View>
+        <Text style={s.trackDur}>{formatDuration(item.duration)}</Text>
+        <Pressable onPress={() => setActionTrack(item)} hitSlop={8} style={s.moreBtn}>
+          <Ionicons name="ellipsis-horizontal" size={18} color={c.textMuted} />
+        </Pressable>
       </Pressable>
-    </Pressable>
-  ), [playQueue, navigateToPlayer, s, c]);
+    );
+  }, [playQueue, navigateToPlayer, s, c, showBadge, clientMode, mergeLocalAndServer]);
 
   const handleRenameConfirm = useCallback(async (newFilename: string) => {
     if (!renameTarget) return;
@@ -1144,19 +1381,21 @@ function TracksTab() {
           { field: 'title', label: 'Title' },
           { field: 'album', label: 'Album' },
           { field: 'year', label: 'Year' },
-          { field: 'bpm', label: 'BPM' },
-          { field: 'added', label: 'Added' },
+          ...(clientMode ? [] : [
+            { field: 'bpm', label: 'BPM' },
+            { field: 'added', label: 'Added' },
+          ]),
         ]}
         sortBy={sortBy}
         sortDir={sortDir}
         onSort={onSort}
       />
       <FlatList
-        data={tracks}
+        data={displayTracks}
         keyExtractor={(item, index) => `${item.path}-${index}`}
         renderItem={renderTrack}
         contentContainerStyle={s.listContent}
-        onEndReached={() => loadPage(false, searchRef.current)}
+        onEndReached={clientMode ? undefined : () => loadPage(false, searchRef.current)}
         onEndReachedThreshold={0.4}
         ListFooterComponent={fetching
           ? <ActivityIndicator color={c.accent} style={{ padding: Spacing.md }} />
@@ -1169,14 +1408,14 @@ function TracksTab() {
         track={actionTrack}
         onClose={() => setActionTrack(null)}
         onPlayNow={(t) => {
-          const idx = tracksRef.current.findIndex((x) => x.path === t.path);
-          playQueue(tracksRef.current, idx >= 0 ? idx : 0);
+          const idx = displayRef.current.findIndex((x) => x.path === t.path);
+          playQueue(displayRef.current, idx >= 0 ? idx : 0);
           navigateToPlayer();
           setActionTrack(null);
         }}
         onPlayNext={(t) => { playNext([t]); setActionTrack(null); }}
         onAddToQueue={(t) => { addToQueue([t]); setActionTrack(null); }}
-        onRename={(t) => { setActionTrack(null); setRenameTarget(t); }}
+        onRename={!clientMode ? (t) => { setActionTrack(null); setRenameTarget(t); } : undefined}
       />
     </View>
   );
@@ -1219,13 +1458,19 @@ function LovedTab() {
     ]);
   }, [clearAllLoved]);
 
-  const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => (
+  const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => {
+    const local = isLocalPath(item.path);
+    return (
     <Pressable
       onPress={() => { playQueue(lovedTracks, index); navigateToPlayer(); }}
       onLongPress={() => setActionTrack(item)}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
     >
-      <ArtworkBox path={item.hasArtwork ? item.path : null} size={42} />
+      <ArtworkBox
+        path={item.hasArtwork && !local ? item.path : null}
+        overrideUrl={local && item.hasArtwork ? item.coverPath : undefined}
+        size={42}
+      />
       <View style={s.rowInfo}>
         <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
         <Text style={s.rowMeta} numberOfLines={1}>
@@ -1236,7 +1481,8 @@ function LovedTab() {
         <Ionicons name="heart" size={18} color="#e05a7a" />
       </Pressable>
     </Pressable>
-  ), [playQueue, navigateToPlayer, lovedTracks, toggleLove, s]);
+  );
+  }, [playQueue, navigateToPlayer, lovedTracks, toggleLove, s, isLocalPath]);
 
   if (loading) return <ActivityIndicator style={{ marginTop: 40 }} color={c.accent} />;
 
@@ -1303,6 +1549,7 @@ const recordToTrack = (entry: PlayRecord): MusicTrack => {
     trackNumber: null,
     discNumber: null,
     hasArtwork: true,
+    coverPath: null,
     genre: null,
     bpm: null,
     key: null,
@@ -1457,10 +1704,12 @@ function HistoryTab() {
 
 // ── Tab: Folders ─────────────────────────────────────────────────────────────
 
+type FolderWithSource = MusicFolder & { _local?: boolean };
+
 function FoldersTab() {
   const { s, c } = useLibStyles();
   const navigation = useNavigation<LibraryNav>();
-  const [folders, setFolders] = useState<MusicFolder[]>([]);
+  const [folders, setFolders] = useState<FolderWithSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [actionFolder, setActionFolder] = useState<MusicFolder | null>(null);
@@ -1468,37 +1717,65 @@ function FoldersTab() {
   const { sortBy, sortDir, onSort } = useSort('name');
   const libraryRevision = useLibraryActivityStore((s) => s.libraryRevision);
   const { mixtapes } = useMixtapeStore();
+  const { includeLocalLibrary, mergeLocalAndServer } = useLibrarySettings();
 
   useEffect(() => {
-    getFolders()
-      .then((d) => setFolders(d ?? []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [libraryRevision]);
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        let serverFolders: FolderWithSource[] = [];
+        let localFolders: FolderWithSource[] = [];
+
+        if (!includeLocalLibrary || mergeLocalAndServer) {
+          serverFolders = await getFolders().catch(() => []);
+        }
+        if (includeLocalLibrary) {
+          localFolders = (await getLocalFolders().catch(() => [])).map(f => ({ ...f, _local: true }));
+        }
+
+        if (includeLocalLibrary && !mergeLocalAndServer) {
+          setFolders(localFolders);
+        } else if (includeLocalLibrary && mergeLocalAndServer) {
+          setFolders([...serverFolders, ...localFolders]);
+        } else {
+          setFolders(serverFolders);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, [libraryRevision, includeLocalLibrary, mergeLocalAndServer]);
+
+  const showBadge = includeLocalLibrary && mergeLocalAndServer;
 
   const filtered = useMemo(() => {
-    // Deduplicate by name — keep one entry per folder name, preferring whichever
-    // has a matching mixtape (for artwork), then the one with more tracks
-    const byName = new Map<string, MusicFolder>();
-    for (const f of folders) {
-      const existing = byName.get(f.name);
-      if (!existing) { byName.set(f.name, f); continue; }
-      const hasMixtape = mixtapes.some((m) => m.name === f.name);
-      if (hasMixtape && !mixtapes.some((m) => m.name === existing.name)) {
-        byName.set(f.name, f);
-      } else if (f.trackCount > existing.trackCount) {
-        byName.set(f.name, f);
-      }
-    }
-    let deduped = Array.from(byName.values());
+    let list = folders;
     if (search) {
       const q = search.toLowerCase();
-      deduped = deduped.filter(
+      list = list.filter(
         (f) => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q),
       );
     }
-    return sortList(deduped, sortBy, sortDir, (f, field) => f[field as keyof MusicFolder]);
-  }, [folders, mixtapes, search, sortBy, sortDir]);
+    if (!includeLocalLibrary || mergeLocalAndServer) {
+      // Server folders: deduplicate by name (server can return same name from different roots)
+      const serverDeduped = new Map<string, FolderWithSource>();
+      const localList: FolderWithSource[] = [];
+      for (const f of list) {
+        if (f._local) { localList.push(f); continue; }
+        const existing = serverDeduped.get(f.name);
+        if (!existing) { serverDeduped.set(f.name, f); continue; }
+        const hasMixtape = mixtapes.some((m) => m.name === f.name);
+        if (hasMixtape && !mixtapes.some((m) => m.name === existing.name)) {
+          serverDeduped.set(f.name, f);
+        } else if (f.trackCount > existing.trackCount) {
+          serverDeduped.set(f.name, f);
+        }
+      }
+      list = [...Array.from(serverDeduped.values()), ...localList];
+    }
+    return sortList(list, sortBy, sortDir, (f, field) => f[field as keyof MusicFolder]);
+  }, [folders, mixtapes, search, sortBy, sortDir, includeLocalLibrary, mergeLocalAndServer]);
 
   const handleRenameConfirm = useCallback(async (newName: string) => {
     if (!renameTarget) return;
@@ -1511,28 +1788,40 @@ function FoldersTab() {
     }
   }, [renameTarget]);
 
-  const renderItem = useCallback(({ item }: { item: MusicFolder }) => {
-    const mixtape = mixtapes.find((m) => item.name === m.name);
+  const renderItem = useCallback(({ item }: { item: FolderWithSource }) => {
+    const mixtape = !item._local ? mixtapes.find((m) => item.name === m.name) : null;
     const artworkOverride = mixtape?.hasArtwork ? getMixtapeArtworkUrl(mixtape.id) : null;
     const artworkOverrideCacheKey = mixtape?.hasArtwork ? `mixtape_${mixtape.id}` : undefined;
     return (
       <Pressable
-        onPress={() => navigation.push('FolderDetail', { folderPath: item.path, folderName: item.name })}
+        onPress={() => navigation.push('FolderDetail', {
+          folderPath: item.path,
+          folderName: item.name,
+          isLocal: item._local,
+        })}
         style={({ pressed }) => [s.row, pressed && s.rowPressed]}
       >
-        <ArtworkBox path={item.hasArtwork ? item.coverPath : null} size={48} overrideUrl={artworkOverride} overrideCacheKey={artworkOverrideCacheKey} />
+        <ArtworkBox
+          path={item.hasArtwork ? item.coverPath : null}
+          size={48}
+          overrideUrl={artworkOverride}
+          overrideCacheKey={artworkOverrideCacheKey}
+          source={showBadge ? (item._local ? 'local' : 'server') : undefined}
+        />
         <View style={s.rowInfo}>
           <Text style={s.rowTitle} numberOfLines={1}>{item.name}</Text>
           <Text style={s.rowMeta} numberOfLines={1}>
             {item.trackCount} track{item.trackCount !== 1 ? 's' : ''}
           </Text>
         </View>
-        <Pressable hitSlop={8} onPress={() => setActionFolder(item)} style={s.moreBtn}>
-          <Ionicons name="ellipsis-horizontal" size={18} color={c.textMuted} />
-        </Pressable>
+        {!item._local && (
+          <Pressable hitSlop={8} onPress={() => setActionFolder(item)} style={s.moreBtn}>
+            <Ionicons name="ellipsis-horizontal" size={18} color={c.textMuted} />
+          </Pressable>
+        )}
       </Pressable>
     );
-  }, [navigation, s, c, mixtapes]);
+  }, [navigation, s, c, mixtapes, showBadge]);
 
   return (
     <View style={s.flex}>
@@ -1585,13 +1874,21 @@ function GenresTab() {
   const [search, setSearch] = useState('');
   const { sortBy, sortDir, onSort } = useSort('genre');
   const libraryRevision = useLibraryActivityStore((s) => s.libraryRevision);
+  const { includeLocalLibrary, mergeLocalAndServer } = useLibrarySettings();
 
+  // Local tracks have no genre metadata; show server genres in both server-only
+  // and merged modes. In local-only mode the list will be empty.
   useEffect(() => {
+    if (includeLocalLibrary && !mergeLocalAndServer) {
+      setGenres([]);
+      setLoading(false);
+      return;
+    }
     getGenres()
       .then((d) => setGenres(d ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [libraryRevision]);
+  }, [libraryRevision, includeLocalLibrary, mergeLocalAndServer]);
 
   const filtered = useMemo(() => {
     let list = genres;
@@ -1639,7 +1936,13 @@ function GenresTab() {
             renderItem={renderItem}
             contentContainerStyle={s.listContent}
             ListEmptyComponent={
-              <Text style={s.empty}>{search ? 'No genres match' : 'No genres in library'}</Text>
+              <Text style={s.empty}>
+                {search
+                  ? 'No genres match'
+                  : includeLocalLibrary && !mergeLocalAndServer
+                    ? 'Genre tags are not available for device music'
+                    : 'No genres in library'}
+              </Text>
             }
           />
         )}
@@ -2025,7 +2328,7 @@ type AlbumProps = NativeStackScreenProps<LibraryStackParamList, 'Album'>;
 
 function AlbumDetail({ route }: AlbumProps) {
   const { s, c } = useLibStyles();
-  const { album } = route.params;
+  const { album, localAlbumTitle } = route.params;
   const { playQueue, addToQueue, playNext } = usePlayer();
   const navigation = useNavigation<LibraryNav>();
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
@@ -2036,6 +2339,13 @@ function AlbumDetail({ route }: AlbumProps) {
   useEffect(() => { tracksRef.current = tracks; }, [tracks]);
 
   useEffect(() => {
+    if (localAlbumTitle) {
+      getLocalAlbumTracks(localAlbumTitle)
+        .then(setTracks)
+        .catch(() => {})
+        .finally(() => setLoading(false));
+      return;
+    }
     getTracks({ album: album.album, artist: album.artist, limit: 500 })
       .then((result) => {
         const sorted = [...(result.tracks ?? [])].sort((a, b) => {
@@ -2047,7 +2357,7 @@ function AlbumDetail({ route }: AlbumProps) {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [album.album, album.artist]);
+  }, [album.album, album.artist, localAlbumTitle]);
 
   const navigateToPlayer = useCallback(() => {
     usePlayerUI.getState().expand();
@@ -2305,13 +2615,21 @@ function YearsTab() {
   const [loading, setLoading] = useState(true);
   const { sortBy, sortDir, onSort } = useSort('year', 'desc');
   const libraryRevision = useLibraryActivityStore((s) => s.libraryRevision);
+  const { includeLocalLibrary, mergeLocalAndServer } = useLibrarySettings();
 
+  // Local tracks have no year metadata; show server years in both server-only
+  // and merged modes. In local-only mode the list will be empty.
   useEffect(() => {
+    if (includeLocalLibrary && !mergeLocalAndServer) {
+      setYears([]);
+      setLoading(false);
+      return;
+    }
     getYears()
       .then((d) => setYears(d ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [libraryRevision]);
+  }, [libraryRevision, includeLocalLibrary, mergeLocalAndServer]);
 
   const sorted = useMemo(
     () => sortList(years, sortBy, sortDir, (y, f) => y[f as keyof MusicYear]),
@@ -2357,7 +2675,13 @@ function YearsTab() {
             keyExtractor={(item) => String(item.year)}
             renderItem={renderItem}
             contentContainerStyle={s.listContent}
-            ListEmptyComponent={<Text style={s.empty}>No years in library</Text>}
+            ListEmptyComponent={
+              <Text style={s.empty}>
+                {includeLocalLibrary && !mergeLocalAndServer
+                  ? 'Year tags are not available for device music'
+                  : 'No years in library'}
+              </Text>
+            }
           />
         )}
     </View>
@@ -2491,7 +2815,7 @@ type FolderDetailProps = NativeStackScreenProps<LibraryStackParamList, 'FolderDe
 
 function FolderDetail({ route }: FolderDetailProps) {
   const { s, c } = useLibStyles();
-  const { folderPath, folderName } = route.params;
+  const { folderPath, folderName, isLocal } = route.params;
   const { playQueue, addToQueue, playNext } = usePlayer();
   const navigation = useNavigation<LibraryNav>();
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
@@ -2512,7 +2836,31 @@ function FolderDetail({ route }: FolderDetailProps) {
   useEffect(() => { totalRef.current = total; }, [total]);
   useEffect(() => { searchRef.current = search; }, [search]);
 
+  // Local folder: load all tracks from device storage, then filter client-side
+  const [allLocalTracks, setAllLocalTracks] = useState<MusicTrack[]>([]);
+  useEffect(() => {
+    if (!isLocal) return;
+    setFetching(true);
+    getLocalFolderTracks(folderPath)
+      .then((t) => { setAllLocalTracks(t); setTotal(t.length); totalRef.current = t.length; })
+      .catch(() => {})
+      .finally(() => setFetching(false));
+  }, [isLocal, folderPath]);
+
+  const localFiltered = useMemo(() => {
+    if (!isLocal) return [];
+    if (!search) return allLocalTracks;
+    const q = search.toLowerCase();
+    return allLocalTracks.filter(t =>
+      getTrackTitle(t).toLowerCase().includes(q) ||
+      t.artist?.toLowerCase().includes(q) ||
+      t.album?.toLowerCase().includes(q),
+    );
+  }, [isLocal, allLocalTracks, search]);
+
+  // Server folder: paginated
   const loadPage = useCallback(async (reset: boolean, query: string) => {
+    if (isLocal) return;
     if (fetchingRef.current) return;
     const offset = reset ? 0 : tracksRef.current.length;
     if (!reset && totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return;
@@ -2525,24 +2873,26 @@ function FolderDetail({ route }: FolderDetailProps) {
       totalRef.current = result.total;
     } catch {}
     finally { fetchingRef.current = false; setFetching(false); }
-  }, []);
+  }, [isLocal]);
 
   useEffect(() => {
+    if (isLocal) return;
     const t = setTimeout(() => loadPage(true, search), search ? 300 : 0);
     return () => clearTimeout(t);
-  }, [search]);
+  }, [search, isLocal]);
 
   const navigateToPlayer = useCallback(() => {
     usePlayerUI.getState().expand();
   }, [navigation]);
 
   const fetchAllTracks = useCallback(async (): Promise<MusicTrack[]> => {
+    if (isLocal) return allLocalTracks;
     if (totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return tracksRef.current;
     try {
       const result = await getTracks({ folder: folderRef.current, search: searchRef.current, limit: totalRef.current || 9999, offset: 0 });
       return result.tracks;
     } catch { return tracksRef.current; }
-  }, []);
+  }, [isLocal, allLocalTracks]);
 
   const handlePlayAll = useCallback(async () => {
     const all = await fetchAllTracks();
@@ -2558,12 +2908,20 @@ function FolderDetail({ route }: FolderDetailProps) {
     navigateToPlayer();
   }, [fetchAllTracks, playQueue, navigateToPlayer]);
 
+  const displayTracks = isLocal ? localFiltered : tracks;
+  const displayRef = useRef<MusicTrack[]>([]);
+  useEffect(() => { displayRef.current = displayTracks; }, [displayTracks]);
+
   const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => (
     <Pressable
-      onPress={() => { playQueue(tracksRef.current, index); navigateToPlayer(); }}
+      onPress={() => { playQueue(displayRef.current, index); navigateToPlayer(); }}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
     >
-      <ArtworkBox path={item.hasArtwork ? item.path : null} size={42} />
+      <ArtworkBox
+        path={item.hasArtwork && !isLocal ? item.path : null}
+        overrideUrl={isLocal && item.hasArtwork ? item.coverPath : undefined}
+        size={42}
+      />
       <View style={s.rowInfo}>
         <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
         <Text style={s.rowMeta} numberOfLines={1}>
@@ -2595,17 +2953,19 @@ function FolderDetail({ route }: FolderDetailProps) {
           <Text style={[s.actionBtnText, { color: c.textPrimary }]}>Shuffle</Text>
         </Pressable>
         {total > 0 && <Text style={s.detailTotal}>{total} tracks</Text>}
-        <Pressable hitSlop={8} onPress={() => setFolderActionOpen(true)} style={s.moreBtn}>
-          <Ionicons name="ellipsis-horizontal" size={20} color={c.textMuted} />
-        </Pressable>
+        {!isLocal && (
+          <Pressable hitSlop={8} onPress={() => setFolderActionOpen(true)} style={s.moreBtn}>
+            <Ionicons name="ellipsis-horizontal" size={20} color={c.textMuted} />
+          </Pressable>
+        )}
       </View>
       <SearchBar value={search} onChange={setSearch} placeholder="Search in folder…" />
       <FlatList
-        data={tracks}
+        data={displayTracks}
         keyExtractor={(item, index) => `${item.path}-${index}`}
         renderItem={renderTrack}
         contentContainerStyle={s.listContent}
-        onEndReached={() => loadPage(false, searchRef.current)}
+        onEndReached={isLocal ? undefined : () => loadPage(false, searchRef.current)}
         onEndReachedThreshold={0.4}
         ListFooterComponent={fetching
           ? <ActivityIndicator color={c.accent} style={{ padding: Spacing.md }} />
@@ -2616,22 +2976,24 @@ function FolderDetail({ route }: FolderDetailProps) {
         track={actionTrack}
         onClose={() => setActionTrack(null)}
         onPlayNow={(t) => {
-          const idx = tracksRef.current.findIndex((x) => x.path === t.path);
-          playQueue(tracksRef.current, idx >= 0 ? idx : 0);
+          const idx = displayRef.current.findIndex((x) => x.path === t.path);
+          playQueue(displayRef.current, idx >= 0 ? idx : 0);
           navigateToPlayer();
           setActionTrack(null);
         }}
         onPlayNext={(t) => { playNext([t]); setActionTrack(null); }}
         onAddToQueue={(t) => { addToQueue([t]); setActionTrack(null); }}
-        onRename={(t) => { setActionTrack(null); setRenameTrackTarget(t); }}
+        onRename={!isLocal ? (t) => { setActionTrack(null); setRenameTrackTarget(t); } : undefined}
       />
-      <FolderActionSheet
-        folder={folderActionOpen
-          ? { path: folderPath, name: folderName, trackCount: total, coverPath: null, hasArtwork: false }
-          : null}
-        onClose={() => setFolderActionOpen(false)}
-        onRename={(_f) => { setFolderActionOpen(false); setRenamingFolder(true); }}
-      />
+      {!isLocal && (
+        <FolderActionSheet
+          folder={folderActionOpen
+            ? { path: folderPath, name: folderName, trackCount: total, coverPath: null, hasArtwork: false }
+            : null}
+          onClose={() => setFolderActionOpen(false)}
+          onRename={(_f) => { setFolderActionOpen(false); setRenamingFolder(true); }}
+        />
+      )}
       <RenameModal
         initialValue={renameTrackTarget?.filename ?? ''}
         onCancel={() => setRenameTrackTarget(null)}

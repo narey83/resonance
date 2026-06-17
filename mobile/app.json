@@ -38,7 +38,15 @@
           "color": "#388bfd"
         }
       ],
-      "expo-image"
+      "expo-image",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to access your music library.",
+          "savePhotosPermission": "Allow $(PRODUCT_NAME) to save tracks to your music library.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ]
     ],
     "extra": {
       "eas": {

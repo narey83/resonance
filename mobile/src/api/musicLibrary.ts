@@ -35,6 +35,7 @@ export interface MusicTrack {
   trackNumber: number | null;
   discNumber: number | null;
   hasArtwork: boolean;
+  coverPath: string | null;
   genre: string | null;
   bpm: number | null;
   key: string | null;

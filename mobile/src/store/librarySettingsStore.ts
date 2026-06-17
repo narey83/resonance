@@ -11,20 +11,31 @@ const SETTINGS_VERSION = 2;
 
 interface LibrarySettingsStore {
   visibleTabs: LibraryTab[];
+  includeLocalLibrary: boolean;
+  mergeLocalAndServer: boolean;
   loaded: boolean;
   load: () => Promise<void>;
   setVisibleTabs: (tabs: LibraryTab[]) => Promise<void>;
+  setIncludeLocalLibrary: (include: boolean) => Promise<void>;
+  setMergeLocalAndServer: (merge: boolean) => Promise<void>;
 }
 
-export const useLibrarySettings = create<LibrarySettingsStore>((set) => ({
+export const useLibrarySettings = create<LibrarySettingsStore>((set, get) => ({
   visibleTabs: DEFAULT_TABS,
+  includeLocalLibrary: false,
+  mergeLocalAndServer: false,
   loaded: false,
 
   load: async () => {
     try {
       const raw = await SecureStore.getItemAsync(STORE_KEY);
       if (raw) {
-        let { visibleTabs, version } = JSON.parse(raw) as { visibleTabs: string[]; version?: number };
+        let { visibleTabs, version, includeLocalLibrary, mergeLocalAndServer } = JSON.parse(raw) as {
+          visibleTabs: string[];
+          version?: number;
+          includeLocalLibrary?: boolean;
+          mergeLocalAndServer?: boolean;
+        };
         // Migrate: 'Playlists' was renamed to 'Mixtapes'
         visibleTabs = (visibleTabs ?? DEFAULT_TABS).map((t) => t === 'Playlists' ? 'Mixtapes' : t);
         // Migrate: 'Albums' tab was re-added; surface it for settings saved before it existed
@@ -35,7 +46,12 @@ export const useLibrarySettings = create<LibrarySettingsStore>((set) => ({
         const sorted = (visibleTabs as LibraryTab[])
           .filter((t) => ALL_TABS.includes(t))
           .sort((a, b) => ALL_TABS.indexOf(a) - ALL_TABS.indexOf(b));
-        set({ visibleTabs: sorted.length ? sorted : DEFAULT_TABS, loaded: true });
+        set({
+          visibleTabs: sorted.length ? sorted : DEFAULT_TABS,
+          includeLocalLibrary: includeLocalLibrary ?? false,
+          mergeLocalAndServer: mergeLocalAndServer ?? false,
+          loaded: true,
+        });
       } else {
         set({ loaded: true });
       }
@@ -46,8 +62,40 @@ export const useLibrarySettings = create<LibrarySettingsStore>((set) => ({
 
   setVisibleTabs: async (tabs) => {
     set({ visibleTabs: tabs });
+    const { includeLocalLibrary, mergeLocalAndServer } = get();
     try {
-      await SecureStore.setItemAsync(STORE_KEY, JSON.stringify({ visibleTabs: tabs, version: SETTINGS_VERSION }));
+      await SecureStore.setItemAsync(STORE_KEY, JSON.stringify({
+        visibleTabs: tabs,
+        version: SETTINGS_VERSION,
+        includeLocalLibrary,
+        mergeLocalAndServer,
+      }));
+    } catch {}
+  },
+
+  setIncludeLocalLibrary: async (include) => {
+    set({ includeLocalLibrary: include });
+    const { visibleTabs, mergeLocalAndServer } = get();
+    try {
+      await SecureStore.setItemAsync(STORE_KEY, JSON.stringify({
+        visibleTabs,
+        version: SETTINGS_VERSION,
+        includeLocalLibrary: include,
+        mergeLocalAndServer,
+      }));
+    } catch {}
+  },
+
+  setMergeLocalAndServer: async (merge) => {
+    set({ mergeLocalAndServer: merge });
+    const { visibleTabs, includeLocalLibrary } = get();
+    try {
+      await SecureStore.setItemAsync(STORE_KEY, JSON.stringify({
+        visibleTabs,
+        version: SETTINGS_VERSION,
+        includeLocalLibrary,
+        mergeLocalAndServer: merge,
+      }));
     } catch {}
   },
 }));

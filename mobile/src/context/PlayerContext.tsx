@@ -19,6 +19,7 @@ import TrackPlayer, {
 } from 'react-native-track-player';
 import { AppState } from 'react-native';
 import { MusicTrack, getArtworkUrl, getStreamUrl, getTrackTitle } from '../api/musicLibrary';
+import { isLocalPath } from '../services/localMusicLibrary';
 import { useLibraryActivityStore } from '../store/libraryActivityStore';
 import { useConnectionStore } from '../services/connectionMonitor';
 import { useAuthStore } from '../store/auth';
@@ -69,15 +70,18 @@ const PlaybackStatusContext = createContext<PlaybackStatusContextValue>({
 
 type RntpTrack = Track & { _source: MusicTrack };
 
-const toRntpTrack = (track: MusicTrack): RntpTrack => ({
-  url:      getStreamUrl(track.path),
-  title:    getTrackTitle(track),
-  artist:   track.artist    ?? undefined,
-  album:    track.album     ?? undefined,
-  artwork:  track.hasArtwork ? (getArtworkUrl(track.path, 512) ?? undefined) : undefined,
-  duration: track.duration  ?? undefined,
-  _source:  track,
-} as RntpTrack);
+const toRntpTrack = (track: MusicTrack): RntpTrack => {
+  const isLocal = isLocalPath(track.path);
+  return {
+    url:      isLocal ? track.path : getStreamUrl(track.path),
+    title:    getTrackTitle(track),
+    artist:   track.artist    ?? undefined,
+    album:    track.album     ?? undefined,
+    artwork:  track.hasArtwork ? (getArtworkUrl(track.path, 512) ?? undefined) : undefined,
+    duration: track.duration  ?? undefined,
+    _source:  track,
+  } as RntpTrack;
+};
 
 const fromRntpTrack = (t: Track | undefined | null): MusicTrack | null =>
   t ? ((t as RntpTrack)._source ?? null) : null;
@@ -115,7 +119,6 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { shuffleOrderRef.current = shuffleOrder; }, [shuffleOrder]);
   useEffect(() => { queueRef.current        = queue; },        [queue]);
   useEffect(() => { queueIndexRef.current   = queueIndex; },   [queueIndex]);
-  useEffect(() => { playingRef.current      = playing; },      [playing]);
 
   // ── RNTP setup ─────────────────────────────────────────────────────────────
 
@@ -156,6 +159,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const { playing = false, bufferingDuringPlay = false } = useIsPlaying();
   const { position, duration }                     = useProgress(250);
 
+  useEffect(() => { playingRef.current  = playing; },  [playing]);
   useEffect(() => { positionRef.current = position; }, [position]);
 
   const currentTrack = useMemo(() => fromRntpTrack(activeRntpTrack), [activeRntpTrack]);

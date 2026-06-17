@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 import { Image as ExpoImage } from 'expo-image';
 
 function djb2(s: string): string {
@@ -23,7 +23,7 @@ export async function evictArtwork(trackPaths: string[]): Promise<void> {
       EVICT_SIZES.map(async size => {
         try {
           const cachePath = await ExpoImage.getCachePathAsync(getArtworkCacheKey(path, size));
-          if (cachePath) await FileSystem.deleteAsync(cachePath, { idempotent: true });
+          if (cachePath) { const f = new File(cachePath); if (f.exists) f.delete(); }
         } catch {}
       })
     ),
