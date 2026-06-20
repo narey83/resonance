@@ -36,7 +36,7 @@ export interface KpiMetric {
   type:     string;
   sum?:     number;
   count?:   number;
-  samples?: Array<{ value?: number; labels: Record<string, string> }>;
+  samples?: { value?: number; labels: Record<string, string> }[];
 }
 
 export const getApplicationState = () =>

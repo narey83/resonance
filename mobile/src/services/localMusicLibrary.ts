@@ -12,6 +12,7 @@ import {
   getMetadataForPaths,
   upsertMetadata,
   pruneRemovedTracks,
+  clearLocalMetadata,
   cacheArtwork,
   type TrackMetadata,
 } from './metadataDb';
@@ -92,9 +93,7 @@ const parseId3 = async (basics: AssetBasics): Promise<TrackMetadata> => {
   let artworkPath: string | null = null;
 
   try {
-    // Use contentUri (content://media/...) for reading — the file:// path in basics.uri
-    // is inaccessible on Android 13+ scoped storage even with READ_MEDIA_AUDIO.
-    const tags = await readId3Tags(basics.contentUri, {
+    const tags = await readId3Tags(basics.uri, {
       title: true, artist: true, album: true, genre: true, picture: true,
     });
     title = tags.title;
@@ -139,9 +138,20 @@ const parseId3 = async (basics: AssetBasics): Promise<TrackMetadata> => {
 // Session-level cache — resets on app restart, avoids redundant scans within a session.
 let _trackCache: MusicTrack[] | null = null;
 let _trackCacheTime = 0;
+let _backgroundScan: Promise<void> | null = null;
+// Set by the app to bump libraryRevision whenever a scan batch completes.
+let _onScanProgress: (() => void) | null = null;
+
+export const setScanProgressCallback = (cb: () => void) => { _onScanProgress = cb; };
 
 export const invalidateLocalTracksCache = () => {
   _trackCache = null;
+};
+
+export const forceRescanLocalTracks = async (): Promise<void> => {
+  _trackCache = null;
+  _backgroundScan = null;
+  await clearLocalMetadata();
 };
 
 export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
@@ -150,58 +160,56 @@ export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
 
   if (!await requestPermissions()) return [];
 
-  // 1. Fetch all audio assets from MediaStore
   const assets = await new Query()
     .eq(AssetField.MEDIA_TYPE, MediaType.AUDIO)
-    .limit(2000)
     .exe();
 
-  // 2. Fetch uri/filename/duration/mtime in parallel
   const basics = (await Promise.all(assets.map(fetchAssetBasics)))
     .filter((b): b is AssetBasics => b !== null);
 
   const uris = basics.map(b => b.uri);
-
-  // 3. Load existing cached metadata from DB
   const cached = await getMetadataForPaths(uris);
 
-  // 4. Identify stale tracks (not in cache or mtime changed)
   const stale = basics.filter(b => {
     const c = cached.get(b.uri);
-    if (!c) return true;
-    if (c.fileMtime !== b.mtime) return true;
-    return false;
+    return !c || c.fileMtime !== b.mtime;
   });
 
-  // 5. Parse ID3 for stale tracks (batches of 8 to limit concurrent I/O)
-  if (stale.length > 0) {
-    const newEntries: TrackMetadata[] = [];
-    for (let i = 0; i < stale.length; i += 8) {
-      const batch = stale.slice(i, i + 8);
-      const parsed = await Promise.all(batch.map(parseId3));
-      newEntries.push(...parsed);
-    }
-    await upsertMetadata(newEntries);
-    for (const e of newEntries) {
-      cached.set(e.path, e);
-    }
+  const buildTrackList = (): MusicTrack[] =>
+    basics.map(b => {
+      const meta = cached.get(b.uri) ?? {
+        path: b.uri, source: 'local' as const,
+        title: null, artist: null, albumArtist: null, album: null,
+        year: null, genre: null, trackNumber: null, discNumber: null,
+        duration: b.durationSec, bpm: null, musicalKey: null, fileSize: null,
+        hasArtwork: false, artworkPath: null, fileMtime: b.mtime, cachedAt: Date.now(),
+      };
+      return metadataToMusicTrack(b.uri, b.filename, {
+        ...meta, duration: meta.duration ?? b.durationSec,
+      });
+    });
+
+  // Return whatever we have immediately so the UI is not blocked.
+  _trackCache = buildTrackList();
+  _trackCacheTime = now;
+
+  if (stale.length > 0 && !_backgroundScan) {
+    _backgroundScan = (async () => {
+      const BATCH = 32;
+      for (let i = 0; i < stale.length; i += BATCH) {
+        const parsed = await Promise.all(stale.slice(i, i + BATCH).map(parseId3));
+        await upsertMetadata(parsed);
+        for (const e of parsed) cached.set(e.path, e);
+        _trackCache = buildTrackList();
+        _trackCacheTime = Date.now();
+        _onScanProgress?.();
+      }
+      pruneRemovedTracks(uris, 'local').catch(() => {});
+      _backgroundScan = null;
+    })();
   }
 
-  // 6. Remove DB entries for files that no longer exist
-  pruneRemovedTracks(uris, 'local').catch(() => {});
-
-  // 7. Build final track list
-  const tracks: MusicTrack[] = basics.map(b => {
-    const meta = cached.get(b.uri)!;
-    return metadataToMusicTrack(b.uri, b.filename, {
-      ...meta,
-      duration: meta.duration ?? b.durationSec,
-    });
-  });
-
-  _trackCache = tracks;
-  _trackCacheTime = now;
-  return tracks;
+  return _trackCache;
 };
 
 export const getLocalTracks = async (offset = 0, limit = 50): Promise<TracksResult> => {
@@ -279,7 +287,10 @@ export const getLocalFolders = async (): Promise<MusicFolder[]> => {
     const existing = folderMap.get(dir);
     if (existing) {
       existing.trackCount++;
-      if (!existing.coverPath && track.coverPath) existing.coverPath = track.coverPath;
+      if (!existing.coverPath && track.coverPath) {
+        existing.coverPath = track.coverPath;
+        existing.hasArtwork = true;
+      }
     } else {
       folderMap.set(dir, {
         name, path: dir, trackCount: 1,

@@ -54,6 +54,7 @@ export default function ConnectionBanner() {
         Animated.timing(fadeAnim, { toValue: 0,  duration: 180, easing: Easing.in(Easing.ease),      useNativeDriver: true }),
       ]).start();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   const bottomOffset = insets.bottom + TAB_BAR_HEIGHT + MINI_BAR_HEIGHT + Spacing.md;

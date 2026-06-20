@@ -34,59 +34,78 @@ namespace resonance.Mixtapes
 {
     using System;
     using System.Collections.Generic;
+    using System.Data;
+    using System.Data.Common;
     using Microsoft.Data.Sqlite;
+    using Npgsql;
 
     public class MixtapeRepository
     {
-        public MixtapeRepository(string connectionString)
+        public MixtapeRepository(string connectionString, bool usePostgres = false)
         {
             ConnectionString = connectionString;
+            UsePostgres = usePostgres;
         }
 
         private string ConnectionString { get; }
+        private bool UsePostgres { get; }
+
+        // Schema-qualified table prefixes
+        private string M => UsePostgres ? "mixtapes.mixtapes" : "mixtapes";
+        private string MT => UsePostgres ? "mixtapes.mixtape_tracks" : "mixtape_tracks";
 
         public void Initialize()
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(@"
-                PRAGMA journal_mode=WAL;
-                CREATE TABLE IF NOT EXISTS mixtapes (
-                    id                  TEXT PRIMARY KEY,
-                    name                TEXT NOT NULL,
-                    description         TEXT,
-                    is_published        INTEGER NOT NULL DEFAULT 0,
-                    public_token        TEXT,
-                    created_at          INTEGER NOT NULL,
-                    updated_at          INTEGER NOT NULL,
-                    is_soulseek_shared  INTEGER NOT NULL DEFAULT 0
+            using var conn = OpenConnection();
+
+            if (!UsePostgres)
+            {
+                using var pragmaCmd = conn.CreateCommand();
+                pragmaCmd.CommandText = "PRAGMA journal_mode=WAL;";
+                pragmaCmd.ExecuteNonQuery();
+            }
+            else
+            {
+                using var schemaCmd = conn.CreateCommand();
+                schemaCmd.CommandText = "CREATE SCHEMA IF NOT EXISTS mixtapes";
+                schemaCmd.ExecuteNonQuery();
+            }
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
+                CREATE TABLE IF NOT EXISTS {M} (
+                    id                 TEXT PRIMARY KEY,
+                    name               TEXT NOT NULL,
+                    description        TEXT,
+                    is_published       INTEGER NOT NULL DEFAULT 0,
+                    public_token       TEXT,
+                    created_at         {(UsePostgres ? "BIGINT" : "INTEGER")} NOT NULL,
+                    updated_at         {(UsePostgres ? "BIGINT" : "INTEGER")} NOT NULL,
+                    is_soulseek_shared INTEGER NOT NULL DEFAULT 0
                 );
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_mixtapes_token ON mixtapes(public_token)
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_mixtapes_token ON {M}(public_token)
                     WHERE public_token IS NOT NULL;
-                CREATE TABLE IF NOT EXISTS mixtape_tracks (
+                CREATE TABLE IF NOT EXISTS {MT} (
                     id         TEXT PRIMARY KEY,
-                    mixtape_id TEXT NOT NULL REFERENCES mixtapes(id) ON DELETE CASCADE,
+                    mixtape_id TEXT NOT NULL REFERENCES {M}(id) ON DELETE CASCADE,
                     file_path  TEXT NOT NULL,
                     title      TEXT,
                     artist     TEXT,
                     album      TEXT,
-                    duration   REAL,
+                    duration   {(UsePostgres ? "DOUBLE PRECISION" : "REAL")},
                     sort_order INTEGER NOT NULL DEFAULT 0
                 );
-                CREATE INDEX IF NOT EXISTS idx_mixtape_tracks_mixtape ON mixtape_tracks(mixtape_id);", conn);
+                CREATE INDEX IF NOT EXISTS idx_mixtape_tracks_mixtape ON {MT}(mixtape_id);";
             cmd.ExecuteNonQuery();
 
-            // Migrations
-            TryAlter(conn, "ALTER TABLE mixtapes ADD COLUMN is_soulseek_shared INTEGER NOT NULL DEFAULT 0");
-        }
-
-        private static void TryAlter(SqliteConnection conn, string sql)
-        {
+            // Migration: add is_soulseek_shared if not present
             try
             {
-                using var cmd = new SqliteCommand(sql, conn);
-                cmd.ExecuteNonQuery();
+                using var alter = conn.CreateCommand();
+                alter.CommandText = $"ALTER TABLE {M} ADD COLUMN is_soulseek_shared INTEGER NOT NULL DEFAULT 0";
+                alter.ExecuteNonQuery();
             }
-            catch (SqliteException)
+            catch (Exception)
             { /* column already exists */
             }
         }
@@ -94,38 +113,41 @@ namespace resonance.Mixtapes
         // ── Mixtape CRUD ──────────────────────────────────────────────────────
         public void InsertMixtape(Mixtape m)
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(@"
-                INSERT INTO mixtapes (id, name, description, is_published, public_token, created_at, updated_at, is_soulseek_shared)
-                VALUES (@id, @name, @desc, @pub, @token, @created, @updated, @slsk)", conn);
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
+                INSERT INTO {M} (id, name, description, is_published, public_token, created_at, updated_at, is_soulseek_shared)
+                VALUES (@id, @name, @desc, @pub, @token, @created, @updated, @slsk)";
             BindMixtape(cmd, m);
             cmd.ExecuteNonQuery();
         }
 
         public void UpdateMixtape(Mixtape m)
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(@"
-                UPDATE mixtapes
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
+                UPDATE {M}
                 SET name=@name, description=@desc, is_published=@pub, public_token=@token, updated_at=@updated, is_soulseek_shared=@slsk
-                WHERE id=@id", conn);
+                WHERE id=@id";
             BindMixtape(cmd, m);
             cmd.ExecuteNonQuery();
         }
 
         public void DeleteMixtape(string id)
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand("DELETE FROM mixtapes WHERE id=@id", conn);
-            cmd.Parameters.AddWithValue("@id", id);
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"DELETE FROM {M} WHERE id=@id";
+            AddParam(cmd, "@id", id);
             cmd.ExecuteNonQuery();
         }
 
         public IReadOnlyList<Mixtape> GetAll()
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(
-                "SELECT id,name,description,is_published,public_token,created_at,updated_at,is_soulseek_shared FROM mixtapes ORDER BY created_at DESC", conn);
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"SELECT id,name,description,is_published,public_token,created_at,updated_at,is_soulseek_shared FROM {M} ORDER BY created_at DESC";
             using var r = cmd.ExecuteReader();
             var list = new List<Mixtape>();
             while (r.Read())
@@ -138,56 +160,59 @@ namespace resonance.Mixtapes
 
         public Mixtape? GetById(string id)
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(
-                "SELECT id,name,description,is_published,public_token,created_at,updated_at,is_soulseek_shared FROM mixtapes WHERE id=@id", conn);
-            cmd.Parameters.AddWithValue("@id", id);
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"SELECT id,name,description,is_published,public_token,created_at,updated_at,is_soulseek_shared FROM {M} WHERE id=@id";
+            AddParam(cmd, "@id", id);
             using var r = cmd.ExecuteReader();
             return r.Read() ? ReadMixtape(r) : null;
         }
 
         public Mixtape? GetByToken(string token)
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(
-                "SELECT id,name,description,is_published,public_token,created_at,updated_at,is_soulseek_shared FROM mixtapes WHERE public_token=@token AND is_published=1", conn);
-            cmd.Parameters.AddWithValue("@token", token);
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"SELECT id,name,description,is_published,public_token,created_at,updated_at,is_soulseek_shared FROM {M} WHERE public_token=@token AND is_published=1";
+            AddParam(cmd, "@token", token);
             using var r = cmd.ExecuteReader();
             return r.Read() ? ReadMixtape(r) : null;
         }
 
         public bool HasAny()
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand("SELECT 1 FROM mixtapes LIMIT 1", conn);
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"SELECT 1 FROM {M} LIMIT 1";
             return cmd.ExecuteScalar() != null;
         }
 
         // ── Track CRUD ────────────────────────────────────────────────────────
         public void InsertTrack(MixtapeTrack t)
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(@"
-                INSERT INTO mixtape_tracks (id, mixtape_id, file_path, title, artist, album, duration, sort_order)
-                VALUES (@id, @mid, @path, @title, @artist, @album, @dur, @ord)", conn);
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
+                INSERT INTO {MT} (id, mixtape_id, file_path, title, artist, album, duration, sort_order)
+                VALUES (@id, @mid, @path, @title, @artist, @album, @dur, @ord)";
             BindTrack(cmd, t);
             cmd.ExecuteNonQuery();
         }
 
         public void DeleteTrack(string trackId)
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand("DELETE FROM mixtape_tracks WHERE id=@id", conn);
-            cmd.Parameters.AddWithValue("@id", trackId);
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"DELETE FROM {MT} WHERE id=@id";
+            AddParam(cmd, "@id", trackId);
             cmd.ExecuteNonQuery();
         }
 
         public IReadOnlyList<MixtapeTrack> GetTracks(string mixtapeId)
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(
-                "SELECT id,mixtape_id,file_path,title,artist,album,duration,sort_order FROM mixtape_tracks WHERE mixtape_id=@mid ORDER BY sort_order", conn);
-            cmd.Parameters.AddWithValue("@mid", mixtapeId);
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"SELECT id,mixtape_id,file_path,title,artist,album,duration,sort_order FROM {MT} WHERE mixtape_id=@mid ORDER BY sort_order";
+            AddParam(cmd, "@mid", mixtapeId);
             using var r = cmd.ExecuteReader();
             var list = new List<MixtapeTrack>();
             while (r.Read())
@@ -200,29 +225,31 @@ namespace resonance.Mixtapes
 
         public void ClearTracks(string mixtapeId)
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand("DELETE FROM mixtape_tracks WHERE mixtape_id=@mid", conn);
-            cmd.Parameters.AddWithValue("@mid", mixtapeId);
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"DELETE FROM {MT} WHERE mixtape_id=@mid";
+            AddParam(cmd, "@mid", mixtapeId);
             cmd.ExecuteNonQuery();
         }
 
         public void UpdateTrackOrder(string trackId, int sortOrder)
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand("UPDATE mixtape_tracks SET sort_order=@ord WHERE id=@id", conn);
-            cmd.Parameters.AddWithValue("@ord", sortOrder);
-            cmd.Parameters.AddWithValue("@id", trackId);
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"UPDATE {MT} SET sort_order=@ord WHERE id=@id";
+            AddParam(cmd, "@ord", sortOrder);
+            AddParam(cmd, "@id", trackId);
             cmd.ExecuteNonQuery();
         }
 
-        /// <summary>Returns the distinct mixtape IDs that have any track whose file_path starts with <paramref name="oldPrefix"/>.</summary>
-        /// <returns></returns>
         public IReadOnlyList<string> GetMixtapeIdsByTrackPrefix(string oldPrefix)
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(
-                "SELECT DISTINCT mixtape_id FROM mixtape_tracks WHERE file_path LIKE @p ESCAPE '\\'", conn);
-            cmd.Parameters.AddWithValue("@p", EscapeLike(oldPrefix) + "%");
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = UsePostgres
+                ? $"SELECT DISTINCT mixtape_id FROM {MT} WHERE file_path LIKE @p"
+                : $"SELECT DISTINCT mixtape_id FROM {MT} WHERE file_path LIKE @p ESCAPE '\\'";
+            AddParam(cmd, "@p", EscapeLike(oldPrefix) + "%");
             using var r = cmd.ExecuteReader();
             var ids = new List<string>();
             while (r.Read())
@@ -233,60 +260,68 @@ namespace resonance.Mixtapes
             return ids;
         }
 
-        /// <summary>
-        /// Rewrites all mixtape track file_paths that begin with <paramref name="oldPrefix"/> to begin
-        /// with <paramref name="newPrefix"/> instead.  For a folder rename pass paths with a trailing
-        /// separator; for a single-file rename pass the exact paths.
-        /// </summary>
-        /// <returns></returns>
         public int UpdateTrackPaths(string oldPrefix, string newPrefix)
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(@"
-                UPDATE mixtape_tracks
-                SET file_path = @new || SUBSTR(file_path, LENGTH(@old) + 1)
-                WHERE file_path LIKE @pattern ESCAPE '\'", conn);
-            cmd.Parameters.AddWithValue("@old", oldPrefix);
-            cmd.Parameters.AddWithValue("@new", newPrefix);
-            cmd.Parameters.AddWithValue("@pattern", EscapeLike(oldPrefix) + "%");
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = UsePostgres
+                ? $@"UPDATE {MT}
+                     SET file_path = @new || SUBSTRING(file_path FROM LENGTH(@old) + 1)
+                     WHERE file_path LIKE @pattern"
+                : $@"UPDATE {MT}
+                     SET file_path = @new || SUBSTR(file_path, LENGTH(@old) + 1)
+                     WHERE file_path LIKE @pattern ESCAPE '\'";
+            AddParam(cmd, "@old", oldPrefix);
+            AddParam(cmd, "@new", newPrefix);
+            AddParam(cmd, "@pattern", EscapeLike(oldPrefix) + "%");
             return cmd.ExecuteNonQuery();
         }
 
         private static string EscapeLike(string s) => s.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 
         // ── Helpers ───────────────────────────────────────────────────────────
-        private SqliteConnection GetConnection()
+        private DbConnection OpenConnection()
         {
-            var conn = new SqliteConnection(ConnectionString);
+            DbConnection conn = UsePostgres
+                ? new NpgsqlConnection(ConnectionString)
+                : new SqliteConnection(ConnectionString);
             conn.Open();
             return conn;
         }
 
-        private static void BindMixtape(SqliteCommand cmd, Mixtape m)
+        private static void AddParam(DbCommand cmd, string name, object value)
         {
-            cmd.Parameters.AddWithValue("@id", m.Id);
-            cmd.Parameters.AddWithValue("@name", m.Name);
-            cmd.Parameters.AddWithValue("@desc", (object?)m.Description ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@pub", m.IsPublished ? 1 : 0);
-            cmd.Parameters.AddWithValue("@token", (object?)m.PublicToken ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@created", m.CreatedAt);
-            cmd.Parameters.AddWithValue("@updated", m.UpdatedAt);
-            cmd.Parameters.AddWithValue("@slsk", m.IsSoulseekShared ? 1 : 0);
+            var p = cmd.CreateParameter();
+            p.ParameterName = name;
+            p.Value = value;
+            cmd.Parameters.Add(p);
         }
 
-        private static void BindTrack(SqliteCommand cmd, MixtapeTrack t)
+        private static void BindMixtape(DbCommand cmd, Mixtape m)
         {
-            cmd.Parameters.AddWithValue("@id", t.Id);
-            cmd.Parameters.AddWithValue("@mid", t.MixtapeId);
-            cmd.Parameters.AddWithValue("@path", t.FilePath);
-            cmd.Parameters.AddWithValue("@title", (object?)t.Title ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@artist", (object?)t.Artist ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@album", (object?)t.Album ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@dur", (object?)t.Duration ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@ord", t.SortOrder);
+            AddParam(cmd, "@id", m.Id);
+            AddParam(cmd, "@name", m.Name);
+            AddParam(cmd, "@desc", (object?)m.Description ?? DBNull.Value);
+            AddParam(cmd, "@pub", m.IsPublished ? 1 : 0);
+            AddParam(cmd, "@token", (object?)m.PublicToken ?? DBNull.Value);
+            AddParam(cmd, "@created", m.CreatedAt);
+            AddParam(cmd, "@updated", m.UpdatedAt);
+            AddParam(cmd, "@slsk", m.IsSoulseekShared ? 1 : 0);
         }
 
-        private static Mixtape ReadMixtape(SqliteDataReader r) => new(
+        private static void BindTrack(DbCommand cmd, MixtapeTrack t)
+        {
+            AddParam(cmd, "@id", t.Id);
+            AddParam(cmd, "@mid", t.MixtapeId);
+            AddParam(cmd, "@path", t.FilePath);
+            AddParam(cmd, "@title", (object?)t.Title ?? DBNull.Value);
+            AddParam(cmd, "@artist", (object?)t.Artist ?? DBNull.Value);
+            AddParam(cmd, "@album", (object?)t.Album ?? DBNull.Value);
+            AddParam(cmd, "@dur", (object?)t.Duration ?? DBNull.Value);
+            AddParam(cmd, "@ord", t.SortOrder);
+        }
+
+        private static Mixtape ReadMixtape(DbDataReader r) => new(
             r.GetString(0),
             r.GetString(1),
             r.IsDBNull(2) ? null : r.GetString(2),
@@ -296,7 +331,7 @@ namespace resonance.Mixtapes
             r.GetInt64(6),
             IsSoulseekShared: r.GetInt64(7) != 0);
 
-        private static MixtapeTrack ReadTrack(SqliteDataReader r) => new(
+        private static MixtapeTrack ReadTrack(DbDataReader r) => new(
             r.GetString(0),
             r.GetString(1),
             r.GetString(2),

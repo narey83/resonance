@@ -41,6 +41,7 @@ namespace resonance.MusicLibrary
     using Microsoft.AspNetCore.SignalR;
     using resonance.Events;
     using resonance.KeyAnalysis;
+    using resonance.MusicLibrary.Activity;
     using resonance.MusicLibrary.API;
     using resonance.Shares;
     using Serilog;
@@ -69,12 +70,13 @@ namespace resonance.MusicLibrary
         private static readonly TimeSpan SyncInterval = TimeSpan.FromMinutes(15);
         private static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(45);
 
-        public MusicLibraryService(OptionsAtStartup options, MusicRepository repository, EventBus eventBus, IHubContext<LibraryActivityHub> hub)
+        public MusicLibraryService(OptionsAtStartup options, MusicRepository repository, EventBus eventBus, IHubContext<LibraryActivityHub> hub, ILibraryActivityService activity)
         {
             Options = options;
             Repository = repository;
             Events = eventBus;
             Hub = hub;
+            Activity = activity;
         }
 
         public MusicLibrarySyncState SyncState => CurrentState;
@@ -83,6 +85,7 @@ namespace resonance.MusicLibrary
         private MusicRepository Repository { get; }
         private EventBus Events { get; }
         private IHubContext<LibraryActivityHub> Hub { get; }
+        private ILibraryActivityService Activity { get; }
 
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Library);
 
@@ -144,6 +147,8 @@ namespace resonance.MusicLibrary
         public System.Collections.Generic.IReadOnlyList<MusicFolder> GetFolders() => Repository.GetFolders();
         public MusicTrack GetTrack(string path) => Repository.GetByPath(path);
 
+        public (int Total, double TotalDuration) GetStats() => Repository.GetStats();
+
         public System.Collections.Generic.IReadOnlyList<MusicAlbum> GetAlbums(string artistFilter = null)
             => Repository.GetAlbums(artistFilter);
 
@@ -155,6 +160,13 @@ namespace resonance.MusicLibrary
 
         public System.Collections.Generic.IReadOnlyList<MusicTrack> GetKeyedTracks()
             => Repository.GetKeyedTracks();
+
+        public void ForceResync()
+        {
+            Repository.ClearAll();
+            Log.Information("Music library cleared for forced re-index");
+            TriggerImmediateSync();
+        }
 
         public void TriggerSync()
         {
@@ -449,6 +461,17 @@ namespace resonance.MusicLibrary
                 {
                     _ = Hub.BroadcastLibraryUpdatedAsync(added, updated, removed,
                         stale.Count <= 500 ? stale.AsReadOnly() : null);
+                }
+
+                // Now that the library reflects the filesystem, repoint/prune loved tracks whose
+                // files were renamed (extension changes) or removed.
+                try
+                {
+                    await Activity.ReconcileLovedTracksAsync();
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning("Loved track reconciliation failed: {Err}", ex.Message);
                 }
             }
             catch (OperationCanceledException)

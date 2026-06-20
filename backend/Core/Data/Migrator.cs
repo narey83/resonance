@@ -75,6 +75,8 @@ public class Migrator
             { nameof(Z2026_06_07_EventTimestampIndexMigration), new Z2026_06_07_EventTimestampIndexMigration(connectionStrings: Databases) },
             { nameof(Z2026_06_12_SessionPreviousTokenHashMigration), new Z2026_06_12_SessionPreviousTokenHashMigration(connectionStrings: Databases) },
             { nameof(Z2026_06_16_YtDlpConvertFormatMigration), new Z2026_06_16_YtDlpConvertFormatMigration(connectionStrings: Databases) },
+            { nameof(Z2026_06_17_PlayHistorySourceMigration), new Z2026_06_17_PlayHistorySourceMigration(connectionStrings: Databases) },
+            { nameof(Z2026_06_19_TransferEndedAtIndexMigration), new Z2026_06_19_TransferEndedAtIndexMigration(connectionStrings: Databases) },
         };
     }
 
@@ -157,21 +159,32 @@ public class Migrator
         {
             Log.Information("Backing up existing databases...");
 
-            foreach (var database in Database.List)
+            // All databases now live in a single resonance.db file
+            var singleFile = MakeSourceDatabasePath("resonance");
+            if (File.Exists(singleFile))
             {
-                var src = MakeSourceDatabasePath(database.Name);
-
-                if (!File.Exists(src))
+                var dest = MakeBackupDatabasePath("resonance", migrationId);
+                File.Copy(singleFile, dest, overwrite: true);
+                Log.Information("Backed database {Original} up to {Backup}", singleFile, dest);
+            }
+            else
+            {
+                // Fall back to per-database backup for installations that haven't
+                // migrated to the single-file layout yet
+                foreach (var database in Database.List)
                 {
-                    Log.Debug("Database {Name} does not exist, skipping backup", database.Name);
-                    continue;
+                    var src = MakeSourceDatabasePath(database.Name);
+
+                    if (!File.Exists(src))
+                    {
+                        Log.Debug("Database {Name} does not exist, skipping backup", database.Name);
+                        continue;
+                    }
+
+                    var dest = MakeBackupDatabasePath(database.Name, migrationId);
+                    File.Copy(src, dest, overwrite: true);
+                    Log.Information("Backed database {Original} up to {Backup}", src, dest);
                 }
-
-                var dest = MakeBackupDatabasePath(database.Name, migrationId);
-
-                File.Copy(src, dest, overwrite: true);
-
-                Log.Information("Backed database {Original} up to {Backup}", src, dest);
             }
 
             Log.Information("Databases backed up successfully");
@@ -227,16 +240,22 @@ public class Migrator
             {
                 Log.Information("Attempting to restore databases from backups...");
 
-                foreach (var database in Database.List)
+                var singleBackup = MakeBackupDatabasePath("resonance", migrationId);
+                if (File.Exists(singleBackup))
                 {
-                    var name = Path.Combine(Program.DataDirectory, database.Name);
-                    var src = MakeBackupDatabasePath(database.Name, migrationId);
-                    var dest = MakeSourceDatabasePath(database.Name);
-
-                    // note: leave the backup in place just in case; automatic cleanup will delete them later
-                    File.Copy(src, dest, overwrite: true);
-
-                    Log.Information("Restored {Original} from {Backup}", dest, src);
+                    var dest = MakeSourceDatabasePath("resonance");
+                    File.Copy(singleBackup, dest, overwrite: true);
+                    Log.Information("Restored {Original} from {Backup}", dest, singleBackup);
+                }
+                else
+                {
+                    foreach (var database in Database.List)
+                    {
+                        var src = MakeBackupDatabasePath(database.Name, migrationId);
+                        var dest = MakeSourceDatabasePath(database.Name);
+                        File.Copy(src, dest, overwrite: true);
+                        Log.Information("Restored {Original} from {Backup}", dest, src);
+                    }
                 }
 
                 Log.Information("Databases restored successfully");

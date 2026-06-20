@@ -277,6 +277,29 @@
   50%       { opacity: 0.65; }
 }
 
+.logs-pause-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  transition: border-color 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+
+.logs-pause-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.logs-pause-btn--paused {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* ─── Mobile log cards ───────────────────────────────────────────────────── */
 
 .logs-scroll--mobile {
@@ -356,6 +379,156 @@
   border-radius: 2px;
   color: inherit;
   padding: 0 1px;
+}
+
+/* ─── Log viewer tabs ────────────────────────────────────────────────────────── */
+
+.logs-tabs {
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-shrink: 0;
+  gap: 0;
+  padding: 0 10px;
+}
+
+.logs-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 7px 12px 5px;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.logs-tab:hover {
+  color: var(--text-primary);
+}
+
+.logs-tab--active {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ─── Exception expand ───────────────────────────────────────────────────────── */
+
+.logs-copy-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 11px;
+  opacity: 0;
+  padding: 0 2px;
+  transition: color 0.1s, opacity 0.1s;
+}
+
+.logs-row:hover .logs-copy-btn,
+.logs-card:hover .logs-copy-btn {
+  opacity: 0.6;
+}
+
+.logs-copy-btn:hover {
+  color: var(--accent);
+  opacity: 1 !important;
+}
+
+.logs-copy-btn--copied {
+  color: #21ba45;
+  opacity: 1 !important;
+}
+
+.logs-exception-toggle {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 10px;
+  margin-left: 6px;
+  opacity: 0.7;
+  padding: 0 2px;
+  transition: opacity 0.1s;
+  vertical-align: middle;
+}
+
+.logs-exception-toggle:hover {
+  opacity: 1;
+}
+
+.logs-exception-detail {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  margin: 4px 0 2px;
+  overflow-x: auto;
+  padding: 6px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ─── History tab ────────────────────────────────────────────────────────────── */
+
+.logs-date-range {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+}
+
+.logs-date-input {
+  font-size: 11px !important;
+  padding: 2px 6px !important;
+  width: 120px !important;
+}
+
+.logs-history-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.logs-history-mobile {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .logs-history-body:not(.logs-history-mobile) {
+    display: none;
+  }
+
+  .logs-history-mobile {
+    display: block;
+  }
+}
+
+.logs-history-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 24px 12px;
+  text-align: center;
+}
+
+.logs-pagination {
+  align-items: center;
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-shrink: 0;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 4px 10px;
+}
+
+.logs-pagination-count {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-right: auto;
 }
 
 .no-grow {
@@ -1378,6 +1551,44 @@
 .brl-unblock-btn:disabled {
   cursor: default;
   opacity: 0.4;
+}
+
+/* ─── Transfer error notification history ────────────────────────────────── */
+
+.ten-type-badge {
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ten-type-badge--upload-error {
+  background: rgba(248, 81, 73, 0.12);
+  color: #f85149;
+}
+
+.ten-type-badge--upload-rejected {
+  background: rgba(210, 153, 34, 0.12);
+  color: #d29922;
+}
+
+.ten-type-badge--download-error {
+  background: rgba(88, 166, 255, 0.12);
+  color: #58a6ff;
+}
+
+.ten-message {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: italic;
+  margin-top: 2px;
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ─── Options sidebar layout ─────────────────────────────────────────────── */

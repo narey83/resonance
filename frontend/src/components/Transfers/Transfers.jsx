@@ -28,7 +28,6 @@ const retry = async ({ file }) => {
     });
   } catch (error) {
     console.error(error);
-    toast.error(error?.response?.data ?? error?.message ?? error);
   }
 };
 
@@ -44,7 +43,6 @@ const retryBatch = async (files) => {
       await transfersLibrary.download({ files: batch, username });
     } catch (error) {
       console.error(error);
-      toast.error(error?.response?.data ?? error?.message ?? error);
     }
   }
 };
@@ -87,7 +85,6 @@ const Transfers = ({ direction }) => {
       await transfersLibrary.cancel({ direction, id, username });
     } catch (error) {
       console.error(error);
-      toast.error(error?.response?.data ?? error?.message ?? error);
     }
   };
 
@@ -97,7 +94,6 @@ const Transfers = ({ direction }) => {
       await transfersLibrary.cancel({ direction, id, remove: true, username });
     } catch (error) {
       console.error(error);
-      toast.error(error?.response?.data ?? error?.message ?? error);
     }
   };
 
@@ -106,7 +102,6 @@ const Transfers = ({ direction }) => {
       await transfersLibrary.clearCompleted({ direction });
     } catch (error) {
       console.error(error);
-      toast.error(error?.response?.data ?? error?.message ?? error);
     }
   };
 
@@ -167,7 +162,6 @@ const Transfers = ({ direction }) => {
       } catch (error) {
         if (mounted) {
           console.error(error);
-          toast.error(error?.response?.data ?? error?.message ?? error);
         }
       }
 
@@ -216,7 +210,6 @@ const Transfers = ({ direction }) => {
       );
     } catch (error) {
       console.error(error);
-      toast.error(error?.response?.data ?? error?.message ?? error);
     }
   };
 

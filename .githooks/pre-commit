@@ -1,0 +1,42 @@
+#!/bin/sh
+# Pre-commit: lint/format-check only the files staged for this commit, per
+# sub-project. Fast for JS/TS (ESLint), light whitespace check for C#.
+#
+# Enable once per clone:   git config core.hooksPath .githooks
+# Skip in a pinch:         git commit --no-verify
+#
+# Note: the mobile/frontend ESLint configs require Node 20+. If you use nvm,
+# make sure a recent Node is the default (`nvm alias default 22`).
+set -e
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$STAGED" ] && exit 0
+
+fail=0
+
+run_eslint() {
+  dir=$1
+  files=$(printf '%s\n' "$STAGED" | grep -E "^$dir/.*\.(js|jsx|ts|tsx)$" || true)
+  [ -z "$files" ] && return 0
+  [ -x "$dir/node_modules/.bin/eslint" ] || { echo "⚠ $dir: eslint not installed, skipping"; return 0; }
+  rel=$(printf '%s\n' "$files" | sed "s#^$dir/##")
+  echo "▶ eslint ($dir)"
+  ( cd "$dir" && printf '%s\n' "$rel" | xargs ./node_modules/.bin/eslint ) || fail=1
+}
+
+run_eslint frontend
+run_eslint mobile
+
+# Backend C# — verify staged files are already formatted (whitespace only = fast).
+cs=$(printf '%s\n' "$STAGED" | grep -E '^backend/.*\.cs$' || true)
+if [ -n "$cs" ]; then
+  inc=$(printf '%s\n' "$cs" | sed 's#^backend/##' | paste -sd ' ' -)
+  echo "▶ dotnet format whitespace (backend)"
+  ( cd backend && dotnet format whitespace resonance.csproj --verify-no-changes --no-restore --include $inc ) || fail=1
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo "✗ pre-commit checks failed — fix the issues above (or commit with --no-verify)"
+  exit 1
+fi
+echo "✓ pre-commit checks passed"

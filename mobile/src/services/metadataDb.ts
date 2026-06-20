@@ -27,7 +27,7 @@ const artworkDirectory = () => new Directory(Paths.cache, 'resonance_artwork');
 
 // Bump this whenever the local scanning logic changes in a way that
 // requires previously-cached entries to be re-scanned from scratch.
-const LOCAL_SCAN_VERSION = 14;
+const LOCAL_SCAN_VERSION = 15;
 
 let _db: SQLiteDatabase | null = null;
 
@@ -111,6 +111,16 @@ export const upsertMetadata = async (entries: TrackMetadata[]): Promise<void> =>
       );
     }
   });
+};
+
+export const clearLocalMetadata = async (): Promise<void> => {
+  const db = await openDb();
+  await db.runAsync('DELETE FROM track_metadata WHERE source = ?', ['local']);
+  // Clear cached artwork files too
+  try {
+    const dir = artworkDirectory();
+    if (dir.exists) dir.delete();
+  } catch { /* ignore */ }
 };
 
 export const pruneRemovedTracks = async (currentPaths: string[], source: 'local' | 'server'): Promise<void> => {

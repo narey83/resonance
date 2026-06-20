@@ -1,5 +1,6 @@
 import '../System.css';
 import { createLogsHubConnection } from '../../../lib/hubFactory';
+import { getLogs } from '../../../lib/logs';
 import { parseUtcDate } from '../../../lib/util';
 import { LoaderSegment } from '../../Shared';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -10,17 +11,10 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { Pagination } from 'semantic-ui-react';
 
 const MAX_LOGS = 500;
-
-const TIME_RANGES = [
-  { label: 'All time', value: 0 },
-  { label: 'Last 1 min', value: 1 },
-  { label: 'Last 5 min', value: 5 },
-  { label: 'Last 15 min', value: 15 },
-  { label: 'Last 30 min', value: 30 },
-  { label: 'Last 1 hr', value: 60 },
-];
+const PER_PAGE = 50;
 
 const LEVEL_LABELS = {
   Debug: 'DBG',
@@ -66,7 +60,109 @@ const formatTimestamp = (ts) =>
     .replace('T', ' ')
     .replace(/\.\d{3}Z$/, 'Z');
 
-const Logs = () => {
+// ─── Shared row/card renderers ────────────────────────────────────────────────
+
+const copyLog = (log) => {
+  const parts = [
+    `${formatTimestamp(log.timestamp)} [${LEVEL_LABELS[log.level] ?? log.level}] ${log.context ?? ''}`,
+    log.message ?? '',
+  ];
+
+  if (log.exception) parts.push(log.exception);
+
+  navigator.clipboard.writeText(parts.join('\n')).catch(() => {});
+};
+
+const CopyButton = ({ log }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = (e) => {
+    e.stopPropagation();
+    copyLog(log);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1_500);
+  };
+
+  return (
+    <button
+      className={`logs-copy-btn${copied ? ' logs-copy-btn--copied' : ''}`}
+      onClick={handleCopy}
+      title="Copy to clipboard"
+      type="button"
+    >
+      {copied ? '✓' : '⎘'}
+    </button>
+  );
+};
+
+const LogRow = ({ expanded, log, messageFilter, onToggle, regexMode }) => {
+  const level = (log.level ?? 'information').toLowerCase();
+  return (
+    <div
+      className={`logs-row logs-row--${level}${log.exception ? ' logs-row--has-exception' : ''}`}
+    >
+      <div className="logs-row-ts">{formatTimestamp(log.timestamp)}</div>
+      <div className="logs-row-lvl">{LEVEL_LABELS[log.level] ?? log.level}</div>
+      <div
+        className="logs-row-ctx"
+        title={log.context}
+      >
+        {log.context}
+      </div>
+      <div className="logs-row-msg">
+        {highlight(log.message, messageFilter, regexMode)}
+        {log.exception && (
+          <button
+            className="logs-exception-toggle"
+            onClick={onToggle}
+            type="button"
+          >
+            {expanded ? '▾ hide' : '▸ exception'}
+          </button>
+        )}
+        {expanded && log.exception && (
+          <pre className="logs-exception-detail">{log.exception}</pre>
+        )}
+      </div>
+      <CopyButton log={log} />
+    </div>
+  );
+};
+
+const LogCard = ({ expanded, log, messageFilter, onToggle, regexMode }) => {
+  const level = (log.level ?? 'information').toLowerCase();
+  return (
+    <div className={`logs-card logs-card--${level}`}>
+      <div className="logs-card-meta">
+        <span className="logs-card-level">
+          {LEVEL_LABELS[log.level] ?? log.level}
+        </span>
+        <span className="logs-card-ts">{formatTimestamp(log.timestamp)}</span>
+        {log.context && <span className="logs-card-ctx">{log.context}</span>}
+        <CopyButton log={log} />
+      </div>
+      <div className="logs-card-msg">
+        {highlight(log.message, messageFilter, regexMode)}
+        {log.exception && (
+          <button
+            className="logs-exception-toggle"
+            onClick={onToggle}
+            type="button"
+          >
+            {expanded ? '▾ hide' : '▸ exception'}
+          </button>
+        )}
+        {expanded && log.exception && (
+          <pre className="logs-exception-detail">{log.exception}</pre>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ─── Live tab ─────────────────────────────────────────────────────────────────
+
+const LiveTab = () => {
   const [connected, setConnected] = useState(false);
   const [logs, setLogs] = useState([]);
   const [levels, setLevels] = useState({
@@ -79,20 +175,21 @@ const Logs = () => {
   const [activeContexts, setActiveContexts] = useState([]);
   const [messageFilter, setMessageFilter] = useState('');
   const [regexMode, setRegexMode] = useState(false);
-  const [timeRange, setTimeRange] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [expanded, setExpanded] = useState(new Set());
   const [tick, setTick] = useState(0);
 
   const scrollRef = useRef(null);
   const mobileScrollRef = useRef(null);
-  const timeRangeRef = useRef(timeRange);
+  const isPausedRef = useRef(false);
+  const pendingLogsRef = useRef([]);
 
   useEffect(() => {
-    timeRangeRef.current = timeRange;
-  }, [timeRange]);
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
 
   useEffect(() => {
-    // onclose fires when cleanup stops the hub; don't setState after unmount.
     let unmounted = false;
     const logsHub = createLogsHubConnection();
 
@@ -107,6 +204,16 @@ const Logs = () => {
 
     logsHub.on('log', (log) => {
       setConnected(true);
+
+      if (isPausedRef.current) {
+        pendingLogsRef.current = [log, ...pendingLogsRef.current].slice(
+          0,
+          MAX_LOGS,
+        );
+        setPendingCount((n) => n + 1);
+        return;
+      }
+
       setLogs((prev) => [log, ...prev].slice(0, MAX_LOGS));
       setSeenContexts((prev) =>
         log.context && !prev.includes(log.context)
@@ -120,12 +227,9 @@ const Logs = () => {
       if (!unmounted) setConnected(false);
     });
     logsHub.onreconnected(() => setConnected(true));
-
     logsHub.start().catch(() => {});
 
-    const tickInterval = setInterval(() => {
-      if (timeRangeRef.current > 0) setTick((t) => t + 1);
-    }, 10_000);
+    const tickInterval = setInterval(() => setTick((t) => t + 1), 10_000);
 
     return () => {
       unmounted = true;
@@ -144,11 +248,11 @@ const Logs = () => {
     previousLogsLengthRef.current = logs.length;
   }, [logs.length, isPaused]);
 
-  // regexError is computed inline for the input className; also recomputed inside useMemo
   let regexError = false;
+
   if (regexMode && messageFilter) {
     try {
-      // eslint-disable-next-line no-new -- validity probe only
+      // eslint-disable-next-line no-new
       new RegExp(messageFilter, 'i');
     } catch {
       regexError = true;
@@ -167,16 +271,12 @@ const Logs = () => {
       }
     }
 
-    const nowMs = Date.now();
     return logs.filter((log) => {
       if (!levels[log.level]) return false;
+
       if (activeContexts.length > 0 && !activeContexts.includes(log.context))
         return false;
-      if (
-        timeRange > 0 &&
-        nowMs - parseUtcDate(log.timestamp).getTime() > timeRange * 60_000
-      )
-        return false;
+
       if (messageFilter) {
         if (regexMode) return !reError && compiledRe?.test(log.message ?? '');
         return (log.message ?? '')
@@ -186,7 +286,7 @@ const Logs = () => {
 
       return true;
     });
-  }, [activeContexts, levels, logs, messageFilter, regexMode, tick, timeRange]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeContexts, levels, logs, messageFilter, regexMode, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const desktopVirtualizer = useVirtualizer({
     count: filtered.length,
@@ -210,15 +310,31 @@ const Logs = () => {
         : undefined,
   });
 
-  const handleScroll = useCallback((e) => {
-    if (e.target.scrollTop > 20) setIsPaused(true);
-  }, []);
+  const handleScroll = useCallback(() => {}, []);
 
   const jumpToLatest = useCallback(() => {
+    const pending = pendingLogsRef.current;
+    pendingLogsRef.current = [];
+
+    if (pending.length > 0) {
+      setLogs((prev) => [...pending, ...prev].slice(0, MAX_LOGS));
+      setSeenContexts((prev) => {
+        const newCtxs = pending.map((l) => l.context).filter(Boolean);
+        const merged = [...new Set([...newCtxs, ...prev])];
+        return merged;
+      });
+    }
+
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
     if (mobileScrollRef.current) mobileScrollRef.current.scrollTop = 0;
+    setPendingCount(0);
     setIsPaused(false);
   }, []);
+
+  const togglePause = useCallback(() => {
+    if (isPaused) jumpToLatest();
+    else setIsPaused(true);
+  }, [isPaused, jumpToLatest]);
 
   const toggleLevel = (level) =>
     setLevels((prev) => ({ ...prev, [level]: !prev[level] }));
@@ -230,231 +346,543 @@ const Logs = () => {
         : [...prev, context],
     );
 
+  const toggleExpanded = (key) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+
+      return next;
+    });
+
   const clearAll = () => {
     setLevels({ Debug: true, Information: true, Warning: true, Error: true });
     setActiveContexts([]);
     setMessageFilter('');
-    setTimeRange(0);
   };
 
   const hasFilters =
     activeContexts.length > 0 ||
     messageFilter ||
-    timeRange > 0 ||
+    !Object.values(levels).every(Boolean);
+
+  if (!connected) return <LoaderSegment />;
+
+  return (
+    <>
+      <div className="logs-toolbar">
+        <div className="logs-toolbar-row">
+          <div className="logs-chip-group">
+            {LEVEL_ORDER.map((level) => (
+              <button
+                className={`logs-chip logs-chip--mono${levels[level] ? '' : ' logs-chip--off'}`}
+                key={level}
+                onClick={() => toggleLevel(level)}
+                type="button"
+              >
+                {LEVEL_LABELS[level]}
+              </button>
+            ))}
+          </div>
+
+          <span style={{ flex: 1 }} />
+
+          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+            {filtered.length} / {logs.length}
+          </span>
+
+          <button
+            className={`logs-pause-btn${isPaused ? ' logs-pause-btn--paused' : ''}`}
+            onClick={togglePause}
+            title={isPaused ? 'Resume live stream' : 'Pause live stream'}
+            type="button"
+          >
+            {isPaused
+              ? `▶ Resume${pendingCount > 0 ? ` (${pendingCount})` : ''}`
+              : '⏸ Pause'}
+          </button>
+
+          {hasFilters && (
+            <button
+              className="shares-add-btn"
+              onClick={clearAll}
+              style={{ fontSize: 11 }}
+              type="button"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {seenContexts.length > 0 && (
+          <div className="logs-toolbar-row logs-context-row">
+            {seenContexts.map((ctx) => (
+              <button
+                className={`logs-chip${activeContexts.length > 0 && !activeContexts.includes(ctx) ? ' logs-chip--off' : activeContexts.includes(ctx) ? ' logs-chip--active' : ''}`}
+                key={ctx}
+                onClick={() => toggleContext(ctx)}
+                title={ctx}
+                type="button"
+              >
+                {ctx}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="logs-toolbar-row">
+          <div className="logs-search-wrap">
+            <input
+              className={`opt-input logs-search-input${regexError ? ' opt-input--error' : ''}`}
+              onChange={(e) => setMessageFilter(e.target.value)}
+              placeholder={regexMode ? 'Regex pattern…' : 'Search message…'}
+              type="text"
+              value={messageFilter}
+            />
+            <button
+              className={`logs-regex-btn${regexMode ? ' logs-regex-btn--on' : ''}`}
+              onClick={() => setRegexMode((prev) => !prev)}
+              title="Toggle regex mode"
+              type="button"
+            >
+              .*
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="logs-col-head logs-col-head--desktop">
+        <div className="logs-row-ts">Timestamp</div>
+        <div className="logs-row-lvl">Lvl</div>
+        <div className="logs-row-ctx">Process</div>
+        <div className="logs-row-msg">Message</div>
+      </div>
+
+      <div
+        className="logs-scroll logs-scroll--desktop"
+        onScroll={handleScroll}
+        ref={scrollRef}
+      >
+        <div
+          style={{
+            height: `${desktopVirtualizer.getTotalSize()}px`,
+            position: 'relative',
+          }}
+        >
+          {desktopVirtualizer.getVirtualItems().map((vRow) => {
+            const log = filtered[vRow.index];
+            const key = `${log.timestamp}-${log.context}-${log.level}`;
+            return (
+              <div
+                data-index={vRow.index}
+                key={vRow.key}
+                ref={desktopVirtualizer.measureElement}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  transform: `translateY(${vRow.start}px)`,
+                }}
+              >
+                <LogRow
+                  expanded={expanded.has(key)}
+                  log={log}
+                  messageFilter={messageFilter}
+                  onToggle={() => toggleExpanded(key)}
+                  regexMode={regexMode}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div
+        className="logs-scroll logs-scroll--mobile"
+        onScroll={handleScroll}
+        ref={mobileScrollRef}
+      >
+        <div
+          style={{
+            height: `${mobileVirtualizer.getTotalSize()}px`,
+            position: 'relative',
+          }}
+        >
+          {mobileVirtualizer.getVirtualItems().map((vRow) => {
+            const log = filtered[vRow.index];
+            const key = `${log.timestamp}-${log.context}-${log.level}`;
+            return (
+              <div
+                data-index={vRow.index}
+                key={vRow.key}
+                ref={mobileVirtualizer.measureElement}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  transform: `translateY(${vRow.start}px)`,
+                }}
+              >
+                <LogCard
+                  expanded={expanded.has(key)}
+                  log={log}
+                  messageFilter={messageFilter}
+                  onToggle={() => toggleExpanded(key)}
+                  regexMode={regexMode}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+};
+
+// ─── History tab ──────────────────────────────────────────────────────────────
+
+const HistoryTab = () => {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [levels, setLevels] = useState({
+    Debug: true,
+    Information: true,
+    Warning: true,
+    Error: true,
+  });
+  const [contextFilter, setContextFilter] = useState('');
+  const [messageFilter, setMessageFilter] = useState('');
+  const [regexMode, setRegexMode] = useState(false);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState(today);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(new Set());
+
+  const filtersRef = useRef({
+    contextFilter,
+    dateFrom,
+    dateTo,
+    levels,
+    messageFilter,
+    regexMode,
+  });
+  filtersRef.current = {
+    contextFilter,
+    dateFrom,
+    dateTo,
+    levels,
+    messageFilter,
+    regexMode,
+  };
+
+  const fetch = async (pg = page) => {
+    setLoading(true);
+
+    const {
+      contextFilter: ctx,
+      dateFrom: from,
+      dateTo: to,
+      levels: lvl,
+      messageFilter: msg,
+      regexMode: rx,
+    } = filtersRef.current;
+
+    const activeLevels = Object.entries(lvl)
+      .filter(([, on]) => on)
+      .map(([name]) => name);
+
+    const allLevels = activeLevels.length === LEVEL_ORDER.length;
+
+    let reError = false;
+
+    if (rx && msg) {
+      try {
+        // eslint-disable-next-line no-new
+        new RegExp(msg, 'i');
+      } catch {
+        reError = true;
+      }
+    }
+
+    try {
+      const { logs: items, totalCount: tc } = await getLogs({
+        offset: (pg - 1) * PER_PAGE,
+        limit: PER_PAGE,
+        level: allLevels ? undefined : activeLevels,
+        context: ctx || undefined,
+        search: msg && !reError ? msg : undefined,
+        from: from ? new Date(from).toISOString() : undefined,
+        to: to ? new Date(to + 'T23:59:59').toISOString() : undefined,
+      });
+
+      const tp = Math.ceil(tc / PER_PAGE);
+      setResults(items);
+      setTotalCount(tc);
+      setTotalPages(Number.isNaN(tp) ? 0 : tp);
+      setExpanded(new Set());
+    } catch {
+      setResults([]);
+      setTotalCount(0);
+      setTotalPages(0);
+    }
+
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetch(1);
+    setPage(1);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handlePageChange = (_, { activePage }) => {
+    setPage(activePage);
+    fetch(activePage);
+  };
+
+  const applyFilters = () => {
+    setPage(1);
+    fetch(1);
+  };
+
+  const toggleLevel = (level) =>
+    setLevels((prev) => ({ ...prev, [level]: !prev[level] }));
+
+  const toggleExpanded = (key) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+
+      return next;
+    });
+
+  const clearAll = () => {
+    setLevels({ Debug: true, Information: true, Warning: true, Error: true });
+    setContextFilter('');
+    setMessageFilter('');
+    setDateFrom('');
+    setDateTo(today);
+    setTimeout(() => {
+      setPage(1);
+      fetch(1);
+    }, 0);
+  };
+
+  let regexError = false;
+
+  if (regexMode && messageFilter) {
+    try {
+      // eslint-disable-next-line no-new
+      new RegExp(messageFilter, 'i');
+    } catch {
+      regexError = true;
+    }
+  }
+
+  const hasFilters =
+    contextFilter ||
+    messageFilter ||
+    dateFrom ||
+    dateTo !== today ||
     !Object.values(levels).every(Boolean);
 
   return (
-    <div className="logs">
-      {!connected && <LoaderSegment />}
-      {connected && (
-        <>
-          <div className="logs-toolbar">
-            {/* Row 1: level toggles · time range · count · jump · clear */}
-            <div className="logs-toolbar-row">
-              <div className="logs-chip-group">
-                {LEVEL_ORDER.map((level) => (
-                  <button
-                    className={`logs-chip logs-chip--mono${levels[level] ? '' : ' logs-chip--off'}`}
-                    key={level}
-                    onClick={() => toggleLevel(level)}
-                    type="button"
-                  >
-                    {LEVEL_LABELS[level]}
-                  </button>
-                ))}
-              </div>
-
-              <select
-                className="opt-select"
-                onChange={(e) => setTimeRange(Number(e.target.value))}
-                style={{ fontSize: 11, padding: '2px 6px' }}
-                value={timeRange}
+    <>
+      <div className="logs-toolbar">
+        <div className="logs-toolbar-row">
+          <div className="logs-chip-group">
+            {LEVEL_ORDER.map((level) => (
+              <button
+                className={`logs-chip logs-chip--mono${levels[level] ? '' : ' logs-chip--off'}`}
+                key={level}
+                onClick={() => toggleLevel(level)}
+                type="button"
               >
-                {TIME_RANGES.map((r) => (
-                  <option
-                    key={r.value}
-                    value={r.value}
-                  >
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-
-              <span style={{ flex: 1 }} />
-
-              <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
-                {filtered.length} / {logs.length}
-              </span>
-
-              {isPaused && (
-                <button
-                  className="logs-jump-btn"
-                  onClick={jumpToLatest}
-                  type="button"
-                >
-                  ↑ Latest
-                </button>
-              )}
-
-              {hasFilters && (
-                <button
-                  className="shares-add-btn"
-                  onClick={clearAll}
-                  style={{ fontSize: 11 }}
-                  type="button"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-
-            {/* Row 2: context chips */}
-            {seenContexts.length > 0 && (
-              <div className="logs-toolbar-row logs-context-row">
-                {seenContexts.map((ctx) => (
-                  <button
-                    className={`logs-chip${activeContexts.length > 0 && !activeContexts.includes(ctx) ? ' logs-chip--off' : activeContexts.includes(ctx) ? ' logs-chip--active' : ''}`}
-                    key={ctx}
-                    onClick={() => toggleContext(ctx)}
-                    title={ctx}
-                    type="button"
-                  >
-                    {ctx}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Row 3: message search + regex toggle */}
-            <div className="logs-toolbar-row">
-              <div className="logs-search-wrap">
-                <input
-                  className={`opt-input logs-search-input${regexError ? ' opt-input--error' : ''}`}
-                  onChange={(e) => setMessageFilter(e.target.value)}
-                  placeholder={regexMode ? 'Regex pattern…' : 'Search message…'}
-                  type="text"
-                  value={messageFilter}
-                />
-                <button
-                  className={`logs-regex-btn${regexMode ? ' logs-regex-btn--on' : ''}`}
-                  onClick={() => setRegexMode((prev) => !prev)}
-                  title="Toggle regex mode"
-                  type="button"
-                >
-                  .*
-                </button>
-              </div>
-            </div>
+                {LEVEL_LABELS[level]}
+              </button>
+            ))}
           </div>
 
-          {/* Column header — desktop only */}
-          <div className="logs-col-head logs-col-head--desktop">
-            <div className="logs-row-ts">Timestamp</div>
-            <div className="logs-row-lvl">Lvl</div>
-            <div className="logs-row-ctx">Process</div>
-            <div className="logs-row-msg">Message</div>
+          <div className="logs-date-range">
+            <input
+              className="opt-input logs-date-input"
+              onChange={(e) => setDateFrom(e.target.value)}
+              type="date"
+              value={dateFrom}
+            />
+            <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>to</span>
+            <input
+              className="opt-input logs-date-input"
+              onChange={(e) => setDateTo(e.target.value)}
+              type="date"
+              value={dateTo}
+            />
           </div>
 
-          {/* Virtualized desktop table */}
-          <div
-            className="logs-scroll logs-scroll--desktop"
-            onScroll={handleScroll}
-            ref={scrollRef}
+          <span style={{ flex: 1 }} />
+
+          <button
+            className="shares-add-btn"
+            onClick={applyFilters}
+            style={{ fontSize: 11 }}
+            type="button"
           >
-            <div
-              style={{
-                height: `${desktopVirtualizer.getTotalSize()}px`,
-                position: 'relative',
-              }}
-            >
-              {desktopVirtualizer.getVirtualItems().map((vRow) => {
-                const log = filtered[vRow.index];
-                const level = (log.level ?? 'information').toLowerCase();
-                return (
-                  <div
-                    className={`logs-row logs-row--${level}`}
-                    data-index={vRow.index}
-                    key={vRow.key}
-                    ref={desktopVirtualizer.measureElement}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      transform: `translateY(${vRow.start}px)`,
-                    }}
-                  >
-                    <div className="logs-row-ts">
-                      {formatTimestamp(log.timestamp)}
-                    </div>
-                    <div className="logs-row-lvl">
-                      {LEVEL_LABELS[log.level] ?? log.level}
-                    </div>
-                    <div
-                      className="logs-row-ctx"
-                      title={log.context}
-                    >
-                      {log.context}
-                    </div>
-                    <div className="logs-row-msg">
-                      {highlight(log.message, messageFilter, regexMode)}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+            Search
+          </button>
 
-          {/* Virtualized mobile cards */}
-          <div
-            className="logs-scroll logs-scroll--mobile"
-            onScroll={handleScroll}
-            ref={mobileScrollRef}
-          >
-            <div
-              style={{
-                height: `${mobileVirtualizer.getTotalSize()}px`,
-                position: 'relative',
-              }}
+          {hasFilters && (
+            <button
+              className="shares-add-btn"
+              onClick={clearAll}
+              style={{ fontSize: 11 }}
+              type="button"
             >
-              {mobileVirtualizer.getVirtualItems().map((vRow) => {
-                const log = filtered[vRow.index];
-                const level = (log.level ?? 'information').toLowerCase();
-                return (
-                  <div
-                    className={`logs-card logs-card--${level}`}
-                    data-index={vRow.index}
-                    key={vRow.key}
-                    ref={mobileVirtualizer.measureElement}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      transform: `translateY(${vRow.start}px)`,
-                    }}
-                  >
-                    <div className="logs-card-meta">
-                      <span className="logs-card-level">
-                        {LEVEL_LABELS[log.level] ?? log.level}
-                      </span>
-                      <span className="logs-card-ts">
-                        {formatTimestamp(log.timestamp)}
-                      </span>
-                      {log.context && (
-                        <span className="logs-card-ctx">{log.context}</span>
-                      )}
-                    </div>
-                    <div className="logs-card-msg">
-                      {highlight(log.message, messageFilter, regexMode)}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+              Clear
+            </button>
+          )}
+        </div>
+
+        <div className="logs-toolbar-row">
+          <input
+            className="opt-input"
+            onChange={(e) => setContextFilter(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && applyFilters()}
+            placeholder="Context filter…"
+            style={{ fontSize: 11, width: 150 }}
+            type="text"
+            value={contextFilter}
+          />
+
+          <div className="logs-search-wrap">
+            <input
+              className={`opt-input logs-search-input${regexError ? ' opt-input--error' : ''}`}
+              onChange={(e) => setMessageFilter(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && applyFilters()}
+              placeholder={regexMode ? 'Regex pattern…' : 'Search message…'}
+              type="text"
+              value={messageFilter}
+            />
+            <button
+              className={`logs-regex-btn${regexMode ? ' logs-regex-btn--on' : ''}`}
+              onClick={() => setRegexMode((prev) => !prev)}
+              title="Toggle regex mode"
+              type="button"
+            >
+              .*
+            </button>
           </div>
-        </>
-      )}
+        </div>
+      </div>
+
+      <div className="logs-col-head logs-col-head--desktop">
+        <div className="logs-row-ts">Timestamp</div>
+        <div className="logs-row-lvl">Lvl</div>
+        <div className="logs-row-ctx">Process</div>
+        <div className="logs-row-msg">Message</div>
+      </div>
+
+      <div className="logs-history-body">
+        {loading && <LoaderSegment />}
+        {!loading && results.length === 0 && (
+          <div className="logs-history-empty">
+            No log entries match the current filters.
+          </div>
+        )}
+        {!loading &&
+          results.map((log, i) => {
+            const key = `${log.timestamp}-${log.context}-${log.level}-${i}`;
+            return (
+              <LogRow
+                expanded={expanded.has(key)}
+                key={key}
+                log={log}
+                messageFilter={regexError ? '' : messageFilter}
+                onToggle={() => toggleExpanded(key)}
+                regexMode={regexMode}
+              />
+            );
+          })}
+      </div>
+
+      <div className="logs-history-body logs-history-mobile">
+        {loading && <LoaderSegment />}
+        {!loading && results.length === 0 && (
+          <div className="logs-history-empty">
+            No log entries match the current filters.
+          </div>
+        )}
+        {!loading &&
+          results.map((log, i) => {
+            const key = `${log.timestamp}-${log.context}-${log.level}-${i}`;
+            return (
+              <LogCard
+                expanded={expanded.has(key)}
+                key={key}
+                log={log}
+                messageFilter={regexError ? '' : messageFilter}
+                onToggle={() => toggleExpanded(key)}
+                regexMode={regexMode}
+              />
+            );
+          })}
+      </div>
+
+      <div className="logs-pagination">
+        <span className="logs-pagination-count">
+          {totalCount.toLocaleString()} {totalCount === 1 ? 'entry' : 'entries'}
+        </span>
+        {totalPages > 1 && (
+          <Pagination
+            activePage={page}
+            boundaryRange={1}
+            ellipsisItem={null}
+            firstItem={null}
+            lastItem={null}
+            onPageChange={handlePageChange}
+            siblingRange={2}
+            size="mini"
+            totalPages={totalPages}
+          />
+        )}
+      </div>
+    </>
+  );
+};
+
+// ─── Root component ───────────────────────────────────────────────────────────
+
+const Logs = () => {
+  const [mode, setMode] = useState('live');
+
+  return (
+    <div className="logs">
+      <div className="logs-tabs">
+        <button
+          className={`logs-tab${mode === 'live' ? ' logs-tab--active' : ''}`}
+          onClick={() => setMode('live')}
+          type="button"
+        >
+          Live
+        </button>
+        <button
+          className={`logs-tab${mode === 'history' ? ' logs-tab--active' : ''}`}
+          onClick={() => setMode('history')}
+          type="button"
+        >
+          History
+        </button>
+      </div>
+
+      {mode === 'live' && <LiveTab />}
+      {mode === 'history' && <HistoryTab />}
     </div>
   );
 };

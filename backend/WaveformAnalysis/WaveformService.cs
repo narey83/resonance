@@ -41,8 +41,10 @@ namespace resonance.WaveformAnalysis
     using System.Threading;
     using System.Threading.Channels;
     using System.Threading.Tasks;
+    using System.Data.Common;
     using Microsoft.Data.Sqlite;
     using Microsoft.Extensions.Hosting;
+    using Npgsql;
     using resonance.Common.Ffmpeg;
     using resonance.Shares;
     using Serilog;
@@ -60,11 +62,12 @@ namespace resonance.WaveformAnalysis
             "mp3", "flac", "ogg", "wav", "m4a", "aac", "opus", "wma", "aiff", "aif",
         };
 
-        public WaveformService(IShareService shareService, IFfmpegService ffmpeg, string connectionString)
+        public WaveformService(IShareService shareService, IFfmpegService ffmpeg, string connectionString, bool usePostgres = false)
         {
             ShareService = shareService;
             Ffmpeg = ffmpeg;
             ConnectionString = connectionString;
+            UsePostgres = usePostgres;
             EnsureSchema();
         }
 
@@ -73,7 +76,16 @@ namespace resonance.WaveformAnalysis
         private IShareService ShareService { get; }
         private IFfmpegService Ffmpeg { get; }
         private string ConnectionString { get; }
+        private bool UsePostgres { get; }
+        private string T => UsePostgres ? "waveform.waveform_cache" : "waveform_cache";
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Waveform);
+
+        private DbConnection OpenConnection()
+        {
+            DbConnection conn = UsePostgres ? new NpgsqlConnection(ConnectionString) : new SqliteConnection(ConnectionString);
+            conn.Open();
+            return conn;
+        }
 
         private WaveformScanState CurrentState { get; set; } = new(false, false, false, 0, 0, 0, 0, 0);
         private SemaphoreSlim SyncRoot { get; } = new(1, 1);
@@ -416,23 +428,41 @@ namespace resonance.WaveformAnalysis
             return peaks;
         }
 
-        // ── SQLite cache ──────────────────────────────────────────────────────
+        // ── DB cache ──────────────────────────────────────────────────────────
         private void EnsureSchema()
         {
-            using var conn = new SqliteConnection(ConnectionString);
-            conn.Open();
+            using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = @"
-                CREATE TABLE IF NOT EXISTS waveform_cache (
-                    masked_filename  TEXT PRIMARY KEY,
-                    file_size        INTEGER NOT NULL,
-                    num_bars         INTEGER NOT NULL,
-                    overall_peaks    BLOB NOT NULL,
-                    low_peaks        BLOB NOT NULL,
-                    mid_peaks        BLOB NOT NULL,
-                    high_peaks       BLOB NOT NULL,
-                    analysed_at      INTEGER NOT NULL
-                )";
+            if (UsePostgres)
+            {
+                cmd.CommandText = @"
+                    CREATE SCHEMA IF NOT EXISTS waveform;
+                    CREATE TABLE IF NOT EXISTS waveform.waveform_cache (
+                        masked_filename  TEXT PRIMARY KEY,
+                        file_size        BIGINT NOT NULL,
+                        num_bars         INTEGER NOT NULL,
+                        overall_peaks    BYTEA NOT NULL,
+                        low_peaks        BYTEA NOT NULL,
+                        mid_peaks        BYTEA NOT NULL,
+                        high_peaks       BYTEA NOT NULL,
+                        analysed_at      BIGINT NOT NULL
+                    )";
+            }
+            else
+            {
+                cmd.CommandText = @"
+                    CREATE TABLE IF NOT EXISTS waveform_cache (
+                        masked_filename  TEXT PRIMARY KEY,
+                        file_size        INTEGER NOT NULL,
+                        num_bars         INTEGER NOT NULL,
+                        overall_peaks    BLOB NOT NULL,
+                        low_peaks        BLOB NOT NULL,
+                        mid_peaks        BLOB NOT NULL,
+                        high_peaks       BLOB NOT NULL,
+                        analysed_at      INTEGER NOT NULL
+                    )";
+            }
+
             cmd.ExecuteNonQuery();
         }
 
@@ -448,15 +478,14 @@ namespace resonance.WaveformAnalysis
                 return null;
             }
 
-            using var conn = new SqliteConnection(ConnectionString);
-            conn.Open();
+            using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = @"
+            cmd.CommandText = $@"
                 SELECT num_bars, overall_peaks, low_peaks, mid_peaks, high_peaks
-                FROM waveform_cache
+                FROM {T}
                 WHERE masked_filename = @m AND file_size = @s";
-            cmd.Parameters.AddWithValue("@m", maskedFilename);
-            cmd.Parameters.AddWithValue("@s", fileSize);
+            AddParam(cmd, "@m", maskedFilename);
+            AddParam(cmd, "@s", fileSize);
 
             using var reader = cmd.ExecuteReader();
             if (!reader.Read())
@@ -475,11 +504,10 @@ namespace resonance.WaveformAnalysis
 
         private bool IsCached(string maskedFilename)
         {
-            using var conn = new SqliteConnection(ConnectionString);
-            conn.Open();
+            using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT 1 FROM waveform_cache WHERE masked_filename = @m LIMIT 1";
-            cmd.Parameters.AddWithValue("@m", maskedFilename);
+            cmd.CommandText = $"SELECT 1 FROM {T} WHERE masked_filename = @m LIMIT 1";
+            AddParam(cmd, "@m", maskedFilename);
             return cmd.ExecuteScalar() != null;
         }
 
@@ -495,30 +523,36 @@ namespace resonance.WaveformAnalysis
                 return;
             }
 
-            using var conn = new SqliteConnection(ConnectionString);
-            conn.Open();
+            using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = @"
-                INSERT OR REPLACE INTO waveform_cache
-                    (masked_filename, file_size, num_bars, overall_peaks, low_peaks, mid_peaks, high_peaks, analysed_at)
-                VALUES (@m, @s, @n, @op, @lp, @mp, @hp, @t)";
-            cmd.Parameters.AddWithValue("@m", maskedFilename);
-            cmd.Parameters.AddWithValue("@s", fileSize);
-            cmd.Parameters.AddWithValue("@n", data.NumBars);
-            cmd.Parameters.AddWithValue("@op", FloatsToBlob(data.OverallPeaks));
-            cmd.Parameters.AddWithValue("@lp", FloatsToBlob(data.LowPeaks));
-            cmd.Parameters.AddWithValue("@mp", FloatsToBlob(data.MidPeaks));
-            cmd.Parameters.AddWithValue("@hp", FloatsToBlob(data.HighPeaks));
-            cmd.Parameters.AddWithValue("@t", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            cmd.CommandText = UsePostgres
+                ? $@"INSERT INTO {T}
+                        (masked_filename, file_size, num_bars, overall_peaks, low_peaks, mid_peaks, high_peaks, analysed_at)
+                    VALUES (@m, @s, @n, @op, @lp, @mp, @hp, @t)
+                    ON CONFLICT(masked_filename) DO UPDATE SET
+                        file_size=EXCLUDED.file_size, num_bars=EXCLUDED.num_bars,
+                        overall_peaks=EXCLUDED.overall_peaks, low_peaks=EXCLUDED.low_peaks,
+                        mid_peaks=EXCLUDED.mid_peaks, high_peaks=EXCLUDED.high_peaks,
+                        analysed_at=EXCLUDED.analysed_at"
+                : $@"INSERT OR REPLACE INTO {T}
+                        (masked_filename, file_size, num_bars, overall_peaks, low_peaks, mid_peaks, high_peaks, analysed_at)
+                    VALUES (@m, @s, @n, @op, @lp, @mp, @hp, @t)";
+            AddParam(cmd, "@m", maskedFilename);
+            AddParam(cmd, "@s", fileSize);
+            AddParam(cmd, "@n", data.NumBars);
+            AddParam(cmd, "@op", FloatsToBlob(data.OverallPeaks));
+            AddParam(cmd, "@lp", FloatsToBlob(data.LowPeaks));
+            AddParam(cmd, "@mp", FloatsToBlob(data.MidPeaks));
+            AddParam(cmd, "@hp", FloatsToBlob(data.HighPeaks));
+            AddParam(cmd, "@t", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
             cmd.ExecuteNonQuery();
         }
 
         private void ClearCache()
         {
-            using var conn = new SqliteConnection(ConnectionString);
-            conn.Open();
+            using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "DELETE FROM waveform_cache";
+            cmd.CommandText = $"DELETE FROM {T}";
             cmd.ExecuteNonQuery();
         }
 
@@ -534,6 +568,14 @@ namespace resonance.WaveformAnalysis
             var arr = new float[blob.Length / 4];
             Buffer.BlockCopy(blob, 0, arr, 0, blob.Length);
             return arr;
+        }
+
+        private static void AddParam(System.Data.Common.DbCommand cmd, string name, object value)
+        {
+            var p = cmd.CreateParameter();
+            p.ParameterName = name;
+            p.Value = value;
+            cmd.Parameters.Add(p);
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────

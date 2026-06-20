@@ -100,6 +100,15 @@ export const getArtworkUrl = (path: string | null, size?: number): string | null
   return `${serverUrl}/api/v0/musiclibrary/artwork?path=${encodeURIComponent(path)}${sizeParam}${token}`;
 };
 
+// Returns the path to pass to ArtworkBox for a track.
+// For local tracks the artwork lives in coverPath (a file:// URI); for server tracks
+// the track path itself is used by the backend artwork endpoint.
+export const getTrackArtworkPath = (track: MusicTrack): string | null => {
+  if (!track.hasArtwork) return null;
+  const isLocal = track.path.startsWith('file://') || track.path.startsWith('content://');
+  return isLocal ? track.coverPath : track.path;
+};
+
 // Decide, at queue-build time, whether to request a transcoded low-bitrate stream.
 // Auto = transcode on cellular or when the connection monitor reports a slow link.
 const resolveStreamQuality = (): 'low' | null => {

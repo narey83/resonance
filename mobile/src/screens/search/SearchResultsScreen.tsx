@@ -142,9 +142,6 @@ function getDirectory(filename: string): string {
   return idx > 0 ? filename.slice(0, idx) : filename;
 }
 
-function getSeparator(dirPath: string): string {
-  return dirPath.includes('\\') ? '\\' : '/';
-}
 
 function qualityLabel(file: {
   extension: string;
@@ -970,7 +967,6 @@ export default function SearchResultsScreen({ route, navigation }: Props) {
   // Track which usernames have already been queued so we never double-fetch
   const statusFetchQueued = useRef<Set<string>>(new Set());
 
-  const intervalRef  = useRef<ReturnType<typeof setInterval> | null>(null); // kept for onStop only
   const hasLoadedRef = useRef(false);
 
   useEffect(() => {
@@ -997,9 +993,6 @@ export default function SearchResultsScreen({ route, navigation }: Props) {
       .catch(() => {});
   }, [responses]);
 
-  const stopPolling = useCallback(() => {
-    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
-  }, []);
 
   // Soulseek searches time out server-side after ~60 s; 90 s is a safe cutoff.
   // Use lastSearchedAt (set on restart) rather than startedAt so restarted searches
@@ -1197,6 +1190,7 @@ export default function SearchResultsScreen({ route, navigation }: Props) {
     const groups: DownloadGroup[] = [...map.entries()].map(([username, files]) => ({ username, files }));
     const total = groups.reduce((sum, g) => sum + g.files.length, 0);
     setPending({ groups, label: `${total} track${total !== 1 ? 's' : ''}` });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTracks]); // trackItems injected via closure below
 
   const confirmDownload = useCallback(async () => {
@@ -1264,6 +1258,7 @@ export default function SearchResultsScreen({ route, navigation }: Props) {
     } else {
       playTrack(searchFileToTrack(item.username, item.file));
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playerTrack, isPlaying, playTrack, togglePlayPause]);
 
   const trackItems = useMemo(

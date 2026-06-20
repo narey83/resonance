@@ -34,10 +34,12 @@ namespace resonance.Telemetry;
 
 using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Linq;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Caching.Memory;
+using Npgsql;
 using resonance.Transfers;
 using Serilog;
 using Soulseek;
@@ -58,40 +60,66 @@ public class ReportsService
 
     private ConnectionStringDictionary ConnectionStrings { get; }
     private IMemoryCache Cache { get; }
+    private bool UsePostgres => ConnectionStrings.UsePostgres;
     private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Telemetry);
 
     // Truncate timestamps to the nearest minute so requests within the same window share a cache key.
     private static DateTime Bucket(DateTime t) =>
         new DateTime(t.Ticks / TimeSpan.TicksPerMinute * TimeSpan.TicksPerMinute, t.Kind);
 
+    // Longer TTL for wider time windows — no point refreshing a 30-day summary every 30s.
+    private static TimeSpan GetCacheTtl(DateTime start, DateTime end)
+    {
+        var range = end - start;
+
+        if (range >= TimeSpan.FromDays(7))
+        {
+            return TimeSpan.FromMinutes(10);
+        }
+
+        if (range >= TimeSpan.FromDays(1))
+        {
+            return TimeSpan.FromMinutes(5);
+        }
+
+        return TimeSpan.FromMinutes(2);
+    }
+
+    private DbConnection OpenConnection(Database database)
+    {
+        DbConnection conn = UsePostgres
+            ? new NpgsqlConnection(ConnectionStrings[database])
+            : new SqliteConnection(ConnectionStrings[database]);
+        conn.Open();
+        return conn;
+    }
+
+    // Normalise DateTime values to UTC kind so Npgsql accepts them for timestamptz columns.
+    // For SQLite the kind is ignored by Dapper so this is safe for both providers.
+    private static DateTime Utc(DateTime dt) => DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+
     /// <summary>
     ///     Returns a summary of all transfer data grouped by direction and final transfer state. Includes only
     ///     completed transfers.
     /// </summary>
-    /// <param name="start">The optional start time of the summary window.</param>
-    /// <param name="end">The optional end time of the summary window.</param>
-    /// <param name="direction">The optional direction (Upload or Download) for the summary.</param>
-    /// <param name="username">The optional username by which to filter results.</param>
-    /// <returns>A nested dictionary keyed by direction and state and containing summary information.</returns>
-    /// <exception cref="ArgumentException">Thrown if end time is not later than start time.</exception>
     public Dictionary<TransferDirection, Dictionary<TransferStates, TransferSummary>> GetTransferSummary(
         DateTime? start = null,
         DateTime? end = null,
         TransferDirection? direction = null,
         string username = null)
     {
-        start ??= DateTime.MinValue;
-        end ??= DateTime.MaxValue;
+        var s = Utc(start ?? DateTime.MinValue);
+        var e = Utc(end ?? DateTime.MaxValue);
 
-        if (end <= start)
+        if (e <= s)
         {
             throw new ArgumentException("End time must be later than start time");
         }
 
-        var cacheKey = $"reports:summary:{Bucket(start.Value):O}:{Bucket(end.Value):O}:{direction}:{username}";
+        var cacheKey = $"reports:summary:{Bucket(s):O}:{Bucket(e):O}:{direction}:{username}";
         return Cache.GetOrCreate(cacheKey, entry =>
         {
-            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30);
+            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
 
             var dict = new Dictionary<TransferDirection, Dictionary<TransferStates, TransferSummary>>()
             {
@@ -99,33 +127,58 @@ public class ReportsService
                 { TransferDirection.Upload, new Dictionary<TransferStates, TransferSummary>() },
             };
 
-            var sql = @$"
-                SELECT
-                    Direction,
-                    StateDescription,
-                    SUM(Size) AS TotalBytes,
-                    COUNT(*) AS Count,
-                    COUNT(DISTINCT Username) AS DistinctUsers,
-                    AVG(AverageSpeed) AS AverageSpeed,
-                    AVG(strftime('%s', StartedAt) - strftime('%s', EnqueuedAt)) AS AverageWait,
-                    AVG(strftime('%s', EndedAt) - strftime('%s', StartedAt)) AS AverageDuration
-                FROM Transfers
-                WHERE EndedAt IS NOT NULL
-                    AND EndedAt BETWEEN @Start AND @End
-                    AND State IN ({string.Join(", ", TransferStateCategories.Completed.Select(s => (int)s))})
-                    {(direction is not null ? "AND Direction = @Direction" : string.Empty)}
-                    {(username is not null ? "AND Username = @Username" : string.Empty)}
-                GROUP BY Direction, StateDescription
-            ";
+            var stateList = string.Join(", ", TransferStateCategories.Completed.Select(s => (int)s));
 
-            using var connection = new SqliteConnection(ConnectionStrings[Database.Transfers]);
+            string sql;
+            if (UsePostgres)
+            {
+                sql = $@"
+                    SELECT ""Direction"", ""StateDescription"",
+                        SUM(""Size"") AS TotalBytes,
+                        COUNT(*) AS Count,
+                        COUNT(DISTINCT ""Username"") AS DistinctUsers,
+                        AVG(""AverageSpeed"") AS AverageSpeed,
+                        AVG(EXTRACT(EPOCH FROM (""StartedAt"" - ""EnqueuedAt""))) AS AverageWait,
+                        AVG(EXTRACT(EPOCH FROM (""EndedAt"" - ""StartedAt""))) AS AverageDuration
+                    FROM transfers.""Transfers""
+                    WHERE ""EndedAt"" IS NOT NULL
+                        AND ""EndedAt"" BETWEEN @Start AND @End
+                        AND ""State"" IN ({stateList})
+                        {(direction is not null ? "AND \"Direction\" = @Direction" : string.Empty)}
+                        {(username is not null ? "AND \"Username\" = @Username" : string.Empty)}
+                    GROUP BY ""Direction"", ""StateDescription""
+                ";
+            }
+            else
+            {
+                sql = $@"
+                    SELECT
+                        Direction,
+                        StateDescription,
+                        SUM(Size) AS TotalBytes,
+                        COUNT(*) AS Count,
+                        COUNT(DISTINCT Username) AS DistinctUsers,
+                        AVG(AverageSpeed) AS AverageSpeed,
+                        AVG(strftime('%s', StartedAt) - strftime('%s', EnqueuedAt)) AS AverageWait,
+                        AVG(strftime('%s', EndedAt) - strftime('%s', StartedAt)) AS AverageDuration
+                    FROM Transfers
+                    WHERE EndedAt IS NOT NULL
+                        AND EndedAt BETWEEN @Start AND @End
+                        AND State IN ({stateList})
+                        {(direction is not null ? "AND Direction = @Direction" : string.Empty)}
+                        {(username is not null ? "AND Username = @Username" : string.Empty)}
+                    GROUP BY Direction, StateDescription
+                ";
+            }
+
+            using var connection = OpenConnection(Database.Transfers);
 
             var param = new
             {
                 Direction = direction?.ToString(),
                 Username = username,
-                Start = start,
-                End = end,
+                Start = s,
+                End = e,
             };
 
             var results = connection.Query<TransferSummaryRow>(sql, param);
@@ -153,13 +206,6 @@ public class ReportsService
     ///     Returns a histogram of all transfer data, aggregated into fixed size time intervals and grouped by
     ///     direction and final transfer state. Includes only completed transfers.
     /// </summary>
-    /// <param name="start">The start time of the histogram window.</param>
-    /// <param name="end">The end time of the histogram window.</param>
-    /// <param name="interval">The interval for the histogram.</param>
-    /// <param name="direction">The optional direction (Upload or Download) by which to filter results.</param>
-    /// <param name="username">The optional username by which to filter results.</param>
-    /// <returns>A nested dictionary keyed by direction and state and containing summary information.</returns>
-    /// <exception cref="ArgumentException">Thrown if end time is not later than start time.</exception>
     public Dictionary<DateTime, Dictionary<TransferDirection, Dictionary<TransferStates, TransferSummary>>> GetTransferHistogram(
         DateTime start,
         DateTime end,
@@ -167,22 +213,25 @@ public class ReportsService
         TransferDirection? direction = null,
         string username = null)
     {
-        if (end <= start)
+        var s = Utc(start);
+        var e = Utc(end);
+
+        if (e <= s)
         {
             throw new ArgumentException("End time must be later than start time");
         }
 
-        var cacheKey = $"reports:histogram:{Bucket(start):O}:{Bucket(end):O}:{(int)interval.TotalSeconds}:{direction}:{username}";
+        var cacheKey = $"reports:histogram:{Bucket(s):O}:{Bucket(e):O}:{(int)interval.TotalSeconds}:{direction}:{username}";
         return Cache.GetOrCreate(cacheKey, entry =>
         {
-            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30);
+            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
 
             var dict = new Dictionary<DateTime, Dictionary<TransferDirection, Dictionary<TransferStates, TransferSummary>>>();
 
             // fill the dictionary with gapless intervals and empty dictionaries
-            var currentInterval = new DateTime(start.Ticks / interval.Ticks * interval.Ticks, DateTimeKind.Utc);
+            var currentInterval = new DateTime(s.Ticks / interval.Ticks * interval.Ticks, DateTimeKind.Utc);
 
-            while (currentInterval < end)
+            while (currentInterval < e)
             {
                 dict[currentInterval] = new Dictionary<TransferDirection, Dictionary<TransferStates, TransferSummary>>()
                 {
@@ -192,35 +241,64 @@ public class ReportsService
                 currentInterval = currentInterval.Add(interval);
             }
 
-            var sql = @$"
-                SELECT
-                    datetime(strftime('%s', EndedAt) / CAST(@Interval AS INTEGER) * CAST(@Interval AS INTEGER), 'unixepoch') AS Interval,
-                    Direction,
-                    StateDescription,
-                    SUM(Size) AS TotalBytes,
-                    COUNT(*) AS Count,
-                    COUNT(DISTINCT Username) AS Users,
-                    AVG(AverageSpeed) AS AverageSpeed,
-                    COALESCE(AVG(strftime('%s', StartedAt) - strftime('%s', EnqueuedAt)), 0.0) AS AverageWait,
-                    COALESCE(AVG(strftime('%s', EndedAt) - strftime('%s', StartedAt)), 0.0) AS AverageDuration
-                FROM Transfers
-                WHERE EndedAt IS NOT NULL
-                    AND EndedAt BETWEEN @Start AND @End
-                    AND State IN ({string.Join(", ", TransferStateCategories.Completed.Select(s => (int)s))})
-                    {(direction is not null ? "AND Direction = @Direction" : string.Empty)}
-                    {(username is not null ? "AND Username = @Username" : string.Empty)}
-                GROUP BY Interval, Direction, StateDescription
-                ORDER BY Interval, Direction, StateDescription;
-            ";
+            var stateList = string.Join(", ", TransferStateCategories.Completed.Select(s => (int)s));
 
-            using var connection = new SqliteConnection(ConnectionStrings[Database.Transfers]);
+            string sql;
+            if (UsePostgres)
+            {
+                sql = $@"
+                    SELECT
+                        TO_TIMESTAMP(EXTRACT(EPOCH FROM ""EndedAt"")::BIGINT / @Interval * @Interval) AS ""Interval"",
+                        ""Direction"",
+                        ""StateDescription"",
+                        SUM(""Size"") AS TotalBytes,
+                        COUNT(*) AS Count,
+                        COUNT(DISTINCT ""Username"") AS Users,
+                        AVG(""AverageSpeed"") AS AverageSpeed,
+                        COALESCE(AVG(EXTRACT(EPOCH FROM (""StartedAt"" - ""EnqueuedAt""))), 0.0) AS AverageWait,
+                        COALESCE(AVG(EXTRACT(EPOCH FROM (""EndedAt"" - ""StartedAt""))), 0.0) AS AverageDuration
+                    FROM transfers.""Transfers""
+                    WHERE ""EndedAt"" IS NOT NULL
+                        AND ""EndedAt"" BETWEEN @Start AND @End
+                        AND ""State"" IN ({stateList})
+                        {(direction is not null ? "AND \"Direction\" = @Direction" : string.Empty)}
+                        {(username is not null ? "AND \"Username\" = @Username" : string.Empty)}
+                    GROUP BY 1, ""Direction"", ""StateDescription""
+                    ORDER BY 1, ""Direction"", ""StateDescription"";
+                ";
+            }
+            else
+            {
+                sql = $@"
+                    SELECT
+                        datetime(strftime('%s', EndedAt) / CAST(@Interval AS INTEGER) * CAST(@Interval AS INTEGER), 'unixepoch') AS Interval,
+                        Direction,
+                        StateDescription,
+                        SUM(Size) AS TotalBytes,
+                        COUNT(*) AS Count,
+                        COUNT(DISTINCT Username) AS Users,
+                        AVG(AverageSpeed) AS AverageSpeed,
+                        COALESCE(AVG(strftime('%s', StartedAt) - strftime('%s', EnqueuedAt)), 0.0) AS AverageWait,
+                        COALESCE(AVG(strftime('%s', EndedAt) - strftime('%s', StartedAt)), 0.0) AS AverageDuration
+                    FROM Transfers
+                    WHERE EndedAt IS NOT NULL
+                        AND EndedAt BETWEEN @Start AND @End
+                        AND State IN ({stateList})
+                        {(direction is not null ? "AND Direction = @Direction" : string.Empty)}
+                        {(username is not null ? "AND Username = @Username" : string.Empty)}
+                    GROUP BY Interval, Direction, StateDescription
+                    ORDER BY Interval, Direction, StateDescription;
+                ";
+            }
+
+            using var connection = OpenConnection(Database.Transfers);
 
             var param = new
             {
                 Direction = direction?.ToString(),
                 Username = username,
-                Start = start,
-                End = end,
+                Start = s,
+                End = e,
                 Interval = (int)interval.TotalSeconds,
             };
 
@@ -255,19 +333,8 @@ public class ReportsService
     }
 
     /// <summary>
-    ///     Returns the top N users summaries by count, total bytes, or average speed. Only successful transfers are included in counts.
+    ///     Returns the top N users summaries by count, total bytes, or average speed.
     /// </summary>
-    /// <param name="direction">The direction (Upload or Download).</param>
-    /// <param name="start">The optional start time of the summary window.</param>
-    /// <param name="end">The optional end time of the summary window.</param>
-    /// <param name="sortBy">The property by which to sort.</param>
-    /// <param name="sortOrder">The sort order.</param>
-    /// <param name="limit">The number of records to return (default: 25).</param>
-    /// <param name="offset">The record offset (if paginating).</param>
-    /// <returns>A dictionary keyed by username and containing summary information.</returns>
-    /// <exception cref="ArgumentException">
-    ///     Thrown if end time is not later than start time, or limit is not greater than zero.
-    /// </exception>
     public List<TransferSummary> GetTransferLeaderboard(
         TransferDirection direction,
         DateTime? start = null,
@@ -277,10 +344,10 @@ public class ReportsService
         int limit = 25,
         int offset = 0)
     {
-        start ??= DateTime.MinValue;
-        end ??= DateTime.MaxValue;
+        var s = Utc(start ?? DateTime.MinValue);
+        var e = Utc(end ?? DateTime.MaxValue);
 
-        if (end <= start)
+        if (e <= s)
         {
             throw new ArgumentException("End time must be later than start time");
         }
@@ -290,41 +357,67 @@ public class ReportsService
             throw new ArgumentOutOfRangeException("Limit must be greater than zero");
         }
 
-        var cacheKey = $"reports:leaderboard:{Bucket(start.Value):O}:{Bucket(end.Value):O}:{direction}:{sortBy}:{sortOrder}:{limit}:{offset}";
+        var cacheKey = $"reports:leaderboard:{Bucket(s):O}:{Bucket(e):O}:{direction}:{sortBy}:{sortOrder}:{limit}:{offset}";
         return Cache.GetOrCreate(cacheKey, entry =>
         {
-            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30);
+            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
 
-            var sql = @$"
-                SELECT
-                    Username,
-                    Direction,
-                    State,
-                    SUM(Size) AS TotalBytes,
-                    COUNT(*) AS Count,
-                    AVG(AverageSpeed) AS AverageSpeed,
-                    AVG(strftime('%s', StartedAt) - strftime('%s', EnqueuedAt)) AS AverageWait,
-                    AVG(strftime('%s', EndedAt) - strftime('%s', StartedAt)) AS AverageDuration
-                FROM Transfers
-                WHERE Direction = @Direction
-                    AND State = 48
-                    AND EndedAt IS NOT NULL
-                    AND EndedAt BETWEEN @Start AND @End
-                GROUP BY Username, Direction, StateDescription
-                ORDER BY {sortBy} {sortOrder}, Username DESC
-                LIMIT @Limit
-                OFFSET @Offset
-            ";
+            string sql;
+            if (UsePostgres)
+            {
+                sql = $@"
+                    SELECT
+                        ""Username"",
+                        ""Direction"",
+                        SUM(""Size"") AS TotalBytes,
+                        COUNT(*) AS Count,
+                        AVG(""AverageSpeed"") AS AverageSpeed,
+                        AVG(EXTRACT(EPOCH FROM (""StartedAt"" - ""EnqueuedAt""))) AS AverageWait,
+                        AVG(EXTRACT(EPOCH FROM (""EndedAt"" - ""StartedAt""))) AS AverageDuration
+                    FROM transfers.""Transfers""
+                    WHERE ""Direction"" = @Direction
+                        AND ""State"" = 48
+                        AND ""EndedAt"" IS NOT NULL
+                        AND ""EndedAt"" BETWEEN @Start AND @End
+                    GROUP BY ""Username"", ""Direction""
+                    ORDER BY {sortBy} {sortOrder}, ""Username"" DESC
+                    LIMIT @Limit
+                    OFFSET @Offset
+                ";
+            }
+            else
+            {
+                sql = $@"
+                    SELECT
+                        Username,
+                        Direction,
+                        State,
+                        SUM(Size) AS TotalBytes,
+                        COUNT(*) AS Count,
+                        AVG(AverageSpeed) AS AverageSpeed,
+                        AVG(strftime('%s', StartedAt) - strftime('%s', EnqueuedAt)) AS AverageWait,
+                        AVG(strftime('%s', EndedAt) - strftime('%s', StartedAt)) AS AverageDuration
+                    FROM Transfers
+                    WHERE Direction = @Direction
+                        AND State = 48
+                        AND EndedAt IS NOT NULL
+                        AND EndedAt BETWEEN @Start AND @End
+                    GROUP BY Username, Direction, StateDescription
+                    ORDER BY {sortBy} {sortOrder}, Username DESC
+                    LIMIT @Limit
+                    OFFSET @Offset
+                ";
+            }
 
-            using var connection = new SqliteConnection(ConnectionStrings[Database.Transfers]);
+            using var connection = OpenConnection(Database.Transfers);
 
             var param = new
             {
                 Direction = direction.ToString(),
                 Limit = limit,
                 Offset = offset,
-                Start = start,
-                End = end,
+                Start = s,
+                End = e,
             };
 
             var results = connection.Query<TransferSummaryRow>(sql, param);
@@ -344,17 +437,6 @@ public class ReportsService
     /// <summary>
     ///     Returns a list of transfer exceptions.
     /// </summary>
-    /// <param name="direction">The direction (Upload or Download).</param>
-    /// <param name="start">The optional start time of the summary window.</param>
-    /// <param name="end">The optional end time of the summary window.</param>
-    /// <param name="username">The optional username by which to filter results.</param>
-    /// <param name="sortOrder">The sort order.</param>
-    /// <param name="limit">The number of records to return (default: 25).</param>
-    /// <param name="offset">The record offset (if paginating).</param>
-    /// <returns>A list of exceptions.</returns>
-    /// <exception cref="ArgumentException">
-    ///     Thrown if end time is not later than start time, or limit is not greater than zero.
-    /// </exception>
     public List<TransferExceptionDetail> GetTransferExceptions(
         TransferDirection direction,
         DateTime? start = null,
@@ -364,10 +446,10 @@ public class ReportsService
         int limit = 25,
         int offset = 0)
     {
-        start ??= DateTime.MinValue;
-        end ??= DateTime.MaxValue;
+        var s = Utc(start ?? DateTime.MinValue);
+        var e = Utc(end ?? DateTime.MaxValue);
 
-        if (end <= start)
+        if (e <= s)
         {
             throw new ArgumentException("End time must be later than start time");
         }
@@ -377,46 +459,84 @@ public class ReportsService
             throw new ArgumentOutOfRangeException("Limit must be greater than zero");
         }
 
-        var sql = @$"
-            SELECT
-                Id,
-                Username,
-                Direction,
-                Filename,
-                Size,
-                StartOffset,
-                State,
-                RequestedAt
-                EnqueuedAt,
-                StartedAt,
-                EndedAt,
-                BytesTransferred,
-                AverageSpeed,
-                CASE
-                    WHEN INSTR(Exception, ' (') > 0 AND SUBSTR(TRIM(Exception), -1) = ')'
-                    THEN TRIM(SUBSTR(Exception, 1, INSTR(Exception, ' (') - 1))
-                    WHEN INSTR(Exception, ': ') > 0
-                    THEN TRIM(SUBSTR(Exception, INSTR(Exception, ': ') + 2))
-                    ELSE COALESCE(TRIM(Exception), 'Unknown')
-                END as Exception
-            FROM transfers
-            WHERE state & ~48
-                AND Direction = @Direction
-                AND EndedAt BETWEEN @Start AND @End
-                {(username is not null ? "AND Username = @Username" : string.Empty)}
-            ORDER BY EndedAt {sortOrder}
-            LIMIT @Limit
-            OFFSET @Offset
-        ";
+        string sql;
+        if (UsePostgres)
+        {
+            sql = $@"
+                SELECT
+                    ""Id""::text AS ""Id"",
+                    ""Username"",
+                    ""Direction"",
+                    ""Filename"",
+                    ""Size"",
+                    ""StartOffset"",
+                    ""State"",
+                    ""RequestedAt"",
+                    ""EnqueuedAt"",
+                    ""StartedAt"",
+                    ""EndedAt"",
+                    ""BytesTransferred"",
+                    ""AverageSpeed"",
+                    CASE
+                        WHEN STRPOS(""Exception"", ' (') > 0 AND RIGHT(TRIM(""Exception""), 1) = ')'
+                        THEN TRIM(SUBSTR(""Exception"", 1, STRPOS(""Exception"", ' (') - 1))
+                        WHEN STRPOS(""Exception"", ': ') > 0
+                        THEN TRIM(SUBSTR(""Exception"", STRPOS(""Exception"", ': ') + 2))
+                        ELSE COALESCE(TRIM(""Exception""), 'Unknown')
+                    END AS ""Exception""
+                FROM transfers.""Transfers""
+                WHERE ""State"" & ~48 != 0
+                    AND ""Direction"" = @Direction
+                    AND ""EndedAt"" BETWEEN @Start AND @End
+                    {(username is not null ? "AND \"Username\" = @Username" : string.Empty)}
+                ORDER BY ""EndedAt"" {sortOrder}
+                LIMIT @Limit
+                OFFSET @Offset
+            ";
+        }
+        else
+        {
+            sql = $@"
+                SELECT
+                    Id,
+                    Username,
+                    Direction,
+                    Filename,
+                    Size,
+                    StartOffset,
+                    State,
+                    RequestedAt,
+                    EnqueuedAt,
+                    StartedAt,
+                    EndedAt,
+                    BytesTransferred,
+                    AverageSpeed,
+                    CASE
+                        WHEN INSTR(Exception, ' (') > 0 AND SUBSTR(TRIM(Exception), -1) = ')'
+                        THEN TRIM(SUBSTR(Exception, 1, INSTR(Exception, ' (') - 1))
+                        WHEN INSTR(Exception, ': ') > 0
+                        THEN TRIM(SUBSTR(Exception, INSTR(Exception, ': ') + 2))
+                        ELSE COALESCE(TRIM(Exception), 'Unknown')
+                    END as Exception
+                FROM transfers
+                WHERE state & ~48
+                    AND Direction = @Direction
+                    AND EndedAt BETWEEN @Start AND @End
+                    {(username is not null ? "AND Username = @Username" : string.Empty)}
+                ORDER BY EndedAt {sortOrder}
+                LIMIT @Limit
+                OFFSET @Offset
+            ";
+        }
 
-        using var connection = new SqliteConnection(ConnectionStrings[Database.Transfers]);
+        using var connection = OpenConnection(Database.Transfers);
 
         var param = new
         {
             Direction = direction.ToString(),
             Username = username,
-            Start = start,
-            End = end,
+            Start = s,
+            End = e,
             Limit = limit,
             Offset = offset,
         };
@@ -428,16 +548,6 @@ public class ReportsService
     /// <summary>
     ///     Returns a summary of distinct transfer exceptions and the number of times they occurred.
     /// </summary>
-    /// <param name="direction">The direction (Upload or Download) for the summary.</param>
-    /// <param name="start">The optional start time of the summary window.</param>
-    /// <param name="end">The optional end time of the summary window.</param>
-    /// <param name="username">The optional username by which to filter results.</param>
-    /// <param name="limit">The number of records to return (default: 25).</param>
-    /// <param name="offset">The record offset (if paginating).</param>
-    /// <returns>A dictionary keyed by direction and containing a list of exceptions and the number of times they occurred.</returns>
-    /// <exception cref="ArgumentException">
-    ///     Thrown if end time is not later than start time, or limit is not greater than zero.
-    /// </exception>
     public List<TransferExceptionSummary> GetTransferExceptionsPareto(
         TransferDirection direction,
         DateTime? start = null,
@@ -446,10 +556,10 @@ public class ReportsService
         int limit = 25,
         int offset = 0)
     {
-        start ??= DateTime.MinValue;
-        end ??= DateTime.MaxValue;
+        var s = Utc(start ?? DateTime.MinValue);
+        var e = Utc(end ?? DateTime.MaxValue);
 
-        if (end <= start)
+        if (e <= s)
         {
             throw new ArgumentException("End time must be later than start time");
         }
@@ -459,48 +569,79 @@ public class ReportsService
             throw new ArgumentOutOfRangeException("Limit must be greater than zero");
         }
 
-        var cacheKey = $"reports:exceptions-pareto:{Bucket(start.Value):O}:{Bucket(end.Value):O}:{direction}:{username}:{limit}:{offset}";
+        var cacheKey = $"reports:exceptions-pareto:{Bucket(s):O}:{Bucket(e):O}:{direction}:{username}:{limit}:{offset}";
         return Cache.GetOrCreate(cacheKey, entry =>
         {
-            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30);
+            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
 
-            var sql = @$"
-                SELECT
+            string sql;
+            if (UsePostgres)
+            {
+                sql = $@"
+                    WITH categorized AS (
+                        SELECT
+                            CASE
+                                WHEN STRPOS(""Exception"", ' (') > 0 AND RIGHT(TRIM(""Exception""), 1) = ')'
+                                THEN TRIM(SUBSTR(""Exception"", 1, STRPOS(""Exception"", ' (') - 1))
+                                WHEN STRPOS(""Exception"", ': ') > 0
+                                THEN TRIM(SUBSTR(""Exception"", STRPOS(""Exception"", ': ') + 2))
+                                ELSE COALESCE(TRIM(""Exception""), 'Unknown')
+                            END AS Exception,
+                            ""Username""
+                        FROM transfers.""Transfers""
+                        WHERE ""State"" & ~48 != 0
+                            AND ""Direction"" = @Direction
+                            AND ""EndedAt"" BETWEEN @Start AND @End
+                            {(username is not null ? "AND \"Username\" = @Username" : string.Empty)}
+                    )
+                    SELECT Exception, COUNT(*) AS Count, COUNT(DISTINCT ""Username"") AS DistinctUsers
+                    FROM categorized
+                    GROUP BY Exception
+                    ORDER BY Count DESC
+                    LIMIT @Limit
+                    OFFSET @Offset
+                ";
+            }
+            else
+            {
+                sql = $@"
+                    SELECT
+                        CASE
+                            WHEN INSTR(Exception, ' to ') > 0 AND SUBSTR(TRIM(Exception), -1) = ')'
+                            THEN TRIM(SUBSTR(Exception, 1, INSTR(Exception, ' to ') - 1))
+                            WHEN INSTR(Exception, ': ') > 0
+                            THEN TRIM(SUBSTR(Exception, INSTR(Exception, ': ') + 2))
+                            ELSE COALESCE(TRIM(Exception), 'Unknown')
+                        END as Exception,
+                        COUNT(*) as Count,
+                        COUNT(DISTINCT Username) as DistinctUsers
+                    FROM transfers
+                    WHERE state & ~48
+                        AND Direction = @Direction
+                        AND EndedAt BETWEEN @Start AND @End
+                        {(username is not null ? "AND Username = @Username" : string.Empty)}
+                    GROUP BY Direction,
                     CASE
-                        WHEN INSTR(Exception, ' to ') > 0 AND SUBSTR(TRIM(Exception), -1) = ')'
-                        THEN TRIM(SUBSTR(Exception, 1, INSTR(Exception, ' to ') - 1))
+                        WHEN INSTR(Exception, ' (') > 0 AND SUBSTR(TRIM(Exception), -1) = ')'
+                        THEN TRIM(SUBSTR(Exception, 1, INSTR(Exception, ' (') - 1))
                         WHEN INSTR(Exception, ': ') > 0
                         THEN TRIM(SUBSTR(Exception, INSTR(Exception, ': ') + 2))
                         ELSE COALESCE(TRIM(Exception), 'Unknown')
-                    END as Exception,
-                    COUNT(*) as Count,
-                    COUNT(DISTINCT Username) as DistinctUsers
-                FROM transfers
-                WHERE state & ~48
-                    AND Direction = @Direction
-                    AND EndedAt BETWEEN @Start AND @End
-                    {(username is not null ? "AND Username = @Username" : string.Empty)}
-                GROUP BY Direction,
-                CASE
-                    WHEN INSTR(Exception, ' (') > 0 AND SUBSTR(TRIM(Exception), -1) = ')'
-                    THEN TRIM(SUBSTR(Exception, 1, INSTR(Exception, ' (') - 1))
-                    WHEN INSTR(Exception, ': ') > 0
-                    THEN TRIM(SUBSTR(Exception, INSTR(Exception, ': ') + 2))
-                    ELSE COALESCE(TRIM(Exception), 'Unknown')
-                END
-                ORDER BY Count DESC
-                LIMIT @Limit
-                OFFSET @Offset
-            ";
+                    END
+                    ORDER BY Count DESC
+                    LIMIT @Limit
+                    OFFSET @Offset
+                ";
+            }
 
-            using var connection = new SqliteConnection(ConnectionStrings[Database.Transfers]);
+            using var connection = OpenConnection(Database.Transfers);
 
             var param = new
             {
                 Direction = direction.ToString(),
                 Username = username,
-                Start = start,
-                End = end,
+                Start = s,
+                End = e,
                 Limit = limit,
                 Offset = offset,
             };
@@ -513,16 +654,6 @@ public class ReportsService
     /// <summary>
     ///     Returns a list of directories and the frequency at which they have been downloaded.
     /// </summary>
-    /// <param name="start"></param>
-    /// <param name="end"></param>
-    /// <param name="username"></param>
-    /// <param name="sortOrder"></param>
-    /// <param name="limit"></param>
-    /// <param name="offset"></param>
-    /// <returns></returns>
-    /// <exception cref="ArgumentException">
-    ///     Thrown if end time is not later than start time, or limit is not greater than zero.
-    /// </exception>
     public List<TransferDirectorySummary> GetTransferDirectoryFrequency(
         DateTime? start = null,
         DateTime? end = null,
@@ -531,10 +662,10 @@ public class ReportsService
         int limit = 25,
         int offset = 0)
     {
-        start ??= DateTime.MinValue;
-        end ??= DateTime.MaxValue;
+        var s = Utc(start ?? DateTime.MinValue);
+        var e = Utc(end ?? DateTime.MaxValue);
 
-        if (end <= start)
+        if (e <= s)
         {
             throw new ArgumentException("End time must be later than start time");
         }
@@ -544,39 +675,67 @@ public class ReportsService
             throw new ArgumentOutOfRangeException("Limit must be greater than zero");
         }
 
-        var cacheKey = $"reports:directories:{Bucket(start.Value):O}:{Bucket(end.Value):O}:{username}:{sortOrder}:{limit}:{offset}";
+        var cacheKey = $"reports:directories:{Bucket(s):O}:{Bucket(e):O}:{username}:{sortOrder}:{limit}:{offset}";
         return Cache.GetOrCreate(cacheKey, entry =>
         {
-            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30);
+            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
 
-            var sql = @$"
-                WITH directories AS (
-                    SELECT
-                        RTRIM(
-                            RTRIM(filename, REPLACE(REPLACE(filename, '/', ''), '\', '')), '/\'
-                        ) AS Directory,
-                        Username
-                    FROM transfers
-                    WHERE Direction = 'Upload'
-                    AND State = 48
-                    AND EndedAt IS NOT NULL
-                    AND EndedAt BETWEEN @Start AND @End
-                    {(username is not null ? "AND Username = @Username" : string.Empty)}
-                )
-                SELECT Directory, COUNT(*) AS Count, COUNT(DISTINCT Username) AS DistinctUsers
-                FROM directories
-                GROUP BY Directory
-                ORDER BY DistinctUsers DESC, Count DESC
-                LIMIT @Limit
-                OFFSET @Offset
-            ";
+            string sql;
+            if (UsePostgres)
+            {
+                sql = $@"
+                    WITH directories AS (
+                        SELECT
+                            RTRIM(
+                                RTRIM(""Filename"", REPLACE(REPLACE(""Filename"", '/', ''), '\', '')), '/\'
+                            ) AS Directory,
+                            ""Username""
+                        FROM transfers.""Transfers""
+                        WHERE ""Direction"" = 'Upload'
+                        AND ""State"" = 48
+                        AND ""EndedAt"" IS NOT NULL
+                        AND ""EndedAt"" BETWEEN @Start AND @End
+                        {(username is not null ? "AND \"Username\" = @Username" : string.Empty)}
+                    )
+                    SELECT Directory, COUNT(*) AS Count, COUNT(DISTINCT ""Username"") AS DistinctUsers
+                    FROM directories
+                    GROUP BY Directory
+                    ORDER BY DistinctUsers DESC, Count DESC
+                    LIMIT @Limit
+                    OFFSET @Offset
+                ";
+            }
+            else
+            {
+                sql = $@"
+                    WITH directories AS (
+                        SELECT
+                            RTRIM(
+                                RTRIM(filename, REPLACE(REPLACE(filename, '/', ''), '\', '')), '/\'
+                            ) AS Directory,
+                            Username
+                        FROM transfers
+                        WHERE Direction = 'Upload'
+                        AND State = 48
+                        AND EndedAt IS NOT NULL
+                        AND EndedAt BETWEEN @Start AND @End
+                        {(username is not null ? "AND Username = @Username" : string.Empty)}
+                    )
+                    SELECT Directory, COUNT(*) AS Count, COUNT(DISTINCT Username) AS DistinctUsers
+                    FROM directories
+                    GROUP BY Directory
+                    ORDER BY DistinctUsers DESC, Count DESC
+                    LIMIT @Limit
+                    OFFSET @Offset
+                ";
+            }
 
-            using var connection = new SqliteConnection(ConnectionStrings[Database.Transfers]);
+            using var connection = OpenConnection(Database.Transfers);
 
             var param = new
             {
-                Start = start,
-                End = end,
+                Start = s,
+                End = e,
                 Limit = limit,
                 Offset = offset,
                 Username = username,
@@ -590,49 +749,72 @@ public class ReportsService
     /// <summary>
     ///     Returns the top N most-downloaded files (uploaded from this server) within the given time window.
     /// </summary>
-    /// <returns></returns>
     public List<TransferFileSummary> GetTopFiles(
         DateTime? start = null,
         DateTime? end = null,
         int limit = 10,
         int offset = 0)
     {
-        start ??= DateTime.MinValue;
-        end ??= DateTime.MaxValue;
+        var s = Utc(start ?? DateTime.MinValue);
+        var e = Utc(end ?? DateTime.MaxValue);
 
-        var cacheKey = $"reports:files:{Bucket(start.Value):O}:{Bucket(end.Value):O}:{limit}:{offset}";
+        var cacheKey = $"reports:files:{Bucket(s):O}:{Bucket(e):O}:{limit}:{offset}";
         return Cache.GetOrCreate(cacheKey, entry =>
         {
-            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30);
+            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
 
-            var sql = @"
-                WITH files AS (
-                    SELECT
-                        SUBSTR(filename, LENGTH(RTRIM(filename, REPLACE(REPLACE(filename, '/', ''), '\', ''))) + 1) AS Filename,
-                        Username,
-                        Size
-                    FROM transfers
-                    WHERE Direction = 'Upload'
-                    AND State = 48
-                    AND EndedAt IS NOT NULL
-                    AND EndedAt BETWEEN @Start AND @End
-                )
-                SELECT Filename, COUNT(*) AS Count, COUNT(DISTINCT Username) AS DistinctUsers, SUM(Size) AS TotalBytes
-                FROM files
-                GROUP BY LOWER(Filename)
-                ORDER BY Count DESC, DistinctUsers DESC
-                LIMIT @Limit OFFSET @Offset
-            ";
+            string sql;
+            if (UsePostgres)
+            {
+                sql = @"
+                    WITH files AS (
+                        SELECT
+                            SUBSTR(""Filename"", LENGTH(RTRIM(""Filename"", REPLACE(REPLACE(""Filename"", '/', ''), '\', ''))) + 1) AS Filename,
+                            ""Username"",
+                            ""Size""
+                        FROM transfers.""Transfers""
+                        WHERE ""Direction"" = 'Upload'
+                        AND ""State"" = 48
+                        AND ""EndedAt"" IS NOT NULL
+                        AND ""EndedAt"" BETWEEN @Start AND @End
+                    )
+                    SELECT Filename, COUNT(*) AS Count, COUNT(DISTINCT ""Username"") AS DistinctUsers, SUM(""Size"") AS TotalBytes
+                    FROM files
+                    GROUP BY Filename
+                    ORDER BY Count DESC, DistinctUsers DESC
+                    LIMIT @Limit OFFSET @Offset
+                ";
+            }
+            else
+            {
+                sql = @"
+                    WITH files AS (
+                        SELECT
+                            SUBSTR(filename, LENGTH(RTRIM(filename, REPLACE(REPLACE(filename, '/', ''), '\', ''))) + 1) AS Filename,
+                            Username,
+                            Size
+                        FROM transfers
+                        WHERE Direction = 'Upload'
+                        AND State = 48
+                        AND EndedAt IS NOT NULL
+                        AND EndedAt BETWEEN @Start AND @End
+                    )
+                    SELECT Filename, COUNT(*) AS Count, COUNT(DISTINCT Username) AS DistinctUsers, SUM(Size) AS TotalBytes
+                    FROM files
+                    GROUP BY LOWER(Filename)
+                    ORDER BY Count DESC, DistinctUsers DESC
+                    LIMIT @Limit OFFSET @Offset
+                ";
+            }
 
-            using var connection = new SqliteConnection(ConnectionStrings[Database.Transfers]);
-            return connection.Query<TransferFileSummary>(sql, new { Start = start, End = end, Limit = limit, Offset = offset }).ToList();
+            using var connection = OpenConnection(Database.Transfers);
+            return connection.Query<TransferFileSummary>(sql, new { Start = s, End = e, Limit = limit, Offset = offset }).ToList();
         });
     }
 
     /// <summary>
     ///     Returns a paginated list of all users with aggregate transfer statistics.
     /// </summary>
-    /// <returns></returns>
     public (List<UserReportSummary> Items, int Total) GetUserList(
         DateTime? start = null,
         DateTime? end = null,
@@ -642,8 +824,8 @@ public class ReportsService
         int limit = 25,
         int offset = 0)
     {
-        start ??= DateTime.MinValue;
-        end ??= DateTime.MaxValue;
+        var s = Utc(start ?? DateTime.MinValue);
+        var e = Utc(end ?? DateTime.MaxValue);
 
         if (limit <= 0)
         {
@@ -661,61 +843,106 @@ public class ReportsService
             _ => "LastSeen",
         };
 
-        var searchClause = search is not null
-            ? @"AND (a.Username LIKE @Search
-                  OR n.IpAddress LIKE @Search
-                  OR n.Country LIKE @Search
-                  OR n.City LIKE @Search)"
-            : string.Empty;
-
-        var sql = @$"
-            WITH aggregated AS (
-                SELECT
-                    Username,
-                    SUM(CASE WHEN Direction = 'Upload' AND State = 48 THEN 1 ELSE 0 END) AS UploadCount,
-                    SUM(CASE WHEN Direction = 'Download' AND State = 48 THEN 1 ELSE 0 END) AS DownloadCount,
-                    SUM(CASE WHEN Direction = 'Upload' AND State = 48 THEN Size ELSE 0 END) AS UploadBytes,
-                    SUM(CASE WHEN Direction = 'Download' AND State = 48 THEN Size ELSE 0 END) AS DownloadBytes,
-                    SUM(CASE WHEN Direction = 'Upload' AND (State & ~48) != 0 THEN 1 ELSE 0 END) AS UploadErrorCount,
-                    SUM(CASE WHEN Direction = 'Download' AND (State & ~48) != 0 THEN 1 ELSE 0 END) AS DownloadErrorCount,
-                    AVG(CASE WHEN Direction = 'Upload' AND State = 48 THEN AverageSpeed ELSE NULL END) AS UploadAverageSpeed,
-                    AVG(CASE WHEN Direction = 'Download' AND State = 48 THEN AverageSpeed ELSE NULL END) AS DownloadAverageSpeed,
-                    MAX(EndedAt) AS LastSeen
-                FROM Transfers
-                WHERE EndedAt IS NOT NULL
-                    AND EndedAt BETWEEN @Start AND @End
-                GROUP BY Username
-            )
-            SELECT a.*, n.IpAddress, n.Country, n.City, n.IsVpn, n.Lat, n.Lon, COUNT(*) OVER() AS TotalCount
-            FROM aggregated a
-            LEFT JOIN TransferNetworkInfo n ON n.Username = a.Username
-            WHERE 1=1 {searchClause}
-            ORDER BY {sortColumn} {sortOrder}
-            LIMIT @Limit
-            OFFSET @Offset
-        ";
-
-        using var connection = new SqliteConnection(ConnectionStrings[Database.Transfers]);
-
-        var param = new
+        string sql;
+        if (UsePostgres)
         {
-            Start = start,
-            End = end,
-            Search = search is not null ? "%" + search + "%" : null,
-            Limit = limit,
-            Offset = offset,
-        };
+            var searchClause = search is not null
+                ? @"AND (a.""Username"" LIKE @Search
+                      OR n.""IpAddress"" LIKE @Search
+                      OR n.""Country"" LIKE @Search
+                      OR n.""City"" LIKE @Search)"
+                : string.Empty;
 
-        var rows = connection.Query<UserReportRow>(sql, param).ToList();
-        var total = rows.FirstOrDefault()?.TotalCount ?? 0;
-        var items = rows.Cast<UserReportSummary>().ToList();
-        return (items, total);
+            sql = $@"
+                WITH aggregated AS (
+                    SELECT
+                        ""Username"",
+                        SUM(CASE WHEN ""Direction"" = 'Upload'   AND ""State"" = 48 THEN 1 ELSE 0 END) AS UploadCount,
+                        SUM(CASE WHEN ""Direction"" = 'Download' AND ""State"" = 48 THEN 1 ELSE 0 END) AS DownloadCount,
+                        SUM(CASE WHEN ""Direction"" = 'Upload'   AND ""State"" = 48 THEN ""Size"" ELSE 0 END) AS UploadBytes,
+                        SUM(CASE WHEN ""Direction"" = 'Download' AND ""State"" = 48 THEN ""Size"" ELSE 0 END) AS DownloadBytes,
+                        SUM(CASE WHEN ""Direction"" = 'Upload'   AND (""State"" & ~48) != 0 THEN 1 ELSE 0 END) AS UploadErrorCount,
+                        SUM(CASE WHEN ""Direction"" = 'Download' AND (""State"" & ~48) != 0 THEN 1 ELSE 0 END) AS DownloadErrorCount,
+                        AVG(CASE WHEN ""Direction"" = 'Upload'   AND ""State"" = 48 THEN ""AverageSpeed"" ELSE NULL END) AS UploadAverageSpeed,
+                        AVG(CASE WHEN ""Direction"" = 'Download' AND ""State"" = 48 THEN ""AverageSpeed"" ELSE NULL END) AS DownloadAverageSpeed,
+                        MAX(""EndedAt"") AS LastSeen
+                    FROM transfers.""Transfers""
+                    WHERE ""EndedAt"" IS NOT NULL
+                        AND ""EndedAt"" BETWEEN @Start AND @End
+                    GROUP BY ""Username""
+                )
+                SELECT a.*, n.""IpAddress"", n.""Country"", n.""City"", n.""IsVpn"", n.""Lat"", n.""Lon"", COUNT(*) OVER() AS TotalCount
+                FROM aggregated a
+                LEFT JOIN transfers.""TransferNetworkInfo"" n ON n.""Username"" = a.""Username""
+                WHERE 1=1 {searchClause}
+                ORDER BY {sortColumn} {sortOrder}
+                LIMIT @Limit
+                OFFSET @Offset
+            ";
+        }
+        else
+        {
+            var searchClause = search is not null
+                ? @"AND (a.Username LIKE @Search
+                      OR n.IpAddress LIKE @Search
+                      OR n.Country LIKE @Search
+                      OR n.City LIKE @Search)"
+                : string.Empty;
+
+            sql = $@"
+                WITH aggregated AS (
+                    SELECT
+                        Username,
+                        SUM(CASE WHEN Direction = 'Upload' AND State = 48 THEN 1 ELSE 0 END) AS UploadCount,
+                        SUM(CASE WHEN Direction = 'Download' AND State = 48 THEN 1 ELSE 0 END) AS DownloadCount,
+                        SUM(CASE WHEN Direction = 'Upload' AND State = 48 THEN Size ELSE 0 END) AS UploadBytes,
+                        SUM(CASE WHEN Direction = 'Download' AND State = 48 THEN Size ELSE 0 END) AS DownloadBytes,
+                        SUM(CASE WHEN Direction = 'Upload' AND (State & ~48) != 0 THEN 1 ELSE 0 END) AS UploadErrorCount,
+                        SUM(CASE WHEN Direction = 'Download' AND (State & ~48) != 0 THEN 1 ELSE 0 END) AS DownloadErrorCount,
+                        AVG(CASE WHEN Direction = 'Upload' AND State = 48 THEN AverageSpeed ELSE NULL END) AS UploadAverageSpeed,
+                        AVG(CASE WHEN Direction = 'Download' AND State = 48 THEN AverageSpeed ELSE NULL END) AS DownloadAverageSpeed,
+                        MAX(EndedAt) AS LastSeen
+                    FROM Transfers
+                    WHERE EndedAt IS NOT NULL
+                        AND EndedAt BETWEEN @Start AND @End
+                    GROUP BY Username
+                )
+                SELECT a.*, n.IpAddress, n.Country, n.City, n.IsVpn, n.Lat, n.Lon, COUNT(*) OVER() AS TotalCount
+                FROM aggregated a
+                LEFT JOIN TransferNetworkInfo n ON n.Username = a.Username
+                WHERE 1=1 {searchClause}
+                ORDER BY {sortColumn} {sortOrder}
+                LIMIT @Limit
+                OFFSET @Offset
+            ";
+        }
+
+        var cacheKey = $"reports:users:{Bucket(s):O}:{Bucket(e):O}:{search}:{sortBy}:{sortOrder}:{limit}:{offset}";
+        return Cache.GetOrCreate(cacheKey, entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
+
+            using var connection = OpenConnection(Database.Transfers);
+
+            var param = new
+            {
+                Start = s,
+                End = e,
+                Search = search is not null ? "%" + search + "%" : null,
+                Limit = limit,
+                Offset = offset,
+            };
+
+            var rows = connection.Query<UserReportRow>(sql, param).ToList();
+            var total = rows.FirstOrDefault()?.TotalCount ?? 0;
+            var items = rows.Cast<UserReportSummary>().ToList();
+            return (items, total);
+        });
     }
 
     /// <summary>
     ///     Returns paginated individual transfer records for the specified user.
     /// </summary>
-    /// <returns></returns>
     public (List<UserTransferRecord> Items, int Total) GetUserTransfers(
         string username,
         TransferDirection? direction = null,
@@ -725,64 +952,108 @@ public class ReportsService
         int limit = 25,
         int offset = 0)
     {
-        start ??= DateTime.MinValue;
-        end ??= DateTime.MaxValue;
+        var s = Utc(start ?? DateTime.MinValue);
+        var e = Utc(end ?? DateTime.MaxValue);
 
         if (limit <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than zero");
         }
 
-        var directionClause = direction is not null ? "AND Direction = @Direction" : string.Empty;
+        string sql, countSql;
+        if (UsePostgres)
+        {
+            var dirClause = direction is not null ? "AND \"Direction\" = @Direction" : string.Empty;
+            sql = $@"
+                SELECT
+                    ""Id""::text AS ""Id"",
+                    ""Username"",
+                    ""Direction"",
+                    ""Filename"",
+                    ""Size"",
+                    ""StateDescription"",
+                    CASE
+                        WHEN STRPOS(""Exception"", ' (') > 0 AND RIGHT(TRIM(""Exception""), 1) = ')'
+                        THEN TRIM(SUBSTR(""Exception"", 1, STRPOS(""Exception"", ' (') - 1))
+                        WHEN STRPOS(""Exception"", ': ') > 0
+                        THEN TRIM(SUBSTR(""Exception"", STRPOS(""Exception"", ': ') + 2))
+                        ELSE COALESCE(TRIM(""Exception""), '')
+                    END AS Exception,
+                    ""RequestedAt"",
+                    ""EnqueuedAt"",
+                    ""StartedAt"",
+                    ""EndedAt"",
+                    ""BytesTransferred"",
+                    ""AverageSpeed""
+                FROM transfers.""Transfers""
+                WHERE ""Username"" = @Username
+                    AND ""EndedAt"" IS NOT NULL
+                    AND ""EndedAt"" BETWEEN @Start AND @End
+                    {dirClause}
+                ORDER BY ""EndedAt"" {sortOrder}
+                LIMIT @Limit
+                OFFSET @Offset
+            ";
+            countSql = $@"
+                SELECT COUNT(*)
+                FROM transfers.""Transfers""
+                WHERE ""Username"" = @Username
+                    AND ""EndedAt"" IS NOT NULL
+                    AND ""EndedAt"" BETWEEN @Start AND @End
+                    {dirClause}
+            ";
+        }
+        else
+        {
+            var dirClause = direction is not null ? "AND Direction = @Direction" : string.Empty;
+            sql = $@"
+                SELECT
+                    Id,
+                    Username,
+                    Direction,
+                    Filename,
+                    Size,
+                    StateDescription,
+                    CASE
+                        WHEN INSTR(Exception, ' (') > 0 AND SUBSTR(TRIM(Exception), -1) = ')'
+                        THEN TRIM(SUBSTR(Exception, 1, INSTR(Exception, ' (') - 1))
+                        WHEN INSTR(Exception, ': ') > 0
+                        THEN TRIM(SUBSTR(Exception, INSTR(Exception, ': ') + 2))
+                        ELSE COALESCE(TRIM(Exception), '')
+                    END AS Exception,
+                    RequestedAt,
+                    EnqueuedAt,
+                    StartedAt,
+                    EndedAt,
+                    BytesTransferred,
+                    AverageSpeed
+                FROM Transfers
+                WHERE Username = @Username
+                    AND EndedAt IS NOT NULL
+                    AND EndedAt BETWEEN @Start AND @End
+                    {dirClause}
+                ORDER BY EndedAt {sortOrder}
+                LIMIT @Limit
+                OFFSET @Offset
+            ";
+            countSql = $@"
+                SELECT COUNT(*)
+                FROM Transfers
+                WHERE Username = @Username
+                    AND EndedAt IS NOT NULL
+                    AND EndedAt BETWEEN @Start AND @End
+                    {dirClause}
+            ";
+        }
 
-        var sql = @$"
-            SELECT
-                Id,
-                Username,
-                Direction,
-                Filename,
-                Size,
-                StateDescription,
-                CASE
-                    WHEN INSTR(Exception, ' (') > 0 AND SUBSTR(TRIM(Exception), -1) = ')'
-                    THEN TRIM(SUBSTR(Exception, 1, INSTR(Exception, ' (') - 1))
-                    WHEN INSTR(Exception, ': ') > 0
-                    THEN TRIM(SUBSTR(Exception, INSTR(Exception, ': ') + 2))
-                    ELSE COALESCE(TRIM(Exception), '')
-                END AS Exception,
-                RequestedAt,
-                EnqueuedAt,
-                StartedAt,
-                EndedAt,
-                BytesTransferred,
-                AverageSpeed
-            FROM Transfers
-            WHERE Username = @Username
-                AND EndedAt IS NOT NULL
-                AND EndedAt BETWEEN @Start AND @End
-                {directionClause}
-            ORDER BY EndedAt {sortOrder}
-            LIMIT @Limit
-            OFFSET @Offset
-        ";
-
-        var countSql = @$"
-            SELECT COUNT(*)
-            FROM Transfers
-            WHERE Username = @Username
-                AND EndedAt IS NOT NULL
-                AND EndedAt BETWEEN @Start AND @End
-                {directionClause}
-        ";
-
-        using var connection = new SqliteConnection(ConnectionStrings[Database.Transfers]);
+        using var connection = OpenConnection(Database.Transfers);
 
         var param = new
         {
             Username = username,
             Direction = direction?.ToString(),
-            Start = start,
-            End = end,
+            Start = s,
+            End = e,
             Limit = limit,
             Offset = offset,
         };
@@ -795,7 +1066,6 @@ public class ReportsService
     /// <summary>
     ///     Returns paginated browse event timestamps for the specified user from the events database.
     /// </summary>
-    /// <returns></returns>
     public (List<DateTime> Timestamps, int Total) GetUserBrowseEvents(
         string username,
         DateTime? start = null,
@@ -803,36 +1073,59 @@ public class ReportsService
         int limit = 50,
         int offset = 0)
     {
-        start ??= DateTime.MinValue;
-        end ??= DateTime.MaxValue;
+        var s = Utc(start ?? DateTime.MinValue);
+        var e = Utc(end ?? DateTime.MaxValue);
 
         if (limit <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than zero");
         }
 
-        var sql = @"
-            SELECT Timestamp
-            FROM Events
-            WHERE Type = 'Browsed'
-                AND json_extract(Data, '$.username') = @Username
-                AND Timestamp BETWEEN @Start AND @End
-            ORDER BY Timestamp DESC
-            LIMIT @Limit
-            OFFSET @Offset
-        ";
+        string sql, countSql;
+        if (UsePostgres)
+        {
+            sql = @"
+                SELECT ""Timestamp""
+                FROM events.""Events""
+                WHERE ""Type"" = 'Browsed'
+                    AND (""Data""::jsonb)->>'username' = @Username
+                    AND ""Timestamp"" BETWEEN @Start AND @End
+                ORDER BY ""Timestamp"" DESC
+                LIMIT @Limit
+                OFFSET @Offset
+            ";
+            countSql = @"
+                SELECT COUNT(*)
+                FROM events.""Events""
+                WHERE ""Type"" = 'Browsed'
+                    AND (""Data""::jsonb)->>'username' = @Username
+                    AND ""Timestamp"" BETWEEN @Start AND @End
+            ";
+        }
+        else
+        {
+            sql = @"
+                SELECT Timestamp
+                FROM Events
+                WHERE Type = 'Browsed'
+                    AND json_extract(Data, '$.username') = @Username
+                    AND Timestamp BETWEEN @Start AND @End
+                ORDER BY Timestamp DESC
+                LIMIT @Limit
+                OFFSET @Offset
+            ";
+            countSql = @"
+                SELECT COUNT(*)
+                FROM Events
+                WHERE Type = 'Browsed'
+                    AND json_extract(Data, '$.username') = @Username
+                    AND Timestamp BETWEEN @Start AND @End
+            ";
+        }
 
-        var countSql = @"
-            SELECT COUNT(*)
-            FROM Events
-            WHERE Type = 'Browsed'
-                AND json_extract(Data, '$.username') = @Username
-                AND Timestamp BETWEEN @Start AND @End
-        ";
+        using var connection = OpenConnection(Database.Events);
 
-        using var connection = new SqliteConnection(ConnectionStrings[Database.Events]);
-
-        var param = new { Username = username, Start = start, End = end, Limit = limit, Offset = offset };
+        var param = new { Username = username, Start = s, End = e, Limit = limit, Offset = offset };
 
         var timestamps = connection.Query<DateTime>(sql, param).ToList();
         var total = connection.QuerySingle<int>(countSql, param);
@@ -841,13 +1134,25 @@ public class ReportsService
 
     public UserNetworkInfo GetUserNetworkInfo(string username)
     {
-        var sql = @"
-            SELECT IpAddress, Country, City, IsVpn, LastSeen AS EndedAt
-            FROM TransferNetworkInfo
-            WHERE Username = @Username
-        ";
+        string sql;
+        if (UsePostgres)
+        {
+            sql = @"
+                SELECT ""IpAddress"", ""Country"", ""City"", ""IsVpn"", ""LastSeen"" AS EndedAt
+                FROM transfers.""TransferNetworkInfo""
+                WHERE ""Username"" = @Username
+            ";
+        }
+        else
+        {
+            sql = @"
+                SELECT IpAddress, Country, City, IsVpn, LastSeen AS EndedAt
+                FROM TransferNetworkInfo
+                WHERE Username = @Username
+            ";
+        }
 
-        using var connection = new SqliteConnection(ConnectionStrings[Database.Transfers]);
+        using var connection = OpenConnection(Database.Transfers);
         return connection.QueryFirstOrDefault<UserNetworkInfo>(sql, new { Username = username });
     }
 
@@ -860,26 +1165,47 @@ public class ReportsService
         }
 
         var inClause = string.Join(",", list.Select((_, i) => $"@u{i}"));
-        var sql = $@"
-            SELECT
-                json_extract(data, '$.username') AS Username,
-                SUM(CASE WHEN type = 'Browsed'                THEN 1 ELSE 0 END) AS BrowseCount,
-                SUM(CASE WHEN type = 'PrivateMessageReceived' THEN 1 ELSE 0 END) AS ChatCount
-            FROM Events
-            WHERE type IN ('Browsed', 'PrivateMessageReceived')
-                AND timestamp >= @Since
-                AND json_extract(data, '$.username') IN ({inClause})
-            GROUP BY json_extract(data, '$.username')
-        ";
 
-        var param = new DynamicParameters();
-        param.Add("Since", since.ToString("o"));
-        for (var i = 0; i < list.Count; i++)
+        string sql;
+        if (UsePostgres)
         {
-            param.Add($"u{i}", list[i]);
+            sql = $@"
+                SELECT
+                    (""Data""::jsonb)->>'username' AS Username,
+                    SUM(CASE WHEN ""Type"" = 'Browsed'                THEN 1 ELSE 0 END) AS BrowseCount,
+                    SUM(CASE WHEN ""Type"" = 'PrivateMessageReceived' THEN 1 ELSE 0 END) AS ChatCount
+                FROM events.""Events""
+                WHERE ""Type"" IN ('Browsed', 'PrivateMessageReceived')
+                    AND ""Timestamp"" >= @Since
+                    AND (""Data""::jsonb)->>'username' IN ({inClause})
+                GROUP BY (""Data""::jsonb)->>'username'
+            ";
+        }
+        else
+        {
+            sql = $@"
+                SELECT
+                    json_extract(data, '$.username') AS Username,
+                    SUM(CASE WHEN type = 'Browsed'                THEN 1 ELSE 0 END) AS BrowseCount,
+                    SUM(CASE WHEN type = 'PrivateMessageReceived' THEN 1 ELSE 0 END) AS ChatCount
+                FROM Events
+                WHERE type IN ('Browsed', 'PrivateMessageReceived')
+                    AND timestamp >= @Since
+                    AND json_extract(data, '$.username') IN ({inClause})
+                GROUP BY json_extract(data, '$.username')
+            ";
         }
 
-        using var connection = new SqliteConnection(ConnectionStrings[Database.Events]);
+        var param = new DynamicParameters();
+        if (UsePostgres)
+            param.Add("Since", Utc(since));
+        else
+            param.Add("Since", since.ToString("o"));
+
+        for (var i = 0; i < list.Count; i++)
+            param.Add($"u{i}", list[i]);
+
+        using var connection = OpenConnection(Database.Events);
         return connection
             .Query<UserEventCountRow>(sql, param)
             .ToDictionary(r => r.Username, r => new UserEventCounts(r.BrowseCount, r.ChatCount));

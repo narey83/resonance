@@ -33,10 +33,13 @@
 namespace resonance.Core.API
 {
     using System;
+    using System.Linq;
     using Asp.Versioning;
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.AspNetCore.SignalR;
+    using Microsoft.EntityFrameworkCore;
+    using resonance.Core.LogStore;
     using Serilog;
 
     /// <summary>
@@ -49,29 +52,87 @@ namespace resonance.Core.API
     [Consumes("application/json")]
     public class LogsController : ControllerBase
     {
-        public LogsController(IHubContext<LogsHub> logHub)
+        public LogsController(IHubContext<LogsHub> logHub, IDbContextFactory<LogsDbContext> logsDbContextFactory)
         {
             LogHub = logHub;
+            LogsDbContextFactory = logsDbContextFactory;
         }
 
         private IHubContext<LogsHub> LogHub { get; }
+        private IDbContextFactory<LogsDbContext> LogsDbContextFactory { get; }
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", resonance.Logs.Application);
 
         /// <summary>
-        ///     Gets the last few application logs.
+        ///     Gets a paginated, filtered list of historical log entries from persistent storage.
         /// </summary>
-        /// <returns></returns>
         [HttpGet]
         [Authorize(Policy = AuthPolicy.Any)]
-        public IActionResult Get()
+        public IActionResult Get(
+            [FromQuery] int offset = 0,
+            [FromQuery] int limit = 100,
+            [FromQuery] string[] level = null,
+            [FromQuery] string context = null,
+            [FromQuery] string search = null,
+            [FromQuery] DateTime? from = null,
+            [FromQuery] DateTime? to = null)
         {
-            return Ok(Program.LogBuffer);
+            if (offset < 0)
+                return BadRequest("Offset must be >= 0");
+
+            if (limit <= 0 || limit > 1000)
+                return BadRequest("Limit must be between 1 and 1000");
+
+            try
+            {
+                using var ctx = LogsDbContextFactory.CreateDbContext();
+                var query = ctx.LogEntries.AsNoTracking().AsQueryable();
+
+                if (level?.Length > 0)
+                    query = query.Where(e => level.Contains(e.Level));
+
+                if (!string.IsNullOrWhiteSpace(context))
+                    query = query.Where(e => e.Context.Contains(context));
+
+                if (!string.IsNullOrWhiteSpace(search))
+                    query = query.Where(e => e.Message.Contains(search));
+
+                if (from.HasValue)
+                    query = query.Where(e => e.Timestamp >= from.Value);
+
+                if (to.HasValue)
+                    query = query.Where(e => e.Timestamp <= to.Value);
+
+                var total = query.Count();
+
+                var items = query
+                    .OrderByDescending(e => e.Timestamp)
+                    .ThenByDescending(e => e.Id)
+                    .Skip(offset)
+                    .Take(limit)
+                    .Select(e => new LogRecord
+                    {
+                        Timestamp = e.Timestamp,
+                        Level = e.Level,
+                        Context = e.Context,
+                        SubContext = e.SubContext,
+                        Message = e.Message,
+                        Exception = e.Exception,
+                    })
+                    .ToList();
+
+                Response.Headers["X-Total-Count"] = total.ToString();
+                return Ok(items);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to query logs: {Message}", ex.Message);
+                throw;
+            }
         }
 
         /// <summary>
         ///     Accepts a browser console log entry and injects it into the application log stream.
         /// </summary>
-        /// <returns></returns>
         [HttpPost]
         [Authorize(Policy = AuthPolicy.Any)]
         public IActionResult Post([FromBody] BrowserLogEntry entry)

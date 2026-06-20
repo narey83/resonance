@@ -118,6 +118,234 @@ function parseApic(b: Uint8Array, o: number, size: number, v2: boolean): string 
   }
 }
 
+// ── M4A/MP4 (iTunes atoms) support ───────────────────────────────────────────
+
+async function readM4aTags(
+  uri: string,
+  first: Uint8Array,
+  opts: { title?: boolean; artist?: boolean; album?: boolean; genre?: boolean; picture?: boolean },
+): Promise<Id3Tags> {
+  const result: Id3Tags = { title: null, artist: null, album: null, genre: null, picture: null };
+
+  // Random-access read — prefer bytes already in `first`, else read from file
+  const readAt = async (pos: number, len: number): Promise<Uint8Array | null> => {
+    if (pos + len <= first.length) return first.subarray(pos, pos + len);
+    return readBytes(uri, pos, len);
+  };
+
+  // Scan top-level MP4 boxes for 'moov', jumping over large boxes (e.g. mdat) efficiently
+  let p = 0;
+  let moovPos = -1;
+  let moovLen = 0;
+  const MAX_SCAN = 64 * 1024 * 1024;
+
+  while (p < MAX_SCAN) {
+    const hdr = await readAt(p, 8);
+    if (!hdr || hdr.length < 8) break;
+    const sz = be32(hdr, 0);
+    const ty = String.fromCharCode(hdr[4], hdr[5], hdr[6], hdr[7]);
+    if (sz < 8) break;
+    if (ty === 'moov') { moovPos = p; moovLen = sz; break; }
+    p += sz;
+  }
+
+  if (moovPos < 0) return result;
+
+  // Read the moov box (cap at 8 MB for safety — covers any realistic embedded artwork)
+  const readLen = Math.min(moovLen, 8 * 1024 * 1024);
+  let moov: Uint8Array;
+
+  if (moovPos + readLen <= first.length) {
+    moov = first.subarray(moovPos, moovPos + readLen);
+  } else {
+    const buf = new Uint8Array(readLen);
+    let filled = 0;
+    while (filled < readLen) {
+      const want = Math.min(CHUNK_SIZE, readLen - filled);
+      const chunk = await readAt(moovPos + filled, want);
+      if (!chunk || chunk.length === 0) break;
+      buf.set(chunk, filled);
+      filled += chunk.length;
+      if (chunk.length < want) break;
+    }
+    moov = buf.subarray(0, filled);
+  }
+
+  // Synchronous child-box search within the buffered moov
+  const findChild = (start: number, end: number, type: string): [number, number] | null => {
+    let pp = start;
+    while (pp + 8 <= end) {
+      const sz = be32(moov, pp);
+      if (sz < 8 || pp + sz > end) break;
+      if (String.fromCharCode(moov[pp+4], moov[pp+5], moov[pp+6], moov[pp+7]) === type)
+        return [pp + 8, pp + sz];
+      pp += sz;
+    }
+    return null;
+  };
+
+  // Navigate: moov[8..] > udta > meta (+4 version/flags) > ilst
+  const moovEnd = moov.length;
+  const udta = findChild(8, moovEnd, 'udta');
+  if (!udta) return result;
+  const meta = findChild(udta[0], udta[1], 'meta');
+  if (!meta) return result;
+  const ilst = findChild(meta[0] + 4, meta[1], 'ilst');
+  if (!ilst) return result;
+
+  const dec = new TextDecoder('utf-8');
+  let ip = ilst[0];
+  while (ip + 8 <= ilst[1]) {
+    const tagSz = be32(moov, ip);
+    if (tagSz < 8 || ip + tagSz > ilst[1]) break;
+    const tagEnd = ip + tagSz;
+    const b0 = moov[ip+4], b1 = moov[ip+5], b2 = moov[ip+6], b3 = moov[ip+7];
+    const tagType = String.fromCharCode(b0, b1, b2, b3);
+
+    // Each ilst child contains a 'data' sub-atom
+    let dp = ip + 8;
+    while (dp + 16 <= tagEnd) {
+      const dSz = be32(moov, dp);
+      if (dSz < 16 || dp + dSz > tagEnd) break;
+      if (String.fromCharCode(moov[dp+4], moov[dp+5], moov[dp+6], moov[dp+7]) === 'data') {
+        const typeFlag  = be32(moov, dp + 8); // 1=UTF-8, 13=JPEG, 14=PNG
+        const dataStart = dp + 16;            // 8-byte header + 4-byte type + 4-byte locale
+        const dataEnd   = dp + dSz;
+
+        if (typeFlag === 1 && dataStart < dataEnd) {
+          const text = dec.decode(moov.subarray(dataStart, dataEnd)).trim() || null;
+          if (b0 === 0xA9 && text) {
+            const k = String.fromCharCode(b1, b2, b3);
+            if      (k === 'nam' && opts.title  !== false && !result.title)  result.title  = text;
+            else if (k === 'ART' && opts.artist !== false && !result.artist) result.artist = text;
+            else if (k === 'alb' && opts.album  !== false && !result.album)  result.album  = text;
+            else if (k === 'gen' && opts.genre  !== false && !result.genre)  result.genre  = text;
+          }
+        } else if ((typeFlag === 13 || typeFlag === 14) && opts.picture && tagType === 'covr' && !result.picture && dataStart < dataEnd) {
+          const mime = typeFlag === 14 ? 'image/png' : 'image/jpeg';
+          result.picture = `data:${mime};base64,${uint8ToBase64(moov.subarray(dataStart, dataEnd))}`;
+        }
+        break;
+      }
+      dp += dSz;
+    }
+    ip = tagEnd;
+  }
+
+  return result;
+}
+
+// ── FLAC support ──────────────────────────────────────────────────────────────
+
+function parseFlacPicture(b: Uint8Array, offset: number, length: number): string | null {
+  try {
+    const end = offset + length;
+    let p = offset;
+    if (p + 8 > end) return null;
+    p += 4; // skip picture type
+    const mimeLen = be32(b, p); p += 4;
+    if (p + mimeLen > end) return null;
+    const mime = String.fromCharCode(...b.subarray(p, p + mimeLen)) || 'image/jpeg';
+    p += mimeLen;
+    if (p + 4 > end) return null;
+    const descLen = be32(b, p); p += 4;
+    p += descLen; // skip description
+    p += 16;     // skip width + height + color depth + color count
+    if (p + 4 > end) return null;
+    const dataLen = be32(b, p); p += 4;
+    if (p + dataLen > end) return null;
+    return `data:${mime};base64,${uint8ToBase64(b.subarray(p, p + dataLen))}`;
+  } catch {
+    return null;
+  }
+}
+
+function parseVorbisComments(
+  b: Uint8Array, offset: number, length: number, result: Id3Tags,
+  opts: { title?: boolean; artist?: boolean; album?: boolean; genre?: boolean },
+): void {
+  const end = offset + length;
+  let p = offset;
+  if (p + 4 > end) return;
+  const vendorLen = b[p] | (b[p+1] << 8) | (b[p+2] << 16) | (b[p+3] << 24);
+  p += 4 + vendorLen;
+  if (p + 4 > end) return;
+  const count = b[p] | (b[p+1] << 8) | (b[p+2] << 16) | (b[p+3] << 24);
+  p += 4;
+  const dec = new TextDecoder();
+  for (let i = 0; i < count && p + 4 <= end; i++) {
+    const len = b[p] | (b[p+1] << 8) | (b[p+2] << 16) | (b[p+3] << 24);
+    p += 4;
+    if (p + len > end) break;
+    const comment = dec.decode(b.subarray(p, p + len));
+    p += len;
+    const eq = comment.indexOf('=');
+    if (eq < 0) continue;
+    const key = comment.slice(0, eq).toUpperCase();
+    const val = comment.slice(eq + 1).trim() || null;
+    if (!val) continue;
+    if (key === 'TITLE'  && opts.title  !== false && !result.title)  result.title  = val;
+    if (key === 'ARTIST' && opts.artist !== false && !result.artist) result.artist = val;
+    if (key === 'ALBUM'  && opts.album  !== false && !result.album)  result.album  = val;
+    if (key === 'GENRE'  && opts.genre  !== false && !result.genre)  result.genre  = val;
+  }
+}
+
+async function readFlacTags(
+  uri: string,
+  first: Uint8Array,
+  opts: { title?: boolean; artist?: boolean; album?: boolean; genre?: boolean; picture?: boolean },
+): Promise<Id3Tags> {
+  const result: Id3Tags = { title: null, artist: null, album: null, genre: null, picture: null };
+  let buf = first;
+
+  const ensure = async (upTo: number): Promise<boolean> => {
+    while (buf.length < upTo) {
+      const more = await readBytes(uri, buf.length, CHUNK_SIZE);
+      if (!more || more.length === 0) return false;
+      const extended = new Uint8Array(buf.length + more.length);
+      extended.set(buf);
+      extended.set(more, buf.length);
+      buf = extended;
+      if (more.length < CHUNK_SIZE) break;
+    }
+    return buf.length >= upTo;
+  };
+
+  let p = 4; // skip 'fLaC'
+  for (;;) {
+    if (!await ensure(p + 4)) break;
+    const lastBlock = (buf[p] & 0x80) !== 0;
+    const blockType = buf[p] & 0x7F;
+    const blockLen = (buf[p+1] << 16) | (buf[p+2] << 8) | buf[p+3];
+    p += 4;
+
+    if (blockType === 4) { // VORBIS_COMMENT
+      if (await ensure(p + blockLen)) {
+        parseVorbisComments(buf, p, blockLen, result, opts);
+      }
+    } else if (blockType === 6 && opts.picture) { // PICTURE
+      if (p + 4 <= buf.length || await ensure(p + 4)) {
+        const picType = be32(buf, p);
+        // Prefer front cover (type 3); accept any if we haven't got one yet
+        if (picType === 3 || !result.picture) {
+          if (await ensure(p + blockLen)) {
+            const pic = parseFlacPicture(buf, p, blockLen);
+            if (pic) result.picture = pic;
+            if (picType === 3) { p += blockLen; if (lastBlock) break; continue; }
+          }
+        }
+      }
+    }
+
+    p += blockLen;
+    if (lastBlock) break;
+  }
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 let _dbgCount = 0;
 
 export async function readId3Tags(
@@ -127,14 +355,26 @@ export async function readId3Tags(
   const dbg = _dbgCount++ < 3;
   const result: Id3Tags = { title: null, artist: null, album: null, genre: null, picture: null };
 
-  // Read first chunk — always contains the ID3 header if one exists
+  // Read first chunk — always contains the ID3/FLAC header if one exists
   const first = await readBytes(uri, 0, CHUNK_SIZE);
-  if (dbg) console.log('[id3] readBytes result:', first ? `${first.length} bytes, first3=${first[0]},${first[1]},${first[2]}` : 'null', 'uri=', uri.slice(-30));
+  if (dbg) console.log('[id3] readBytes result:', first ? `${first.length} bytes, first4=${first[0]},${first[1]},${first[2]},${first[3]}` : 'null', 'uri=', uri.slice(-30));
   if (!first || first.length < 10) return result;
+
+  // FLAC magic: 'fLaC'
+  if (first[0] === 0x66 && first[1] === 0x4C && first[2] === 0x61 && first[3] === 0x43) {
+    if (dbg) console.log('[id3] FLAC detected');
+    return readFlacTags(uri, first, opts);
+  }
+
+  // M4A/MP4 magic: 'ftyp' at bytes 4-7 (bytes 0-3 are the variable-length box size)
+  if (first.length >= 8 && first[4] === 0x66 && first[5] === 0x74 && first[6] === 0x79 && first[7] === 0x70) {
+    if (dbg) console.log('[id3] M4A detected');
+    return readM4aTags(uri, first, opts);
+  }
 
   // ID3v2 magic
   if (first[0] !== 0x49 || first[1] !== 0x44 || first[2] !== 0x33) {
-    if (dbg) console.log('[id3] no ID3 magic');
+    if (dbg) console.log('[id3] no ID3/FLAC magic');
     return result;
   }
 

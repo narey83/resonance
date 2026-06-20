@@ -138,11 +138,85 @@ public class LibraryActivityService : ILibraryActivityService
         await Hub.BroadcastAllUnlovedAsync(username);
     }
 
-    public async Task<PlayStat> RecordPlayAsync(string username, string path)
+    public async Task ReconcileLovedTracksAsync()
     {
         using var ctx = ContextFactory.CreateDbContext();
 
-        var (title, artist, folder) = ResolveMetadata(path);
+        var loved = ctx.LovedTracks.ToList();
+        if (loved.Count == 0)
+        {
+            return;
+        }
+
+        var repointed = 0;
+        var pruned = 0;
+
+        foreach (var entry in loved)
+        {
+            // Still present in the library at its stored path — nothing to do.
+            if (MusicRepo.GetByPath(entry.Path) != null)
+            {
+                continue;
+            }
+
+            // The file's extension may have changed (e.g. opus→mp3). Re-point to the new path.
+            var replacement = MusicRepo.FindByPathIgnoringExtension(entry.Path);
+            if (replacement != null)
+            {
+                var (title, artist, folder) = ResolveMetadata(replacement.Path);
+
+                ctx.LovedTracks.Remove(entry);
+                ctx.LovedTracks.Add(new LovedTrack
+                {
+                    Path = replacement.Path,
+                    Username = entry.Username,
+                    LovedAt = entry.LovedAt,
+                    Title = title,
+                    Artist = artist,
+                    Folder = folder,
+                });
+                await ctx.SaveChangesAsync();
+
+                await Hub.BroadcastTrackUnlovedAsync(entry.Username, entry.Path);
+                await Hub.BroadcastTrackLovedAsync(entry.Username, replacement.Path);
+
+                Log.Information(
+                    "Loved track re-pointed after extension change: {Old} → {New}",
+                    entry.Path, replacement.Path);
+                repointed++;
+                continue;
+            }
+
+            // Not in the library under any extension. Only prune if the containing directory still
+            // exists on disk — otherwise the volume may simply be unmounted and the file isn't gone.
+            var directory = Path.GetDirectoryName(entry.Path);
+            if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+            {
+                continue;
+            }
+
+            ctx.LovedTracks.Remove(entry);
+            await ctx.SaveChangesAsync();
+
+            await Hub.BroadcastTrackUnlovedAsync(entry.Username, entry.Path);
+
+            Log.Information("Loved track pruned — file no longer exists: {Path}", entry.Path);
+            pruned++;
+        }
+
+        if (repointed > 0 || pruned > 0)
+        {
+            Log.Information(
+                "Loved track reconciliation complete — re-pointed={Repointed} pruned={Pruned}",
+                repointed, pruned);
+        }
+    }
+
+    public async Task<PlayStat> RecordPlayAsync(string username, string path, string title = null, string artist = null, string folder = null, string source = null)
+    {
+        using var ctx = ContextFactory.CreateDbContext();
+
+        var (resolvedTitle, resolvedArtist, resolvedFolder) = ResolveMetadata(path);
 
         var record = new PlayRecord
         {
@@ -150,9 +224,10 @@ public class LibraryActivityService : ILibraryActivityService
             Path = path,
             Username = username,
             PlayedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            Title = title,
-            Artist = artist,
-            Folder = folder,
+            Title = !string.IsNullOrEmpty(title) ? title : resolvedTitle,
+            Artist = !string.IsNullOrEmpty(artist) ? artist : resolvedArtist,
+            Folder = !string.IsNullOrEmpty(folder) ? folder : resolvedFolder,
+            Source = source ?? string.Empty,
         };
 
         ctx.PlayHistory.Add(record);

@@ -1,29 +1,15 @@
 import { getArtworkUrl } from '../../../lib/musicLibrary';
 import React, { useCallback, useEffect, useState } from 'react';
 
-const SESSION_FAIL_KEY = 'resonance-artwork-fail-paths';
-
-const loadFailPaths = () => {
-  try {
-    const raw = sessionStorage.getItem(SESSION_FAIL_KEY);
-    return raw ? new Set(JSON.parse(raw)) : new Set();
-  } catch {
-    return new Set();
-  }
-};
-
-const artworkFailCache = loadFailPaths();
+// In-memory only (not persisted): this suppresses repeat requests for artwork
+// that 404s within a single page load (e.g. while scrolling a virtualized list),
+// but is cleared on reload so a transient backend error can't permanently poison
+// the session. Persisting this to sessionStorage previously meant one server
+// hiccup disabled all artwork until the tab was closed.
+const artworkFailCache = new Set();
 
 const persistFailPath = (key) => {
   artworkFailCache.add(key);
-  try {
-    sessionStorage.setItem(
-      SESSION_FAIL_KEY,
-      JSON.stringify([...artworkFailCache]),
-    );
-  } catch {
-    /* ignore */
-  }
 };
 
 const stringToHsl = (nameInput) => {
@@ -104,7 +90,11 @@ const AlbumArt = ({
   src: sourceOverride,
   style = {},
 }) => {
-  const imgSource = sourceOverride ?? getArtworkUrl(path);
+  const requestSize = Math.min(
+    Math.ceil(size * (window.devicePixelRatio || 2)),
+    512,
+  );
+  const imgSource = sourceOverride ?? getArtworkUrl(path, requestSize);
   const cacheKey = path || sourceOverride || '';
   const [imgError, setImgError] = useState(() =>
     artworkFailCache.has(cacheKey),

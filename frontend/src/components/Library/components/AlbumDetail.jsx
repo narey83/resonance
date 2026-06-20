@@ -33,7 +33,9 @@ const AlbumDetail = ({ album, onArtist, onBack, onContextMenu }) => {
       try {
         const result = await getTracks({
           album: album.album,
-          artist: album.artist,
+          ...(album.directory
+            ? { folder: album.directory }
+            : { artist: album.artist }),
           limit: 5_000,
         });
         if (!cancelled) {
@@ -54,7 +56,7 @@ const AlbumDetail = ({ album, onArtist, onBack, onContextMenu }) => {
     return () => {
       cancelled = true;
     };
-  }, [album.album, album.artist]);
+  }, [album.album, album.artist, album.directory]);
 
   const handlePlay = () => {
     if (tracks.length) playQueue(tracks.map(toQueue), 0);
@@ -100,13 +102,17 @@ const AlbumDetail = ({ album, onArtist, onBack, onContextMenu }) => {
           <div className="jb-album-hero-title">
             {album.album || '(Untitled)'}
           </div>
-          <button
-            className="jb-album-hero-artist"
-            onClick={() => onArtist?.({ artist: album.artist })}
-            type="button"
-          >
-            {album.artist}
-          </button>
+          {album.artist && album.artist !== 'Various Artists' ? (
+            <button
+              className="jb-album-hero-artist"
+              onClick={() => onArtist?.({ artist: album.artist })}
+              type="button"
+            >
+              {album.artist}
+            </button>
+          ) : (
+            <div className="jb-album-hero-artist">{album.artist}</div>
+          )}
           {meta && <div className="jb-album-hero-meta">{meta}</div>}
           <div className="jb-album-hero-actions">
             <button

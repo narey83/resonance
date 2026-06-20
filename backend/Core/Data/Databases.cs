@@ -46,7 +46,11 @@ public class Database
     public static Database LibraryActivity { get; } = new Database { Name = "library-activity" };
     public static Database Preferences { get; } = new Database { Name = "preferences" };
     public static Database YtDlp { get; } = new Database { Name = "ytdlp" };
-    public static Database[] List { get; } = [Search, Transfers, Messaging, Events, Users, LibraryActivity, Preferences, YtDlp];
+    public static Database AppLogs { get; } = new Database { Name = "logs" };
+    public static Database Music { get; } = new Database { Name = "music" };
+    public static Database Waveform { get; } = new Database { Name = "waveform" };
+    public static Database Mixtapes { get; } = new Database { Name = "mixtapes" };
+    public static Database[] List { get; } = [Search, Transfers, Messaging, Events, Users, LibraryActivity, Preferences, YtDlp, AppLogs, Music, Waveform, Mixtapes];
 
     public required string Name { get; init; }
 

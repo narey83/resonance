@@ -31,6 +31,7 @@
 // </copyright>
 
 using Microsoft.Extensions.Options;
+using resonance.Transfers;
 using Soulseek;
 
 namespace resonance.Transfers.Downloads
@@ -166,7 +167,8 @@ namespace resonance.Transfers.Downloads
             FileService fileService,
             IRelayService relayService,
             IFTPService ftpClient,
-            EventBus eventBus)
+            EventBus eventBus,
+            ITransferErrorNotificationService errorNotifications)
         {
             Client = soulseekClient;
             OptionsMonitor = optionsMonitor;
@@ -175,6 +177,7 @@ namespace resonance.Transfers.Downloads
             FTP = ftpClient;
             Relay = relayService;
             EventBus = eventBus;
+            ErrorNotifications = errorNotifications;
 
             Clock.EveryMinute += (_, _) => Task.Run(() => CleanupEnqueueSemaphoresAsync());
         }
@@ -207,6 +210,7 @@ namespace resonance.Transfers.Downloads
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Transfers.Downloads);
         private IOptionsMonitor<Options> OptionsMonitor { get; }
         private EventBus EventBus { get; }
+        private ITransferErrorNotificationService ErrorNotifications { get; }
 
         /// <summary>
         ///     Allow only one enqueue operation for a given user at a time. Entries are added on the fly if they
@@ -1309,6 +1313,11 @@ namespace resonance.Transfers.Downloads
 
                 TryFail(transfer.Id, exception: ex);
 
+                if (ex is TimeoutException)
+                {
+                    _ = ErrorNotifications.NotifyDownloadErrorAsync(transfer.Username, transfer.Filename, ex.Message);
+                }
+
                 // todo: broadcast
                 SynchronizedUpdate(transfer, semaphore: updateSyncRoot, cancellationToken: CancellationToken.None);
 
@@ -1319,6 +1328,7 @@ namespace resonance.Transfers.Downloads
                 Log.Error(ex, "Download of {Filename} from user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
 
                 TryFail(transfer.Id, exception: ex);
+                _ = ErrorNotifications.NotifyDownloadErrorAsync(transfer.Username, transfer.Filename, ex.Message);
 
                 // todo: broadcast
                 SynchronizedUpdate(transfer, semaphore: updateSyncRoot, cancellationToken: CancellationToken.None);

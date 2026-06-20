@@ -12,6 +12,7 @@ import DebugModal from './DebugModal';
 import FfmpegSection from './FfmpegSection';
 import QoSSection from './QoSSection';
 import SharesSection from './SharesSection';
+import TransferErrorNotificationSection from './TransferErrorNotificationSection';
 import YtDlpOptionsSection from './YtDlpOptionsSection';
 import React, { useEffect, useRef, useState } from 'react';
 import YAML from 'yaml';
@@ -512,6 +513,68 @@ const SCHEMA = [
       },
     ],
     title: 'Browse Rate Limiting',
+  },
+  {
+    fields: [
+      {
+        description:
+          'Send a private Soulseek message to users when a transfer involving them fails.',
+        label: 'Enabled',
+        path: ['transfer_error_notifications', 'enabled'],
+        type: 'toggle',
+      },
+      {
+        description:
+          "Message sent when a user's download from you fails. Supports {filename} and {exception} placeholders.",
+        disabledWhen: {
+          equals: false,
+          path: ['transfer_error_notifications', 'enabled'],
+        },
+        label: 'Upload Error Message',
+        path: ['transfer_error_notifications', 'upload_error_template'],
+        placeholder: "Your download of '{filename}' failed: {exception}",
+        type: 'textarea',
+      },
+      {
+        description:
+          "Message sent when a user's file request is rejected. Supports {filename} and {reason} placeholders.",
+        disabledWhen: {
+          equals: false,
+          path: ['transfer_error_notifications', 'enabled'],
+        },
+        label: 'Rejected Request Message',
+        path: ['transfer_error_notifications', 'upload_rejected_template'],
+        placeholder: "Your request for '{filename}' was rejected: {reason}",
+        type: 'textarea',
+      },
+      {
+        description:
+          'Message sent to a user when their upload to you fails. Supports {filename} and {exception} placeholders.',
+        disabledWhen: {
+          equals: false,
+          path: ['transfer_error_notifications', 'enabled'],
+        },
+        label: 'Download Error Message',
+        path: ['transfer_error_notifications', 'download_error_template'],
+        placeholder: "Your upload of '{filename}' to me failed: {exception}",
+        type: 'textarea',
+      },
+      {
+        baseUnit: 'minutes',
+        description:
+          'Minimum time between notifications to the same user. Prevents flooding a user with messages during repeated errors. Set to 0 to disable. Default: 5 minutes.',
+        disabledWhen: {
+          equals: false,
+          path: ['transfer_error_notifications', 'enabled'],
+        },
+        label: 'Cooldown',
+        min: 0,
+        path: ['transfer_error_notifications', 'cooldown_mins'],
+        placeholder: '5',
+        type: 'duration',
+      },
+    ],
+    title: 'Transfer Error Notifications',
   },
   {
     title: 'Shares',
@@ -1625,6 +1688,10 @@ const Options = ({ options, state = {}, theme }) => {
                 })}
                 {SCHEMA[activeSection].title === 'Browse Rate Limiting' && (
                   <BrowseRateLimitSection />
+                )}
+                {SCHEMA[activeSection].title ===
+                  'Transfer Error Notifications' && (
+                  <TransferErrorNotificationSection />
                 )}
                 {SCHEMA[activeSection].title === 'YouTube / yt-dlp' && (
                   <YtDlpOptionsSection />

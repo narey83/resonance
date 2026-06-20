@@ -17,6 +17,7 @@ import {
   getFolders,
   getGenres,
   getIssueTracks,
+  getLibraryStats,
   getRecentlyAdded,
   getSyncState,
   getYears,
@@ -139,6 +140,11 @@ const AlphaStrip = ({ handlerRef }) => (
 );
 
 // ── Module-scope track helpers ────────────────────────────────────────────────
+
+const albumTrackParams = (album) => ({
+  album: album.album,
+  ...(album.directory ? { folder: album.directory } : { artist: album.artist }),
+});
 
 const libraryTrackToQueue = (track) => ({
   album: track.album,
@@ -1006,20 +1012,21 @@ const MixtapeCard = ({ mixtape, onPlay, onSelect }) => (
           minWidth: 'unset',
         }}
       />
-      <button
+      <div
         className="jb-folder-card-play"
         onClick={(e) => {
           e.stopPropagation();
           onPlay(mixtape);
         }}
+        role="button"
+        tabIndex={0}
         title="Play"
-        type="button"
       >
         <Play
           fill="currentColor"
           size={18}
         />
-      </button>
+      </div>
     </div>
     <div className="jb-folder-card-info">
       <div
@@ -2234,10 +2241,43 @@ const HomeRow = ({ children, count, label, onMore }) => (
   </div>
 );
 
+const ISSUE_TYPES = [
+  {
+    id: 'missingKey',
+    label: 'Missing Key',
+    icon: KeyRound,
+    analyzeDefault: { key: true, bpm: false },
+  },
+  {
+    id: 'missingBpm',
+    label: 'Missing BPM',
+    icon: Activity,
+    analyzeDefault: { key: false, bpm: true },
+  },
+  {
+    id: 'missingTitle',
+    label: 'No Title',
+    icon: AlertTriangle,
+    analyzeDefault: null,
+  },
+  {
+    id: 'missingArtist',
+    label: 'No Artist',
+    icon: AlertTriangle,
+    analyzeDefault: null,
+  },
+  {
+    id: 'missingArtwork',
+    label: 'No Artwork',
+    icon: AlertTriangle,
+    analyzeDefault: null,
+  },
+];
+
 const HomeView = ({
   albums,
   artists,
-  issueCount,
+  issueCounts,
   mixtapes,
   onAlbumContextMenu,
   onNavigate,
@@ -2304,17 +2344,20 @@ const HomeView = ({
             <span className="jb-home-stat-label">loved</span>
           </button>
         )}
-        {issueCount > 0 && (
-          <button
-            className="jb-home-stat jb-home-stat--warn"
-            onClick={() => onNavigate(VIEWS.ISSUES)}
-            type="button"
-          >
-            <span className="jb-home-stat-num">
-              {issueCount.toLocaleString()}
-            </span>
-            <span className="jb-home-stat-label">need attention</span>
-          </button>
+        {ISSUE_TYPES.map(({ id, label }) =>
+          (issueCounts[id] ?? 0) > 0 ? (
+            <button
+              className="jb-home-stat jb-home-stat--warn"
+              key={id}
+              onClick={() => onNavigate(VIEWS.ISSUES, { initialIssue: id })}
+              type="button"
+            >
+              <span className="jb-home-stat-num">
+                {issueCounts[id].toLocaleString()}
+              </span>
+              <span className="jb-home-stat-label">{label.toLowerCase()}</span>
+            </button>
+          ) : null,
         )}
       </div>
 
@@ -2352,7 +2395,7 @@ const HomeView = ({
                       minWidth: 'unset',
                     }}
                   />
-                  <button
+                  <div
                     className="jb-folder-card-play"
                     onClick={async (e) => {
                       e.stopPropagation();
@@ -2360,20 +2403,20 @@ const HomeView = ({
                         '../../lib/musicLibrary'
                       );
                       const res = await getTracks({
-                        album: album.album,
-                        artist: album.artist,
-                        limit: 5_000,
+                        ...albumTrackParams(album),
+                        limit: 500_000,
                       });
                       playQueue((res.tracks ?? []).map(libraryTrackToQueue), 0);
                     }}
+                    role="button"
+                    tabIndex={0}
                     title="Play"
-                    type="button"
                   >
                     <Play
                       fill="currentColor"
                       size={14}
                     />
-                  </button>
+                  </div>
                 </div>
                 <div className="jb-home-album-body">
                   <div
@@ -2429,20 +2472,21 @@ const HomeView = ({
                       minWidth: 'unset',
                     }}
                   />
-                  <button
+                  <div
                     className="jb-folder-card-play"
                     onClick={(e) => {
                       e.stopPropagation();
                       playQueue((m.tracks ?? []).map(mixtapeTrackToQueue), 0);
                     }}
+                    role="button"
+                    tabIndex={0}
                     title="Play"
-                    type="button"
                   >
                     <Play
                       fill="currentColor"
                       size={14}
                     />
-                  </button>
+                  </div>
                 </div>
                 <div className="jb-home-album-body">
                   <div
@@ -2496,41 +2540,15 @@ const HomeView = ({
 
 // ── Issues view ───────────────────────────────────────────────────────────────
 
-const ISSUE_TYPES = [
-  {
-    id: 'missingKey',
-    label: 'Missing Key',
-    icon: KeyRound,
-    analyzeDefault: { key: true, bpm: false },
-  },
-  {
-    id: 'missingBpm',
-    label: 'Missing BPM',
-    icon: Activity,
-    analyzeDefault: { key: false, bpm: true },
-  },
-  {
-    id: 'missingTitle',
-    label: 'No Title',
-    icon: AlertTriangle,
-    analyzeDefault: null,
-  },
-  {
-    id: 'missingArtist',
-    label: 'No Artist',
-    icon: AlertTriangle,
-    analyzeDefault: null,
-  },
-  {
-    id: 'missingArtwork',
-    label: 'No Artwork',
-    icon: AlertTriangle,
-    analyzeDefault: null,
-  },
-];
-
-const IssuesView = ({ onContextMenu, onCountChange }) => {
-  const [activeIssue, setActiveIssue] = useState(ISSUE_TYPES[0].id);
+const IssuesView = ({
+  alphaHandlerRef,
+  initialIssue,
+  onContextMenu,
+  onCountChange,
+}) => {
+  const [activeIssue, setActiveIssue] = useState(
+    initialIssue ?? ISSUE_TYPES[0].id,
+  );
   const [tracks, setTracks] = useState([]);
   const [counts, setCounts] = useState({});
   const [loading, setLoading] = useState(false);
@@ -2548,8 +2566,7 @@ const IssuesView = ({ onContextMenu, onCountChange }) => {
         );
         const map = Object.fromEntries(results);
         setCounts(map);
-        const sum = Object.values(map).reduce((s, n) => s + n, 0);
-        onCountChange?.(sum);
+        onCountChange?.(map);
       } catch {
         // ignore
       }
@@ -2564,7 +2581,7 @@ const IssuesView = ({ onContextMenu, onCountChange }) => {
       setLoading(true);
       setTracks([]);
       try {
-        const result = await getIssueTracks(activeIssue, 5_000);
+        const result = await getIssueTracks(activeIssue);
         if (!cancelled) setTracks(result.tracks ?? []);
       } catch {
         // ignore
@@ -2580,17 +2597,11 @@ const IssuesView = ({ onContextMenu, onCountChange }) => {
   }, [activeIssue]);
 
   const activeType = ISSUE_TYPES.find((t) => t.id === activeIssue);
-  const total = Object.values(counts).reduce((s, n) => s + n, 0);
 
   return (
     <div className="jb-issues-view">
       <div className="jb-section-header">
         <span className="jb-section-title">Library Issues</span>
-        {total > 0 && (
-          <span className="jb-section-count">
-            {total} tracks need attention
-          </span>
-        )}
       </div>
 
       <div className="jb-issues-chips">
@@ -2642,6 +2653,7 @@ const IssuesView = ({ onContextMenu, onCountChange }) => {
         </div>
       ) : (
         <TrackTable
+          alphaHandlerRef={alphaHandlerRef}
           loading={loading}
           onContextMenu={onContextMenu}
           tracks={tracks}
@@ -2671,11 +2683,12 @@ const Library = () => {
   const [allTracks, setAllTracks] = useState([]);
   const [albums, setAlbums] = useState([]);
   const [artists, setArtists] = useState([]);
+  const [libraryStats, setLibraryStats] = useState(null);
   const [folders, setFolders] = useState([]);
   const [genres, setGenres] = useState([]);
   const [recentlyAdded, setRecentlyAdded] = useState([]);
   const [years, setYears] = useState([]);
-  const [issueCount, setIssueCount] = useState(0);
+  const [issueCounts, setIssueCounts] = useState({});
   const [contextMenu, setContextMenu] = useState(null);
   const [folderContextMenu, setFolderContextMenu] = useState(null);
   const [albumContextMenu, setAlbumContextMenu] = useState(null);
@@ -2753,16 +2766,19 @@ const Library = () => {
   const loadInitialData = useCallback(async () => {
     setLoadingArtists(true);
     try {
-      const [artistData, genreData, recentData, albumData] = await Promise.all([
-        getArtists(),
-        getGenres(),
-        getRecentlyAdded(16),
-        getAlbums(),
-      ]);
+      const [artistData, genreData, recentData, albumData, statsData] =
+        await Promise.all([
+          getArtists(),
+          getGenres(),
+          getRecentlyAdded(16),
+          getAlbums(),
+          getLibraryStats().catch(() => null),
+        ]);
       setArtists(artistData ?? []);
       setGenres(genreData ?? []);
       setRecentlyAdded(recentData ?? []);
       setAlbums(albumData ?? []);
+      setLibraryStats(statsData);
     } catch {
       // ignore
     } finally {
@@ -2875,7 +2891,7 @@ const Library = () => {
         setLoadingTracks(true);
         try {
           const { getTracks } = await import('../../lib/musicLibrary');
-          const result = await getTracks({ limit: 5_000 });
+          const result = await getTracks({ limit: 500_000 });
           const tracks = result?.tracks ?? [];
           tracks.sort((a, b) =>
             (a.title || a.filename || '').localeCompare(
@@ -3076,11 +3092,11 @@ const Library = () => {
     (activeView === VIEWS.ALBUMS && Boolean(current.params?.selected));
 
   const showAlphaStrip =
-    (activeView === VIEWS.ARTISTS ||
-      activeView === VIEWS.TRACKS ||
-      (activeView === VIEWS.FOLDERS && viewMode === 'list')) &&
-    activeView !== VIEWS.HOME &&
-    activeView !== VIEWS.ISSUES;
+    activeView === VIEWS.ARTISTS ||
+    activeView === VIEWS.TRACKS ||
+    activeView === VIEWS.ISSUES ||
+    (activeView === VIEWS.ALBUMS && !current.params?.selected) ||
+    (activeView === VIEWS.FOLDERS && viewMode === 'list');
 
   const handleRefresh = useCallback(async () => {
     if (syncing) return;
@@ -3121,7 +3137,7 @@ const Library = () => {
   const handleAddFolderToMixtape = async (folder, mixtapeId) => {
     try {
       const { getTracks } = await import('../../lib/musicLibrary');
-      const parameters = { folder: folder.path, limit: 5_000 };
+      const parameters = { folder: folder.path, limit: 500_000 };
       const result = await getTracks(parameters);
       await Promise.allSettled(
         (result.tracks ?? []).map((t) =>
@@ -3147,9 +3163,8 @@ const Library = () => {
     try {
       const { getTracks } = await import('../../lib/musicLibrary');
       const result = await getTracks({
-        album: album.album,
-        artist: album.artist,
-        limit: 5_000,
+        ...albumTrackParams(album),
+        limit: 500_000,
       });
       await Promise.allSettled(
         (result.tracks ?? []).map((t) =>
@@ -3176,9 +3191,8 @@ const Library = () => {
       try {
         const { getTracks } = await import('../../lib/musicLibrary');
         const result = await getTracks({
-          album: album.album,
-          artist: album.artist,
-          limit: 5_000,
+          ...albumTrackParams(album),
+          limit: 500_000,
         });
         for (const t of (result.tracks ?? []).map(libraryTrackToQueue))
           enqueueTrack(t);
@@ -3193,9 +3207,8 @@ const Library = () => {
     try {
       const { getTracks } = await import('../../lib/musicLibrary');
       const result = await getTracks({
-        album: album.album,
-        artist: album.artist,
-        limit: 5_000,
+        ...albumTrackParams(album),
+        limit: 500_000,
       });
       await Promise.allSettled(
         (result.tracks ?? []).map((t) => deleteTrack(t.path)),
@@ -3209,9 +3222,8 @@ const Library = () => {
     try {
       const { getTracks } = await import('../../lib/musicLibrary');
       const result = await getTracks({
-        album: album.album,
-        artist: album.artist,
-        limit: 5_000,
+        ...albumTrackParams(album),
+        limit: 500_000,
       });
       await Promise.allSettled(
         (result.tracks ?? []).map((t) => analyzeTrack(t.path, { key, bpm })),
@@ -3228,11 +3240,7 @@ const Library = () => {
   const handleShowAlbumInFolder = useCallback(async (album) => {
     try {
       const { getTracks } = await import('../../lib/musicLibrary');
-      const result = await getTracks({
-        album: album.album,
-        artist: album.artist,
-        limit: 1,
-      });
+      const result = await getTracks({ ...albumTrackParams(album), limit: 1 });
       const first = result.tracks?.[0];
       if (first?.directory) {
         setNavStack([
@@ -3508,7 +3516,7 @@ const Library = () => {
   const playQuery = useCallback(
     async (parameters) => {
       const { getTracks } = await import('../../lib/musicLibrary');
-      const result = await getTracks({ ...parameters, limit: 5_000 });
+      const result = await getTracks({ ...parameters, limit: 500_000 });
       playQueue((result.tracks ?? []).map(libraryTrackToQueue), 0);
     },
     [playQueue],
@@ -3523,12 +3531,15 @@ const Library = () => {
           <HomeView
             albums={albums}
             artists={artists}
-            issueCount={issueCount}
+            issueCounts={issueCounts}
             mixtapes={playlists}
             onAlbumContextMenu={openAlbumContextMenu}
             onNavigate={(view, parameters = {}) => navTo(view, parameters)}
             recentlyAdded={recentlyAdded}
-            totalTracks={artists.reduce((s, a) => s + a.trackCount, 0)}
+            totalTracks={
+              libraryStats?.total ??
+              artists.reduce((s, a) => s + a.trackCount, 0)
+            }
           />
         );
 
@@ -3553,6 +3564,7 @@ const Library = () => {
         return (
           <AlbumsView
             albums={albums}
+            alphaHandlerRef={alphaHandlerRef}
             loading={loadingAlbums}
             onAlbum={(album) =>
               setNavStack((s) => {
@@ -3564,12 +3576,8 @@ const Library = () => {
               })
             }
             onAlbumContextMenu={openAlbumContextMenu}
-            onPlayAlbum={(album) =>
-              playQuery({ album: album.album, artist: album.artist })
-            }
-            onShuffleAlbum={(album) =>
-              playQuery({ album: album.album, artist: album.artist })
-            }
+            onPlayAlbum={(album) => playQuery(albumTrackParams(album))}
+            onShuffleAlbum={(album) => playQuery(albumTrackParams(album))}
             scrollContainerRef={viewScrollRef}
             tileSize={tileSize}
             viewMode={viewMode}
@@ -3580,9 +3588,10 @@ const Library = () => {
       case VIEWS.ISSUES:
         return (
           <IssuesView
-            issueCount={issueCount}
+            alphaHandlerRef={alphaHandlerRef}
+            initialIssue={current.params?.initialIssue}
             onContextMenu={openContextMenu}
-            onCountChange={setIssueCount}
+            onCountChange={setIssueCounts}
           />
         );
 
@@ -4020,14 +4029,10 @@ const Library = () => {
           }
           onDeleteAlbum={handleDeleteAlbum}
           onGoToArtist={goToArtist}
-          onPlay={(album) =>
-            playQuery({ album: album.album, artist: album.artist })
-          }
+          onPlay={(album) => playQuery(albumTrackParams(album))}
           onSearchArtist={handleSearchArtist}
           onShowInFolder={handleShowAlbumInFolder}
-          onShuffle={(album) =>
-            playQuery({ album: album.album, artist: album.artist })
-          }
+          onShuffle={(album) => playQuery(albumTrackParams(album))}
           playlists={playlists}
           x={albumContextMenu.x}
           y={albumContextMenu.y}

@@ -41,7 +41,7 @@ namespace resonance.MusicLibrary.API
     using resonance.MusicLibrary.Activity;
 
     public record LoveTrackRequest(string Path);
-    public record RecordPlayRequest(string Path);
+    public record RecordPlayRequest(string Path, string Title = null, string Artist = null, string Folder = null, string Source = null);
 
     [ApiController]
     [ApiVersion("0")]
@@ -95,7 +95,7 @@ namespace resonance.MusicLibrary.API
         [ProducesResponseType(typeof(PlayStat), 200)]
         public async Task<IActionResult> RecordPlay([FromBody] RecordPlayRequest request)
         {
-            var stat = await Service.RecordPlayAsync(Username, request.Path);
+            var stat = await Service.RecordPlayAsync(Username, request.Path, request.Title, request.Artist, request.Folder, request.Source);
             return Ok(stat);
         }
 

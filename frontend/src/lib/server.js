@@ -25,3 +25,7 @@ export const getBrowseRateLimitUsers = async () => {
 export const unblockBrowseRateLimitUser = (username) => {
   return api.delete(`/browse-rate-limit/users/${encodeURIComponent(username)}`);
 };
+
+export const getTransferErrorNotifications = async () => {
+  return (await api.get('/transfer-error-notifications')).data;
+};

@@ -39,6 +39,7 @@ function ResonanceLogo() {
       Animated.spring(scale, { toValue: 1, tension: 60, friction: 7, useNativeDriver: true }),
       Animated.timing(opacity, { toValue: 1, duration: 300, useNativeDriver: true }),
     ]).start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

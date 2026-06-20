@@ -37,23 +37,33 @@ using System.Collections.Generic;
 using System.Text.Json;
 using Dapper;
 using Microsoft.Data.Sqlite;
+using Npgsql;
 using Serilog;
+using System.Data.Common;
 
 public class PreferencesService
 {
     public PreferencesService(ConnectionStringDictionary connectionStrings)
     {
         ConnectionStrings = connectionStrings;
+        UsePostgres = connectionStrings.UsePostgres;
         EnsureSchema();
     }
 
     private ConnectionStringDictionary ConnectionStrings { get; }
+    private bool UsePostgres { get; }
     private ILogger Log { get; } = Serilog.Log.ForContext<PreferencesService>();
+
+    private DbConnection CreateConnection() => UsePostgres
+        ? new NpgsqlConnection(ConnectionStrings[Database.Preferences])
+        : new SqliteConnection(ConnectionStrings[Database.Preferences]);
+
+    private string T => UsePostgres ? "preferences.\"Preferences\"" : "Preferences";
 
     public Dictionary<string, JsonElement> GetAll()
     {
-        using var conn = new SqliteConnection(ConnectionStrings[Database.Preferences]);
-        var rows = conn.Query<(string Key, string Value)>("SELECT Key, Value FROM Preferences");
+        using var conn = CreateConnection();
+        var rows = conn.Query<(string Key, string Value)>($"SELECT \"Key\", \"Value\" FROM {T}");
         var result = new Dictionary<string, JsonElement>();
         foreach (var (key, value) in rows)
         {
@@ -79,7 +89,7 @@ public class PreferencesService
 
     public void Patch(Dictionary<string, JsonElement> updates)
     {
-        using var conn = new SqliteConnection(ConnectionStrings[Database.Preferences]);
+        using var conn = CreateConnection();
         foreach (var (key, value) in updates)
         {
             var raw = value.GetRawText();
@@ -96,15 +106,17 @@ public class PreferencesService
             }
 
             conn.Execute(
-                "INSERT INTO Preferences (Key, Value) VALUES (@Key, @Value) " +
-                "ON CONFLICT(Key) DO UPDATE SET Value = excluded.Value",
+                $"INSERT INTO {T} (\"Key\", \"Value\") VALUES (@Key, @Value) " +
+                "ON CONFLICT(\"Key\") DO UPDATE SET \"Value\" = excluded.\"Value\"",
                 new { Key = key, Value = raw });
         }
     }
 
     private void EnsureSchema()
     {
-        using var conn = new SqliteConnection(ConnectionStrings[Database.Preferences]);
-        conn.Execute("CREATE TABLE IF NOT EXISTS Preferences (Key TEXT PRIMARY KEY NOT NULL, Value TEXT NOT NULL)");
+        using var conn = CreateConnection();
+        if (UsePostgres)
+            conn.Execute("CREATE SCHEMA IF NOT EXISTS preferences");
+        conn.Execute($"CREATE TABLE IF NOT EXISTS {T} (\"Key\" TEXT PRIMARY KEY NOT NULL, \"Value\" TEXT NOT NULL)");
     }
 }

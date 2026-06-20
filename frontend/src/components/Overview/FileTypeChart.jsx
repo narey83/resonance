@@ -10,6 +10,7 @@ import {
   Bar,
   BarChart,
   Cell,
+  LabelList,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -94,7 +95,7 @@ const FileTypeChart = ({ counts }) => {
           <BarChart
             data={data}
             layout="vertical"
-            margin={{ bottom: 0, left: 8, right: 24, top: 4 }}
+            margin={{ bottom: 0, left: 8, right: 56, top: 4 }}
           >
             <XAxis
               allowDecimals={false}
@@ -132,6 +133,12 @@ const FileTypeChart = ({ counts }) => {
                   key={entry.ext}
                 />
               ))}
+              <LabelList
+                dataKey="count"
+                formatter={(v) => v.toLocaleString()}
+                position="right"
+                style={{ fill: 'var(--text-muted)', fontSize: 11 }}
+              />
             </Bar>
           </BarChart>
         </ResponsiveContainer>

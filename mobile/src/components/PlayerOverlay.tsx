@@ -12,7 +12,6 @@ import {
   FlatList,
   Modal,
   PanResponder,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -31,7 +30,6 @@ import { usePlayerUI } from '../store/playerUIStore';
 import { Radius, Spacing, ThemeColors, Typography } from '../theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const HEADER_H     = Platform.select({ ios: 44, android: 56, default: 44 });
 const ARTWORK_SIZE = Math.min(SCREEN_W - 64, Math.round(SCREEN_H * 0.38));
 const SNAP_VELOCITY = 0.6;
 const SNAP_DISTANCE = 80;
@@ -125,6 +123,7 @@ function MixtapePickerModal({ visible, onClose, onSelect }: {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName]   = useState('');
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (visible) load(); }, [visible]);
 
   const handleCreate = async () => {
@@ -271,6 +270,7 @@ export default function PlayerOverlay() {
     );
     anim.start();
     return () => anim.stop();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted]);
 
   useEffect(() => {
@@ -286,6 +286,7 @@ export default function PlayerOverlay() {
         Animated.timing(overlayOpacity, { toValue: 0, duration: 220, easing: Easing.in(Easing.ease), useNativeDriver: true }),
       ]).start(() => setMounted(false));
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded]);
 
   useEffect(() => {
@@ -308,6 +309,7 @@ export default function PlayerOverlay() {
     queueBaseX.current = target;
     queueShowingRef.current = showQueue;
     setQueueShowing(showQueue);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded, track?.path]);
 
   useEffect(() => {
@@ -315,6 +317,7 @@ export default function PlayerOverlay() {
       const timer = setTimeout(collapse, 600);
       return () => clearTimeout(timer);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track, isGoogleCasting, expanded]);
 
   useEffect(() => {
@@ -324,6 +327,7 @@ export default function PlayerOverlay() {
       return false;
     });
     return () => sub.remove();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, expanded]);
 
   const dragPan = useRef(
@@ -335,6 +339,7 @@ export default function PlayerOverlay() {
     }),
   ).current;
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadMixtapes(); }, []);
 
   if (!mounted) return null;
@@ -342,8 +347,9 @@ export default function PlayerOverlay() {
   // While the overlay is visible the background is always dark, so force white status bar text
   // regardless of the app's light/dark theme.
 
-  const artworkUrl      = track?.hasArtwork ? getArtworkUrl(track.path, 512) : null;
-  const artworkCacheKey = track?.hasArtwork ? getArtworkCacheKey(track.path, 512) : undefined;
+  const isLocalTrack    = track?.path.startsWith('file://') || track?.path.startsWith('content://');
+  const artworkUrl      = track?.hasArtwork ? (isLocalTrack ? track.coverPath : getArtworkUrl(track.path, 512)) : null;
+  const artworkCacheKey = track?.hasArtwork && !isLocalTrack ? getArtworkCacheKey(track.path, 512) : undefined;
   const hasArt          = !!(artworkUrl && !artworkError);
   const title      = track ? getTrackTitle(track) : '';
   const artist     = track?.artist ?? '';

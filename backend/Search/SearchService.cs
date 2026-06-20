@@ -185,7 +185,7 @@ namespace resonance.Search
         /// <param name="includeResponses">A value indicating whether to include search responses in the result.</param>
         /// <returns>The found search, or default if not found.</returns>
         /// <exception cref="ArgumentException">Thrown when an expression is not supplied.</exception>
-        public Task<Search> FindAsync(Expression<Func<Search, bool>> expression, bool includeResponses = false)
+        public async Task<Search> FindAsync(Expression<Func<Search, bool>> expression, bool includeResponses = false)
         {
             if (expression == default)
             {
@@ -203,7 +203,7 @@ namespace resonance.Search
                 selector = selector.WithoutResponses();
             }
 
-            return selector.FirstOrDefaultAsync();
+            return await selector.FirstOrDefaultAsync();
         }
 
         /// <summary>
@@ -211,12 +211,12 @@ namespace resonance.Search
         /// </summary>
         /// <param name="expression">An optional expression used to match searches.</param>
         /// <returns>The list of searches matching the specified expression, or all searches if no expression is specified.</returns>
-        public Task<List<Search>> ListAsync(Expression<Func<Search, bool>> expression = null)
+        public async Task<List<Search>> ListAsync(Expression<Func<Search, bool>> expression = null)
         {
             expression ??= s => true;
             using var context = ContextFactory.CreateDbContext();
 
-            return context.Searches
+            return await context.Searches
                 .AsNoTracking()
                 .Where(expression)
                 .WithoutResponses()

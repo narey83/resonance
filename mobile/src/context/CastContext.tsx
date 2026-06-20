@@ -134,6 +134,7 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
   useEffect(() => {
     setSuppressLocalPlay(isGoogleCasting);
     if (isGoogleCasting) pause();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isGoogleCasting]);
 
   useEffect(() => {
@@ -168,6 +169,7 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
       fileSize:    null,
     };
     restoreTrack(restored);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isGoogleCasting, track, mediaStatus]);
 
   const pendingTrackRef    = useRef<MusicTrack | null>(null);
@@ -207,10 +209,12 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
     if (!nativeClient.current) return;
     if (castIsPlaying) nativeClient.current.pause();
     else nativeClient.current.play();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nativeClient.current, castIsPlaying]);
 
   const castSeek = useCallback((seconds: number) => {
     nativeClient.current?.seek({ position: seconds });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nativeClient.current]);
 
   const connectAndPlayGoogle = useCallback(async (deviceId: string, trackToPlay: MusicTrack) => {
@@ -249,12 +253,14 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
       castPositionSec,
       castDurationSec,
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [googleCastState, googleDevices, googleCastTitle, googleCastDeviceName,
       isGoogleCasting, castIsPlaying, castPositionSec, castDurationSec]);
 
   // Keep actions ref current
   useEffect(() => {
     actionsRef.current = { castTogglePlayPause, castSeek, connectAndPlayGoogle, showGoogleCastPicker, stopGoogleCast };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [castTogglePlayPause, castSeek, connectAndPlayGoogle, showGoogleCastPicker, stopGoogleCast]);
 
   return null;

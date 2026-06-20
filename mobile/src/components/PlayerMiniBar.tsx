@@ -21,6 +21,7 @@ export function PlayerMiniBar() {
       prevPath.current = track.path;
       expand();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track?.path]);
 
   const swipePan = useRef(
@@ -36,8 +37,9 @@ export function PlayerMiniBar() {
   const activeTogglePlay = isGoogleCasting ? castTogglePlayPause : togglePlayPause;
   const multiTrack = queue.length > 1;
   const progress   = durationSec > 0 ? Math.min(positionSec / durationSec, 1) : 0;
-  const artUrl     = track.hasArtwork ? getArtworkUrl(track.path, 96) : null;
-  const artCacheKey = track.hasArtwork ? getArtworkCacheKey(track.path, 96) : undefined;
+  const isLocal    = track.path.startsWith('file://') || track.path.startsWith('content://');
+  const artUrl     = track.hasArtwork ? (isLocal ? track.coverPath : getArtworkUrl(track.path, 96)) : null;
+  const artCacheKey = track.hasArtwork && !isLocal ? getArtworkCacheKey(track.path, 96) : undefined;
 
   return (
     <View {...swipePan.panHandlers} style={styles.container}>

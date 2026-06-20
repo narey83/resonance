@@ -48,6 +48,9 @@ namespace resonance.Messaging
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            if (Database.IsNpgsql())
+                modelBuilder.HasDefaultSchema("messaging");
+
             modelBuilder.Entity<Conversation>().HasKey(e => e.Username);
             modelBuilder.Entity<Conversation>().Ignore(e => e.Messages);
             modelBuilder.Entity<Conversation>().Ignore(e => e.UnAcknowledgedMessageCount);

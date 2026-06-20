@@ -280,9 +280,7 @@ const Overview = () => {
 
       <div className="overview-body">
         <div className="overview-analytics">
-          <div style={{ display: activeTab === 'users' ? '' : 'none' }}>
-            <UserReports />
-          </div>
+          {activeTab === 'users' && <UserReports />}
           {activeTab === 'analytics' && (
             <>
               <div className="overview-controls">

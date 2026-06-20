@@ -12,6 +12,8 @@ coverage.json
 # Backend build output and runtime data
 /backend/bin/
 /backend/obj/
+/tests/bin/
+/tests/obj/
 /backend/wwwroot/
 /backend/resonance.csproj.user
 /backend/tools/ffmpeg

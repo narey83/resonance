@@ -45,7 +45,7 @@ interface LibraryActivityState {
 
   toggleLove: (path: string) => Promise<void>;
   clearAllLoved: () => Promise<void>;
-  recordPlay: (path: string) => Promise<void>;
+  recordPlay: (path: string, meta?: { title?: string; artist?: string; folder?: string; source?: string }) => Promise<void>;
   deletePlay: (id: string) => Promise<void>;
   clearHistory: () => Promise<void>;
 }
@@ -118,8 +118,8 @@ export const useLibraryActivityStore = create<LibraryActivityState>((set, get) =
     try { await apiClearAllLoved(); } catch {}
   },
 
-  recordPlay: async (path) => {
-    try { await apiRecordPlay(path); } catch {}
+  recordPlay: async (path, meta) => {
+    try { await apiRecordPlay(path, meta); } catch {}
     // Hub broadcasts TRACK_PLAYED → applyPlayed handles state update
   },
 

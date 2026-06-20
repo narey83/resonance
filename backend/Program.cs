@@ -410,7 +410,7 @@ namespace resonance
             LogDirectory = Path.Combine(AppDirectory, "logs");
             ScriptDirectory = Path.Combine(AppDirectory, "scripts");
 
-            DefaultConfigurationFile = Path.Combine(AppDirectory, "config.yml");
+            DefaultConfigurationFile = Path.Combine(AppDirectory, "resonance.yml");
             DefaultDownloadsDirectory = Path.Combine(AppDirectory, "downloads");
             DefaultIncompleteDirectory = Path.Combine(AppDirectory, "incomplete");
 
@@ -637,12 +637,48 @@ namespace resonance
 
                 var app = builder.Build();
 
-                if (!OptionsAtStartup.Flags.Volatile)
+                if (!OptionsAtStartup.Flags.Volatile && !OptionsAtStartup.Database.Type.Equals("postgresql", StringComparison.OrdinalIgnoreCase))
                 {
                     Log.Debug($"Running Migrate()...");
 
                     // note: if this ever throws, we've forgotten to register a Migrator following database DI config
                     app.Services.GetService<Migrator>().Migrate(force: OptionsAtStartup.Flags.ForceMigrations);
+                }
+
+                var migrateDb = OptionsAtStartup.Flags.MigrateDb;
+                if (!string.IsNullOrWhiteSpace(migrateDb))
+                {
+                    var sqliteFile = Path.Combine(DataDirectory, "resonance.db");
+                    var pgConnStr = OptionsAtStartup.Database.ConnectionString;
+                    var migrator = new DatabaseMigrator();
+
+                    if (migrateDb.Equals("sqlite-to-postgres", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (string.IsNullOrWhiteSpace(pgConnStr))
+                        {
+                            Log.Fatal("--migrate-db sqlite-to-postgres requires database.connection_string to be set in config");
+                            return;
+                        }
+
+                        migrator.MigrateToPostgres(DataDirectory, pgConnStr);
+                    }
+                    else if (migrateDb.Equals("postgres-to-sqlite", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (string.IsNullOrWhiteSpace(pgConnStr))
+                        {
+                            Log.Fatal("--migrate-db postgres-to-sqlite requires database.connection_string to be set in config");
+                            return;
+                        }
+
+                        migrator.MigrateToSqlite(sqliteFile, pgConnStr);
+                    }
+                    else
+                    {
+                        Log.Fatal("Unknown --migrate-db value '{Value}'. Use 'sqlite-to-postgres' or 'postgres-to-sqlite'", migrateDb);
+                    }
+
+                    Log.Information("Database migration complete. Exiting.");
+                    return;
                 }
 
                 // ensure built-in permission roles are always seeded (idempotent)
@@ -752,26 +788,62 @@ namespace resonance
 
             // wire up all of the connection strings we'll use. this is somewhat annoying but necessary because of the
             // intersection of run-time options (volatile, non-volatile) and ORM/mappers in use (EF, Dapper)
+            var usePostgres = OptionsAtStartup.Database.Type.Equals("postgresql", StringComparison.OrdinalIgnoreCase);
+
             var connectionStringDictionary = new ConnectionStringDictionary(Database.List
                 .Select(database =>
                 {
-                    var pooling = OptionsAtStartup.Flags.NoSqlitePooling ? "False" : "True"; // don't invert and ToString this it is confusing
+                    ConnectionString connStr;
 
-                    var connStr = OptionsAtStartup.Flags.Volatile
-                        ? $"Data Source=file:{database}?mode=memory;Pooling={pooling};"
-                        : $"Data Source={Path.Combine(DataDirectory, $"{database}.db")};Pooling={pooling}";
+                    if (usePostgres)
+                    {
+                        connStr = OptionsAtStartup.Database.ConnectionString;
+                    }
+                    else
+                    {
+                        var pooling = OptionsAtStartup.Flags.NoSqlitePooling ? "False" : "True"; // don't invert and ToString this it is confusing
+
+                        connStr = OptionsAtStartup.Flags.Volatile
+                            ? $"Data Source=file:resonance?mode=memory&cache=shared;Pooling={pooling};"
+                            : $"Data Source={Path.Combine(DataDirectory, "resonance.db")};Pooling={pooling}";
+                    }
 
                     return new KeyValuePair<Database, ConnectionString>(database, connStr);
                 })
-                .ToDictionary(x => x.Key, x => x.Value));
+                .ToDictionary(x => x.Key, x => x.Value), usePostgres);
 
             services.AddDbContext<SearchDbContext>(connectionStringDictionary[Database.Search]);
             services.AddDbContext<TransfersDbContext>(connectionStringDictionary[Database.Transfers]);
+
+            if (usePostgres)
+            {
+                // TransferNetworkInfo is a custom (non-EF) table managed by the SQLite migration system.
+                // For Postgres, create it here after the transfers schema is ready.
+                using var pgConn = new Npgsql.NpgsqlConnection(connectionStringDictionary[Database.Transfers]);
+                pgConn.Open();
+                using var pgCmd = pgConn.CreateCommand();
+                pgCmd.CommandText = """
+                    CREATE TABLE IF NOT EXISTS transfers."TransferNetworkInfo" (
+                        "Username"  TEXT NOT NULL,
+                        "IpAddress" TEXT NOT NULL,
+                        "Country"   TEXT,
+                        "City"      TEXT,
+                        "IsVpn"     SMALLINT NOT NULL DEFAULT 0,
+                        "Lat"       DOUBLE PRECISION,
+                        "Lon"       DOUBLE PRECISION,
+                        "LastSeen"  TIMESTAMPTZ NOT NULL,
+                        PRIMARY KEY ("Username")
+                    )
+                    """;
+                pgCmd.ExecuteNonQuery();
+            }
             services.AddDbContext<MessagingDbContext>(connectionStringDictionary[Database.Messaging]);
             services.AddDbContext<EventsDbContext>(connectionStringDictionary[Database.Events]);
             services.AddDbContext<UsersDbContext>(connectionStringDictionary[Database.Users]);
             services.AddDbContext<resonance.MusicLibrary.Activity.LibraryActivityDbContext>(connectionStringDictionary[Database.LibraryActivity]);
             services.AddDbContext<Resonance.Integrations.YtDlp.Data.YtDlpDbContext>(connectionStringDictionary[Database.YtDlp]);
+            services.AddDbContext<resonance.Core.LogStore.LogsDbContext>(connectionStringDictionary[Database.AppLogs]);
+            services.AddHostedService<resonance.Core.LogStore.LogPersistenceService>();
             services.AddSingleton<resonance.MusicLibrary.Activity.ILibraryActivityService, resonance.MusicLibrary.Activity.LibraryActivityService>();
             services.AddSingleton<AppUserService>();
             services.AddSingleton<SessionService>();
@@ -781,12 +853,13 @@ namespace resonance
 
             services.AddSingleton<ConnectionStringDictionary>(connectionStringDictionary);
 
-            if (!OptionsAtStartup.Flags.Volatile)
+            if (!OptionsAtStartup.Flags.Volatile && !usePostgres)
             {
-                // we're working with non-volatile database files, so register a Migrator to be used later in the
+                // we're working with non-volatile SQLite database files, so register a Migrator to be used later in the
                 // bootup process. the presence of a Migrator instance in DI determines whether a migration is needed.
                 // it's important that we keep this list of databases in sync with those used by the application; anything
                 // not in this list will not be able to be migrated.
+                // PostgreSQL starts fresh via EnsureCreated() and does not use this migration system.
                 services.AddSingleton<Migrator>(_ => new Migrator(databases: connectionStringDictionary));
             }
 
@@ -807,6 +880,7 @@ namespace resonance
 
             services.AddSingleton<IMessagingService, MessagingService>();
             services.AddSingleton<IConversationService, ConversationService>();
+            services.AddSingleton<resonance.Transfers.ITransferErrorNotificationService, resonance.Transfers.TransferErrorNotificationService>();
 
             services.AddSingleton<IShareService, ShareService>();
             services.AddSingleton<resonance.Common.Ffmpeg.IFfmpegService, resonance.Common.Ffmpeg.FfmpegService>();
@@ -822,7 +896,8 @@ namespace resonance
                 new resonance.WaveformAnalysis.WaveformService(
                     sp.GetRequiredService<IShareService>(),
                     sp.GetRequiredService<resonance.Common.Ffmpeg.IFfmpegService>(),
-                    $"Data Source={Path.Combine(DataDirectory, "waveform.db")};Pooling=True"));
+                    connectionStringDictionary[Database.Waveform],
+                    usePostgres));
             services.AddSingleton<resonance.WaveformAnalysis.IWaveformService>(sp => sp.GetRequiredService<resonance.WaveformAnalysis.WaveformService>());
             services.AddHostedService(sp => sp.GetRequiredService<resonance.WaveformAnalysis.WaveformService>());
             services.AddSingleton<resonance.Cast.ICastService, resonance.Cast.CastService>();
@@ -832,7 +907,8 @@ namespace resonance
             services.AddSingleton<resonance.MusicLibrary.MusicRepository>(_ =>
             {
                 var repo = new resonance.MusicLibrary.MusicRepository(
-                    $"Data Source={System.IO.Path.Combine(DataDirectory, "music.db")};Cache=Shared");
+                    connectionStringDictionary[Database.Music],
+                    usePostgres);
                 return repo;
             });
             services.AddSingleton<resonance.MusicLibrary.IMusicLibraryService, resonance.MusicLibrary.MusicLibraryService>();
@@ -846,7 +922,8 @@ namespace resonance
             services.AddSingleton<resonance.Mixtapes.MixtapeRepository>(_ =>
             {
                 var repo = new resonance.Mixtapes.MixtapeRepository(
-                    $"Data Source={System.IO.Path.Combine(DataDirectory, "mixtapes.db")}");
+                    connectionStringDictionary[Database.Mixtapes],
+                    usePostgres);
                 return repo;
             });
             services.AddSingleton<resonance.Mixtapes.IMixtapeService>(sp => new resonance.Mixtapes.MixtapeService(
@@ -1202,35 +1279,8 @@ namespace resonance
             var urlBase = OptionsAtStartup.Web.UrlBase;
             urlBase = urlBase.StartsWith("/") ? urlBase : "/" + urlBase;
 
-            // use urlBase. this effectively just removes urlBase from the path.
-            // inject urlBase into any html files we serve, and rewrite links to ./static or /static to
-            // prepend the url base.
             app.UsePathBase(urlBase);
-            app.UseHTMLRewrite("((\\.)?\\/static)", $"{(urlBase == "/" ? string.Empty : urlBase)}/static");
-            app.UseHTMLInjection($"<script>window.urlBase=\"{urlBase}\";window.port={OptionsAtStartup.Web.Port}</script>", excludedRoutes: new[] { "/api", "/swagger" });
             Log.Information("Using base url {UrlBase}", urlBase);
-
-            // serve static content from the configured path
-            FileServerOptions fileServerOptions = default;
-            var contentPath = Path.Combine(AppContext.BaseDirectory, OptionsAtStartup.Web.ContentPath);
-
-            fileServerOptions = new FileServerOptions
-            {
-                FileProvider = new PhysicalFileProvider(contentPath),
-                RequestPath = string.Empty,
-                EnableDirectoryBrowsing = false,
-                EnableDefaultFiles = true,
-            };
-
-            if (!OptionsAtStartup.Headless)
-            {
-                app.UseFileServer(fileServerOptions);
-                Log.Information("Serving static content from {ContentPath}", contentPath);
-            }
-            else
-            {
-                Log.Warning("Running in headless mode; web UI is DISABLED");
-            }
 
             if (OptionsAtStartup.Web.Logging)
             {
@@ -1332,29 +1382,6 @@ namespace resonance
                     .ForEach(description => options.SwaggerEndpoint($"{(urlBase == "/" ? string.Empty : urlBase)}/swagger/{description.GroupName}/swagger.json", description.GroupName)));
 
                 Log.Information("Publishing Swagger documentation to {URL}", "/swagger");
-            }
-
-            /*
-                if we made it this far, the caller is either looking for a route that was synthesized with a SPA router, or is genuinely confused.
-                if the request is for a directory, modify the request to redirect it to the index, otherwise leave it alone and let it 404 in the next
-                middleware.
-
-                if we're running in headless mode, do nothing and let ASP.NET return a 404
-            */
-            if (!OptionsAtStartup.Headless)
-            {
-                app.Use(async (context, next) =>
-                {
-                    if (Path.GetExtension(context.Request.Path.ToString()) == string.Empty)
-                    {
-                        context.Request.Path = "/";
-                    }
-
-                    await next();
-                });
-
-                // either serve the index, or 404
-                app.UseFileServer(fileServerOptions);
             }
 
             return app;
@@ -1490,12 +1517,21 @@ namespace resonance
         {
             Log.Debug("Initializing database context {Name}", typeof(T).Name);
 
+            var usePostgres = OptionsAtStartup.Database.Type.Equals("postgresql", StringComparison.OrdinalIgnoreCase);
+
             try
             {
                 services.AddDbContextFactory<T>(options =>
                 {
-                    options.UseSqlite(connectionString);
-                    options.AddInterceptors(new SqliteConnectionOpenedInterceptor());
+                    if (usePostgres)
+                    {
+                        options.UseNpgsql(connectionString);
+                    }
+                    else
+                    {
+                        options.UseSqlite(connectionString);
+                        options.AddInterceptors(new SqliteConnectionOpenedInterceptor());
+                    }
 
                     if (OptionsAtStartup.Flags.LogSQL)
                     {
@@ -1515,40 +1551,85 @@ namespace resonance
                     .CreateDbContext();
 
                 Log.Debug("Ensuring {Contex} is created", typeof(T).Name);
-                ctx.Database.EnsureCreated();
 
-                /*
-                    set (and validate) our desired PRAGMAs
-
-                    synchronous mode is also set upon every connection via SqliteConnectionOpenedInterceptor.
-                */
-                ctx.Database.OpenConnection();
-                var conn = ctx.Database.GetDbConnection();
-
-                Log.Debug("Setting PRAGMAs for {Contex}", typeof(T).Name);
-                using var initCommand = conn.CreateCommand();
-                initCommand.CommandText = "PRAGMA journal_mode=WAL; PRAGMA synchronous=1; PRAGMA optimize;";
-                initCommand.ExecuteNonQuery();
-
-                using var journalCmd = conn.CreateCommand();
-                journalCmd.CommandText = "PRAGMA journal_mode;";
-                var journalMode = journalCmd.ExecuteScalar()?.ToString();
-
-                if (!journalMode.Equals("WAL", StringComparison.OrdinalIgnoreCase))
+                // All EF Core contexts share one database (one file for SQLite, one Postgres DB).
+                // EnsureCreated() short-circuits after the first context creates tables because
+                // HasTables() returns true globally. For all subsequent contexts we generate the
+                // DDL script and execute it with IF NOT EXISTS guards.
+                var freshDb = ctx.Database.EnsureCreated();
+                if (!freshDb)
                 {
-                    Log.Warning("Failed to set database {Type} journal_mode PRAGMA to WAL; performance may be reduced", typeof(T).Name);
+                    if (usePostgres)
+                    {
+                        var schema = ctx.Model.GetDefaultSchema();
+                        if (!string.IsNullOrEmpty(schema))
+                            ctx.Database.ExecuteSqlRaw($"CREATE SCHEMA IF NOT EXISTS \"{schema}\"");
+                    }
+
+                    var script = ctx.Database.GenerateCreateScript();
+
+                    if (usePostgres)
+                    {
+                        // Npgsql emits DO $EF$...END $EF$; blocks for schema creation,
+                        // which we handle above. Strip them so the semicolon-split below works.
+                        script = System.Text.RegularExpressions.Regex.Replace(
+                            script,
+                            @"DO \$EF\$.*?END \$EF\$;",
+                            string.Empty,
+                            System.Text.RegularExpressions.RegexOptions.Singleline);
+                    }
+
+                    script = System.Text.RegularExpressions.Regex.Replace(
+                        script, @"\bCREATE TABLE\b", "CREATE TABLE IF NOT EXISTS");
+                    script = System.Text.RegularExpressions.Regex.Replace(
+                        script, @"\bCREATE (UNIQUE )?INDEX\b", "CREATE $1INDEX IF NOT EXISTS");
+                    script = System.Text.RegularExpressions.Regex.Replace(
+                        script, @"\bCREATE SEQUENCE\b", "CREATE SEQUENCE IF NOT EXISTS");
+
+                    foreach (var statement in script.Split(";\n", StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        var s = statement.Trim();
+                        if (string.IsNullOrEmpty(s)) continue;
+                        try { ctx.Database.ExecuteSqlRaw(s); }
+                        catch (Exception ex) { Log.Warning("Schema init skipped a statement for {Type}: {Ex}", typeof(T).Name, ex.Message); }
+                    }
                 }
 
-                using var syncCmd = conn.CreateCommand();
-                syncCmd.CommandText = "PRAGMA synchronous;";
-                var sync = syncCmd.ExecuteScalar()?.ToString();
-
-                if (!sync.Equals("1", StringComparison.OrdinalIgnoreCase))
+                if (!usePostgres)
                 {
-                    Log.Warning("Failed to set database {Type} synchronous PRAGMA to 1; performance may be reduced", typeof(T).Name);
-                }
+                    /*
+                        set (and validate) our desired PRAGMAs
 
-                Log.Debug("PRAGMAs for {Context}: journal_mode={JournalMode}, synchronous={Synchronous}", typeof(T).Name, journalMode, sync);
+                        synchronous mode is also set upon every connection via SqliteConnectionOpenedInterceptor.
+                    */
+                    ctx.Database.OpenConnection();
+                    var conn = ctx.Database.GetDbConnection();
+
+                    Log.Debug("Setting PRAGMAs for {Contex}", typeof(T).Name);
+                    using var initCommand = conn.CreateCommand();
+                    initCommand.CommandText = "PRAGMA journal_mode=WAL; PRAGMA synchronous=1; PRAGMA optimize;";
+                    initCommand.ExecuteNonQuery();
+
+                    using var journalCmd = conn.CreateCommand();
+                    journalCmd.CommandText = "PRAGMA journal_mode;";
+                    var journalMode = journalCmd.ExecuteScalar()?.ToString();
+
+                    if (!journalMode.Equals("WAL", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Log.Warning("Failed to set database {Type} journal_mode PRAGMA to WAL; performance may be reduced", typeof(T).Name);
+                    }
+
+                    using var syncCmd = conn.CreateCommand();
+                    syncCmd.CommandText = "PRAGMA synchronous;";
+                    var sync = syncCmd.ExecuteScalar()?.ToString();
+
+                    if (!sync.Equals("1", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Log.Warning("Failed to set database {Type} synchronous PRAGMA to 1; performance may be reduced", typeof(T).Name);
+                    }
+
+                    Log.Debug("PRAGMAs for {Context}: journal_mode={JournalMode}, synchronous={Synchronous}", typeof(T).Name, journalMode, sync);
+                }
 
                 return services;
             }
@@ -1566,7 +1647,7 @@ namespace resonance
                 try
                 {
                     Log.Warning("Configuration file {ConfigurationFile} does not exist; creating from example", configurationFile);
-                    var source = Path.Combine(AppContext.BaseDirectory, "config", "config.yml.example");
+                    var source = Path.Combine(AppContext.BaseDirectory, "config", "resonance.yml.example");
                     var destination = configurationFile;
                     IOFile.Copy(source, destination);
                 }

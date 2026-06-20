@@ -5,6 +5,9 @@ import { getToken, isPassthroughEnabled } from './token';
 // btoa only handles Latin-1; encode to UTF-8 bytes first so paths with non-ASCII chars work
 const pathToBase64 = (s) => btoa(unescape(encodeURIComponent(s)));
 
+export const getLibraryStats = async () =>
+  (await api.get('/musiclibrary/stats')).data;
+
 export const getSyncState = async () =>
   (await api.get('/musiclibrary/sync')).data;
 
@@ -13,7 +16,7 @@ export const triggerSync = async () => api.post('/musiclibrary/sync');
 export const getTracks = async (queryParameters) =>
   (await api.get('/musiclibrary/tracks', { params: queryParameters })).data;
 
-export const getIssueTracks = async (issue, limit = 5_000) =>
+export const getIssueTracks = async (issue, limit = 500_000) =>
   (await api.get('/musiclibrary/tracks', { params: { [issue]: true, limit } }))
     .data;
 
@@ -75,13 +78,14 @@ export const deleteTrackBatchLocal = async (paths) =>
   ).data;
 
 // Returns a URL for use in <img src={...}> — includes auth token when required.
-export const getArtworkUrl = (path) => {
+export const getArtworkUrl = (path, size = null) => {
   if (!path) return null;
 
   const token = isPassthroughEnabled() ? null : getToken();
   const tokenParameter = token
     ? `&access_token=${encodeURIComponent(token)}`
     : '';
+  const sizeParameter = size ? `&size=${size}` : '';
 
-  return `${apiBaseUrl}/musiclibrary/artwork?path=${encodeURIComponent(path)}${tokenParameter}`;
+  return `${apiBaseUrl}/musiclibrary/artwork?path=${encodeURIComponent(path)}${sizeParameter}${tokenParameter}`;
 };

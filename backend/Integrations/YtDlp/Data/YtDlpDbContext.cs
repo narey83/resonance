@@ -48,6 +48,9 @@ public class YtDlpDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        if (Database.IsNpgsql())
+            modelBuilder.HasDefaultSchema("ytdlp");
+
         modelBuilder.Entity<YtDlpJob>()
             .Property(e => e.State)
             .HasConversion<string>();

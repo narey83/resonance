@@ -1,6 +1,8 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '../store/auth';
 
+// axios's default export legitimately exposes `.create` — false positive here.
+// eslint-disable-next-line import/no-named-as-default-member
 export const apiClient = axios.create({ timeout: 15000 });
 
 const getJwtExpiry = (token: string): number | null => {

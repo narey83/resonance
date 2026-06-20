@@ -42,7 +42,13 @@ public interface ILibraryActivityService
     Task UnloveTrackAsync(string username, string path);
     Task ClearAllLovedAsync(string username);
 
-    Task<PlayStat> RecordPlayAsync(string username, string path);
+    /// <summary>
+    /// Reconciles every loved track against the music library: repoints entries whose file
+    /// had its extension changed (e.g. opus→mp3) and prunes entries whose file is gone.
+    /// </summary>
+    Task ReconcileLovedTracksAsync();
+
+    Task<PlayStat> RecordPlayAsync(string username, string path, string title = null, string artist = null, string folder = null, string source = null);
     PlayRecord[] GetPlayHistory(string username, int limit = 100, int offset = 0);
     Task DeletePlayAsync(string username, string id);
     Task ClearHistoryAsync(string username);

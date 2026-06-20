@@ -39,11 +39,13 @@ using System.Collections.Generic;
 /// </summary>
 public class ConnectionStringDictionary
 {
-    public ConnectionStringDictionary(Dictionary<Database, ConnectionString> dictionary)
+    public ConnectionStringDictionary(Dictionary<Database, ConnectionString> dictionary, bool usePostgres = false)
     {
         Strings = dictionary;
+        UsePostgres = usePostgres;
     }
 
+    public bool UsePostgres { get; }
     private Dictionary<Database, ConnectionString> Strings { get; } = [];
 
     public ConnectionString this[Database database] => Strings[database];

@@ -8,8 +8,14 @@ const LIST_ROW_HEIGHT = 52;
 const TILE_GAP = 16;
 const TILE_INFO_HEIGHT = 82;
 
+const alphaKey = (s) => {
+  const c = s?.trim()?.[0]?.toUpperCase();
+  return c >= 'A' && c <= 'Z' ? c : '#';
+};
+
 const AlbumsView = ({
   albums = [],
+  alphaHandlerRef,
   loading,
   onAlbum,
   onAlbumContextMenu,
@@ -95,6 +101,36 @@ const AlbumsView = ({
     paddingEnd: 40,
   });
 
+  useEffect(() => {
+    if (!alphaHandlerRef) return undefined;
+    alphaHandlerRef.current = (letter) => {
+      const index = sorted.findIndex((a) => alphaKey(a.album) === letter);
+      if (index < 0) return;
+      if (viewMode === 'list') {
+        listVirtualizer.scrollToIndex(index, {
+          align: 'start',
+          behavior: 'smooth',
+        });
+      } else if (cols > 0) {
+        gridVirtualizer.scrollToIndex(Math.floor(index / cols), {
+          align: 'start',
+          behavior: 'smooth',
+        });
+      }
+    };
+
+    return () => {
+      alphaHandlerRef.current = null;
+    };
+  }, [
+    alphaHandlerRef,
+    cols,
+    gridVirtualizer,
+    listVirtualizer,
+    sorted,
+    viewMode,
+  ]);
+
   if (loading) {
     return (
       <div className="jb-state">
@@ -151,7 +187,6 @@ const AlbumsView = ({
           <div className="jb-album-list-head">
             <span />
             <span>Album</span>
-            <span>Artist</span>
             <span>Year</span>
             <span>Tracks</span>
             <span>Date Added</span>
@@ -268,12 +303,6 @@ const AlbumRow = ({ album, onAlbum, onContextMenu, onPlay, onShuffle }) => {
         title={album.album}
       >
         {album.album || '(Untitled)'}
-      </span>
-      <span
-        className="jb-album-row-artist"
-        title={album.artist}
-      >
-        {album.artist}
       </span>
       <span className="jb-album-row-year">{album.year ?? '–'}</span>
       <span className="jb-album-row-tracks">{album.trackCount ?? '–'}</span>

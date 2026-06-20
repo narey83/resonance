@@ -1,9 +1,14 @@
 import TrackPlayer, { Event, State } from 'react-native-track-player';
-import { handleAndroidAutoBrowse, playAndroidAutoMediaId } from './androidAuto';
+import { handleAndroidAutoBrowse, playAndroidAutoMediaId, handleAndroidAutoLove } from './androidAuto';
+import { ensurePlayerSetup } from './playerSetup';
 
 // Runs in a background thread — handles remote control events from
 // lock screen, notification, Android Auto, and Bluetooth controls.
 export default async function () {
+  // Ensure the player is initialised in the headless context (Android Auto can
+  // fire remote-browse before the UI mounts and calls setupPlayer itself).
+  await ensurePlayerSetup();
+
   TrackPlayer.addEventListener(Event.RemotePlay,     ()      => TrackPlayer.play());
   TrackPlayer.addEventListener(Event.RemotePause,    ()      => TrackPlayer.pause());
   TrackPlayer.addEventListener(Event.RemoteNext,     ()      => TrackPlayer.skipToNext());
@@ -13,11 +18,15 @@ export default async function () {
 
   // Android Auto: a track was selected in the car (mediaId === track path).
   TrackPlayer.addEventListener(Event.RemotePlayId, (event) => playAndroidAutoMediaId(event.id));
-  // Android Auto: the car opened a not-yet-loaded browse node. `remote-browse`
-  // isn't in this RNTP build's Event enum, so we listen by its raw event name.
+  // Android Auto: the car opened a not-yet-loaded browse node.
   (TrackPlayer.addEventListener as (e: string, cb: (event: { mediaId: string }) => void) => void)(
     'remote-browse',
     (event) => handleAndroidAutoBrowse(event.mediaId),
+  );
+  // Android Auto: the user tapped the heart/love button in the car.
+  (TrackPlayer.addEventListener as (e: string, cb: () => void) => void)(
+    'remote-love',
+    () => handleAndroidAutoLove(),
   );
 
   let wasPlayingBeforeDuck = false;

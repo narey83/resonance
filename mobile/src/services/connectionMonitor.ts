@@ -172,5 +172,6 @@ export function useConnectionMonitor() {
       checkNowRef.current = null;
       clearTimeout(timer);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverUrl]);
 }

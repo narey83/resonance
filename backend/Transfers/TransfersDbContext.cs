@@ -61,6 +61,9 @@ namespace resonance.Transfers
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            if (Database.IsNpgsql())
+                modelBuilder.HasDefaultSchema("transfers");
+
             modelBuilder
                 .Entity<Transfer>()
                 .Property(e => e.StartedAt)

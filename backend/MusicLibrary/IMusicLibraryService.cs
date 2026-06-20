@@ -38,6 +38,7 @@ namespace resonance.MusicLibrary
     public interface IMusicLibraryService : IHostedService
     {
         MusicLibrarySyncState SyncState { get; }
+        (int Total, double TotalDuration) GetStats();
         MusicLibraryQueryResult QueryTracks(string search, string artist, string album, string genre, int? year, string folder, bool missingKey, bool missingBpm, bool missingTitle, bool missingArtist, bool missingArtwork, int limit, int offset, string sort = null, bool descending = false);
         IReadOnlyList<MusicAlbum> GetAlbums(string artistFilter = null);
         IReadOnlyList<MusicArtist> GetArtists();
@@ -51,6 +52,9 @@ namespace resonance.MusicLibrary
         MusicTrack GetTrack(string path);
 
         void TriggerSync();
+
+        /// <summary>Clears all indexed tracks and triggers an immediate full re-index from disk.</summary>
+        void ForceResync();
 
         /// <summary>Renames a folder on disk and bulk-updates all DB paths under it. Notifies clients via hub.</summary>
         void RenameFolder(string path, string newLeafName);

@@ -32,15 +32,15 @@ import { makeScreenOptions, Radius, Spacing, ThemeColors, Typography } from '../
 import { useTheme } from '../../context/ThemeContext';
 import {
   getAlbums, getArtists, getFolders, getGenres, getYears, getTracks,
-  getArtworkUrl, getTrackTitle,
+  getArtworkUrl, getTrackTitle, getTrackArtworkPath,
   analyzeFolder, deleteFolder as deleteFolderApi,
   renameFolder as renameFolderApi, renameTrack as renameTrackApi,
   MusicAlbum, MusicArtist, MusicFolder, MusicGenre, MusicTrack, MusicYear,
 } from '../../api/musicLibrary';
 import {
-  getLocalTracks, getLocalAlbums, getLocalArtists, getLocalAlbumTracks,
+  getLocalAlbums, getLocalArtists, getLocalAlbumTracks,
   getAllLocalTracks, getLocalFolders, getLocalFolderTracks,
-  isLocalPath, isLocalFolderPath,
+  isLocalPath, forceRescanLocalTracks, setScanProgressCallback,
 } from '../../services/localMusicLibrary';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -130,9 +130,10 @@ const ArtworkBox = ({ path, size, overrideUrl, overrideCacheKey, source }: {
   const [error, setError] = React.useState(false);
 
   const px = Math.ceil(PixelRatio.getPixelSizeForLayoutSize(size));
-  const downloadUrl = path ? getArtworkUrl(path, px) : null;
+  const isLocalPath = path?.startsWith('file://') ?? false;
+  const downloadUrl = path ? (isLocalPath ? path : getArtworkUrl(path, px)) : null;
   const url = overrideUrl ?? downloadUrl;
-  const cacheKey = overrideUrl ? overrideCacheKey : (path ? getArtworkCacheKey(path, px) : undefined);
+  const cacheKey = overrideUrl ? overrideCacheKey : (path && !isLocalPath ? getArtworkCacheKey(path, px) : undefined);
 
   const badge = source ? (
     <View style={{
@@ -305,6 +306,45 @@ const TabBar = ({ tabs, active, onSelect }: {
     </ScrollView>
   );
 };
+
+// ── SourcePicker ──────────────────────────────────────────────────────────────
+
+type SourceMode = 'server' | 'both' | 'local';
+
+function SourcePicker() {
+  const { s } = useLibStyles();
+  const {
+    includeLocalLibrary, setIncludeLocalLibrary,
+    mergeLocalAndServer, setMergeLocalAndServer,
+  } = useLibrarySettings();
+
+  const mode: SourceMode = !includeLocalLibrary ? 'server' : mergeLocalAndServer ? 'both' : 'local';
+
+  const setMode = (m: SourceMode) => {
+    if (m === 'server') {
+      setIncludeLocalLibrary(false);
+      setMergeLocalAndServer(false);
+    } else if (m === 'both') {
+      setIncludeLocalLibrary(true);
+      setMergeLocalAndServer(true);
+    } else {
+      setIncludeLocalLibrary(true);
+      setMergeLocalAndServer(false);
+    }
+  };
+
+  return (
+    <View style={s.sourcePicker}>
+      {(['server', 'both', 'local'] as SourceMode[]).map((m) => (
+        <Pressable key={m} onPress={() => setMode(m)} style={[s.sourceBtn, mode === m && s.sourceBtnActive]}>
+          <Text style={[s.sourceBtnText, mode === m && s.sourceBtnTextActive]}>
+            {m === 'server' ? 'Server' : m === 'both' ? 'Both' : 'Local'}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
 
 // ── Action row button used inside bottom sheets ───────────────────────────────
 
@@ -506,7 +546,7 @@ function FolderActionSheet({
   onRename: (folder: MusicFolder) => void;
 }) {
   const { s } = useLibStyles();
-  const { mixtapes, addTrack } = useMixtapeStore();
+  const { addTrack } = useMixtapeStore();
   const [showPicker, setShowPicker] = useState(false);
 
   if (!folder) return null;
@@ -868,6 +908,17 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
     includeLocalLibrary, setIncludeLocalLibrary,
     mergeLocalAndServer, setMergeLocalAndServer,
   } = useLibrarySettings();
+  const bumpLibraryRevision = useLibraryActivityStore((s) => s.bumpLibraryRevision);
+  const [rescanning, setRescanning] = useState(false);
+
+  const handleRescan = async () => {
+    if (rescanning) return;
+    setRescanning(true);
+    await forceRescanLocalTracks();
+    await getAllLocalTracks(); // returns immediately; background scan fires _onScanProgress batches
+    bumpLibraryRevision();
+    setRescanning(false);
+  };
 
   const toggle = (tab: LibraryTab) => {
     if (visibleTabs.includes(tab)) {
@@ -921,6 +972,20 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
                 thumbColor={mergeLocalAndServer ? c.accent : c.textMuted}
                 trackColor={{ false: c.bgElevated, true: `${c.accent}88` }}
               />
+            </Pressable>
+          )}
+
+          {includeLocalLibrary && (
+            <Pressable
+              onPress={handleRescan}
+              disabled={rescanning}
+              style={[s.sheetBtn, { justifyContent: 'space-between', opacity: rescanning ? 0.5 : 1 }]}
+            >
+              <View>
+                <Text style={s.sheetBtnText}>{rescanning ? 'Rescanning…' : 'Rescan Local Library'}</Text>
+                <Text style={s.sheetMetaSub}>Re-read metadata and artwork from all local files</Text>
+              </View>
+              <Ionicons name="refresh" size={20} color={c.textMuted} />
             </Pressable>
           )}
 
@@ -1322,6 +1387,7 @@ function TracksTab() {
 
   const navigateToPlayer = useCallback(() => {
     usePlayerUI.getState().expand();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigation]);
 
   const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => {
@@ -1435,7 +1501,9 @@ function LovedTab() {
 
   useEffect(() => {
     setLoading(true);
-    getTracks({ limit: 5000 })
+    // Loved paths are matched against the full library, so fetch all tracks — a low
+    // limit silently drops loved tracks that sort past it (the library has 20k+ tracks).
+    getTracks({ limit: 500_000 })
       .then((r) => setAllTracks(r?.tracks ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -1443,6 +1511,7 @@ function LovedTab() {
 
   const navigateToPlayer = useCallback(() => {
     usePlayerUI.getState().expand();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigation]);
 
   const lovedTracks = useMemo(() => {
@@ -1482,6 +1551,7 @@ function LovedTab() {
       </Pressable>
     </Pressable>
   );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playQueue, navigateToPlayer, lovedTracks, toggleLove, s, isLocalPath]);
 
   if (loading) return <ActivityIndicator style={{ marginTop: 40 }} color={c.accent} />;
@@ -1594,6 +1664,7 @@ function HistoryTab() {
     finally { setLoading(false); setLoadingMore(false); }
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadRest(true); }, [historyVersion]);
 
   // Merge: recentPlays (SignalR) on top, REST below, deduplicated.
@@ -1606,6 +1677,7 @@ function HistoryTab() {
 
   const navigateToPlayer = useCallback(() => {
     usePlayerUI.getState().expand();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigation]);
 
   const tracksFromEntries = useMemo(
@@ -1637,7 +1709,7 @@ function HistoryTab() {
         onLongPress={() => setActionTrack(track)}
         style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
       >
-        <ArtworkBox path={item.path} size={42} />
+        <ArtworkBox path={track ? getTrackArtworkPath(track) : item.path} size={42} />
         <View style={s.rowInfo}>
           <Text style={s.rowTitle} numberOfLines={1}>{track.title}</Text>
           <Text style={s.rowMeta} numberOfLines={1}>
@@ -1649,6 +1721,7 @@ function HistoryTab() {
         </Pressable>
       </Pressable>
     );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tracksFromEntries, playQueue, navigateToPlayer, handleDeletePlay, s]);
 
   if (loading) return <ActivityIndicator style={{ marginTop: 40 }} color={c.accent} />;
@@ -2112,15 +2185,19 @@ function LibraryHome({ navigation }: HomeProps) {
   const [tab, setTab] = useState<LibraryTab>('Artists');
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  const bumpRevisionOnce = useLibraryActivityStore((s) => s.bumpLibraryRevision);
   useEffect(() => {
+    setScanProgressCallback(bumpRevisionOnce);
     if (!settingsLoaded) loadSettings();
     loadMixtapes();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (settingsLoaded && !visibleTabs.includes(tab)) {
       setTab(visibleTabs[0]);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleTabs, settingsLoaded]);
 
   useEffect(() => {
@@ -2136,6 +2213,7 @@ function LibraryHome({ navigation }: HomeProps) {
   return (
     <View style={s.flex}>
       <TabBar tabs={visibleTabs} active={tab} onSelect={(t) => setTab(t as LibraryTab)} />
+      <SourcePicker />
       {tab === 'Artists'   && <ArtistsTab />}
       {tab === 'Albums'    && <AlbumsTab />}
       {tab === 'Tracks'    && <TracksTab />}
@@ -2198,10 +2276,12 @@ function ArtistDetail({ route }: ArtistProps) {
   useEffect(() => {
     const t = setTimeout(() => loadPage(true, search), search ? 300 : 0);
     return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
   const navigateToPlayer = useCallback(() => {
     usePlayerUI.getState().expand();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigation]);
 
   const fetchAllTracks = useCallback(async (): Promise<MusicTrack[]> => {
@@ -2231,7 +2311,7 @@ function ArtistDetail({ route }: ArtistProps) {
       onPress={() => { playQueue(tracksRef.current, index); navigateToPlayer(); }}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
     >
-      <ArtworkBox path={item.hasArtwork ? item.path : null} size={42} />
+      <ArtworkBox path={getTrackArtworkPath(item)} size={42} />
       <View style={s.rowInfo}>
         <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
         <Text style={s.rowMeta} numberOfLines={1}>
@@ -2361,6 +2441,7 @@ function AlbumDetail({ route }: AlbumProps) {
 
   const navigateToPlayer = useCallback(() => {
     usePlayerUI.getState().expand();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigation]);
 
   const handlePlayAll = useCallback(() => {
@@ -2511,10 +2592,12 @@ function GenreDetail({ route }: GenreDetailProps) {
   useEffect(() => {
     const t = setTimeout(() => loadPage(true, search), search ? 300 : 0);
     return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
   const navigateToPlayer = useCallback(() => {
     usePlayerUI.getState().expand();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigation]);
 
   const fetchAllTracks = useCallback(async (): Promise<MusicTrack[]> => {
@@ -2544,7 +2627,7 @@ function GenreDetail({ route }: GenreDetailProps) {
       onPress={() => { playQueue(tracksRef.current, index); navigateToPlayer(); }}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
     >
-      <ArtworkBox path={item.hasArtwork ? item.path : null} size={42} />
+      <ArtworkBox path={getTrackArtworkPath(item)} size={42} />
       <View style={s.rowInfo}>
         <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
         <Text style={s.rowMeta} numberOfLines={1}>
@@ -2727,6 +2810,7 @@ function YearDetail({ route }: YearDetailProps) {
 
   const navigateToPlayer = useCallback(() => {
     usePlayerUI.getState().expand();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigation]);
 
   const fetchAllTracks = useCallback(async (): Promise<MusicTrack[]> => {
@@ -2756,7 +2840,7 @@ function YearDetail({ route }: YearDetailProps) {
       onPress={() => { playQueue(tracksRef.current, index); navigateToPlayer(); }}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
     >
-      <ArtworkBox path={item.hasArtwork ? item.path : null} size={42} />
+      <ArtworkBox path={getTrackArtworkPath(item)} size={42} />
       <View style={s.rowInfo}>
         <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
         <Text style={s.rowMeta} numberOfLines={1}>
@@ -2879,10 +2963,12 @@ function FolderDetail({ route }: FolderDetailProps) {
     if (isLocal) return;
     const t = setTimeout(() => loadPage(true, search), search ? 300 : 0);
     return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, isLocal]);
 
   const navigateToPlayer = useCallback(() => {
     usePlayerUI.getState().expand();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigation]);
 
   const fetchAllTracks = useCallback(async (): Promise<MusicTrack[]> => {
@@ -2933,6 +3019,7 @@ function FolderDetail({ route }: FolderDetailProps) {
         <Ionicons name="ellipsis-horizontal" size={18} color={c.textMuted} />
       </Pressable>
     </Pressable>
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   ), [playQueue, navigateToPlayer, s, c]);
 
   return (
@@ -3042,15 +3129,18 @@ function PlaylistDetail({ route, navigation: nav }: PlaylistDetailProps) {
   const linkCopiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const playlist = mixtapes.find((p) => p.id === playlistId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const tracks = playlist?.tracks ?? [];
 
   const musicTracksRef = useRef<MusicTrack[]>([]);
   useEffect(() => {
     musicTracksRef.current = tracks.map(mixtapeTrackToMusicTrack);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playlist]);
 
   const totalDuration = useMemo(
     () => tracks.reduce((s, t) => s + (t.duration ?? 0), 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [playlist],
   );
 
@@ -3058,6 +3148,7 @@ function PlaylistDetail({ route, navigation: nav }: PlaylistDetailProps) {
 
   useEffect(() => {
     if (playlist?.name) nav.setOptions({ title: playlist.name });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playlist?.name]);
 
   useEffect(() => {
@@ -3072,6 +3163,7 @@ function PlaylistDetail({ route, navigation: nav }: PlaylistDetailProps) {
 
   const navigateToPlayer = useCallback(() => {
     usePlayerUI.getState().expand();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigation]);
 
   const handlePlayAll = useCallback(() => {
@@ -3378,6 +3470,29 @@ function makeLibStyles(c: ThemeColors) {
       paddingVertical: Spacing.xxl,
       lineHeight: 20,
     },
+
+    // Source picker
+    sourcePicker: {
+      flexDirection: 'row',
+      marginHorizontal: Spacing.md,
+      marginTop: Spacing.sm,
+      marginBottom: Spacing.xs,
+      backgroundColor: c.bgElevated,
+      borderRadius: Radius.sm,
+      padding: 2,
+    },
+    sourceBtn: {
+      flex: 1,
+      paddingVertical: 6,
+      alignItems: 'center',
+      borderRadius: Radius.sm - 1,
+    },
+    sourceBtnActive: {
+      backgroundColor: c.bgSurface,
+      elevation: 1,
+    },
+    sourceBtnText:       { fontSize: Typography.sm, color: c.textMuted, fontWeight: '500' },
+    sourceBtnTextActive: { fontSize: Typography.sm, color: c.textPrimary, fontWeight: '600' },
 
     // Search
     searchWrap: {

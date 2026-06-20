@@ -34,23 +34,83 @@ namespace resonance.MusicLibrary
 {
     using System;
     using System.Collections.Generic;
+    using System.Data;
+    using System.Data.Common;
     using Microsoft.Data.Sqlite;
+    using Npgsql;
 
     public class MusicRepository
     {
-        public MusicRepository(string connectionString)
+        public MusicRepository(string connectionString, bool usePostgres = false)
         {
             ConnectionString = connectionString;
+            UsePostgres = usePostgres;
         }
 
         private string ConnectionString { get; }
+        private bool UsePostgres { get; }
+
+        // Schema-qualified table name: "music"."tracks" for Postgres, "tracks" for SQLite
+        private string T => UsePostgres ? "music.tracks" : "tracks";
+
+        // Case-insensitive LIKE operator
+        private string Like => UsePostgres ? "ILIKE" : "LIKE";
+
+        // Case-insensitive equality (used in WHERE)
+        private string IEq(string col) => UsePostgres ? $"{col} ILIKE" : $"{col} =";
+
+        // Case-insensitive GROUP BY expression for a column
+        private string GrpBy(string col) => UsePostgres ? $"lower({col})" : $"{col} COLLATE NOCASE";
+
+        // Case-insensitive ORDER BY expression for a column
+        private string OrdBy(string col, string dir = "ASC") => UsePostgres ? $"lower({col}) {dir}" : $"{col} COLLATE NOCASE {dir}";
 
         public void Initialize()
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(@"
-                PRAGMA journal_mode=WAL;
-                CREATE TABLE IF NOT EXISTS tracks (
+            using var conn = OpenConnection();
+
+            if (!UsePostgres)
+            {
+                using var pragmaCmd = conn.CreateCommand();
+                pragmaCmd.CommandText = "PRAGMA journal_mode=WAL;";
+                pragmaCmd.ExecuteNonQuery();
+            }
+            else
+            {
+                using var schemaCmd = conn.CreateCommand();
+                schemaCmd.CommandText = "CREATE SCHEMA IF NOT EXISTS music";
+                schemaCmd.ExecuteNonQuery();
+            }
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = UsePostgres
+                ? $@"CREATE TABLE IF NOT EXISTS {T} (
+                    path         TEXT PRIMARY KEY,
+                    filename     TEXT NOT NULL,
+                    directory    TEXT NOT NULL,
+                    extension    TEXT NOT NULL,
+                    file_size    BIGINT NOT NULL,
+                    file_modified BIGINT NOT NULL,
+                    indexed_at   BIGINT NOT NULL,
+                    duration     DOUBLE PRECISION,
+                    title        TEXT,
+                    artist       TEXT,
+                    album_artist TEXT,
+                    album        TEXT,
+                    year         INTEGER,
+                    track_number INTEGER,
+                    disc_number  INTEGER,
+                    genre        TEXT,
+                    bpm          INTEGER,
+                    key_sig      TEXT,
+                    comment      TEXT,
+                    has_artwork  INTEGER NOT NULL DEFAULT 0,
+                    tag_types    TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_tracks_directory ON {T}(directory);
+                CREATE INDEX IF NOT EXISTS idx_tracks_artist    ON {T}(lower(artist));
+                CREATE INDEX IF NOT EXISTS idx_tracks_album     ON {T}(lower(album));"
+                : $@"CREATE TABLE IF NOT EXISTS {T} (
                     path         TEXT PRIMARY KEY,
                     filename     TEXT NOT NULL,
                     directory    TEXT NOT NULL,
@@ -73,27 +133,29 @@ namespace resonance.MusicLibrary
                     has_artwork  INTEGER NOT NULL DEFAULT 0,
                     tag_types    TEXT
                 );
-                CREATE INDEX IF NOT EXISTS idx_tracks_directory ON tracks(directory);
-                CREATE INDEX IF NOT EXISTS idx_tracks_artist    ON tracks(artist COLLATE NOCASE);
-                CREATE INDEX IF NOT EXISTS idx_tracks_album     ON tracks(album  COLLATE NOCASE);", conn);
+                CREATE INDEX IF NOT EXISTS idx_tracks_directory ON {T}(directory);
+                CREATE INDEX IF NOT EXISTS idx_tracks_artist    ON {T}(artist COLLATE NOCASE);
+                CREATE INDEX IF NOT EXISTS idx_tracks_album     ON {T}(album  COLLATE NOCASE);";
             cmd.ExecuteNonQuery();
 
             // Migration: add tag_types column if it doesn't exist yet
             try
             {
-                using var alter = new SqliteCommand("ALTER TABLE tracks ADD COLUMN tag_types TEXT", conn);
+                using var alter = conn.CreateCommand();
+                alter.CommandText = $"ALTER TABLE {T} ADD COLUMN tag_types TEXT";
                 alter.ExecuteNonQuery();
             }
-            catch (SqliteException)
+            catch (Exception)
             { /* column already exists */
             }
         }
 
         public void Upsert(MusicTrack t)
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(@"
-                INSERT INTO tracks
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
+                INSERT INTO {T}
                     (path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
                      title, artist, album_artist, album, year, track_number, disc_number,
                      genre, bpm, key_sig, comment, has_artwork, tag_types)
@@ -108,41 +170,54 @@ namespace resonance.MusicLibrary
                     album_artist=excluded.album_artist, album=excluded.album, year=excluded.year,
                     track_number=excluded.track_number, disc_number=excluded.disc_number,
                     genre=excluded.genre, bpm=excluded.bpm, key_sig=excluded.key_sig,
-                    comment=excluded.comment, has_artwork=excluded.has_artwork, tag_types=excluded.tag_types", conn);
+                    comment=excluded.comment, has_artwork=excluded.has_artwork, tag_types=excluded.tag_types";
 
-            cmd.Parameters.AddWithValue("@path", t.Path);
-            cmd.Parameters.AddWithValue("@filename", t.Filename);
-            cmd.Parameters.AddWithValue("@dir", t.Directory);
-            cmd.Parameters.AddWithValue("@ext", t.Extension);
-            cmd.Parameters.AddWithValue("@size", t.FileSize);
-            cmd.Parameters.AddWithValue("@mod", t.FileModified);
-            cmd.Parameters.AddWithValue("@idx", t.IndexedAt);
-            cmd.Parameters.AddWithValue("@dur", (object)t.Duration ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@title", (object)t.Title ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@artist", (object)t.Artist ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@aartist", (object)t.AlbumArtist ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@album", (object)t.Album ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@year", (object)t.Year ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@track", (object)t.TrackNumber ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@disc", (object)t.DiscNumber ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@genre", (object)t.Genre ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@bpm", (object)t.Bpm ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@key", (object)t.Key ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@comment", (object)t.Comment ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@art", t.HasArtwork ? 1 : 0);
-            cmd.Parameters.AddWithValue("@tagtypes", (object)t.TagTypes ?? DBNull.Value);
+            AddParam(cmd, "@path", t.Path);
+            AddParam(cmd, "@filename", t.Filename);
+            AddParam(cmd, "@dir", t.Directory);
+            AddParam(cmd, "@ext", t.Extension);
+            AddParam(cmd, "@size", t.FileSize);
+            AddParam(cmd, "@mod", t.FileModified);
+            AddParam(cmd, "@idx", t.IndexedAt);
+            AddParam(cmd, "@dur", (object)t.Duration ?? DBNull.Value);
+            AddParam(cmd, "@title", (object)t.Title ?? DBNull.Value);
+            AddParam(cmd, "@artist", (object)t.Artist ?? DBNull.Value);
+            AddParam(cmd, "@aartist", (object)t.AlbumArtist ?? DBNull.Value);
+            AddParam(cmd, "@album", (object)t.Album ?? DBNull.Value);
+            AddParam(cmd, "@year", (object)t.Year ?? DBNull.Value);
+            AddParam(cmd, "@track", (object)t.TrackNumber ?? DBNull.Value);
+            AddParam(cmd, "@disc", (object)t.DiscNumber ?? DBNull.Value);
+            AddParam(cmd, "@genre", (object)t.Genre ?? DBNull.Value);
+            AddParam(cmd, "@bpm", (object)t.Bpm ?? DBNull.Value);
+            AddParam(cmd, "@key", (object)t.Key ?? DBNull.Value);
+            AddParam(cmd, "@comment", (object)t.Comment ?? DBNull.Value);
+            AddParam(cmd, "@art", t.HasArtwork ? 1 : 0);
+            AddParam(cmd, "@tagtypes", (object)t.TagTypes ?? DBNull.Value);
+            cmd.ExecuteNonQuery();
+        }
+
+        public void ClearAll()
+        {
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"DELETE FROM {T}";
             cmd.ExecuteNonQuery();
         }
 
         public void DeletePaths(IEnumerable<string> paths)
         {
-            using var conn = GetConnection();
+            using var conn = OpenConnection();
             using var tx = conn.BeginTransaction();
-            using var cmd = new SqliteCommand("DELETE FROM tracks WHERE path = @p", conn, tx);
-            cmd.Parameters.Add(new SqliteParameter("@p", SqliteType.Text));
-            foreach (var p in paths)
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"DELETE FROM {T} WHERE path = @p";
+            cmd.Transaction = tx;
+            var p = cmd.CreateParameter();
+            p.ParameterName = "@p";
+            p.DbType = DbType.String;
+            cmd.Parameters.Add(p);
+            foreach (var path in paths)
             {
-                cmd.Parameters["@p"].Value = p;
+                p.Value = path;
                 cmd.ExecuteNonQuery();
             }
 
@@ -154,8 +229,9 @@ namespace resonance.MusicLibrary
         public Dictionary<string, (long Size, long Modified)> GetAllFingerprints()
         {
             var result = new Dictionary<string, (long, long)>(StringComparer.Ordinal);
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand("SELECT path, file_size, file_modified FROM tracks", conn);
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"SELECT path, file_size, file_modified FROM {T}";
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
@@ -171,7 +247,7 @@ namespace resonance.MusicLibrary
             bool missingKey, bool missingBpm, bool missingTitle, bool missingArtist, bool missingArtwork,
             int limit, int offset, string sort = null, bool descending = false)
         {
-            using var conn = GetConnection();
+            using var conn = OpenConnection();
 
             var conditions = new System.Collections.Generic.List<string>();
             var hasSearch = !string.IsNullOrWhiteSpace(search);
@@ -183,27 +259,27 @@ namespace resonance.MusicLibrary
 
             if (hasSearch)
             {
-                conditions.Add("(title LIKE @s OR artist LIKE @s OR album LIKE @s OR key_sig LIKE @s)");
+                conditions.Add($"(title {Like} @s OR artist {Like} @s OR album {Like} @s OR key_sig {Like} @s)");
             }
 
             if (hasArtist)
             {
-                conditions.Add("artist = @artist COLLATE NOCASE");
+                conditions.Add($"{IEq("artist")} @artist");
             }
 
             if (hasAlbum)
             {
-                conditions.Add("album  = @album  COLLATE NOCASE");
+                conditions.Add($"{IEq("album")} @album");
             }
 
             if (hasGenre)
             {
-                conditions.Add("genre  = @genre  COLLATE NOCASE");
+                conditions.Add($"{IEq("genre")} @genre");
             }
 
             if (hasYear)
             {
-                conditions.Add("year   = @year");
+                conditions.Add("year = @year");
             }
 
             if (hasFolder)
@@ -239,93 +315,55 @@ namespace resonance.MusicLibrary
             var where = conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : string.Empty;
             var pattern = $"%{search?.Trim()}%";
 
-            using var countCmd = new SqliteCommand($"SELECT COUNT(*) FROM tracks {where}", conn);
-            if (hasSearch)
-            {
-                countCmd.Parameters.AddWithValue("@s", pattern);
-            }
-
-            if (hasArtist)
-            {
-                countCmd.Parameters.AddWithValue("@artist", artist);
-            }
-
-            if (hasAlbum)
-            {
-                countCmd.Parameters.AddWithValue("@album", album);
-            }
-
-            if (hasGenre)
-            {
-                countCmd.Parameters.AddWithValue("@genre", genre);
-            }
-
-            if (hasYear)
-            {
-                countCmd.Parameters.AddWithValue("@year", year.Value);
-            }
-
+            using var countCmd = conn.CreateCommand();
+            countCmd.CommandText = $"SELECT COUNT(*) FROM {T} {where}";
+            if (hasSearch) AddParam(countCmd, "@s", pattern);
+            if (hasArtist) AddParam(countCmd, "@artist", artist);
+            if (hasAlbum) AddParam(countCmd, "@album", album);
+            if (hasGenre) AddParam(countCmd, "@genre", genre);
+            if (hasYear) AddParam(countCmd, "@year", year.Value);
             if (hasFolder)
             {
-                countCmd.Parameters.AddWithValue("@folder", folder);
-                countCmd.Parameters.AddWithValue("@folderPrefix", folder.TrimEnd('/') + "/%");
+                AddParam(countCmd, "@folder", folder);
+                AddParam(countCmd, "@folderPrefix", folder.TrimEnd('/') + "/%");
             }
 
-            var total = (int)(long)countCmd.ExecuteScalar();
+            var total = Convert.ToInt32(countCmd.ExecuteScalar());
 
             // The sort key is mapped through a whitelist; user input never reaches the SQL directly
             var dir = descending ? "DESC" : "ASC";
             var orderBy = sort?.ToLowerInvariant() switch
             {
-                "title" => $"title COLLATE NOCASE {dir}, artist COLLATE NOCASE",
-                "album" => $"album COLLATE NOCASE {dir}, disc_number, track_number",
-                "year" => $"year {dir}, artist COLLATE NOCASE, album COLLATE NOCASE, track_number",
-                "duration" => $"duration {dir}, title COLLATE NOCASE",
-                "bpm" => $"bpm {dir}, title COLLATE NOCASE",
-                "added" => $"indexed_at {dir}, title COLLATE NOCASE",
-                _ => $"artist COLLATE NOCASE {dir}, album COLLATE NOCASE, disc_number, track_number, title COLLATE NOCASE",
+                "title" => $"{OrdBy("title", dir)}, {OrdBy("artist")}",
+                "album" => $"{OrdBy("album", dir)}, disc_number, track_number",
+                "year" => $"year {dir}, {OrdBy("artist")}, {OrdBy("album")}, track_number",
+                "duration" => $"duration {dir}, {OrdBy("title")}",
+                "bpm" => $"bpm {dir}, {OrdBy("title")}",
+                "added" => $"indexed_at {dir}, {OrdBy("title")}",
+                _ => $"{OrdBy("artist", dir)}, {OrdBy("album")}, disc_number, track_number, {OrdBy("title")}",
             };
 
-            using var cmd = new SqliteCommand($@"
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
                 SELECT path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
                        title, artist, album_artist, album, year, track_number, disc_number,
                        genre, bpm, key_sig, comment, has_artwork, tag_types
-                FROM tracks {where}
+                FROM {T} {where}
                 ORDER BY {orderBy}
-                LIMIT @limit OFFSET @offset", conn);
-            if (hasSearch)
-            {
-                cmd.Parameters.AddWithValue("@s", pattern);
-            }
-
-            if (hasArtist)
-            {
-                cmd.Parameters.AddWithValue("@artist", artist);
-            }
-
-            if (hasAlbum)
-            {
-                cmd.Parameters.AddWithValue("@album", album);
-            }
-
-            if (hasGenre)
-            {
-                cmd.Parameters.AddWithValue("@genre", genre);
-            }
-
-            if (hasYear)
-            {
-                cmd.Parameters.AddWithValue("@year", year.Value);
-            }
-
+                LIMIT @limit OFFSET @offset";
+            if (hasSearch) AddParam(cmd, "@s", pattern);
+            if (hasArtist) AddParam(cmd, "@artist", artist);
+            if (hasAlbum) AddParam(cmd, "@album", album);
+            if (hasGenre) AddParam(cmd, "@genre", genre);
+            if (hasYear) AddParam(cmd, "@year", year.Value);
             if (hasFolder)
             {
-                cmd.Parameters.AddWithValue("@folder", folder);
-                cmd.Parameters.AddWithValue("@folderPrefix", folder.TrimEnd('/') + "/%");
+                AddParam(cmd, "@folder", folder);
+                AddParam(cmd, "@folderPrefix", folder.TrimEnd('/') + "/%");
             }
 
-            cmd.Parameters.AddWithValue("@limit", limit);
-            cmd.Parameters.AddWithValue("@offset", offset);
+            AddParam(cmd, "@limit", limit);
+            AddParam(cmd, "@offset", offset);
 
             var tracks = new List<MusicTrack>();
             using var reader = cmd.ExecuteReader();
@@ -339,13 +377,14 @@ namespace resonance.MusicLibrary
 
         public IReadOnlyList<MusicGenre> GetGenres()
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(@"
-                SELECT genre, COUNT(*) AS track_count, SUM(duration) AS total_dur
-                FROM tracks
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
+                SELECT MIN(genre) AS genre, COUNT(*) AS track_count, SUM(duration) AS total_dur
+                FROM {T}
                 WHERE genre IS NOT NULL AND genre != ''
-                GROUP BY genre COLLATE NOCASE
-                ORDER BY genre COLLATE NOCASE", conn);
+                GROUP BY {GrpBy("genre")}
+                ORDER BY {OrdBy("genre")}";
             var results = new List<MusicGenre>();
             using var r = cmd.ExecuteReader();
             while (r.Read())
@@ -361,15 +400,16 @@ namespace resonance.MusicLibrary
 
         public IReadOnlyList<MusicYear> GetYears()
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(@"
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
                 SELECT year,
                        COUNT(*) AS track_count,
                        COUNT(DISTINCT album || '|' || COALESCE(NULLIF(album_artist,''), artist)) AS album_count
-                FROM tracks
+                FROM {T}
                 WHERE year IS NOT NULL
                 GROUP BY year
-                ORDER BY year DESC", conn);
+                ORDER BY year DESC";
             var results = new List<MusicYear>();
             using var r = cmd.ExecuteReader();
             while (r.Read())
@@ -385,16 +425,17 @@ namespace resonance.MusicLibrary
 
         public IReadOnlyList<MusicFolder> GetFolders()
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(@"
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
                 SELECT directory,
                        COUNT(*) AS track_count,
                        MIN(CASE WHEN has_artwork = 1 THEN path ELSE NULL END) AS cover_path,
                        MAX(has_artwork) AS has_art,
                        MIN(indexed_at) AS indexed_at
-                FROM tracks
+                FROM {T}
                 GROUP BY directory
-                ORDER BY directory", conn);
+                ORDER BY directory";
             var results = new List<MusicFolder>();
             using var r = cmd.ExecuteReader();
             while (r.Read())
@@ -415,12 +456,13 @@ namespace resonance.MusicLibrary
 
         public (int Total, double TotalDuration) GetStats()
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand("SELECT COUNT(*), COALESCE(SUM(duration), 0.0) FROM tracks", conn);
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"SELECT COUNT(*), COALESCE(SUM(duration), 0.0) FROM {T}";
             using var r = cmd.ExecuteReader();
             if (r.Read())
             {
-                return ((int)(long)r.GetValue(0), r.IsDBNull(1) ? 0.0 : r.GetDouble(1));
+                return (Convert.ToInt32(r.GetValue(0)), r.IsDBNull(1) ? 0.0 : r.GetDouble(1));
             }
 
             return (0, 0.0);
@@ -428,24 +470,32 @@ namespace resonance.MusicLibrary
 
         public IReadOnlyList<MusicAlbum> GetAlbums(string artistFilter = null)
         {
-            using var conn = GetConnection();
+            using var conn = OpenConnection();
             var hasFilter = !string.IsNullOrWhiteSpace(artistFilter);
-            var where = hasFilter ? "WHERE artist = @artist COLLATE NOCASE" : string.Empty;
-            using var cmd = new SqliteCommand($@"
-                SELECT album, artist, album_artist,
+            var where = hasFilter
+                ? $"WHERE {IEq("COALESCE(NULLIF(album_artist,''), artist)")} @artist"
+                : string.Empty;
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
+                SELECT MIN(album) AS album,
+                       CASE WHEN MAX(NULLIF(album_artist,'')) IS NOT NULL THEN MAX(NULLIF(album_artist,''))
+                            WHEN COUNT(DISTINCT artist) > 1              THEN 'Various Artists'
+                            ELSE MIN(artist) END AS artist,
+                       MAX(NULLIF(album_artist,'')) AS album_artist,
                        MAX(year)          AS year,
                        COUNT(*)           AS track_count,
                        SUM(duration)      AS total_dur,
-                       MIN(path)          AS cover_path,
+                       MIN(CASE WHEN has_artwork = 1 THEN path ELSE NULL END) AS cover_path,
                        MAX(has_artwork)   AS has_art,
-                       MIN(indexed_at)    AS indexed_at
-                FROM tracks {where}
-                GROUP BY album COLLATE NOCASE, COALESCE(NULLIF(album_artist,''), artist) COLLATE NOCASE
-                HAVING album IS NOT NULL AND album != ''
-                ORDER BY album COLLATE NOCASE", conn);
+                       MIN(indexed_at)    AS indexed_at,
+                       MIN(directory)     AS directory
+                FROM {T} {where}
+                GROUP BY {GrpBy("album")}, COALESCE(NULLIF(album_artist,''), directory)
+                HAVING MIN(album) IS NOT NULL AND MIN(album) != ''
+                ORDER BY {OrdBy("album")}";
             if (hasFilter)
             {
-                cmd.Parameters.AddWithValue("@artist", artistFilter);
+                AddParam(cmd, "@artist", artistFilter);
             }
 
             var results = new List<MusicAlbum>();
@@ -461,7 +511,8 @@ namespace resonance.MusicLibrary
                     TotalDuration: r.IsDBNull(5) ? null : (double?)r.GetDouble(5),
                     CoverPath: r.IsDBNull(6) ? null : r.GetString(6),
                     HasArtwork: r.GetInt32(7) != 0,
-                    IndexedAt: r.GetInt64(8)));
+                    IndexedAt: r.GetInt64(8),
+                    Directory: r.IsDBNull(9) ? null : r.GetString(9)));
             }
 
             return results;
@@ -469,18 +520,19 @@ namespace resonance.MusicLibrary
 
         public IReadOnlyList<MusicArtist> GetArtists()
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(@"
-                SELECT COALESCE(NULLIF(album_artist,''), artist) AS display_artist,
-                       COUNT(DISTINCT album COLLATE NOCASE)      AS album_count,
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
+                SELECT MIN(COALESCE(NULLIF(album_artist,''), artist)) AS display_artist,
+                       COUNT(DISTINCT {GrpBy("album")})               AS album_count,
                        COUNT(*)                                  AS track_count,
-                       MIN(path)                                 AS cover_path,
+                       MIN(CASE WHEN has_artwork = 1 THEN path ELSE NULL END) AS cover_path,
                        MAX(has_artwork)                          AS has_art,
                        MIN(indexed_at)                           AS indexed_at
-                FROM tracks
+                FROM {T}
                 WHERE artist IS NOT NULL AND artist != ''
-                GROUP BY display_artist COLLATE NOCASE
-                ORDER BY display_artist COLLATE NOCASE", conn);
+                GROUP BY {GrpBy("COALESCE(NULLIF(album_artist,''), artist)")}
+                ORDER BY {OrdBy("COALESCE(NULLIF(album_artist,''), artist)")}";
 
             var results = new List<MusicArtist>();
             using var r = cmd.ExecuteReader();
@@ -500,21 +552,27 @@ namespace resonance.MusicLibrary
 
         public IReadOnlyList<MusicAlbum> GetRecentlyAdded(int limit)
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(@"
-                SELECT album, artist, album_artist,
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
+                SELECT MIN(album) AS album,
+                       CASE WHEN MAX(NULLIF(album_artist,'')) IS NOT NULL THEN MAX(NULLIF(album_artist,''))
+                            WHEN COUNT(DISTINCT artist) > 1              THEN 'Various Artists'
+                            ELSE MIN(artist) END AS artist,
+                       MAX(NULLIF(album_artist,'')) AS album_artist,
                        MAX(year)        AS year,
                        COUNT(*)         AS track_count,
                        SUM(duration)    AS total_dur,
-                       MIN(path)        AS cover_path,
+                       MIN(CASE WHEN has_artwork = 1 THEN path ELSE NULL END) AS cover_path,
                        MAX(has_artwork) AS has_art,
-                       MIN(indexed_at)  AS indexed_at
-                FROM tracks
-                GROUP BY album COLLATE NOCASE, COALESCE(NULLIF(album_artist,''), artist) COLLATE NOCASE
-                HAVING album IS NOT NULL AND album != ''
+                       MIN(indexed_at)  AS indexed_at,
+                       MIN(directory)   AS directory
+                FROM {T}
+                GROUP BY {GrpBy("album")}, COALESCE(NULLIF(album_artist,''), directory)
+                HAVING MIN(album) IS NOT NULL AND MIN(album) != ''
                 ORDER BY MAX(indexed_at) DESC
-                LIMIT @limit", conn);
-            cmd.Parameters.AddWithValue("@limit", limit);
+                LIMIT @limit";
+            AddParam(cmd, "@limit", limit);
 
             var results = new List<MusicAlbum>();
             using var r = cmd.ExecuteReader();
@@ -529,7 +587,8 @@ namespace resonance.MusicLibrary
                     TotalDuration: r.IsDBNull(5) ? null : (double?)r.GetDouble(5),
                     CoverPath: r.IsDBNull(6) ? null : r.GetString(6),
                     HasArtwork: r.GetInt32(7) != 0,
-                    IndexedAt: r.GetInt64(8)));
+                    IndexedAt: r.GetInt64(8),
+                    Directory: r.IsDBNull(9) ? null : r.GetString(9)));
             }
 
             return results;
@@ -537,14 +596,15 @@ namespace resonance.MusicLibrary
 
         public IReadOnlyList<MusicTrack> GetKeyedTracks()
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(@"
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
                 SELECT path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
                        title, artist, album_artist, album, year, track_number, disc_number,
                        genre, bpm, key_sig, comment, has_artwork, tag_types
-                FROM tracks
+                FROM {T}
                 WHERE key_sig IS NOT NULL AND key_sig != ''
-                ORDER BY artist COLLATE NOCASE", conn);
+                ORDER BY {OrdBy("artist")}";
 
             var results = new List<MusicTrack>();
             using var r = cmd.ExecuteReader();
@@ -558,54 +618,102 @@ namespace resonance.MusicLibrary
 
         public void RenameTrackPath(string oldPath, string newPath, string newFilename)
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(
-                "UPDATE tracks SET path = @newPath, filename = @newFilename WHERE path = @oldPath", conn);
-            cmd.Parameters.AddWithValue("@oldPath", oldPath);
-            cmd.Parameters.AddWithValue("@newPath", newPath);
-            cmd.Parameters.AddWithValue("@newFilename", newFilename);
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"UPDATE {T} SET path = @newPath, filename = @newFilename WHERE path = @oldPath";
+            AddParam(cmd, "@oldPath", oldPath);
+            AddParam(cmd, "@newPath", newPath);
+            AddParam(cmd, "@newFilename", newFilename);
             cmd.ExecuteNonQuery();
         }
 
         /// <summary>Updates all track paths that live under <paramref name="oldDir"/> to use <paramref name="newDir"/> as their prefix.</summary>
         public void RenameDirectory(string oldDir, string newDir)
         {
-            using var conn = GetConnection();
-            var prefixStart = oldDir.Length + 1; // SQLite substr is 1-indexed; +1 to skip the trailing slash
-            using var cmd = new SqliteCommand(@"
-                UPDATE tracks SET
+            using var conn = OpenConnection();
+            var prefixStart = oldDir.Length + 1; // substr is 1-indexed; +1 to skip the trailing slash
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
+                UPDATE {T} SET
                     path      = @newDir || substr(path,      @start),
                     directory = @newDir || substr(directory, @start)
-                WHERE directory = @oldDir OR directory LIKE @prefix", conn);
-            cmd.Parameters.AddWithValue("@oldDir", oldDir);
-            cmd.Parameters.AddWithValue("@newDir", newDir);
-            cmd.Parameters.AddWithValue("@start", prefixStart);
-            cmd.Parameters.AddWithValue("@prefix", oldDir.TrimEnd('/') + "/%");
+                WHERE directory = @oldDir OR directory LIKE @prefix";
+            AddParam(cmd, "@oldDir", oldDir);
+            AddParam(cmd, "@newDir", newDir);
+            AddParam(cmd, "@start", prefixStart);
+            AddParam(cmd, "@prefix", oldDir.TrimEnd('/') + "/%");
             cmd.ExecuteNonQuery();
         }
 
         public MusicTrack? GetByPath(string path)
         {
-            using var conn = GetConnection();
-            using var cmd = new SqliteCommand(@"
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
                 SELECT path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
                        title, artist, album_artist, album, year, track_number, disc_number,
                        genre, bpm, key_sig, comment, has_artwork, tag_types
-                FROM tracks WHERE path=@path", conn);
-            cmd.Parameters.AddWithValue("@path", path);
+                FROM {T} WHERE path=@path";
+            AddParam(cmd, "@path", path);
             using var r = cmd.ExecuteReader();
             return r.Read() ? ReadRow(r) : null;
         }
 
-        // ── Helpers ───────────────────────────────────────────────────────────
-        private SqliteConnection GetConnection()
+        /// <summary>
+        /// Finds a track that lives in the same directory and shares the same filename stem
+        /// as <paramref name="path"/> but with a different extension — e.g. after a file is
+        /// converted from <c>.opus</c> to <c>.mp3</c>. Returns <see langword="null"/> if none exists.
+        /// </summary>
+        public MusicTrack? FindByPathIgnoringExtension(string path)
         {
-            var conn = new SqliteConnection(ConnectionString);
+            var directory = System.IO.Path.GetDirectoryName(path);
+            var stem = System.IO.Path.GetFileNameWithoutExtension(path);
+            if (string.IsNullOrEmpty(directory) || string.IsNullOrEmpty(stem))
+            {
+                return null;
+            }
+
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
+                SELECT path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
+                       title, artist, album_artist, album, year, track_number, disc_number,
+                       genre, bpm, key_sig, comment, has_artwork, tag_types
+                FROM {T} WHERE directory=@dir";
+            AddParam(cmd, "@dir", directory);
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                var row = ReadRow(r);
+                if (!string.Equals(row.Path, path, StringComparison.Ordinal) &&
+                    string.Equals(System.IO.Path.GetFileNameWithoutExtension(row.Filename), stem, StringComparison.OrdinalIgnoreCase))
+                {
+                    return row;
+                }
+            }
+
+            return null;
+        }
+
+        // ── Helpers ───────────────────────────────────────────────────────────
+        private DbConnection OpenConnection()
+        {
+            DbConnection conn = UsePostgres
+                ? new NpgsqlConnection(ConnectionString)
+                : new SqliteConnection(ConnectionString);
             conn.Open();
             return conn;
         }
 
-        private static MusicTrack ReadRow(SqliteDataReader r) => new(
+        private static void AddParam(DbCommand cmd, string name, object value)
+        {
+            var p = cmd.CreateParameter();
+            p.ParameterName = name;
+            p.Value = value;
+            cmd.Parameters.Add(p);
+        }
+
+        private static MusicTrack ReadRow(DbDataReader r) => new(
             Path: r.GetString(0),
             Filename: r.GetString(1),
             Directory: r.GetString(2),

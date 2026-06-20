@@ -53,6 +53,7 @@ public class PlayRecord
     public required string Title { get; init; }
     public required string Artist { get; init; }
     public required string Folder { get; init; }
+    public string Source { get; init; } = string.Empty;
 }
 
 public class LibraryActivityDbContext : DbContext
@@ -67,6 +68,9 @@ public class LibraryActivityDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        if (Database.IsNpgsql())
+            modelBuilder.HasDefaultSchema("library_activity");
+
         modelBuilder.Entity<LovedTrack>()
             .HasKey(e => new { e.Path, e.Username });
 

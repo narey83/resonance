@@ -32,6 +32,7 @@
 
 using Microsoft.Extensions.Options;
 using resonance.Files;
+using resonance.Transfers;
 using Soulseek;
 
 namespace resonance.Transfers.Uploads
@@ -198,7 +199,8 @@ namespace resonance.Transfers.Uploads
             IShareService shareService,
             IRelayService relayService,
             IDbContextFactory<TransfersDbContext> contextFactory,
-            EventBus eventBus)
+            EventBus eventBus,
+            ITransferErrorNotificationService errorNotifications)
         {
             Files = fileService;
             Users = userService;
@@ -208,6 +210,7 @@ namespace resonance.Transfers.Uploads
             ContextFactory = contextFactory;
             OptionsMonitor = optionsMonitor;
             EventBus = eventBus;
+            ErrorNotifications = errorNotifications;
 
             Governor = new UploadGovernor(userService, optionsMonitor);
             Queue = new UploadQueue(userService, optionsMonitor);
@@ -233,6 +236,7 @@ namespace resonance.Transfers.Uploads
         private IShareService Shares { get; set; }
         private IUserService Users { get; set; }
         private EventBus EventBus { get; }
+        private ITransferErrorNotificationService ErrorNotifications { get; }
         private ConcurrentDictionary<string, bool> Locks { get; } = new();
         private ConcurrentDictionary<string, string> PeerAddresses { get; } = new();
 
@@ -490,6 +494,7 @@ namespace resonance.Transfers.Uploads
                 Log.Error(ex, "Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
 
                 TryFail(transfer.Id, "File could not be found", TransferStates.Completed | TransferStates.Aborted);
+                _ = ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, "File could not be found");
 
                 // todo: broadcast
                 SynchronizedUpdate(transfer, semaphore: syncRoot, cancellationToken: CancellationToken.None);
@@ -501,6 +506,7 @@ namespace resonance.Transfers.Uploads
                 Log.Error(ex, "Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
 
                 TryFail(transfer.Id, exception: ex);
+                _ = ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, ex.Message);
 
                 // todo: broadcast
                 SynchronizedUpdate(transfer, semaphore: syncRoot, cancellationToken: CancellationToken.None);
@@ -512,6 +518,7 @@ namespace resonance.Transfers.Uploads
                 Log.Error(ex, "Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
 
                 TryFail(transfer.Id, exception: ex);
+                _ = ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, ex.Message);
 
                 // todo: broadcast
                 SynchronizedUpdate(transfer, semaphore: syncRoot, cancellationToken: CancellationToken.None);
@@ -637,6 +644,7 @@ namespace resonance.Transfers.Uploads
                 catch (NotFoundException)
                 {
                     Log.Information("Upload of {Filename} to {Username} {Rejected}: {Message}", filename, username, "REJECTED", "File not shared.");
+                    _ = ErrorNotifications.NotifyUploadRejectedAsync(username, filename, "File not shared");
                     throw new DownloadEnqueueException($"File not shared.");
                 }
 

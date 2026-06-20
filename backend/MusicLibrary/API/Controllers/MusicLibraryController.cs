@@ -100,6 +100,17 @@ namespace resonance.MusicLibrary.API
         private IMemoryCache Cache { get; }
         private resonance.Common.Ffmpeg.IFfmpegService Ffmpeg { get; }
 
+        /// <summary>Returns total track count and duration for the library.</summary>
+        /// <returns></returns>
+        [HttpGet("stats")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(200)]
+        public IActionResult GetStats()
+        {
+            var (total, totalDuration) = Service.GetStats();
+            return Ok(new { total, totalDuration });
+        }
+
         /// <summary>Returns the current sync state.</summary>
         /// <returns></returns>
         [HttpGet("sync")]
@@ -107,14 +118,17 @@ namespace resonance.MusicLibrary.API
         [ProducesResponseType(typeof(MusicLibrarySyncState), 200)]
         public IActionResult GetSyncState() => Ok(Service.SyncState);
 
-        /// <summary>Triggers an immediate sync (fire-and-forget).</summary>
+        /// <summary>Triggers an immediate sync (fire-and-forget). Pass force=true to clear all indexed tracks and re-read every file from disk.</summary>
         /// <returns></returns>
         [HttpPost("sync")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(202)]
-        public IActionResult TriggerSync()
+        public IActionResult TriggerSync([FromQuery] bool force = false)
         {
-            Service.TriggerSync();
+            if (force)
+                Service.ForceResync();
+            else
+                Service.TriggerSync();
             return Accepted();
         }
 
@@ -140,7 +154,7 @@ namespace resonance.MusicLibrary.API
             [FromQuery] string sort = null,
             [FromQuery] bool descending = false)
         {
-            limit = Math.Clamp(limit, 1, 10_000);
+            limit = Math.Max(1, limit);
             offset = Math.Max(0, offset);
             return Ok(Service.QueryTracks(search, artist, album, genre, year, folder, missingKey, missingBpm, missingTitle, missingArtist, missingArtwork, limit, offset, sort, descending));
         }
@@ -433,7 +447,7 @@ namespace resonance.MusicLibrary.API
         /// <returns></returns>
         [HttpGet("artwork")]
         [Authorize(Policy = AuthPolicy.Any)]
-        [ResponseCache(Duration = 86400)]
+        [ResponseCache(Duration = 86400, Location = ResponseCacheLocation.Client)]
         public IActionResult GetArtwork([FromQuery] string path, [FromQuery] int? size)
         {
             if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
@@ -485,7 +499,7 @@ namespace resonance.MusicLibrary.API
                     mime = DetectImageMime(rawBytes)!;
                 }
 
-                Cache.Set(cacheKey, new ArtworkCacheEntry(bytes, mime), TimeSpan.FromMinutes(30));
+                Cache.Set(cacheKey, new ArtworkCacheEntry(bytes, mime), TimeSpan.FromHours(4));
                 return File(bytes, mime);
             }
             catch

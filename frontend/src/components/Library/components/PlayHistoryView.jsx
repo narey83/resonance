@@ -1,7 +1,7 @@
 import { useLibraryActivity } from '../../../context/LibraryActivityContext';
 import { usePlayer } from '../../../context/PlayerContext';
 import { getPlayHistory } from '../../../lib/libraryActivity';
-import { Heart, Play, Trash2, X } from 'lucide-react';
+import { Heart, Play, Smartphone, Trash2, X } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const formatDate = (ms) => {
@@ -279,6 +279,19 @@ const PlayHistoryView = ({ onContextMenu }) => {
               className="jb-ph-title"
               title={entry.path}
             >
+              {entry.source === 'local' && (
+                <Smartphone
+                  size={11}
+                  strokeWidth={1.75}
+                  style={{
+                    marginRight: 5,
+                    opacity: 0.5,
+                    flexShrink: 0,
+                    verticalAlign: 'middle',
+                  }}
+                  title="Played from device"
+                />
+              )}
               {displayTitle}
             </div>
             <div className="jb-ph-artist">{displayArtist}</div>

@@ -27,4 +27,18 @@ Review the `IMigration` interface to determine implementation details.
 
 The new `IMigration` implementation must be added to the dictionary in the `Migrations` property of the `Migrator` in the desired order so that it can be run.
 
+## Postgres
+
+When `database.type = postgresql` is set in config, the `Migrator` is **not run**. Postgres schema is created by EF Core at startup. SQLite migrations are irrelevant in Postgres mode.
+
+If a new SQLite migration creates a table that accumulates data while the app is running in SQLite mode, that data will not automatically appear in Postgres. After switching, re-run the built-in data migration tool to sync:
+
+```bash
+./backend/bin/Debug/net10.0/resonance \
+  --app-dir /home/narey/projects/resonance/backend \
+  --migrate-db sqlite-to-postgres
+```
+
+This is idempotent (`ON CONFLICT DO NOTHING`) and exits after completion without starting the server. See `DatabaseMigrator.cs` for implementation.
+
 ### Above all else, each and every migration **MUST** be idempotent; they'll be evaluated and run each time the app starts.

@@ -48,6 +48,9 @@ public class UsersDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        if (Database.IsNpgsql())
+            modelBuilder.HasDefaultSchema("users");
+
         modelBuilder.Entity<AppUser>()
             .Property(u => u.Role)
             .HasConversion<string>();

@@ -279,6 +279,12 @@ namespace resonance
         public BrowseRateLimitOptions BrowseRateLimit { get; init; } = new BrowseRateLimitOptions();
 
         /// <summary>
+        ///     Gets transfer error notification options.
+        /// </summary>
+        [Validate]
+        public TransferErrorNotificationsOptions TransferErrorNotifications { get; init; } = new TransferErrorNotificationsOptions();
+
+        /// <summary>
         ///     Gets filter options.
         /// </summary>
         [Validate]
@@ -329,6 +335,13 @@ namespace resonance
         [Validate]
         [RequiresRestart]
         public MetricsOptions Metrics { get; init; } = new MetricsOptions();
+
+        /// <summary>
+        ///     Gets database options.
+        /// </summary>
+        [Validate]
+        [RequiresRestart]
+        public DatabaseOptions Database { get; init; } = new DatabaseOptions();
 
         /// <summary>
         ///     Gets the app-wide ffmpeg options.
@@ -522,6 +535,16 @@ namespace resonance
             [Description("use volatile data storage (all data will be lost at shutdown)")]
             [RequiresRestart]
             public bool Volatile { get; init; } = false;
+
+            /// <summary>
+            ///     Gets the direction of a one-shot database migration: 'sqlite-to-postgres' or 'postgres-to-sqlite'.
+            ///     When set, the application migrates all data in the specified direction and exits.
+            /// </summary>
+            [Argument(default, "migrate-db")]
+            [EnvironmentVariable("MIGRATE_DB")]
+            [Description("migrate all data between database backends (sqlite-to-postgres or postgres-to-sqlite) and exit")]
+            [RequiresRestart]
+            public string MigrateDb { get; init; } = null;
 
             /// <summary>
             ///     Gets a value indicating whether user-defined regular expressions are case sensitive.
@@ -1557,6 +1580,42 @@ namespace resonance
         }
 
         /// <summary>
+        ///     Transfer error notification options.
+        /// </summary>
+        public class TransferErrorNotificationsOptions
+        {
+            /// <summary>
+            ///     Gets a value indicating whether transfer error notifications are enabled.
+            /// </summary>
+            public bool Enabled { get; init; } = false;
+
+            /// <summary>
+            ///     Gets the message template sent when an upload (their download from us) fails.
+            ///     Supports {filename} and {exception} placeholders.
+            /// </summary>
+            public string UploadErrorTemplate { get; init; } = "Your download of '{filename}' failed: {exception}";
+
+            /// <summary>
+            ///     Gets the message template sent when an upload request is rejected.
+            ///     Supports {filename} and {reason} placeholders.
+            /// </summary>
+            public string UploadRejectedTemplate { get; init; } = "Your request for '{filename}' was rejected: {reason}";
+
+            /// <summary>
+            ///     Gets the message template sent when a download (their upload to us) fails.
+            ///     Supports {filename} and {exception} placeholders.
+            /// </summary>
+            public string DownloadErrorTemplate { get; init; } = "Your upload of '{filename}' to me failed: {exception}";
+
+            /// <summary>
+            ///     Gets the minimum number of minutes between notifications to the same user.
+            ///     Prevents flooding a user with messages if they experience repeated errors. Default: 5.
+            /// </summary>
+            [Range(0, 1440)]
+            public int CooldownMins { get; init; } = 5;
+        }
+
+        /// <summary>
         ///     Filter options.
         /// </summary>
         public class FiltersOptions
@@ -1905,6 +1964,40 @@ namespace resonance
                 [Secret]
                 [RequiresRestart]
                 public string Password { get; init; } = Program.AppName;
+            }
+        }
+
+        /// <summary>
+        ///     Database options.
+        /// </summary>
+        public class DatabaseOptions : IValidatableObject
+        {
+            /// <summary>
+            ///     Gets the database type; 'sqlite' or 'postgresql'.
+            /// </summary>
+            [Description("database type; sqlite or postgresql")]
+            public string Type { get; init; } = "sqlite";
+
+            /// <summary>
+            ///     Gets the connection string for the database. Required when Type is 'postgresql'.
+            /// </summary>
+            [Description("connection string; required when type is postgresql")]
+            [Secret]
+            public string ConnectionString { get; init; } = null;
+
+            public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+            {
+                var validTypes = new[] { "sqlite", "postgresql" };
+                if (!validTypes.Contains(Type, StringComparer.OrdinalIgnoreCase))
+                {
+                    yield return new ValidationResult($"The database type must be one of: {string.Join(", ", validTypes)}");
+                    yield break;
+                }
+
+                if (Type.Equals("postgresql", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(ConnectionString))
+                {
+                    yield return new ValidationResult("A connection_string is required when database type is postgresql");
+                }
             }
         }
 

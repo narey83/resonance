@@ -43,7 +43,8 @@ namespace resonance.MusicLibrary
         double? TotalDuration,
         string CoverPath,
         bool HasArtwork,
-        long IndexedAt);
+        long IndexedAt,
+        string Directory);
 
     public record MusicArtist(
         string Artist,

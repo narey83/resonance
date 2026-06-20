@@ -1926,7 +1926,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
     public void Dispose()
     {
-        cts.Cancel();
+        try { cts.Cancel(); } catch (ObjectDisposedException) { }
         cts.Dispose();
         workerSlots?.Dispose();
     }

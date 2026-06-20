@@ -3111,6 +3111,7 @@
 .jb-issues-view {
   display: flex;
   flex-direction: column;
+  height: 100%;
 }
 
 .jb-issues-chips {

@@ -258,6 +258,7 @@ namespace resonance
             ConnectionWatchdog = connectionWatchdog;
             HttpClientFactory = httpClientFactory;
             TransfersConnectionString = connectionStrings[Database.Transfers];
+            UsePostgres = connectionStrings.UsePostgres;
 
             Clock.EveryMinute += Clock_EveryMinute;
             Clock.EveryThirtySeconds += Clock_EveryThirtySeconds;
@@ -318,6 +319,7 @@ namespace resonance
         private IHttpClientFactory HttpClientFactory { get; set; }
         private resonance.Network.GeoService GeoService { get; set; }
         private string TransfersConnectionString { get; set; }
+        private bool UsePostgres { get; set; }
         private ConcurrentDictionary<string, IPEndPoint> UserEndpointCache { get; } = new(StringComparer.OrdinalIgnoreCase);
 
         public void CollectGarbage()
@@ -1649,31 +1651,66 @@ namespace resonance
                     }
                 }
 
-                using var conn = new Microsoft.Data.Sqlite.SqliteConnection(TransfersConnectionString);
+                System.Data.Common.DbConnection conn = UsePostgres
+                    ? new Npgsql.NpgsqlConnection(TransfersConnectionString)
+                    : new Microsoft.Data.Sqlite.SqliteConnection(TransfersConnectionString);
+
                 await conn.OpenAsync();
+                using (conn)
+                {
+                    string sql;
+                    System.Data.Common.DbCommand cmd;
 
-                var sql = @"
-                    INSERT INTO TransferNetworkInfo (Username, IpAddress, Country, City, IsVpn, Lat, Lon, LastSeen)
-                    VALUES (@Username, @Ip, @Country, @City, @IsVpn, @Lat, @Lon, @LastSeen)
-                    ON CONFLICT(Username) DO UPDATE SET
-                        IpAddress = excluded.IpAddress,
-                        Country   = excluded.Country,
-                        City      = excluded.City,
-                        IsVpn     = excluded.IsVpn,
-                        Lat       = excluded.Lat,
-                        Lon       = excluded.Lon,
-                        LastSeen  = excluded.LastSeen";
+                    if (UsePostgres)
+                    {
+                        sql = @"
+                            INSERT INTO transfers.""TransferNetworkInfo"" (""Username"", ""IpAddress"", ""Country"", ""City"", ""IsVpn"", ""Lat"", ""Lon"", ""LastSeen"")
+                            VALUES (@Username, @Ip, @Country, @City, @IsVpn, @Lat, @Lon, @LastSeen)
+                            ON CONFLICT (""Username"") DO UPDATE SET
+                                ""IpAddress"" = EXCLUDED.""IpAddress"",
+                                ""Country""   = EXCLUDED.""Country"",
+                                ""City""      = EXCLUDED.""City"",
+                                ""IsVpn""     = EXCLUDED.""IsVpn"",
+                                ""Lat""       = EXCLUDED.""Lat"",
+                                ""Lon""       = EXCLUDED.""Lon"",
+                                ""LastSeen""  = EXCLUDED.""LastSeen""";
+                        cmd = new Npgsql.NpgsqlCommand(sql, (Npgsql.NpgsqlConnection)conn);
+                        cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@Username", username));
+                        cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@Ip", ip));
+                        cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@Country", (object)country ?? DBNull.Value));
+                        cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@City", (object)city ?? DBNull.Value));
+                        cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@IsVpn", isVpn ? 1 : 0));
+                        cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@Lat", (object)lat ?? DBNull.Value));
+                        cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@Lon", (object)lon ?? DBNull.Value));
+                        cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@LastSeen", DateTime.UtcNow));
+                    }
+                    else
+                    {
+                        sql = @"
+                            INSERT INTO TransferNetworkInfo (Username, IpAddress, Country, City, IsVpn, Lat, Lon, LastSeen)
+                            VALUES (@Username, @Ip, @Country, @City, @IsVpn, @Lat, @Lon, @LastSeen)
+                            ON CONFLICT(Username) DO UPDATE SET
+                                IpAddress = excluded.IpAddress,
+                                Country   = excluded.Country,
+                                City      = excluded.City,
+                                IsVpn     = excluded.IsVpn,
+                                Lat       = excluded.Lat,
+                                Lon       = excluded.Lon,
+                                LastSeen  = excluded.LastSeen";
+                        cmd = new Microsoft.Data.Sqlite.SqliteCommand(sql, (Microsoft.Data.Sqlite.SqliteConnection)conn);
+                        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@Username", username));
+                        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@Ip", ip));
+                        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@Country", (object)country ?? DBNull.Value));
+                        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@City", (object)city ?? DBNull.Value));
+                        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@IsVpn", isVpn ? 1 : 0));
+                        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@Lat", (object)lat ?? DBNull.Value));
+                        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@Lon", (object)lon ?? DBNull.Value));
+                        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@LastSeen", DateTime.UtcNow.ToString("o")));
+                    }
 
-                using var cmd = new Microsoft.Data.Sqlite.SqliteCommand(sql, conn);
-                cmd.Parameters.AddWithValue("@Username", username);
-                cmd.Parameters.AddWithValue("@Ip", ip);
-                cmd.Parameters.AddWithValue("@Country", (object)country ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("@City", (object)city ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("@IsVpn", isVpn ? 1 : 0);
-                cmd.Parameters.AddWithValue("@Lat", (object)lat ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("@Lon", (object)lon ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("@LastSeen", DateTime.UtcNow.ToString("o"));
-                await cmd.ExecuteNonQueryAsync();
+                    using (cmd)
+                        await cmd.ExecuteNonQueryAsync();
+                }
             }
             catch (Exception ex)
             {

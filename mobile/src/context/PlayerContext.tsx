@@ -8,8 +8,6 @@ import React, {
   useState,
 } from 'react';
 import TrackPlayer, {
-  AppKilledPlaybackBehavior,
-  Capability,
   Event,
   Track,
   useActiveTrack,
@@ -30,6 +28,7 @@ import {
   clearAndroidAutoTree,
   registerAutoPlayHandler,
 } from '../services/androidAuto';
+import { ensurePlayerSetup } from '../services/playerSetup';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -77,7 +76,7 @@ const toRntpTrack = (track: MusicTrack): RntpTrack => {
     title:    getTrackTitle(track),
     artist:   track.artist    ?? undefined,
     album:    track.album     ?? undefined,
-    artwork:  track.hasArtwork ? (getArtworkUrl(track.path, 512) ?? undefined) : undefined,
+    artwork:  track.hasArtwork ? (isLocal ? track.coverPath ?? undefined : getArtworkUrl(track.path, 512) ?? undefined) : undefined,
     duration: track.duration  ?? undefined,
     _source:  track,
   } as RntpTrack;
@@ -123,34 +122,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   // ── RNTP setup ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const setup = async () => {
-      try {
-        await TrackPlayer.setupPlayer({
-          maxCacheSize: 1024 * 256, // 256 MB on-disk cache — fewer re-downloads on repeat plays
-          // Buffer generously so brief bandwidth dips (tunnels, weak cellular) don't stall:
-          minBuffer:  30,  // keep ≥30 s buffered ahead
-          maxBuffer:  120, // read up to 2 min ahead when bandwidth allows
-          playBuffer: 5,   // wait for 5 s buffered before (re)starting playback
-          backBuffer: 30,  // retain 30 s behind for instant back-seek
-        });
-      } catch {
-        // Already set up
-      }
-      await TrackPlayer.updateOptions({
-        capabilities: [
-          Capability.Play,
-          Capability.Pause,
-          Capability.SkipToNext,
-          Capability.SkipToPrevious,
-          Capability.SeekTo,
-        ],
-        notificationCapabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext],
-        android: {
-          appKilledPlaybackBehavior: AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
-        },
-      });
-    };
-    setup();
+    ensurePlayerSetup();
   }, []);
 
   // ── RNTP state hooks ───────────────────────────────────────────────────────
@@ -177,7 +149,14 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const recordPlay = useLibraryActivityStore((s) => s.recordPlay);
   useEffect(() => {
-    if (currentTrack?.path) recordPlay(currentTrack.path);
+    if (!currentTrack?.path) return;
+    const local = isLocalPath(currentTrack.path);
+    recordPlay(currentTrack.path, local ? {
+      title: currentTrack.title ?? undefined,
+      artist: currentTrack.artist ?? undefined,
+      folder: currentTrack.directory ?? undefined,
+      source: 'local',
+    } : undefined);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrack?.path]);
 
@@ -200,7 +179,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       }
     }, 4_000);
     return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [networkSwitchedAt]);
 
   // Whenever the access token rotates (proactive refresh or reconnect) and the player
@@ -228,7 +207,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       .then(() => idx > 0 ? TrackPlayer.skip(idx) : Promise.resolve())
       .then(() => TrackPlayer.seekTo(pos))
       .catch((err: unknown) => remoteLog('warn', `[player] queue rebuild failed — ${err instanceof Error ? err.message : String(err)}`));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [storeAccessToken]);
 
   // Refresh the access token if it's expiring, and — if it actually rotated — rebuild the
@@ -294,8 +273,18 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (storeAccessToken) buildAndroidAutoTree();
     else clearAndroidAutoTree();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [storeAccessToken]);
+
+  const lovedPaths = useLibraryActivityStore((s) => s.lovedPaths);
+  useEffect(() => {
+    const isLoved = currentTrack ? lovedPaths.has(currentTrack.path) : false;
+    // Wait for setup — this effect fires on mount, racing the async player init.
+    ensurePlayerSetup()
+      .then(() => TrackPlayer.updateOptions({ likeOptions: { isActive: isLoved, title: 'Love' } }))
+      .catch(() => { /* player unavailable */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTrack?.path, lovedPaths]);
 
   const playTrack = useCallback((track: MusicTrack) => {
     playQueue([track], 0);

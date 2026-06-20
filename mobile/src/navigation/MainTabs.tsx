@@ -1,11 +1,10 @@
 import React from 'react';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { BottomTabBar } from '@react-navigation/bottom-tabs';
+import { createBottomTabNavigator , BottomTabBar } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { View } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
-import { makeScreenOptions, Typography } from '../theme';
+import { makeScreenOptions } from '../theme';
 import { PlayerMiniBar } from '../components/PlayerMiniBar';
 import { useConversationStore } from '../store/conversationStore';
 

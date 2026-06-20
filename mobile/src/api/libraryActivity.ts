@@ -13,6 +13,7 @@ export interface PlayRecord {
   title: string;
   artist: string;
   folder: string;
+  source: string;
 }
 
 export interface LibraryActivitySnapshot {
@@ -32,8 +33,11 @@ export const unloveTrack = async (path: string): Promise<void> =>
 export const clearAllLoved = async (): Promise<void> =>
   apiClient.delete('/musiclibrary/loved/all');
 
-export const recordPlay = async (path: string): Promise<PlayStat> =>
-  (await apiClient.post('/musiclibrary/plays', { path })).data;
+export const recordPlay = async (
+  path: string,
+  meta?: { title?: string | null; artist?: string | null; folder?: string | null; source?: string },
+): Promise<PlayStat> =>
+  (await apiClient.post('/musiclibrary/plays', { path, ...meta })).data;
 
 export const getPlayHistory = async (limit = 100, offset = 0): Promise<PlayRecord[]> =>
   (await apiClient.get('/musiclibrary/plays', { params: { limit, offset } })).data;

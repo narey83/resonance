@@ -66,7 +66,15 @@ Each module typically contains: `*Service.cs`, `API/Controllers/*Controller.cs`,
 
 **SignalR hubs:** `LogsHub`, `ApplicationHub`, `SearchHub`, `RelayHub`. The hub pattern uses an extension method (`hub.EmitXyzAsync(...)`) in the same file as the hub class. New connections receive a buffered snapshot via `OnConnectedAsync`.
 
-**Databases:** Each major module has its own `DbContext` and SQLite file under `app/`. WAL mode and PRAGMAs are set at init time in `Program.cs`. Migrations live in `*/Data/Migrations/`.
+**Databases:** The app supports SQLite (default) and PostgreSQL. Controlled by `database.type` in config — set to `postgresql` with a `connection_string` to enable Postgres. When using Postgres, the `Migrator` (SQLite schema migrations) is skipped entirely; Postgres schema is managed by EF Core via `ctx.Database.EnsureCreated()` at startup. SQLite schema migrations live in `backend/Core/Data/Migrations/`.
+
+**Switching to Postgres / syncing SQLite data:** The built-in `DatabaseMigrator` handles copying all SQLite data to Postgres. It reads all `.db` files in the data directory and upserts into Postgres (`ON CONFLICT DO NOTHING`), so it is safe to re-run at any time. Run it on the server:
+```bash
+./backend/bin/Debug/net10.0/resonance \
+  --app-dir /home/narey/projects/resonance/backend \
+  --migrate-db sqlite-to-postgres
+```
+Re-run this whenever a new SQLite migration creates a table that has accumulated data, as those rows won't automatically appear in Postgres. The command exits immediately after migrating — it does not start the web server.
 
 **Options:** Config is loaded from `resonance.yml` (YAML) and merged with environment variables and CLI flags. The root type is `Options` in `Core/Options.cs`. Injected as `IOptions<Options>` and `IOptionsMonitor<Options>`. A snapshot at startup is exposed as `Program.OptionsAtStartup`.
 
