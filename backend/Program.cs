@@ -178,9 +178,15 @@ namespace resonance
         public static string FullVersion { get; } = $"{SemanticVersion} ({InformationalVersion})";
 
         /// <summary>
-        ///     Gets the minor version to identify this client on the Soulseek network.
+        ///     Gets the minor version that identifies this client on the Soulseek network.
         /// </summary>
-        public static int NetworkMinorVersion { get; } = 9001;
+        /// <remarks>
+        ///     Must be unique per Soulseek.NET-based client (library LICENSE) and must not
+        ///     reuse another client's identifier (slskd Additional Terms 4(d)). Per the
+        ///     Soulseek.NET "Reserved Minor Version Ranges" registry, slskd reserves
+        ///     760-7699999; Resonance uses the 8000000+ block, above that range.
+        /// </remarks>
+        public static int NetworkMinorVersion { get; } = 8000000;
 
         /// <summary>
         ///     Gets a value indicating whether the current version is a Canary build.
