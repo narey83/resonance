@@ -1,5 +1,6 @@
 import { lookupIp } from '../../lib/network';
 import { formatBytes, parseUtcDate } from '../../lib/util';
+import UserReportModal from './UserReportModal';
 import React, {
   useEffect,
   useLayoutEffect,
@@ -78,6 +79,7 @@ const WorldMap = ({
   const wrapRef = useRef(null);
   const [peerLocations, setPeerLocations] = useState([]);
   const [tooltip, setTooltip] = useState(null);
+  const [modalUser, setModalUser] = useState(null);
   const hideTimerRef = useRef(null);
   const [position, setPosition] = useState({ coordinates: [0, 15], zoom: 1 });
   const [dragging, setDragging] = useState(false);
@@ -170,6 +172,22 @@ const WorldMap = ({
 
   const cancelHide = () => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+  };
+
+  const openUserModal = (peer, initialTab) => {
+    if (!peer.username) return;
+    cancelHide();
+    setTooltip(null);
+    setModalUser({
+      username: peer.username,
+      initialTab,
+      seed: {
+        ip: peer.ip,
+        city: peer.city,
+        country: peer.country,
+        isVpn: peer.isVpn,
+      },
+    });
   };
 
   const handleZoomIn = () =>
@@ -451,11 +469,6 @@ const WorldMap = ({
                 minute: '2-digit',
               })
             : null;
-          const base = (window.urlBase === '/' ? '' : window.urlBase) || '';
-          const userQ = encodeURIComponent(p.username ?? '');
-          const browseUrl = `${base}/browse?user=${userQ}`;
-          const chatUrl = `${base}/chat?user=${userQ}`;
-          const uploadsUrl = `${base}/overview?user=${userQ}`;
           const left = Math.max(
             8,
             Math.min(tooltip.x + 14, window.innerWidth - TOOLTIP_W - 8),
@@ -553,35 +566,27 @@ const WorldMap = ({
 
               {p.username && (
                 <div className="map-tooltip-actions">
-                  <a
+                  <button
                     className="map-tooltip-action"
-                    href={browseUrl}
-                    rel="noopener noreferrer"
-                    target="_blank"
+                    onClick={() => openUserModal(p, 'overview')}
+                    type="button"
                   >
-                    Browse files
-                  </a>
-                  <a
-                    className="map-tooltip-action"
-                    href={chatUrl}
-                    rel="noopener noreferrer"
-                    target="_blank"
-                  >
-                    Chat
-                  </a>
-                  <a
-                    className="map-tooltip-action"
-                    href={uploadsUrl}
-                    rel="noopener noreferrer"
-                    target="_blank"
-                  >
-                    Uploads
-                  </a>
+                    View user
+                  </button>
                 </div>
               )}
             </div>
           );
         })()}
+
+      {modalUser && (
+        <UserReportModal
+          initialTab={modalUser.initialTab}
+          onClose={() => setModalUser(null)}
+          seed={modalUser.seed}
+          username={modalUser.username}
+        />
+      )}
     </div>
   );
 };

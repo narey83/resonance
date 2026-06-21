@@ -275,6 +275,10 @@
 #       api_key: <gluetun API key>        # for API key auth
 #       username: <username if using basic auth>
 #       password: <password if using basic auth>
+#   upnp:
+#     enabled: false           # ask the gateway to forward the Soulseek listen port via UPnP IGD
+#     protocol: tcp            # tcp or udp; incoming peer connections are tcp
+#     lease_duration: 3600     # lease lifetime in seconds; renewed before expiry. 0 = permanent
 #   webhooks:
 #     my_webhook:
 #       on:

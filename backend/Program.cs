@@ -5,6 +5,9 @@
 //     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
 //   │ Copyright (c) JP Dillingham.
+//   │ Copyright (c) 2026 John Narey.
+//   │ Modified as part of Resonance, a modified version of slskd;
+//   │ see the project repository for the nature of the changes.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -74,6 +77,7 @@ namespace resonance
     using resonance.Integrations.FTP;
     using resonance.Integrations.Pushbullet;
     using resonance.Integrations.Scripts;
+    using resonance.Integrations.Upnp;
     using resonance.Integrations.VPN;
     using resonance.Integrations.Webhooks;
     using resonance.Messaging;
@@ -693,6 +697,9 @@ namespace resonance
                 _ = app.Services.GetService<WebhookService>();
                 _ = app.Services.GetService<VPNService>();
 
+                // begin UPnP discovery/port mapping if enabled; the mapping is removed on shutdown via disposal
+                app.Services.GetService<UpnpService>()?.Start();
+
                 app.ConfigureAspDotNetPipeline();
 
                 if (OptionsAtStartup.Flags.NoStart)
@@ -872,6 +879,7 @@ namespace resonance
             services.AddSingleton<TelemetryService>();
 
             services.AddSingleton<VPNService>();
+            services.AddSingleton<UpnpService>();
             services.AddSingleton<ScriptService>();
             services.AddSingleton<WebhookService>();
 

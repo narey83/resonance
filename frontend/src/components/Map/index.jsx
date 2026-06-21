@@ -2,6 +2,7 @@
 import './Map.css';
 import * as networkAPI from '../../lib/network';
 import * as optionsAPI from '../../lib/options';
+import * as prefs from '../../lib/prefs';
 import * as reportsAPI from '../../lib/reports';
 import * as transfersAPI from '../../lib/transfers';
 import WorldMap from '../Overview/WorldMap';
@@ -23,7 +24,11 @@ const MapPage = () => {
   const [uploads, setUploads] = useState([]);
   const [serverLat, setServerLat] = useState(null);
   const [serverLon, setServerLon] = useState(null);
-  const [range, setRange] = useState(24);
+  // Shared with the Overview page via the `overview:range-h` preference.
+  const [range, setRange] = useState(() => {
+    const n = Number(prefs.get('overview:range-h', 24));
+    return RANGES.some((r) => r.hours === n) ? n : 24;
+  });
   const [pastPeers, setPastPeers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [resolving, setResolving] = useState(false);
@@ -206,7 +211,10 @@ const MapPage = () => {
             <button
               className={`map-pill${range === r.hours ? ' active' : ''}`}
               key={r.hours}
-              onClick={() => setRange(r.hours)}
+              onClick={() => {
+                prefs.set('overview:range-h', r.hours);
+                setRange(r.hours);
+              }}
               type="button"
             >
               {r.label}

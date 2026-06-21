@@ -1,15 +1,26 @@
 import './Overview.css';
 import * as eventsAPI from '../../lib/events';
+import * as libraryActivityAPI from '../../lib/libraryActivity';
+import * as musicLibraryAPI from '../../lib/musicLibrary';
 import * as prefs from '../../lib/prefs';
 import * as reportsAPI from '../../lib/reports';
 import * as sharesAPI from '../../lib/shares';
 import * as transfersAPI from '../../lib/transfers';
 import ActivityChart from './ActivityChart';
+import ActivityHeatmap from './ActivityHeatmap';
+import CoverageCard from './CoverageCard';
 import ErrorChart from './ErrorChart';
 import FileTypeChart from './FileTypeChart';
+import GeographyCard from './GeographyCard';
 import KpiCards from './KpiCards';
+import LibraryComposition from './LibraryComposition';
 import NotificationFeed from './NotificationFeed';
+import PeerRetentionCard from './PeerRetentionCard';
 import PopularDirectories from './PopularDirectories';
+import QueueWaitCard from './QueueWaitCard';
+import RatioCard from './RatioCard';
+import RetryFunnel from './RetryFunnel';
+import SocialPulse from './SocialPulse';
 import TopFiles from './TopFiles';
 import TransferHealth from './TransferHealth';
 import UserLeaderboard from './UserLeaderboard';
@@ -82,6 +93,7 @@ const Overview = () => {
   });
 
   const [summary, setSummary] = useState(null);
+  const [prevSummary, setPrevSummary] = useState(null);
   const [histogram, setHistogram] = useState(null);
   const [leaderboard, setLeaderboard] = useState({ download: [], upload: [] });
   const [directories, setDirectories] = useState([]);
@@ -90,6 +102,16 @@ const Overview = () => {
   const [ulExceptions, setUlExceptions] = useState([]);
   const [events, setEvents] = useState([]);
   const [fileTypeCounts, setFileTypeCounts] = useState(null);
+  const [heatmap, setHeatmap] = useState([]);
+  const [geography, setGeography] = useState(null);
+  const [retries, setRetries] = useState([]);
+  const [queueWait, setQueueWait] = useState(null);
+  const [peers, setPeers] = useState(null);
+  const [social, setSocial] = useState(null);
+  const [coverage, setCoverage] = useState(null);
+  const [genres, setGenres] = useState([]);
+  const [years, setYears] = useState([]);
+  const [playStats, setPlayStats] = useState([]);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [analyticsRefresh, setAnalyticsRefresh] = useState(0);
 
@@ -158,6 +180,43 @@ const Overview = () => {
     load();
   }, []);
 
+  // Activity heatmap — fixed 90-day lookback so the day/hour pattern is meaningful
+  // regardless of the selected range (which can be as short as 1h).
+  useEffect(() => {
+    const load = async () => {
+      const end = new Date().toISOString();
+      const start = new Date(
+        Date.now() - 90 * 24 * 60 * 60 * 1_000,
+      ).toISOString();
+      try {
+        const heat = await reportsAPI.getHeatmap({ end, start });
+        setHeatmap(heat ?? []);
+      } catch {
+        // silently ignore
+      }
+    };
+
+    load();
+  }, []);
+
+  // Catalog coverage + local library composition — load once on mount (not time-windowed)
+  useEffect(() => {
+    const load = async () => {
+      const [cov, gen, yrs, plays] = await Promise.all([
+        reportsAPI.getCoverage().catch(() => null),
+        musicLibraryAPI.getGenres().catch(() => null),
+        musicLibraryAPI.getYears().catch(() => null),
+        libraryActivityAPI.getPlayStats().catch(() => null),
+      ]);
+      setCoverage(cov);
+      setGenres(gen ?? []);
+      setYears(yrs ?? []);
+      setPlayStats(plays ?? []);
+    };
+
+    load();
+  }, []);
+
   // Analytics — reload when range, direction, or refresh interval changes
   useEffect(() => {
     setAnalyticsLoading(true);
@@ -166,6 +225,12 @@ const Overview = () => {
     const interval = getHistogramInterval(range);
 
     const apiDirection = direction ?? undefined;
+
+    // previous equal-length window, for KPI deltas
+    const prevEnd = start;
+    const prevStart = new Date(
+      Date.now() - 2 * range * 60 * 60 * 1_000,
+    ).toISOString();
 
     const load = async () => {
       try {
@@ -213,7 +278,7 @@ const Overview = () => {
             reportsAPI
               .getExceptionsPareto({ direction: 'upload', end, start })
               .catch(() => null),
-            reportsAPI.getTopFiles({ end, limit: 2, start }).catch(() => null),
+            reportsAPI.getTopFiles({ end, limit: 10, start }).catch(() => null),
           ]);
         setSummary(sum);
         setHistogram(hist);
@@ -222,6 +287,28 @@ const Overview = () => {
         setDlExceptions(dlExc ?? []);
         setUlExceptions(ulExc ?? []);
         setTopFiles(filesData ?? []);
+
+        const [prevSum, geo, retry, queue, peerData, socialData] =
+          await Promise.all([
+            reportsAPI
+              .getSummary({
+                direction: apiDirection,
+                end: prevEnd,
+                start: prevStart,
+              })
+              .catch(() => null),
+            reportsAPI.getGeography({ end, limit: 8, start }).catch(() => null),
+            reportsAPI.getRetryFunnel({ end, start }).catch(() => null),
+            reportsAPI.getQueueWait({ end, start }).catch(() => null),
+            reportsAPI.getPeerRetention({ end, start }).catch(() => null),
+            reportsAPI.getSocialActivity({ end, start }).catch(() => null),
+          ]);
+        setPrevSummary(prevSum);
+        setGeography(geo);
+        setRetries(retry ?? []);
+        setQueueWait(queue);
+        setPeers(peerData);
+        setSocial(socialData);
       } catch {
         // silently ignore
       } finally {
@@ -244,6 +331,9 @@ const Overview = () => {
 
   const allDownloads = flattenTransfers(downloads);
   const allUploads = flattenTransfers(uploads);
+  const totalSharedFiles = fileTypeCounts
+    ? Object.values(fileTypeCounts).reduce((s, v) => s + (Number(v) || 0), 0)
+    : 0;
 
   return (
     <div className="overview">
@@ -339,42 +429,95 @@ const Overview = () => {
                 </div>
               </div>
 
-              <KpiCards
-                downloads={allDownloads}
-                loading={analyticsLoading && !summary}
-                summary={summary}
-                uploads={allUploads}
-              />
+              <section className="overview-section">
+                <h2 className="overview-section-title">At a Glance</h2>
+                <KpiCards
+                  downloads={allDownloads}
+                  loading={analyticsLoading && !summary}
+                  prevSummary={prevSummary}
+                  summary={summary}
+                  uploads={allUploads}
+                />
+                <SocialPulse data={social} />
+                <div className="overview-row">
+                  <RatioCard
+                    histogram={histogram}
+                    summary={summary}
+                  />
+                  <CoverageCard
+                    totalFiles={totalSharedFiles}
+                    uploadedFiles={coverage?.uploadedFiles}
+                  />
+                </div>
+              </section>
 
-              <ActivityChart
-                data={histogram}
-                intervalMinutes={getHistogramInterval(range)}
-                range={range}
-              />
+              <section className="overview-section">
+                <h2 className="overview-section-title">Transfer Activity</h2>
+                <ActivityChart
+                  data={histogram}
+                  intervalMinutes={getHistogramInterval(range)}
+                  range={range}
+                />
+                <ActivityHeatmap data={heatmap} />
+                <ErrorChart
+                  data={histogram}
+                  intervalMinutes={getHistogramInterval(range)}
+                />
+              </section>
 
-              <ErrorChart
-                data={histogram}
-                intervalMinutes={getHistogramInterval(range)}
-              />
+              <section className="overview-section">
+                <h2 className="overview-section-title">Reliability</h2>
+                <div className="overview-row">
+                  <RetryFunnel data={retries} />
+                  <QueueWaitCard stats={queueWait} />
+                </div>
+                <TransferHealth
+                  dlExceptions={dlExceptions}
+                  summary={summary}
+                  ulExceptions={ulExceptions}
+                />
+              </section>
 
-              <div className="overview-row">
-                <UserLeaderboard leaderboard={leaderboard} />
-                <PopularDirectories directories={directories} />
-                <TopFiles files={topFiles} />
-              </div>
+              <section className="overview-section">
+                <h2 className="overview-section-title">
+                  Top Users &amp; Content
+                </h2>
+                <div className="overview-row">
+                  <UserLeaderboard leaderboard={leaderboard} />
+                  <PopularDirectories directories={directories} />
+                  <TopFiles files={topFiles} />
+                </div>
+              </section>
 
-              <TransferHealth
-                dlExceptions={dlExceptions}
-                summary={summary}
-                ulExceptions={ulExceptions}
-              />
+              <section className="overview-section">
+                <h2 className="overview-section-title">
+                  Audience &amp; Geography
+                </h2>
+                <div className="overview-row">
+                  <GeographyCard geography={geography} />
+                  <PeerRetentionCard data={peers} />
+                </div>
+              </section>
 
-              <FileTypeChart counts={fileTypeCounts} />
+              <section className="overview-section">
+                <h2 className="overview-section-title">Library</h2>
+                <div className="overview-row">
+                  <LibraryComposition
+                    genres={genres}
+                    playStats={playStats}
+                    years={years}
+                  />
+                  <FileTypeChart counts={fileTypeCounts} />
+                </div>
+              </section>
+
+              <section className="overview-section overview-section--feed">
+                <h2 className="overview-section-title">Activity Feed</h2>
+                <NotificationFeed events={events} />
+              </section>
             </>
           )}
         </div>
-
-        <NotificationFeed events={events} />
       </div>
     </div>
   );

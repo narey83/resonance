@@ -194,7 +194,7 @@ const DatabaseViewer = () => {
 
   const selectTable = (table) => {
     const cols = schema[table];
-    const colList = cols?.map((c) => `  ${c.name}`).join(',\n') ?? '*';
+    const colList = cols?.map((c) => `  "${c.name}"`).join(',\n') ?? '*';
     setSql(`SELECT\n${colList}\nFROM "${table}"\nLIMIT ${limit};`);
     setTimeout(() => textareaRef.current?.focus(), 50);
   };

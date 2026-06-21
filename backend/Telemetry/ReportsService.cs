@@ -5,6 +5,9 @@
 //     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
 //   │ Copyright (c) JP Dillingham.
+//   │ Copyright (c) 2026 John Narey.
+//   │ Modified as part of Resonance, a modified version of slskd;
+//   │ see the project repository for the nature of the changes.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -1209,6 +1212,479 @@ public class ReportsService
         return connection
             .Query<UserEventCountRow>(sql, param)
             .ToDictionary(r => r.Username, r => new UserEventCounts(r.BrowseCount, r.ChatCount));
+    }
+
+    /// <summary>
+    ///     Returns a day-of-week (0=Sunday) by hour-of-day (UTC) heatmap of successful transfer activity.
+    /// </summary>
+    public List<HeatmapCell> GetActivityHeatmap(
+        DateTime? start = null,
+        DateTime? end = null,
+        TransferDirection? direction = null)
+    {
+        var s = Utc(start ?? DateTime.MinValue);
+        var e = Utc(end ?? DateTime.MaxValue);
+
+        if (e <= s)
+        {
+            throw new ArgumentException("End time must be later than start time");
+        }
+
+        var cacheKey = $"reports:heatmap:{Bucket(s):O}:{Bucket(e):O}:{direction}";
+        return Cache.GetOrCreate(cacheKey, entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
+
+            string sql;
+            if (UsePostgres)
+            {
+                sql = $@"
+                    SELECT
+                        EXTRACT(DOW FROM ""EndedAt"")::int AS Dow,
+                        EXTRACT(HOUR FROM ""EndedAt"")::int AS Hour,
+                        SUM(""Size"") AS Bytes,
+                        COUNT(*) AS Count
+                    FROM transfers.""Transfers""
+                    WHERE ""State"" = 48
+                        AND ""EndedAt"" IS NOT NULL
+                        AND ""EndedAt"" BETWEEN @Start AND @End
+                        {(direction is not null ? "AND \"Direction\" = @Direction" : string.Empty)}
+                    GROUP BY 1, 2
+                ";
+            }
+            else
+            {
+                sql = $@"
+                    SELECT
+                        CAST(strftime('%w', EndedAt) AS INTEGER) AS Dow,
+                        CAST(strftime('%H', EndedAt) AS INTEGER) AS Hour,
+                        SUM(Size) AS Bytes,
+                        COUNT(*) AS Count
+                    FROM Transfers
+                    WHERE State = 48
+                        AND EndedAt IS NOT NULL
+                        AND EndedAt BETWEEN @Start AND @End
+                        {(direction is not null ? "AND Direction = @Direction" : string.Empty)}
+                    GROUP BY Dow, Hour
+                ";
+            }
+
+            using var connection = OpenConnection(Database.Transfers);
+            var param = new { Start = s, End = e, Direction = direction?.ToString() };
+            return connection.Query<HeatmapCell>(sql, param).ToList();
+        });
+    }
+
+    /// <summary>
+    ///     Returns the top countries by upload volume plus VPN usage among peers active in the window.
+    /// </summary>
+    public GeographyReport GetGeography(
+        DateTime? start = null,
+        DateTime? end = null,
+        int limit = 10)
+    {
+        var s = Utc(start ?? DateTime.MinValue);
+        var e = Utc(end ?? DateTime.MaxValue);
+
+        if (e <= s)
+        {
+            throw new ArgumentException("End time must be later than start time");
+        }
+
+        if (limit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than zero");
+        }
+
+        var cacheKey = $"reports:geography:{Bucket(s):O}:{Bucket(e):O}:{limit}";
+        return Cache.GetOrCreate(cacheKey, entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
+
+            string countrySql, vpnSql;
+            if (UsePostgres)
+            {
+                countrySql = @"
+                    WITH up AS (
+                        SELECT ""Username"", ""Size""
+                        FROM transfers.""Transfers""
+                        WHERE ""Direction"" = 'Upload' AND ""State"" = 48
+                            AND ""EndedAt"" IS NOT NULL AND ""EndedAt"" BETWEEN @Start AND @End
+                    )
+                    SELECT COALESCE(n.""Country"", 'Unknown') AS Country,
+                        SUM(up.""Size"") AS Bytes,
+                        COUNT(*) AS Count,
+                        COUNT(DISTINCT up.""Username"") AS Users
+                    FROM up
+                    LEFT JOIN transfers.""TransferNetworkInfo"" n ON n.""Username"" = up.""Username""
+                    GROUP BY COALESCE(n.""Country"", 'Unknown')
+                    ORDER BY Bytes DESC
+                    LIMIT @Limit
+                ";
+                vpnSql = @"
+                    WITH up AS (
+                        SELECT DISTINCT ""Username""
+                        FROM transfers.""Transfers""
+                        WHERE ""Direction"" = 'Upload' AND ""State"" = 48
+                            AND ""EndedAt"" IS NOT NULL AND ""EndedAt"" BETWEEN @Start AND @End
+                    )
+                    SELECT
+                        COUNT(*) AS TotalUsers,
+                        COUNT(*) FILTER (WHERE n.""IsVpn"" = 1) AS VpnUsers,
+                        COUNT(*) FILTER (WHERE n.""Username"" IS NULL OR n.""Country"" IS NULL) AS UnknownUsers
+                    FROM up
+                    LEFT JOIN transfers.""TransferNetworkInfo"" n ON n.""Username"" = up.""Username""
+                ";
+            }
+            else
+            {
+                countrySql = @"
+                    WITH up AS (
+                        SELECT Username, Size
+                        FROM Transfers
+                        WHERE Direction = 'Upload' AND State = 48
+                            AND EndedAt IS NOT NULL AND EndedAt BETWEEN @Start AND @End
+                    )
+                    SELECT COALESCE(n.Country, 'Unknown') AS Country,
+                        SUM(up.Size) AS Bytes,
+                        COUNT(*) AS Count,
+                        COUNT(DISTINCT up.Username) AS Users
+                    FROM up
+                    LEFT JOIN TransferNetworkInfo n ON n.Username = up.Username
+                    GROUP BY COALESCE(n.Country, 'Unknown')
+                    ORDER BY Bytes DESC
+                    LIMIT @Limit
+                ";
+                vpnSql = @"
+                    WITH up AS (
+                        SELECT DISTINCT Username
+                        FROM Transfers
+                        WHERE Direction = 'Upload' AND State = 48
+                            AND EndedAt IS NOT NULL AND EndedAt BETWEEN @Start AND @End
+                    )
+                    SELECT
+                        COUNT(*) AS TotalUsers,
+                        SUM(CASE WHEN n.IsVpn = 1 THEN 1 ELSE 0 END) AS VpnUsers,
+                        SUM(CASE WHEN n.Username IS NULL OR n.Country IS NULL THEN 1 ELSE 0 END) AS UnknownUsers
+                    FROM up
+                    LEFT JOIN TransferNetworkInfo n ON n.Username = up.Username
+                ";
+            }
+
+            using var connection = OpenConnection(Database.Transfers);
+            var param = new { Start = s, End = e, Limit = limit };
+
+            var countries = connection.Query<CountrySummary>(countrySql, param).ToList();
+            var vpn = connection.QueryFirstOrDefault<VpnRow>(vpnSql, param) ?? new VpnRow();
+
+            return new GeographyReport
+            {
+                Countries = countries,
+                VpnUsers = vpn.VpnUsers,
+                TotalUsers = vpn.TotalUsers,
+                UnknownUsers = vpn.UnknownUsers,
+            };
+        });
+    }
+
+    /// <summary>
+    ///     Returns the distribution of terminal download transfers by the number of attempts taken.
+    /// </summary>
+    public List<RetryBucket> GetRetryFunnel(
+        DateTime? start = null,
+        DateTime? end = null)
+    {
+        var s = Utc(start ?? DateTime.MinValue);
+        var e = Utc(end ?? DateTime.MaxValue);
+
+        if (e <= s)
+        {
+            throw new ArgumentException("End time must be later than start time");
+        }
+
+        var cacheKey = $"reports:retries:{Bucket(s):O}:{Bucket(e):O}";
+        return Cache.GetOrCreate(cacheKey, entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
+
+            string sql;
+            if (UsePostgres)
+            {
+                sql = @"
+                    SELECT
+                        LEAST(""Attempts"", 5) AS Attempts,
+                        COUNT(*) AS Count,
+                        COUNT(*) FILTER (WHERE ""State"" = 48) AS Succeeded
+                    FROM transfers.""Transfers""
+                    WHERE ""Direction"" = 'Download'
+                        AND ""EndedAt"" IS NOT NULL
+                        AND ""EndedAt"" BETWEEN @Start AND @End
+                    GROUP BY LEAST(""Attempts"", 5)
+                    ORDER BY Attempts
+                ";
+            }
+            else
+            {
+                sql = @"
+                    SELECT
+                        MIN(Attempts, 5) AS Attempts,
+                        COUNT(*) AS Count,
+                        SUM(CASE WHEN State = 48 THEN 1 ELSE 0 END) AS Succeeded
+                    FROM Transfers
+                    WHERE Direction = 'Download'
+                        AND EndedAt IS NOT NULL
+                        AND EndedAt BETWEEN @Start AND @End
+                    GROUP BY MIN(Attempts, 5)
+                    ORDER BY Attempts
+                ";
+            }
+
+            using var connection = OpenConnection(Database.Transfers);
+            return connection.Query<RetryBucket>(sql, new { Start = s, End = e }).ToList();
+        });
+    }
+
+    /// <summary>
+    ///     Returns the distribution of upload queue wait times (seconds) over the window.
+    /// </summary>
+    public QueueWaitStats GetQueueWaitStats(
+        DateTime? start = null,
+        DateTime? end = null)
+    {
+        var s = Utc(start ?? DateTime.MinValue);
+        var e = Utc(end ?? DateTime.MaxValue);
+
+        if (e <= s)
+        {
+            throw new ArgumentException("End time must be later than start time");
+        }
+
+        var cacheKey = $"reports:queue-wait:{Bucket(s):O}:{Bucket(e):O}";
+        return Cache.GetOrCreate(cacheKey, entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
+
+            using var connection = OpenConnection(Database.Transfers);
+
+            if (UsePostgres)
+            {
+                var sql = @"
+                    WITH waits AS (
+                        SELECT EXTRACT(EPOCH FROM (""StartedAt"" - ""EnqueuedAt"")) AS W
+                        FROM transfers.""Transfers""
+                        WHERE ""Direction"" = 'Upload' AND ""State"" = 48
+                            AND ""StartedAt"" IS NOT NULL AND ""EnqueuedAt"" IS NOT NULL
+                            AND ""EndedAt"" BETWEEN @Start AND @End
+                    )
+                    SELECT
+                        COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY W), 0) AS P50,
+                        COALESCE(percentile_cont(0.9) WITHIN GROUP (ORDER BY W), 0) AS P90,
+                        COALESCE(percentile_cont(0.99) WITHIN GROUP (ORDER BY W), 0) AS P99,
+                        COALESCE(MAX(W), 0) AS Max,
+                        COALESCE(AVG(W), 0) AS Avg,
+                        COUNT(*) AS Count
+                    FROM waits
+                    WHERE W >= 0
+                ";
+                return connection.QueryFirstOrDefault<QueueWaitStats>(sql, new { Start = s, End = e }) ?? new QueueWaitStats();
+            }
+
+            // SQLite has no percentile aggregate; pull the ordered values and compute in-process (dev only).
+            var listSql = @"
+                SELECT (strftime('%s', StartedAt) - strftime('%s', EnqueuedAt)) AS W
+                FROM Transfers
+                WHERE Direction = 'Upload' AND State = 48
+                    AND StartedAt IS NOT NULL AND EnqueuedAt IS NOT NULL
+                    AND EndedAt BETWEEN @Start AND @End
+                ORDER BY W
+            ";
+            var waits = connection.Query<double>(listSql, new { Start = s, End = e })
+                .Where(w => w >= 0)
+                .ToList();
+
+            if (waits.Count == 0)
+            {
+                return new QueueWaitStats();
+            }
+
+            double Percentile(double p)
+            {
+                var idx = (int)Math.Ceiling(p * waits.Count) - 1;
+                return waits[Math.Clamp(idx, 0, waits.Count - 1)];
+            }
+
+            return new QueueWaitStats
+            {
+                P50 = Percentile(0.5),
+                P90 = Percentile(0.9),
+                P99 = Percentile(0.99),
+                Max = waits[^1],
+                Avg = waits.Average(),
+                Count = waits.Count,
+            };
+        });
+    }
+
+    /// <summary>
+    ///     Returns the count of new versus returning peers active within the window, based on each peer's
+    ///     first-ever transfer.
+    /// </summary>
+    public PeerRetention GetPeerRetention(
+        DateTime? start = null,
+        DateTime? end = null)
+    {
+        var s = Utc(start ?? DateTime.MinValue);
+        var e = Utc(end ?? DateTime.MaxValue);
+
+        if (e <= s)
+        {
+            throw new ArgumentException("End time must be later than start time");
+        }
+
+        var cacheKey = $"reports:peers:{Bucket(s):O}:{Bucket(e):O}";
+        return Cache.GetOrCreate(cacheKey, entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
+
+            string sql;
+            if (UsePostgres)
+            {
+                sql = @"
+                    WITH firsts AS (
+                        SELECT ""Username"", MIN(""EndedAt"") AS FirstSeen
+                        FROM transfers.""Transfers""
+                        WHERE ""EndedAt"" IS NOT NULL
+                        GROUP BY ""Username""
+                    ),
+                    active AS (
+                        SELECT DISTINCT ""Username""
+                        FROM transfers.""Transfers""
+                        WHERE ""EndedAt"" IS NOT NULL AND ""EndedAt"" BETWEEN @Start AND @End
+                    )
+                    SELECT
+                        COUNT(*) FILTER (WHERE f.FirstSeen >= @Start) AS NewPeers,
+                        COUNT(*) FILTER (WHERE f.FirstSeen < @Start) AS ReturningPeers
+                    FROM active a
+                    JOIN firsts f ON f.""Username"" = a.""Username""
+                ";
+            }
+            else
+            {
+                sql = @"
+                    WITH firsts AS (
+                        SELECT Username, MIN(EndedAt) AS FirstSeen
+                        FROM Transfers
+                        WHERE EndedAt IS NOT NULL
+                        GROUP BY Username
+                    ),
+                    active AS (
+                        SELECT DISTINCT Username
+                        FROM Transfers
+                        WHERE EndedAt IS NOT NULL AND EndedAt BETWEEN @Start AND @End
+                    )
+                    SELECT
+                        SUM(CASE WHEN f.FirstSeen >= @Start THEN 1 ELSE 0 END) AS NewPeers,
+                        SUM(CASE WHEN f.FirstSeen < @Start THEN 1 ELSE 0 END) AS ReturningPeers
+                    FROM active a
+                    JOIN firsts f ON f.Username = a.Username
+                ";
+            }
+
+            using var connection = OpenConnection(Database.Transfers);
+            return connection.QueryFirstOrDefault<PeerRetention>(sql, new { Start = s, End = e }) ?? new PeerRetention();
+        });
+    }
+
+    /// <summary>
+    ///     Returns the number of distinct shared files that have ever been uploaded (catalog reach).
+    /// </summary>
+    public CoverageReport GetCatalogCoverage()
+    {
+        return Cache.GetOrCreate("reports:coverage", entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10);
+
+            string sql;
+            if (UsePostgres)
+            {
+                sql = @"
+                    SELECT COUNT(DISTINCT LOWER(SUBSTR(""Filename"", LENGTH(RTRIM(""Filename"", REPLACE(REPLACE(""Filename"", '/', ''), '\', ''))) + 1)))
+                    FROM transfers.""Transfers""
+                    WHERE ""Direction"" = 'Upload' AND ""State"" = 48
+                ";
+            }
+            else
+            {
+                sql = @"
+                    SELECT COUNT(DISTINCT LOWER(SUBSTR(Filename, LENGTH(RTRIM(Filename, REPLACE(REPLACE(Filename, '/', ''), '\', ''))) + 1)))
+                    FROM Transfers
+                    WHERE Direction = 'Upload' AND State = 48
+                ";
+            }
+
+            using var connection = OpenConnection(Database.Transfers);
+            var count = connection.ExecuteScalar<long>(sql);
+            return new CoverageReport { UploadedFiles = count };
+        });
+    }
+
+    /// <summary>
+    ///     Returns counts of social / discovery events (browses, private messages, room messages, mentions)
+    ///     within the window.
+    /// </summary>
+    public SocialActivity GetSocialActivity(
+        DateTime? start = null,
+        DateTime? end = null)
+    {
+        var s = Utc(start ?? DateTime.MinValue);
+        var e = Utc(end ?? DateTime.MaxValue);
+
+        if (e <= s)
+        {
+            throw new ArgumentException("End time must be later than start time");
+        }
+
+        var cacheKey = $"reports:social:{Bucket(s):O}:{Bucket(e):O}";
+        return Cache.GetOrCreate(cacheKey, entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
+
+            string sql;
+            if (UsePostgres)
+            {
+                sql = @"
+                    SELECT
+                        COUNT(*) FILTER (WHERE ""Type"" = 'Browsed') AS Browsed,
+                        COUNT(*) FILTER (WHERE ""Type"" = 'PrivateMessageReceived') AS PrivateMessages,
+                        COUNT(*) FILTER (WHERE ""Type"" = 'RoomMessageReceived') AS RoomMessages,
+                        COUNT(*) FILTER (WHERE ""Type"" = 'RoomMention') AS Mentions
+                    FROM events.""Events""
+                    WHERE ""Timestamp"" BETWEEN @Start AND @End
+                ";
+            }
+            else
+            {
+                sql = @"
+                    SELECT
+                        SUM(CASE WHEN Type = 'Browsed' THEN 1 ELSE 0 END) AS Browsed,
+                        SUM(CASE WHEN Type = 'PrivateMessageReceived' THEN 1 ELSE 0 END) AS PrivateMessages,
+                        SUM(CASE WHEN Type = 'RoomMessageReceived' THEN 1 ELSE 0 END) AS RoomMessages,
+                        SUM(CASE WHEN Type = 'RoomMention' THEN 1 ELSE 0 END) AS Mentions
+                    FROM Events
+                    WHERE Timestamp BETWEEN @Start AND @End
+                ";
+            }
+
+            using var connection = OpenConnection(Database.Events);
+            return connection.QueryFirstOrDefault<SocialActivity>(sql, new { Start = s, End = e }) ?? new SocialActivity();
+        });
+    }
+
+    private record VpnRow
+    {
+        public long VpnUsers { get; init; }
+        public long TotalUsers { get; init; }
+        public long UnknownUsers { get; init; }
     }
 
     private record UserEventCountRow

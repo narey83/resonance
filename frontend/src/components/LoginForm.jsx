@@ -132,6 +132,45 @@ const LoginForm = ({ error, loading, onLoginAttempt }) => {
                 {loading ? 'Signing in…' : 'Sign In'}
               </button>
             </form>
+
+            <div
+              className="auth-legal"
+              style={{
+                borderTop: '1px solid rgba(128,128,128,0.2)',
+                fontSize: 11,
+                lineHeight: 1.5,
+                marginTop: 24,
+                opacity: 0.6,
+                paddingTop: 16,
+              }}
+            >
+              Resonance is a modified version of{' '}
+              <a
+                href="https://github.com/slskd/slskd"
+                rel="noreferrer"
+                target="_blank"
+              >
+                slskd
+              </a>
+              . It is not maintained by, endorsed by, or affiliated with the
+              slskd project or its author(s). Licensed under{' '}
+              <a
+                href="https://www.gnu.org/licenses/agpl-3.0.html"
+                rel="noreferrer"
+                target="_blank"
+              >
+                AGPL-3.0
+              </a>{' '}
+              with additional terms.{' '}
+              <a
+                href="https://github.com/narey83/resonance"
+                rel="noreferrer"
+                target="_blank"
+              >
+                Source code
+              </a>
+              .
+            </div>
           </div>
         </div>
       </div>

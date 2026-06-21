@@ -5,6 +5,9 @@
 //     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
 //   │ Copyright (c) JP Dillingham.
+//   │ Copyright (c) 2026 John Narey.
+//   │ Modified as part of Resonance, a modified version of slskd;
+//   │ see the project repository for the nature of the changes.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -2721,6 +2724,12 @@ namespace resonance
             public VpnOptions Vpn { get; init; } = new();
 
             /// <summary>
+            ///     Gets UPnP options.
+            /// </summary>
+            [Validate]
+            public UpnpOptions Upnp { get; init; } = new();
+
+            /// <summary>
             ///     Gets webhook configuration.
             /// </summary>
             [Validate]
@@ -2749,6 +2758,45 @@ namespace resonance
             /// </summary>
             [Validate]
             public YtDlpOptions YtDlp { get; init; } = new YtDlpOptions();
+
+            /// <summary>
+            ///     UPnP options.
+            /// </summary>
+            /// <remarks>
+            ///     When enabled, the application asks the local gateway to forward the Soulseek listen port
+            ///     (<see cref="SoulseekOptions.ListenPort"/>) to this host via UPnP IGD, so that incoming peer
+            ///     connections succeed without a manually configured static port forward.
+            /// </remarks>
+            public class UpnpOptions
+            {
+                /// <summary>
+                ///     Gets a value indicating whether the UPnP integration is enabled.
+                /// </summary>
+                [Argument(default, "upnp")]
+                [EnvironmentVariable("UPNP")]
+                [Description("enable UPnP port mapping for the Soulseek listen port")]
+                [RequiresRestart]
+                public bool Enabled { get; init; } = false;
+
+                /// <summary>
+                ///     Gets the lifetime of the port mapping lease, in seconds. The mapping is renewed before
+                ///     this interval elapses. Some gateways reject leased mappings; set to 0 for a permanent mapping.
+                /// </summary>
+                [Argument(default, "upnp-lease-duration")]
+                [EnvironmentVariable("UPNP_LEASE_DURATION")]
+                [Description("lifetime of the UPnP port mapping lease, in seconds (0 = permanent)")]
+                [Range(0, 604800)]
+                public int LeaseDuration { get; init; } = 3600;
+
+                /// <summary>
+                ///     Gets the protocol to map. Incoming Soulseek peer connections are TCP.
+                /// </summary>
+                [Argument(default, "upnp-protocol")]
+                [EnvironmentVariable("UPNP_PROTOCOL")]
+                [Description("protocol to map (Tcp or Udp)")]
+                [Enum(typeof(global::resonance.Integrations.Upnp.UpnpProtocol))]
+                public string Protocol { get; init; } = global::resonance.Integrations.Upnp.UpnpProtocol.Tcp.ToString().ToLowerInvariant();
+            }
 
             /// <summary>
             ///     VPN options.

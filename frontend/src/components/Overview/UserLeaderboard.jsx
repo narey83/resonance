@@ -52,38 +52,26 @@ const LeaderboardTable = ({ entries, onUserClick }) => {
 };
 
 const UserLeaderboard = ({ leaderboard }) => {
-  const [tab, setTab] = useState('upload');
   const [selectedUser, setSelectedUser] = useState(null);
-
-  const entries =
-    tab === 'download'
-      ? leaderboard?.download ?? []
-      : leaderboard?.upload ?? [];
 
   return (
     <>
       <div className="section-card">
         <div className="section-card-header">
-          <span className="section-card-title">Top Users</span>
-          <div className="section-card-tabs">
-            <button
-              className={`section-tab${tab === 'download' ? ' active' : ''}`}
-              onClick={() => setTab('download')}
-              type="button"
-            >
-              Downloads
-            </button>
-            <button
-              className={`section-tab${tab === 'upload' ? ' active' : ''}`}
-              onClick={() => setTab('upload')}
-              type="button"
-            >
-              Uploads
-            </button>
-          </div>
+          <span className="section-card-title">Top Downloaders</span>
         </div>
         <LeaderboardTable
-          entries={entries}
+          entries={leaderboard?.download ?? []}
+          onUserClick={setSelectedUser}
+        />
+      </div>
+
+      <div className="section-card">
+        <div className="section-card-header">
+          <span className="section-card-title">Top Uploaders</span>
+        </div>
+        <LeaderboardTable
+          entries={leaderboard?.upload ?? []}
           onUserClick={setSelectedUser}
         />
       </div>

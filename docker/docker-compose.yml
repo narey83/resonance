@@ -1,0 +1,99 @@
+# Resonance dev stack — backend (dotnet watch) + frontend (craco) with the
+# project's source bind-mounted for hot reload. Editing code on the host triggers
+# rebuild/HMR inside the containers; you do NOT rebuild images for code changes.
+#
+# Postgres (the shared `postgres-db` container) is NOT part of this stack. It is
+# shared infrastructure; the backend reaches it via the host-published 5432, so
+# the existing connection string (Host=localhost) keeps working unchanged.
+#
+# Host networking is used deliberately: Resonance does Soulseek P2P (tcp 50300),
+# DLNA SSDP multicast, and UPnP, all of which need direct host network access.
+# As a bonus every existing address is preserved — backend on :5030, frontend on
+# :3000 (Caddy already points there) — so no Caddyfile and no config changes.
+#
+# Containers run as uid:gid 1000:1000 (narey) so runtime files written into the
+# bind-mounted source (backend/data, logs) and downloads stay narey-owned.
+# Build artifacts / caches use host scratch dirs under SCRATCH so they're
+# isolated from the host's own bin/obj and have no named-volume permission issues.
+#
+# RESONANCE_SRC : project source checkout that gets bind-mounted (default: server path).
+# RESONANCE_SCRATCH : throwaway build-cache dir owned by 1000 (default below).
+#
+# Build contexts are local to this directory, so the stack is self-contained and
+# can live anywhere (e.g. /home/narey/containers/resonance) independent of the
+# source it bind-mounts.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    image: resonance-backend-dev
+    container_name: resonance-backend
+    network_mode: host
+    user: "1000:1000"
+    working_dir: /src
+    # --no-launch-profile: launchSettings.json hardcodes a host-only RESONANCE_APP_DIR
+    # and would override the container env below. We supply the container values here.
+    command: dotnet watch --project backend/resonance.csproj run --no-launch-profile
+    environment:
+      DOTNET_USE_POLLING_FILE_WATCHER: "1"
+      ASPNETCORE_ENVIRONMENT: Development
+      RESONANCE_APP_DIR: /src/backend
+      HOME: /home/dev
+      DOTNET_CLI_HOME: /home/dev
+      NUGET_PACKAGES: /home/dev/.nuget
+      DLNA: "true"
+      DLNA_FRIENDLY_NAME: "Resonance"
+      NO_COLOR: "1"
+    volumes:
+      - ${RESONANCE_SRC:-/home/narey/projects/resonance}:/src
+      # Isolate build artifacts from the host's own bin/obj (host scratch, narey-owned).
+      - ${RESONANCE_SCRATCH:-/home/narey/.local/share/resonance-dev}/backend-obj:/src/backend/obj
+      - ${RESONANCE_SCRATCH:-/home/narey/.local/share/resonance-dev}/backend-bin:/src/backend/bin
+      - ${RESONANCE_SCRATCH:-/home/narey/.local/share/resonance-dev}/backend-home:/home/dev
+      # Downloads / incomplete live outside the project at absolute paths referenced by resonance.yml.
+      - /mnt/data/music:/mnt/data/music
+      - /mnt/data/incomplete:/mnt/data/incomplete
+    restart: unless-stopped
+
+  frontend:
+    image: node:22
+    container_name: resonance-frontend
+    network_mode: host
+    user: "1000:1000"
+    working_dir: /src/frontend
+    command: sh -c "npm install && npm start"
+    environment:
+      HOST: "0.0.0.0"
+      HOME: /home/dev
+      # Bind-mount file watching needs polling to fire reliably.
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+      # craco proxies /api and /hub to localhost:5030 — correct under host networking.
+      DANGEROUSLY_DISABLE_HOST_CHECK: "true"
+    volumes:
+      - ${RESONANCE_SRC:-/home/narey/projects/resonance}/frontend:/src/frontend
+      # node_modules built fresh in-container (host's were built with a different node); isolated on scratch.
+      - ${RESONANCE_SCRATCH:-/home/narey/.local/share/resonance-dev}/node_modules:/src/frontend/node_modules
+      - ${RESONANCE_SCRATCH:-/home/narey/.local/share/resonance-dev}/frontend-home:/home/dev
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Resonance's own reverse proxy. Owns all app routing, rate limiting, security
+  # headers and body limits, so the outer/main proxy only has to terminate TLS
+  # and forward the hostname to host port 8930.
+  caddy:
+    build:
+      context: caddy
+      dockerfile: Dockerfile
+    image: resonance-caddy
+    container_name: resonance-caddy
+    network_mode: host
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped

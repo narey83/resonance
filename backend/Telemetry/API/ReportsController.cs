@@ -5,6 +5,9 @@
 //     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
 //   │ Copyright (c) JP Dillingham.
+//   │ Copyright (c) 2026 John Narey.
+//   │ Modified as part of Resonance, a modified version of slskd;
+//   │ see the project repository for the nature of the changes.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -881,6 +884,236 @@ public class ReportsController : ControllerBase
 
         var since = DateTime.TryParse(start, out var dt) ? dt : DateTime.UtcNow.AddDays(-365);
         return Ok(Telemetry.Reports.GetUserEventCounts(usernames, since));
+    }
+
+    /// <summary>
+    ///     Gets a day-of-week by hour-of-day (UTC) heatmap of successful transfer activity.
+    /// </summary>
+    [HttpGet("transfers/heatmap")]
+    [Authorize(Policy = AuthPolicy.Any)]
+    [ProducesResponseType(typeof(List<HeatmapCell>), 200)]
+    [ProducesResponseType(typeof(string), 400)]
+    [ProducesResponseType(typeof(string), 500)]
+    public IActionResult GetActivityHeatmap(
+        [FromQuery] DateTime? start = null,
+        [FromQuery] DateTime? end = null,
+        [FromQuery] string direction = null)
+    {
+        var now = DateTime.UtcNow;
+        start ??= now.AddDays(-7);
+        end ??= now;
+
+        if (start >= end)
+        {
+            return BadRequest("End time must be later than start time");
+        }
+
+        TransferDirection? transferDirection = null;
+        if (!string.IsNullOrWhiteSpace(direction))
+        {
+            if (!Enum.TryParse<TransferDirection>(direction, ignoreCase: true, out var parsed))
+            {
+                return BadRequest($"Invalid direction; expected one of: {string.Join(", ", Enum.GetNames(typeof(TransferDirection)))}");
+            }
+
+            transferDirection = parsed;
+        }
+
+        try
+        {
+            return Ok(Telemetry.Reports.GetActivityHeatmap(start, end, transferDirection));
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error fetching activity heatmap: {Message}", ex.Message);
+            return StatusCode(500, ex.Message);
+        }
+    }
+
+    /// <summary>
+    ///     Gets the top countries by upload volume plus VPN usage among active peers.
+    /// </summary>
+    [HttpGet("transfers/geography")]
+    [Authorize(Policy = AuthPolicy.Any)]
+    [ProducesResponseType(typeof(GeographyReport), 200)]
+    [ProducesResponseType(typeof(string), 400)]
+    [ProducesResponseType(typeof(string), 500)]
+    public IActionResult GetGeography(
+        [FromQuery] DateTime? start = null,
+        [FromQuery] DateTime? end = null,
+        [FromQuery] int limit = 10)
+    {
+        var now = DateTime.UtcNow;
+        start ??= now.AddDays(-7);
+        end ??= now;
+
+        if (start >= end)
+        {
+            return BadRequest("End time must be later than start time");
+        }
+
+        if (limit <= 0)
+        {
+            return BadRequest("Limit must be greater than zero");
+        }
+
+        try
+        {
+            return Ok(Telemetry.Reports.GetGeography(start, end, limit));
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error fetching geography report: {Message}", ex.Message);
+            return StatusCode(500, ex.Message);
+        }
+    }
+
+    /// <summary>
+    ///     Gets the distribution of terminal download transfers by number of attempts.
+    /// </summary>
+    [HttpGet("transfers/retries")]
+    [Authorize(Policy = AuthPolicy.Any)]
+    [ProducesResponseType(typeof(List<RetryBucket>), 200)]
+    [ProducesResponseType(typeof(string), 400)]
+    [ProducesResponseType(typeof(string), 500)]
+    public IActionResult GetRetryFunnel(
+        [FromQuery] DateTime? start = null,
+        [FromQuery] DateTime? end = null)
+    {
+        var now = DateTime.UtcNow;
+        start ??= now.AddDays(-7);
+        end ??= now;
+
+        if (start >= end)
+        {
+            return BadRequest("End time must be later than start time");
+        }
+
+        try
+        {
+            return Ok(Telemetry.Reports.GetRetryFunnel(start, end));
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error fetching retry funnel: {Message}", ex.Message);
+            return StatusCode(500, ex.Message);
+        }
+    }
+
+    /// <summary>
+    ///     Gets distribution statistics for how long peers waited in the upload queue.
+    /// </summary>
+    [HttpGet("transfers/queue-wait")]
+    [Authorize(Policy = AuthPolicy.Any)]
+    [ProducesResponseType(typeof(QueueWaitStats), 200)]
+    [ProducesResponseType(typeof(string), 400)]
+    [ProducesResponseType(typeof(string), 500)]
+    public IActionResult GetQueueWaitStats(
+        [FromQuery] DateTime? start = null,
+        [FromQuery] DateTime? end = null)
+    {
+        var now = DateTime.UtcNow;
+        start ??= now.AddDays(-7);
+        end ??= now;
+
+        if (start >= end)
+        {
+            return BadRequest("End time must be later than start time");
+        }
+
+        try
+        {
+            return Ok(Telemetry.Reports.GetQueueWaitStats(start, end));
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error fetching queue wait stats: {Message}", ex.Message);
+            return StatusCode(500, ex.Message);
+        }
+    }
+
+    /// <summary>
+    ///     Gets the count of new versus returning peers active within the window.
+    /// </summary>
+    [HttpGet("transfers/peers")]
+    [Authorize(Policy = AuthPolicy.Any)]
+    [ProducesResponseType(typeof(PeerRetention), 200)]
+    [ProducesResponseType(typeof(string), 400)]
+    [ProducesResponseType(typeof(string), 500)]
+    public IActionResult GetPeerRetention(
+        [FromQuery] DateTime? start = null,
+        [FromQuery] DateTime? end = null)
+    {
+        var now = DateTime.UtcNow;
+        start ??= now.AddDays(-7);
+        end ??= now;
+
+        if (start >= end)
+        {
+            return BadRequest("End time must be later than start time");
+        }
+
+        try
+        {
+            return Ok(Telemetry.Reports.GetPeerRetention(start, end));
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error fetching peer retention: {Message}", ex.Message);
+            return StatusCode(500, ex.Message);
+        }
+    }
+
+    /// <summary>
+    ///     Gets the number of distinct shared files that have ever been uploaded (catalog reach).
+    /// </summary>
+    [HttpGet("transfers/coverage")]
+    [Authorize(Policy = AuthPolicy.Any)]
+    [ProducesResponseType(typeof(CoverageReport), 200)]
+    [ProducesResponseType(typeof(string), 500)]
+    public IActionResult GetCatalogCoverage()
+    {
+        try
+        {
+            return Ok(Telemetry.Reports.GetCatalogCoverage());
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error fetching catalog coverage: {Message}", ex.Message);
+            return StatusCode(500, ex.Message);
+        }
+    }
+
+    /// <summary>
+    ///     Gets counts of social / discovery events (browses, private messages, room messages, mentions).
+    /// </summary>
+    [HttpGet("social")]
+    [Authorize(Policy = AuthPolicy.Any)]
+    [ProducesResponseType(typeof(SocialActivity), 200)]
+    [ProducesResponseType(typeof(string), 400)]
+    [ProducesResponseType(typeof(string), 500)]
+    public IActionResult GetSocialActivity(
+        [FromQuery] DateTime? start = null,
+        [FromQuery] DateTime? end = null)
+    {
+        var now = DateTime.UtcNow;
+        start ??= now.AddDays(-7);
+        end ??= now;
+
+        if (start >= end)
+        {
+            return BadRequest("End time must be later than start time");
+        }
+
+        try
+        {
+            return Ok(Telemetry.Reports.GetSocialActivity(start, end));
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error fetching social activity: {Message}", ex.Message);
+            return StatusCode(500, ex.Message);
+        }
     }
 }
 

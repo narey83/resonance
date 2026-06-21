@@ -93,6 +93,36 @@ const SCHEMA = [
   {
     fields: [
       {
+        description:
+          'Automatically ask your router to forward the listen port via UPnP, so incoming peer connections work without a manual port forward. Your router must have UPnP enabled. Takes effect after a restart.',
+        label: 'Enable UPnP',
+        path: ['integrations', 'upnp', 'enabled'],
+        type: 'toggle',
+      },
+      {
+        choices: ['tcp', 'udp'],
+        description:
+          'Protocol to map. Incoming Soulseek peer connections use TCP.',
+        label: 'Protocol',
+        path: ['integrations', 'upnp', 'protocol'],
+        type: 'select',
+      },
+      {
+        description:
+          'Lifetime of the port mapping lease, in seconds. The mapping is renewed before it expires. Set to 0 for a permanent mapping (use if your router rejects leased mappings). Default: 3600.',
+        label: 'Lease Duration',
+        max: 604_800,
+        min: 0,
+        path: ['integrations', 'upnp', 'lease_duration'],
+        placeholder: '3600',
+        type: 'number',
+      },
+    ],
+    title: 'UPnP Port Mapping',
+  },
+  {
+    fields: [
+      {
         description: 'Directory where completed downloads are saved.',
         label: 'Download Directory',
         path: ['directories', 'downloads'],

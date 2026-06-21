@@ -5,6 +5,9 @@
 //     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
 //   │ Copyright (c) JP Dillingham.
+//   │ Copyright (c) 2026 John Narey.
+//   │ Modified as part of Resonance, a modified version of slskd;
+//   │ see the project repository for the nature of the changes.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -86,6 +89,7 @@ namespace resonance
         public static class Integrations
         {
             public const string VPN = "Integrations / VPN";
+            public const string UPnP = "Integrations / UPnP";
             public const string Webhooks = "Integrations / Webhooks";
             public const string Scripts = "Integrations / Scripts";
             public const string FTP = "Integrations / FTP";

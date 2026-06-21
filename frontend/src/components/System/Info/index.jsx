@@ -660,6 +660,45 @@ const Info = ({ state }) => {
             </div>
           </div>
         </Section>
+
+        <Section
+          fullWidth
+          title="License & Attribution"
+        >
+          <div
+            className="info-field-desc"
+            style={{ lineHeight: 1.6, padding: '4px 14px 12px' }}
+          >
+            Resonance is a modified version of{' '}
+            <a
+              href="https://github.com/slskd/slskd"
+              rel="noreferrer"
+              target="_blank"
+            >
+              slskd
+            </a>
+            . It is not maintained by, endorsed by, or affiliated with the slskd
+            project or its author(s). Resonance is free software licensed under
+            the{' '}
+            <a
+              href="https://www.gnu.org/licenses/agpl-3.0.html"
+              rel="noreferrer"
+              target="_blank"
+            >
+              GNU Affero General Public License v3.0
+            </a>{' '}
+            with additional terms. The complete source code corresponding to
+            this running version is available at{' '}
+            <a
+              href="https://github.com/narey83/resonance"
+              rel="noreferrer"
+              target="_blank"
+            >
+              github.com/narey83/resonance
+            </a>
+            .
+          </div>
+        </Section>
       </div>
     </>
   );

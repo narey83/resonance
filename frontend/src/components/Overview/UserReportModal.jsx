@@ -1,17 +1,19 @@
 import * as reportsAPI from '../../lib/reports';
-import {
-  formatBytes,
-  formatDate,
-  getDirectoryName,
-  getFileName,
-} from '../../lib/util';
+import { formatBytes, formatDate, getFileName } from '../../lib/util';
 import UsernameLink from '../Shared/UsernameLink';
+import UserChatTab from './UserChatTab';
+import UserFilesTab from './UserFilesTab';
 import React, { useEffect, useState } from 'react';
 import { Header, Modal } from 'semantic-ui-react';
 
 const PAGE_SIZE = 25;
 
 const formatSpeed = (speed) => (speed > 0 ? `${formatBytes(speed)}/s` : '—');
+
+// Show only the immediate parent folder, dropping the share-root segments
+// (e.g. "music\") — matches the Uploads/Downloads tables.
+const leafFolder = (fullPath) =>
+  fullPath.split(/[/\\]/u).filter(Boolean).slice(0, -1).at(-1) ?? '';
 
 const STATE_COLORS = {
   Succeeded: 'var(--success)',
@@ -197,7 +199,7 @@ const TransfersTab = ({ username }) => {
                           {getFileName(t.filename ?? t.Filename ?? '')}
                         </span>
                         <span className="user-report-folder-text">
-                          {getDirectoryName(t.filename ?? t.Filename ?? '')}
+                          {leafFolder(t.filename ?? t.Filename ?? '')}
                         </span>
                       </div>
                     </div>
@@ -347,18 +349,22 @@ const BrowseTab = ({ username }) => {
   );
 };
 
-const UserReportModal = ({ onClose, username }) => {
-  const [activeTab, setActiveTab] = useState('overview');
+const UserReportModal = ({ initialTab, onClose, seed, username }) => {
+  const [activeTab, setActiveTab] = useState(initialTab || 'overview');
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(true);
   const [networkInfo, setNetworkInfo] = useState(null);
   const [networkLoading, setNetworkLoading] = useState(false);
   const [networkOffline, setNetworkOffline] = useState(false);
 
+  // Reset to the requested tab whenever the modal opens for a (new) user.
+  useEffect(() => {
+    setActiveTab(initialTab || 'overview');
+  }, [initialTab, username]);
+
   useEffect(() => {
     if (!username) return undefined;
     let cancelled = false;
-    setActiveTab('overview');
     setDetailLoading(true);
     reportsAPI
       .getUserDetail({ username })
@@ -379,8 +385,24 @@ const UserReportModal = ({ onClose, username }) => {
   useEffect(() => {
     if (!username) return undefined;
     let cancelled = false;
-    setNetworkInfo(null);
     setNetworkOffline(false);
+
+    // The map dot already resolved geo for this peer — seed the bar to skip a
+    // redundant lookup. Fall back to the live lookup when no seed is provided.
+    if (seed?.ip) {
+      setNetworkInfo({
+        ipAddress: seed.ip,
+        city: seed.city,
+        country: seed.country,
+        isVpn: seed.isVpn,
+      });
+      setNetworkLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setNetworkInfo(null);
     setNetworkLoading(true);
     reportsAPI
       .getUserNetworkInfo({ username })
@@ -396,12 +418,14 @@ const UserReportModal = ({ onClose, username }) => {
     return () => {
       cancelled = true;
     };
-  }, [username]);
+  }, [seed, username]);
 
   const TABS = [
     { id: 'overview', label: 'Overview' },
     { id: 'transfers', label: 'Transfers' },
     { id: 'browse', label: 'Browse History' },
+    { id: 'files', label: 'Files' },
+    { id: 'chat', label: 'Chat' },
   ];
 
   return (
@@ -471,6 +495,13 @@ const UserReportModal = ({ onClose, username }) => {
           )}
           {activeTab === 'transfers' && <TransfersTab username={username} />}
           {activeTab === 'browse' && <BrowseTab username={username} />}
+          {activeTab === 'files' && (
+            <UserFilesTab
+              onChat={() => setActiveTab('chat')}
+              username={username}
+            />
+          )}
+          {activeTab === 'chat' && <UserChatTab username={username} />}
         </div>
       </Modal.Content>
     </Modal>

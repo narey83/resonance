@@ -1,9 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
-    <RepositoryUrl>https://github.com/slskd/slskd</RepositoryUrl>
-    <PackageProjectUrl>https://slskd.org</PackageProjectUrl>
-    <Authors>JP Dillingham</Authors>
-    <Copyright>Copyright (c) JP Dillingham</Copyright>
+    <RepositoryUrl>https://github.com/narey83/resonance</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/narey83/resonance</PackageProjectUrl>
+    <Description>Resonance — a Soulseek client. A modified version of slskd; not maintained by, endorsed by, or affiliated with the slskd project or its author(s).</Description>
+    <Authors>John Narey</Authors>
+    <Copyright>Copyright (c) JP Dillingham. Modifications Copyright (c) 2026 John Narey.</Copyright>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
   </PropertyGroup>
   
@@ -37,12 +38,12 @@
   </Target>
 
   <Target Name="CopyAfterBuild" AfterTargets="AfterBuild">
-    <Copy SourceFiles="config\config.yml.example" DestinationFolder="$(OutDir)\config" />
+    <Copy SourceFiles="config\resonance.yml.example" DestinationFolder="$(OutDir)\config" />
     <Copy SourceFiles="$(OutDir)\resonance.xml" DestinationFolder="$(OutDir)\etc" />
     <Copy SourceFiles="$(MSBuildThisFileDirectory)tools/ffmpeg" DestinationFolder="$(OutDir)" Condition="Exists('$(MSBuildThisFileDirectory)tools/ffmpeg')" />
   </Target>
   <Target Name="CopyOnPublish" AfterTargets="Publish">
-    <Copy SourceFiles="config\config.yml.example" DestinationFolder="$(PublishDir)\config" />
+    <Copy SourceFiles="config\resonance.yml.example" DestinationFolder="$(PublishDir)\config" />
     <Move SourceFiles="$(PublishDir)\resonance.xml" DestinationFolder="$(PublishDir)\etc" />
     <Copy SourceFiles="$(MSBuildThisFileDirectory)tools/ffmpeg" DestinationFolder="$(PublishDir)" Condition="Exists('$(MSBuildThisFileDirectory)tools/ffmpeg')" />
   </Target>
@@ -54,6 +55,7 @@
     <PackageReference Include="FluentFTP" Version="49.0.2" />
     <PackageReference Include="IPAddressRange" Version="6.0.0" />
     <PackageReference Include="Makaretu.Dns.Multicast" Version="0.27.0" />
+    <PackageReference Include="Mono.Nat" Version="3.0.4" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.6" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="8.0.6" />
     <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="8.0.0">

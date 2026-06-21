@@ -56,14 +56,36 @@ const formatWait = (seconds) => {
   return `${Math.round(seconds / 60)}m`;
 };
 
-const KpiCard = ({ label, loading, sub, value }) => (
+// Percent change of current vs previous, or null when there's no usable baseline.
+const pctChange = (current, previous) => {
+  if (previous == null || previous === 0 || current == null) return null;
+  return ((current - previous) / previous) * 100;
+};
+
+const DeltaBadge = ({ delta }) => {
+  if (delta == null || !Number.isFinite(delta) || Math.round(delta) === 0) {
+    return null;
+  }
+
+  const up = delta > 0;
+  return (
+    <span className={`kpi-delta${up ? ' kpi-delta-up' : ' kpi-delta-down'}`}>
+      {up ? '▲' : '▼'} {Math.abs(delta).toFixed(0)}%
+    </span>
+  );
+};
+
+const KpiCard = ({ delta, label, loading, sub, value }) => (
   <div className="kpi-card">
     <div className="kpi-card-label">{label}</div>
     {loading ? (
       <div className="kpi-card-loading" />
     ) : (
       <>
-        <div className="kpi-card-value">{value}</div>
+        <div className="kpi-card-value">
+          {value}
+          <DeltaBadge delta={delta} />
+        </div>
         <div
           className="kpi-card-sub"
           style={{ visibility: sub ? 'visible' : 'hidden' }}
@@ -75,8 +97,9 @@ const KpiCard = ({ label, loading, sub, value }) => (
   </div>
 );
 
-const KpiCards = ({ downloads, loading, summary, uploads }) => {
+const KpiCards = ({ downloads, loading, prevSummary, summary, uploads }) => {
   const kpis = extractKpis(summary);
+  const prev = extractKpis(prevSummary);
 
   const activeDownloads = Array.isArray(downloads)
     ? downloads.filter((t) => t.state === 'InProgress')
@@ -96,6 +119,7 @@ const KpiCards = ({ downloads, loading, summary, uploads }) => {
   return (
     <div className="kpi-cards">
       <KpiCard
+        delta={kpis && prev ? pctChange(kpis.dlBytes, prev.dlBytes) : null}
         label="Downloaded"
         loading={loading}
         sub={
@@ -104,12 +128,16 @@ const KpiCards = ({ downloads, loading, summary, uploads }) => {
         value={kpis ? formatBytes(kpis.dlBytes) : '—'}
       />
       <KpiCard
+        delta={kpis && prev ? pctChange(kpis.ulBytes, prev.ulBytes) : null}
         label="Uploaded"
         loading={loading}
         sub={liveUpSpeed > 0 ? `${formatBytes(liveUpSpeed)}/s now` : undefined}
         value={kpis ? formatBytes(kpis.ulBytes) : '—'}
       />
       <KpiCard
+        delta={
+          kpis && prev ? pctChange(kpis.totalCount, prev.totalCount) : null
+        }
         label="Transfers"
         loading={loading}
         sub={

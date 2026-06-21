@@ -5,6 +5,9 @@
 //     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
 //   │ Copyright (c) JP Dillingham.
+//   │ Copyright (c) 2026 John Narey.
+//   │ Modified as part of Resonance, a modified version of slskd;
+//   │ see the project repository for the nature of the changes.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -515,7 +518,16 @@ namespace resonance.Transfers.Uploads
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
+                if (IsExpectedPeerFailure(ex))
+                {
+                    // the remote user disconnected or the connection dropped mid-transfer (e.g. broken pipe);
+                    // routine in a P2P network, so log quietly without the stack trace.
+                    Log.Warning("Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
+                }
+                else
+                {
+                    Log.Error(ex, "Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
+                }
 
                 TryFail(transfer.Id, exception: ex);
                 _ = ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, ex.Message);
@@ -715,7 +727,14 @@ namespace resonance.Transfers.Uploads
                         * transfer record updated so that it's no longer in Queued | Locally
                         * Soulseek.NET already tracking an identical upload (slskd <> Soulseek.NET desync)
                     */
-                    Log.Error(task.Exception, "Task for upload of {Filename} to {Username} did not complete successfully: {Error}", filename, username, task.Exception.Message);
+                    if (IsExpectedPeerFailure(task.Exception))
+                    {
+                        Log.Warning("Task for upload of {Filename} to {Username} did not complete successfully: {Error}", filename, username, task.Exception.Message);
+                    }
+                    else
+                    {
+                        Log.Error(task.Exception, "Task for upload of {Filename} to {Username} did not complete successfully: {Error}", filename, username, task.Exception.Message);
+                    }
 
                     if (!TryFail(id, task.Exception))
                     {
@@ -957,6 +976,26 @@ namespace resonance.Transfers.Uploads
             };
 
             return TryFail(id, exception.Message, state);
+        }
+
+        /// <summary>
+        ///     Determines whether the given <paramref name="exception"/> represents an expected peer/connection
+        ///     failure (e.g. the remote user disconnected or reset the connection mid-transfer) rather than an
+        ///     application error. These are routine in a P2P network and should be logged quietly.
+        /// </summary>
+        /// <param name="exception">The exception to classify.</param>
+        /// <returns>A value indicating whether the failure is an expected peer/connection failure.</returns>
+        private static bool IsExpectedPeerFailure(Exception exception)
+        {
+            for (var ex = exception; ex is not null; ex = ex.InnerException)
+            {
+                if (ex is ConnectionException)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>

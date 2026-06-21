@@ -1,0 +1,85 @@
+# Resonance's own reverse proxy — self-contained app routing, rate limiting,
+# security headers and body limits. Designed to sit behind an outer TLS-
+# terminating proxy (the deployer's main Caddy/nginx/Traefik): that outer proxy
+# forwards a hostname here over plain HTTP, and this Caddy fans requests out to
+# the backend (API/hub) and frontend (web UI / HMR socket).
+#
+# Listens on :8930 (HTTP only; TLS is the outer proxy's job). Under the stack's
+# host networking the backend/frontend are reachable on localhost.
+{
+	admin off
+	auto_https off
+	# Trust an outer proxy on a private network so {client_ip} resolves to the
+	# real client (via X-Forwarded-For) for rate limiting, not the proxy's IP.
+	# Standalone (no outer proxy) this is a no-op and {client_ip} == remote IP.
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		X-XSS-Protection "1; mode=block"
+		Referrer-Policy "no-referrer-when-downgrade"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		-Server
+	}
+}
+
+(body_limits) {
+	request_body {
+		max_size 20MB
+	}
+}
+
+# 20 login/refresh attempts per minute per client IP, then 429.
+(rate_limit_auth) {
+	rate_limit {
+		zone auth {
+			key {client_ip}
+			events 20
+			window 1m
+		}
+	}
+}
+
+:8930 {
+	log
+	import security_headers
+	import body_limits
+
+	# Auth endpoints — rate limited.
+	@auth_post {
+		method POST
+		path /api/v0/session /api/v0/session/refresh
+	}
+	handle @auth_post {
+		import rate_limit_auth
+		reverse_proxy localhost:5030
+	}
+
+	# REST API.
+	handle /api/* {
+		reverse_proxy localhost:5030
+	}
+
+	# SignalR hubs — disable response buffering for server-sent streams.
+	handle /hub/* {
+		reverse_proxy localhost:5030 {
+			flush_interval -1
+		}
+	}
+
+	# Webpack/craco HMR socket (frontend).
+	handle /ws {
+		reverse_proxy localhost:3000
+	}
+
+	# Everything else → the web UI (craco dev server).
+	reverse_proxy localhost:3000 {
+		flush_interval -1
+	}
+}

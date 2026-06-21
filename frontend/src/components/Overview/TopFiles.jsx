@@ -3,7 +3,7 @@ import React from 'react';
 const stripExtension = (name) => name.replace(/\.[^./]+$/, '');
 
 const TopFiles = ({ files }) => {
-  const list = Array.isArray(files) ? files.slice(0, 2) : [];
+  const list = Array.isArray(files) ? files.slice(0, 10) : [];
   const max = list[0]?.count ?? 1;
 
   return (
@@ -12,7 +12,7 @@ const TopFiles = ({ files }) => {
         <span className="section-card-title">Top Downloaded Tracks</span>
       </div>
       {list.length === 0 ? (
-        <div className="dir-empty">No upload data for this period</div>
+        <div className="dir-empty">No download data for this period</div>
       ) : (
         <div className="dir-list">
           {list.map((item, index) => {

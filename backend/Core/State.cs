@@ -5,6 +5,9 @@
 //     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
 //   │ Copyright (c) JP Dillingham.
+//   │ Copyright (c) 2026 John Narey.
+//   │ Modified as part of Resonance, a modified version of slskd;
+//   │ see the project repository for the nature of the changes.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -52,6 +55,7 @@ namespace resonance
         public ServerState Server { get; init; } = new ServerState();
         public ServerConnectionWatchdogState ConnectionWatchdog { get; init; } = new ServerConnectionWatchdogState();
         public VpnState Vpn { get; init; } = new VpnState();
+        public UpnpState Upnp { get; init; } = new UpnpState();
         public RelayState Relay { get; init; } = new RelayState();
         public HealthState Health { get; init; } = new HealthState();
         public UserState User { get; init; } = new UserState();
@@ -117,6 +121,16 @@ namespace resonance
         public IPAddress PublicIPAddress { get; init; } = null;
         public string Location { get; init; } = null;
         public int? ForwardedPort { get; init; } = null;
+    }
+
+    public record UpnpState
+    {
+        public bool IsEnabled { get; init; } = false;
+        public bool IsMapped { get; init; } = false;
+        public IPAddress ExternalIPAddress { get; init; } = null;
+        public int? MappedPort { get; init; } = null;
+        public DateTime? LeaseExpiresAt { get; init; } = null;
+        public string LastError { get; init; } = null;
     }
 
     public record RelayState

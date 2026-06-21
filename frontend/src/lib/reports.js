@@ -161,6 +161,40 @@ export const getUserNetworkInfo = async ({ username } = {}) => {
   }
 };
 
+export const getHeatmap = async ({ start, end, direction } = {}) => {
+  const q = buildParameters({ start, end, direction });
+  return (await api.get(`/telemetry/reports/transfers/heatmap?${q}`)).data;
+};
+
+export const getGeography = async ({ start, end, limit = 10 } = {}) => {
+  const q = buildParameters({ start, end, limit });
+  return (await api.get(`/telemetry/reports/transfers/geography?${q}`)).data;
+};
+
+export const getRetryFunnel = async ({ start, end } = {}) => {
+  const q = buildParameters({ start, end });
+  return (await api.get(`/telemetry/reports/transfers/retries?${q}`)).data;
+};
+
+export const getQueueWait = async ({ start, end } = {}) => {
+  const q = buildParameters({ start, end });
+  return (await api.get(`/telemetry/reports/transfers/queue-wait?${q}`)).data;
+};
+
+export const getPeerRetention = async ({ start, end } = {}) => {
+  const q = buildParameters({ start, end });
+  return (await api.get(`/telemetry/reports/transfers/peers?${q}`)).data;
+};
+
+export const getCoverage = async () => {
+  return (await api.get('/telemetry/reports/transfers/coverage')).data;
+};
+
+export const getSocialActivity = async ({ start, end } = {}) => {
+  const q = buildParameters({ start, end });
+  return (await api.get(`/telemetry/reports/social?${q}`)).data;
+};
+
 export const getUserBrowseEvents = async ({
   username,
   start,

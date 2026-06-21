@@ -5,6 +5,9 @@
 //     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
 //   │ Copyright (c) JP Dillingham.
+//   │ Copyright (c) 2026 John Narey.
+//   │ Modified as part of Resonance, a modified version of slskd;
+//   │ see the project repository for the nature of the changes.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -41,6 +44,7 @@ namespace resonance.Users.API
     using System.Threading.Tasks;
     using Asp.Versioning;
     using Microsoft.AspNetCore.Authorization;
+    using Microsoft.AspNetCore.Http;
     using Microsoft.AspNetCore.Mvc;
     using Serilog;
 
@@ -148,6 +152,13 @@ namespace resonance.Users.API
             {
                 return NotFound(ex.Message);
             }
+            catch (SoulseekClientException ex)
+            {
+                // the user is online but unreachable (e.g. a direct/indirect connection couldn't be established).
+                // this is expected in a P2P network; log quietly and return a clean status instead of a 500.
+                Log.Information("Failed to browse user {User}: {Message}", username, ex.Message);
+                return StatusCode(StatusCodes.Status504GatewayTimeout, ex.Message);
+            }
         }
 
         /// <summary>
@@ -213,6 +224,11 @@ namespace resonance.Users.API
             {
                 return NotFound(ex.Message);
             }
+            catch (SoulseekClientException ex)
+            {
+                Log.Information("Failed to retrieve directory contents from user {User}: {Message}", username, ex.Message);
+                return StatusCode(StatusCodes.Status504GatewayTimeout, ex.Message);
+            }
         }
 
         /// <summary>
@@ -244,6 +260,11 @@ namespace resonance.Users.API
             catch (UserOfflineException ex)
             {
                 return NotFound(ex.Message);
+            }
+            catch (SoulseekClientException ex)
+            {
+                Log.Information("Failed to retrieve info for user {User}: {Message}", username, ex.Message);
+                return StatusCode(StatusCodes.Status504GatewayTimeout, ex.Message);
             }
         }
 
