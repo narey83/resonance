@@ -35,8 +35,11 @@
 
 namespace resonance.Transfers.API
 {
+    using System.ComponentModel.DataAnnotations;
+
     public class CreateFolderRequest
     {
+        [Required]
         public string Path { get; set; }
     }
 }

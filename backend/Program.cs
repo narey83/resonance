@@ -1187,6 +1187,12 @@ namespace resonance
             services.AddControllers(options =>
             {
                 options.ModelBinderProviders.Insert(0, new UrlEncodingModelBinderProvider());
+
+                // The backend compiles with <Nullable>annotations</Nullable>, which makes ASP.NET treat every
+                // non-nullable reference-type property on a request DTO as implicitly [Required]. That silently
+                // rejects requests (400) whenever the client omits an optional field. Rely only on explicit
+                // [Required]/[ValidatableObject] validation instead so optional fields can be omitted freely.
+                options.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true;
             })
                 .ConfigureApiBehaviorOptions(options =>
                 {

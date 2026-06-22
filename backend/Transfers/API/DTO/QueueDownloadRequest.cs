@@ -53,6 +53,10 @@ namespace resonance.Transfers.API
         /// <summary>
         ///     Gets or sets an optional destination subfolder relative to the downloads root.
         /// </summary>
-        public string DestinationFolder { get; set; }
+        /// <remarks>
+        ///     Nullable so that the implicit "required" validation applied to non-nullable reference types
+        ///     (the project uses &lt;Nullable&gt;annotations&lt;/Nullable&gt;) does not reject requests that omit it.
+        /// </remarks>
+        public string? DestinationFolder { get; set; }
     }
 }

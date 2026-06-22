@@ -36,11 +36,16 @@
 namespace resonance.Core.API
 {
     using System;
+    using System.ComponentModel.DataAnnotations;
 
     public class LoginRequest
     {
+        [Required]
         public string Username { get; set; }
+
+        [Required]
         public string Password { get; set; }
+
         public string DeviceName { get; set; }
         public Guid? ExistingSessionId { get; set; }
     }
