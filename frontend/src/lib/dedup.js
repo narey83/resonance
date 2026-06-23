@@ -6,6 +6,7 @@ const getExtension = (filename) =>
 const normalizeForDedup = (filename) =>
   getBasename(filename)
     .replace(/\.[^.]+$/u, '') // strip extension
+    .replace(/_\d{15,}$/u, '') // strip legacy _<DateTime.Ticks> collision suffix
     .replace(/\s*\(\d+\)\s*$/u, '') // strip (1), (2) etc.
     .replace(/\s*[-_]\s*copy(?:\s*\(\d+\))?$/iu, '') // strip " - copy", "_copy (1)" etc.
     .replaceAll(/\s+/gu, ' ')

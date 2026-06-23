@@ -439,15 +439,40 @@ namespace resonance.Files
 
             if (!overwrite && File.Exists(destinationFilename))
             {
-                Log.Debug("Destination file {Destination} exists, and overwrite option is not set; attempting to generate new filename", destinationFilename);
+                // a file with this name already exists. if it's the same size as the incoming file,
+                // treat it as a re-download of something we already have: keep the existing copy and
+                // discard the freshly-downloaded source rather than littering the library with
+                // duplicates. (the source lives in the incomplete directory and hasn't been added to
+                // the user's library yet, so discarding it is safe.)
+                if (new FileInfo(destinationFilename).Length == new FileInfo(sourceFilename).Length)
+                {
+                    Log.Information("Destination file {Destination} already exists with an identical size; discarding redundant download {Source}", destinationFilename, sourceFilename);
+
+                    File.Delete(sourceFilename);
+
+                    if (deleteSourceDirectoryIfEmptyAfterMove && !Directory.EnumerateFileSystemEntries(Path.GetDirectoryName(sourceFilename)).Any())
+                    {
+                        Directory.Delete(Path.GetDirectoryName(sourceFilename));
+                    }
+
+                    return destinationFilename;
+                }
+
+                // a genuinely different file (e.g. a different rip or quality) already occupies the
+                // name. keep both, but disambiguate with a human-readable " (n)" suffix that the
+                // duplicate finder understands — never a DateTime.Ticks value.
+                Log.Debug("Destination file {Destination} exists with a different size and overwrite is not set; generating a numbered filename", destinationFilename);
 
                 string extensionlessFilename = Path.Combine(Path.GetDirectoryName(destinationFilename), Path.GetFileNameWithoutExtension(sourceFilename));
                 string extension = Path.GetExtension(sourceFilename);
 
-                while (File.Exists(destinationFilename))
+                var counter = 1;
+                do
                 {
-                    destinationFilename = $"{extensionlessFilename}_{DateTime.UtcNow.Ticks}{extension}";
+                    destinationFilename = $"{extensionlessFilename} ({counter}){extension}";
+                    counter++;
                 }
+                while (File.Exists(destinationFilename));
             }
 
             try
