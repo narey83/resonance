@@ -29,3 +29,7 @@ export const unblockBrowseRateLimitUser = (username) => {
 export const getTransferErrorNotifications = async () => {
   return (await api.get('/transfer-error-notifications')).data;
 };
+
+export const checkPort = async () => {
+  return (await api.get('/server/port-check')).data;
+};

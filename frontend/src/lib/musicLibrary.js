@@ -1,6 +1,6 @@
 import { apiBaseUrl } from '../config';
 import api from './api';
-import { getToken, isPassthroughEnabled } from './token';
+import { ensureSigned, signedQuery } from './streamSignatures';
 
 // btoa only handles Latin-1; encode to UTF-8 bytes first so paths with non-ASCII chars work
 const pathToBase64 = (s) => btoa(unescape(encodeURIComponent(s)));
@@ -13,33 +13,68 @@ export const getSyncState = async () =>
 
 export const triggerSync = async () => api.post('/musiclibrary/sync');
 
-export const getTracks = async (queryParameters) =>
-  (await api.get('/musiclibrary/tracks', { params: queryParameters })).data;
+export const getTracks = async (queryParameters) => {
+  const data = (
+    await api.get('/musiclibrary/tracks', { params: queryParameters })
+  ).data;
+  await ensureSigned((data.tracks ?? []).map((t) => t.path));
+  return data;
+};
 
-export const getIssueTracks = async (issue, limit = 500_000) =>
-  (await api.get('/musiclibrary/tracks', { params: { [issue]: true, limit } }))
-    .data;
+// Full track records for the user's loved paths only — resolved server-side against the library.
+// Avoids downloading the entire library (20k+ tracks) just to show a handful of loved tracks.
+export const getLovedTracks = async () => {
+  const data = (await api.get('/musiclibrary/loved/tracks')).data ?? [];
+  await ensureSigned(data.map((t) => t.path));
+  return data;
+};
 
-export const getAlbums = async (artist) =>
-  (await api.get('/musiclibrary/albums', { params: artist ? { artist } : {} }))
-    .data;
+export const getIssueTracks = async (issue, limit = 500_000) => {
+  const data = (
+    await api.get('/musiclibrary/tracks', { params: { [issue]: true, limit } })
+  ).data;
+  await ensureSigned((data.tracks ?? []).map((t) => t.path));
+  return data;
+};
 
-export const getArtists = async () =>
-  (await api.get('/musiclibrary/artists')).data;
+export const getAlbums = async (artist) => {
+  const data = (
+    await api.get('/musiclibrary/albums', { params: artist ? { artist } : {} })
+  ).data;
+  await ensureSigned(data.map((a) => a.coverPath));
+  return data;
+};
 
-export const getRecentlyAdded = async (limit = 20) =>
-  (await api.get('/musiclibrary/recentlyadded', { params: { limit } })).data;
+export const getArtists = async () => {
+  const data = (await api.get('/musiclibrary/artists')).data;
+  await ensureSigned(data.map((a) => a.coverPath));
+  return data;
+};
 
-export const getKeyedTracks = async () =>
-  (await api.get('/musiclibrary/keyed')).data;
+export const getRecentlyAdded = async (limit = 20) => {
+  const data = (
+    await api.get('/musiclibrary/recentlyadded', { params: { limit } })
+  ).data;
+  await ensureSigned(data.map((a) => a.coverPath));
+  return data;
+};
+
+export const getKeyedTracks = async () => {
+  const data = (await api.get('/musiclibrary/keyed')).data;
+  await ensureSigned(data.map((t) => t.path));
+  return data;
+};
 
 export const getGenres = async () =>
   (await api.get('/musiclibrary/genres')).data;
 
 export const getYears = async () => (await api.get('/musiclibrary/years')).data;
 
-export const getFolders = async () =>
-  (await api.get('/musiclibrary/folders')).data;
+export const getFolders = async () => {
+  const data = (await api.get('/musiclibrary/folders')).data;
+  await ensureSigned(data.map((f) => f.coverPath));
+  return data;
+};
 
 export const analyzeTrack = async (path, { key = true, bpm = true } = {}) =>
   api.post('/musiclibrary/tracks/analyze', {
@@ -77,15 +112,13 @@ export const deleteTrackBatchLocal = async (paths) =>
     })
   ).data;
 
-// Returns a URL for use in <img src={...}> — includes auth token when required.
+// Returns a URL for use in <img src={...}>, signed with the path's cached HMAC signature
+// (see streamSignatures). The path must already be signed (the list fetchers warm the cache);
+// an unsigned path yields a URL the server rejects with 401.
 export const getArtworkUrl = (path, size = null) => {
   if (!path) return null;
 
-  const token = isPassthroughEnabled() ? null : getToken();
-  const tokenParameter = token
-    ? `&access_token=${encodeURIComponent(token)}`
-    : '';
   const sizeParameter = size ? `&size=${size}` : '';
 
-  return `${apiBaseUrl}/musiclibrary/artwork?path=${encodeURIComponent(path)}${sizeParameter}${tokenParameter}`;
+  return `${apiBaseUrl}/musiclibrary/artwork?path=${encodeURIComponent(path)}${sizeParameter}${signedQuery(path)}`;
 };

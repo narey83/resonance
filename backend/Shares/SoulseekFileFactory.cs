@@ -44,21 +44,6 @@ namespace resonance.Shares
     using Soulseek;
 
     /// <summary>
-    ///     ID3/tag metadata read from a file during share scanning.
-    /// </summary>
-    public record FileTags(string Artist, string AlbumArtist, string Album, string Title, uint TrackNumber, uint Year, string Key = null, string Genre = null, uint Bpm = 0, string Comment = null, uint DiscNumber = 0);
-
-    /// <summary>
-    ///     Represents a shared file that has no tag metadata.
-    /// </summary>
-    public record UntaggedFile(string MaskedFilename, string OriginalFilename, string Directory, string Filename, string Extension);
-
-    /// <summary>
-    ///     Represents a shared file that has tag metadata.
-    /// </summary>
-    public record TaggedFile(string MaskedFilename, string OriginalFilename, string Directory, string Filename, string Extension, FileTags Tags);
-
-    /// <summary>
     ///     Creates instances of <see cref="Soulseek.File"/>.
     /// </summary>
     public interface ISoulseekFileFactory
@@ -72,6 +57,21 @@ namespace resonance.Shares
         /// <returns>The created file and any tag metadata that was read.</returns>
         (File File, FileTags Tags) Create(string filename, string maskedFilename, long size);
     }
+
+    /// <summary>
+    ///     ID3/tag metadata read from a file during share scanning.
+    /// </summary>
+    public record FileTags(string Artist, string AlbumArtist, string Album, string Title, uint TrackNumber, uint Year, string Key = null, string Genre = null, uint Bpm = 0, string Comment = null, uint DiscNumber = 0);
+
+    /// <summary>
+    ///     Represents a shared file that has no tag metadata.
+    /// </summary>
+    public record UntaggedFile(string MaskedFilename, string OriginalFilename, string Directory, string Filename, string Extension);
+
+    /// <summary>
+    ///     Represents a shared file that has tag metadata.
+    /// </summary>
+    public record TaggedFile(string MaskedFilename, string OriginalFilename, string Directory, string Filename, string Extension, FileTags Tags);
 
     /// <summary>
     ///     Creates instances of <see cref="Soulseek.File"/>.

@@ -232,6 +232,16 @@
 #   workers: 2
 #   write_to_tags: true
 #   ffmpeg_path: ffmpeg        # path to ffmpeg binary, defaults to 'ffmpeg' on PATH
+# metadata_lookup:
+#   enabled: false             # auto-fill missing title/artist/album/year/genre from MusicBrainz
+#   min_score: 90              # minimum match confidence (0-100) before tags are written automatically
+#   contact: ~                 # email/URL for the MusicBrainz User-Agent (recommended so requests aren't blocked)
+#   base_url: https://musicbrainz.org/ws/2  # point at a self-hosted mirror to remove the public rate limit
+#   rate_limit_per_second: 1   # public API allows 1; raise only against a mirror
+#   workers: 1                 # concurrent lookups per pass; keep at 1 for the public API
+#   discogs:
+#     enabled: false           # use Discogs instead of MusicBrainz (better for electronic/vinyl/underground)
+#     token: ~                 # Discogs personal access token (discogs.com -> Settings -> Developers)
 # soulseek:
 #   address: vps.slsknet.org
 #   port: 2271

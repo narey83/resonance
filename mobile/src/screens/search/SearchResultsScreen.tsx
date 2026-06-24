@@ -1296,7 +1296,7 @@ export default function SearchResultsScreen({ route, navigation }: Props) {
         <View style={styles.statusBar}>
           <View style={styles.statusInfo}>
             {isActive || fetchingResults
-              ? <ActivityIndicator size="small" color={colors.accent} style={styles.statusIcon} />
+              ? null
               : <Ionicons name="checkmark-circle" size={16} color={colors.success} style={styles.statusIcon} />
             }
             <Text style={styles.statusText}>

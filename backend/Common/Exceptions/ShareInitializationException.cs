@@ -1,4 +1,4 @@
-﻿// <copyright file="ShareInitializationException.cs" company="JP Dillingham">
+// <copyright file="ShareInitializationException.cs" company="JP Dillingham">
 //           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
 //     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
 //     █__ --█  █__ --█    ◄█  -  █

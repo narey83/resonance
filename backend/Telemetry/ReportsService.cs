@@ -105,6 +105,7 @@ public class ReportsService
     ///     Returns a summary of all transfer data grouped by direction and final transfer state. Includes only
     ///     completed transfers.
     /// </summary>
+    /// <returns></returns>
     public Dictionary<TransferDirection, Dictionary<TransferStates, TransferSummary>> GetTransferSummary(
         DateTime? start = null,
         DateTime? end = null,
@@ -209,6 +210,7 @@ public class ReportsService
     ///     Returns a histogram of all transfer data, aggregated into fixed size time intervals and grouped by
     ///     direction and final transfer state. Includes only completed transfers.
     /// </summary>
+    /// <returns></returns>
     public Dictionary<DateTime, Dictionary<TransferDirection, Dictionary<TransferStates, TransferSummary>>> GetTransferHistogram(
         DateTime start,
         DateTime end,
@@ -338,6 +340,7 @@ public class ReportsService
     /// <summary>
     ///     Returns the top N users summaries by count, total bytes, or average speed.
     /// </summary>
+    /// <returns></returns>
     public List<TransferSummary> GetTransferLeaderboard(
         TransferDirection direction,
         DateTime? start = null,
@@ -440,6 +443,7 @@ public class ReportsService
     /// <summary>
     ///     Returns a list of transfer exceptions.
     /// </summary>
+    /// <returns></returns>
     public List<TransferExceptionDetail> GetTransferExceptions(
         TransferDirection direction,
         DateTime? start = null,
@@ -551,6 +555,7 @@ public class ReportsService
     /// <summary>
     ///     Returns a summary of distinct transfer exceptions and the number of times they occurred.
     /// </summary>
+    /// <returns></returns>
     public List<TransferExceptionSummary> GetTransferExceptionsPareto(
         TransferDirection direction,
         DateTime? start = null,
@@ -657,6 +662,7 @@ public class ReportsService
     /// <summary>
     ///     Returns a list of directories and the frequency at which they have been downloaded.
     /// </summary>
+    /// <returns></returns>
     public List<TransferDirectorySummary> GetTransferDirectoryFrequency(
         DateTime? start = null,
         DateTime? end = null,
@@ -752,6 +758,7 @@ public class ReportsService
     /// <summary>
     ///     Returns the top N most-downloaded files (uploaded from this server) within the given time window.
     /// </summary>
+    /// <returns></returns>
     public List<TransferFileSummary> GetTopFiles(
         DateTime? start = null,
         DateTime? end = null,
@@ -818,6 +825,7 @@ public class ReportsService
     /// <summary>
     ///     Returns a paginated list of all users with aggregate transfer statistics.
     /// </summary>
+    /// <returns></returns>
     public (List<UserReportSummary> Items, int Total) GetUserList(
         DateTime? start = null,
         DateTime? end = null,
@@ -946,6 +954,7 @@ public class ReportsService
     /// <summary>
     ///     Returns paginated individual transfer records for the specified user.
     /// </summary>
+    /// <returns></returns>
     public (List<UserTransferRecord> Items, int Total) GetUserTransfers(
         string username,
         TransferDirection? direction = null,
@@ -1069,6 +1078,7 @@ public class ReportsService
     /// <summary>
     ///     Returns paginated browse event timestamps for the specified user from the events database.
     /// </summary>
+    /// <returns></returns>
     public (List<DateTime> Timestamps, int Total) GetUserBrowseEvents(
         string username,
         DateTime? start = null,
@@ -1201,12 +1211,18 @@ public class ReportsService
 
         var param = new DynamicParameters();
         if (UsePostgres)
+        {
             param.Add("Since", Utc(since));
+        }
         else
+        {
             param.Add("Since", since.ToString("o"));
+        }
 
         for (var i = 0; i < list.Count; i++)
+        {
             param.Add($"u{i}", list[i]);
+        }
 
         using var connection = OpenConnection(Database.Events);
         return connection
@@ -1217,6 +1233,7 @@ public class ReportsService
     /// <summary>
     ///     Returns a day-of-week (0=Sunday) by hour-of-day (UTC) heatmap of successful transfer activity.
     /// </summary>
+    /// <returns></returns>
     public List<HeatmapCell> GetActivityHeatmap(
         DateTime? start = null,
         DateTime? end = null,
@@ -1278,6 +1295,7 @@ public class ReportsService
     /// <summary>
     ///     Returns the top countries by upload volume plus VPN usage among peers active in the window.
     /// </summary>
+    /// <returns></returns>
     public GeographyReport GetGeography(
         DateTime? start = null,
         DateTime? end = null,
@@ -1390,6 +1408,7 @@ public class ReportsService
     /// <summary>
     ///     Returns the distribution of terminal download transfers by the number of attempts taken.
     /// </summary>
+    /// <returns></returns>
     public List<RetryBucket> GetRetryFunnel(
         DateTime? start = null,
         DateTime? end = null)
@@ -1447,6 +1466,7 @@ public class ReportsService
     /// <summary>
     ///     Returns the distribution of upload queue wait times (seconds) over the window.
     /// </summary>
+    /// <returns></returns>
     public QueueWaitStats GetQueueWaitStats(
         DateTime? start = null,
         DateTime? end = null)
@@ -1529,6 +1549,7 @@ public class ReportsService
     ///     Returns the count of new versus returning peers active within the window, based on each peer's
     ///     first-ever transfer.
     /// </summary>
+    /// <returns></returns>
     public PeerRetention GetPeerRetention(
         DateTime? start = null,
         DateTime? end = null)
@@ -1598,6 +1619,7 @@ public class ReportsService
     /// <summary>
     ///     Returns the number of distinct shared files that have ever been uploaded (catalog reach).
     /// </summary>
+    /// <returns></returns>
     public CoverageReport GetCatalogCoverage()
     {
         return Cache.GetOrCreate("reports:coverage", entry =>
@@ -1632,6 +1654,7 @@ public class ReportsService
     ///     Returns counts of social / discovery events (browses, private messages, room messages, mentions)
     ///     within the window.
     /// </summary>
+    /// <returns></returns>
     public SocialActivity GetSocialActivity(
         DateTime? start = null,
         DateTime? end = null)

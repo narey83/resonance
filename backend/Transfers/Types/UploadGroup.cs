@@ -1,4 +1,4 @@
-﻿// <copyright file="UploadGroup.cs" company="JP Dillingham">
+// <copyright file="UploadGroup.cs" company="JP Dillingham">
 //           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
 //     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
 //     █__ --█  █__ --█    ◄█  -  █

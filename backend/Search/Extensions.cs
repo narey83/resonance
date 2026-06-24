@@ -1,4 +1,4 @@
-﻿// <copyright file="Extensions.cs" company="JP Dillingham">
+// <copyright file="Extensions.cs" company="JP Dillingham">
 //           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
 //     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
 //     █__ --█  █__ --█    ◄█  -  █

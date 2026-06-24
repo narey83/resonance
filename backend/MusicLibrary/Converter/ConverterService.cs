@@ -1,13 +1,9 @@
-// <copyright file="ConverterService.cs" company="JP Dillingham">
-//           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
-//     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
-//     █__ --█  █__ --█    ◄█  -  █
-//     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
+// <copyright file="ConverterService.cs" company="John Narey">
+//    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
+//   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
-//   │ Copyright (c) JP Dillingham.
 //   │ Copyright (c) 2026 John Narey.
-//   │ Modified as part of Resonance, a modified version of slskd;
-//   │ see the project repository for the nature of the changes.
+//   │ Part of Resonance, a Soulseek client based on slskd.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -25,10 +21,8 @@
 //   │ of the AGPLv3.  See the LICENSE file in the root directory of this
 //   │ project for the complete terms and conditions.
 //   │
-//   │ https://slskd.org
-//   │
 //   ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ╌ ╌╌╌╌ ╌
-//   │ SPDX-FileCopyrightText: JP Dillingham
+//   │ SPDX-FileCopyrightText: John Narey
 //   │ SPDX-License-Identifier: AGPL-3.0-only
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
@@ -51,14 +45,14 @@ using Serilog;
 
 public sealed class ConverterService : IConverterService
 {
+    private const int MaxErrorsRetained = 100;
+    private const int MaxJobsRetained = 25;
+
     // Audio file types we will enumerate inside a folder and consider for conversion.
     private static readonly HashSet<string> AudioExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         "mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "wma", "aiff", "aif", "alac", "ape", "wv", "mpc",
     };
-
-    private const int MaxErrorsRetained = 100;
-    private const int MaxJobsRetained = 25;
 
     private static readonly ILogger Log = Serilog.Log.ForContext<ConverterService>();
 

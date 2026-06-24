@@ -32,6 +32,14 @@ const Events = () => {
   const filtersRef = useRef({ typeFilter, dateFrom, dateTo });
   filtersRef.current = { typeFilter, dateFrom, dateTo };
 
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const fetch = async (pg = page) => {
     setLoading(true);
 
@@ -44,6 +52,8 @@ const Events = () => {
       from: from ? new Date(from).toISOString() : undefined,
       to: to ? new Date(to + 'T23:59:59').toISOString() : undefined,
     });
+
+    if (!mountedRef.current) return;
 
     const tp = Math.ceil(totalCount / PER_PAGE);
 

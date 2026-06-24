@@ -1,13 +1,9 @@
-// <copyright file="MusicRepository.cs" company="JP Dillingham">
-//           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
-//     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
-//     █__ --█  █__ --█    ◄█  -  █
-//     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
+// <copyright file="MusicRepository.cs" company="John Narey">
+//    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
+//   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
-//   │ Copyright (c) JP Dillingham.
 //   │ Copyright (c) 2026 John Narey.
-//   │ Modified as part of Resonance, a modified version of slskd;
-//   │ see the project repository for the nature of the changes.
+//   │ Part of Resonance, a Soulseek client based on slskd.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -25,10 +21,8 @@
 //   │ of the AGPLv3.  See the LICENSE file in the root directory of this
 //   │ project for the complete terms and conditions.
 //   │
-//   │ https://slskd.org
-//   │
 //   ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ╌ ╌╌╌╌ ╌
-//   │ SPDX-FileCopyrightText: JP Dillingham
+//   │ SPDX-FileCopyrightText: John Narey
 //   │ SPDX-License-Identifier: AGPL-3.0-only
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
@@ -320,11 +314,31 @@ namespace resonance.MusicLibrary
 
             using var countCmd = conn.CreateCommand();
             countCmd.CommandText = $"SELECT COUNT(*) FROM {T} {where}";
-            if (hasSearch) AddParam(countCmd, "@s", pattern);
-            if (hasArtist) AddParam(countCmd, "@artist", artist);
-            if (hasAlbum) AddParam(countCmd, "@album", album);
-            if (hasGenre) AddParam(countCmd, "@genre", genre);
-            if (hasYear) AddParam(countCmd, "@year", year.Value);
+            if (hasSearch)
+            {
+                AddParam(countCmd, "@s", pattern);
+            }
+
+            if (hasArtist)
+            {
+                AddParam(countCmd, "@artist", artist);
+            }
+
+            if (hasAlbum)
+            {
+                AddParam(countCmd, "@album", album);
+            }
+
+            if (hasGenre)
+            {
+                AddParam(countCmd, "@genre", genre);
+            }
+
+            if (hasYear)
+            {
+                AddParam(countCmd, "@year", year.Value);
+            }
+
             if (hasFolder)
             {
                 AddParam(countCmd, "@folder", folder);
@@ -354,11 +368,31 @@ namespace resonance.MusicLibrary
                 FROM {T} {where}
                 ORDER BY {orderBy}
                 LIMIT @limit OFFSET @offset";
-            if (hasSearch) AddParam(cmd, "@s", pattern);
-            if (hasArtist) AddParam(cmd, "@artist", artist);
-            if (hasAlbum) AddParam(cmd, "@album", album);
-            if (hasGenre) AddParam(cmd, "@genre", genre);
-            if (hasYear) AddParam(cmd, "@year", year.Value);
+            if (hasSearch)
+            {
+                AddParam(cmd, "@s", pattern);
+            }
+
+            if (hasArtist)
+            {
+                AddParam(cmd, "@artist", artist);
+            }
+
+            if (hasAlbum)
+            {
+                AddParam(cmd, "@album", album);
+            }
+
+            if (hasGenre)
+            {
+                AddParam(cmd, "@genre", genre);
+            }
+
+            if (hasYear)
+            {
+                AddParam(cmd, "@year", year.Value);
+            }
+
             if (hasFolder)
             {
                 AddParam(cmd, "@folder", folder);
@@ -667,6 +701,7 @@ namespace resonance.MusicLibrary
         /// as <paramref name="path"/> but with a different extension — e.g. after a file is
         /// converted from <c>.opus</c> to <c>.mp3</c>. Returns <see langword="null"/> if none exists.
         /// </summary>
+        /// <returns></returns>
         public MusicTrack? FindByPathIgnoringExtension(string path)
         {
             var directory = System.IO.Path.GetDirectoryName(path);

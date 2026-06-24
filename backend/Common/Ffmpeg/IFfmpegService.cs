@@ -1,13 +1,9 @@
-// <copyright file="IFfmpegService.cs" company="JP Dillingham">
-//           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
-//     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
-//     █__ --█  █__ --█    ◄█  -  █
-//     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
+// <copyright file="IFfmpegService.cs" company="John Narey">
+//    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
+//   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
-//   │ Copyright (c) JP Dillingham.
 //   │ Copyright (c) 2026 John Narey.
-//   │ Modified as part of Resonance, a modified version of slskd;
-//   │ see the project repository for the nature of the changes.
+//   │ Part of Resonance, a Soulseek client based on slskd.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -25,10 +21,8 @@
 //   │ of the AGPLv3.  See the LICENSE file in the root directory of this
 //   │ project for the complete terms and conditions.
 //   │
-//   │ https://slskd.org
-//   │
 //   ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ╌ ╌╌╌╌ ╌
-//   │ SPDX-FileCopyrightText: JP Dillingham
+//   │ SPDX-FileCopyrightText: John Narey
 //   │ SPDX-License-Identifier: AGPL-3.0-only
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
@@ -53,17 +47,22 @@ public interface IFfmpegService : IHostedService
     string? FfprobePath { get; }
 
     /// <summary>Ensures ffmpeg is available (downloading if needed) and returns its path.</summary>
+    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
     Task<string> GetFfmpegPathAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Ensures ffprobe is available (downloading if needed) and returns its path.</summary>
+    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
     Task<string> GetFfprobePathAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Returns the first line of <c>ffmpeg -version</c>, or null on failure.</summary>
+    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
     Task<string?> GetVersionAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Checks GitHub for a newer static build of the self-managed ffmpeg.</summary>
+    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
     Task<(string? Current, string? Latest, bool UpdateAvailable)> CheckForUpdateAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Downloads and installs the latest static ffmpeg/ffprobe build. Returns the new version tag.</summary>
+    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
     Task<string> UpdateAsync(CancellationToken cancellationToken = default);
 }

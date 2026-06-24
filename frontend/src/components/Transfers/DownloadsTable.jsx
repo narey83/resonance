@@ -624,15 +624,6 @@ const UserGroup = ({
           {netInfo && (
             <div className="dl-user-net">
               <span className="dl-user-net-ip">{netInfo.ip}</span>
-              {netInfo.isVpn ? (
-                <span className="dl-user-net-vpn dl-user-net-vpn--good">
-                  VPN
-                </span>
-              ) : (
-                <span className="dl-user-net-vpn dl-user-net-vpn--bad">
-                  No VPN
-                </span>
-              )}
               <span className="dl-user-net-sep">·</span>
               <span className="dl-user-net-isp">{netInfo.isp}</span>
               <span className="dl-user-net-sep">·</span>

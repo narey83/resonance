@@ -31,7 +31,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { makeScreenOptions, Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import { useTheme } from '../../context/ThemeContext';
 import {
-  getAlbums, getArtists, getFolders, getGenres, getYears, getTracks,
+  getAlbums, getArtists, getFolders, getGenres, getYears, getTracks, getLovedTracks,
   getArtworkUrl, getTrackTitle, getTrackArtworkPath,
   analyzeFolder, deleteFolder as deleteFolderApi,
   renameFolder as renameFolderApi, renameTrack as renameTrackApi,
@@ -1501,10 +1501,10 @@ function LovedTab() {
 
   useEffect(() => {
     setLoading(true);
-    // Loved paths are matched against the full library, so fetch all tracks — a low
-    // limit silently drops loved tracks that sort past it (the library has 20k+ tracks).
-    getTracks({ limit: 500_000 })
-      .then((r) => setAllTracks(r?.tracks ?? []))
+    // Fetch only the loved tracks (resolved server-side) rather than the whole 20k+ library.
+    // We still filter by the reactive lovedPaths below so unloving updates the list live.
+    getLovedTracks()
+      .then((tracks) => setAllTracks(tracks ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);

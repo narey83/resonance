@@ -1,0 +1,178 @@
+.ml-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: 100%;
+  overflow: auto;
+  padding: 18px 20px;
+}
+
+.ml-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.ml-title {
+  align-items: center;
+  color: var(--text-primary);
+  display: flex;
+  font-size: 15px;
+  font-weight: 600;
+  gap: 8px;
+}
+
+.ml-subtitle {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  margin-top: 4px;
+  max-width: 60ch;
+}
+
+.ml-btn {
+  align-items: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  flex-shrink: 0;
+  font-size: 13px;
+  gap: 6px;
+  padding: 7px 12px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.ml-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.ml-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.ml-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ml-progress-bar {
+  background: var(--bg-elevated);
+  border-radius: 4px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.ml-progress-fill {
+  background: var(--accent, #5c8cf7);
+  height: 100%;
+  transition: width 0.4s ease;
+}
+
+.ml-progress-stats {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 10px;
+}
+
+.ml-count {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.ml-chip {
+  background: var(--bg-elevated);
+  border-radius: 10px;
+  padding: 2px 8px;
+}
+
+.ml-chip--ok {
+  color: var(--success);
+}
+
+.ml-chip--err {
+  color: var(--danger);
+}
+
+.ml-eta {
+  margin-left: auto;
+}
+
+.ml-idle {
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.ml-list {
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+.ml-empty {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  padding: 16px 4px;
+}
+
+.ml-item {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  font-size: 12.5px;
+  gap: 12px;
+  padding: 8px 4px;
+}
+
+.ml-item-status {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  width: 96px;
+}
+
+.ml-item-status--written {
+  color: var(--success);
+}
+
+.ml-item-status--failed {
+  color: var(--danger);
+}
+
+.ml-item-file {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ml-item-summary {
+  color: var(--text-muted);
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ml-spin {
+  animation: ml-spin 1s linear infinite;
+}
+
+@keyframes ml-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}

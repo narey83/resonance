@@ -1,4 +1,4 @@
-﻿// <copyright file="CompositeValidationResult.cs" company="JP Dillingham">
+// <copyright file="CompositeValidationResult.cs" company="JP Dillingham">
 //           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
 //     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
 //     █__ --█  █__ --█    ◄█  -  █

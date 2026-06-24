@@ -39,6 +39,7 @@
         }
       ],
       "expo-image",
+      "expo-sharing",
       [
         "expo-media-library",
         {

@@ -50,7 +50,9 @@ namespace resonance.Search
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             if (Database.IsNpgsql())
+            {
                 modelBuilder.HasDefaultSchema("search");
+            }
 
             modelBuilder
                 .Entity<Search>()

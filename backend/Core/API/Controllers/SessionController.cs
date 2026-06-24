@@ -40,6 +40,7 @@ namespace resonance.Core.API
     using System.Linq;
     using System.Net;
     using System.Security.Claims;
+    using System.Text.Json.Serialization;
     using System.Threading.Tasks;
     using Asp.Versioning;
     using Microsoft.AspNetCore.Authorization;
@@ -148,51 +149,43 @@ namespace resonance.Core.API
         [ProducesResponseType(429)]
         public IActionResult Login([FromBody] LoginRequest login)
         {
-            if (login == default || string.IsNullOrWhiteSpace(login.Username) || string.IsNullOrWhiteSpace(login.Password))
+            if (login == default)
             {
                 return BadRequest("Username and password are required");
             }
 
-            var callerIp = GetCallerIp();
-
-            if (LoginAttempts.IsBlocked(callerIp))
-            {
-                Log.Warning("Login attempt blocked for user {Username} from {IP}: too many failed attempts", login.Username, callerIp);
-                return StatusCode(429, "Too many failed login attempts; try again later");
-            }
-
-            var user = Users.Authenticate(login.Username, login.Password);
-            if (user is null)
-            {
-                LoginAttempts.RecordFailure(callerIp);
-                Log.Warning("Login failed for user {Username} from {IP}", login.Username, callerIp);
-                return Unauthorized();
-            }
-
-            LoginAttempts.RecordSuccess(callerIp);
-
-            var (refreshToken, sessionId) = Sessions.CreateSession(user.Username, login.DeviceName, callerIp, login.ExistingSessionId);
-            var jwt = Security.GenerateJwt(user.Username, user.Role, sessionId: sessionId);
-            return Ok(new TokenResponse(jwt, refreshToken, sessionId));
+            var (token, error) = IssueToken(login.Username, login.Password, login.DeviceName, login.ExistingSessionId);
+            return error ?? Ok(token);
         }
 
-        private string GetCallerIp()
+        /// <summary>
+        ///     OAuth2 password-grant token endpoint, consumed by the Swagger UI "Authorize" dialog so it can
+        ///     prompt for a username and password directly. Returns an OAuth2-shaped token response.
+        /// </summary>
+        /// <returns></returns>
+        [HttpPost]
+        [Route("token")]
+        [AllowAnonymous]
+        [Consumes("application/x-www-form-urlencoded")]
+        [ProducesResponseType(typeof(OAuthTokenResponse), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(429)]
+        public IActionResult Token([FromForm] OAuthTokenRequest request)
         {
-            var ip = HttpContext.Connection.RemoteIpAddress;
-            if (ip is not null && ip.IsIPv4MappedToIPv6)
+            var (token, error) = IssueToken(request?.Username, request?.Password, deviceName: "Swagger UI", existingSessionId: null);
+            if (error is not null)
             {
-                ip = ip.MapToIPv4();
+                return error;
             }
 
-            // Only trust X-Forwarded-For when the direct peer is the local machine (reverse proxy
-            // or dev server on the same host); any remote client can set the header to an arbitrary value.
-            var forwarded = Request.Headers["X-Forwarded-For"].FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(forwarded) && ip is not null && IPAddress.IsLoopback(ip))
+            return Ok(new OAuthTokenResponse
             {
-                return forwarded.Split(',')[0].Trim();
-            }
-
-            return ip?.ToString();
+                AccessToken = token.Token,
+                TokenType = "Bearer",
+                ExpiresIn = token.Expires - DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                RefreshToken = token.RefreshToken,
+            });
         }
 
         /// <summary>
@@ -324,10 +317,92 @@ namespace resonance.Core.API
             await Hub.BroadcastSessionRevokedAsync(id);
             return Ok();
         }
+
+        private (TokenResponse Token, IActionResult Error) IssueToken(string username, string password, string deviceName, Guid? existingSessionId)
+        {
+            if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+            {
+                return (null, BadRequest("Username and password are required"));
+            }
+
+            var callerIp = GetCallerIp();
+
+            if (LoginAttempts.IsBlocked(callerIp))
+            {
+                Log.Warning("Login attempt blocked for user {Username} from {IP}: too many failed attempts", username, callerIp);
+                return (null, StatusCode(429, "Too many failed login attempts; try again later"));
+            }
+
+            var user = Users.Authenticate(username, password);
+            if (user is null)
+            {
+                LoginAttempts.RecordFailure(callerIp);
+                Log.Warning("Login failed for user {Username} from {IP}", username, callerIp);
+                return (null, Unauthorized());
+            }
+
+            LoginAttempts.RecordSuccess(callerIp);
+
+            var (refreshToken, sessionId) = Sessions.CreateSession(user.Username, deviceName, callerIp, existingSessionId);
+            var jwt = Security.GenerateJwt(user.Username, user.Role, sessionId: sessionId);
+            return (new TokenResponse(jwt, refreshToken, sessionId), null);
+        }
+
+        private string GetCallerIp()
+        {
+            var ip = HttpContext.Connection.RemoteIpAddress;
+            if (ip is not null && ip.IsIPv4MappedToIPv6)
+            {
+                ip = ip.MapToIPv4();
+            }
+
+            // Only trust X-Forwarded-For when the direct peer is the local machine (reverse proxy
+            // or dev server on the same host); any remote client can set the header to an arbitrary value.
+            var forwarded = Request.Headers["X-Forwarded-For"].FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(forwarded) && ip is not null && IPAddress.IsLoopback(ip))
+            {
+                return forwarded.Split(',')[0].Trim();
+            }
+
+            return ip?.ToString();
+        }
     }
 
     public record RefreshRequest(string RefreshToken);
     public record LogoutRequest(string RefreshToken);
+
+    /// <summary>
+    ///     Form body for the OAuth2 password-grant token endpoint (sent by the Swagger UI Authorize dialog).
+    /// </summary>
+    public class OAuthTokenRequest
+    {
+        [FromForm(Name = "grant_type")]
+        public string GrantType { get; set; }
+
+        [FromForm(Name = "username")]
+        public string Username { get; set; }
+
+        [FromForm(Name = "password")]
+        public string Password { get; set; }
+    }
+
+    /// <summary>
+    ///     OAuth2-shaped token response expected by the Swagger UI Authorize dialog.
+    /// </summary>
+    public class OAuthTokenResponse
+    {
+        [JsonPropertyName("access_token")]
+        public string AccessToken { get; set; }
+
+        [JsonPropertyName("token_type")]
+        public string TokenType { get; set; }
+
+        [JsonPropertyName("expires_in")]
+        public long ExpiresIn { get; set; }
+
+        [JsonPropertyName("refresh_token")]
+        public string RefreshToken { get; set; }
+    }
 
     public class SessionInfo
     {

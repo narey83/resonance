@@ -1,4 +1,5 @@
 import './TagEditor.css';
+import { lookup as lookupMetadata } from '../../lib/metadataLookup';
 import {
   getTagged,
   getUntagged,
@@ -12,6 +13,7 @@ import {
   ChevronDown,
   ChevronRight,
   FolderEdit,
+  Globe,
   Loader,
   Lock,
   Pencil,
@@ -29,6 +31,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { toast } from 'react-toastify';
 
 const EMPTY_FORM = {
   album: '',
@@ -323,6 +326,7 @@ const FolderEditorForm = ({ directory, files, onSave, saving }) => {
 
 const TagEditorForm = ({ file, mode, onSave, onSkip, saving }) => {
   const [form, setForm] = useState(EMPTY_FORM);
+  const [looking, setLooking] = useState(false);
   const titleRef = useRef(null);
 
   useEffect(() => {
@@ -345,6 +349,42 @@ const TagEditorForm = ({ file, mode, onSave, onSkip, saving }) => {
       artist: previous.artist || guessed.artist,
       title: previous.title || guessed.title,
     }));
+  };
+
+  const handleLookup = async () => {
+    if (!file || looking) return;
+    setLooking(true);
+    try {
+      const matches = await lookupMetadata({
+        maskedFilename: file.maskedFilename,
+      });
+      const match = matches?.[0];
+      if (!match) {
+        toast.info('No online match found for this track.');
+        return;
+      }
+
+      setForm((previous) => ({
+        ...previous,
+        album: match.album || previous.album,
+        albumArtist: match.albumArtist || previous.albumArtist,
+        artist: match.artist || previous.artist,
+        discNumber: match.discNumber
+          ? String(match.discNumber)
+          : previous.discNumber,
+        genre: match.genre || previous.genre,
+        title: match.title || previous.title,
+        trackNumber: match.trackNumber
+          ? String(match.trackNumber)
+          : previous.trackNumber,
+        year: match.year ? String(match.year) : previous.year,
+      }));
+      toast.success('Filled from MusicBrainz — review, then save.');
+    } catch {
+      toast.error('Online lookup failed.');
+    } finally {
+      setLooking(false);
+    }
   };
 
   const handleSubmit = (submitEvent) => {
@@ -571,6 +611,23 @@ const TagEditorForm = ({ file, mode, onSave, onSkip, saving }) => {
         >
           <Sparkles size={14} />
           Auto-fill
+        </button>
+        <button
+          className="te-btn te-btn--ghost"
+          disabled={looking}
+          onClick={handleLookup}
+          title="Look up track details online (MusicBrainz)"
+          type="button"
+        >
+          {looking ? (
+            <Loader
+              className="te-spin"
+              size={14}
+            />
+          ) : (
+            <Globe size={14} />
+          )}
+          Look up online
         </button>
 
         <div className="te-form-actions-right">

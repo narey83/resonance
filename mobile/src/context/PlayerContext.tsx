@@ -9,6 +9,8 @@ import React, {
 } from 'react';
 import TrackPlayer, {
   Event,
+  RepeatMode,
+  State,
   Track,
   useActiveTrack,
   useIsPlaying,
@@ -17,12 +19,14 @@ import TrackPlayer, {
 } from 'react-native-track-player';
 import { AppState } from 'react-native';
 import { MusicTrack, getArtworkUrl, getStreamUrl, getTrackTitle } from '../api/musicLibrary';
+import { getArtworkCacheKey, prefetchArtwork, PLAYER_ART_SIZE } from '../services/artworkCache';
 import { isLocalPath } from '../services/localMusicLibrary';
 import { useLibraryActivityStore } from '../store/libraryActivityStore';
 import { useConnectionStore } from '../services/connectionMonitor';
 import { useAuthStore } from '../store/auth';
-import { getValidToken } from '../api/client';
+import { ensureSigned, getSignature, invalidateSignatures } from '../api/streamSignatures';
 import { remoteLog } from '../api/remoteLogger';
+import { recordMediaLoad } from '../store/networkLogStore';
 import {
   buildAndroidAutoTree,
   clearAndroidAutoTree,
@@ -32,11 +36,15 @@ import { ensurePlayerSetup } from '../services/playerSetup';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
+export type RepeatSetting = 'off' | 'queue' | 'track';
+
 interface PlayerContextValue {
   track: MusicTrack | null;
   queue: MusicTrack[];
   queueIndex: number;
   shuffle: boolean;
+  repeatMode: RepeatSetting;
+  cycleRepeat: () => void;
   playTrack: (track: MusicTrack) => void;
   playQueue: (tracks: MusicTrack[], startIndex?: number) => void;
   addToQueue: (tracks: MusicTrack[]) => void;
@@ -94,6 +102,9 @@ const buildShuffleOrder = (length: number, startIndex: number): number[] => {
   return [startIndex, ...indices];
 };
 
+// How many tracks on each side of the current one to prefetch artwork for.
+const PREFETCH_RADIUS = 2;
+
 // ── Provider ───────────────────────────────────────────────────────────────────
 
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
@@ -102,17 +113,21 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [queueIndex, setQueueIndex] = useState(0);
   const [shuffle, setShuffle]       = useState(false);
   const [shuffleOrder, setShuffleOrder] = useState<number[]>([]);
+  const [repeatMode, setRepeatMode] = useState<RepeatSetting>('off');
 
   const suppressLocalPlayRef = useRef(false);
   const positionRef          = useRef(0);
   const playingRef           = useRef(false);
+  // Path of the track we last auto-recovered from a stale-URL playback error, so a genuine
+  // (non-token) failure doesn't loop. Reset when playback moves to a different track.
+  const recoveringRef        = useRef<string | null>(null);
+  // Pending stream-load timing: armed when a remote track becomes active, cleared (and recorded)
+  // when it first reaches a playable state — i.e. how long the user waited for audio to buffer.
+  const streamLoadRef        = useRef<{ path: string; startedAt: number } | null>(null);
   const shuffleRef           = useRef(shuffle);
   const shuffleOrderRef      = useRef(shuffleOrder);
   const queueRef             = useRef(queue);
   const queueIndexRef        = useRef(queueIndex);
-  // Tracks which access token was in effect when the RNTP queue was last built,
-  // so we know when stream URLs have gone stale.
-  const queueTokenRef        = useRef<string | null>(null);
 
   useEffect(() => { shuffleRef.current      = shuffle; },      [shuffle]);
   useEffect(() => { shuffleOrderRef.current = shuffleOrder; }, [shuffleOrder]);
@@ -123,6 +138,39 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     ensurePlayerSetup();
+  }, []);
+
+  // Rehydrate the React queue from RNTP after a JS-context reload. When Android tears down
+  // the JS runtime in the background, the RNTP foreground service keeps the native queue and
+  // active track alive — but this provider remounts with queue: []. useActiveTrack() then shows
+  // the track while next/prev sit disabled and the queue panel is empty ("the queue is gone").
+  // getQueue() returns each track's originalItem bundle, which preserves our _source field, so
+  // we can reconstruct the MusicTrack[] and restore index from the native player.
+  useEffect(() => {
+    let cancelled = false;
+    ensurePlayerSetup().then(async () => {
+      if (cancelled || queueRef.current.length > 0) return; // React state already holds the queue
+      try {
+        const rntpQueue = await TrackPlayer.getQueue();
+        if (cancelled || rntpQueue.length === 0) return;
+        const tracks = rntpQueue
+          .map(fromRntpTrack)
+          .filter((t): t is MusicTrack => t != null);
+        if (tracks.length === 0) return;
+        const idx = (await TrackPlayer.getActiveTrackIndex()) ?? 0;
+        if (cancelled) return;
+        setQueue(tracks);
+        setQueueIndex(idx);
+        // The native queue's baked URLs carry pre-reload signatures and our signature cache is
+        // empty after the reload. Warm it so artwork resolves; the next play/skip re-signs and
+        // rebuilds the native queue (ensureFreshStreamUrls) so its URLs are guaranteed fresh.
+        ensureSigned(tracks.map((t) => t.path)).catch(() => { /* re-signs lazily on play */ });
+        remoteLog('info', `[player] rehydrated ${tracks.length}-track queue from RNTP after JS reload`);
+      } catch (err: unknown) {
+        remoteLog('warn', `[player] queue rehydrate failed — ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+    return () => { cancelled = true; };
   }, []);
 
   // ── RNTP state hooks ───────────────────────────────────────────────────────
@@ -136,13 +184,55 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const currentTrack = useMemo(() => fromRntpTrack(activeRntpTrack), [activeRntpTrack]);
 
-  // Track active index and log errors
+  // Track active index and recover from stale-URL playback errors
   useTrackPlayerEvents([Event.PlaybackActiveTrackChanged, Event.PlaybackError], (event) => {
     if (event.type === Event.PlaybackError) {
+      // Account a failed stream load if one was in flight, then clear the timer.
+      if (streamLoadRef.current) {
+        recordMediaLoad('stream', streamLoadRef.current.path, streamLoadRef.current.startedAt, false, {
+          error: 'message' in event ? String(event.message) : 'playback error',
+        });
+        streamLoadRef.current = null;
+      }
       remoteLog('error', `[player] playback error — ${'message' in event ? String(event.message) : JSON.stringify(event)}`);
+      // A remote track failing to load is almost always an expired token baked into its stream
+      // URL (e.g. auto-advance across token expiry on a long queue). Refresh URLs and resume —
+      // once per track, so a genuine error (missing file, network down) doesn't loop.
+      const active = queueRef.current[queueIndexRef.current];
+      if (active && !isLocalPath(active.path) && recoveringRef.current !== active.path) {
+        recoveringRef.current = active.path;
+        invalidateSignatures([active.path]); // force a re-sign even if the cached sig looks current
+        remoteLog('info', '[player] recovering from playback error — refreshing stream signatures');
+        ensureFreshStreamUrls()
+          .then(() => TrackPlayer.play())
+          .catch((err: unknown) => remoteLog('warn', `[player] recovery failed — ${err instanceof Error ? err.message : String(err)}`));
+      }
       return;
     }
-    if ('index' in event && event.index != null) setQueueIndex(event.index);
+    if ('index' in event && event.index != null) {
+      setQueueIndex(event.index);
+      // Reset the recovery guard only when playback genuinely moves to a different track — our
+      // own recovery rebuild re-fires this event for the same track, which must not re-arm it.
+      const newPath = queueRef.current[event.index]?.path ?? null;
+      if (newPath && newPath !== recoveringRef.current) recoveringRef.current = null;
+      // Arm stream-load timing for remote tracks; the PlaybackState listener stops it on the
+      // first playable state. Local files load from disk instantly, so skip them.
+      streamLoadRef.current = newPath && !isLocalPath(newPath)
+        ? { path: newPath, startedAt: Date.now() }
+        : null;
+    }
+  });
+
+  // Stop the stream-load timer when buffering completes, recording how long the user waited for
+  // audio to become playable. Only the first playable state after a track change counts — mid-play
+  // buffering dips leave streamLoadRef null and are ignored.
+  useTrackPlayerEvents([Event.PlaybackState], (event) => {
+    const pending = streamLoadRef.current;
+    if (!pending) return;
+    if (event.state === State.Ready || event.state === State.Playing) {
+      recordMediaLoad('stream', pending.path, pending.startedAt, true);
+      streamLoadRef.current = null;
+    }
   });
 
   // ── Side effects ───────────────────────────────────────────────────────────
@@ -163,7 +253,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const networkSwitchedAt = useConnectionStore((s) => s.networkSwitchedAt);
   useEffect(() => {
     if (!networkSwitchedAt) return;
-    if (!playingRef.current) return; // idle — the token-rotation effect rebuilds the queue
+    if (!playingRef.current) return; // idle — the foreground/play path re-signs and rebuilds
 
     // ExoPlayer keeps playing from its buffer (≥30 s) across a wifi↔cellular handover,
     // so the switch is normally seamless. Only force a reconnecting seek if playback has
@@ -182,53 +272,33 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
    
   }, [networkSwitchedAt]);
 
-  // Whenever the access token rotates (proactive refresh or reconnect) and the player
-  // is idle, rebuild the RNTP queue immediately with fresh stream URLs.
-  // Stream URLs are baked with the token at queue-build time; a stale URL returns 401
-  // and RNTP stops silently after ~1 s of buffering.
   const storeAccessToken = useAuthStore((s) => s.accessToken);
-  useEffect(() => {
-    if (!storeAccessToken) return;                         // logged out
-    if (storeAccessToken === queueTokenRef.current) return; // token unchanged
-    if (playingRef.current) return;                        // stream alive — don't interrupt
 
-    const q = queueRef.current;
-    if (q.length === 0) {
-      queueTokenRef.current = storeAccessToken;
-      return;
-    }
-
-    const idx = queueIndexRef.current;
-    const pos = positionRef.current;
-    queueTokenRef.current = storeAccessToken;
-
-    remoteLog('info', '[player] token rotated while idle — rebuilding queue with fresh URLs');
-    TrackPlayer.setQueue(q.map(toRntpTrack))
-      .then(() => idx > 0 ? TrackPlayer.skip(idx) : Promise.resolve())
-      .then(() => TrackPlayer.seekTo(pos))
-      .catch((err: unknown) => remoteLog('warn', `[player] queue rebuild failed — ${err instanceof Error ? err.message : String(err)}`));
-   
-  }, [storeAccessToken]);
-
-  // Refresh the access token if it's expiring, and — if it actually rotated — rebuild the
-  // RNTP queue in place (preserving index + position) so its baked stream URLs carry the
-  // fresh token. queueTokenRef is advanced *before* the rebuild so the token-rotation effect
-  // above sees the token as already-applied and no-ops (no double rebuild). Resolves once the
-  // queue is safe to play, so callers can await it immediately before TrackPlayer.play().
+  // Ensure the queue's server tracks have fresh path signatures, and — if any signature actually
+  // changed — rebuild the RNTP queue in place (preserving index + position) so its baked URLs
+  // carry the new signature. Stream/artwork URLs bake the signature at queue-build time; an
+  // expired signature returns 401 and RNTP stops silently after ~1 s of buffering. Resolves once
+  // the queue is safe to play, so callers can await it immediately before TrackPlayer.play().
   const ensureFreshStreamUrls = useCallback(async () => {
-    const fresh = await getValidToken();
-    if (!fresh || fresh === queueTokenRef.current) return; // refresh failed, or URLs already current
     const q = queueRef.current;
-    if (q.length === 0) { queueTokenRef.current = fresh; return; }
+    if (q.length === 0) return;
+    const remotePaths = q.map((t) => t.path).filter((p) => !isLocalPath(p));
+    if (remotePaths.length === 0) return; // all-local — file URLs never expire
+
+    const before = remotePaths.map((p) => getSignature(p)?.sig ?? '').join('|');
+    await ensureSigned(remotePaths);
+    const after = remotePaths.map((p) => getSignature(p)?.sig ?? '').join('|');
+    if (after === before) return; // signatures unchanged — baked URLs still valid
 
     const idx = queueIndexRef.current;
     const pos = positionRef.current;
-    queueTokenRef.current = fresh;
-    remoteLog('info', '[player] refreshing stale stream URLs before playback');
+    remoteLog('info', '[player] stream signatures refreshed — rebuilding queue');
     try {
       await TrackPlayer.setQueue(q.map(toRntpTrack));
-      if (idx > 0) await TrackPlayer.skip(idx);
-      await TrackPlayer.seekTo(pos);
+      // Restore index + position via skip's initialPosition. A bare seekTo() right after
+      // setQueue races the queue's native re-prepare and is dropped (resuming from 0);
+      // skip applies the seek as part of the load, after prepare, so it sticks.
+      await TrackPlayer.skip(idx, pos);
     } catch (err: unknown) {
       remoteLog('warn', `[player] queue rebuild failed — ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -249,17 +319,82 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, [ensureFreshStreamUrls]);
 
+  // Prefetch artwork for the couple of tracks on either side of the current one, so skipping
+  // forward/back shows the cover instantly instead of fetching it on demand. Warms expo-image's
+  // cache under the same stable cacheKey the player renders with (path-derived, survives URL
+  // signature rotation). Server tracks are signed first so their artwork URL is valid; the work
+  // is best-effort and runs off the playback critical path.
+  useEffect(() => {
+    if (queue.length === 0) return;
+    let cancelled = false;
+
+    (async () => {
+      const neighbours: MusicTrack[] = [];
+      for (let d = -PREFETCH_RADIUS; d <= PREFETCH_RADIUS; d++) {
+        const t = d !== 0 ? queue[queueIndex + d] : undefined;
+        if (t?.hasArtwork) neighbours.push(t);
+      }
+      if (neighbours.length === 0) return;
+
+      const serverPaths = neighbours.filter((t) => !isLocalPath(t.path)).map((t) => t.path);
+      if (serverPaths.length > 0) {
+        try { await ensureSigned(serverPaths); } catch { return; }
+      }
+      if (cancelled) return;
+
+      await Promise.all(neighbours.map((t) => {
+        const local = isLocalPath(t.path);
+        const uri   = local ? t.coverPath : getArtworkUrl(t.path, PLAYER_ART_SIZE);
+        if (!uri) return Promise.resolve();
+        const cacheKey = local ? undefined : getArtworkCacheKey(t.path, PLAYER_ART_SIZE);
+        return prefetchArtwork(uri, cacheKey);
+      }));
+    })();
+
+    return () => { cancelled = true; };
+  }, [queue, queueIndex]);
+
   // ── Playback commands ──────────────────────────────────────────────────────
+
+  // Number of tracks (from the start) signed up-front before playback begins. The rest are
+  // signed in the background so a large queue doesn't delay the first track.
+  const HEAD_SIGN_COUNT = 2;
 
   const playQueue = useCallback(async (tracks: MusicTrack[], startIndex = 0) => {
     const idx = Math.max(0, Math.min(startIndex, tracks.length - 1));
     setQueue(tracks);
     setQueueIndex(idx);
     if (shuffleRef.current) setShuffleOrder(buildShuffleOrder(tracks.length, idx));
-    queueTokenRef.current = useAuthStore.getState().accessToken;
+
+    // Sign only the tapped track (plus a small look-ahead) so playback starts without waiting on
+    // signing the entire queue. The native queue is still built from all tracks; the unsigned tail
+    // is signed + re-baked in the background below.
+    await ensureSigned(tracks.slice(idx, idx + HEAD_SIGN_COUNT).map((t) => t.path));
     await TrackPlayer.setQueue(tracks.map(toRntpTrack));
     if (idx > 0) await TrackPlayer.skip(idx);
     if (!suppressLocalPlayRef.current) await TrackPlayer.play();
+
+    // Background: sign the remaining tracks, then re-bake the not-yet-played tail in place — the
+    // currently playing track is left untouched, so there's no re-buffer, and auto-advance lands
+    // on signed URLs instead of 401-ing into the stale-URL recovery path.
+    const tailNeedsSigning =
+      tracks.length > idx + HEAD_SIGN_COUNT && tracks.slice(idx + 1).some((t) => !isLocalPath(t.path));
+    if (tailNeedsSigning) {
+      void (async () => {
+        await ensureSigned(tracks.map((t) => t.path));
+        if (queueRef.current !== tracks) return; // a newer queue operation has taken over
+        try {
+          const activeIdx = (await TrackPlayer.getActiveTrackIndex()) ?? idx;
+          const tailStart = activeIdx + 1;
+          if (tailStart >= tracks.length) return;
+          const indices = Array.from({ length: tracks.length - tailStart }, (_, i) => tailStart + i);
+          await TrackPlayer.remove(indices);
+          await TrackPlayer.add(tracks.slice(tailStart).map(toRntpTrack));
+        } catch (err: unknown) {
+          remoteLog('warn', `[player] tail re-sign failed — ${err instanceof Error ? err.message : String(err)}`);
+        }
+      })();
+    }
   }, []);
 
   // ── Android Auto ────────────────────────────────────────────────────────────
@@ -292,6 +427,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const addToQueue = useCallback(async (tracks: MusicTrack[]) => {
     setQueue((prev) => [...prev, ...tracks]);
+    await ensureSigned(tracks.map((t) => t.path));
     await TrackPlayer.add(tracks.map(toRntpTrack));
   }, []);
 
@@ -309,14 +445,18 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const playNext = useCallback(async (tracks: MusicTrack[]) => {
     const idx = queueIndexRef.current;
     setQueue((prev) => [...prev.slice(0, idx + 1), ...tracks, ...prev.slice(idx + 1)]);
+    await ensureSigned(tracks.map((t) => t.path));
     await TrackPlayer.add(tracks.map(toRntpTrack), idx + 1);
   }, []);
 
   const skipToIndex = useCallback(async (idx: number) => {
     if (idx < 0 || idx >= queueRef.current.length) return;
+    // Skipping reuses the target track's baked stream URL, whose signature may have expired
+    // (long idle, or a rehydrated post-reload queue) — refresh first so it doesn't 401.
+    await ensureFreshStreamUrls();
     await TrackPlayer.skip(idx);
     await TrackPlayer.play();
-  }, []);
+  }, [ensureFreshStreamUrls]);
 
   const pause = useCallback(async () => {
     await TrackPlayer.pause();
@@ -324,7 +464,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const togglePlayPause = useCallback(async () => {
     if (playing) { await TrackPlayer.pause(); return; }
-    // Resuming an already-loaded track reuses its baked stream URL, whose token may have
+    // Resuming an already-loaded track reuses its baked stream URL, whose signature may have
     // expired while idle — refresh it first so play doesn't silently 401.
     await ensureFreshStreamUrls();
     await TrackPlayer.play();
@@ -332,7 +472,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const next = useCallback(async () => {
     const q = queueRef.current;
+    // Cold reopen: the React queue hasn't rehydrated yet but the native queue is alive — skip natively.
+    if (q.length === 0) { await TrackPlayer.skipToNext().catch(() => { /* no next track */ }); return; }
     if (q.length <= 1) return;
+    await ensureFreshStreamUrls();
     if (shuffleRef.current && shuffleOrderRef.current.length > 1) {
       const idx = queueIndexRef.current;
       const pos = shuffleOrderRef.current.indexOf(idx);
@@ -341,12 +484,15 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     } else {
       await TrackPlayer.skipToNext();
     }
-  }, []);
+  }, [ensureFreshStreamUrls]);
 
   const prev = useCallback(async () => {
     if (positionRef.current > 3) { await TrackPlayer.seekTo(0); return; }
     const q = queueRef.current;
+    // Cold reopen: defer to the native queue while the React queue is still rehydrating.
+    if (q.length === 0) { await TrackPlayer.skipToPrevious().catch(() => { /* no previous track */ }); return; }
     if (q.length <= 1) { await TrackPlayer.seekTo(0); return; }
+    await ensureFreshStreamUrls();
     if (shuffleRef.current && shuffleOrderRef.current.length > 1) {
       const idx = queueIndexRef.current;
       const pos = shuffleOrderRef.current.indexOf(idx);
@@ -355,7 +501,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     } else {
       await TrackPlayer.skipToPrevious();
     }
-  }, []);
+  }, [ensureFreshStreamUrls]);
 
   const seekTo = useCallback((seconds: number) => {
     TrackPlayer.seekTo(seconds);
@@ -364,6 +510,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const restoreTrack = useCallback(async (restoredTrack: MusicTrack) => {
     setQueue([restoredTrack]);
     setQueueIndex(0);
+    await ensureSigned([restoredTrack.path]);
     await TrackPlayer.setQueue([toRntpTrack(restoredTrack)]);
     // Do not play — local playback is suppressed while casting
   }, []);
@@ -381,15 +528,27 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // Cycle off → repeat-all → repeat-one → off, mirroring the setting into RNTP's native player.
+  const cycleRepeat = useCallback(() => {
+    setRepeatMode((current) => {
+      const next: RepeatSetting = current === 'off' ? 'queue' : current === 'queue' ? 'track' : 'off';
+      const rntpMode = next === 'queue' ? RepeatMode.Queue : next === 'track' ? RepeatMode.Track : RepeatMode.Off;
+      ensurePlayerSetup()
+        .then(() => TrackPlayer.setRepeatMode(rntpMode))
+        .catch(() => { /* player unavailable */ });
+      return next;
+    });
+  }, []);
+
   // ── Context values ─────────────────────────────────────────────────────────
 
   const playerValue = useMemo<PlayerContextValue>(() => ({
-    track: currentTrack, queue, queueIndex, shuffle,
+    track: currentTrack, queue, queueIndex, shuffle, repeatMode, cycleRepeat,
     playTrack, playQueue, addToQueue, clearQueue, playNext, skipToIndex,
     pause, togglePlayPause, next, prev, seekTo, toggleShuffle,
     setSuppressLocalPlay, restoreTrack,
   }), [
-    currentTrack, queue, queueIndex, shuffle,
+    currentTrack, queue, queueIndex, shuffle, repeatMode, cycleRepeat,
     playTrack, playQueue, addToQueue, clearQueue, playNext, skipToIndex,
     pause, togglePlayPause, next, prev, seekTo, toggleShuffle,
     setSuppressLocalPlay, restoreTrack,

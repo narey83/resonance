@@ -40,16 +40,6 @@ namespace resonance.Shares
     using Soulseek;
 
     /// <summary>
-    ///     A cached file record read from the shares database, used to detect unchanged files during a scan.
-    /// </summary>
-    public record CachedShareFile(string MaskedFilename, string OriginalFilename, long Size, DateTime? TouchedAt);
-
-    /// <summary>
-    ///     A scanned file pending insertion into the shares database.
-    /// </summary>
-    public record ShareFileUpsert(string MaskedFilename, string OriginalFilename, DateTime TouchedAt, File File, FileTags Tags);
-
-    /// <summary>
     ///     Persistent storage of shared files and metadata.
     /// </summary>
     public interface IShareRepository : IDisposable
@@ -266,4 +256,14 @@ namespace resonance.Shares
         /// </summary>
         void Vacuum();
     }
+
+    /// <summary>
+    ///     A cached file record read from the shares database, used to detect unchanged files during a scan.
+    /// </summary>
+    public record CachedShareFile(string MaskedFilename, string OriginalFilename, long Size, DateTime? TouchedAt);
+
+    /// <summary>
+    ///     A scanned file pending insertion into the shares database.
+    /// </summary>
+    public record ShareFileUpsert(string MaskedFilename, string OriginalFilename, DateTime TouchedAt, File File, FileTags Tags);
 }

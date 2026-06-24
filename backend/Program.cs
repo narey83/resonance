@@ -123,7 +123,7 @@ namespace resonance
         /// <summary>
         ///     The url to the issues/support site.
         /// </summary>
-        public static readonly string IssuesUrl = "https://github.com/slsk-evolved/resonance/issues";
+        public static readonly string IssuesUrl = "https://github.com/narey83/resonance/issues";
 
         /// <summary>
         ///     The global prefix for environment variables.
@@ -850,6 +850,7 @@ namespace resonance
                     """;
                 pgCmd.ExecuteNonQuery();
             }
+
             services.AddDbContext<MessagingDbContext>(connectionStringDictionary[Database.Messaging]);
             services.AddDbContext<EventsDbContext>(connectionStringDictionary[Database.Events]);
             services.AddDbContext<UsersDbContext>(connectionStringDictionary[Database.Users]);
@@ -906,6 +907,13 @@ namespace resonance
             services.AddSingleton<resonance.BpmAnalysis.BpmAnalysisService>();
             services.AddSingleton<resonance.BpmAnalysis.IBpmAnalysisService>(sp => sp.GetRequiredService<resonance.BpmAnalysis.BpmAnalysisService>());
             services.AddHostedService(sp => sp.GetRequiredService<resonance.BpmAnalysis.BpmAnalysisService>());
+            services.AddSingleton<resonance.MetadataLookup.MusicBrainzClient>();
+            services.AddSingleton<resonance.MetadataLookup.DiscogsClient>();
+            services.AddSingleton<resonance.MetadataLookup.LastfmClient>();
+            services.AddSingleton<resonance.MetadataLookup.DeezerClient>();
+            services.AddSingleton<resonance.MetadataLookup.MetadataLookupService>();
+            services.AddSingleton<resonance.MetadataLookup.IMetadataLookupService>(sp => sp.GetRequiredService<resonance.MetadataLookup.MetadataLookupService>());
+            services.AddHostedService(sp => sp.GetRequiredService<resonance.MetadataLookup.MetadataLookupService>());
             services.AddSingleton<resonance.WaveformAnalysis.WaveformService>(sp =>
                 new resonance.WaveformAnalysis.WaveformService(
                     sp.GetRequiredService<IShareService>(),
@@ -1029,6 +1037,12 @@ namespace resonance
             services.AddSingleton(jwtSigningKey);
             services.AddSingleton<SecurityService>();
 
+            // Signs short-lived, path-scoped stream/artwork URLs so clients fetch media without
+            // their JWT in the URL. Keyed off the same (stable) JWT secret.
+            services.AddSingleton(new resonance.MusicLibrary.StreamUrlSigner(
+                StableJwtKey ?? OptionsAtStartup.Web.Authentication.Jwt.Key,
+                OptionsAtStartup.Web.Authentication.Jwt.StreamUrlTtl));
+
             if (!OptionsAtStartup.Web.Authentication.Disabled)
             {
                 services.AddAuthorization(options =>
@@ -1082,10 +1096,13 @@ namespace resonance
                             OnMessageReceived = context =>
                             {
                                 var isHub = context.Request.Path.StartsWithSegments("/hub");
+
+                                // musiclibrary/stream and musiclibrary/artwork no longer accept the
+                                // access_token query param — they authenticate via path-scoped HMAC
+                                // signatures (see StreamUrlSigner) so the account JWT never appears in
+                                // a media URL.
                                 var isStream = context.Request.Path.StartsWithSegments("/api/v0/streams")
-                                    || context.Request.Path.StartsWithSegments("/api/v0/files/downloads/stream")
-                                    || context.Request.Path.StartsWithSegments("/api/v0/musiclibrary/stream")
-                                    || context.Request.Path.StartsWithSegments("/api/v0/musiclibrary/artwork");
+                                    || context.Request.Path.StartsWithSegments("/api/v0/files/downloads/stream");
 
                                 // signalr, browser audio elements, and mobile Image components can't set Authorization headers,
                                 // so both accept the token via the access_token query parameter
@@ -1251,17 +1268,81 @@ namespace resonance
                         Contact = new OpenApiContact
                         {
                             Name = "GitHub",
-                            Url = new Uri("https://github.com/slsk-evolved/resonance"),
+                            Url = new Uri("https://github.com/narey83/resonance"),
                         },
                         License = new OpenApiLicense
                         {
                             Name = "AGPL-3.0 license",
-                            Url = new Uri("https://github.com/slsk-evolved/resonance/blob/master/LICENSE"),
+                            Url = new Uri("https://github.com/narey83/resonance/blob/main/LICENSE"),
                         },
                     });
 
                     // allow endpoints marked with multiple content types in [Produces] to generate properly
                     options.OperationFilter<ContentNegotiationOperationFilter>();
+
+                    // expose the supported auth schemes so the Swagger UI shows an "Authorize" button for testing.
+                    // the OAuth2 password flow lets the Authorize dialog prompt for a username/password directly and
+                    // exchange them for a JWT via the bridging token endpoint (SessionController.Token).
+                    var oauthBase = OptionsAtStartup.Web.UrlBase;
+                    oauthBase = oauthBase.StartsWith("/") ? oauthBase : "/" + oauthBase;
+                    var oauthTokenPath = (oauthBase == "/" ? string.Empty : oauthBase.TrimEnd('/')) + "/api/v0/session/token";
+
+                    options.AddSecurityDefinition("OAuth2", new OpenApiSecurityScheme
+                    {
+                        Type = SecuritySchemeType.OAuth2,
+                        Description = "Log in with your Resonance username and password; Swagger exchanges them for a JWT via the password grant.",
+                        Flows = new OpenApiOAuthFlows
+                        {
+                            Password = new OpenApiOAuthFlow
+                            {
+                                TokenUrl = new Uri(oauthTokenPath, UriKind.Relative),
+                                Scopes = new Dictionary<string, string>(),
+                            },
+                        },
+                    });
+
+                    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+                    {
+                        Name = "Authorization",
+                        Type = SecuritySchemeType.Http,
+                        Scheme = "bearer",
+                        BearerFormat = "JWT",
+                        In = ParameterLocation.Header,
+                        Description = "JWT obtained from POST /api/v0/session. Enter the raw token; Swagger adds the 'Bearer ' prefix.",
+                    });
+
+                    options.AddSecurityDefinition(ApiKeyAuthentication.AuthenticationScheme, new OpenApiSecurityScheme
+                    {
+                        Name = "X-API-Key",
+                        Type = SecuritySchemeType.ApiKey,
+                        In = ParameterLocation.Header,
+                        Description = "An API key configured under 'web.authentication.api_keys' in resonance.yml.",
+                    });
+
+                    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+                    {
+                        {
+                            new OpenApiSecurityScheme
+                            {
+                                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "OAuth2" },
+                            },
+                            Array.Empty<string>()
+                        },
+                        {
+                            new OpenApiSecurityScheme
+                            {
+                                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" },
+                            },
+                            Array.Empty<string>()
+                        },
+                        {
+                            new OpenApiSecurityScheme
+                            {
+                                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = ApiKeyAuthentication.AuthenticationScheme },
+                            },
+                            Array.Empty<string>()
+                        },
+                    });
 
                     if (IOFile.Exists(XmlDocumentationFile))
                     {
@@ -1583,7 +1664,9 @@ namespace resonance
                     {
                         var schema = ctx.Model.GetDefaultSchema();
                         if (!string.IsNullOrEmpty(schema))
-                            ctx.Database.ExecuteSqlRaw($"CREATE SCHEMA IF NOT EXISTS \"{schema}\"");
+                        {
+                            ctx.Database.ExecuteSql($"CREATE SCHEMA IF NOT EXISTS \"{schema}\"");
+                        }
                     }
 
                     var script = ctx.Database.GenerateCreateScript();
@@ -1609,9 +1692,19 @@ namespace resonance
                     foreach (var statement in script.Split(";\n", StringSplitOptions.RemoveEmptyEntries))
                     {
                         var s = statement.Trim();
-                        if (string.IsNullOrEmpty(s)) continue;
-                        try { ctx.Database.ExecuteSqlRaw(s); }
-                        catch (Exception ex) { Log.Warning("Schema init skipped a statement for {Type}: {Ex}", typeof(T).Name, ex.Message); }
+                        if (string.IsNullOrEmpty(s))
+                        {
+                            continue;
+                        }
+
+                        try
+                        {
+                            ctx.Database.ExecuteSqlRaw(s);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Warning("Schema init skipped a statement for {Type}: {Ex}", typeof(T).Name, ex.Message);
+                        }
                     }
                 }
 

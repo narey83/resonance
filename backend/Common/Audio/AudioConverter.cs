@@ -1,13 +1,9 @@
-// <copyright file="AudioConverter.cs" company="JP Dillingham">
-//           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
-//     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
-//     █__ --█  █__ --█    ◄█  -  █
-//     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
+// <copyright file="AudioConverter.cs" company="John Narey">
+//    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
+//   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
-//   │ Copyright (c) JP Dillingham.
 //   │ Copyright (c) 2026 John Narey.
-//   │ Modified as part of Resonance, a modified version of slskd;
-//   │ see the project repository for the nature of the changes.
+//   │ Part of Resonance, a Soulseek client based on slskd.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -25,10 +21,8 @@
 //   │ of the AGPLv3.  See the LICENSE file in the root directory of this
 //   │ project for the complete terms and conditions.
 //   │
-//   │ https://slskd.org
-//   │
 //   ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ╌ ╌╌╌╌ ╌
-//   │ SPDX-FileCopyrightText: JP Dillingham
+//   │ SPDX-FileCopyrightText: John Narey
 //   │ SPDX-License-Identifier: AGPL-3.0-only
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
@@ -48,15 +42,11 @@ using System.Threading.Tasks;
 public static class AudioConverter
 {
     /// <summary>
-    ///     The result of a single-file conversion attempt.
-    /// </summary>
-    public readonly record struct ConversionResult(bool Success, string? DestinationPath, string? Error);
-
-    /// <summary>
     ///     Maps a target format to its file extension and the ffmpeg codec arguments to produce it.
     ///     mp3 honours the supplied quality (libmp3lame VBR 0=best..9=worst); other formats use sane
     ///     fixed defaults. Returns null for formats we do not transcode to.
     /// </summary>
+    /// <returns></returns>
     public static (string Extension, Func<int, string> CodecArgs)? FormatSpec(string? format)
         => (format ?? string.Empty).Trim().ToLowerInvariant() switch
         {
@@ -74,6 +64,7 @@ public static class AudioConverter
     ///     Whether the given format is one we can actually transcode to. "best"/"none"/empty are
     ///     treated as "no conversion" and therefore return false.
     /// </summary>
+    /// <returns></returns>
     public static bool IsConvertibleTarget(string? format)
         => !string.IsNullOrWhiteSpace(format)
             && !format.Equals("none", StringComparison.OrdinalIgnoreCase)
@@ -84,6 +75,7 @@ public static class AudioConverter
     ///     Whether a file would change format under the given target (i.e. its current extension
     ///     differs from the target's). Already-target files return false (nothing to do).
     /// </summary>
+    /// <returns></returns>
     public static bool NeedsConversion(string? filePath, string? targetFormat)
     {
         var spec = FormatSpec(targetFormat);
@@ -170,4 +162,9 @@ public static class AudioConverter
             // best-effort cleanup of a partial/failed output
         }
     }
+
+    /// <summary>
+    ///     The result of a single-file conversion attempt.
+    /// </summary>
+    public readonly record struct ConversionResult(bool Success, string? DestinationPath, string? Error);
 }

@@ -9,8 +9,6 @@ import {
   Loader,
   MessageSquare,
   Plus,
-  Shield,
-  ShieldOff,
   User,
   UserX,
   X,
@@ -270,20 +268,6 @@ const UserDetail = ({ onBrowse, onChat, onClose, userData, username }) => {
                   <span className="usr-stat-value">{ipInfo.country}</span>
                 </div>
               )}
-              <div className="usr-stat">
-                <span className="usr-stat-label">VPN</span>
-                <span className="usr-stat-value">
-                  {ipInfo.isVpn ? (
-                    <span className="usr-stat--yes">
-                      <Shield size={13} /> Yes
-                    </span>
-                  ) : (
-                    <span className="usr-stat--no">
-                      <ShieldOff size={13} /> No
-                    </span>
-                  )}
-                </span>
-              </div>
             </>
           )}
         </div>

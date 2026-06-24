@@ -1,13 +1,9 @@
-// <copyright file="MusicLibraryController.cs" company="JP Dillingham">
-//           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
-//     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
-//     █__ --█  █__ --█    ◄█  -  █
-//     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
+// <copyright file="MusicLibraryController.cs" company="John Narey">
+//    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
+//   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
-//   │ Copyright (c) JP Dillingham.
 //   │ Copyright (c) 2026 John Narey.
-//   │ Modified as part of Resonance, a modified version of slskd;
-//   │ see the project repository for the nature of the changes.
+//   │ Part of Resonance, a Soulseek client based on slskd.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -25,10 +21,8 @@
 //   │ of the AGPLv3.  See the LICENSE file in the root directory of this
 //   │ project for the complete terms and conditions.
 //   │
-//   │ https://slskd.org
-//   │
 //   ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ╌ ╌╌╌╌ ╌
-//   │ SPDX-FileCopyrightText: JP Dillingham
+//   │ SPDX-FileCopyrightText: John Narey
 //   │ SPDX-License-Identifier: AGPL-3.0-only
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
@@ -63,6 +57,8 @@ namespace resonance.MusicLibrary.API
     public record DeleteTrackBatchLocalRequest(string[] Paths);
     public record RenameFolderRequest(string Path, string NewName);
     public record RenameTrackRequest(string Path, string NewFilename);
+    public record SignUrlsRequest(string[] Paths);
+    public record SignedUrl(long Exp, string Sig);
 
     internal sealed record ArtworkCacheEntry(byte[] Bytes, string Mime);
 
@@ -82,6 +78,7 @@ namespace resonance.MusicLibrary.API
             IMixtapeService mixtapes,
             IOptionsSnapshot<AppOptions> options,
             IMemoryCache cache,
+            StreamUrlSigner urlSigner,
             resonance.Common.Ffmpeg.IFfmpegService ffmpeg)
         {
             Service = service;
@@ -91,6 +88,7 @@ namespace resonance.MusicLibrary.API
             Mixtapes = mixtapes;
             Options = options;
             Cache = cache;
+            UrlSigner = urlSigner;
             Ffmpeg = ffmpeg;
         }
 
@@ -101,6 +99,7 @@ namespace resonance.MusicLibrary.API
         private IMixtapeService Mixtapes { get; }
         private IOptionsSnapshot<AppOptions> Options { get; }
         private IMemoryCache Cache { get; }
+        private StreamUrlSigner UrlSigner { get; }
         private resonance.Common.Ffmpeg.IFfmpegService Ffmpeg { get; }
 
         /// <summary>Returns total track count and duration for the library.</summary>
@@ -129,9 +128,14 @@ namespace resonance.MusicLibrary.API
         public IActionResult TriggerSync([FromQuery] bool force = false)
         {
             if (force)
+            {
                 Service.ForceResync();
+            }
             else
+            {
                 Service.TriggerSync();
+            }
+
             return Accepted();
         }
 
@@ -219,6 +223,37 @@ namespace resonance.MusicLibrary.API
             => Ok(Service.GetKeyedTracks());
 
         /// <summary>
+        ///     Issues short-lived, path-scoped signatures for the given library paths. Clients
+        ///     append <c>&amp;exp=...&amp;sig=...</c> to stream/artwork URLs instead of their JWT.
+        ///     Only paths inside the library are signed; others are omitted from the result.
+        /// </summary>
+        /// <returns>A map of path → { exp, sig } for every path that was signable.</returns>
+        [HttpPost("sign")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(typeof(System.Collections.Generic.Dictionary<string, SignedUrl>), 200)]
+        public IActionResult SignUrls([FromBody] SignUrlsRequest request)
+        {
+            var result = new System.Collections.Generic.Dictionary<string, SignedUrl>();
+            if (request?.Paths == null)
+            {
+                return Ok(result);
+            }
+
+            foreach (var path in request.Paths)
+            {
+                if (string.IsNullOrWhiteSpace(path) || result.ContainsKey(path) || !Service.IsLibraryPath(path))
+                {
+                    continue;
+                }
+
+                var (exp, sig) = UrlSigner.Sign(path);
+                result[path] = new SignedUrl(exp, sig);
+            }
+
+            return Ok(result);
+        }
+
+        /// <summary>
         ///     Streams an audio file from the music library.
         ///     With no <paramref name="quality"/> the original file is served with HTTP range
         ///     support (seekable). With <c>quality=low</c>/<c>medium</c> the file is transcoded
@@ -227,13 +262,31 @@ namespace resonance.MusicLibrary.API
         /// </summary>
         /// <returns></returns>
         [HttpGet("stream")]
-        [Authorize(Policy = AuthPolicy.Any)]
+        [AllowAnonymous]
         [Produces("audio/mpeg", "audio/flac", "audio/ogg", "audio/wav", "audio/mp4", "audio/aac")]
-        public async Task<IActionResult> StreamTrack([FromQuery] string path, [FromQuery] string quality = null)
+        public async Task<IActionResult> StreamTrack([FromQuery] string path, [FromQuery] long exp = 0, [FromQuery] string sig = null, [FromQuery] string quality = null)
         {
-            if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
+            if (!Service.IsLibraryPath(path))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            if (!UrlSigner.Validate(path, exp, sig))
+            {
+                return Unauthorized();
+            }
+
+            if (!System.IO.File.Exists(path))
             {
                 return NotFound();
+            }
+
+            // Resolve symlinks to the real file: PhysicalFile range/sendfile throws on a symlink
+            // (ArgumentOutOfRangeException), and a link could point outside the library — re-check.
+            var file = ResolveRealPath(path);
+            if (!Service.IsLibraryPath(file))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden);
             }
 
             var kbps = quality?.ToLowerInvariant() switch
@@ -245,11 +298,11 @@ namespace resonance.MusicLibrary.API
 
             if (kbps > 0 && FfmpegPath != null)
             {
-                await StreamTranscoded(path, kbps, HttpContext.RequestAborted);
+                await StreamTranscoded(file, kbps, HttpContext.RequestAborted);
                 return new EmptyResult();
             }
 
-            var extension = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+            var extension = Path.GetExtension(file).TrimStart('.').ToLowerInvariant();
             var contentType = extension switch
             {
                 "mp3" => "audio/mpeg",
@@ -263,7 +316,25 @@ namespace resonance.MusicLibrary.API
                 _ => "audio/mpeg",
             };
 
-            return PhysicalFile(path, contentType, enableRangeProcessing: true);
+            return PhysicalFile(file, contentType, enableRangeProcessing: true);
+        }
+
+        /// <summary>
+        ///     Resolves a (possibly symlinked) path to its real on-disk target, following a chain
+        ///     of links. Returns the original path unchanged if it is not a link or cannot be
+        ///     resolved. Callers must re-validate the result with <see cref="IMusicLibraryService.IsLibraryPath"/>.
+        /// </summary>
+        private static string ResolveRealPath(string path)
+        {
+            try
+            {
+                var target = new FileInfo(path).ResolveLinkTarget(returnFinalTarget: true);
+                return target?.FullName ?? path;
+            }
+            catch
+            {
+                return path;
+            }
         }
 
         /// <summary>
@@ -342,6 +413,7 @@ namespace resonance.MusicLibrary.API
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = FfmpegPath,
+
                     // ArgumentList avoids quoting bugs with paths containing spaces.
                     // -ss before -i seeks the input quickly (accurate enough for CBR mapping);
                     // -vn drops any embedded cover-art (video) stream; -ar 44100 keeps the
@@ -449,15 +521,33 @@ namespace resonance.MusicLibrary.API
         /// <summary>Returns embedded album artwork for a local track file.</summary>
         /// <returns></returns>
         [HttpGet("artwork")]
-        [Authorize(Policy = AuthPolicy.Any)]
+        [AllowAnonymous]
         [ResponseCache(Duration = 86400, Location = ResponseCacheLocation.Client)]
-        public IActionResult GetArtwork([FromQuery] string path, [FromQuery] int? size)
+        public IActionResult GetArtwork([FromQuery] string path, [FromQuery] int? size, [FromQuery] long exp = 0, [FromQuery] string sig = null)
         {
-            if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
+            if (!Service.IsLibraryPath(path))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            if (!UrlSigner.Validate(path, exp, sig))
+            {
+                return Unauthorized();
+            }
+
+            if (!System.IO.File.Exists(path))
             {
                 return NotFound();
             }
 
+            // Resolve symlinks and re-check, so a link can't point at artwork outside the library.
+            var file = ResolveRealPath(path);
+            if (!Service.IsLibraryPath(file))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            path = file;
             var cacheKey = size.HasValue ? $"artwork:{path}:{size}" : $"artwork:{path}";
             if (Cache.TryGetValue(cacheKey, out ArtworkCacheEntry? cached) && cached != null)
             {

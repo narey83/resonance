@@ -27,6 +27,7 @@ import Library from './Library/Library';
 import LoginForm from './LoginForm';
 import MapPage from './Map';
 import MediaPlayer from './MediaPlayer';
+import MetadataLookupWatcher from './MetadataLookup/MetadataLookupWatcher';
 import NotificationCentre from './Notifications/NotificationCentre';
 import Overview from './Overview';
 import StatusStrip from './Overview/StatusStrip';
@@ -703,7 +704,9 @@ const App = () => {
       } catch {
         /* silently ignore */
       }
+    };
 
+    const loadNetworkInfo = async () => {
       try {
         const info = await networkAPI.getNetworkInfo();
         if (!cancelled) setNetworkInfo(info);
@@ -713,8 +716,13 @@ const App = () => {
     };
 
     load();
+    loadNetworkInfo();
+    // Poll network info so the VPN indicator reflects connect/disconnect
+    // without needing a full page reload.
+    const networkInterval = setInterval(loadNetworkInfo, 30_000);
     return () => {
       cancelled = true;
+      clearInterval(networkInterval);
     };
   }, [isLoggedIn]);
 
@@ -1408,6 +1416,8 @@ const App = () => {
         </div>
 
         {connectionOverlay}
+
+        <MetadataLookupWatcher />
 
         {notificationPanelOpen && (
           <NotificationCentre

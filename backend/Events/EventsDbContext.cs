@@ -50,7 +50,9 @@ public class EventsDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         if (Database.IsNpgsql())
+        {
             modelBuilder.HasDefaultSchema("events");
+        }
 
         modelBuilder
             .Entity<EventRecord>()

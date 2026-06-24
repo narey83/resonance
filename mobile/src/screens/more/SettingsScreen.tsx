@@ -7,12 +7,17 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { getDeviceName } from '../../store/auth';
 import { useAppSettings } from '../../store/appSettingsStore';
 import type { StreamQuality } from '../../store/appSettingsStore';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import type { ThemeName } from '../../theme';
+import type { MoreStackParamList } from '../../navigation/MainTabs';
+
+type Props = NativeStackScreenProps<MoreStackParamList, 'Settings'>;
 
 // ── Theme options ─────────────────────────────────────────────────────────────
 
@@ -38,7 +43,7 @@ const STREAM_QUALITY_SUBTITLE: Record<StreamQuality, string> = {
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
@@ -180,7 +185,6 @@ export default function SettingsScreen() {
               : 'Stream console logs to the server log viewer'
           }
           colors={colors}
-          last
         >
           <Switch
             disabled={!loaded}
@@ -190,6 +194,20 @@ export default function SettingsScreen() {
             value={remoteLogging}
           />
         </SettingRow>
+        <Pressable
+          onPress={() => navigation.navigate('NetworkLog')}
+          style={({ pressed }) => [rowStyle, pressed && { backgroundColor: colors.bgElevated }]}
+        >
+          <View style={rowTextStyle}>
+            <Text style={{ fontSize: Typography.base, fontWeight: '500', color: colors.textPrimary }}>
+              Network log
+            </Text>
+            <Text style={{ fontSize: Typography.xs, color: colors.textMuted }}>
+              Inspect recent requests &amp; latency
+            </Text>
+          </View>
+          <Ionicons color={colors.textDim} name="chevron-forward" size={16} />
+        </Pressable>
       </View>
 
     </ScrollView>

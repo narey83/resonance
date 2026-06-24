@@ -2,6 +2,7 @@ import { apiClient } from './client';
 import { useAuthStore } from '../store/auth';
 import { useAppSettings } from '../store/appSettingsStore';
 import { useConnectionStore } from '../services/connectionMonitor';
+import { ensureSigned, signedQuery } from './streamSignatures';
 
 export interface MusicArtist {
   artist: string;
@@ -68,14 +69,31 @@ export interface TracksResult {
   tracks: MusicTrack[];
 }
 
-export const getArtists = async (): Promise<MusicArtist[]> =>
-  (await apiClient.get('/musiclibrary/artists')).data;
+export const getArtists = async (): Promise<MusicArtist[]> => {
+  const data: MusicArtist[] = (await apiClient.get('/musiclibrary/artists')).data;
+  await ensureSigned(data.map((a) => a.coverPath));
+  return data;
+};
 
-export const getAlbums = async (artist?: string): Promise<MusicAlbum[]> =>
-  (await apiClient.get('/musiclibrary/albums', { params: artist ? { artist } : {} })).data;
+export const getAlbums = async (artist?: string): Promise<MusicAlbum[]> => {
+  const data: MusicAlbum[] = (await apiClient.get('/musiclibrary/albums', { params: artist ? { artist } : {} })).data;
+  await ensureSigned(data.map((a) => a.coverPath));
+  return data;
+};
 
-export const getTracks = async (params: Record<string, string | number>): Promise<TracksResult> =>
-  (await apiClient.get('/musiclibrary/tracks', { params })).data;
+export const getTracks = async (params: Record<string, string | number>): Promise<TracksResult> => {
+  const data: TracksResult = (await apiClient.get('/musiclibrary/tracks', { params })).data;
+  await ensureSigned(data.tracks.map((t) => t.path));
+  return data;
+};
+
+// Full track records for the user's loved paths only — resolved server-side against the library.
+// Avoids downloading the entire library (20k+ tracks) just to show a handful of loved tracks.
+export const getLovedTracks = async (): Promise<MusicTrack[]> => {
+  const data: MusicTrack[] = (await apiClient.get('/musiclibrary/loved/tracks')).data;
+  await ensureSigned(data.map((t) => t.path));
+  return data;
+};
 
 export const getGenres = async (): Promise<MusicGenre[]> =>
   (await apiClient.get('/musiclibrary/genres')).data;
@@ -83,21 +101,28 @@ export const getGenres = async (): Promise<MusicGenre[]> =>
 export const getYears = async (): Promise<MusicYear[]> =>
   (await apiClient.get('/musiclibrary/years')).data;
 
-export const getFolders = async (): Promise<MusicFolder[]> =>
-  (await apiClient.get('/musiclibrary/folders')).data;
+export const getFolders = async (): Promise<MusicFolder[]> => {
+  const data: MusicFolder[] = (await apiClient.get('/musiclibrary/folders')).data;
+  await ensureSigned(data.map((f) => f.coverPath));
+  return data;
+};
 
-export const getRecentlyAdded = async (limit = 20): Promise<MusicAlbum[]> =>
-  (await apiClient.get('/musiclibrary/recentlyadded', { params: { limit } })).data;
+export const getRecentlyAdded = async (limit = 20): Promise<MusicAlbum[]> => {
+  const data: MusicAlbum[] = (await apiClient.get('/musiclibrary/recentlyadded', { params: { limit } })).data;
+  await ensureSigned(data.map((a) => a.coverPath));
+  return data;
+};
 
-// Build a URL with the access_token query param for use in Image/Audio sources.
+// Build an artwork URL signed with the path's cached HMAC signature (see streamSignatures).
+// The path must already be signed (the list fetchers warm the cache); an unsigned path yields
+// a URL the server will reject with 401.
 // Pass size to request a resized JPEG thumbnail (e.g. 96 for small UI cells, 512 for the player).
 export const getArtworkUrl = (path: string | null, size?: number): string | null => {
   if (!path) return null;
-  const { serverUrl, accessToken } = useAuthStore.getState();
+  const { serverUrl } = useAuthStore.getState();
   if (!serverUrl) return null;
-  const token = accessToken ? `&access_token=${encodeURIComponent(accessToken)}` : '';
   const sizeParam = size ? `&size=${size}` : '';
-  return `${serverUrl}/api/v0/musiclibrary/artwork?path=${encodeURIComponent(path)}${sizeParam}${token}`;
+  return `${serverUrl}/api/v0/musiclibrary/artwork?path=${encodeURIComponent(path)}${sizeParam}${signedQuery(path)}`;
 };
 
 // Returns the path to pass to ArtworkBox for a track.
@@ -135,7 +160,7 @@ export const getStreamUrl = (path: string): string => {
   }
   const quality = resolveStreamQuality();
   const qualityParam = quality ? `&quality=${quality}` : '';
-  return `${serverUrl}/api/v0/musiclibrary/stream?path=${encodeURIComponent(path)}${qualityParam}${token}`;
+  return `${serverUrl}/api/v0/musiclibrary/stream?path=${encodeURIComponent(path)}${qualityParam}${signedQuery(path)}`;
 };
 
 export const renameFolder = async (path: string, newName: string): Promise<void> =>

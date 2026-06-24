@@ -365,6 +365,12 @@ namespace resonance
         public BpmAnalysisOptions BpmAnalysis { get; init; } = new BpmAnalysisOptions();
 
         /// <summary>
+        ///     Gets online metadata lookup (MusicBrainz) options.
+        /// </summary>
+        [Validate]
+        public MetadataLookupOptions MetadataLookup { get; init; } = new MetadataLookupOptions();
+
+        /// <summary>
         ///     Gets feature options.
         /// </summary>
         [Validate]
@@ -1465,6 +1471,131 @@ namespace resonance
             ///     Gets an optional custom path to the ffmpeg binary. Defaults to 'ffmpeg' on PATH.
             /// </summary>
             public string FfmpegPath { get; init; } = "ffmpeg";
+        }
+
+        /// <summary>
+        ///     Online metadata lookup (MusicBrainz) options.
+        /// </summary>
+        public class MetadataLookupOptions
+        {
+            /// <summary>
+            ///     Gets a value indicating whether automatic online metadata lookup is enabled. When
+            ///     enabled, a background service enriches tracks that are missing metadata.
+            /// </summary>
+            public bool Enabled { get; init; }
+
+            /// <summary>
+            ///     Gets the minimum MusicBrainz match score (0-100) required before metadata is written
+            ///     automatically. Lower-scoring matches are skipped to avoid overwriting good tags.
+            /// </summary>
+            [Range(0, 100)]
+            public int MinScore { get; init; } = 90;
+
+            /// <summary>
+            ///     Gets the contact (email or URL) included in the MusicBrainz User-Agent header, as
+            ///     required by their API guidelines.
+            /// </summary>
+            public string Contact { get; init; } = string.Empty;
+
+            /// <summary>
+            ///     Gets the base URL of the MusicBrainz web service. Point this at a self-hosted mirror
+            ///     to remove the public rate limit.
+            /// </summary>
+            public string BaseUrl { get; init; } = "https://musicbrainz.org/ws/2";
+
+            /// <summary>
+            ///     Gets the maximum number of MusicBrainz requests per second. The public API allows 1;
+            ///     raise this only against a self-hosted mirror.
+            /// </summary>
+            [Range(0.1, 100)]
+            public double RateLimitPerSecond { get; init; } = 1;
+
+            /// <summary>
+            ///     Gets the number of concurrent workers used during an enrichment pass.
+            /// </summary>
+            [Range(1, 16)]
+            public int Workers { get; init; } = 1;
+
+            /// <summary>
+            ///     Gets Discogs provider options. When enabled (with a token), Discogs is used as the
+            ///     lookup source instead of MusicBrainz — far better for electronic/vinyl/underground.
+            /// </summary>
+            [Validate]
+            public DiscogsOptions Discogs { get; init; } = new DiscogsOptions();
+
+            /// <summary>
+            ///     Gets MusicBrainz provider options.
+            /// </summary>
+            [Validate]
+            public MusicBrainzOptions MusicBrainz { get; init; } = new MusicBrainzOptions();
+
+            /// <summary>
+            ///     MusicBrainz provider options. (Contact and Base URL live at the parent level for
+            ///     backward compatibility.)
+            /// </summary>
+            public class MusicBrainzOptions
+            {
+                /// <summary>
+                ///     Gets a value indicating whether MusicBrainz should be used as a lookup source.
+                /// </summary>
+                public bool Enabled { get; init; } = true;
+            }
+
+            /// <summary>
+            ///     Gets Last.fm provider options (a genre source).
+            /// </summary>
+            [Validate]
+            public LastfmOptions Lastfm { get; init; } = new LastfmOptions();
+
+            /// <summary>
+            ///     Gets Deezer provider options (no authentication; year and broad genre).
+            /// </summary>
+            [Validate]
+            public DeezerOptions Deezer { get; init; } = new DeezerOptions();
+
+            /// <summary>
+            ///     Last.fm provider options.
+            /// </summary>
+            public class LastfmOptions
+            {
+                /// <summary>
+                ///     Gets a value indicating whether Last.fm should be used as a lookup source.
+                /// </summary>
+                public bool Enabled { get; init; }
+
+                /// <summary>
+                ///     Gets the Last.fm API key (last.fm/api/account/create). Required for Last.fm lookups.
+                /// </summary>
+                public string ApiKey { get; init; } = string.Empty;
+            }
+
+            /// <summary>
+            ///     Deezer provider options.
+            /// </summary>
+            public class DeezerOptions
+            {
+                /// <summary>
+                ///     Gets a value indicating whether Deezer should be used as a lookup source.
+                /// </summary>
+                public bool Enabled { get; init; }
+            }
+
+            /// <summary>
+            ///     Discogs provider options.
+            /// </summary>
+            public class DiscogsOptions
+            {
+                /// <summary>
+                ///     Gets a value indicating whether Discogs should be used as the lookup source.
+                /// </summary>
+                public bool Enabled { get; init; }
+
+                /// <summary>
+                ///     Gets the Discogs personal access token (discogs.com → Settings → Developers).
+                ///     Required for Discogs lookups.
+                /// </summary>
+                public string Token { get; init; } = string.Empty;
+            }
         }
 
         /// <summary>
@@ -2574,6 +2705,32 @@ namespace resonance
                     [Description("TTL for refresh tokens")]
                     [RequiresRestart]
                     public long RefreshTokenTtl { get; init; } = 2592000000L; // 30 days
+
+                    /// <summary>
+                    ///     Gets the idle timeout for sessions, in milliseconds. Defaults to 30 minutes (2x the JWT TTL).
+                    ///     A live client silently refreshes its JWT within each <see cref="Ttl"/> window; a session whose
+                    ///     refresh token has not been used within this window is considered dead. Such sessions are hidden
+                    ///     from the active-session list, rejected on refresh, and pruned from the database, so phantom
+                    ///     credential/API logins don't linger for the full <see cref="RefreshTokenTtl"/>.
+                    /// </summary>
+                    [Argument(default, "session-idle-timeout")]
+                    [EnvironmentVariable("SESSION_IDLE_TIMEOUT")]
+                    [Description("Idle timeout for sessions")]
+                    [RequiresRestart]
+                    public long IdleTimeout { get; init; } = 1800000L; // 30 minutes
+
+                    /// <summary>
+                    ///     Gets the TTL for signed stream/artwork URLs, in milliseconds. Defaults to 24 hours.
+                    ///     Clients fetch media via a path-scoped HMAC signature instead of their JWT; this is how
+                    ///     long such a signature stays valid. It should comfortably exceed a listening session so
+                    ///     baked player-queue URLs never expire mid-session, but stay bounded to limit a leak.
+                    /// </summary>
+                    [Argument(default, "stream-url-ttl")]
+                    [EnvironmentVariable("STREAM_URL_TTL")]
+                    [Description("TTL for signed stream/artwork URLs")]
+                    [Range(60000, long.MaxValue)]
+                    [RequiresRestart]
+                    public long StreamUrlTtl { get; init; } = 86400000L; // 24 hours
                 }
 
                 /// <summary>

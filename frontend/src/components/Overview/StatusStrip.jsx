@@ -1,3 +1,4 @@
+import * as serverAPI from '../../lib/server';
 import * as session from '../../lib/session';
 import * as sharesAPI from '../../lib/shares';
 import { formatBytes } from '../../lib/util';
@@ -10,6 +11,8 @@ import {
   Globe,
   LogOut,
   Moon,
+  Plug,
+  PlugZap,
   RefreshCw,
   Shield,
   ShieldOff,
@@ -41,6 +44,7 @@ const StatusStrip = ({
   const [description, setDescription] = useState('');
   const [descDraft, setDescDraft] = useState('');
   const [saving, setSaving] = useState(false);
+  const [portStatus, setPortStatus] = useState(null);
   const menuRef = useRef(null);
   const triggerRef = useRef(null);
 
@@ -73,6 +77,26 @@ const StatusStrip = ({
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [menuOpen]);
+
+  const runPortCheck = async () => {
+    setPortStatus('checking');
+    try {
+      const result = await serverAPI.checkPort();
+      setPortStatus(result);
+    } catch {
+      setPortStatus('error');
+    }
+  };
+
+  // Check the listening port once the client is logged in to the network.
+  useEffect(() => {
+    if (!server?.isLoggedIn) {
+      setPortStatus(null);
+      return;
+    }
+
+    runPortCheck();
+  }, [server?.isLoggedIn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSetPresence = async (p) => {
     try {
@@ -312,6 +336,49 @@ const StatusStrip = ({
               document.body,
             )}
         </div>
+      )}
+
+      {/* Listening port reachability */}
+      {isConnected && portStatus && (
+        <>
+          <div className="status-strip-sep" />
+          <button
+            className="status-strip-item status-strip-btn--label"
+            disabled={portStatus === 'checking'}
+            onClick={runPortCheck}
+            title={
+              portStatus === 'checking'
+                ? 'Checking listening port…'
+                : portStatus === 'error'
+                  ? 'Port check failed — click to retry'
+                  : `Listening port ${portStatus.port} is ${portStatus.isOpen ? 'open (reachable)' : 'closed (not reachable from the internet)'} — click to re-check`
+            }
+            type="button"
+          >
+            {portStatus.isOpen ? (
+              <PlugZap
+                className="status-icon connected"
+                size={13}
+                strokeWidth={1.75}
+              />
+            ) : (
+              <Plug
+                className="status-icon disconnected"
+                size={13}
+                strokeWidth={1.75}
+              />
+            )}
+            <span className="status-strip-text">
+              {portStatus === 'checking'
+                ? 'Port…'
+                : portStatus === 'error'
+                  ? 'Port ?'
+                  : portStatus.isOpen
+                    ? 'Port open'
+                    : 'Port closed'}
+            </span>
+          </button>
+        </>
       )}
 
       <div className="status-strip-sep" />

@@ -1,13 +1,9 @@
-// <copyright file="NetworkController.cs" company="JP Dillingham">
-//           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
-//     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
-//     █__ --█  █__ --█    ◄█  -  █
-//     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
+// <copyright file="NetworkController.cs" company="John Narey">
+//    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
+//   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
-//   │ Copyright (c) JP Dillingham.
 //   │ Copyright (c) 2026 John Narey.
-//   │ Modified as part of Resonance, a modified version of slskd;
-//   │ see the project repository for the nature of the changes.
+//   │ Part of Resonance, a Soulseek client based on slskd.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -25,10 +21,8 @@
 //   │ of the AGPLv3.  See the LICENSE file in the root directory of this
 //   │ project for the complete terms and conditions.
 //   │
-//   │ https://slskd.org
-//   │
 //   ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ╌ ╌╌╌╌ ╌
-//   │ SPDX-FileCopyrightText: JP Dillingham
+//   │ SPDX-FileCopyrightText: John Narey
 //   │ SPDX-License-Identifier: AGPL-3.0-only
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
@@ -54,8 +48,8 @@ using resonance.Core.API;
 [Produces("application/json")]
 public class NetworkController : ControllerBase
 {
-    private static readonly MemoryCache Cache = new(new MemoryCacheOptions());
     private const string CacheKey = "network_info";
+    private static readonly MemoryCache Cache = new(new MemoryCacheOptions());
 
     public NetworkController(IHttpClientFactory httpClientFactory, GeoService geoService)
     {
@@ -78,7 +72,11 @@ public class NetworkController : ControllerBase
         try
         {
             var info = await FetchIpInfo(string.Empty);
-            Cache.Set(CacheKey, info, TimeSpan.FromMinutes(5));
+
+            // Short TTL so the VPN/IP indicator reflects connect/disconnect
+            // promptly. Only applies to our own public IP (the "info" endpoint);
+            // per-IP lookups remain cached longer below.
+            Cache.Set(CacheKey, info, TimeSpan.FromSeconds(30));
             return Ok(info);
         }
         catch

@@ -1,13 +1,9 @@
-// <copyright file="IMusicLibraryService.cs" company="JP Dillingham">
-//           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
-//     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
-//     █__ --█  █__ --█    ◄█  -  █
-//     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
+// <copyright file="IMusicLibraryService.cs" company="John Narey">
+//    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
+//   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
-//   │ Copyright (c) JP Dillingham.
 //   │ Copyright (c) 2026 John Narey.
-//   │ Modified as part of Resonance, a modified version of slskd;
-//   │ see the project repository for the nature of the changes.
+//   │ Part of Resonance, a Soulseek client based on slskd.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -25,10 +21,8 @@
 //   │ of the AGPLv3.  See the LICENSE file in the root directory of this
 //   │ project for the complete terms and conditions.
 //   │
-//   │ https://slskd.org
-//   │
 //   ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ╌ ╌╌╌╌ ╌
-//   │ SPDX-FileCopyrightText: JP Dillingham
+//   │ SPDX-FileCopyrightText: John Narey
 //   │ SPDX-License-Identifier: AGPL-3.0-only
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
@@ -41,6 +35,14 @@ namespace resonance.MusicLibrary
     public interface IMusicLibraryService : IHostedService
     {
         MusicLibrarySyncState SyncState { get; }
+
+        /// <summary>
+        ///     Returns true if <paramref name="path"/> resolves to a file inside one of the
+        ///     configured library (share) directories. Used to ensure the server only ever
+        ///     signs/serves library paths — never an arbitrary location on disk.
+        /// </summary>
+        bool IsLibraryPath(string path);
+
         (int Total, double TotalDuration) GetStats();
         MusicLibraryQueryResult QueryTracks(string search, string artist, string album, string genre, int? year, string folder, bool missingKey, bool missingBpm, bool missingTitle, bool missingArtist, bool missingArtwork, int limit, int offset, string sort = null, bool descending = false);
         IReadOnlyList<MusicAlbum> GetAlbums(string artistFilter = null);
@@ -52,6 +54,7 @@ namespace resonance.MusicLibrary
         IReadOnlyList<MusicFolder> GetFolders();
 
         /// <summary>Returns the indexed metadata for a single track by its absolute path, or null if not indexed.</summary>
+        /// <returns></returns>
         MusicTrack GetTrack(string path);
 
         void TriggerSync();

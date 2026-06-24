@@ -1,4 +1,4 @@
-﻿// <copyright file="Application.cs" company="JP Dillingham">
+// <copyright file="Application.cs" company="JP Dillingham">
 //           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
 //     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
 //     █__ --█  █__ --█    ◄█  -  █
@@ -1712,7 +1712,9 @@ namespace resonance
                     }
 
                     using (cmd)
+                    {
                         await cmd.ExecuteNonQueryAsync();
+                    }
                 }
             }
             catch (Exception ex)

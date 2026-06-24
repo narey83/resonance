@@ -1,13 +1,9 @@
-// <copyright file="ILibraryActivityService.cs" company="JP Dillingham">
-//           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
-//     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
-//     █__ --█  █__ --█    ◄█  -  █
-//     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
+// <copyright file="ILibraryActivityService.cs" company="John Narey">
+//    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
+//   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
-//   │ Copyright (c) JP Dillingham.
 //   │ Copyright (c) 2026 John Narey.
-//   │ Modified as part of Resonance, a modified version of slskd;
-//   │ see the project repository for the nature of the changes.
+//   │ Part of Resonance, a Soulseek client based on slskd.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -25,10 +21,8 @@
 //   │ of the AGPLv3.  See the LICENSE file in the root directory of this
 //   │ project for the complete terms and conditions.
 //   │
-//   │ https://slskd.org
-//   │
 //   ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ╌ ╌╌╌╌ ╌
-//   │ SPDX-FileCopyrightText: JP Dillingham
+//   │ SPDX-FileCopyrightText: John Narey
 //   │ SPDX-License-Identifier: AGPL-3.0-only
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
@@ -41,6 +35,15 @@ using resonance.MusicLibrary;
 public interface ILibraryActivityService
 {
     string[] GetLovedPaths(string username);
+
+    /// <summary>
+    /// Returns full track records for the user's loved paths, resolved against the music library.
+    /// Loved entries whose file is no longer present are omitted. Saves clients from having to
+    /// download the entire library just to display a handful of loved tracks.
+    /// </summary>
+    /// <returns><placeholder>The loved tracks present in the library.</placeholder></returns>
+    MusicTrack[] GetLovedTracks(string username);
+
     Task LoveTrackAsync(string username, string path);
     Task UnloveTrackAsync(string username, string path);
     Task ClearAllLovedAsync(string username);
@@ -49,6 +52,7 @@ public interface ILibraryActivityService
     /// Reconciles every loved track against the music library: repoints entries whose file
     /// had its extension changed (e.g. opus→mp3) and prunes entries whose file is gone.
     /// </summary>
+    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
     Task ReconcileLovedTracksAsync();
 
     Task<PlayStat> RecordPlayAsync(string username, string path, string title = null, string artist = null, string folder = null, string source = null);

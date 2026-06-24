@@ -1,4 +1,4 @@
-﻿// <copyright file="SearchesController.cs" company="JP Dillingham">
+// <copyright file="SearchesController.cs" company="JP Dillingham">
 //           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
 //     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
 //     █__ --█  █__ --█    ◄█  -  █

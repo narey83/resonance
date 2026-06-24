@@ -1,13 +1,9 @@
-// <copyright file="TransferErrorNotificationService.cs" company="JP Dillingham">
-//           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
-//     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
-//     █__ --█  █__ --█    ◄█  -  █
-//     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
+// <copyright file="TransferErrorNotificationService.cs" company="John Narey">
+//    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
+//   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
-//   │ Copyright (c) JP Dillingham.
 //   │ Copyright (c) 2026 John Narey.
-//   │ Modified as part of Resonance, a modified version of slskd;
-//   │ see the project repository for the nature of the changes.
+//   │ Part of Resonance, a Soulseek client based on slskd.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -25,10 +21,8 @@
 //   │ of the AGPLv3.  See the LICENSE file in the root directory of this
 //   │ project for the complete terms and conditions.
 //   │
-//   │ https://slskd.org
-//   │
 //   ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ╌ ╌╌╌╌ ╌
-//   │ SPDX-FileCopyrightText: JP Dillingham
+//   │ SPDX-FileCopyrightText: John Narey
 //   │ SPDX-License-Identifier: AGPL-3.0-only
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
@@ -44,13 +38,6 @@ using Microsoft.Extensions.Options;
 using resonance.Messaging;
 using Serilog;
 
-public record TransferErrorNotification(
-    DateTime SentAt,
-    string Username,
-    string Filename,
-    string Type,
-    string Message);
-
 public interface ITransferErrorNotificationService
 {
     IEnumerable<TransferErrorNotification> GetHistory();
@@ -58,6 +45,13 @@ public interface ITransferErrorNotificationService
     Task NotifyUploadRejectedAsync(string username, string filename, string reason);
     Task NotifyDownloadErrorAsync(string username, string filename, string exception);
 }
+
+public record TransferErrorNotification(
+    DateTime SentAt,
+    string Username,
+    string Filename,
+    string Type,
+    string Message);
 
 public class TransferErrorNotificationService : ITransferErrorNotificationService
 {

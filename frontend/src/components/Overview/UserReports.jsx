@@ -8,7 +8,7 @@ import React, { useEffect, useRef, useState } from 'react';
 const ROW_HEIGHT = 33;
 const FETCH_LIMIT = 500;
 const AUTO_REFRESH_MS = 30_000;
-const COL_COUNT = 13;
+const COL_COUNT = 12;
 
 const SORT_COLS = [
   { key: 'LastSeen', label: 'Last Seen' },
@@ -160,7 +160,6 @@ const UserReports = () => {
                   <th className="user-reports-th">IP</th>
                   <th className="user-reports-th">Country</th>
                   <th className="user-reports-th">City</th>
-                  <th className="user-reports-th">VPN</th>
                   {SORT_COLS.map((col) => (
                     <SortHeader
                       col={col}
@@ -205,18 +204,6 @@ const UserReports = () => {
                       </td>
                       <td className="user-reports-network">
                         {u.city ?? u.City ?? '—'}
-                      </td>
-                      <td className="user-reports-network">
-                        {(u.isVpn ?? u.IsVpn) !== null &&
-                        (u.isVpn ?? u.IsVpn) !== undefined ? (
-                          <span
-                            className={`user-report-vpn-badge${(u.isVpn ?? u.IsVpn) === 1 ? ' user-report-vpn-badge--yes' : ' user-report-vpn-badge--no'}`}
-                          >
-                            {(u.isVpn ?? u.IsVpn) === 1 ? 'VPN' : 'No VPN'}
-                          </span>
-                        ) : (
-                          '—'
-                        )}
                       </td>
                       <td className="user-reports-num">
                         {lastSeen ? formatDate(lastSeen) : '—'}

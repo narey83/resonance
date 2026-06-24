@@ -1,3 +1,4 @@
+import { rootUrl } from '../../../config';
 import {
   getSoulseekCredentials,
   updateSoulseekCredentials,
@@ -37,6 +38,11 @@ const snakeToCamel = (snakeString) =>
 
 const getAtPathCamel = (object, path) =>
   path.reduce((accumulated, key) => accumulated?.[snakeToCamel(key)], object);
+
+const isBlank = (value) =>
+  value === undefined ||
+  value === null ||
+  (typeof value === 'string' && value.trim() === '');
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 
@@ -879,6 +885,133 @@ const SCHEMA = [
     title: 'ffmpeg',
   },
   {
+    fields: [
+      {
+        description:
+          'Automatically look up missing track details (title, artist, album, year, genre) online and write them to your files. Runs quietly in the background. Enable one or more providers below.',
+        label: 'Enable Metadata Retrieval',
+        path: ['metadata_lookup', 'enabled'],
+        type: 'toggle',
+      },
+      {
+        description:
+          'Minimum match confidence (0-100) required before tags are written automatically. Higher is safer. Default: 90.',
+        disabledWhen: { equals: false, path: ['metadata_lookup', 'enabled'] },
+        label: 'Minimum Match Score',
+        max: 100,
+        min: 0,
+        path: ['metadata_lookup', 'min_score'],
+        placeholder: '90',
+        type: 'number',
+      },
+      {
+        description:
+          'Maximum lookup requests per second. The public APIs allow about 1; raise only against a self-hosted mirror.',
+        disabledWhen: { equals: false, path: ['metadata_lookup', 'enabled'] },
+        label: 'Requests per Second',
+        max: 100,
+        min: 1,
+        path: ['metadata_lookup', 'rate_limit_per_second'],
+        placeholder: '1',
+        type: 'number',
+      },
+      {
+        description:
+          'Number of tracks looked up in parallel during a pass. Keep at 1 for the public APIs.',
+        disabledWhen: { equals: false, path: ['metadata_lookup', 'enabled'] },
+        label: 'Workers',
+        max: 16,
+        min: 1,
+        path: ['metadata_lookup', 'workers'],
+        placeholder: '1',
+        type: 'number',
+      },
+      { label: 'MusicBrainz', type: 'heading' },
+      {
+        description:
+          'Use MusicBrainz as a lookup source. Free, no token; broad coverage but weaker for underground/electronic releases. When more than one provider is enabled they are tried in order, Discogs first.',
+        disabledWhen: { equals: false, path: ['metadata_lookup', 'enabled'] },
+        label: 'Use MusicBrainz',
+        path: ['metadata_lookup', 'music_brainz', 'enabled'],
+        type: 'toggle',
+      },
+      {
+        description:
+          'Email or URL included in the MusicBrainz User-Agent, as their API requires. Recommended so requests are not blocked.',
+        disabledWhen: {
+          equals: false,
+          path: ['metadata_lookup', 'music_brainz', 'enabled'],
+        },
+        label: 'Contact',
+        path: ['metadata_lookup', 'contact'],
+        placeholder: 'you@example.com',
+        type: 'text',
+      },
+      {
+        description:
+          'MusicBrainz web service URL. Point this at a self-hosted mirror to remove the public rate limit. Default: https://musicbrainz.org/ws/2.',
+        disabledWhen: {
+          equals: false,
+          path: ['metadata_lookup', 'music_brainz', 'enabled'],
+        },
+        label: 'Base URL',
+        path: ['metadata_lookup', 'base_url'],
+        placeholder: 'https://musicbrainz.org/ws/2',
+        type: 'text',
+      },
+      { label: 'Discogs', type: 'heading' },
+      { help: 'discogs', type: 'help' },
+      {
+        description:
+          'Use Discogs as a lookup source. Best for electronic, vinyl and underground releases, with richer genres (Discogs Styles like Techno, Minimal, Tech House). Requires the token below.',
+        disabledWhen: { equals: false, path: ['metadata_lookup', 'enabled'] },
+        label: 'Use Discogs',
+        path: ['metadata_lookup', 'discogs', 'enabled'],
+        requiresValue: ['metadata_lookup', 'discogs', 'token'],
+        type: 'toggle',
+      },
+      {
+        description:
+          'Your Discogs personal access token (see the steps above to generate one). Stored privately and used only to authenticate metadata lookups.',
+        disabledWhen: { equals: false, path: ['metadata_lookup', 'enabled'] },
+        label: 'Discogs Token',
+        path: ['metadata_lookup', 'discogs', 'token'],
+        placeholder: 'paste your token here',
+        type: 'password',
+      },
+      { label: 'Last.fm', type: 'heading' },
+      { help: 'lastfm', type: 'help' },
+      {
+        description:
+          'Use Last.fm as a genre source. Its community tags cover obscure/electronic tracks the other databases miss, and fill in genre where the providers above came up empty. Requires a free API key.',
+        disabledWhen: { equals: false, path: ['metadata_lookup', 'enabled'] },
+        label: 'Use Last.fm',
+        path: ['metadata_lookup', 'lastfm', 'enabled'],
+        requiresValue: ['metadata_lookup', 'lastfm', 'api_key'],
+        type: 'toggle',
+      },
+      {
+        description:
+          'Your Last.fm API key (see the steps above). Stored privately and used only to authenticate genre lookups.',
+        disabledWhen: { equals: false, path: ['metadata_lookup', 'enabled'] },
+        label: 'Last.fm API Key',
+        path: ['metadata_lookup', 'lastfm', 'api_key'],
+        placeholder: 'paste your API key here',
+        type: 'password',
+      },
+      { label: 'Deezer', type: 'heading' },
+      {
+        description:
+          'Use Deezer as a no-setup fallback — no account or key needed. Supplies release year and a broad genre where the providers above came up empty.',
+        disabledWhen: { equals: false, path: ['metadata_lookup', 'enabled'] },
+        label: 'Use Deezer',
+        path: ['metadata_lookup', 'deezer', 'enabled'],
+        type: 'toggle',
+      },
+    ],
+    title: 'Metadata Retrieval',
+  },
+  {
     title: 'Developer',
     type: 'developer',
   },
@@ -1102,8 +1235,10 @@ const DeveloperSection = ({ disabled, onChange, parsed }) => {
   const swaggerEnabled = Boolean(
     getAtPath(parsed ?? {}, ['feature', 'swagger']),
   );
-  const port = getAtPath(parsed ?? {}, ['web', 'port']) ?? 5_030;
-  const swaggerUrl = `http://${window.location.hostname}:${port}/swagger`;
+  // Build the Swagger link from the current origin (scheme/host/port) plus the
+  // configured urlBase, so it works behind an HTTPS reverse proxy as well as in
+  // local dev where the dev server proxies /swagger to the backend.
+  const swaggerUrl = `${window.location.origin}${rootUrl}/swagger`;
 
   return (
     <div className="info-section">
@@ -1389,6 +1524,74 @@ const OptionField = ({
       </div>
       <div className="opt-field-desc">{field.description}</div>
     </div>
+  </div>
+);
+
+const DiscogsTokenHelp = () => (
+  <div className="opt-help">
+    <div className="opt-help-title">How to get a token</div>
+    Discogs has far deeper coverage of electronic, vinyl and underground
+    releases than MusicBrainz, with richer genres (Discogs “Styles” such as
+    Techno, Minimal and Tech House). To use it you need a free personal access
+    token:
+    <ol>
+      <li>
+        Sign in to Discogs and open{' '}
+        <a
+          className="opt-link"
+          href="https://www.discogs.com/settings/developers"
+          rel="noreferrer"
+          target="_blank"
+        >
+          discogs.com/settings/developers
+        </a>
+        .
+      </li>
+      <li>
+        Under <strong>Personal access token</strong>, click{' '}
+        <strong>Generate new token</strong>.
+      </li>
+      <li>
+        Copy the token and paste it into the <strong>Discogs Token</strong>{' '}
+        field below.
+      </li>
+      <li>
+        Turn on <strong>Use Discogs</strong> (with{' '}
+        <strong>Enable Metadata Retrieval</strong> on), then{' '}
+        <strong>Save</strong>. A backend restart applies the change.
+      </li>
+    </ol>
+  </div>
+);
+
+const LastfmKeyHelp = () => (
+  <div className="opt-help">
+    <div className="opt-help-title">How to get an API key</div>
+    Last.fm’s community tags are a good genre source for obscure and electronic
+    tracks. To use them you need a free API key:
+    <ol>
+      <li>
+        Sign in to Last.fm and open{' '}
+        <a
+          className="opt-link"
+          href="https://www.last.fm/api/account/create"
+          rel="noreferrer"
+          target="_blank"
+        >
+          last.fm/api/account/create
+        </a>
+        .
+      </li>
+      <li>Fill in the form (any application name/description) and submit.</li>
+      <li>
+        Copy the <strong>API key</strong> and paste it into the{' '}
+        <strong>Last.fm API Key</strong> field below.
+      </li>
+      <li>
+        Turn on <strong>Use Last.fm</strong>, then <strong>Save</strong>. A
+        backend restart applies the change.
+      </li>
+    </ol>
   </div>
 );
 
@@ -1692,10 +1895,33 @@ const Options = ({ options, state = {}, theme }) => {
                   </>
                 )}
                 {SCHEMA[activeSection].fields.map((field) => {
-                  const conditionallyDisabled = field.disabledWhen
-                    ? getAtPath(parsed ?? {}, field.disabledWhen.path) ===
-                      field.disabledWhen.equals
-                    : false;
+                  if (field.type === 'heading') {
+                    return (
+                      <div
+                        className="opt-subheading"
+                        key={`heading-${field.label}`}
+                      >
+                        {field.label}
+                      </div>
+                    );
+                  }
+
+                  if (field.type === 'help' && field.help === 'discogs') {
+                    return <DiscogsTokenHelp key="discogs-help" />;
+                  }
+
+                  if (field.type === 'help' && field.help === 'lastfm') {
+                    return <LastfmKeyHelp key="lastfm-help" />;
+                  }
+
+                  const conditionallyDisabled =
+                    (field.disabledWhen &&
+                      getAtPath(parsed ?? {}, field.disabledWhen.path) ===
+                        field.disabledWhen.equals) ||
+                    // gate a toggle on a required value elsewhere (e.g. an API key/token)
+                    (field.requiresValue &&
+                      isBlank(getAtPath(parsed ?? {}, field.requiresValue))) ||
+                    false;
                   return (
                     <OptionField
                       connectionSpeedValue={

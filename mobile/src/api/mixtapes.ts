@@ -1,5 +1,6 @@
 import { apiClient } from './client';
 import { useAuthStore } from '../store/auth';
+import { ensureSigned } from './streamSignatures';
 
 export interface MixtapeTrack {
   id: string;
@@ -50,8 +51,16 @@ export const getPublicZipUrl = (publicToken: string): string | null => {
   return `${serverUrl}/api/v0/public/mixtapes/${encodeURIComponent(publicToken)}/download.zip`;
 };
 
-export const getAll        = ()                             => apiClient.get<Mixtape[]>('/mixtapes').then(r => r.data);
-export const getById       = (id: string)                   => apiClient.get<Mixtape>(`/mixtapes/${encodeURIComponent(id)}`).then(r => r.data);
+export const getAll        = async (): Promise<Mixtape[]> => {
+  const data = await apiClient.get<Mixtape[]>('/mixtapes').then(r => r.data);
+  await ensureSigned(data.flatMap(m => m.tracks.map(t => t.filePath)));
+  return data;
+};
+export const getById       = async (id: string): Promise<Mixtape> => {
+  const data = await apiClient.get<Mixtape>(`/mixtapes/${encodeURIComponent(id)}`).then(r => r.data);
+  await ensureSigned(data.tracks.map(t => t.filePath));
+  return data;
+};
 export const create        = (name: string, description?: string) => apiClient.post<Mixtape>('/mixtapes', { name, description }).then(r => r.data);
 export const update        = (id: string, name: string, description?: string) => apiClient.put<Mixtape>(`/mixtapes/${encodeURIComponent(id)}`, { name, description }).then(r => r.data);
 export const remove        = (id: string)                   => apiClient.delete(`/mixtapes/${encodeURIComponent(id)}`);

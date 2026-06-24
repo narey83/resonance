@@ -2681,6 +2681,8 @@ const Library = () => {
   const libraryRevision = libraryActivity?.libraryRevision ?? 0;
 
   const [allTracks, setAllTracks] = useState([]);
+  const [lovedTracks, setLovedTracks] = useState([]);
+  const [loadingLoved, setLoadingLoved] = useState(false);
   const [albums, setAlbums] = useState([]);
   const [artists, setArtists] = useState([]);
   const [libraryStats, setLibraryStats] = useState(null);
@@ -2881,9 +2883,7 @@ const Library = () => {
 
   useEffect(() => {
     if (
-      (activeView === VIEWS.SEARCH ||
-        activeView === VIEWS.LOVED ||
-        activeView === VIEWS.TRACKS) &&
+      (activeView === VIEWS.SEARCH || activeView === VIEWS.TRACKS) &&
       allTracks.length === 0 &&
       !loadingTracks
     ) {
@@ -2909,6 +2909,27 @@ const Library = () => {
       loadTracks();
     }
   }, [activeView, allTracks.length, loadingTracks]);
+
+  // Loved view fetches only its tracks (resolved server-side) rather than the whole library.
+  // Refetch each time the view opens so newly-loved tracks appear.
+  useEffect(() => {
+    if (activeView === VIEWS.LOVED && !loadingLoved) {
+      const loadLoved = async () => {
+        setLoadingLoved(true);
+        try {
+          const { getLovedTracks } = await import('../../lib/musicLibrary');
+          setLovedTracks(await getLovedTracks());
+        } catch {
+          // ignore
+        } finally {
+          setLoadingLoved(false);
+        }
+      };
+
+      loadLoved();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView]);
 
   useEffect(() => {
     if (activeView === VIEWS.ALBUMS && albums.length === 0 && !loadingAlbums) {
@@ -3621,8 +3642,8 @@ const Library = () => {
       case VIEWS.LOVED:
         return (
           <LovedView
-            allTracks={allTracks}
-            loading={loadingTracks}
+            allTracks={lovedTracks}
+            loading={loadingLoved}
             lovedPaths={lovedPaths}
             onContextMenu={openContextMenu}
           />

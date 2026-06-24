@@ -1,5 +1,31 @@
 import { File } from 'expo-file-system';
 import { Image as ExpoImage } from 'expo-image';
+import { Dimensions, PixelRatio } from 'react-native';
+import { recordMediaLoad } from '../store/networkLogStore';
+
+// Pixel size to request for the full-screen player artwork. The cover now spans the whole
+// screen width, so request it at the device's physical pixel width (capped) rather than a
+// fixed 512 — otherwise it's upscaled and looks soft. Bounded so the server transcode and
+// payload stay reasonable on very high-DPI screens.
+export const PLAYER_ART_SIZE = Math.min(
+  1280,
+  Math.round(Dimensions.get('window').width * PixelRatio.get()),
+);
+
+// Warm expo-image's cache for a single artwork URL under its stable cacheKey (path-derived,
+// not the rotating URL signature), so a later <Image> render of the same track is instant.
+// loadAsync uses the source's cacheKey and the default memory-disk policy. Best-effort.
+export async function prefetchArtwork(uri: string, cacheKey?: string): Promise<void> {
+  const startedAt = Date.now();
+  try {
+    await ExpoImage.loadAsync(cacheKey ? { uri, cacheKey } : { uri });
+    // Latency is near-zero on a cache hit and the real fetch time on a miss — both useful in the
+    // Network Log debug screen for confirming caching and spotting slow artwork loads.
+    recordMediaLoad('img', uri, startedAt, true);
+  } catch (e) {
+    recordMediaLoad('img', uri, startedAt, false, { error: e instanceof Error ? e.message : 'load failed' });
+  }
+}
 
 function djb2(s: string): string {
   let h = 5381;

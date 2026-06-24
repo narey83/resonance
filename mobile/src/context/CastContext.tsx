@@ -11,7 +11,7 @@ import { NativeModules } from 'react-native';
 import { MusicTrack } from '../api/musicLibrary';
 import { usePlayer } from './PlayerContext';
 import { useAuthStore } from '../store/auth';
-import { getValidToken } from '../api/client';
+import { ensureSigned, signedQuery } from '../api/streamSignatures';
 
 // True only when the Google Cast native module is present (not available in Expo Go)
 const CAST_AVAILABLE = !!(NativeModules as any).RNGCCastContext;
@@ -177,13 +177,12 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
 
   const loadTrack = useCallback(async (client: typeof nativeClient.current, trackToLoad: MusicTrack) => {
     if (!client) return;
-    // The cast device streams independently and holds this URL for the whole track, so bake in
-    // a freshly-refreshed token — otherwise a token that expires mid-session leaves the next
-    // track load pointing at an expired URL the receiver can't play.
-    const accessToken = await getValidToken();
+    // The cast device streams independently and holds this URL for the whole track. The path
+    // signature is valid for ~24h (well beyond any track), so a fresh signature can't expire
+    // mid-playback the way the old 15-min access token could.
+    await ensureSigned([trackToLoad.path]);
     const { serverUrl } = useAuthStore.getState();
-    const token = accessToken ? `&access_token=${encodeURIComponent(accessToken)}` : '';
-    const streamUrl = `${serverUrl}/api/v0/musiclibrary/stream?path=${encodeURIComponent(trackToLoad.path)}${token}`;
+    const streamUrl = `${serverUrl}/api/v0/musiclibrary/stream?path=${encodeURIComponent(trackToLoad.path)}${signedQuery(trackToLoad.path)}`;
     await client.loadMedia({
       mediaInfo: {
         contentUrl:  streamUrl,

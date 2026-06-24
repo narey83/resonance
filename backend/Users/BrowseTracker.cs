@@ -1,4 +1,4 @@
-﻿// <copyright file="BrowseTracker.cs" company="JP Dillingham">
+// <copyright file="BrowseTracker.cs" company="JP Dillingham">
 //           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
 //     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
 //     █__ --█  █__ --█    ◄█  -  █

@@ -113,6 +113,9 @@ const Overview = () => {
   const [years, setYears] = useState([]);
   const [playStats, setPlayStats] = useState([]);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
+  // Frosted-glass transition overlay — shown only on user-initiated range/
+  // direction changes, not on background auto-refresh (which would flash it).
+  const [transitioning, setTransitioning] = useState(false);
   const [analyticsRefresh, setAnalyticsRefresh] = useState(0);
 
   const location = useLocation();
@@ -313,6 +316,7 @@ const Overview = () => {
         // silently ignore
       } finally {
         setAnalyticsLoading(false);
+        setTransitioning(false);
       }
     };
 
@@ -369,7 +373,9 @@ const Overview = () => {
       </div>
 
       <div className="overview-body">
-        <div className="overview-analytics">
+        <div
+          className={`overview-analytics${activeTab === 'users' ? ' overview-analytics--users' : ''}`}
+        >
           {activeTab === 'users' && <UserReports />}
           {activeTab === 'analytics' && (
             <>
@@ -381,7 +387,9 @@ const Overview = () => {
                         className={`overview-pill${range === r.hours ? ' active' : ''}`}
                         key={r.hours}
                         onClick={() => {
+                          if (range === r.hours) return;
                           prefs.set('overview:range-h', r.hours);
+                          setTransitioning(true);
                           setRange(r.hours);
                         }}
                         type="button"
@@ -396,7 +404,9 @@ const Overview = () => {
                         className={`overview-pill${direction === d.value ? ' active' : ''}`}
                         key={d.label}
                         onClick={() => {
+                          if (direction === d.value) return;
                           prefs.set('overview:direction', d.value ?? null);
+                          setTransitioning(true);
                           setDirection(d.value);
                         }}
                         type="button"
@@ -429,92 +439,104 @@ const Overview = () => {
                 </div>
               </div>
 
-              <section className="overview-section">
-                <h2 className="overview-section-title">At a Glance</h2>
-                <KpiCards
-                  downloads={allDownloads}
-                  loading={analyticsLoading && !summary}
-                  prevSummary={prevSummary}
-                  summary={summary}
-                  uploads={allUploads}
-                />
-                <SocialPulse data={social} />
-                <div className="overview-row">
-                  <RatioCard
-                    histogram={histogram}
+              <div
+                className={`overview-sections${transitioning ? ' transitioning' : ''}`}
+              >
+                {transitioning && (
+                  <div
+                    aria-hidden="true"
+                    className="overview-glass-overlay"
+                  >
+                    <div className="overview-glass-spinner" />
+                  </div>
+                )}
+                <section className="overview-section">
+                  <h2 className="overview-section-title">At a Glance</h2>
+                  <KpiCards
+                    downloads={allDownloads}
+                    loading={analyticsLoading && !summary}
+                    prevSummary={prevSummary}
                     summary={summary}
+                    uploads={allUploads}
                   />
-                  <CoverageCard
-                    totalFiles={totalSharedFiles}
-                    uploadedFiles={coverage?.uploadedFiles}
+                  <SocialPulse data={social} />
+                  <div className="overview-row">
+                    <RatioCard
+                      histogram={histogram}
+                      summary={summary}
+                    />
+                    <CoverageCard
+                      totalFiles={totalSharedFiles}
+                      uploadedFiles={coverage?.uploadedFiles}
+                    />
+                  </div>
+                </section>
+
+                <section className="overview-section">
+                  <h2 className="overview-section-title">Transfer Activity</h2>
+                  <ActivityChart
+                    data={histogram}
+                    intervalMinutes={getHistogramInterval(range)}
+                    range={range}
                   />
-                </div>
-              </section>
-
-              <section className="overview-section">
-                <h2 className="overview-section-title">Transfer Activity</h2>
-                <ActivityChart
-                  data={histogram}
-                  intervalMinutes={getHistogramInterval(range)}
-                  range={range}
-                />
-                <ActivityHeatmap data={heatmap} />
-                <ErrorChart
-                  data={histogram}
-                  intervalMinutes={getHistogramInterval(range)}
-                />
-              </section>
-
-              <section className="overview-section">
-                <h2 className="overview-section-title">Reliability</h2>
-                <div className="overview-row">
-                  <RetryFunnel data={retries} />
-                  <QueueWaitCard stats={queueWait} />
-                </div>
-                <TransferHealth
-                  dlExceptions={dlExceptions}
-                  summary={summary}
-                  ulExceptions={ulExceptions}
-                />
-              </section>
-
-              <section className="overview-section">
-                <h2 className="overview-section-title">
-                  Top Users &amp; Content
-                </h2>
-                <div className="overview-row">
-                  <UserLeaderboard leaderboard={leaderboard} />
-                  <PopularDirectories directories={directories} />
-                  <TopFiles files={topFiles} />
-                </div>
-              </section>
-
-              <section className="overview-section">
-                <h2 className="overview-section-title">
-                  Audience &amp; Geography
-                </h2>
-                <div className="overview-row">
-                  <GeographyCard geography={geography} />
-                  <PeerRetentionCard data={peers} />
-                </div>
-              </section>
-
-              <section className="overview-section">
-                <h2 className="overview-section-title">Library</h2>
-                <div className="overview-row">
-                  <LibraryComposition
-                    genres={genres}
-                    playStats={playStats}
-                    years={years}
+                  <ActivityHeatmap data={heatmap} />
+                  <ErrorChart
+                    data={histogram}
+                    intervalMinutes={getHistogramInterval(range)}
                   />
-                  <FileTypeChart counts={fileTypeCounts} />
-                </div>
-              </section>
+                </section>
 
-              <section className="overview-section overview-section--feed">
-                <h2 className="overview-section-title">Activity Feed</h2>
-                <NotificationFeed events={events} />
-              </section>
+                <section className="overview-section">
+                  <h2 className="overview-section-title">Reliability</h2>
+                  <div className="overview-row">
+                    <RetryFunnel data={retries} />
+                    <QueueWaitCard stats={queueWait} />
+                  </div>
+                  <TransferHealth
+                    dlExceptions={dlExceptions}
+                    summary={summary}
+                    ulExceptions={ulExceptions}
+                  />
+                </section>
+
+                <section className="overview-section">
+                  <h2 className="overview-section-title">
+                    Top Users &amp; Content
+                  </h2>
+                  <div className="overview-row">
+                    <UserLeaderboard leaderboard={leaderboard} />
+                    <PopularDirectories directories={directories} />
+                    <TopFiles files={topFiles} />
+                  </div>
+                </section>
+
+                <section className="overview-section">
+                  <h2 className="overview-section-title">
+                    Audience &amp; Geography
+                  </h2>
+                  <div className="overview-row">
+                    <GeographyCard geography={geography} />
+                    <PeerRetentionCard data={peers} />
+                  </div>
+                </section>
+
+                <section className="overview-section">
+                  <h2 className="overview-section-title">Library</h2>
+                  <div className="overview-row">
+                    <LibraryComposition
+                      genres={genres}
+                      playStats={playStats}
+                      years={years}
+                    />
+                    <FileTypeChart counts={fileTypeCounts} />
+                  </div>
+                </section>
+
+                <section className="overview-section overview-section--feed">
+                  <h2 className="overview-section-title">Activity Feed</h2>
+                  <NotificationFeed events={events} />
+                </section>
+              </div>
             </>
           )}
         </div>

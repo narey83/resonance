@@ -23,6 +23,7 @@ import TagsScreen                from '../screens/more/TagsScreen';
 import AnalysisScreen            from '../screens/more/AnalysisScreen';
 import SystemScreen              from '../screens/more/SystemScreen';
 import SettingsScreen            from '../screens/more/SettingsScreen';
+import NetworkLogScreen          from '../screens/more/NetworkLogScreen';
 
 export type MainTabParamList = {
   SearchTab:    undefined;
@@ -43,6 +44,7 @@ export type MoreStackParamList = {
   Analysis:         undefined;
   System:           undefined;
   Settings:         undefined;
+  NetworkLog:       undefined;
 };
 
 const Tab  = createBottomTabNavigator<MainTabParamList>();
@@ -64,6 +66,7 @@ function MoreStack() {
       <More.Screen name="Analysis"         component={AnalysisScreen}         options={{ title: 'Analysis' }} />
       <More.Screen name="System"           component={SystemScreen}           options={{ title: 'System' }} />
       <More.Screen name="Settings"         component={SettingsScreen}         options={{ title: 'Settings' }} />
+      <More.Screen name="NetworkLog"       component={NetworkLogScreen}       options={{ title: 'Network Log' }} />
     </More.Navigator>
   );
 }

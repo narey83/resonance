@@ -68,6 +68,7 @@ namespace resonance.Core.API
         /// <summary>
         ///     Gets a paginated, filtered list of historical log entries from persistent storage.
         /// </summary>
+        /// <returns></returns>
         [HttpGet]
         [Authorize(Policy = AuthPolicy.Any)]
         public IActionResult Get(
@@ -80,10 +81,14 @@ namespace resonance.Core.API
             [FromQuery] DateTime? to = null)
         {
             if (offset < 0)
+            {
                 return BadRequest("Offset must be >= 0");
+            }
 
             if (limit <= 0 || limit > 1000)
+            {
                 return BadRequest("Limit must be between 1 and 1000");
+            }
 
             try
             {
@@ -91,19 +96,29 @@ namespace resonance.Core.API
                 var query = ctx.LogEntries.AsNoTracking().AsQueryable();
 
                 if (level?.Length > 0)
+                {
                     query = query.Where(e => level.Contains(e.Level));
+                }
 
                 if (!string.IsNullOrWhiteSpace(context))
+                {
                     query = query.Where(e => e.Context.Contains(context));
+                }
 
                 if (!string.IsNullOrWhiteSpace(search))
+                {
                     query = query.Where(e => e.Message.Contains(search));
+                }
 
                 if (from.HasValue)
+                {
                     query = query.Where(e => e.Timestamp >= from.Value);
+                }
 
                 if (to.HasValue)
+                {
                     query = query.Where(e => e.Timestamp <= to.Value);
+                }
 
                 var total = query.Count();
 
@@ -136,6 +151,7 @@ namespace resonance.Core.API
         /// <summary>
         ///     Accepts a browser console log entry and injects it into the application log stream.
         /// </summary>
+        /// <returns></returns>
         [HttpPost]
         [Authorize(Policy = AuthPolicy.Any)]
         public IActionResult Post([FromBody] BrowserLogEntry entry)

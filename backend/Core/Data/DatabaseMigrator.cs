@@ -1,6 +1,9 @@
-// <copyright file="DatabaseMigrator.cs" company="Resonance">
+// <copyright file="DatabaseMigrator.cs" company="John Narey">
+//    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
+//   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
 //   │ Copyright (c) 2026 John Narey.
+//   │ Part of Resonance, a Soulseek client based on slskd.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -103,13 +106,17 @@ public class DatabaseMigrator
                         Log.Warning("FK violation on {Table}, will retry (pass {Pass})", table, pass);
                         retry.Add(table);
                     }
+
                     // SchemaMismatch: wrong table was matched; skip silently (warning already logged)
                 }
+
                 pending = retry;
             }
 
             if (pending.Count > 0)
+            {
                 Log.Error("Could not migrate tables after all passes: {Tables}", string.Join(", ", pending));
+            }
         }
 
         ResetPostgresIdentitySequences(postgres);
@@ -134,10 +141,14 @@ public class DatabaseMigrator
         Log.Information("PostgreSQL → SQLite migration complete");
     }
 
-    private enum CopyResult { Ok, FkViolation, SchemaMismatch }
+    private enum CopyResult
+    {
+        Ok,
+        FkViolation,
+        SchemaMismatch
+    }
 
     // ── SQLite → Postgres ──────────────────────────────────────────────────────
-
     private CopyResult CopySqliteToPostgres(
         SqliteConnection sqlite,
         NpgsqlConnection postgres,
@@ -146,10 +157,17 @@ public class DatabaseMigrator
         Dictionary<string, string> pgColTypes)
     {
         var columns = GetSqliteColumns(sqlite, srcTable);
-        if (columns.Count == 0) return CopyResult.Ok;
+        if (columns.Count == 0)
+        {
+            return CopyResult.Ok;
+        }
 
         var count = CountRows(sqlite, $"\"{srcTable}\"");
-        if (count == 0) { Log.Debug("Table {Table} empty, skipping", srcTable); return CopyResult.Ok; }
+        if (count == 0)
+        {
+            Log.Debug("Table {Table} empty, skipping", srcTable);
+            return CopyResult.Ok;
+        }
 
         Log.Information("Migrating {Table} → {Dst} ({Count} rows)...", srcTable, dstTable, count);
 
@@ -198,27 +216,47 @@ public class DatabaseMigrator
         }
         catch (Npgsql.PostgresException ex) when (ex.SqlState == "23503") // FK violation
         {
-            try { tx.Rollback(); } catch { }
+            try
+            {
+                tx.Rollback();
+            }
+            catch
+            {
+            }
+
             tx.Dispose();
             return CopyResult.FkViolation;
         }
         catch (Npgsql.PostgresException ex) when (ex.SqlState == "42703") // column does not exist
         {
-            try { tx.Rollback(); } catch { }
+            try
+            {
+                tx.Rollback();
+            }
+            catch
+            {
+            }
+
             tx.Dispose();
             Log.Warning("Column mismatch migrating {Table} → {Dst} (wrong schema match?): {Msg}", srcTable, dstTable, ex.MessageText);
             return CopyResult.SchemaMismatch;
         }
         catch
         {
-            try { tx.Rollback(); } catch { }
+            try
+            {
+                tx.Rollback();
+            }
+            catch
+            {
+            }
+
             tx.Dispose();
             throw;
         }
     }
 
     // ── Postgres → SQLite ──────────────────────────────────────────────────────
-
     private void CopyPostgresToSqlite(
         NpgsqlConnection postgres,
         SqliteConnection sqlite,
@@ -226,10 +264,17 @@ public class DatabaseMigrator
         string dstTable)
     {
         var columns = GetPostgresColumns(postgres, srcQualified);
-        if (columns.Count == 0) return;
+        if (columns.Count == 0)
+        {
+            return;
+        }
 
         var count = CountRows(postgres, srcQualified);
-        if (count == 0) { Log.Debug("Table {Table} empty, skipping", srcQualified); return; }
+        if (count == 0)
+        {
+            Log.Debug("Table {Table} empty, skipping", srcQualified);
+            return;
+        }
 
         Log.Information("Migrating {Src} → {Dst} ({Count} rows)...", srcQualified, dstTable, count);
 
@@ -273,7 +318,6 @@ public class DatabaseMigrator
     }
 
     // ── Schema discovery ───────────────────────────────────────────────────────
-
     private static List<string> ListSqliteTables(SqliteConnection conn)
     {
         var tables = new List<string>();
@@ -284,8 +328,11 @@ public class DatabaseMigrator
         {
             var name = r.GetString(0);
             if (!SkipTables.Contains(name))
+            {
                 tables.Add(name);
+            }
         }
+
         return tables;
     }
 
@@ -307,8 +354,11 @@ public class DatabaseMigrator
             var schema = r.GetString(0);
             var table = r.GetString(1);
             if (!SkipTables.Contains(table))
+            {
                 list.Add((schema, table, $"\"{schema}\".\"{table}\""));
+            }
         }
+
         return list;
     }
 
@@ -323,8 +373,15 @@ public class DatabaseMigrator
             .Where(t => t.Table.Equals(sqliteTable, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        if (matches.Count == 0) return null;
-        if (matches.Count == 1) return matches[0].Qualified;
+        if (matches.Count == 0)
+        {
+            return null;
+        }
+
+        if (matches.Count == 1)
+        {
+            return matches[0].Qualified;
+        }
 
         // Multiple schemas have a table with this name — prefer the one matching the source file
         var preferred = matches.FirstOrDefault(t => t.Schema.Equals(schemaHint, StringComparison.OrdinalIgnoreCase));
@@ -347,9 +404,13 @@ public class DatabaseMigrator
         {
             var key = $"\"{r.GetString(0)}\".\"{r.GetString(1)}\"";
             if (!result.TryGetValue(key, out var cols))
+            {
                 result[key] = cols = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            }
+
             cols[r.GetString(2)] = r.GetString(3);
         }
+
         return result;
     }
 
@@ -360,13 +421,16 @@ public class DatabaseMigrator
         cmd.CommandText = $"PRAGMA table_info(\"{table}\")";
         using var r = cmd.ExecuteReader();
         while (r.Read())
+        {
             cols.Add(r.GetString(1));
+        }
+
         return cols;
     }
 
     private static List<string> GetPostgresColumns(NpgsqlConnection conn, string qualifiedTable)
     {
-        var parts = qualifiedTable.Replace("\"", "").Split('.');
+        var parts = qualifiedTable.Replace("\"", string.Empty).Split('.');
         var cols = new List<string>();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
@@ -378,23 +442,29 @@ public class DatabaseMigrator
         cmd.Parameters.AddWithValue("t", parts[1]);
         using var r = cmd.ExecuteReader();
         while (r.Read())
+        {
             cols.Add(r.GetString(0));
+        }
+
         return cols;
     }
 
     // ── Type conversion ────────────────────────────────────────────────────────
-
     private static NpgsqlParameter MakePostgresParam(string name, object raw, string pgType)
     {
         if (raw == null)
+        {
             return new NpgsqlParameter(name, DBNull.Value);
+        }
 
         try
         {
             if (pgType != null)
             {
                 if (pgType is "uuid" && raw is string uuidStr)
+                {
                     return new NpgsqlParameter(name, Guid.Parse(uuidStr));
+                }
 
                 if (pgType is "boolean")
                 {
@@ -441,7 +511,6 @@ public class DatabaseMigrator
     };
 
     // ── Helpers ────────────────────────────────────────────────────────────────
-
     private static long CountRows(IDbConnection conn, string table)
     {
         using var cmd = conn.CreateCommand();
@@ -465,7 +534,9 @@ public class DatabaseMigrator
         using (var r = cmd.ExecuteReader())
         {
             while (r.Read())
+            {
                 identityCols.Add((r.GetString(0), r.GetString(1), r.GetString(2)));
+            }
         }
 
         foreach (var (schema, table, column) in identityCols)
@@ -473,7 +544,10 @@ public class DatabaseMigrator
             using var maxCmd = conn.CreateCommand();
             maxCmd.CommandText = $"SELECT COALESCE(MAX(\"{column}\"), 0) FROM \"{schema}\".\"{table}\"";
             var maxVal = Convert.ToInt64(maxCmd.ExecuteScalar());
-            if (maxVal <= 0) continue;
+            if (maxVal <= 0)
+            {
+                continue;
+            }
 
             using var restartCmd = conn.CreateCommand();
             restartCmd.CommandText = $"ALTER TABLE \"{schema}\".\"{table}\" ALTER COLUMN \"{column}\" RESTART WITH {maxVal + 1}";

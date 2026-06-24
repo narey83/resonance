@@ -1,13 +1,9 @@
-// <copyright file="SessionService.cs" company="JP Dillingham">
-//           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
-//     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
-//     █__ --█  █__ --█    ◄█  -  █
-//     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
+// <copyright file="SessionService.cs" company="John Narey">
+//    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
+//   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
-//   │ Copyright (c) JP Dillingham.
 //   │ Copyright (c) 2026 John Narey.
-//   │ Modified as part of Resonance, a modified version of slskd;
-//   │ see the project repository for the nature of the changes.
+//   │ Part of Resonance, a Soulseek client based on slskd.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -25,10 +21,8 @@
 //   │ of the AGPLv3.  See the LICENSE file in the root directory of this
 //   │ project for the complete terms and conditions.
 //   │
-//   │ https://slskd.org
-//   │
 //   ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ╌ ╌╌╌╌ ╌
-//   │ SPDX-FileCopyrightText: JP Dillingham
+//   │ SPDX-FileCopyrightText: John Narey
 //   │ SPDX-License-Identifier: AGPL-3.0-only
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
@@ -159,6 +153,18 @@ public class SessionService
             throw new UnauthorizedException("Refresh token has expired");
         }
 
+        // Idle timeout: a live client refreshes within each JWT TTL window. A session whose token
+        // hasn't been used within the idle window is dead (e.g. a one-off credential/API login) —
+        // revoke it rather than silently reviving it, so it can't linger for the full refresh TTL.
+        if (session.LastUsedAt < DateTime.UtcNow.AddMilliseconds(-Options.Web.Authentication.Jwt.IdleTimeout))
+        {
+            session.IsRevoked = true;
+            db.SaveChanges();
+            CacheRevocation(session.Id);
+            Log.Warning("Idle refresh token presented for user {Username}; session revoked", session.Username);
+            throw new UnauthorizedException("Session has expired due to inactivity");
+        }
+
         // Update the session in place — same ID, new token hash, sliding expiry.
         // The old hash is retained so a replay of the rotated-away token can be detected above.
         var newToken = GenerateToken();
@@ -235,27 +241,33 @@ public class SessionService
     }
 
     /// <summary>
-    ///     Returns all non-revoked, non-expired sessions for the given user.
+    ///     Returns all live sessions for the given user: non-revoked, non-expired, and used within the
+    ///     idle-timeout window. A live client silently refreshes its JWT within each TTL window, so a
+    ///     session idle beyond the configured <c>Jwt.IdleTimeout</c> is effectively dead and excluded.
     /// </summary>
     /// <returns></returns>
     public IEnumerable<UserSession> GetActiveSessions(string username)
     {
+        var idleCutoff = DateTime.UtcNow.AddMilliseconds(-Options.Web.Authentication.Jwt.IdleTimeout);
+
         using var db = ContextFactory.CreateDbContext();
         return db.Sessions
-            .Where(s => s.Username == username && !s.IsRevoked && s.ExpiresAt > DateTime.UtcNow)
+            .Where(s => s.Username == username && !s.IsRevoked && s.ExpiresAt > DateTime.UtcNow && s.LastUsedAt > idleCutoff)
             .OrderByDescending(s => s.LastUsedAt)
             .ToList();
     }
 
     /// <summary>
-    ///     Deletes all expired and revoked sessions from the database.
+    ///     Deletes all expired, revoked, and idle sessions from the database.
     ///     Called once on startup to keep the table lean.
     /// </summary>
     public void CleanupExpiredSessions()
     {
+        var idleCutoff = DateTime.UtcNow.AddMilliseconds(-Options.Web.Authentication.Jwt.IdleTimeout);
+
         using var db = ContextFactory.CreateDbContext();
         var stale = db.Sessions
-            .Where(s => s.IsRevoked || s.ExpiresAt < DateTime.UtcNow)
+            .Where(s => s.IsRevoked || s.ExpiresAt < DateTime.UtcNow || s.LastUsedAt < idleCutoff)
             .ToList();
 
         if (stale.Count > 0)
@@ -274,6 +286,16 @@ public class SessionService
         return sessions.Select(s => s.Id).ToList();
     }
 
+    private static string GenerateToken()
+    {
+        var bytes = new byte[32];
+        RandomNumberGenerator.Fill(bytes);
+        return Convert.ToBase64String(bytes);
+    }
+
+    private static string HashToken(string token)
+        => Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+
     private void CacheRevocation(Guid sessionId) => RevokedSessionCache[sessionId] = DateTime.UtcNow;
 
     private void PruneRevocationCache()
@@ -287,14 +309,4 @@ public class SessionService
             RevokedSessionCache.TryRemove(entry.Key, out _);
         }
     }
-
-    private static string GenerateToken()
-    {
-        var bytes = new byte[32];
-        RandomNumberGenerator.Fill(bytes);
-        return Convert.ToBase64String(bytes);
-    }
-
-    private static string HashToken(string token)
-        => Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
 }

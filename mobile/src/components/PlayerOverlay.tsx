@@ -1,6 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { CastButton } from 'react-native-google-cast';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
+import MaskedView from '@react-native-masked-view/masked-view';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -23,14 +25,19 @@ import { usePlaybackStatus, usePlayer } from '../context/PlayerContext';
 import { useCast } from '../context/CastContext';
 import { useTheme } from '../context/ThemeContext';
 import { MusicTrack, getArtworkUrl, getTrackTitle } from '../api/musicLibrary';
-import { getArtworkCacheKey } from '../services/artworkCache';
+import { getArtworkCacheKey, PLAYER_ART_SIZE } from '../services/artworkCache';
 import { useMixtapeStore } from '../store/mixtapeStore';
 import { useLibraryActivityStore } from '../store/libraryActivityStore';
 import { usePlayerUI } from '../store/playerUIStore';
+import { haptics } from '../lib/haptics';
 import { Radius, Spacing, ThemeColors, Typography } from '../theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const ARTWORK_SIZE = Math.min(SCREEN_W - 64, Math.round(SCREEN_H * 0.38));
+const ARTWORK_SIZE = SCREEN_W;
+// Fixed queue-row height so FlatList offsets are exact (via getItemLayout) and scrolling the
+// current track to a consistent position never has to estimate/correct — which is what caused
+// the "bounce". Rows must render at exactly this height regardless of whether they show an artist.
+const QUEUE_ROW_HEIGHT = 60;
 const SNAP_VELOCITY = 0.6;
 const SNAP_DISTANCE = 80;
 
@@ -48,36 +55,199 @@ const ProgressBar = ({
   positionSec, durationSec, onSeek,
 }: { positionSec: number; durationSec: number; onSeek: (s: number) => void }) => {
   const [barWidth, setBarWidth] = useState(0);
-  const progress = durationSec > 0 ? Math.min(positionSec / durationSec, 1) : 0;
+  // While the user is dragging, `scrubFrac` (0..1) drives the UI so the bar follows the
+  // finger and the position label updates live; null means "not scrubbing".
+  const [scrubFrac, setScrubFrac] = useState<number | null>(null);
+  // After a seek is released, hold the bar at the seek target until the player's reported
+  // position catches up. Without this the bar flips straight to the live (still-old) position
+  // for a beat — looking like it jumps back to the start — then snaps forward once RNTP seeks.
+  const [pendingSec, setPendingSec] = useState<number | null>(null);
+  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Refs so the PanResponder (created once) always reads current values without stale closures.
+  const widthRef    = useRef(0);
+  const durRef      = useRef(durationSec);
+  const seekRef     = useRef(onSeek);
+  const barLeftRef  = useRef(0);   // bar's absolute screen X, captured on touch start
+  const scrubRef    = useRef<number | null>(null);
+  widthRef.current = barWidth;
+  durRef.current   = durationSec;
+  seekRef.current  = onSeek;
+
+  const setScrub = (f: number | null) => { scrubRef.current = f; setScrubFrac(f); };
+  const fracFromAbs = (absX: number) => {
+    const w = widthRef.current;
+    if (w <= 0) return 0;
+    return Math.max(0, Math.min(1, (absX - barLeftRef.current) / w));
+  };
+
+  const pan = useRef(
+    PanResponder.create({
+      // Win the gesture on touch-down and keep it through movement, so the overlay's
+      // swipe-to-dismiss / queue-swipe PanResponders can't steal an in-progress seek.
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (e) => {
+        barLeftRef.current = e.nativeEvent.pageX - e.nativeEvent.locationX;
+        setScrub(fracFromAbs(e.nativeEvent.pageX));
+      },
+      onPanResponderMove: (_, g) => setScrub(fracFromAbs(g.moveX)),
+      onPanResponderRelease: () => {
+        const f = scrubRef.current;
+        if (f != null && durRef.current > 0) {
+          const target = f * durRef.current;
+          haptics.light();
+          seekRef.current(target);
+          setPendingSec(target);
+          if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
+          // Safety release in case the reported position never lands exactly on the target.
+          pendingTimerRef.current = setTimeout(() => setPendingSec(null), 1500);
+        }
+        setScrub(null);
+      },
+      onPanResponderTerminate: () => setScrub(null),
+    })
+  ).current;
+
+  // Release the hold once the player's reported position actually reaches the seeked spot.
+  useEffect(() => {
+    if (pendingSec == null) return;
+    if (Math.abs(positionSec - pendingSec) < 0.8) {
+      if (pendingTimerRef.current) { clearTimeout(pendingTimerRef.current); pendingTimerRef.current = null; }
+      setPendingSec(null);
+    }
+  }, [pendingSec, positionSec]);
+
+  // Displayed position: live finger drag > post-release hold > live playback position.
+  const shownSec = scrubFrac != null ? scrubFrac * durationSec
+                 : pendingSec != null ? pendingSec
+                 : positionSec;
+  const progress = durationSec > 0 ? Math.min(shownSec / durationSec, 1) : 0;
+  const labelSec = shownSec;
+  const dragging = scrubFrac != null;
 
   return (
     <View style={{ marginBottom: Spacing.lg }}>
       <View
-        style={{ height: 32, justifyContent: 'center' }}
+        style={{ height: 44, justifyContent: 'center' }}
         onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
-        onStartShouldSetResponder={() => true}
-        onResponderRelease={(e) => {
-          if (barWidth > 0 && durationSec > 0) {
-            const x = Math.max(0, Math.min(e.nativeEvent.locationX, barWidth));
-            onSeek((x / barWidth) * durationSec);
-          }
-        }}
+        {...pan.panHandlers}
       >
+        {dragging && (
+          <View style={{
+            position: 'absolute', bottom: '100%', left: `${progress * 100}%`,
+            marginBottom: 6, marginLeft: -28, width: 56,
+            alignItems: 'center', paddingVertical: 4, borderRadius: 8,
+            backgroundColor: 'rgba(0,0,0,0.8)',
+          }}>
+            <Text style={{ color: '#fff', fontSize: Typography.xs, fontVariant: ['tabular-nums'] }}>{fmt(labelSec)}</Text>
+          </View>
+        )}
         <View style={{ height: 3, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 2 }} />
         <View style={{ position: 'absolute', height: 3, backgroundColor: '#fff', borderRadius: 2, width: `${progress * 100}%` }} />
         <View style={{
-          position: 'absolute', width: 14, height: 14, borderRadius: 7,
-          backgroundColor: '#fff', top: '50%', marginTop: -7, marginLeft: -7,
+          position: 'absolute',
+          width: dragging ? 18 : 14, height: dragging ? 18 : 14, borderRadius: 9,
+          backgroundColor: '#fff', top: '50%',
+          marginTop: dragging ? -9 : -7, marginLeft: dragging ? -9 : -7,
           left: `${progress * 100}%` as any,
         }} />
       </View>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 }}>
-        <Text style={{ fontSize: Typography.xs, color: 'rgba(255,255,255,0.5)' }}>{fmt(positionSec)}</Text>
+        <Text style={{ fontSize: Typography.xs, color: 'rgba(255,255,255,0.5)' }}>{fmt(labelSec)}</Text>
         <Text style={{ fontSize: Typography.xs, color: 'rgba(255,255,255,0.5)' }}>{durationSec > 0 ? fmt(durationSec) : '--:--'}</Text>
       </View>
     </View>
   );
 };
+
+// ── Marquee title ─────────────────────────────────────────────────────────────
+// Keeps a title on a single line. If it's wider than the available width it scrolls
+// horizontally in a seamless loop (a duplicate copy fills the gap); otherwise it sits static.
+
+const MARQUEE_GAP         = 48;   // space between the repeated copies
+const MARQUEE_SPEED       = 45;   // px per second
+const MARQUEE_START_DELAY = 1200; // pause before each scroll so the start is readable
+
+function MarqueeText({ text, style }: { text: string; style: any }) {
+  const [containerW, setContainerW] = useState(0);
+  const [textW, setTextW]           = useState(0);
+  const x = useRef(new Animated.Value(0)).current;
+
+  const overflowing = textW > 0 && containerW > 0 && textW > containerW;
+
+  useEffect(() => {
+    x.setValue(0);
+    if (!overflowing) return;
+    const distance = textW + MARQUEE_GAP;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(MARQUEE_START_DELAY),
+        Animated.timing(x, {
+          toValue: -distance,
+          duration: (distance / MARQUEE_SPEED) * 1000,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [overflowing, textW, x]);
+
+  return (
+    <View onLayout={(e) => setContainerW(e.nativeEvent.layout.width)} style={{ width: '100%', overflow: 'hidden' }}>
+      {/* Invisible measurer — absolutely positioned so it sizes to its full content width
+          rather than being clamped (and truncated) to the container width. */}
+      <Text
+        numberOfLines={1}
+        onLayout={(e) => setTextW(Math.ceil(e.nativeEvent.layout.width))}
+        style={[style, { position: 'absolute', top: 0, left: 0, opacity: 0 }]}
+      >
+        {text}
+      </Text>
+
+      {overflowing ? (
+        <Animated.View style={{ flexDirection: 'row', alignSelf: 'flex-start', transform: [{ translateX: x }] }}>
+          <Text style={style}>{text}</Text>
+          <Text style={[style, { marginLeft: MARQUEE_GAP }]}>{text}</Text>
+        </Animated.View>
+      ) : (
+        <Text numberOfLines={1} style={style}>{text}</Text>
+      )}
+    </View>
+  );
+}
+
+// ── Feathered artwork ─────────────────────────────────────────────────────────
+// Softly fades the cover's edges so it blends into the blurred colour backdrop instead of
+// showing a hard border — handy for scanned covers that carry a white margin. A single
+// gradient only fades one axis, so two gradient masks are nested: their alphas multiply,
+// feathering all four edges at once.
+
+const ART_FEATHER = 0.015; // fraction of each edge that fades to transparent
+
+function FeatheredArt({ uri, cacheKey, style, onError }: {
+  uri: string; cacheKey?: string; style: any; onError: () => void;
+}) {
+  const mask = (horizontal: boolean) => (
+    <LinearGradient
+      colors={['transparent', 'black', 'black', 'transparent']}
+      end={horizontal ? { x: 1, y: 0 } : undefined}
+      locations={[0, ART_FEATHER, 1 - ART_FEATHER, 1]}
+      start={horizontal ? { x: 0, y: 0 } : undefined}
+      style={StyleSheet.absoluteFill}
+    />
+  );
+  return (
+    <MaskedView maskElement={mask(false)} style={style}>
+      <MaskedView maskElement={mask(true)} style={style}>
+        <Image contentFit="cover" onError={onError} source={{ uri, cacheKey }} style={style} />
+      </MaskedView>
+    </MaskedView>
+  );
+}
 
 // ── Queue item ────────────────────────────────────────────────────────────────
 
@@ -89,8 +259,8 @@ function QueueItem({ track, index, isCurrent, onPress }: {
     <Pressable
       onPress={onPress}
       style={({ pressed }) => ({
-        flexDirection: 'row', alignItems: 'center',
-        paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, gap: Spacing.md,
+        flexDirection: 'row', alignItems: 'center', height: QUEUE_ROW_HEIGHT,
+        paddingHorizontal: Spacing.lg, gap: Spacing.md,
         backgroundColor: isCurrent ? 'rgba(255,255,255,0.1)' : pressed ? 'rgba(255,255,255,0.05)' : 'transparent',
       })}
     >
@@ -193,13 +363,18 @@ export default function PlayerOverlay() {
   const s = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
 
-  const { track, shuffle, queue, queueIndex, togglePlayPause, next, prev, seekTo, toggleShuffle, skipToIndex } = usePlayer();
+  const { track, shuffle, queue, queueIndex, repeatMode, cycleRepeat, togglePlayPause, next, prev, seekTo, toggleShuffle, skipToIndex } = usePlayer();
   const { isPlaying, isBuffering, positionSec, durationSec } = usePlaybackStatus();
   const {
     isCasting, isGoogleCasting, googleCastDeviceName, googleCastTitle,
     castIsPlaying, castPositionSec, castDurationSec,
     castTogglePlayPause, castSeek, stopGoogleCast, showGoogleCastPicker,
   } = useCast();
+
+  // Skip/back are normally gated on having more than one track. On a cold reopen the native queue
+  // is still playing but the React queue hasn't rehydrated (empty) — keep the buttons live in that
+  // window rather than greying them, since next/prev fall back to the native queue.
+  const canSkip = queue.length > 1 || (queue.length === 0 && track != null);
 
   const activeIsPlaying   = isGoogleCasting ? castIsPlaying   : isPlaying;
   const activePositionSec = isGoogleCasting ? castPositionSec : positionSec;
@@ -222,13 +397,35 @@ export default function PlayerOverlay() {
   const overlayOpacity  = useRef(new Animated.Value(0)).current;
   const chevronNudge    = useRef(new Animated.Value(0)).current;
   const queueX          = useRef(new Animated.Value(0)).current; // 0 = artwork, -SCREEN_W = queue
+  const artScale        = useRef(new Animated.Value(1)).current; // 1 = playing, shrinks when paused
   const queueBaseX      = useRef(0);
   const queueShowingRef = useRef(false);
   const flatListRef     = useRef<FlatList<MusicTrack>>(null);
 
   const queuePanelX = queueX.interpolate({ inputRange: [-SCREEN_W, 0], outputRange: [0, SCREEN_W] });
-  const dotArtOpacity   = queueX.interpolate({ inputRange: [-SCREEN_W, 0], outputRange: [0.3, 0.8] });
-  const dotQueueOpacity = queueX.interpolate({ inputRange: [-SCREEN_W, 0], outputRange: [0.8, 0.3] });
+  // Drive the Artwork/Queue toggle: the active tab is bright, the inactive one dim, and they
+  // cross-fade as the panels swipe (queueX: 0 = artwork, -SCREEN_W = queue).
+  const artTabOpacity   = queueX.interpolate({ inputRange: [-SCREEN_W, 0], outputRange: [0.45, 1] });
+  const queueTabOpacity = queueX.interpolate({ inputRange: [-SCREEN_W, 0], outputRange: [1, 0.45] });
+
+  // Animate to a panel from a tap on the toggle (mirrors the swipe gesture's end state).
+  const goToPanel = (showQueue: boolean) => {
+    const target = showQueue ? -SCREEN_W : 0;
+    if (queueBaseX.current === target) return;
+    haptics.selection();
+    queueBaseX.current = target;
+    queueShowingRef.current = showQueue;
+    setQueueShowing(showQueue);
+    Animated.spring(queueX, { toValue: target, useNativeDriver: true, tension: 220, friction: 26 }).start();
+  };
+
+  // Artwork breathes with playback — full size while playing, shrinks slightly when paused.
+  useEffect(() => {
+    Animated.spring(artScale, {
+      toValue: activeIsPlaying ? 1 : 0.86,
+      useNativeDriver: true, tension: 120, friction: 9,
+    }).start();
+  }, [activeIsPlaying, artScale]);
 
   const artworkQueuePan = useRef(
     PanResponder.create({
@@ -289,10 +486,15 @@ export default function PlayerOverlay() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded]);
 
+  // Keep the current track pinned at a consistent spot (30% down) in the queue. Snap instantly
+  // when the queue first opens (no opening bounce), then animate smoothly as the track advances
+  // so it tracks to the same position. getItemLayout makes both exact, so there's no estimate/correct.
+  const queueScrolledOpen = useRef(false);
   useEffect(() => {
-    if (queueShowing && queue.length > 0) {
-      flatListRef.current?.scrollToIndex({ index: Math.max(0, queueIndex), animated: true, viewPosition: 0.3 });
-    }
+    if (!queueShowing || queue.length === 0) { queueScrolledOpen.current = false; return; }
+    const justOpened = !queueScrolledOpen.current;
+    queueScrolledOpen.current = true;
+    flatListRef.current?.scrollToIndex({ index: Math.max(0, queueIndex), animated: !justOpened, viewPosition: 0.3 });
   }, [queueShowing, queueIndex, queue.length]);
 
   useEffect(() => {
@@ -303,12 +505,16 @@ export default function PlayerOverlay() {
       setQueueShowing(false);
       return;
     }
-    const showQueue = !!track && !track.hasArtwork;
-    const target = showQueue ? -SCREEN_W : 0;
+    // Only the *queue* is ever forced: a track with no artwork has nothing to show on the artwork
+    // panel, so fall to the queue. Otherwise leave the user on whichever panel they're on — never
+    // yank them back to artwork on a track change (e.g. pressing next while viewing the queue).
+    const mustShowQueue = !!track && !track.hasArtwork;
+    if (!mustShowQueue && queueShowingRef.current) return;
+    const target = mustShowQueue ? -SCREEN_W : 0;
     queueX.setValue(target);
     queueBaseX.current = target;
-    queueShowingRef.current = showQueue;
-    setQueueShowing(showQueue);
+    queueShowingRef.current = mustShowQueue;
+    setQueueShowing(mustShowQueue);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded, track?.path]);
 
@@ -348,8 +554,8 @@ export default function PlayerOverlay() {
   // regardless of the app's light/dark theme.
 
   const isLocalTrack    = track?.path.startsWith('file://') || track?.path.startsWith('content://');
-  const artworkUrl      = track?.hasArtwork ? (isLocalTrack ? track.coverPath : getArtworkUrl(track.path, 512)) : null;
-  const artworkCacheKey = track?.hasArtwork && !isLocalTrack ? getArtworkCacheKey(track.path, 512) : undefined;
+  const artworkUrl      = track?.hasArtwork ? (isLocalTrack ? track.coverPath : getArtworkUrl(track.path, PLAYER_ART_SIZE)) : null;
+  const artworkCacheKey = track?.hasArtwork && !isLocalTrack ? getArtworkCacheKey(track.path, PLAYER_ART_SIZE) : undefined;
   const hasArt          = !!(artworkUrl && !artworkError);
   const title      = track ? getTrackTitle(track) : '';
   const artist     = track?.artist ?? '';
@@ -363,12 +569,32 @@ export default function PlayerOverlay() {
         {...dragPan.panHandlers}
         style={[s.overlay, { opacity: overlayOpacity, transform: [{ translateY: slideY }] }]}
       >
-        {/* Full-bleed blurred artwork background */}
+        {/* Full-bleed blurred artwork background — scaled up so its colour bleeds edge-to-edge */}
         {hasArt && (
-          <Image blurRadius={22} contentFit="cover" source={{ uri: artworkUrl!, cacheKey: artworkCacheKey }} style={StyleSheet.absoluteFill} />
+          <Image
+            blurRadius={28}
+            contentFit="cover"
+            source={{ uri: artworkUrl!, cacheKey: artworkCacheKey }}
+            style={[StyleSheet.absoluteFill, { transform: [{ scale: 1.3 }] }]}
+          />
         )}
-        {/* Dark scrim — always present so text is always legible */}
-        <View style={[StyleSheet.absoluteFill, s.scrim]} />
+        {/* Gradient scrim — dark at the top/bottom for legibility, but lets the artwork's
+            colour glow through the middle of the screen. Falls back to a flat dark wash
+            when there's no artwork to colour the background. */}
+        {hasArt ? (
+          <LinearGradient
+            colors={[
+              'rgba(0,0,0,0.55)',
+              'rgba(0,0,0,0.22)',
+              'rgba(0,0,0,0.28)',
+              'rgba(0,0,0,0.72)',
+            ]}
+            locations={[0, 0.34, 0.62, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        ) : (
+          <View style={[StyleSheet.absoluteFill, s.scrim]} />
+        )}
 
         {/* ── Casting-only state ── */}
         {!track && isGoogleCasting && (
@@ -397,6 +623,9 @@ export default function PlayerOverlay() {
                   <Ionicons color="rgba(255,255,255,0.55)" name="chevron-down" size={24} />
                 </Animated.View>
               </Pressable>
+              {queue.length > 1 && (
+                <Text style={s.queueInfo}>{queueIndex + 1} of {queue.length}</Text>
+              )}
             </View>
 
             {/* Artwork / Queue panels — swipe left to see queue, right to return */}
@@ -405,12 +634,14 @@ export default function PlayerOverlay() {
               {hasArt && (
                 <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ translateX: queueX }] }]}>
                   <View style={s.artworkWrap}>
-                    <Image
-                      contentFit="cover"
-                      onError={() => setArtworkError(true)}
-                      source={{ uri: artworkUrl!, cacheKey: artworkCacheKey }}
-                      style={s.artwork}
-                    />
+                    <Animated.View style={{ transform: [{ scale: artScale }] }}>
+                      <FeatheredArt
+                        cacheKey={artworkCacheKey}
+                        onError={() => setArtworkError(true)}
+                        style={s.artwork}
+                        uri={artworkUrl!}
+                      />
+                    </Animated.View>
                   </View>
                 </Animated.View>
               )}
@@ -425,20 +656,17 @@ export default function PlayerOverlay() {
                   contentContainerStyle={{ paddingVertical: Spacing.sm }}
                   data={queue}
                   keyExtractor={(_, idx) => String(idx)}
+                  getItemLayout={(_, index) => ({
+                    length: QUEUE_ROW_HEIGHT,
+                    offset: QUEUE_ROW_HEIGHT * index + Spacing.sm,
+                    index,
+                  })}
                   onScrollToIndexFailed={() => {}}
                   renderItem={({ item, index }) => (
                     <QueueItem
                       index={index}
                       isCurrent={index === queueIndex}
-                      onPress={() => {
-                        skipToIndex(index);
-                        if (hasArt) {
-                          queueBaseX.current = 0;
-                          queueShowingRef.current = false;
-                          setQueueShowing(false);
-                          Animated.spring(queueX, { toValue: 0, useNativeDriver: true, tension: 220, friction: 26 }).start();
-                        }
-                      }}
+                      onPress={() => skipToIndex(index)}
                       track={item}
                     />
                   )}
@@ -446,80 +674,42 @@ export default function PlayerOverlay() {
               </Animated.View>
             </View>
 
-            {/* Page dots — only when artwork is present */}
+            {/* Artwork / Queue toggle — tap or swipe to switch; only when artwork is present */}
             {hasArt && (
-              <View style={s.pageDotsRow}>
-                <Animated.View style={[s.pageDot, { opacity: dotArtOpacity }]} />
-                <Animated.View style={[s.pageDot, { opacity: dotQueueOpacity }]} />
+              <View style={s.segmentRow}>
+                <Pressable hitSlop={8} onPress={() => goToPanel(false)}>
+                  <Animated.View style={[s.segment, { opacity: artTabOpacity }]}>
+                    <Ionicons color="#fff" name="disc" size={14} />
+                    <Text style={s.segmentText}>Artwork</Text>
+                  </Animated.View>
+                </Pressable>
+                <Pressable hitSlop={8} onPress={() => goToPanel(true)}>
+                  <Animated.View style={[s.segment, { opacity: queueTabOpacity }]}>
+                    <Ionicons color="#fff" name="list" size={16} />
+                    <Text style={s.segmentText}>Queue</Text>
+                  </Animated.View>
+                </Pressable>
               </View>
             )}
 
             {/* Info + controls */}
             <View style={[s.bottom, { paddingBottom: Math.max(insets.bottom + Spacing.lg, Spacing.xxl) }]}>
 
-              {/* Title row */}
+              {/* Title row — full width, on its own */}
               <View style={s.titleRow}>
-                <View style={{ flex: 1 }}>
-                  <Text numberOfLines={2} style={s.title}>{title}</Text>
-                  {(artist || album) ? (
-                    <Text numberOfLines={1} style={s.artist}>{[artist, album].filter(Boolean).join(' · ')}</Text>
-                  ) : null}
-                  {folder ? (
-                    <View style={s.folderRow}>
-                      <Ionicons color="rgba(255,255,255,0.35)" name="folder-outline" size={11} style={{ marginRight: 3 }} />
-                      <Text numberOfLines={1} style={s.folder}>{folder}</Text>
-                    </View>
-                  ) : null}
-                </View>
-                <Pressable hitSlop={12} onPress={() => toggleLove(track.path)} style={({ pressed }) => [s.iconBtn, pressed && { opacity: 0.5 }]}>
-                  <Ionicons color={isLoved ? '#e05a7a' : 'rgba(255,255,255,0.6)'} name={isLoved ? 'heart' : 'heart-outline'} size={24} />
-                </Pressable>
-                <Pressable hitSlop={12} onPress={() => setMixtapeModalVisible(true)} style={({ pressed }) => [s.iconBtn, pressed && { opacity: 0.5 }]}>
-                  <Ionicons color={inMixtape ? colors.accent : 'rgba(255,255,255,0.6)'} name={inMixtape ? 'radio' : 'radio-outline'} size={24} />
-                </Pressable>
+                <MarqueeText style={s.title} text={title} />
+                {(artist || album) ? (
+                  <Text numberOfLines={1} style={s.artist}>{[artist, album].filter(Boolean).join(' · ')}</Text>
+                ) : null}
+                {folder ? (
+                  <View style={s.folderRow}>
+                    <Ionicons color="rgba(255,255,255,0.35)" name="folder-outline" size={11} style={{ marginRight: 3 }} />
+                    <Text numberOfLines={1} style={s.folder}>{folder}</Text>
+                  </View>
+                ) : null}
               </View>
 
-              {/* Progress */}
-              <ProgressBar durationSec={activeDurationSec} onSeek={activeSeek} positionSec={activePositionSec} />
-
-              {/* Transport controls */}
-              <View style={s.controls}>
-                <Pressable
-                  hitSlop={12}
-                  onPress={toggleShuffle}
-                  style={({ pressed }) => [{ opacity: pressed ? 0.5 : 1 }]}
-                >
-                  <Ionicons color={shuffle ? '#fff' : 'rgba(255,255,255,0.4)'} name="shuffle" size={22} />
-                </Pressable>
-
-                <Pressable
-                  disabled={queue.length <= 1}
-                  hitSlop={12}
-                  onPress={prev}
-                  style={({ pressed }) => [{ opacity: queue.length <= 1 ? 0.3 : pressed ? 0.5 : 1 }]}
-                >
-                  <Ionicons color="#fff" name="play-skip-back" size={34} />
-                </Pressable>
-
-                <Pressable onPress={activeTogglePlay} style={s.playBtn}>
-                  {isBuffering && !isGoogleCasting
-                    ? <ActivityIndicator color="#111" size="small" />
-                    : <Ionicons color="#111" name={activeIsPlaying ? 'pause' : 'play'} size={32} />}
-                </Pressable>
-
-                <Pressable
-                  disabled={queue.length <= 1}
-                  hitSlop={12}
-                  onPress={next}
-                  style={({ pressed }) => [{ opacity: queue.length <= 1 ? 0.3 : pressed ? 0.5 : 1 }]}
-                >
-                  <Ionicons color="#fff" name="play-skip-forward" size={34} />
-                </Pressable>
-
-                <CastButton style={{ width: 22, height: 22, tintColor: isCasting ? colors.accent : 'rgba(255,255,255,0.4)' }} />
-              </View>
-
-              {/* Tags */}
+              {/* Tags — sit just under the title/artist */}
               {(track.key || track.bpm != null || track.genre || track.year != null) && (
                 <View style={s.tagRow}>
                   {track.key && (
@@ -534,6 +724,67 @@ export default function PlayerOverlay() {
                 </View>
               )}
 
+              {/* Action row — shuffle / repeat (left) · love / mixtape / cast (right) */}
+              <View style={s.actionRow}>
+                <View style={s.actionRowLeft}>
+                  <Pressable hitSlop={12} onPress={() => { haptics.selection(); toggleShuffle(); }} style={({ pressed }) => [s.iconBtn, pressed && { opacity: 0.5 }]}>
+                    <Ionicons color={shuffle ? '#fff' : 'rgba(255,255,255,0.4)'} name="shuffle" size={22} />
+                  </Pressable>
+                  <Pressable hitSlop={12} onPress={() => { haptics.selection(); cycleRepeat(); }} style={({ pressed }) => [s.iconBtn, pressed && { opacity: 0.5 }]}>
+                    <MaterialCommunityIcons
+                      color={repeatMode === 'off' ? 'rgba(255,255,255,0.4)' : colors.accent}
+                      name={repeatMode === 'track' ? 'repeat-once' : repeatMode === 'queue' ? 'repeat' : 'repeat-off'}
+                      size={22}
+                    />
+                  </Pressable>
+                </View>
+                <View style={s.actionRowRight}>
+                  <Pressable hitSlop={12} onPress={() => { haptics.light(); toggleLove(track.path); }} style={({ pressed }) => [s.iconBtn, pressed && { opacity: 0.5 }]}>
+                    <Ionicons color={isLoved ? '#e05a7a' : 'rgba(255,255,255,0.6)'} name={isLoved ? 'heart' : 'heart-outline'} size={24} />
+                  </Pressable>
+                  <Pressable hitSlop={12} onPress={() => setMixtapeModalVisible(true)} style={({ pressed }) => [s.iconBtn, pressed && { opacity: 0.5 }]}>
+                    <Ionicons color={inMixtape ? colors.accent : 'rgba(255,255,255,0.6)'} name={inMixtape ? 'radio' : 'radio-outline'} size={24} />
+                  </Pressable>
+                  <CastButton style={{ width: 24, height: 24, tintColor: isCasting ? colors.accent : 'rgba(255,255,255,0.6)' }} />
+                </View>
+              </View>
+
+              {/* Progress */}
+              <ProgressBar durationSec={activeDurationSec} onSeek={activeSeek} positionSec={activePositionSec} />
+
+              {/* Transport controls */}
+              <View style={s.controls}>
+                {/* Spacer to keep the play button centered (shuffle moved to the action row) */}
+                <View style={{ width: 22, height: 22 }} />
+
+                <Pressable
+                  disabled={!canSkip}
+                  hitSlop={12}
+                  onPress={() => { haptics.skip(); prev(); }}
+                  style={({ pressed }) => [{ opacity: !canSkip ? 0.3 : pressed ? 0.5 : 1 }]}
+                >
+                  <Ionicons color="#fff" name="play-skip-back" size={34} />
+                </Pressable>
+
+                <Pressable onPress={() => { haptics.light(); activeTogglePlay(); }} style={s.playBtn}>
+                  {isBuffering && !isGoogleCasting
+                    ? <ActivityIndicator color="#111" size="small" />
+                    : <Ionicons color="#111" name={activeIsPlaying ? 'pause' : 'play'} size={32} />}
+                </Pressable>
+
+                <Pressable
+                  disabled={!canSkip}
+                  hitSlop={12}
+                  onPress={() => { haptics.skip(); next(); }}
+                  style={({ pressed }) => [{ opacity: !canSkip ? 0.3 : pressed ? 0.5 : 1 }]}
+                >
+                  <Ionicons color="#fff" name="play-skip-forward" size={34} />
+                </Pressable>
+
+                {/* Spacer to keep the play button centered (repeat moved to the action row) */}
+                <View style={{ width: 22, height: 22 }} />
+              </View>
+
               {/* Casting banner */}
               {isGoogleCasting && (
                 <Pressable onPress={stopGoogleCast} style={s.castBanner}>
@@ -543,10 +794,6 @@ export default function PlayerOverlay() {
                     {'  ·  '}<Text style={{ color: '#f85149' }}>Stop</Text>
                   </Text>
                 </Pressable>
-              )}
-
-              {queue.length > 1 && (
-                <Text style={s.queueInfo}>{queueIndex + 1} of {queue.length}</Text>
               )}
             </View>
           </View>
@@ -603,27 +850,30 @@ function makeStyles(c: ThemeColors) {
       justifyContent: 'center',
     },
 
-    pageDotsRow: { flexDirection: 'row', justifyContent: 'center', gap: 6, paddingBottom: Spacing.sm },
-    pageDot:     { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' },
+    segmentRow:  { flexDirection: 'row', justifyContent: 'center', gap: Spacing.sm, paddingBottom: Spacing.sm },
+    segment: {
+      flexDirection: 'row', alignItems: 'center', gap: 5,
+      paddingHorizontal: Spacing.md, paddingVertical: 6,
+      borderRadius: Radius.full, backgroundColor: 'rgba(255,255,255,0.12)',
+    },
+    segmentText: { fontSize: Typography.xs, color: '#fff', fontWeight: '600', letterSpacing: 0.3 },
     artwork: {
       width: ARTWORK_SIZE,
       height: ARTWORK_SIZE,
-      borderRadius: Radius.lg + 4,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 16 },
-      shadowOpacity: 0.7,
-      shadowRadius: 28,
-      elevation: 28,
+      borderRadius: 0,
     },
     // Bottom section — info, progress, controls
     bottom: { paddingHorizontal: Spacing.xl, paddingTop: Spacing.xs },
 
-    titleRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: Spacing.xl, gap: Spacing.md },
-    title:    { fontSize: Typography.xxl, fontWeight: '700', color: '#fff', marginBottom: Spacing.xs, letterSpacing: -0.3 },
+    titleRow: { marginBottom: Spacing.md },
+    title:    { fontSize: 21, fontWeight: '700', color: '#fff', marginBottom: Spacing.xs, letterSpacing: -0.3 },
     artist:   { fontSize: Typography.base, color: 'rgba(255,255,255,0.65)' },
     folderRow:{ flexDirection: 'row', alignItems: 'center', marginTop: Spacing.xs },
     folder:   { fontSize: Typography.xs, color: 'rgba(255,255,255,0.38)', flex: 1 },
-    iconBtn:  { padding: 4, marginTop: 2 },
+    actionRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
+    actionRowLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
+    actionRowRight:{ flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
+    iconBtn:  { padding: 4 },
 
     controls: {
       flexDirection: 'row',

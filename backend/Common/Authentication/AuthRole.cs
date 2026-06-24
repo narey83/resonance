@@ -1,4 +1,4 @@
-﻿// <copyright file="AuthRole.cs" company="JP Dillingham">
+// <copyright file="AuthRole.cs" company="JP Dillingham">
 //           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
 //     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
 //     █__ --█  █__ --█    ◄█  -  █

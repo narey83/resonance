@@ -1,4 +1,4 @@
-﻿// <copyright file="Random.cs" company="JP Dillingham">
+// <copyright file="Random.cs" company="JP Dillingham">
 //           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
 //     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
 //     █__ --█  █__ --█    ◄█  -  █

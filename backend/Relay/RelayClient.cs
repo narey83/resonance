@@ -1,4 +1,4 @@
-﻿// <copyright file="RelayClient.cs" company="JP Dillingham">
+// <copyright file="RelayClient.cs" company="JP Dillingham">
 //           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
 //     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
 //     █__ --█  █__ --█    ◄█  -  █

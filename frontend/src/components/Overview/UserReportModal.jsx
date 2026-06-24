@@ -463,14 +463,6 @@ const UserReportModal = ({ initialTab, onClose, seed, username }) => {
                   <span>{networkInfo.city}</span>
                 </span>
               )}
-              {networkInfo.isVpn !== null &&
-                networkInfo.isVpn !== undefined && (
-                  <span
-                    className={`user-report-vpn-badge${networkInfo.isVpn === 1 ? ' user-report-vpn-badge--yes' : ' user-report-vpn-badge--no'}`}
-                  >
-                    {networkInfo.isVpn === 1 ? 'VPN' : 'No VPN'}
-                  </span>
-                )}
             </>
           ) : null}
         </div>

@@ -41,6 +41,13 @@
     <Rule Id="S3241" Action="None" />
   </Rules>
   <Rules AnalyzerId="StyleCop.Analyzers" RuleNamespace="StyleCop.Analyzers">
+    <!-- Resonance carries two valid file-header variants: original files are
+         copyright John Narey; files derived from slskd retain JP Dillingham's
+         copyright (required by AGPL-3.0 section 7 / upstream license terms).
+         SA1633 still requires a header to be present; the two rules below
+         disable the single-template content/company match so both pass. -->
+    <Rule Id="SA1636" Action="None" />
+    <Rule Id="SA1638" Action="None" />
     <Rule Id="SA1008" Action="None" />
     <Rule Id="SA1009" Action="None" />
     <Rule Id="SA1101" Action="None" />

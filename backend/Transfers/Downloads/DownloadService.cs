@@ -163,6 +163,16 @@ namespace resonance.Transfers.Downloads
     /// </summary>
     public class DownloadService : IDownloadService
     {
+        private const int DownloadChunkSize = 50;
+        private const int MaxRejectionRetryDelayInMilliseconds = 600_000;
+
+        /// <summary>
+        ///     Rejection messages that indicate a transient, remote-side queue limit; transfers rejected with one of
+        ///     these messages are eligible for automatic re-enqueueing. Anything else ('Banned', 'File not shared.')
+        ///     is permanent and not worth retrying.
+        /// </summary>
+        private static readonly string[] TransientRejectionMessages = ["too many megabytes", "too many files", "queue full"];
+
         public DownloadService(
             IOptionsMonitor<Options> optionsMonitor,
             ISoulseekClient soulseekClient,
@@ -221,22 +231,11 @@ namespace resonance.Transfers.Downloads
         /// </summary>
         private ConcurrentDictionary<string, SemaphoreSlim> EnqueueSemaphores { get; } = [];
 
-        private const int DownloadChunkSize = 50;
-
         /// <summary>
         ///     Per-user queue of files deferred from large download requests. When fewer than DownloadChunkSize files
         ///     are active, the next file is dequeued and activated.
         /// </summary>
         private ConcurrentDictionary<string, ConcurrentQueue<(string Filename, long Size, string DestinationFolder)>> PendingQueues { get; } = new();
-
-        /// <summary>
-        ///     Rejection messages that indicate a transient, remote-side queue limit; transfers rejected with one of
-        ///     these messages are eligible for automatic re-enqueueing. Anything else ('Banned', 'File not shared.')
-        ///     is permanent and not worth retrying.
-        /// </summary>
-        private static readonly string[] TransientRejectionMessages = ["too many megabytes", "too many files", "queue full"];
-
-        private const int MaxRejectionRetryDelayInMilliseconds = 600_000;
 
         /// <summary>
         ///     Tracks how many times each file has been automatically re-enqueued following a transient rejection,

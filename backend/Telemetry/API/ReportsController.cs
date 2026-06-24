@@ -889,6 +889,7 @@ public class ReportsController : ControllerBase
     /// <summary>
     ///     Gets a day-of-week by hour-of-day (UTC) heatmap of successful transfer activity.
     /// </summary>
+    /// <returns></returns>
     [HttpGet("transfers/heatmap")]
     [Authorize(Policy = AuthPolicy.Any)]
     [ProducesResponseType(typeof(List<HeatmapCell>), 200)]
@@ -933,6 +934,7 @@ public class ReportsController : ControllerBase
     /// <summary>
     ///     Gets the top countries by upload volume plus VPN usage among active peers.
     /// </summary>
+    /// <returns></returns>
     [HttpGet("transfers/geography")]
     [Authorize(Policy = AuthPolicy.Any)]
     [ProducesResponseType(typeof(GeographyReport), 200)]
@@ -971,6 +973,7 @@ public class ReportsController : ControllerBase
     /// <summary>
     ///     Gets the distribution of terminal download transfers by number of attempts.
     /// </summary>
+    /// <returns></returns>
     [HttpGet("transfers/retries")]
     [Authorize(Policy = AuthPolicy.Any)]
     [ProducesResponseType(typeof(List<RetryBucket>), 200)]
@@ -1003,6 +1006,7 @@ public class ReportsController : ControllerBase
     /// <summary>
     ///     Gets distribution statistics for how long peers waited in the upload queue.
     /// </summary>
+    /// <returns></returns>
     [HttpGet("transfers/queue-wait")]
     [Authorize(Policy = AuthPolicy.Any)]
     [ProducesResponseType(typeof(QueueWaitStats), 200)]
@@ -1035,6 +1039,7 @@ public class ReportsController : ControllerBase
     /// <summary>
     ///     Gets the count of new versus returning peers active within the window.
     /// </summary>
+    /// <returns></returns>
     [HttpGet("transfers/peers")]
     [Authorize(Policy = AuthPolicy.Any)]
     [ProducesResponseType(typeof(PeerRetention), 200)]
@@ -1067,6 +1072,7 @@ public class ReportsController : ControllerBase
     /// <summary>
     ///     Gets the number of distinct shared files that have ever been uploaded (catalog reach).
     /// </summary>
+    /// <returns></returns>
     [HttpGet("transfers/coverage")]
     [Authorize(Policy = AuthPolicy.Any)]
     [ProducesResponseType(typeof(CoverageReport), 200)]
@@ -1087,6 +1093,7 @@ public class ReportsController : ControllerBase
     /// <summary>
     ///     Gets counts of social / discovery events (browses, private messages, room messages, mentions).
     /// </summary>
+    /// <returns></returns>
     [HttpGet("social")]
     [Authorize(Policy = AuthPolicy.Any)]
     [ProducesResponseType(typeof(SocialActivity), 200)]

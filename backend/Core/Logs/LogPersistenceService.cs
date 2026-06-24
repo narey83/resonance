@@ -1,13 +1,9 @@
-// <copyright file="LogPersistenceService.cs" company="JP Dillingham">
-//           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
-//     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
-//     █__ --█  █__ --█    ◄█  -  █
-//     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
+// <copyright file="LogPersistenceService.cs" company="John Narey">
+//    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
+//   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
-//   │ Copyright (c) JP Dillingham.
 //   │ Copyright (c) 2026 John Narey.
-//   │ Modified as part of Resonance, a modified version of slskd;
-//   │ see the project repository for the nature of the changes.
+//   │ Part of Resonance, a Soulseek client based on slskd.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -25,10 +21,8 @@
 //   │ of the AGPLv3.  See the LICENSE file in the root directory of this
 //   │ project for the complete terms and conditions.
 //   │
-//   │ https://slskd.org
-//   │
 //   ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ╌ ╌╌╌╌ ╌
-//   │ SPDX-FileCopyrightText: JP Dillingham
+//   │ SPDX-FileCopyrightText: John Narey
 //   │ SPDX-License-Identifier: AGPL-3.0-only
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
@@ -54,7 +48,7 @@ public class LogPersistenceService : BackgroundService
         SingleReader = true,
     };
 
-    private readonly Channel<LogRecord> _channel = Channel.CreateBounded<LogRecord>(ChannelOptions);
+    private readonly Channel<LogRecord> channel = Channel.CreateBounded<LogRecord>(ChannelOptions);
 
     public LogPersistenceService(IDbContextFactory<LogsDbContext> dbContextFactory, IOptionsMonitor<resonance.Options> options)
     {
@@ -75,7 +69,7 @@ public class LogPersistenceService : BackgroundService
     public override Task StopAsync(CancellationToken cancellationToken)
     {
         Program.LogEmitted -= OnLogEmitted;
-        _channel.Writer.TryComplete();
+        channel.Writer.TryComplete();
         return base.StopAsync(cancellationToken);
     }
 
@@ -86,12 +80,14 @@ public class LogPersistenceService : BackgroundService
         var batch = new List<LogEntry>(50);
         var lastRetention = DateTime.UtcNow;
 
-        await foreach (var record in _channel.Reader.ReadAllAsync(stoppingToken))
+        await foreach (var record in channel.Reader.ReadAllAsync(stoppingToken))
         {
             batch.Add(ToEntry(record));
 
-            while (batch.Count < 50 && _channel.Reader.TryRead(out var next))
+            while (batch.Count < 50 && channel.Reader.TryRead(out var next))
+            {
                 batch.Add(ToEntry(next));
+            }
 
             try
             {
@@ -116,7 +112,7 @@ public class LogPersistenceService : BackgroundService
 
     private void OnLogEmitted(object _, LogRecord record)
     {
-        _channel.Writer.TryWrite(record);
+        channel.Writer.TryWrite(record);
     }
 
     private async Task RunRetentionAsync()
@@ -124,7 +120,9 @@ public class LogPersistenceService : BackgroundService
         var days = Options.CurrentValue.Retention.Logs;
 
         if (days <= 0)
+        {
             return;
+        }
 
         var cutoff = DateTime.UtcNow.AddDays(-days);
 
@@ -136,7 +134,9 @@ public class LogPersistenceService : BackgroundService
                 .ExecuteDeleteAsync();
 
             if (deleted > 0)
+            {
                 Log.Information("Deleted {Count} log entries older than {Days} days", deleted, days);
+            }
         }
         catch (Exception ex)
         {

@@ -1,4 +1,5 @@
 import './Tags.css';
+import MetadataLookup from '../MetadataLookup/MetadataLookup';
 import TagEditor from '../TagEditor/TagEditor';
 import TagSanitization from '../TagSanitization/TagSanitization';
 import React, { useState } from 'react';
@@ -23,9 +24,18 @@ const Tags = () => {
         >
           Sanitize
         </button>
+        <button
+          className={`tag-manager-tab${tab === 'lookup' ? ' tag-manager-tab--active' : ''}`}
+          onClick={() => setTab('lookup')}
+          type="button"
+        >
+          Online lookup
+        </button>
       </div>
       <div className="tag-manager-content">
-        {tab === 'editor' ? <TagEditor /> : <TagSanitization />}
+        {tab === 'editor' && <TagEditor />}
+        {tab === 'sanitize' && <TagSanitization />}
+        {tab === 'lookup' && <MetadataLookup />}
       </div>
     </div>
   );

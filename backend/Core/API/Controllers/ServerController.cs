@@ -37,6 +37,10 @@ using Microsoft.Extensions.Options;
 
 namespace resonance.Core.API
 {
+    using System;
+    using System.Net.Http;
+    using System.Text.RegularExpressions;
+    using System.Threading;
     using System.Threading.Tasks;
     using Asp.Versioning;
     using Microsoft.AspNetCore.Authorization;
@@ -59,10 +63,12 @@ namespace resonance.Core.API
             ConnectionWatchdog connectionWatchdog,
             IOptionsSnapshot<Options> optionsSnapshot,
             IStateSnapshot<State> stateSnapshot,
-            IStateMutator<State> stateMutator)
+            IStateMutator<State> stateMutator,
+            IHttpClientFactory httpClientFactory)
         {
             Client = soulseekClient;
             ConnectionWatchdog = connectionWatchdog;
+            HttpClientFactory = httpClientFactory;
             OptionsSnapshot = optionsSnapshot;
             StateSnapshot = stateSnapshot;
             StateMutator = stateMutator;
@@ -70,6 +76,7 @@ namespace resonance.Core.API
 
         private ISoulseekClient Client { get; }
         private ConnectionWatchdog ConnectionWatchdog { get; }
+        private IHttpClientFactory HttpClientFactory { get; }
         private IOptionsSnapshot<Options> OptionsSnapshot { get; }
         private IStateSnapshot<State> StateSnapshot { get; }
         private IStateMutator<State> StateMutator { get; }
@@ -213,10 +220,65 @@ namespace resonance.Core.API
             });
         }
 
+        /// <summary>
+        ///     Checks whether the configured listening port is reachable from the internet, using the
+        ///     Soulseek network's public port test service (slsknet.org).
+        /// </summary>
+        /// <returns></returns>
+        [HttpGet("port-check")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(typeof(PortCheckResponse), 200)]
+        [ProducesResponseType(502)]
+        public async Task<IActionResult> CheckPort(CancellationToken cancellationToken)
+        {
+            var port = OptionsSnapshot.Value.Soulseek.ListenPort;
+
+            try
+            {
+                using var http = HttpClientFactory.CreateClient();
+                http.Timeout = TimeSpan.FromSeconds(15);
+
+                var html = await http.GetStringAsync(
+                    $"https://www.slsknet.org/porttest.php?port={port}",
+                    cancellationToken);
+
+                // the page reports a line like: "IP: 1.2.3.4 Port: 2234/tcp OPEN" (or CLOSED)
+                var match = Regex.Match(
+                    html,
+                    $@"Port:\s*{port}/tcp\s*(?<status>OPEN|CLOSED)",
+                    RegexOptions.IgnoreCase);
+
+                if (!match.Success)
+                {
+                    return StatusCode(StatusCodes.Status502BadGateway, new { error = "Unexpected response from the port test service." });
+                }
+
+                return Ok(new PortCheckResponse
+                {
+                    Port = port,
+                    IsOpen = match.Groups["status"].Value.Equals("OPEN", StringComparison.OrdinalIgnoreCase),
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status502BadGateway, new { error = $"Failed to reach the port test service: {ex.Message}" });
+            }
+        }
+
         public record SetStatusRequest
         {
             public string Presence { get; init; }
             public string Description { get; init; }
+        }
+
+        public record PortCheckResponse
+        {
+            public int Port { get; init; }
+            public bool IsOpen { get; init; }
         }
     }
 }

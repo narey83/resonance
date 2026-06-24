@@ -1,13 +1,9 @@
-// <copyright file="YtDlpService.cs" company="JP Dillingham">
-//           ▄▄▄▄     ▄▄▄▄     ▄▄▄▄
-//     ▄▄▄▄▄▄█  █▄▄▄▄▄█  █▄▄▄▄▄█  █
-//     █__ --█  █__ --█    ◄█  -  █
-//     █▄▄▄▄▄█▄▄█▄▄▄▄▄█▄▄█▄▄█▄▄▄▄▄█
+// <copyright file="YtDlpService.cs" company="John Narey">
+//    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
+//   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
-//   │ Copyright (c) JP Dillingham.
 //   │ Copyright (c) 2026 John Narey.
-//   │ Modified as part of Resonance, a modified version of slskd;
-//   │ see the project repository for the nature of the changes.
+//   │ Part of Resonance, a Soulseek client based on slskd.
 //   │
 //   │ This program is free software: you can redistribute it and/or modify
 //   │ it under the terms of the GNU Affero General Public License as published
@@ -25,10 +21,8 @@
 //   │ of the AGPLv3.  See the LICENSE file in the root directory of this
 //   │ project for the complete terms and conditions.
 //   │
-//   │ https://slskd.org
-//   │
 //   ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ╌ ╌╌╌╌ ╌
-//   │ SPDX-FileCopyrightText: JP Dillingham
+//   │ SPDX-FileCopyrightText: John Narey
 //   │ SPDX-License-Identifier: AGPL-3.0-only
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
@@ -59,6 +53,8 @@ using Serilog;
 
 public sealed class YtDlpService : IYtDlpService, IDisposable
 {
+    private const int EventBufferMax = 500;
+
     private static readonly ILogger Log = Serilog.Log.ForContext<YtDlpService>();
 
     private readonly IOptionsMonitor<resonance.Options> options;
@@ -72,7 +68,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     private readonly ConcurrentDictionary<Guid, YtDlpJob> jobs = new();
     private readonly ConcurrentDictionary<Guid, Process> processes = new();
     private readonly ConcurrentQueue<YtDlpEvent> eventBuffer = new();
-    private const int EventBufferMax = 500;
     private SemaphoreSlim workerSlots;
     private CancellationTokenSource cts = new();
     private string? jsRuntimeArg;
@@ -108,7 +103,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         {
             Log.Warning("YtDlp: no JS runtime found — some YouTube videos may fail to download");
         }
-
 
         // The staging root lives inside the shared/library music tree, so register it as a
         // system-managed share exclusion and keep the library scanner away from partial files
@@ -1719,6 +1713,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         {
             args.Append($" --ffmpeg-location \"{ffmpegLocation}\"");
         }
+
         if (jsRuntimeArg != null)
         {
             args.Append($" {jsRuntimeArg}");
@@ -1929,7 +1924,14 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
     public void Dispose()
     {
-        try { cts.Cancel(); } catch (ObjectDisposedException) { }
+        try
+        {
+            cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
         cts.Dispose();
         workerSlots?.Dispose();
     }
