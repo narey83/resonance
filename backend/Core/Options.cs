@@ -1468,6 +1468,22 @@ namespace resonance
             public bool WriteToTags { get; init; } = true;
 
             /// <summary>
+            ///     Gets the lower bound (inclusive) of the preferred BPM range used for octave folding.
+            ///     Detected tempi below this are doubled (and above <see cref="MaxBpm"/> are halved) to
+            ///     correct half-/double-time errors. Set <see cref="MinBpm"/> to 0 to disable folding.
+            ///     The default 88–176 spans one octave, suited to most dance/electronic music.
+            /// </summary>
+            [Range(0, 400)]
+            public double MinBpm { get; init; } = 88;
+
+            /// <summary>
+            ///     Gets the upper bound (exclusive) of the preferred BPM range used for octave folding.
+            ///     See <see cref="MinBpm"/>.
+            /// </summary>
+            [Range(0, 800)]
+            public double MaxBpm { get; init; } = 176;
+
+            /// <summary>
             ///     Gets an optional custom path to the ffmpeg binary. Defaults to 'ffmpeg' on PATH.
             /// </summary>
             public string FfmpegPath { get; init; } = "ffmpeg";

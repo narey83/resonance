@@ -219,7 +219,9 @@ namespace resonance.BpmAnalysis
                                 detectedBpm = BpmDetector.ReadBpmFromTags(track.OriginalFilename);
                                 if (detectedBpm == null && ffmpegPath != null)
                                 {
-                                    detectedBpm = await BpmDetector.DetectBpmFromAudioAsync(track.OriginalFilename, ffmpegPath, ct);
+                                    var bpmOpts = Options.CurrentValue.BpmAnalysis;
+                                    detectedBpm = await BpmDetector.DetectBpmFromAudioAsync(
+                                        track.OriginalFilename, ffmpegPath, ct, bpmOpts.MinBpm, bpmOpts.MaxBpm);
                                 }
                             }
 

@@ -84,7 +84,9 @@ namespace resonance.BpmAnalysis
         public static async Task<uint?> DetectBpmFromAudioAsync(
             string filePath,
             string ffmpegBinary = "ffmpeg",
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            double minBpm = 88,
+            double maxBpm = 176)
         {
             var samples = await DecodePcmAsync(filePath, ffmpegBinary, cancellationToken);
             if (samples == null || samples.Length < WindowSize * 4)
@@ -98,7 +100,34 @@ namespace resonance.BpmAnalysis
                 return null;
             }
 
-            return EstimateBpm(df);
+            return EstimateBpm(df, minBpm, maxBpm);
+        }
+
+        /// <summary>
+        ///     Folds a tempo into the half-open preferred range [minBpm, maxBpm) by repeatedly doubling
+        ///     or halving, correcting half-/double-time octave errors. Folding is disabled (returns the
+        ///     input unchanged) when the range is invalid (minBpm &lt;= 0 or maxBpm &lt; 2*minBpm), since a
+        ///     window narrower than one octave cannot fold unambiguously. Exposed for testing.
+        /// </summary>
+        /// <returns>The octave-folded tempo.</returns>
+        public static double FoldOctave(double bpm, double minBpm, double maxBpm)
+        {
+            if (bpm <= 0 || minBpm <= 0 || maxBpm < minBpm * 2)
+            {
+                return bpm;
+            }
+
+            while (bpm < minBpm)
+            {
+                bpm *= 2;
+            }
+
+            while (bpm >= maxBpm)
+            {
+                bpm /= 2;
+            }
+
+            return bpm;
         }
 
         // ── PCM decoding via ffmpeg ───────────────────────────────────────────
@@ -212,7 +241,7 @@ namespace resonance.BpmAnalysis
         }
 
         // ── BPM estimation (TempoTrackV2::calculateBeatPeriod + Viterbi) ─────
-        private static uint? EstimateBpm(double[] df)
+        private static uint? EstimateBpm(double[] df, double minBpm, double maxBpm)
         {
             // Zero-phase Butterworth LP filter smooths high-frequency noise in the DF
             FilterDf(df);
@@ -244,13 +273,14 @@ namespace resonance.BpmAnalysis
                 return null;
             }
 
-            // Convert beat periods (in onset-frame units) to BPM and take the median
+            // Convert beat periods (in onset-frame units) to BPM, fold each into the preferred
+            // octave (so consistent half-/double-time paths collapse to one band), then take the median
             var tempi = new List<double>(bestPath.Length);
             foreach (var bp in bestPath)
             {
                 if (bp > 0)
                 {
-                    tempi.Add((60.0 * SampleRate / StepSize) / bp);
+                    tempi.Add(FoldOctave((60.0 * SampleRate / StepSize) / bp, minBpm, maxBpm));
                 }
             }
 
