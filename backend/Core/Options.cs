@@ -1444,6 +1444,25 @@ namespace resonance
             ///     Gets an optional custom path to the ffmpeg binary. Defaults to 'ffmpeg' on PATH.
             /// </summary>
             public string FfmpegPath { get; init; } = "ffmpeg";
+
+            /// <summary>
+            ///     Gets the key-detection engine: 'essentia' (Essentia's profile-based detector via a
+            ///     Python subprocess — roughly 2x the accuracy on electronic music) or 'builtin' (the
+            ///     in-house Queen Mary / Krumhansl detector).
+            /// </summary>
+            public string Engine { get; init; } = "essentia";
+
+            /// <summary>
+            ///     Gets the path to the Python interpreter (a venv with Essentia installed) used by the
+            ///     'essentia' engine. The Docker image provisions this at /opt/keyenv.
+            /// </summary>
+            public string EssentiaPython { get; init; } = "/opt/keyenv/bin/python";
+
+            /// <summary>
+            ///     Gets the Essentia key profile: 'edma' (electronic dance music, recommended),
+            ///     'krumhansl', 'temperley', or 'bgate'.
+            /// </summary>
+            public string EssentiaProfile { get; init; } = "edma";
         }
 
         /// <summary>

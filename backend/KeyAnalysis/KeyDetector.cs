@@ -33,6 +33,7 @@ namespace resonance.KeyAnalysis
     using System.Collections.Generic;
     using System.Diagnostics;
     using System.IO;
+    using System.Linq;
     using System.Numerics;
     using System.Threading;
     using System.Threading.Tasks;
@@ -182,6 +183,78 @@ namespace resonance.KeyAnalysis
             }
 
             return DetectKey(samples);
+        }
+
+        // Essentia key detection (run as a Python subprocess). Returns the key in the same
+        // sharp notation as the built-in detector (e.g. "Am", "C#"), or null on failure.
+        private const string EssentiaScript =
+            "import sys\n" +
+            "import essentia.standard as es\n" +
+            "_S={'Db':'C#','Eb':'D#','Gb':'F#','Ab':'G#','Bb':'A#'}\n" +
+            "a=es.MonoLoader(filename=sys.argv[1], sampleRate=44100)()\n" +
+            "k,scale,_=es.KeyExtractor(profileType=sys.argv[2])(a)\n" +
+            "print(_S.get(k,k)+('m' if scale=='minor' else ''))\n";
+
+        /// <summary>
+        ///     Detects the musical key by invoking Essentia's <c>KeyExtractor</c> via a Python
+        ///     subprocess. More accurate than the built-in detector on electronic music; requires a
+        ///     Python interpreter with Essentia installed (see <c>KeyAnalysis.EssentiaPython</c>).
+        /// </summary>
+        /// <returns>The detected key in sharp notation, or null on failure.</returns>
+        public static async Task<string> DetectKeyViaEssentiaAsync(
+            string filePath,
+            string pythonPath,
+            string profile,
+            CancellationToken cancellationToken = default)
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = string.IsNullOrWhiteSpace(pythonPath) ? "python3" : pythonPath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            psi.ArgumentList.Add("-c");
+            psi.ArgumentList.Add(EssentiaScript);
+            psi.ArgumentList.Add(filePath);
+            psi.ArgumentList.Add(string.IsNullOrWhiteSpace(profile) ? "edma" : profile);
+
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+            using var proc = new Process { StartInfo = psi };
+
+            try
+            {
+                proc.Start();
+                var stdoutTask = proc.StandardOutput.ReadToEndAsync(linkedCts.Token);
+                var stderrTask = proc.StandardError.ReadToEndAsync(linkedCts.Token);
+                await proc.WaitForExitAsync(linkedCts.Token);
+                var stdout = await stdoutTask;
+                _ = await stderrTask; // drained to avoid a full-pipe deadlock
+
+                if (proc.ExitCode != 0)
+                {
+                    return null;
+                }
+
+                var line = stdout
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .LastOrDefault();
+                return string.IsNullOrWhiteSpace(line) ? null : line;
+            }
+            catch (OperationCanceledException)
+            {
+                try
+                {
+                    proc.Kill(entireProcessTree: true);
+                }
+                catch
+                { /* ignored */
+                }
+
+                return null;
+            }
         }
 
         // ── PCM decoding ──────────────────────────────────────────────────────

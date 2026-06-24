@@ -250,9 +250,12 @@ namespace resonance.KeyAnalysis
                             {
                                 // try existing tag first; fall back to audio analysis
                                 detectedKey = KeyDetector.ReadKeyFromTags(track.OriginalFilename);
-                                if (string.IsNullOrEmpty(detectedKey) && ffmpegPath != null)
+                                if (string.IsNullOrEmpty(detectedKey))
                                 {
-                                    detectedKey = await KeyDetector.DetectKeyFromAudioAsync(track.OriginalFilename, ffmpegPath, ct);
+                                    var keyOpts = Options.CurrentValue.KeyAnalysis;
+                                    detectedKey = keyOpts.Engine == "essentia"
+                                        ? await KeyDetector.DetectKeyViaEssentiaAsync(track.OriginalFilename, keyOpts.EssentiaPython, keyOpts.EssentiaProfile, ct)
+                                        : ffmpegPath != null ? await KeyDetector.DetectKeyFromAudioAsync(track.OriginalFilename, ffmpegPath, ct) : null;
                                 }
                             }
 
