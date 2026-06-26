@@ -33,6 +33,7 @@ namespace resonance.TagSanitization
     using System.Collections.Generic;
     using System.IO;
     using System.Linq;
+    using resonance.Common;
     using resonance.KeyAnalysis;
 
     /// <summary>
@@ -56,7 +57,16 @@ namespace resonance.TagSanitization
         // ID3 tagging is only meaningful for these containers
         private static readonly HashSet<string> Id3Extensions = new(StringComparer.OrdinalIgnoreCase)
         {
-            "mp3", "aiff", "aif", "wav",
+            "mp3", "aiff", "aif",
+        };
+
+        // RIFF (little-endian) containers handled with targeted byte surgery. TagLib cannot
+        // reliably rewrite or remove a malformed/empty `id3 ` chunk inside a WAV — Save() leaves
+        // the original chunk in place — so a phantom tag is re-detected on every scan. We strip
+        // it directly instead. (AIFF stays on the generic ID3 path; no breakage observed there.)
+        private static readonly HashSet<string> RiffExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "wav",
         };
 
         // These formats use Xiph/VorbisComment exclusively; any ID3 or APE block is non-standard
@@ -78,13 +88,19 @@ namespace resonance.TagSanitization
             var directory = Path.GetFileName(Path.GetDirectoryName(filePath)) ?? string.Empty;
             var ext = GetExtension(filePath);
 
-            if (!Id3Extensions.Contains(ext) && !XiphExtensions.Contains(ext))
+            if (!Id3Extensions.Contains(ext) && !XiphExtensions.Contains(ext) && !RiffExtensions.Contains(ext))
             {
                 return Clean(maskedFilename, filename, directory);
             }
 
             try
             {
+                if (RiffExtensions.Contains(ext))
+                {
+                    var rChanges = AnalyseRiffId3(filePath);
+                    return new(maskedFilename, filename, directory, rChanges.Count > 0, [.. rChanges]);
+                }
+
                 using var file = TagLib.File.Create(filePath, TagLib.ReadStyle.None);
                 var changes = XiphExtensions.Contains(ext)
                     ? BuildXiphChangeList(file)
@@ -108,10 +124,13 @@ namespace resonance.TagSanitization
             var directory = Path.GetFileName(Path.GetDirectoryName(filePath)) ?? string.Empty;
             var ext = GetExtension(filePath);
 
-            if (!Id3Extensions.Contains(ext) && !XiphExtensions.Contains(ext))
+            if (!Id3Extensions.Contains(ext) && !XiphExtensions.Contains(ext) && !RiffExtensions.Contains(ext))
             {
                 return Clean(maskedFilename, filename, directory);
             }
+
+            // Serialize against other tag writers touching this same file (see FileWriteLock).
+            using var fileLock = FileWriteLock.Acquire(filePath);
 
             try
             {
@@ -150,20 +169,37 @@ namespace resonance.TagSanitization
                     return new(maskedFilename, filename, directory, xChanges.Count > 0, [.. xChanges]);
                 }
 
-                using var id3File = TagLib.File.Create(filePath, TagLib.ReadStyle.None);
-                var changes = BuildChangeList(id3File, dryRun: false);
-                if (changes.Count > 0)
+                if (RiffExtensions.Contains(ext))
                 {
-                    id3File.Save();
+                    var rChanges = ConsolidateRiffId3(filePath);
+                    return new(maskedFilename, filename, directory, rChanges.Count > 0, [.. rChanges]);
+                }
 
-                    // Verify the write persisted by re-reading the raw ID3v2 version byte.
-                    // TagLib's Save() can silently no-op when the tag isn't marked dirty
-                    // (e.g. version-only changes in some library states).
-                    if (!VerifyId3v2Version(filePath, expectedVersion: 3))
+                List<string> changes;
+                using (var id3File = TagLib.File.Create(filePath, TagLib.ReadStyle.None))
+                {
+                    changes = BuildChangeList(id3File, dryRun: false);
+                    if (changes.Count > 0)
                     {
-                        return Error(maskedFilename, filename, directory,
-                            "Save appeared to succeed but ID3v2.3 version did not persist on disk");
+                        id3File.Save();
+
+                        // Verify the write persisted by re-reading the raw ID3v2 version byte.
+                        // TagLib's Save() can silently no-op when the tag isn't marked dirty
+                        // (e.g. version-only changes in some library states).
+                        if (!VerifyId3v2Version(filePath, expectedVersion: 3))
+                        {
+                            return Error(maskedFilename, filename, directory,
+                                "Save appeared to succeed but ID3v2.3 version did not persist on disk");
+                        }
                     }
+                }
+
+                // TagLib's MPEG Save() does not reliably strip the trailing ID3v1 TAG block even
+                // after RemoveTags(Id3v1), so HasPhysicalId3v1Block keeps re-flagging the file on
+                // every scan. Enforce removal directly once the TagLib handle is closed.
+                if (changes.Count > 0 && HasPhysicalId3v1Block(filePath))
+                {
+                    StripTrailingId3v1(filePath);
                 }
 
                 return new(maskedFilename, filename, directory, changes.Count > 0, [.. changes]);
@@ -337,6 +373,222 @@ namespace resonance.TagSanitization
             {
                 fs.SetLength(fs.Length - 128);
             }
+        }
+
+        // ── RIFF/WAV ID3 handling ─────────────────────────────────────────────
+        // WAV files in the wild carry appended (often stacked, malformed) `id3 ` chunks that
+        // TagLib surfaces as a phantom, empty ID3v2 tag it cannot rewrite. We strip such empty
+        // chunks via byte surgery; files with real ID3 frames fall through to the generic path.
+        private static List<string> AnalyseRiffId3(string filePath)
+        {
+            var changes = new List<string>();
+            var frameCount = ReadRiffId3FrameCount(filePath, out var hasId3);
+            if (!hasId3)
+            {
+                return changes;
+            }
+
+            if (frameCount == 0)
+            {
+                if (TryStripTrailingRiffId3(filePath, dryRun: true, out var bytes))
+                {
+                    changes.Add($"Would remove non-canonical empty ID3 chunk ({bytes} bytes) from WAV");
+                }
+
+                // Unlocatable phantom tag: report nothing so the file stops re-appearing.
+                return changes;
+            }
+
+            // Real ID3 frames present — report the same consolidation the generic path performs.
+            using var file = TagLib.File.Create(filePath, TagLib.ReadStyle.None);
+            changes.AddRange(BuildChangeList(file, dryRun: true));
+            return changes;
+        }
+
+        private static List<string> ConsolidateRiffId3(string filePath)
+        {
+            var changes = new List<string>();
+            var frameCount = ReadRiffId3FrameCount(filePath, out var hasId3);
+            if (!hasId3)
+            {
+                return changes;
+            }
+
+            if (frameCount == 0)
+            {
+                if (TryStripTrailingRiffId3(filePath, dryRun: false, out var bytes))
+                {
+                    changes.Add($"Removed non-canonical empty ID3 chunk ({bytes} bytes) from WAV");
+                }
+
+                return changes;
+            }
+
+            using (var file = TagLib.File.Create(filePath, TagLib.ReadStyle.None))
+            {
+                changes.AddRange(BuildChangeList(file, dryRun: false));
+                if (changes.Count > 0)
+                {
+                    file.Save();
+                }
+            }
+
+            return changes;
+        }
+
+        private static int ReadRiffId3FrameCount(string filePath, out bool hasId3)
+        {
+            using var file = TagLib.File.Create(filePath, TagLib.ReadStyle.None);
+            if (file.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag tag)
+            {
+                hasId3 = true;
+                return tag.GetFrames().Count();
+            }
+
+            hasId3 = false;
+            return 0;
+        }
+
+        // Locates an appended `id3 ` chunk region at the tail of a RIFF/WAV and (unless dryRun)
+        // strips it, repairing the `data` and `RIFF` size fields. Bails on anything unexpected.
+        private static bool TryStripTrailingRiffId3(string filePath, bool dryRun, out int removedBytes)
+        {
+            removedBytes = 0;
+            var access = dryRun ? FileAccess.Read : FileAccess.ReadWrite;
+            using var fs = File.Open(filePath, FileMode.Open, access);
+            var n = fs.Length;
+            if (n < 44)
+            {
+                return false;
+            }
+
+            Span<byte> head = stackalloc byte[12];
+            fs.Position = 0;
+            fs.ReadExactly(head);
+            if (head[0] != 'R' || head[1] != 'I' || head[2] != 'F' || head[3] != 'F'
+                || head[8] != 'W' || head[9] != 'A' || head[10] != 'V' || head[11] != 'E')
+            {
+                return false;
+            }
+
+            // Front-walk the chunk list for the data + fmt headers. The data chunk's own declared
+            // size is frequently wrong (which is the whole problem), so we stop once we reach it.
+            long off = 12;
+            long dataHdr = -1;
+            long fmtHdr = -1;
+            Span<byte> chdr = stackalloc byte[8];
+            while (off + 8 <= n)
+            {
+                fs.Position = off;
+                fs.ReadExactly(chdr);
+                var csz = (uint)(chdr[4] | (chdr[5] << 8) | (chdr[6] << 16) | (chdr[7] << 24));
+                if (chdr[0] == 'f' && chdr[1] == 'm' && chdr[2] == 't' && chdr[3] == ' ' && fmtHdr < 0)
+                {
+                    fmtHdr = off;
+                }
+
+                if (chdr[0] == 'd' && chdr[1] == 'a' && chdr[2] == 't' && chdr[3] == 'a')
+                {
+                    dataHdr = off;
+                    break;
+                }
+
+                var next = off + 8 + csz + (csz & 1);
+                if (next <= off || next > n)
+                {
+                    break;
+                }
+
+                off = next;
+            }
+
+            if (dataHdr < 0 || fmtHdr < 0)
+            {
+                return false;
+            }
+
+            var dataBody = dataHdr + 8;
+
+            // Tail-scan the last 64 KiB for the first real id3 chunk header ("id3 " + ID3 magic).
+            var scanStart = Math.Max(dataBody, n - 65536);
+            var scanLen = (int)(n - scanStart);
+            if (scanLen <= 11)
+            {
+                return false;
+            }
+
+            var tail = new byte[scanLen];
+            fs.Position = scanStart;
+            fs.ReadExactly(tail);
+
+            long pId3 = -1;
+            for (var i = 0; i + 11 < scanLen; i++)
+            {
+                var isId3Chunk = (tail[i] == 'i' || tail[i] == 'I')
+                    && (tail[i + 1] == 'd' || tail[i + 1] == 'D')
+                    && tail[i + 2] == '3' && tail[i + 3] == ' ';
+                if (isId3Chunk && tail[i + 8] == 'I' && tail[i + 9] == 'D' && tail[i + 10] == '3')
+                {
+                    pId3 = scanStart + i;
+                    break;
+                }
+            }
+
+            if (pId3 < 0 || pId3 < dataBody || (n - pId3) > 1_000_000)
+            {
+                return false;
+            }
+
+            var newDataSize = pId3 - dataBody;
+            if (newDataSize <= 0)
+            {
+                return false;
+            }
+
+            // Duration sanity guards against a stray id3 match inside PCM truncating real audio.
+            // The WAV byte-rate lives at fmt body offset 8 (i.e. fmtHdr + 8 header + 8 into body).
+            fs.Position = fmtHdr + 16;
+            Span<byte> br = stackalloc byte[4];
+            fs.ReadExactly(br);
+            var byteRate = (uint)(br[0] | (br[1] << 8) | (br[2] << 16) | (br[3] << 24));
+            if (byteRate == 0)
+            {
+                return false;
+            }
+
+            var seconds = (double)newDataSize / byteRate;
+            if (seconds is < 1 or > 7200)
+            {
+                return false;
+            }
+
+            removedBytes = (int)(n - pId3);
+            if (dryRun)
+            {
+                return true;
+            }
+
+            // Repair the data chunk size and the RIFF size, then truncate the trailing id3 region.
+            Span<byte> sz = stackalloc byte[4];
+            WriteUInt32Le(sz, (uint)newDataSize);
+            fs.Position = dataHdr + 4;
+            fs.Write(sz);
+
+            WriteUInt32Le(sz, (uint)(pId3 - 8));
+            fs.Position = 4;
+            fs.Write(sz);
+
+            fs.SetLength(pId3);
+            fs.Flush();
+            return true;
+        }
+
+        private static void WriteUInt32Le(Span<byte> dst, uint v)
+        {
+            dst[0] = (byte)v;
+            dst[1] = (byte)(v >> 8);
+            dst[2] = (byte)(v >> 16);
+            dst[3] = (byte)(v >> 24);
         }
 
         private static List<string> PromoteV1Fields(TagLib.Id3v1.Tag v1, TagLib.Id3v2.Tag v2, bool dryRun)

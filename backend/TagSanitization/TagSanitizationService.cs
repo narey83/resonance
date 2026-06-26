@@ -45,6 +45,13 @@ namespace resonance.TagSanitization
     /// </summary>
     public class TagSanitizationService : ITagSanitizationService
     {
+        /// <summary>
+        ///     Library-sync queue name registered for the duration of a real scan. Other services
+        ///     (e.g. the background metadata lookup) check this to avoid writing the same files
+        ///     concurrently — a sanitization scan takes priority.
+        /// </summary>
+        public const string QueueName = "tag-sanitization";
+
         private const int MaxResultsRetained = 200;
 
         private static readonly HashSet<string> AudioExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -94,7 +101,7 @@ namespace resonance.TagSanitization
                 // triggers an immediate re-sync so the DB picks up the updated tags.
                 if (!request.DryRun)
                 {
-                    MusicLibrary?.RegisterQueue("tag-sanitization");
+                    MusicLibrary?.RegisterQueue(QueueName);
                 }
 
                 var files = GetAudioFiles().ToList();
@@ -218,7 +225,7 @@ namespace resonance.TagSanitization
                 if (!request.DryRun)
                 {
                     // Unblock library sync and trigger an immediate re-index of updated tags.
-                    MusicLibrary?.DeregisterQueue("tag-sanitization");
+                    MusicLibrary?.DeregisterQueue(QueueName);
 
                     // Re-scan shares so the Soulseek index reflects the rewritten ID3v2.3 tags.
                     if (CurrentState.Sanitized > 0)
