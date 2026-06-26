@@ -34,6 +34,7 @@ import {
   registerAutoPlayHandler,
 } from '../services/androidAuto';
 import { ensurePlayerSetup, buildPlayerOptions } from '../services/playerSetup';
+import { promptBatteryExemptionOnce } from '../services/batteryOptimization';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -196,6 +197,15 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const activeRntpTrack                            = useActiveTrack();
   const { playing = false, bufferingDuringPlay = false } = useIsPlaying();
   const { position, duration }                     = useProgress(250);
+
+  // The first time playback actually starts, ask the user (once ever) to exempt the app from
+  // battery optimization — otherwise Doze stalls background playback shortly after the screen locks.
+  const batteryPromptedRef = useRef(false);
+  useEffect(() => {
+    if (!playing || batteryPromptedRef.current) return;
+    batteryPromptedRef.current = true;
+    promptBatteryExemptionOnce();
+  }, [playing]);
 
   useEffect(() => {
     playingRef.current = playing;

@@ -20,6 +20,9 @@ const withAndroidAuto = (config) => {
     };
     addPerm('android.permission.FOREGROUND_SERVICE');
     addPerm('android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK');
+    // Lets the app ask the user to ignore battery optimizations so Doze doesn't
+    // suspend background playback when the screen locks while unplugged.
+    addPerm('android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS');
     manifest['uses-permission'] = perms;
 
     // Android Auto: <uses-feature> declarations
