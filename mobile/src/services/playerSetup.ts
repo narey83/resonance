@@ -28,28 +28,37 @@ export function ensurePlayerSetup(): Promise<void> {
       } catch {
         // Already set up (e.g. the headless service initialised it first).
       }
-      await TrackPlayer.updateOptions({
-        capabilities: [
-          Capability.Play,
-          Capability.Pause,
-          Capability.SkipToNext,
-          Capability.SkipToPrevious,
-          Capability.SeekTo,
-          Capability.SetRating,
-        ],
-        notificationCapabilities: [
-          Capability.Play,
-          Capability.Pause,
-          Capability.SkipToNext,
-          Capability.SkipToPrevious,
-          Capability.SetRating,
-        ],
-        likeOptions: { isActive: false, title: 'Love' },
-        android: {
-          appKilledPlaybackBehavior: AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
-        },
-      });
+      await TrackPlayer.updateOptions(buildPlayerOptions(false));
     })();
   }
   return setupPromise;
+}
+
+// Full options object for TrackPlayer.updateOptions. RNTP's updateOptions is a *full replace* —
+// every call rebuilds the notification/media-session config from scratch, so any call that omits
+// `capabilities`/`notificationCapabilities` wipes the transport controls (no play/pause/skip on the
+// lock screen or shade). Always pass this complete object, toggling only the like state, so the
+// controls survive Love-button updates.
+export function buildPlayerOptions(isLoved: boolean) {
+  return {
+    capabilities: [
+      Capability.Play,
+      Capability.Pause,
+      Capability.SkipToNext,
+      Capability.SkipToPrevious,
+      Capability.SeekTo,
+      Capability.SetRating,
+    ],
+    notificationCapabilities: [
+      Capability.Play,
+      Capability.Pause,
+      Capability.SkipToNext,
+      Capability.SkipToPrevious,
+      Capability.SetRating,
+    ],
+    likeOptions: { isActive: isLoved, title: isLoved ? 'Unlove' : 'Love' },
+    android: {
+      appKilledPlaybackBehavior: AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
+    },
+  };
 }

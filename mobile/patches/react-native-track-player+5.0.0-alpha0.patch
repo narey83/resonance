@@ -1,3 +1,15 @@
+diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicEvents.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicEvents.kt
+index 2f9f28f..eafb80c 100644
+--- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicEvents.kt
++++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicEvents.kt
+@@ -34,6 +34,7 @@ class MusicEvents(private val reactContext: ReactContext) : BroadcastReceiver()
+         const val BUTTON_JUMP_FORWARD = "remote-jump-forward"
+         const val BUTTON_JUMP_BACKWARD = "remote-jump-backward"
+         const val BUTTON_DUCK = "remote-duck"
++        const val BUTTON_LOVE = "remote-love"
+         const val BUTTON_BROWSE = "remote-browse"
+ 
+         // Playback Events
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
 index 13a6c60..7ad01e6 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
@@ -22,7 +34,7 @@ index 13a6c60..7ad01e6 100644
      // which causes an exception. We can work around this using a wrapper.
      private fun launchInScope(block: suspend () -> Unit) {
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
-index b495b5a..7abeb40 100644
+index b495b5a..8c2a0a1 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
 +++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
 @@ -19,7 +19,9 @@ import androidx.media3.common.Player
@@ -44,7 +56,7 @@ index b495b5a..7abeb40 100644
  import com.facebook.react.jstasks.HeadlessJsTaskConfig
  import com.google.common.collect.ImmutableList
  import com.google.common.util.concurrent.Futures
-@@ -64,6 +68,12 @@ class MusicService : HeadlessJsMediaService() {
+@@ -64,9 +68,20 @@ class MusicService : HeadlessJsMediaService() {
      private lateinit var fakePlayer: ExoPlayer
      private lateinit var mediaSession: MediaLibrarySession
      private var progressUpdateJob: Job? = null
@@ -57,7 +69,101 @@ index b495b5a..7abeb40 100644
      private var sessionCommands: SessionCommands? = null
      private var playerCommands: Player.Commands? = null
      private var customLayout: List<CommandButton> = listOf()
-@@ -677,6 +687,87 @@ class MusicService : HeadlessJsMediaService() {
++    // Android 13+ System UI (and the legacy PlaybackState bridge) render transport controls from
++    // the session's media-button preferences, not the notification's own actions. On newer Android
++    // (SDK 35+/Android 17) the old setCustomLayout + player-command path is ignored, leaving the
++    // shade/lock-screen controls blank — so we publish explicit preferences instead.
++    private var mediaButtonPreferences: List<CommandButton> = listOf()
+     private var lastWake: Long = 0
+     var onStartCommandIntentValid: Boolean = true
+ 
+@@ -290,12 +305,67 @@ class MusicService : HeadlessJsMediaService() {
+                     playerCommandsBuilder.add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+                 }
+ 
++                Capability.SKIP_TO_NEXT -> {
++                    playerCommandsBuilder.add(Player.COMMAND_SEEK_TO_NEXT)
++                }
++
++                Capability.SKIP_TO_PREVIOUS -> {
++                    playerCommandsBuilder.add(Player.COMMAND_SEEK_TO_PREVIOUS)
++                }
++
+                 else -> {}
+             }
+         }
++        // NEXT/PREVIOUS are now standard player commands (SEEK_TO_NEXT/PREVIOUS) so they
++        // show natively in Android Auto — exclude them from the custom session layout to
++        // avoid duplicates.
+         customLayout = CustomCommandButton.entries
+             .filter { notificationCapabilities.contains(it.capability) }
++            .filter { it != CustomCommandButton.NEXT && it != CustomCommandButton.PREVIOUS }
+             .map { c -> c.commandButton }
++        val likeBundle = options.getBundle("likeOptions")
++        if (likeBundle != null && notificationCapabilities.contains(Capability.SET_RATING)) {
++            val isLoved = likeBundle.getBoolean("isActive", false)
++            val loveButton = CommandButton.Builder()
++                .setDisplayName(if (isLoved) "Unlove" else "Love")
++                .setSessionCommand(SessionCommand("LOVE", Bundle()))
++                .setIconResId(
++                    if (isLoved) androidx.media3.session.R.drawable.media3_icon_heart_filled
++                    else         androidx.media3.session.R.drawable.media3_icon_heart_unfilled
++                )
++                .build()
++            customLayout = customLayout + loveButton
++        }
++        // Build the media-button preferences System UI / lock screen actually render: explicit
++        // previous/next buttons driven by player commands (placed in the back/forward slots) plus
++        // any custom session-command buttons (e.g. Love) in the overflow. The central play/pause
++        // button is added automatically by media3 from COMMAND_PLAY_PAUSE.
++        mediaButtonPreferences = buildList {
++            if (notificationCapabilities.contains(Capability.SKIP_TO_PREVIOUS)) {
++                add(
++                    CommandButton.Builder()
++                        .setDisplayName("Previous")
++                        .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS)
++                        .setIconResId(androidx.media3.session.R.drawable.media3_icon_previous)
++                        .setSlots(CommandButton.SLOT_BACK)
++                        .build()
++                )
++            }
++            if (notificationCapabilities.contains(Capability.SKIP_TO_NEXT)) {
++                add(
++                    CommandButton.Builder()
++                        .setDisplayName("Next")
++                        .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT)
++                        .setIconResId(androidx.media3.session.R.drawable.media3_icon_next)
++                        .setSlots(CommandButton.SLOT_FORWARD)
++                        .build()
++                )
++            }
++            // Custom buttons (Love, jump) keep their session commands; media3 places them in the
++            // overflow via their default slot.
++            customLayout.forEach { add(it) }
++        }
++
+         val sessionCommandsBuilder =
+             MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
+         customLayout.forEach { v ->
+@@ -305,11 +375,15 @@ class MusicService : HeadlessJsMediaService() {
+         sessionCommands = sessionCommandsBuilder.build()
+         playerCommands = playerCommandsBuilder.build()
+ 
++        // Set the preferences as the session-wide default so controllers that connect outside the
++        // notification controller (System UI, lock screen, Bluetooth) inherit them too.
++        mediaSession.setMediaButtonPreferences(mediaButtonPreferences)
++
+         if (mediaSession.mediaNotificationControllerInfo != null) {
+             // https://github.com/androidx/media/blob/c35a9d62baec57118ea898e271ac66819399649b/demos/session_service/src/main/java/androidx/media3/demo/session/DemoMediaLibrarySessionCallback.kt#L107
+-            mediaSession.setCustomLayout(
++            mediaSession.setMediaButtonPreferences(
+                 mediaSession.mediaNotificationControllerInfo!!,
+-                customLayout
++                mediaButtonPreferences
+             )
+             mediaSession.setAvailableCommands(
+                 mediaSession.mediaNotificationControllerInfo!!,
+@@ -677,6 +751,87 @@ class MusicService : HeadlessJsMediaService() {
          reactContext?.emitDeviceEvent(event, data?.let { Arguments.fromBundle(it) })
      }
  
@@ -145,7 +251,33 @@ index b495b5a..7abeb40 100644
      @SuppressLint("VisibleForTests")
      @MainThread
      private fun emitList(event: String, data: List<Bundle> = emptyList()) {
-@@ -976,6 +1067,66 @@ class MusicService : HeadlessJsMediaService() {
+@@ -905,13 +1060,15 @@ class MusicService : HeadlessJsMediaService() {
+                     onStartCommand(null, 0, 0)
+                 }
+             }
++            val isSystemUi = controller.packageName == "com.android.systemui"
+             return if (
+                 isMediaNotificationController ||
+                 isAutomotiveController ||
+-                isAutoCompanionController
++                isAutoCompanionController ||
++                isSystemUi
+             ) {
+                 MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+-                    .setCustomLayout(customLayout)
++                    .setMediaButtonPreferences(mediaButtonPreferences)
+                     .setAvailableSessionCommands(
+                         sessionCommands
+                             ?: MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
+@@ -937,6 +1094,7 @@ class MusicService : HeadlessJsMediaService() {
+                     CustomCommandButton.JUMP_FORWARD.customAction -> { it.seekForward() }
+                     CustomCommandButton.NEXT.customAction -> { it.seekToNext() }
+                     CustomCommandButton.PREVIOUS.customAction -> { it.seekToPrevious() }
++                    "LOVE" -> emit(MusicEvents.BUTTON_LOVE)
+                 }
+             }
+             return super.onCustomCommand(session, controller, command, args)
+@@ -976,6 +1134,66 @@ class MusicService : HeadlessJsMediaService() {
              }
              return super.onSetRating(session, controller, rating)
          }
@@ -212,7 +344,7 @@ index b495b5a..7abeb40 100644
      }
  
      private fun getPendingIntentFlags(): Int {
-@@ -1029,5 +1180,8 @@ class MusicService : HeadlessJsMediaService() {
+@@ -1029,5 +1247,8 @@ class MusicService : HeadlessJsMediaService() {
  
          const val DEFAULT_JUMP_INTERVAL = 15.0
          const val DEFAULT_STOP_FOREGROUND_GRACE_PERIOD = 5

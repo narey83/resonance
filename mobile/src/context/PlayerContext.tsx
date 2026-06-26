@@ -33,7 +33,7 @@ import {
   clearAndroidAutoTree,
   registerAutoPlayHandler,
 } from '../services/androidAuto';
-import { ensurePlayerSetup } from '../services/playerSetup';
+import { ensurePlayerSetup, buildPlayerOptions } from '../services/playerSetup';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -492,7 +492,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     const isLoved = currentTrack ? lovedPaths.has(currentTrack.path) : false;
     // Wait for setup — this effect fires on mount, racing the async player init.
     ensurePlayerSetup()
-      .then(() => TrackPlayer.updateOptions({ likeOptions: { isActive: isLoved, title: 'Love' } }))
+      // Pass the FULL options (not just likeOptions) — updateOptions is a full replace, so a
+      // partial call would wipe the transport capabilities and blank the lock-screen/shade controls.
+      .then(() => TrackPlayer.updateOptions(buildPlayerOptions(isLoved)))
       .catch(() => { /* player unavailable */ });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrack?.path, lovedPaths]);
