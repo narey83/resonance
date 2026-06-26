@@ -22,6 +22,7 @@ import { MusicTrack, getArtworkUrl, getStreamUrl, getTrackTitle } from '../api/m
 import { getArtworkCacheKey, prefetchArtwork, PLAYER_ART_SIZE } from '../services/artworkCache';
 import { isLocalPath } from '../services/localMusicLibrary';
 import { useLibraryActivityStore } from '../store/libraryActivityStore';
+import { usePlayerUI } from '../store/playerUIStore';
 import { useConnectionStore } from '../services/connectionMonitor';
 import { useAuthStore } from '../store/auth';
 import { ensureSigned, getSignature, invalidateSignatures } from '../api/streamSignatures';
@@ -84,7 +85,7 @@ const toRntpTrack = (track: MusicTrack): RntpTrack => {
     title:    getTrackTitle(track),
     artist:   track.artist    ?? undefined,
     album:    track.album     ?? undefined,
-    artwork:  track.hasArtwork ? (isLocal ? track.coverPath ?? undefined : getArtworkUrl(track.path, 512) ?? undefined) : undefined,
+    artwork:  track.hasArtwork ? (isLocal ? track.coverPath ?? undefined : getArtworkUrl(track.path, PLAYER_ART_SIZE) ?? undefined) : undefined,
     duration: track.duration  ?? undefined,
     _source:  track,
   } as RntpTrack;
@@ -105,6 +106,13 @@ const buildShuffleOrder = (length: number, startIndex: number): number[] => {
 // How many tracks on each side of the current one to prefetch artwork for.
 const PREFETCH_RADIUS = 2;
 
+// Auto-retry budget for a remote stream that errors while foregrounded (transient server 5xx, e.g.
+// the backend briefly 502ing during a restart, or a network blip). Exponential backoff capped at
+// 20s gives ~60s of total retrying before giving up — long enough to outlast a server restart,
+// short enough that a genuinely missing file doesn't loop forever.
+const STREAM_RETRY_MAX = 6;
+const streamRetryDelayMs = (attempt: number) => Math.min(1000 * 2 ** attempt, 20_000);
+
 // ── Provider ───────────────────────────────────────────────────────────────────
 
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
@@ -121,6 +129,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   // Path of the track we last auto-recovered from a stale-URL playback error, so a genuine
   // (non-token) failure doesn't loop. Reset when playback moves to a different track.
   const recoveringRef        = useRef<string | null>(null);
+  // Set when a remote stream errors out (e.g. the server briefly 502s during a restart, or a
+  // socket the OS dropped while backgrounded) and recovery couldn't resume — usually because the
+  // JS thread is throttled / offline in the background. Drives a resume on return to the
+  // foreground, and is cleared once playback is genuinely running again.
+  const pendingResumeRef     = useRef(false);
+  // Bounded backoff retry for a stream that errored while foregrounded (transient server 5xx /
+  // network blip). retryTimerRef holds the pending attempt; retryCountRef counts attempts for the
+  // current errored track. Both reset when playback succeeds or moves to a different track.
+  const retryTimerRef        = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryCountRef        = useRef(0);
   // Pending stream-load timing: armed when a remote track becomes active, cleared (and recorded)
   // when it first reaches a playable state — i.e. how long the user waited for audio to buffer.
   const streamLoadRef        = useRef<{ path: string; startedAt: number } | null>(null);
@@ -179,10 +197,23 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const { playing = false, bufferingDuringPlay = false } = useIsPlaying();
   const { position, duration }                     = useProgress(250);
 
-  useEffect(() => { playingRef.current  = playing; },  [playing]);
+  useEffect(() => {
+    playingRef.current = playing;
+    if (playing) {
+      // Audio is flowing again — clear any recovery state so the next genuine error starts fresh.
+      pendingResumeRef.current = false;
+      retryCountRef.current = 0;
+      recoveringRef.current = null;
+      if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+    }
+  }, [playing]);
   useEffect(() => { positionRef.current = position; }, [position]);
 
   const currentTrack = useMemo(() => fromRntpTrack(activeRntpTrack), [activeRntpTrack]);
+
+  // Mirror "is a track loaded?" into the UI store so playback-start handlers can decide whether
+  // to auto-expand the full player (only when nothing was playing — a genuinely fresh start).
+  useEffect(() => { usePlayerUI.getState().setHasTrack(currentTrack != null); }, [currentTrack]);
 
   // Track active index and recover from stale-URL playback errors
   useTrackPlayerEvents([Event.PlaybackActiveTrackChanged, Event.PlaybackError], (event) => {
@@ -195,26 +226,49 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         streamLoadRef.current = null;
       }
       remoteLog('error', `[player] playback error — ${'message' in event ? String(event.message) : JSON.stringify(event)}`);
-      // A remote track failing to load is almost always an expired token baked into its stream
-      // URL (e.g. auto-advance across token expiry on a long queue). Refresh URLs and resume —
-      // once per track, so a genuine error (missing file, network down) doesn't loop.
+      // A remote stream can fail two ways: an expired signature baked into its URL (401), or a
+      // transient server/network blip (e.g. the backend 502ing during a restart). Both recover on
+      // their own if we retry — re-sign (cheap, fixes the 401 case) and re-prepare the player
+      // (TrackPlayer.retry() reloads the errored item; play() alone won't). Back off exponentially
+      // and cap the attempts so a genuinely broken track (missing file) doesn't loop forever.
       const active = queueRef.current[queueIndexRef.current];
-      if (active && !isLocalPath(active.path) && recoveringRef.current !== active.path) {
-        recoveringRef.current = active.path;
-        invalidateSignatures([active.path]); // force a re-sign even if the cached sig looks current
-        remoteLog('info', '[player] recovering from playback error — refreshing stream signatures');
-        ensureFreshStreamUrls()
-          .then(() => TrackPlayer.play())
-          .catch((err: unknown) => remoteLog('warn', `[player] recovery failed — ${err instanceof Error ? err.message : String(err)}`));
+      if (active && !isLocalPath(active.path)) {
+        // The stream may not come back until we're foregrounded (background socket dropped, JS
+        // timers throttled). Remember to resume on return; the AppState handler retries from there.
+        pendingResumeRef.current = true;
+        if (recoveringRef.current !== active.path) {
+          recoveringRef.current = active.path; // new errored track — restart the retry budget
+          retryCountRef.current = 0;
+        }
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+        if (retryCountRef.current < STREAM_RETRY_MAX) {
+          const attempt = retryCountRef.current++;
+          const delay = streamRetryDelayMs(attempt);
+          remoteLog('info', `[player] stream error — retry ${attempt + 1}/${STREAM_RETRY_MAX} in ${delay}ms`);
+          invalidateSignatures([active.path]); // force a re-sign even if the cached sig looks current
+          retryTimerRef.current = setTimeout(() => {
+            retryTimerRef.current = null;
+            ensureFreshStreamUrls()
+              .then(() => TrackPlayer.retry())
+              .then(() => TrackPlayer.play())
+              .catch((err: unknown) => remoteLog('warn', `[player] retry failed — ${err instanceof Error ? err.message : String(err)}`));
+          }, delay);
+        } else {
+          remoteLog('warn', `[player] giving up after ${STREAM_RETRY_MAX} stream retries — ${active.path}`);
+        }
       }
       return;
     }
     if ('index' in event && event.index != null) {
       setQueueIndex(event.index);
-      // Reset the recovery guard only when playback genuinely moves to a different track — our
+      // Reset the recovery state only when playback genuinely moves to a different track — our
       // own recovery rebuild re-fires this event for the same track, which must not re-arm it.
       const newPath = queueRef.current[event.index]?.path ?? null;
-      if (newPath && newPath !== recoveringRef.current) recoveringRef.current = null;
+      if (newPath && newPath !== recoveringRef.current) {
+        recoveringRef.current = null;
+        retryCountRef.current = 0;
+        if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+      }
       // Arm stream-load timing for remote tracks; the PlaybackState listener stops it on the
       // first playable state. Local files load from disk instantly, so skip them.
       streamLoadRef.current = newPath && !isLocalPath(newPath)
@@ -314,10 +368,32 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       if (next !== 'active') return;
       if (playingRef.current) return;        // stream alive — don't disturb it
       if (queueRef.current.length === 0) return;
+
+      // Playback died while backgrounded (the OS dropped the socket, or the server blipped) and
+      // couldn't recover offline / with JS timers throttled. Now that we're foregrounded and online
+      // again, re-sign, re-prepare and resume so the user doesn't return to silently-stopped audio
+      // with no controls. Reset the retry budget so this gets a fresh batch of attempts.
+      if (pendingResumeRef.current) {
+        recoveringRef.current = null;
+        retryCountRef.current = 0;
+        if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+        remoteLog('info', '[player] resuming playback that stopped while backgrounded');
+        ensureFreshStreamUrls()
+          .then(() => TrackPlayer.retry())
+          .then(() => TrackPlayer.play())
+          .catch((err: unknown) => remoteLog('warn', `[player] background-resume failed — ${err instanceof Error ? err.message : String(err)}`));
+        return;
+      }
+
       ensureFreshStreamUrls().catch(() => { /* refresh failure surfaces via interceptor/login */ });
     });
     return () => sub.remove();
   }, [ensureFreshStreamUrls]);
+
+  // Cancel any pending stream-retry timer on unmount so it can't fire against a torn-down player.
+  useEffect(() => () => {
+    if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+  }, []);
 
   // Prefetch artwork for the couple of tracks on either side of the current one, so skipping
   // forward/back shows the cover instantly instead of fetching it on demand. Warms expo-image's
