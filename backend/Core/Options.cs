@@ -3609,6 +3609,35 @@ namespace resonance
                 [EnvironmentVariable("YTDLP_CONVERT_FORMAT")]
                 [Description("convert completed tracks to this audio format before they go live (empty = no conversion)")]
                 public string ConvertOnCompletionFormat { get; init; } = string.Empty;
+
+                /// <summary>
+                ///     Gets a yt-dlp upload-date lower bound applied when downloading channels/playlists
+                ///     (one of: today, week, month, year; empty = no limit). Mapped to yt-dlp --dateafter.
+                /// </summary>
+                [Argument(default, "ytdlp-uploaded-after")]
+                [EnvironmentVariable("YTDLP_UPLOADED_AFTER")]
+                [Description("only download channel/playlist videos uploaded within this window (today, week, month, year; empty = no limit)")]
+                public string UploadedAfter { get; init; } = string.Empty;
+
+                /// <summary>
+                ///     Gets the default poll interval, in minutes, for channel subscriptions that
+                ///     do not specify their own interval.
+                /// </summary>
+                [Argument(default, "ytdlp-subscription-interval")]
+                [EnvironmentVariable("YTDLP_SUBSCRIPTION_INTERVAL")]
+                [Description("default poll interval (minutes) for yt-dlp channel subscriptions")]
+                [Range(5, 100_000)]
+                public int SubscriptionPollMinutes { get; init; } = 360;
+
+                /// <summary>
+                ///     Gets the number of most-recent videos fetched from a channel on each
+                ///     subscription check. Bounds how many new videos a single check can queue.
+                /// </summary>
+                [Argument(default, "ytdlp-subscription-check-count")]
+                [EnvironmentVariable("YTDLP_SUBSCRIPTION_CHECK_COUNT")]
+                [Description("number of most-recent channel videos inspected per subscription check")]
+                [Range(1, 100)]
+                public int SubscriptionCheckCount { get; init; } = 20;
             }
         }
 

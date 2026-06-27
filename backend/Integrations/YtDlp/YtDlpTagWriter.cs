@@ -45,8 +45,15 @@ public static class YtDlpTagWriter
     ///     Writes parsed metadata and embedded artwork to the given audio file.
     ///     Returns null on success, or an error message on failure.
     /// </summary>
+    /// <param name="filePath">The audio file to tag.</param>
+    /// <param name="metadata">The parsed metadata to write.</param>
+    /// <param name="sourceUrl">
+    ///     The yt-dlp source URL (e.g. the YouTube watch URL). Stamped into the comment tag so the
+    ///     track's origin survives the move into the shared music library and stays queryable there.
+    /// </param>
+    /// <param name="durationSeconds">The detected track duration, in seconds.</param>
     /// <returns></returns>
-    public static string? Write(string filePath, ParsedTrackMetadata metadata, out int? durationSeconds)
+    public static string? Write(string filePath, ParsedTrackMetadata metadata, string? sourceUrl, out int? durationSeconds)
     {
         durationSeconds = null;
         var thumbnailPath = FindThumbnailSidecar(filePath);
@@ -87,6 +94,13 @@ public static class YtDlpTagWriter
             if (metadata.Genre != null)
             {
                 file.Tag.Genres = [metadata.Genre];
+            }
+
+            // Stamp the source URL into the comment so a library track can always be traced back
+            // to its yt-dlp origin. Only fill an empty comment so we never clobber existing notes.
+            if (!string.IsNullOrWhiteSpace(sourceUrl) && string.IsNullOrWhiteSpace(file.Tag.Comment))
+            {
+                file.Tag.Comment = sourceUrl;
             }
 
             if (thumbnailPath != null)

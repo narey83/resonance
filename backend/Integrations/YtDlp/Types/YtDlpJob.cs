@@ -64,6 +64,9 @@ public class YtDlpJob
     public int? MinTrackDurationSecondsOverride { get; set; }
     public int? MaxTrackDurationSecondsOverride { get; set; }
 
+    // Upload-date window for channel/playlist downloads (today/week/month/year; null = no limit).
+    public string? UploadedAfterOverride { get; set; }
+
     // Audio format to convert completed tracks to before they go live (null = use global option,
     // empty/"none"/"best" = no conversion). Applied in staging during FinalizeJobAsync.
     public string? ConvertOnCompletionFormatOverride { get; set; }

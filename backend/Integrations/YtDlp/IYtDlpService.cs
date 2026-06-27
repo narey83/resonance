@@ -40,7 +40,7 @@ public interface IYtDlpService : IHostedService
 {
     IReadOnlyList<YtDlpJob> ListJobs();
     IReadOnlyList<YtDlpEvent> GetRecentEvents();
-    Task<YtDlpJob> SubmitAsync(string url, string? outputDirectory = null, string? audioFormat = null, int? audioQuality = null, string? defaultGenre = null, int? minTrackDurationSeconds = null, int? maxTrackDurationSeconds = null, string? convertOnCompletionFormat = null, CancellationToken cancellationToken = default);
+    Task<YtDlpJob> SubmitAsync(string url, string? outputDirectory = null, string? audioFormat = null, int? audioQuality = null, string? defaultGenre = null, int? minTrackDurationSeconds = null, int? maxTrackDurationSeconds = null, string? convertOnCompletionFormat = null, string? uploadedAfter = null, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<YtDlpTrack>> GetTracksAsync(Guid jobId);
     Task<IReadOnlyList<YtDlpTrack>> GetTagErrorTracksAsync();
     Task CancelJobAsync(Guid jobId);
@@ -56,7 +56,24 @@ public interface IYtDlpService : IHostedService
     Task<string> UpdateYtDlpAsync(CancellationToken cancellationToken = default);
     Task<(int Updated, int Failed, int Skipped)> BackfillDurationsAsync(CancellationToken cancellationToken = default);
     Task ReconcileJobAsync(Guid jobId);
+
+    // ── Subscriptions ─────────────────────────────────────────────────────────
+    IReadOnlyList<YtDlpSubscription> ListSubscriptions();
+    Task<YtDlpSubscription> AddSubscriptionAsync(string channelUrl, YtDlpSubscriptionOverrides? overrides = null, CancellationToken cancellationToken = default);
+    Task UpdateSubscriptionAsync(Guid id, bool? enabled, int? pollIntervalMinutes, YtDlpSubscriptionOverrides? overrides, CancellationToken cancellationToken = default);
+    Task RemoveSubscriptionAsync(Guid id, CancellationToken cancellationToken = default);
+    Task CheckSubscriptionNowAsync(Guid id, CancellationToken cancellationToken = default);
 }
+
+public record YtDlpSubscriptionOverrides(
+    string? OutputDirectory = null,
+    string? AudioFormat = null,
+    int? AudioQuality = null,
+    string? DefaultGenre = null,
+    int? MinTrackDurationSeconds = null,
+    int? MaxTrackDurationSeconds = null,
+    string? ConvertOnCompletionFormat = null,
+    string? UploadedAfter = null);
 
 public record YtDlpEvent(DateTime Timestamp, Guid? JobId, string? JobTitle, string Level, string Message);
 

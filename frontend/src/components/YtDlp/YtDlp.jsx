@@ -1,31 +1,23 @@
 import './YtDlp.css';
-import { urlBase } from '../../config';
 import { createYtDlpHubConnection } from '../../lib/hubFactory';
 import * as ytdlp from '../../lib/ytdlp';
-import AddPane from './AddPane';
 import EventsPane from './EventsPane';
 import JobList from './JobList';
 import SearchPane from './SearchPane';
+import SubscriptionsPane from './SubscriptionsPane';
 import TagErrorList from './TagErrorList';
-import { AlertTriangle, List, ScrollText } from 'lucide-react';
+import { AlertTriangle, Bell, List, ScrollText } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useHistory } from 'react-router-dom';
 import { toast } from 'react-toastify';
 
 const TABS = [
   { icon: List, id: 'downloads', label: 'Downloads' },
+  { icon: Bell, id: 'subscriptions', label: 'Subscriptions' },
   { icon: ScrollText, id: 'events', label: 'Events' },
   { icon: AlertTriangle, id: 'tag-errors', label: 'Tag Errors' },
 ];
 
 const EVENT_BUFFER_MAX = 1_000;
-
-// Matches the search filter buckets (under 4 min / 4–20 min / over 20 min)
-const DURATION_FILTERS = {
-  long: { minTrackDurationSeconds: 1_200 },
-  medium: { maxTrackDurationSeconds: 1_200, minTrackDurationSeconds: 240 },
-  short: { maxTrackDurationSeconds: 240 },
-};
 
 // Resubmits the same URL with the job's original settings; skip-existing-files
 // means only failed or newly added tracks actually download
@@ -103,10 +95,10 @@ const handleReconcileJob = async (jobId) => {
 };
 
 const YtDlp = ({ view }) => {
-  const history = useHistory();
   const isSearchView = view !== 'downloads';
   const [activeTab, setActiveTab] = useState('downloads');
   const [jobs, setJobs] = useState([]);
+  const [subscriptions, setSubscriptions] = useState([]);
   const [jobLogs, setJobLogs] = useState({});
   const [events, setEvents] = useState([]);
   const [unseenErrors, setUnseenErrors] = useState(0);
@@ -123,6 +115,11 @@ const YtDlp = ({ view }) => {
   const handleJobs = useCallback((incoming) => {
     if (!mountedRef.current) return;
     setJobs(Array.isArray(incoming) ? incoming : []);
+  }, []);
+
+  const handleSubscriptions = useCallback((incoming) => {
+    if (!mountedRef.current) return;
+    setSubscriptions(Array.isArray(incoming) ? incoming : []);
   }, []);
 
   // Optimistically upsert a freshly-submitted job so it shows immediately,
@@ -188,6 +185,7 @@ const YtDlp = ({ view }) => {
     hubRef.current = hub;
 
     hub.on('JOBS', handleJobs);
+    hub.on('SUBSCRIPTIONS', handleSubscriptions);
     hub.on('TRACK_PROGRESS', handleTrackProgress);
     hub.on('JOB_LOG', handleJobLog);
     hub.on('EVENT', appendEvent);
@@ -205,6 +203,7 @@ const YtDlp = ({ view }) => {
     handleEventSnapshot,
     handleJobLog,
     handleJobs,
+    handleSubscriptions,
     handleTrackProgress,
   ]);
 
@@ -218,24 +217,26 @@ const YtDlp = ({ view }) => {
     setActiveTab(tabId);
   };
 
-  const handleSubmit = async (parameters) => {
+  const handleSearchSubscribe = useCallback(async (result, overrides) => {
     try {
-      const res = await ytdlp.submitJob(parameters);
-      mergeJob(res.data);
-      history.push(`${urlBase}/ytdlp/downloads`);
+      await ytdlp.addSubscription({
+        channelUrl: result.url,
+        ...overrides,
+      });
+      toast.success(`Subscribed: ${result.title}`);
     } catch (error) {
-      toast.error(`Failed to submit: ${error.response?.data || error.message}`);
+      toast.error(`Subscribe failed: ${error.response?.data || error.message}`);
     }
-  };
+  }, []);
 
   // Stays on the search page so more results can be queued; the job is merged
   // into state immediately and is visible on the Downloads page
   const handleSearchDownload = useCallback(
-    async (result, duration) => {
+    async (result, overrides) => {
       try {
         const res = await ytdlp.submitJob({
           url: result.url,
-          ...DURATION_FILTERS[duration],
+          ...overrides,
         });
         mergeJob(res.data);
         toast.success(`Added: ${result.title}`);
@@ -262,6 +263,8 @@ const YtDlp = ({ view }) => {
           onRetryTags={handleRetryTags}
         />
       );
+    if (activeTab === 'subscriptions')
+      return <SubscriptionsPane subscriptions={subscriptions} />;
     if (activeTab === 'events')
       return (
         <EventsPane
@@ -283,9 +286,10 @@ const YtDlp = ({ view }) => {
     return (
       <div className="ytdlp-root">
         <div className="ytdlp-panel">
-          <SearchPane onDownload={handleSearchDownload} />
-          <div className="ytdlp-section-divider">Add by URL</div>
-          <AddPane onSubmit={handleSubmit} />
+          <SearchPane
+            onDownload={handleSearchDownload}
+            onSubscribe={handleSearchSubscribe}
+          />
         </div>
       </div>
     );

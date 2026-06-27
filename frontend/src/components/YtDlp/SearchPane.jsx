@@ -1,9 +1,11 @@
+import { getCurrent as getOptions } from '../../lib/options';
 import * as ytdlp from '../../lib/ytdlp';
-import { Download, Search, X } from 'lucide-react';
-import React, { useState } from 'react';
+import { Bell, Download, Search, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 
 const HISTORY_KEY = 'ytdlp.searchHistory';
 const HISTORY_MAX = 12;
+const AUDIO_FORMATS = ['best', 'mp3', 'opus', 'flac', 'wav', 'm4a'];
 
 const loadHistory = () => {
   try {
@@ -60,19 +62,31 @@ const resultSubtitle = (r) => {
     .join(' · ');
 };
 
-const SearchPane = ({ onDownload }) => {
+const SearchPane = ({ onDownload, onSubscribe }) => {
   const [query, setQuery] = useState('');
   const [type, setType] = useState('video');
-  const [duration, setDuration] = useState('');
   const [mixPreset, setMixPreset] = useState('');
   const [uploadDate, setUploadDate] = useState('');
+  const [audioFormat, setAudioFormat] = useState('');
   const [sort, setSort] = useState('');
   const [limit, setLimit] = useState(25);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [downloading, setDownloading] = useState({});
+  const [subscribing, setSubscribing] = useState({});
   const [history, setHistory] = useState(loadHistory);
+
+  // Default the format selector to the configured global format so it reflects what would
+  // be used otherwise; the user can override it per download/subscription.
+  useEffect(() => {
+    getOptions()
+      .then((options) => {
+        const fmt = options?.integrations?.yt_dlp?.audio_format;
+        if (fmt) setAudioFormat(fmt);
+      })
+      .catch(() => {});
+  }, []);
 
   const addToHistory = (q) => {
     const next = [q, ...history.filter((h) => h !== q)].slice(0, HISTORY_MAX);
@@ -93,7 +107,6 @@ const SearchPane = ({ onDownload }) => {
 
   const runSearch = async (q, overrides = {}) => {
     const options = {
-      duration: type === 'video' ? duration : '',
       limit,
       sort,
       type,
@@ -121,7 +134,10 @@ const SearchPane = ({ onDownload }) => {
   const handleFilterChange = (setter, key) => async (e) => {
     const { value } = e.target;
     setter(key === 'limit' ? Number(value) : value);
-    if (searched && query.trim() && !loading) {
+    // For channels/playlists, upload date is a download-time filter (not a search filter),
+    // so changing it shouldn't re-run the search.
+    const skipResearch = key === 'uploadDate' && type !== 'video';
+    if (!skipResearch && searched && query.trim() && !loading) {
       await runSearch(query.trim(), {
         [key]: key === 'limit' ? Number(value) : value,
       });
@@ -133,25 +149,47 @@ const SearchPane = ({ onDownload }) => {
     if (!loading) await runSearch(q);
   };
 
-  const preset =
-    type === 'video'
-      ? ytdlp.DURATION_PRESETS.find((p) => p.value === mixPreset)
-      : null;
-  const visibleResults = preset
-    ? results.filter(
-        (r) =>
-          r.duration &&
-          r.duration >= preset.minSeconds &&
-          (preset.maxSeconds === 0 || r.duration <= preset.maxSeconds),
-      )
-    : results;
+  const preset = ytdlp.DURATION_PRESETS.find((p) => p.value === mixPreset);
+
+  // Only hide rows by length for video results — channel/playlist rows have no duration.
+  const visibleResults =
+    preset && type === 'video'
+      ? results.filter(
+          (r) =>
+            r.duration &&
+            r.duration >= preset.minSeconds &&
+            (preset.maxSeconds === 0 || r.duration <= preset.maxSeconds),
+        )
+      : results;
+
+  // Settings forwarded to downloads/subscriptions: chosen length (maxSeconds 0 = no upper bound),
+  // chosen audio format, and — for channels/playlists — an upload-date lower bound.
+  const downloadOverrides = {
+    ...(preset
+      ? {
+          minTrackDurationSeconds: preset.minSeconds,
+          maxTrackDurationSeconds: preset.maxSeconds,
+        }
+      : {}),
+    ...(audioFormat ? { audioFormat } : {}),
+    ...(type !== 'video' && uploadDate ? { uploadedAfter: uploadDate } : {}),
+  };
 
   const handleDownload = async (result) => {
     setDownloading((previous) => ({ ...previous, [result.videoId]: true }));
     try {
-      await onDownload(result, type === 'video' ? duration : '');
+      await onDownload(result, downloadOverrides);
     } finally {
       setDownloading((previous) => ({ ...previous, [result.videoId]: false }));
+    }
+  };
+
+  const handleSubscribe = async (result) => {
+    setSubscribing((previous) => ({ ...previous, [result.videoId]: true }));
+    try {
+      await onSubscribe(result, downloadOverrides);
+    } finally {
+      setSubscribing((previous) => ({ ...previous, [result.videoId]: false }));
     }
   };
 
@@ -168,7 +206,7 @@ const SearchPane = ({ onDownload }) => {
               autoFocus
               disabled={loading}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Artist name or song title…"
+              placeholder="Artist, track, or channel name…"
               type="text"
               value={query}
             />
@@ -194,18 +232,6 @@ const SearchPane = ({ onDownload }) => {
             <option value="playlist">Playlists</option>
           </select>
           <select
-            disabled={type !== 'video'}
-            onChange={handleFilterChange(setDuration, 'duration')}
-            title="Duration"
-            value={duration}
-          >
-            <option value="">Any duration</option>
-            <option value="short">Under 4 min</option>
-            <option value="medium">4–20 min</option>
-            <option value="long">Over 20 min</option>
-          </select>
-          <select
-            disabled={type !== 'video'}
             onChange={(e) => setMixPreset(e.target.value)}
             title="Mix length"
             value={mixPreset}
@@ -221,9 +247,12 @@ const SearchPane = ({ onDownload }) => {
             ))}
           </select>
           <select
-            disabled={type !== 'video'}
             onChange={handleFilterChange(setUploadDate, 'uploadDate')}
-            title="Upload date"
+            title={
+              type === 'video'
+                ? 'Upload date'
+                : 'Only download uploads within this window'
+            }
             value={uploadDate}
           >
             <option value="">Any time</option>
@@ -231,6 +260,20 @@ const SearchPane = ({ onDownload }) => {
             <option value="week">This week</option>
             <option value="month">This month</option>
             <option value="year">This year</option>
+          </select>
+          <select
+            onChange={(e) => setAudioFormat(e.target.value)}
+            title="Audio format"
+            value={audioFormat}
+          >
+            {AUDIO_FORMATS.map((f) => (
+              <option
+                key={f}
+                value={f}
+              >
+                {f}
+              </option>
+            ))}
           </select>
           <select
             onChange={handleFilterChange(setSort, 'sort')}
@@ -320,19 +363,34 @@ const SearchPane = ({ onDownload }) => {
               </div>
               <div className="ytdlp-result-sub">{resultSubtitle(r)}</div>
             </div>
-            <button
-              className="ytdlp-btn ytdlp-btn--primary"
-              disabled={downloading[r.videoId]}
-              onClick={() => handleDownload(r)}
-              type="button"
-            >
-              <Download size={13} />
-              {downloading[r.videoId]
-                ? 'Adding…'
-                : r.type === 'video'
-                  ? 'Download'
-                  : 'Download all'}
-            </button>
+            <div className="ytdlp-job-actions">
+              {(r.type === 'channel' || r.type === 'playlist') &&
+                onSubscribe && (
+                  <button
+                    className="ytdlp-btn"
+                    disabled={subscribing[r.videoId]}
+                    onClick={() => handleSubscribe(r)}
+                    title="Auto-download new uploads from this channel"
+                    type="button"
+                  >
+                    <Bell size={13} />
+                    {subscribing[r.videoId] ? 'Subscribing…' : 'Subscribe'}
+                  </button>
+                )}
+              <button
+                className="ytdlp-btn ytdlp-btn--primary"
+                disabled={downloading[r.videoId]}
+                onClick={() => handleDownload(r)}
+                type="button"
+              >
+                <Download size={13} />
+                {downloading[r.videoId]
+                  ? 'Adding…'
+                  : r.type === 'video'
+                    ? 'Download'
+                    : 'Download all'}
+              </button>
+            </div>
           </div>
         ))}
       </div>

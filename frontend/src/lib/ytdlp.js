@@ -23,6 +23,7 @@ export const submitJob = ({
   minTrackDurationSeconds,
   maxTrackDurationSeconds,
   convertOnCompletionFormat,
+  uploadedAfter,
 }) =>
   api.post('/ytdlp/jobs', {
     url,
@@ -33,6 +34,7 @@ export const submitJob = ({
     minTrackDurationSeconds,
     maxTrackDurationSeconds,
     convertOnCompletionFormat,
+    uploadedAfter,
   });
 export const getJobTracks = (jobId) => api.get(`/ytdlp/jobs/${jobId}/tracks`);
 export const removeJob = (jobId) => api.delete(`/ytdlp/jobs/${jobId}`);
@@ -60,6 +62,36 @@ export const search = (
   if (sort) params.append('sort', sort);
   return api.get(`/ytdlp/search?${params.toString()}`);
 };
+
+export const listSubscriptions = () => api.get('/ytdlp/subscriptions');
+export const addSubscription = ({
+  channelUrl,
+  outputDirectory,
+  audioFormat,
+  audioQuality,
+  defaultGenre,
+  minTrackDurationSeconds,
+  maxTrackDurationSeconds,
+  convertOnCompletionFormat,
+  uploadedAfter,
+} = {}) =>
+  api.post('/ytdlp/subscriptions', {
+    channelUrl,
+    outputDirectory,
+    audioFormat,
+    audioQuality,
+    defaultGenre,
+    minTrackDurationSeconds,
+    maxTrackDurationSeconds,
+    convertOnCompletionFormat,
+    uploadedAfter,
+  });
+export const updateSubscription = (id, changes) =>
+  api.patch(`/ytdlp/subscriptions/${id}`, changes);
+export const removeSubscription = (id) =>
+  api.delete(`/ytdlp/subscriptions/${id}`);
+export const checkSubscription = (id) =>
+  api.post(`/ytdlp/subscriptions/${id}/check`);
 
 export const getVersions = () => api.get('/ytdlp/versions');
 export const checkForUpdate = () => api.get('/ytdlp/update-check');

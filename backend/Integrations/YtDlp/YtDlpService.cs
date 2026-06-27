@@ -68,6 +68,8 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     private readonly ConcurrentDictionary<Guid, YtDlpJob> jobs = new();
     private readonly ConcurrentDictionary<Guid, Process> processes = new();
     private readonly ConcurrentQueue<YtDlpEvent> eventBuffer = new();
+    private readonly ConcurrentDictionary<Guid, YtDlpSubscription> subscriptions = new();
+    private readonly SemaphoreSlim subscriptionCheckLock = new(1, 1);
     private SemaphoreSlim workerSlots;
     private CancellationTokenSource cts = new();
     private string? jsRuntimeArg;
@@ -175,6 +177,15 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         {
             await db.SaveChangesAsync(cancellationToken);
         }
+
+        // Load channel subscriptions into the hot cache and start the poll loop
+        var allSubs = await db.Subscriptions.OrderByDescending(s => s.CreatedAt).ToListAsync(cancellationToken);
+        foreach (var sub in allSubs)
+        {
+            subscriptions[sub.Id] = sub;
+        }
+
+        _ = Task.Run(() => RunSubscriptionPollLoopAsync(cts.Token), CancellationToken.None);
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
@@ -200,7 +211,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
     public IReadOnlyList<YtDlpEvent> GetRecentEvents() => eventBuffer.ToArray();
 
-    public async Task<YtDlpJob> SubmitAsync(string url, string? outputDirectory = null, string? audioFormat = null, int? audioQuality = null, string? defaultGenre = null, int? minTrackDurationSeconds = null, int? maxTrackDurationSeconds = null, string? convertOnCompletionFormat = null, CancellationToken cancellationToken = default)
+    public async Task<YtDlpJob> SubmitAsync(string url, string? outputDirectory = null, string? audioFormat = null, int? audioQuality = null, string? defaultGenre = null, int? minTrackDurationSeconds = null, int? maxTrackDurationSeconds = null, string? convertOnCompletionFormat = null, string? uploadedAfter = null, CancellationToken cancellationToken = default)
     {
         var opts = options.CurrentValue.Integrations.YtDlp;
         var outDir = !string.IsNullOrWhiteSpace(outputDirectory) ? outputDirectory
@@ -218,6 +229,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             MinTrackDurationSecondsOverride = minTrackDurationSeconds,
             MaxTrackDurationSecondsOverride = maxTrackDurationSeconds,
             ConvertOnCompletionFormatOverride = convertOnCompletionFormat,
+            UploadedAfterOverride = uploadedAfter,
         };
         jobs[job.Id] = job;
 
@@ -491,7 +503,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         var opts = options.CurrentValue.Integrations.YtDlp;
         var metadata = YtDlpMetadataParser.Parse(track.Title, track.Uploader, track.PlaylistIndex, track.UploadDate, opts.DefaultGenre);
-        var error = YtDlpTagWriter.Write(track.FilePath, metadata, out _);
+        var error = YtDlpTagWriter.Write(track.FilePath, metadata, track.Url, out _);
 
         if (jobs.TryGetValue(track.JobId, out var job))
         {
@@ -1144,7 +1156,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         }
         else
         {
-            tagError = YtDlpTagWriter.Write(filePath, metadata, out fileDuration);
+            tagError = YtDlpTagWriter.Write(filePath, metadata, track.Url, out fileDuration);
             if (tagError != null)
             {
                 Log.Warning("YtDlp: tag writing failed for {File}: {Error}", filePath, tagError);
@@ -1635,7 +1647,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     {
         if (job.AudioFormatOverride == null && job.AudioQualityOverride == null &&
             job.DefaultGenreOverride == null && job.MinTrackDurationSecondsOverride == null &&
-            job.MaxTrackDurationSecondsOverride == null)
+            job.MaxTrackDurationSecondsOverride == null && job.UploadedAfterOverride == null)
         {
             return opts;
         }
@@ -1658,6 +1670,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             MinTrackDurationSeconds = job.MinTrackDurationSecondsOverride ?? opts.MinTrackDurationSeconds,
             MaxTrackDurationSeconds = job.MaxTrackDurationSecondsOverride ?? opts.MaxTrackDurationSeconds,
             ConvertOnCompletionFormat = opts.ConvertOnCompletionFormat,
+            UploadedAfter = job.UploadedAfterOverride ?? opts.UploadedAfter,
         };
     }
 
@@ -1742,6 +1755,22 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         if (matchParts.Count > 0)
         {
             args.Append($" --match-filter \"{string.Join(" & ", matchParts)}\"");
+        }
+
+        // Upload-date lower bound for channel/playlist downloads. Whitelisted to fixed relative
+        // values so nothing user-supplied is interpolated into the yt-dlp argument string.
+        var dateAfter = opts.UploadedAfter switch
+        {
+            "today" => "today",
+            "week" => "today-1week",
+            "month" => "today-1month",
+            "year" => "today-1year",
+            _ => null,
+        };
+
+        if (dateAfter != null)
+        {
+            args.Append($" --dateafter {dateAfter}");
         }
 
         if (opts.SponsorBlock)
@@ -1920,6 +1949,445 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         }
     }
 
+    // ── Subscriptions ─────────────────────────────────────────────────────────
+    public IReadOnlyList<YtDlpSubscription> ListSubscriptions()
+        => subscriptions.Values.OrderByDescending(s => s.CreatedAt).ToList();
+
+    public async Task<YtDlpSubscription> AddSubscriptionAsync(string channelUrl, YtDlpSubscriptionOverrides? overrides = null, CancellationToken cancellationToken = default)
+    {
+        var url = NormalizeChannelUrl(channelUrl.Trim());
+
+        var existing = subscriptions.Values.FirstOrDefault(s =>
+            string.Equals(s.ChannelUrl, url, StringComparison.OrdinalIgnoreCase));
+        if (existing != null)
+        {
+            throw new InvalidOperationException("Already subscribed to this channel.");
+        }
+
+        var sub = new YtDlpSubscription
+        {
+            ChannelUrl = url,
+            OutputDirectoryOverride = overrides?.OutputDirectory,
+            AudioFormatOverride = overrides?.AudioFormat,
+            AudioQualityOverride = overrides?.AudioQuality,
+            DefaultGenreOverride = overrides?.DefaultGenre,
+            MinTrackDurationSecondsOverride = overrides?.MinTrackDurationSeconds,
+            MaxTrackDurationSecondsOverride = overrides?.MaxTrackDurationSeconds,
+            ConvertOnCompletionFormatOverride = overrides?.ConvertOnCompletionFormat,
+            UploadedAfterOverride = overrides?.UploadedAfter,
+        };
+
+        subscriptions[sub.Id] = sub;
+
+        await using (var db = await dbFactory.CreateDbContextAsync(cancellationToken))
+        {
+            db.Subscriptions.Add(sub);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        await BroadcastSubscriptionsAsync();
+        await EmitEventAsync(null, "info", $"Subscription added: {url}");
+
+        // First check establishes the baseline (records the newest video, downloads nothing)
+        // so subscribing doesn't pull the channel's entire back-catalogue.
+        await CheckSubscriptionAsync(sub, cancellationToken);
+
+        return sub;
+    }
+
+    public async Task UpdateSubscriptionAsync(Guid id, bool? enabled, int? pollIntervalMinutes, YtDlpSubscriptionOverrides? overrides, CancellationToken cancellationToken = default)
+    {
+        if (!subscriptions.TryGetValue(id, out var sub))
+        {
+            return;
+        }
+
+        if (enabled.HasValue)
+        {
+            sub.Enabled = enabled.Value;
+        }
+
+        if (pollIntervalMinutes.HasValue)
+        {
+            sub.PollIntervalMinutes = Math.Max(0, pollIntervalMinutes.Value);
+        }
+
+        if (overrides != null)
+        {
+            sub.OutputDirectoryOverride = overrides.OutputDirectory;
+            sub.AudioFormatOverride = overrides.AudioFormat;
+            sub.AudioQualityOverride = overrides.AudioQuality;
+            sub.DefaultGenreOverride = overrides.DefaultGenre;
+            sub.MinTrackDurationSecondsOverride = overrides.MinTrackDurationSeconds;
+            sub.MaxTrackDurationSecondsOverride = overrides.MaxTrackDurationSeconds;
+            sub.ConvertOnCompletionFormatOverride = overrides.ConvertOnCompletionFormat;
+            sub.UploadedAfterOverride = overrides.UploadedAfter;
+        }
+
+        await PersistSubscriptionAsync(sub, cancellationToken);
+        await BroadcastSubscriptionsAsync();
+    }
+
+    public async Task RemoveSubscriptionAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!subscriptions.TryRemove(id, out var sub))
+        {
+            return;
+        }
+
+        await using (var db = await dbFactory.CreateDbContextAsync(cancellationToken))
+        {
+            var dbSub = await db.Subscriptions.FindAsync([id], cancellationToken);
+            if (dbSub != null)
+            {
+                db.Subscriptions.Remove(dbSub);
+                await db.SaveChangesAsync(cancellationToken);
+            }
+        }
+
+        await BroadcastSubscriptionsAsync();
+        await EmitEventAsync(null, "info", $"Subscription removed: {sub.ChannelTitle ?? sub.ChannelUrl}");
+    }
+
+    public async Task CheckSubscriptionNowAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (subscriptions.TryGetValue(id, out var sub))
+        {
+            await CheckSubscriptionAsync(sub, cancellationToken);
+        }
+    }
+
+    // Ticks once a minute and checks every subscription whose interval has elapsed. Checks run
+    // one-at-a-time (subscriptionCheckLock) so a burst of due subscriptions doesn't spawn a pile
+    // of concurrent yt-dlp enumerations and download jobs.
+    private async Task RunSubscriptionPollLoopAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                if (!options.CurrentValue.Integrations.YtDlp.Enabled)
+                {
+                    continue;
+                }
+
+                var globalInterval = Math.Max(5, options.CurrentValue.Integrations.YtDlp.SubscriptionPollMinutes);
+                var now = DateTime.UtcNow;
+
+                foreach (var sub in subscriptions.Values)
+                {
+                    if (!sub.Enabled)
+                    {
+                        continue;
+                    }
+
+                    var interval = sub.PollIntervalMinutes > 0 ? sub.PollIntervalMinutes : globalInterval;
+                    if (sub.LastCheckedAt.HasValue && (now - sub.LastCheckedAt.Value).TotalMinutes < interval)
+                    {
+                        continue;
+                    }
+
+                    await CheckSubscriptionAsync(sub, cancellationToken);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "YtDlp: subscription poll loop terminated unexpectedly");
+        }
+    }
+
+    private async Task CheckSubscriptionAsync(YtDlpSubscription sub, CancellationToken cancellationToken)
+    {
+        await subscriptionCheckLock.WaitAsync(cancellationToken);
+        try
+        {
+            var opts = options.CurrentValue.Integrations.YtDlp;
+            var count = Math.Clamp(opts.SubscriptionCheckCount, 1, 100);
+
+            List<ChannelEntry> entries;
+            try
+            {
+                entries = await EnumerateChannelRecentAsync(sub.ChannelUrl, count, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                sub.LastError = ex.Message;
+                sub.LastCheckedAt = DateTime.UtcNow;
+                await PersistSubscriptionAsync(sub, CancellationToken.None);
+                await BroadcastSubscriptionsAsync();
+                await EmitEventAsync(null, "error", $"Subscription check failed ({sub.ChannelTitle ?? sub.ChannelUrl}): {ex.Message}");
+                return;
+            }
+
+            if (entries.Count == 0)
+            {
+                sub.LastError = "No videos returned from channel";
+                sub.LastCheckedAt = DateTime.UtcNow;
+                await PersistSubscriptionAsync(sub, CancellationToken.None);
+                await BroadcastSubscriptionsAsync();
+                return;
+            }
+
+            // Populate display metadata from the listing the first time we see it
+            if (string.IsNullOrEmpty(sub.ChannelTitle) && !string.IsNullOrEmpty(entries[0].Uploader))
+            {
+                sub.ChannelTitle = entries[0].Uploader;
+            }
+
+            if (string.IsNullOrEmpty(sub.ThumbnailUrl))
+            {
+                sub.ThumbnailUrl = entries[0].ThumbnailUrl;
+            }
+
+            // Baseline: the very first check records the newest video and downloads nothing.
+            if (sub.LastVideoId == null)
+            {
+                sub.LastVideoId = entries[0].VideoId;
+                sub.LastCheckedAt = DateTime.UtcNow;
+                sub.LastError = null;
+                await PersistSubscriptionAsync(sub, CancellationToken.None);
+                await BroadcastSubscriptionsAsync();
+                await EmitEventAsync(null, "info", $"Subscription baselined: {sub.ChannelTitle ?? sub.ChannelUrl} ({entries.Count} videos)");
+                return;
+            }
+
+            // Channel listings are newest-first; everything ahead of the cursor is new.
+            var newEntries = new List<ChannelEntry>();
+            foreach (var entry in entries)
+            {
+                if (entry.VideoId == sub.LastVideoId)
+                {
+                    break;
+                }
+
+                newEntries.Add(entry);
+            }
+
+            sub.LastVideoId = entries[0].VideoId;
+            sub.LastCheckedAt = DateTime.UtcNow;
+            sub.LastError = null;
+
+            // Download oldest-first so playlists/library ordering reflects upload order
+            newEntries.Reverse();
+            var queued = 0;
+            foreach (var entry in newEntries)
+            {
+                if (string.IsNullOrEmpty(entry.Url))
+                {
+                    continue;
+                }
+
+                await SubmitAsync(
+                    entry.Url,
+                    sub.OutputDirectoryOverride,
+                    sub.AudioFormatOverride,
+                    sub.AudioQualityOverride,
+                    sub.DefaultGenreOverride,
+                    sub.MinTrackDurationSecondsOverride,
+                    sub.MaxTrackDurationSecondsOverride,
+                    sub.ConvertOnCompletionFormatOverride,
+                    sub.UploadedAfterOverride,
+                    cancellationToken);
+                queued++;
+            }
+
+            sub.NewVideosFound += queued;
+            await PersistSubscriptionAsync(sub, CancellationToken.None);
+            await BroadcastSubscriptionsAsync();
+
+            if (queued > 0)
+            {
+                await EmitEventAsync(null, "info", $"Subscription found {queued} new video(s): {sub.ChannelTitle ?? sub.ChannelUrl}");
+            }
+        }
+        finally
+        {
+            subscriptionCheckLock.Release();
+        }
+    }
+
+    // Enumerates the most recent `count` uploads of a channel/playlist without downloading.
+    private async Task<List<ChannelEntry>> EnumerateChannelRecentAsync(string channelUrl, int count, CancellationToken cancellationToken)
+    {
+        var opts = options.CurrentValue.Integrations.YtDlp;
+        var entries = new List<ChannelEntry>();
+
+        var args = new System.Text.StringBuilder($"--flat-playlist --dump-json --playlist-end {count}");
+        if (jsRuntimeArg != null)
+        {
+            args.Append($" {jsRuntimeArg}");
+        }
+
+        var cookieFile = AcquireCookieFile();
+        if (cookieFile != null)
+        {
+            args.Append($" --cookies \"{cookieFile}\"");
+        }
+
+        args.Append($" \"{channelUrl}\"");
+
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo(opts.ExecutablePath)
+            {
+                Arguments = args.ToString(),
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            },
+        };
+
+        try
+        {
+            process.Start();
+
+            var stderr = new System.Text.StringBuilder();
+            var stderrTask = Task.Run(async () =>
+            {
+                string? errLine;
+                while ((errLine = await process.StandardError.ReadLineAsync(CancellationToken.None)) != null)
+                {
+                    stderr.AppendLine(errLine);
+                }
+            }, CancellationToken.None);
+
+            string? line;
+            while ((line = await process.StandardOutput.ReadLineAsync(cancellationToken)) != null)
+            {
+                var entry = ParseChannelEntry(line);
+                if (entry != null)
+                {
+                    entries.Add(entry);
+                }
+            }
+
+            await Task.WhenAll(process.WaitForExitAsync(cancellationToken), stderrTask);
+
+            if (entries.Count == 0 && process.ExitCode != 0)
+            {
+                throw new InvalidOperationException(
+                    stderr.ToString().Trim() is { Length: > 0 } err
+                        ? err.Split('\n')[^1]
+                        : $"yt-dlp exited with code {process.ExitCode}");
+            }
+
+            return entries;
+        }
+        finally
+        {
+            ReleaseCookieFile(cookieFile);
+        }
+    }
+
+    private static ChannelEntry? ParseChannelEntry(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            var videoId = root.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? string.Empty : string.Empty;
+            if (string.IsNullOrEmpty(videoId))
+            {
+                return null;
+            }
+
+            var url = root.TryGetProperty("url", out var urlProp) ? urlProp.GetString() ?? string.Empty : string.Empty;
+            if (!url.StartsWith("http"))
+            {
+                url = $"https://www.youtube.com/watch?v={videoId}";
+            }
+
+            var title = root.TryGetProperty("title", out var titleProp) ? titleProp.GetString() ?? string.Empty : string.Empty;
+            var uploader = root.TryGetProperty("uploader", out var upProp) ? upProp.GetString() ?? string.Empty : string.Empty;
+            if (string.IsNullOrEmpty(uploader) && root.TryGetProperty("channel", out var chProp))
+            {
+                uploader = chProp.GetString() ?? string.Empty;
+            }
+
+            var thumbnail = root.TryGetProperty("thumbnail", out var thumbProp) ? thumbProp.GetString() : null;
+
+            return new ChannelEntry(videoId, url, title, uploader, thumbnail);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // Point bare channel URLs at the Videos tab so we enumerate uploads (newest-first) rather
+    // than the channel home, which mixes in shorts, playlists and featured sections.
+    private static string NormalizeChannelUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return url;
+        }
+
+        var isChannel = url.Contains("/@", StringComparison.OrdinalIgnoreCase)
+            || url.Contains("/channel/", StringComparison.OrdinalIgnoreCase)
+            || url.Contains("/c/", StringComparison.OrdinalIgnoreCase)
+            || url.Contains("/user/", StringComparison.OrdinalIgnoreCase);
+
+        if (!isChannel)
+        {
+            return url;
+        }
+
+        var trimmed = url.TrimEnd('/');
+        foreach (var tab in new[] { "/videos", "/streams", "/shorts", "/playlists", "/featured", "/community" })
+        {
+            if (trimmed.EndsWith(tab, StringComparison.OrdinalIgnoreCase))
+            {
+                return trimmed;
+            }
+        }
+
+        return trimmed + "/videos";
+    }
+
+    private async Task PersistSubscriptionAsync(YtDlpSubscription sub, CancellationToken cancellationToken)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var dbSub = await db.Subscriptions.FindAsync([sub.Id], cancellationToken);
+        if (dbSub == null)
+        {
+            return;
+        }
+
+        dbSub.ChannelTitle = sub.ChannelTitle;
+        dbSub.ThumbnailUrl = sub.ThumbnailUrl;
+        dbSub.Enabled = sub.Enabled;
+        dbSub.PollIntervalMinutes = sub.PollIntervalMinutes;
+        dbSub.LastVideoId = sub.LastVideoId;
+        dbSub.LastCheckedAt = sub.LastCheckedAt;
+        dbSub.NewVideosFound = sub.NewVideosFound;
+        dbSub.LastError = sub.LastError;
+        dbSub.OutputDirectoryOverride = sub.OutputDirectoryOverride;
+        dbSub.AudioFormatOverride = sub.AudioFormatOverride;
+        dbSub.AudioQualityOverride = sub.AudioQualityOverride;
+        dbSub.DefaultGenreOverride = sub.DefaultGenreOverride;
+        dbSub.MinTrackDurationSecondsOverride = sub.MinTrackDurationSecondsOverride;
+        dbSub.MaxTrackDurationSecondsOverride = sub.MaxTrackDurationSecondsOverride;
+        dbSub.ConvertOnCompletionFormatOverride = sub.ConvertOnCompletionFormatOverride;
+        dbSub.UploadedAfterOverride = sub.UploadedAfterOverride;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private Task BroadcastSubscriptionsAsync() => hub.BroadcastSubscriptionsAsync(ListSubscriptions());
+
+    private sealed record ChannelEntry(string VideoId, string Url, string Title, string Uploader, string? ThumbnailUrl);
+
     private Task BroadcastJobsAsync() => hub.BroadcastJobsAsync(jobs.Values.OrderByDescending(j => j.RequestedAt));
 
     public void Dispose()
@@ -1934,5 +2402,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         cts.Dispose();
         workerSlots?.Dispose();
+        subscriptionCheckLock.Dispose();
     }
 }

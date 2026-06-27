@@ -42,6 +42,7 @@ public class YtDlpDbContext : DbContext
 
     public DbSet<YtDlpJob> Jobs { get; set; }
     public DbSet<YtDlpTrack> Tracks { get; set; }
+    public DbSet<YtDlpSubscription> Subscriptions { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -83,5 +84,13 @@ public class YtDlpDbContext : DbContext
 
         modelBuilder.Entity<YtDlpTrack>()
             .HasIndex(e => e.JobId);
+
+        modelBuilder.Entity<YtDlpSubscription>()
+            .Property(e => e.CreatedAt)
+            .HasConversion(v => v, v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
+
+        modelBuilder.Entity<YtDlpSubscription>()
+            .Property(e => e.LastCheckedAt)
+            .HasConversion(v => v, v => v.HasValue ? DateTime.SpecifyKind(v.Value, DateTimeKind.Utc) : null);
     }
 }

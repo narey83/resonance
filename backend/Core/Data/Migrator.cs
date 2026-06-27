@@ -80,6 +80,7 @@ public class Migrator
             { nameof(Z2026_06_16_YtDlpConvertFormatMigration), new Z2026_06_16_YtDlpConvertFormatMigration(connectionStrings: Databases) },
             { nameof(Z2026_06_17_PlayHistorySourceMigration), new Z2026_06_17_PlayHistorySourceMigration(connectionStrings: Databases) },
             { nameof(Z2026_06_19_TransferEndedAtIndexMigration), new Z2026_06_19_TransferEndedAtIndexMigration(connectionStrings: Databases) },
+            { nameof(Z2026_06_27_YtDlpUploadedAfterMigration), new Z2026_06_27_YtDlpUploadedAfterMigration(connectionStrings: Databases) },
         };
     }
 

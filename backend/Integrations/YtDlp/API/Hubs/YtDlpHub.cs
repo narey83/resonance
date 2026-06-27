@@ -44,6 +44,7 @@ public static class YtDlpHubMethods
     public const string JobLog = "JOB_LOG";
     public const string Event = "EVENT";
     public const string EventSnapshot = "EVENT_SNAPSHOT";
+    public const string Subscriptions = "SUBSCRIPTIONS";
 }
 
 public static class YtDlpHubExtensions
@@ -59,6 +60,9 @@ public static class YtDlpHubExtensions
 
     public static Task BroadcastEventAsync(this IHubContext<YtDlpHub> hub, YtDlpEvent ev)
         => hub.Clients.All.SendAsync(YtDlpHubMethods.Event, ev);
+
+    public static Task BroadcastSubscriptionsAsync(this IHubContext<YtDlpHub> hub, IEnumerable<YtDlpSubscription> subscriptions)
+        => hub.Clients.All.SendAsync(YtDlpHubMethods.Subscriptions, subscriptions);
 }
 
 [Authorize(Policy = AuthPolicy.Any)]
@@ -75,6 +79,7 @@ public class YtDlpHub : Hub
     {
         await Clients.Caller.SendAsync(YtDlpHubMethods.Jobs, Service.ListJobs());
         await Clients.Caller.SendAsync(YtDlpHubMethods.EventSnapshot, Service.GetRecentEvents());
+        await Clients.Caller.SendAsync(YtDlpHubMethods.Subscriptions, Service.ListSubscriptions());
     }
 
     public Task RemoveJob(Guid jobId) => Service.RemoveJobAsync(jobId);

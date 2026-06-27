@@ -66,7 +66,7 @@ public class YtDlpController : ControllerBase
             return BadRequest("url is required");
         }
 
-        var job = await Service.SubmitAsync(request.Url, request.OutputDirectory, request.AudioFormat, request.AudioQuality, request.DefaultGenre, request.MinTrackDurationSeconds, request.MaxTrackDurationSeconds, request.ConvertOnCompletionFormat, cancellationToken);
+        var job = await Service.SubmitAsync(request.Url, request.OutputDirectory, request.AudioFormat, request.AudioQuality, request.DefaultGenre, request.MinTrackDurationSeconds, request.MaxTrackDurationSeconds, request.ConvertOnCompletionFormat, request.UploadedAfter, cancellationToken);
         return Ok(job);
     }
 
@@ -140,6 +140,55 @@ public class YtDlpController : ControllerBase
         await Service.RetryTagWritingAsync(trackId);
         return NoContent();
     }
+
+    // ── Subscriptions ─────────────────────────────────────────────────────────
+    [HttpGet("subscriptions")]
+    public IActionResult ListSubscriptions() => Ok(Service.ListSubscriptions());
+
+    [HttpPost("subscriptions")]
+    [Consumes("application/json")]
+    public async Task<IActionResult> AddSubscription([FromBody] AddSubscriptionRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.ChannelUrl))
+        {
+            return BadRequest("channelUrl is required");
+        }
+
+        try
+        {
+            var sub = await Service.AddSubscriptionAsync(request.ChannelUrl, ToOverrides(request), cancellationToken);
+            return Ok(sub);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpPatch("subscriptions/{id:guid}")]
+    [Consumes("application/json")]
+    public async Task<IActionResult> UpdateSubscription(Guid id, [FromBody] UpdateSubscriptionRequest request, CancellationToken cancellationToken)
+    {
+        await Service.UpdateSubscriptionAsync(id, request.Enabled, request.PollIntervalMinutes, request.HasOverrides ? ToOverrides(request) : null, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpDelete("subscriptions/{id:guid}")]
+    public async Task<IActionResult> RemoveSubscription(Guid id, CancellationToken cancellationToken)
+    {
+        await Service.RemoveSubscriptionAsync(id, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPost("subscriptions/{id:guid}/check")]
+    public async Task<IActionResult> CheckSubscription(Guid id, CancellationToken cancellationToken)
+    {
+        await Service.CheckSubscriptionNowAsync(id, cancellationToken);
+        return NoContent();
+    }
+
+    private static YtDlpSubscriptionOverrides ToOverrides(ISubscriptionOverrideFields f)
+        => new(f.OutputDirectory, f.AudioFormat, f.AudioQuality, f.DefaultGenre, f.MinTrackDurationSeconds, f.MaxTrackDurationSeconds, f.ConvertOnCompletionFormat, f.UploadedAfter);
 
     // ── Search ──────────────────────────────────────────────────────────────
     [HttpGet("search")]
@@ -268,4 +317,41 @@ public record SubmitJobRequest(
     string? DefaultGenre,
     int? MinTrackDurationSeconds,
     int? MaxTrackDurationSeconds,
-    string? ConvertOnCompletionFormat);
+    string? ConvertOnCompletionFormat,
+    string? UploadedAfter);
+
+public interface ISubscriptionOverrideFields
+{
+    string? OutputDirectory { get; }
+    string? AudioFormat { get; }
+    int? AudioQuality { get; }
+    string? DefaultGenre { get; }
+    int? MinTrackDurationSeconds { get; }
+    int? MaxTrackDurationSeconds { get; }
+    string? ConvertOnCompletionFormat { get; }
+    string? UploadedAfter { get; }
+}
+
+public record AddSubscriptionRequest(
+    string ChannelUrl,
+    string? OutputDirectory,
+    string? AudioFormat,
+    int? AudioQuality,
+    string? DefaultGenre,
+    int? MinTrackDurationSeconds,
+    int? MaxTrackDurationSeconds,
+    string? ConvertOnCompletionFormat,
+    string? UploadedAfter) : ISubscriptionOverrideFields;
+
+public record UpdateSubscriptionRequest(
+    bool? Enabled,
+    int? PollIntervalMinutes,
+    bool HasOverrides,
+    string? OutputDirectory,
+    string? AudioFormat,
+    int? AudioQuality,
+    string? DefaultGenre,
+    int? MinTrackDurationSeconds,
+    int? MaxTrackDurationSeconds,
+    string? ConvertOnCompletionFormat,
+    string? UploadedAfter) : ISubscriptionOverrideFields;

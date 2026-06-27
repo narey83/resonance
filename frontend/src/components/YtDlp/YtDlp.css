@@ -777,3 +777,93 @@
   margin-left: 6px;
   margin-bottom: 8px;
 }
+
+/* ── Subscriptions ──────────────────────────────────────────────────────── */
+.ytdlp-subs-root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.ytdlp-subs-add {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+.ytdlp-subs-add input[type='text'] {
+  flex: 1 1 320px;
+  padding: 8px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+.ytdlp-subs-add input[type='text']:focus,
+.ytdlp-subs-add select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.ytdlp-subs-add select {
+  padding: 6px 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.ytdlp-subs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ytdlp-sub {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.ytdlp-sub--paused {
+  opacity: 0.6;
+}
+.ytdlp-sub-info {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ytdlp-sub-title {
+  display: block;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ytdlp-sub-title:hover {
+  color: var(--accent);
+}
+.ytdlp-sub-meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.ytdlp-sub-error {
+  font-size: 12px;
+  color: var(--danger, #e0556b);
+  margin-top: 3px;
+}
+.ytdlp-sub .ytdlp-job-actions select {
+  padding: 4px 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+}
