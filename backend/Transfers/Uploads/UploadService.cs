@@ -504,24 +504,12 @@ namespace resonance.Transfers.Uploads
 
                 throw;
             }
-            catch (Exception ex) when (ex is OperationCanceledException || ex is TimeoutException)
-            {
-                Log.Error(ex, "Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
-
-                TryFail(transfer.Id, exception: ex);
-                _ = ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, ex.Message);
-
-                // todo: broadcast
-                SynchronizedUpdate(transfer, semaphore: syncRoot, cancellationToken: CancellationToken.None);
-
-                throw;
-            }
             catch (Exception ex)
             {
                 if (IsExpectedPeerFailure(ex))
                 {
-                    // the remote user disconnected or the connection dropped mid-transfer (e.g. broken pipe);
-                    // routine in a P2P network, so log quietly without the stack trace.
+                    // the remote user is offline, dropped the connection, rejected the transfer, or simply timed
+                    // out; routine in a P2P network, so log quietly without the stack trace.
                     Log.Warning("Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
                 }
                 else
@@ -989,9 +977,22 @@ namespace resonance.Transfers.Uploads
         {
             for (var ex = exception; ex is not null; ex = ex.InnerException)
             {
-                if (ex is ConnectionException)
+                // routine, peer- or network-originated outcomes in a P2P network: the remote user is offline
+                // (UserOfflineException), rejected or aborted the transfer (TransferException /
+                // TransferRejectedException), the connection dropped (ConnectionException), the peer's address
+                // couldn't be resolved (UserEndPointException), or things simply timed out. All Soulseek peer
+                // failures derive from SoulseekClientException; none of these indicate a fault on our side, so
+                // they should not be logged at ERROR.
+                if (ex is SoulseekClientException or TimeoutException or OperationCanceledException)
                 {
                     return true;
+                }
+
+                // a faulted Task surfaces as an AggregateException that may carry several causes; treat the whole
+                // thing as expected only when every cause is.
+                if (ex is AggregateException aggregate)
+                {
+                    return aggregate.Flatten().InnerExceptions.All(IsExpectedPeerFailure);
                 }
             }
 

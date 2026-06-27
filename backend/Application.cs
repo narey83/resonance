@@ -253,8 +253,10 @@ namespace resonance
             Client.LoggedIn += Client_LoggedIn;
             Client.StateChanged += Client_StateChanged;
             Client.DistributedNetworkStateChanged += Client_DistributedNetworkStateChanged;
-            Client.DownloadDenied += (e, args) => Log.Error("Download of {Filename} from {Username} was denied by the remote user: {Message}", args.Filename, args.Username, args.Message);
-            Client.DownloadFailed += (e, args) => Log.Error("Download of {Filename} from {Username} reported as failed by the remote user", args.Filename, args.Username);
+            // denials/failures reported by the remote peer are routine P2P outcomes (they pulled the file, went
+            // offline, etc.), not faults on our side, so log them at Warning rather than Error.
+            Client.DownloadDenied += (e, args) => Log.Warning("Download of {Filename} from {Username} was denied by the remote user: {Message}", args.Filename, args.Username, args.Message);
+            Client.DownloadFailed += (e, args) => Log.Warning("Download of {Filename} from {Username} reported as failed by the remote user", args.Filename, args.Username);
 
             Client.ExcludedSearchPhrasesReceived += Client_ExcludedSearchPhrasesReceived;
 
@@ -1573,7 +1575,20 @@ namespace resonance
 
             var completed = xfer.State.HasFlag(TransferStates.Completed);
 
-            Log.Information($"[{direction}] [{user}/{file}] {oldState} => {state}{(completed ? $" ({xfer.BytesTransferred}/{xfer.Size} = {xfer.PercentComplete}%) @ {xfer.AverageSpeed.SizeSuffix()}/s" : string.Empty)}");
+            // a single transfer fires several state transitions (Requested => Initializing => InProgress => ...);
+            // only the terminal transition carries useful information (bytes/speed), so log that at Information and
+            // relegate the intermediate hops to Debug to keep the log readable. structured properties (rather than
+            // string interpolation) let these be filtered/queried by user, file, and state downstream.
+            if (completed)
+            {
+                Log.Information(
+                    "[{Direction}] [{User}/{File}] {OldState} => {State} ({BytesTransferred}/{Size} = {PercentComplete}%) @ {Speed}/s",
+                    direction, user, file, oldState, state, xfer.BytesTransferred, xfer.Size, xfer.PercentComplete, xfer.AverageSpeed.SizeSuffix());
+            }
+            else
+            {
+                Log.Debug("[{Direction}] [{User}/{File}] {OldState} => {State}", direction, user, file, oldState, state);
+            }
 
             if (completed)
             {
