@@ -115,6 +115,13 @@ namespace resonance.Shares
         IEnumerable<UntaggedFile> GetUntaggedFiles();
 
         /// <summary>
+        ///     Returns tagged files whose metadata is incomplete (missing a core field), so the tag
+        ///     editor can surface exactly what auto-tagging could not fill.
+        /// </summary>
+        /// <returns>The list of tagged-but-incomplete files.</returns>
+        IEnumerable<TaggedFile> GetIncompleteFiles();
+
+        /// <summary>
         ///     Writes tag data to the specified file and updates the share cache.
         /// </summary>
         /// <param name="maskedFilename">The masked filename identifying the file.</param>

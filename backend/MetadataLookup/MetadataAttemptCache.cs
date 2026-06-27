@@ -38,9 +38,10 @@ namespace resonance.MetadataLookup
 
     /// <summary>
     ///     A small persistent record of which files have already been looked up online, keyed by path
-    ///     and file fingerprint (size + last-modified). Lets the enrichment service skip tracks it has
-    ///     already attempted, so unmatchable files aren't re-queried on every pass. An attempt is retried
-    ///     only if the file changes (new fingerprint) or after the configured retry window elapses.
+    ///     and the query identity (normalized artist/title/album). Lets the enrichment service skip
+    ///     tracks it has already attempted, so unmatchable files aren't re-queried on every pass. An
+    ///     attempt is retried only if the queryable metadata changes or the retry window elapses — so a
+    ///     cosmetic file rewrite (e.g. a tag sanitization pass) does not, on its own, force a re-lookup.
     /// </summary>
     internal sealed class MetadataAttemptCache
     {
@@ -57,19 +58,21 @@ namespace resonance.MetadataLookup
         }
 
         /// <summary>
-        ///     Returns true when the file has already been attempted with the same fingerprint and the
-        ///     retry window has not yet elapsed.
+        ///     Returns true when the file has already been attempted with the same query identity and
+        ///     provider, and the retry window has not yet elapsed.
         /// </summary>
-        public bool ShouldSkip(string path, long size, long modified, string provider, TimeSpan retryAfter)
+        public bool ShouldSkip(string path, string identity, string provider, TimeSpan retryAfter)
         {
             if (!entries.TryGetValue(path, out var attempt))
             {
                 return false;
             }
 
-            if (attempt.Size != size || attempt.Modified != modified)
+            // identity is already normalized by the caller, so an ordinal compare is correct. A null
+            // Identity is a legacy fingerprint-era entry — treat as a mismatch so it is re-attempted once.
+            if (!string.Equals(attempt.Identity, identity, StringComparison.Ordinal))
             {
-                return false; // file changed since the last attempt — look it up again
+                return false; // queryable metadata changed since the last attempt — look it up again
             }
 
             // a different provider hasn't tried this file yet — give it a chance. Entries written
@@ -84,10 +87,10 @@ namespace resonance.MetadataLookup
             return ageSeconds < retryAfter.TotalSeconds;
         }
 
-        /// <summary>Records an attempt for the specified file, fingerprint and provider.</summary>
-        public void Record(string path, long size, long modified, string provider)
+        /// <summary>Records an attempt for the specified file, query identity and provider.</summary>
+        public void Record(string path, string identity, string provider)
         {
-            entries[path] = new Attempt(size, modified, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), provider);
+            entries[path] = new Attempt(identity, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), provider);
         }
 
         /// <summary>Persists the cache to disk (atomic write via a temp file).</summary>
@@ -164,6 +167,6 @@ namespace resonance.MetadataLookup
             }
         }
 
-        private sealed record Attempt(long Size, long Modified, long AttemptedAt, string Provider = null);
+        private sealed record Attempt(string Identity, long AttemptedAt, string Provider = null);
     }
 }

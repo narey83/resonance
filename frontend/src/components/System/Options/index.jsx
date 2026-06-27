@@ -65,6 +65,7 @@ const SCHEMA = [
         type: 'text',
       },
     ],
+    group: 'System',
     title: 'General',
   },
   {
@@ -94,6 +95,7 @@ const SCHEMA = [
         type: 'select',
       },
     ],
+    group: 'Soulseek',
     title: 'Soulseek Account',
   },
   {
@@ -124,6 +126,7 @@ const SCHEMA = [
         type: 'number',
       },
     ],
+    group: 'Soulseek',
     title: 'UPnP Port Mapping',
   },
   {
@@ -178,6 +181,7 @@ const SCHEMA = [
         type: 'number',
       },
     ],
+    group: 'Transfers',
     title: 'Downloads',
   },
   {
@@ -200,6 +204,7 @@ const SCHEMA = [
         type: 'speed',
       },
     ],
+    group: 'Transfers',
     title: 'Uploads',
   },
   {
@@ -232,6 +237,7 @@ const SCHEMA = [
         type: 'number',
       },
     ],
+    group: 'Transfers',
     title: 'Default Group',
   },
   {
@@ -281,9 +287,11 @@ const SCHEMA = [
         type: 'number',
       },
     ],
+    group: 'Transfers',
     title: 'Leechers',
   },
   {
+    group: 'Transfers',
     title: 'Schedule',
     type: 'schedule',
   },
@@ -313,6 +321,7 @@ const SCHEMA = [
         type: 'number',
       },
     ],
+    group: 'Soulseek',
     title: 'Distributed Network',
   },
   {
@@ -388,6 +397,7 @@ const SCHEMA = [
         type: 'number',
       },
     ],
+    group: 'Soulseek',
     title: 'Connection',
   },
   {
@@ -453,6 +463,7 @@ const SCHEMA = [
         type: 'toggle',
       },
     ],
+    group: 'System',
     title: 'Web Server',
   },
   {
@@ -485,6 +496,7 @@ const SCHEMA = [
         type: 'duration',
       },
     ],
+    group: 'System',
     title: 'Retention',
   },
   {
@@ -548,6 +560,7 @@ const SCHEMA = [
         type: 'textarea',
       },
     ],
+    group: 'Peers',
     title: 'Browse Rate Limiting',
   },
   {
@@ -610,9 +623,11 @@ const SCHEMA = [
         type: 'duration',
       },
     ],
+    group: 'Peers',
     title: 'Transfer Error Notifications',
   },
   {
+    group: 'Sharing',
     title: 'Shares',
     type: 'shares',
   },
@@ -653,6 +668,7 @@ const SCHEMA = [
         type: 'toggle',
       },
     ],
+    group: 'Sharing',
     title: 'DLNA',
   },
   {
@@ -759,6 +775,7 @@ const SCHEMA = [
         type: 'toggle',
       },
     ],
+    group: 'Integrations',
     title: 'YouTube / yt-dlp',
   },
   {
@@ -853,6 +870,7 @@ const SCHEMA = [
         type: 'password',
       },
     ],
+    group: 'Integrations',
     title: 'VPN',
   },
   {
@@ -882,6 +900,7 @@ const SCHEMA = [
         type: 'number',
       },
     ],
+    group: 'Integrations',
     title: 'ffmpeg',
   },
   {
@@ -1009,9 +1028,11 @@ const SCHEMA = [
         type: 'toggle',
       },
     ],
+    group: 'Integrations',
     title: 'Metadata Retrieval',
   },
   {
+    group: 'System',
     title: 'Developer',
     type: 'developer',
   },
@@ -1599,6 +1620,17 @@ const LastfmKeyHelp = () => (
 
 const SOULSEEK_ACCOUNT_TITLE = 'Soulseek Account';
 
+// Order in which nav groups are shown. Sections are bucketed by their `group`
+// field; the flat SCHEMA order is preserved within each group.
+const GROUP_ORDER = [
+  'System',
+  'Soulseek',
+  'Transfers',
+  'Peers',
+  'Sharing',
+  'Integrations',
+];
+
 // eslint-disable-next-line complexity
 const Options = ({ options, state = {}, theme }) => {
   const [activeSection, setActiveSection] = useState(0);
@@ -1826,16 +1858,31 @@ const Options = ({ options, state = {}, theme }) => {
 
       <div className="opts-layout">
         <nav className="opts-nav">
-          {SCHEMA.map(({ title }, index) => (
-            <button
-              className={`opts-nav-item${activeSection === index ? ' opts-nav-item--active' : ''}`}
-              key={title}
-              onClick={() => setActiveSection(index)}
-              type="button"
-            >
-              {title}
-            </button>
-          ))}
+          {GROUP_ORDER.map((group) => {
+            const items = SCHEMA.map((section, index) => ({
+              section,
+              index,
+            })).filter(({ section }) => section.group === group);
+            if (items.length === 0) return null;
+            return (
+              <div
+                className="opts-nav-group"
+                key={group}
+              >
+                <div className="opts-nav-group-title">{group}</div>
+                {items.map(({ index, section }) => (
+                  <button
+                    className={`opts-nav-item${activeSection === index ? ' opts-nav-item--active' : ''}`}
+                    key={section.title}
+                    onClick={() => setActiveSection(index)}
+                    type="button"
+                  >
+                    {section.title}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
         </nav>
 
         <div className="opts-content">

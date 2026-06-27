@@ -33,13 +33,14 @@ import { haptics } from '../lib/haptics';
 import { Radius, Spacing, ThemeColors, Typography } from '../theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const ARTWORK_SIZE = SCREEN_W;
+// Inset from the screen edges so the cover floats rather than going full-bleed.
+const ARTWORK_SIZE = Math.min(SCREEN_W - 48, Math.round(SCREEN_H * 0.5));
 // Fixed queue-row height so FlatList offsets are exact (via getItemLayout) and scrolling the
 // current track to a consistent position never has to estimate/correct — which is what caused
 // the "bounce". Rows must render at exactly this height regardless of whether they show an artist.
 const QUEUE_ROW_HEIGHT = 60;
-const SNAP_VELOCITY = 0.6;
-const SNAP_DISTANCE = 80;
+const SNAP_VELOCITY = 0.5;
+const SNAP_DISTANCE = 64;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -538,10 +539,21 @@ export default function PlayerOverlay() {
 
   const dragPan = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_, g) => g.dy > 12 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5,
+      // Claim downward-ish drags early (small threshold, lenient vertical bias) so gentle swipes
+      // still register instead of falling through to a no-op.
+      onMoveShouldSetPanResponder: (_, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx) * 1.2,
+      // Track the finger so the sheet visibly follows the drag — this is the feedback that was
+      // missing, which made short/slow swipes feel like they "didn't register".
+      onPanResponderMove: (_, g) => slideY.setValue(Math.max(0, g.dy)),
       onPanResponderRelease: (_, g) => {
-        if (g.dy > SNAP_DISTANCE || g.vy > SNAP_VELOCITY) collapse();
+        if (g.dy > SNAP_DISTANCE || g.vy > SNAP_VELOCITY) {
+          collapse();
+        } else {
+          Animated.spring(slideY, { toValue: 0, useNativeDriver: true, tension: 220, friction: 26 }).start();
+        }
       },
+      onPanResponderTerminate: () =>
+        Animated.spring(slideY, { toValue: 0, useNativeDriver: true, tension: 220, friction: 26 }).start(),
     }),
   ).current;
 

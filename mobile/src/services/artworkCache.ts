@@ -12,6 +12,14 @@ export const PLAYER_ART_SIZE = Math.min(
   Math.round(Dimensions.get('window').width * PixelRatio.get()),
 );
 
+// Canonical thumbnail size for every small artwork cell (library/folder/album-grid rows, the
+// mini-bar, Android Auto icons, lock-screen metadata). The server resizes + caches per (path,
+// size) and expo-image caches per (path, size) cacheKey, so the more sizes we request the more
+// duplicate transcodes and downloads of the *same* cover we incur. Collapsing all small cells
+// onto one size — and the player/album-hero onto PLAYER_ART_SIZE — means a cover is fetched at
+// most twice total instead of once per screen. 192px covers list cells up to ~64pt at 3x.
+export const ARTWORK_THUMB_SIZE = 192;
+
 // Warm expo-image's cache for a single artwork URL under its stable cacheKey (path-derived,
 // not the rotating URL signature), so a later <Image> render of the same track is instant.
 // loadAsync uses the source's cacheKey and the default memory-disk policy. Best-effort.

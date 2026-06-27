@@ -1,7 +1,7 @@
 import '../System.css';
 import { createLogsHubConnection } from '../../../lib/hubFactory';
-import { getLogs } from '../../../lib/logs';
-import { parseUtcDate } from '../../../lib/util';
+import { getHttpCaptureHar, getLogs } from '../../../lib/logs';
+import { downloadFile, parseUtcDate } from '../../../lib/util';
 import { LoaderSegment } from '../../Shared';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import React, {
@@ -861,6 +861,23 @@ const HistoryTab = () => {
 
 const Logs = () => {
   const [mode, setMode] = useState('live');
+  const [exporting, setExporting] = useState(false);
+
+  const exportHar = async () => {
+    setExporting(true);
+    try {
+      const blob = await getHttpCaptureHar();
+      const stamp = new Date()
+        .toISOString()
+        .replaceAll(/[:T]/g, '')
+        .replace(/\..*$/, '');
+      downloadFile(blob, `resonance-backend-${stamp}.har`, 'application/json');
+    } catch {
+      // surfaced by the global API error handling; nothing actionable here
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div className="logs">
@@ -878,6 +895,16 @@ const Logs = () => {
           type="button"
         >
           History
+        </button>
+        <span style={{ flex: 1 }} />
+        <button
+          className="logs-tab"
+          disabled={exporting}
+          onClick={exportHar}
+          title="Export captured backend HTTP traffic as a HAR file for comparison with the mobile network log"
+          type="button"
+        >
+          {exporting ? 'Exporting…' : '⬇ Export HAR'}
         </button>
       </div>
 

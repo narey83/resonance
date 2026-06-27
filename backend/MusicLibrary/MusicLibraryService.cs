@@ -34,6 +34,7 @@ namespace resonance.MusicLibrary
     using System.IO;
     using System.Linq;
     using System.Threading;
+    using System.Threading.Channels;
     using System.Threading.Tasks;
     using Microsoft.AspNetCore.SignalR;
     using resonance.Events;
@@ -88,6 +89,23 @@ namespace resonance.MusicLibrary
 
         private MusicLibrarySyncState CurrentState { get; set; } =
             new(false, false, null, 0, 0, 0, 0, 0, 0, 0);
+
+        // throttles the high-frequency progress broadcasts so a large scan doesn't flood clients with
+        // SignalR messages; start/complete/exit transitions are always sent (throttle: false).
+        private DateTime lastSyncBroadcast = DateTime.MinValue;
+        private static readonly TimeSpan SyncBroadcastThrottle = TimeSpan.FromMilliseconds(500);
+
+        // SetState is called concurrently from the parallel read workers during a scan, so it must be
+        // serialized; this guards CurrentState + the throttle bookkeeping.
+        private readonly object syncStateLock = new();
+
+        // Tag reads are I/O + CPU bound and independent per file, so a full scan reads them in parallel
+        // (capped to avoid thrashing the storage) and writes results to the DB in batched transactions.
+        private static readonly int SyncReadParallelism = Math.Min(Environment.ProcessorCount, 8);
+        private const int SyncWriteBatchSize = 500;
+
+        // cancels only the in-flight scan (not the whole background loop); see CancelSync.
+        private CancellationTokenSource currentRunCts;
 
         private static readonly TimeSpan DebounceDelay = TimeSpan.FromSeconds(30);
 
@@ -146,6 +164,8 @@ namespace resonance.MusicLibrary
 
         public (int Total, double TotalDuration) GetStats() => Repository.GetStats();
 
+        public string GetLibraryVersion() => Repository.GetLibraryVersion();
+
         public System.Collections.Generic.IReadOnlyList<MusicAlbum> GetAlbums(string artistFilter = null)
             => Repository.GetAlbums(artistFilter);
 
@@ -163,6 +183,28 @@ namespace resonance.MusicLibrary
             Repository.ClearAll();
             Log.Information("Music library cleared for forced re-index");
             TriggerImmediateSync();
+        }
+
+        public void CancelSync()
+        {
+            // cancels only the in-flight scan (the linked per-run token), not the background loop;
+            // tracks already written stay, and the next sync reconciles the rest.
+            var cts = currentRunCts;
+            if (cts is null || !CurrentState.Running)
+            {
+                Log.Debug("CancelSync requested but no scan is running");
+                return;
+            }
+
+            Log.Information("Cancelling in-flight music library sync");
+            try
+            {
+                cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // the run finished between the null check and Cancel(); nothing to do
+            }
         }
 
         public void TriggerSync()
@@ -310,6 +352,14 @@ namespace resonance.MusicLibrary
             TriggerImmediateSync();
         }
 
+        public bool IsQueueActive(string name)
+        {
+            lock (queueLock)
+            {
+                return activeQueues.Contains(name);
+            }
+        }
+
         // ── Background loop ───────────────────────────────────────────────────
         private async Task RunLoopAsync(CancellationToken ct)
         {
@@ -343,6 +393,25 @@ namespace resonance.MusicLibrary
             }
         }
 
+        // Assigns the current sync state and pushes it to connected clients so the UI can show a live
+        // "scanning…" banner. Progress updates pass throttle: true to avoid flooding clients; lifecycle
+        // transitions (start/complete/exit) use the default so they're always delivered.
+        private void SetState(MusicLibrarySyncState state, bool throttle = false)
+        {
+            lock (syncStateLock)
+            {
+                CurrentState = state;
+
+                if (throttle && DateTime.UtcNow - lastSyncBroadcast < SyncBroadcastThrottle)
+                {
+                    return;
+                }
+
+                lastSyncBroadcast = DateTime.UtcNow;
+                _ = Hub.BroadcastSyncStateAsync(state);
+            }
+        }
+
         // ── Sync ──────────────────────────────────────────────────────────────
         private async Task RunSyncAsync(CancellationToken ct)
         {
@@ -361,7 +430,11 @@ namespace resonance.MusicLibrary
             }
 
             Log.Information("Music library sync starting");
-            CurrentState = CurrentState with { Running = true, Completed = false, Progress = 0 };
+            SetState(CurrentState with { Running = true, Completed = false, Progress = 0 });
+
+            // a per-run token so CancelSync() can abort just this scan without stopping the background loop
+            currentRunCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var runToken = currentRunCts.Token;
 
             var added = 0;
             var updated = 0;
@@ -375,7 +448,7 @@ namespace resonance.MusicLibrary
                 var fsFiles = new Dictionary<string, FileInfo>(StringComparer.Ordinal);
                 foreach (var dir in GetScanDirectories())
                 {
-                    ct.ThrowIfCancellationRequested();
+                    runToken.ThrowIfCancellationRequested();
                     try
                     {
                         foreach (var fi in EnumerateAudio(dir))
@@ -395,44 +468,102 @@ namespace resonance.MusicLibrary
                 // ── 2. Load existing fingerprints from DB ─────────────────────
                 var dbPrints = Repository.GetAllFingerprints();
                 var total = fsFiles.Count;
-                var done = 0;
 
-                // ── 3. Process files: add new, update changed, skip unchanged ─
+                // ── 3. Partition (cheap, in-memory): which files need a (re)read? ──
+                // Tag reads are the expensive part, so we only do them for new/changed files; unchanged
+                // files are counted here without touching the disk.
+                var toRead = new List<(string Path, long Size, long Mod, bool IsNew)>();
                 foreach (var (path, fi) in fsFiles)
                 {
-                    ct.ThrowIfCancellationRequested();
+                    runToken.ThrowIfCancellationRequested();
+                    var size = fi.Length;
+                    var mod = fi.LastWriteTimeUtc.Ticks;
 
-                    try
+                    if (!dbPrints.TryGetValue(path, out var fp))
                     {
-                        var size = fi.Length;
-                        var mod = fi.LastWriteTimeUtc.Ticks;
+                        toRead.Add((path, size, mod, true));
+                    }
+                    else if (fp.Size != size || fp.Modified != mod)
+                    {
+                        toRead.Add((path, size, mod, false));
+                    }
+                    else
+                    {
+                        unchanged++;
+                    }
+                }
 
-                        if (!dbPrints.TryGetValue(path, out var fp))
+                // ── 3b. Read tags in parallel and write to the DB in batched transactions ─────
+                // Readers (bounded parallelism) produce MusicTracks into a bounded channel; a single
+                // consumer drains them into Repository.UpsertMany batches. Reads overlap with writes,
+                // and the per-file commit storm becomes ~N/batch commits.
+                var readTotal = toRead.Count;
+                var doneReads = 0;
+                var unchangedBase = unchanged; // fixed once partitioning is done
+
+                var channel = Channel.CreateBounded<MusicTrack>(
+                    new BoundedChannelOptions(SyncWriteBatchSize * 4) { SingleReader = true, SingleWriter = false });
+
+                // drain with CancellationToken.None so already-read tracks still get persisted on cancel;
+                // the consumer stops when the channel is completed (in the finally below).
+                var writer = Task.Run(async () =>
+                {
+                    var batch = new List<MusicTrack>(SyncWriteBatchSize);
+                    await foreach (var track in channel.Reader.ReadAllAsync(CancellationToken.None))
+                    {
+                        batch.Add(track);
+                        if (batch.Count >= SyncWriteBatchSize)
                         {
-                            Repository.Upsert(ReadTrack(path, size, mod));
-                            Interlocked.Increment(ref added);
-                        }
-                        else if (fp.Size != size || fp.Modified != mod)
-                        {
-                            Repository.Upsert(ReadTrack(path, size, mod));
-                            Interlocked.Increment(ref updated);
-                        }
-                        else
-                        {
-                            Interlocked.Increment(ref unchanged);
+                            Repository.UpsertMany(batch, SyncWriteBatchSize);
+                            batch.Clear();
                         }
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
-                    {
-                        Log.Debug("Music library sync: cannot read {File}: {Err}", path, ex.Message);
-                        Interlocked.Increment(ref failed);
-                    }
 
-                    done++;
-                    if (done % 100 == 0 || done == total)
+                    if (batch.Count > 0)
                     {
-                        CurrentState = CurrentState with { Progress = total > 0 ? (double)done / total : 1.0 };
+                        Repository.UpsertMany(batch, SyncWriteBatchSize);
                     }
+                });
+
+                try
+                {
+                    await Parallel.ForEachAsync(
+                        toRead,
+                        new ParallelOptions { MaxDegreeOfParallelism = SyncReadParallelism, CancellationToken = runToken },
+                        async (item, token) =>
+                        {
+                            try
+                            {
+                                var track = ReadTrack(item.Path, item.Size, item.Mod);
+                                await channel.Writer.WriteAsync(track, token);
+
+                                if (item.IsNew)
+                                {
+                                    Interlocked.Increment(ref added);
+                                }
+                                else
+                                {
+                                    Interlocked.Increment(ref updated);
+                                }
+                            }
+                            catch (Exception ex) when (ex is not OperationCanceledException)
+                            {
+                                Log.Debug("Music library sync: cannot read {File}: {Err}", item.Path, ex.Message);
+                                Interlocked.Increment(ref failed);
+                            }
+
+                            var n = Interlocked.Increment(ref doneReads);
+                            if (n % 100 == 0 || n == readTotal)
+                            {
+                                SetState(CurrentState with { Progress = total > 0 ? (double)(unchangedBase + n) / total : 1.0 }, throttle: true);
+                            }
+                        });
+                }
+                finally
+                {
+                    // stop the writer and wait for it to flush whatever was read (including on cancel)
+                    channel.Writer.Complete();
+                    await writer;
                 }
 
                 // ── 4. Remove stale entries ───────────────────────────────────
@@ -450,9 +581,9 @@ namespace resonance.MusicLibrary
                     "Music library sync complete — {Total} tracks · added={A} updated={U} removed={R} unchanged={N} failed={F}",
                     totalTracks, added, updated, removed, unchanged, failed);
 
-                CurrentState = new MusicLibrarySyncState(
+                SetState(new MusicLibrarySyncState(
                     false, true, DateTimeOffset.UtcNow.Ticks,
-                    totalTracks, added, updated, removed, unchanged, failed, 1.0);
+                    totalTracks, added, updated, removed, unchanged, failed, 1.0));
 
                 if (added + updated + removed > 0)
                 {
@@ -473,12 +604,18 @@ namespace resonance.MusicLibrary
             }
             catch (OperationCanceledException)
             {
-                CurrentState = CurrentState with { Running = false };
+                Log.Information("Music library sync cancelled");
+                SetState(CurrentState with { Running = false });
             }
             catch (Exception ex)
             {
                 Log.Error(ex, "Music library sync failed unexpectedly");
-                CurrentState = CurrentState with { Running = false };
+                SetState(CurrentState with { Running = false });
+            }
+            finally
+            {
+                currentRunCts?.Dispose();
+                currentRunCts = null;
             }
 
             await Task.Yield(); // yield back to caller

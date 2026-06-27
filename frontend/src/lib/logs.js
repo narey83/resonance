@@ -46,3 +46,12 @@ export const getLogs = async ({
     totalCount: Number(response.headers['x-total-count'] ?? 0),
   };
 };
+
+// Downloads the backend's recently-captured HTTP traffic as a HAR 1.2 file — the server-side
+// counterpart to the mobile app's network log export, for side-by-side latency comparison.
+export const getHttpCaptureHar = async () => {
+  const response = await api.get('/httpcapture/har', { responseType: 'blob' });
+  return response.data;
+};
+
+export const clearHttpCapture = () => api.delete('/httpcapture');

@@ -43,6 +43,7 @@ namespace resonance.Shares
     using System.Linq;
     using System.Threading;
     using System.Threading.Tasks;
+    using resonance.Common;
     using resonance.Files;
     using resonance.Relay;
     using Serilog;
@@ -221,6 +222,29 @@ namespace resonance.Shares
         }
 
         /// <summary>
+        ///     Returns tagged files whose metadata is incomplete (missing a core field).
+        /// </summary>
+        /// <returns></returns>
+        public IEnumerable<TaggedFile> GetIncompleteFiles()
+        {
+            return GetTaggedFiles().Where(f => IsIncomplete(f.Tags));
+        }
+
+        // The tag editor's "incomplete" bar: title and artist are the only mandatory fields;
+        // album/year/genre are optional here. (The online lookup still tries to fill those
+        // separately — see MetadataLookup.NeedsEnrichment — this is just the manual-fix list.)
+        private static bool IsIncomplete(FileTags tags)
+        {
+            if (tags == null)
+            {
+                return true;
+            }
+
+            return string.IsNullOrWhiteSpace(tags.Title)
+                || string.IsNullOrWhiteSpace(tags.Artist);
+        }
+
+        /// <summary>
         ///     Writes tag data to the specified file on disk and updates the share cache.
         /// </summary>
         public void WriteFileTags(string maskedFilename, FileTags tags)
@@ -230,6 +254,10 @@ namespace resonance.Shares
             {
                 throw new NotFoundException($"File '{maskedFilename}' not found in share cache");
             }
+
+            // Serialize against every other tag writer (metadata/bpm/key passes, sanitization)
+            // touching this same file — concurrent TagLib opens risk a torn write.
+            using var fileLock = FileWriteLock.Acquire(originalFilename);
 
             TagLib.File tagFile = null;
             try
@@ -277,6 +305,12 @@ namespace resonance.Shares
                         xiphClear.RemoveField("INITIALKEY");
                     }
                 }
+
+                // Match tag sanitization: leave a single clean tag rather than letting the legacy
+                // ID3v1 block or a non-standard APEv2 block linger alongside the ID3v2.3 tag we wrote.
+                // (TagSanitization's TagConsolidator strips these; without it a lookup write would
+                // re-introduce the duplicate blocks it had just removed.)
+                tagFile.RemoveTags(TagLib.TagTypes.Id3v1 | TagLib.TagTypes.Ape);
 
                 tagFile.Save();
             }

@@ -6,6 +6,7 @@ import {
   useLibraryActivity,
 } from '../context/LibraryActivityContext';
 import { PlayerProvider, usePlayer } from '../context/PlayerContext';
+import { TagEditActivityProvider } from '../context/TagEditActivityContext';
 import * as chatAPI from '../lib/chat';
 import * as eventsAPI from '../lib/events';
 import { createApplicationHubConnection } from '../lib/hubFactory';
@@ -1045,401 +1046,405 @@ const App = () => {
   return (
     <LibraryActivityProvider>
       <PlayerProvider>
-        <PlayTracker />
-        <div className="app-shell">
-          {!isAgent && (
-            <StatusStrip
-              brand={
-                <div className="status-brand">
-                  <button
-                    className="app-nav-toggle"
-                    onClick={handleToggleNav}
-                    title={navCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                    type="button"
-                  >
-                    {navCollapsed ? (
-                      <PanelLeftOpen
-                        size={14}
-                        strokeWidth={1.75}
-                      />
-                    ) : (
-                      <PanelLeftClose
-                        size={14}
-                        strokeWidth={1.75}
-                      />
+        <TagEditActivityProvider>
+          <PlayTracker />
+          <div className="app-shell">
+            {!isAgent && (
+              <StatusStrip
+                brand={
+                  <div className="status-brand">
+                    <button
+                      className="app-nav-toggle"
+                      onClick={handleToggleNav}
+                      title={
+                        navCollapsed ? 'Expand sidebar' : 'Collapse sidebar'
+                      }
+                      type="button"
+                    >
+                      {navCollapsed ? (
+                        <PanelLeftOpen
+                          size={14}
+                          strokeWidth={1.75}
+                        />
+                      ) : (
+                        <PanelLeftClose
+                          size={14}
+                          strokeWidth={1.75}
+                        />
+                      )}
+                    </button>
+                    <ResonanceMark size={18} />
+                    <span className="status-brand-name">Resonance</span>
+                    {version.isCanary && (
+                      <span className="app-nav-brand-badge">canary</span>
                     )}
-                  </button>
-                  <ResonanceMark size={18} />
-                  <span className="status-brand-name">Resonance</span>
-                  {version.isCanary && (
-                    <span className="app-nav-brand-badge">canary</span>
+                  </div>
+                }
+                downloads={downloads}
+                isLoggedIn={isLoggedIn}
+                networkInfo={networkInfo}
+                onConnect={connect}
+                onDisconnect={disconnect}
+                onLogout={handleLogout}
+                server={server}
+                shares={shares}
+                uploads={uploads}
+                user={user}
+              />
+            )}
+
+            <div className="app-body">
+              <nav
+                className={
+                  navCollapsed ? 'app-nav app-nav--collapsed' : 'app-nav'
+                }
+              >
+                <div className="app-nav-section">
+                  {isAgent ? (
+                    <NavItem
+                      active={page === 'system'}
+                      icon={Settings}
+                      label="System"
+                      to={`${urlBase}/system`}
+                    />
+                  ) : (
+                    <>
+                      <NavItem
+                        active={page === 'overview'}
+                        icon={LayoutDashboard}
+                        label="Overview"
+                        to={`${urlBase}/overview`}
+                      />
+
+                      <div className="app-nav-label">Soulseek</div>
+                      <NavItem
+                        active={page === 'searches'}
+                        icon={Search}
+                        label="Search"
+                        to={`${urlBase}/searches`}
+                      />
+                      <NavItem
+                        active={page === 'downloads'}
+                        badge={downloadCount}
+                        icon={Download}
+                        label="Downloads"
+                        to={`${urlBase}/downloads`}
+                      />
+                      <NavItem
+                        active={page === 'uploads'}
+                        badge={uploadCount}
+                        icon={Upload}
+                        label="Uploads"
+                        to={`${urlBase}/uploads`}
+                      />
+
+                      <div className="app-nav-label">Community</div>
+                      <NavItem
+                        active={page === 'rooms'}
+                        badge={page === 'rooms' ? 0 : roomUnread}
+                        icon={MessageSquare}
+                        label="Rooms"
+                        to={`${urlBase}/rooms`}
+                      />
+                      <NavItem
+                        active={page === 'chat'}
+                        badge={page === 'chat' ? 0 : chatUnread}
+                        icon={MessageCircle}
+                        label="Chat"
+                        to={`${urlBase}/chat`}
+                      />
+                      <NavItem
+                        active={page === 'users'}
+                        icon={UsersIcon}
+                        label="Users"
+                        to={`${urlBase}/users`}
+                      />
+                      <NavItem
+                        active={page === 'browse'}
+                        icon={FolderOpen}
+                        label="Browse"
+                        to={`${urlBase}/browse`}
+                      />
+
+                      <div className="app-nav-label">Music</div>
+                      <NavItem
+                        active={page === 'library'}
+                        icon={LibraryIcon}
+                        label="Library"
+                        to={`${urlBase}/library`}
+                      />
+                      <NavItem
+                        active={page === 'trackanalysis'}
+                        icon={KeyRound}
+                        label="Track Analysis"
+                        to={`${urlBase}/trackanalysis`}
+                      />
+                      <NavItem
+                        active={page === 'tags'}
+                        icon={Tag}
+                        label="Tag Manager"
+                        to={`${urlBase}/tags`}
+                      />
+                      <NavItem
+                        active={page === 'duplicates'}
+                        icon={Copy}
+                        label="Duplicates"
+                        to={`${urlBase}/duplicates`}
+                      />
+                      <NavItem
+                        active={page === 'converter'}
+                        icon={AudioLines}
+                        label="Converter"
+                        to={`${urlBase}/converter`}
+                      />
+
+                      <div className="app-nav-label">yt-dlp</div>
+                      <NavItem
+                        active={
+                          page === 'ytdlp' &&
+                          !window.location.pathname.endsWith('/downloads')
+                        }
+                        icon={Search}
+                        label="Search"
+                        to={`${urlBase}/ytdlp/search`}
+                      />
+                      <NavItem
+                        active={
+                          page === 'ytdlp' &&
+                          window.location.pathname.endsWith('/downloads')
+                        }
+                        icon={Download}
+                        label="Downloads"
+                        to={`${urlBase}/ytdlp/downloads`}
+                      />
+                    </>
                   )}
                 </div>
-              }
-              downloads={downloads}
-              isLoggedIn={isLoggedIn}
-              networkInfo={networkInfo}
-              onConnect={connect}
-              onDisconnect={disconnect}
-              onLogout={handleLogout}
-              server={server}
-              shares={shares}
-              uploads={uploads}
-              user={user}
-            />
-          )}
 
-          <div className="app-body">
-            <nav
-              className={
-                navCollapsed ? 'app-nav app-nav--collapsed' : 'app-nav'
-              }
-            >
-              <div className="app-nav-section">
-                {isAgent ? (
+                <div className="app-nav-footer">
+                  {hasPending && (
+                    <NavItem
+                      icon={AlertCircle}
+                      label="Pending Action"
+                      to={`${urlBase}/system/info`}
+                    />
+                  )}
+                  {isUpdateAvailable && (
+                    <Modal
+                      centered
+                      closeIcon
+                      size="mini"
+                      trigger={
+                        <NavItem
+                          icon={Megaphone}
+                          label="New Version!"
+                        />
+                      }
+                    >
+                      <Modal.Header>New Version!</Modal.Header>
+                      <Modal.Content>
+                        <p>
+                          Running <strong>{current}</strong>, version{' '}
+                          <strong>{latest}</strong> is available.
+                        </p>
+                      </Modal.Content>
+                      <Modal.Actions>
+                        <Button
+                          fluid
+                          primary
+                          style={{ marginLeft: 0 }}
+                        >
+                          See Release Notes
+                        </Button>
+                      </Modal.Actions>
+                    </Modal>
+                  )}
+                  <NavItem
+                    badge={unreadCount}
+                    icon={Bell}
+                    label="Notifications"
+                    onClick={handleToggleNotificationPanel}
+                  />
                   <NavItem
                     active={page === 'system'}
                     icon={Settings}
                     label="System"
                     to={`${urlBase}/system`}
                   />
-                ) : (
-                  <>
-                    <NavItem
-                      active={page === 'overview'}
-                      icon={LayoutDashboard}
-                      label="Overview"
-                      to={`${urlBase}/overview`}
-                    />
-
-                    <div className="app-nav-label">Soulseek</div>
-                    <NavItem
-                      active={page === 'searches'}
-                      icon={Search}
-                      label="Search"
-                      to={`${urlBase}/searches`}
-                    />
-                    <NavItem
-                      active={page === 'downloads'}
-                      badge={downloadCount}
-                      icon={Download}
-                      label="Downloads"
-                      to={`${urlBase}/downloads`}
-                    />
-                    <NavItem
-                      active={page === 'uploads'}
-                      badge={uploadCount}
-                      icon={Upload}
-                      label="Uploads"
-                      to={`${urlBase}/uploads`}
-                    />
-
-                    <div className="app-nav-label">Community</div>
-                    <NavItem
-                      active={page === 'rooms'}
-                      badge={page === 'rooms' ? 0 : roomUnread}
-                      icon={MessageSquare}
-                      label="Rooms"
-                      to={`${urlBase}/rooms`}
-                    />
-                    <NavItem
-                      active={page === 'chat'}
-                      badge={page === 'chat' ? 0 : chatUnread}
-                      icon={MessageCircle}
-                      label="Chat"
-                      to={`${urlBase}/chat`}
-                    />
-                    <NavItem
-                      active={page === 'users'}
-                      icon={UsersIcon}
-                      label="Users"
-                      to={`${urlBase}/users`}
-                    />
-                    <NavItem
-                      active={page === 'browse'}
-                      icon={FolderOpen}
-                      label="Browse"
-                      to={`${urlBase}/browse`}
-                    />
-
-                    <div className="app-nav-label">Music</div>
-                    <NavItem
-                      active={page === 'library'}
-                      icon={LibraryIcon}
-                      label="Library"
-                      to={`${urlBase}/library`}
-                    />
-                    <NavItem
-                      active={page === 'trackanalysis'}
-                      icon={KeyRound}
-                      label="Track Analysis"
-                      to={`${urlBase}/trackanalysis`}
-                    />
-                    <NavItem
-                      active={page === 'tags'}
-                      icon={Tag}
-                      label="Tag Manager"
-                      to={`${urlBase}/tags`}
-                    />
-                    <NavItem
-                      active={page === 'duplicates'}
-                      icon={Copy}
-                      label="Duplicates"
-                      to={`${urlBase}/duplicates`}
-                    />
-                    <NavItem
-                      active={page === 'converter'}
-                      icon={AudioLines}
-                      label="Converter"
-                      to={`${urlBase}/converter`}
-                    />
-
-                    <div className="app-nav-label">yt-dlp</div>
-                    <NavItem
-                      active={
-                        page === 'ytdlp' &&
-                        !window.location.pathname.endsWith('/downloads')
-                      }
-                      icon={Search}
-                      label="Search"
-                      to={`${urlBase}/ytdlp/search`}
-                    />
-                    <NavItem
-                      active={
-                        page === 'ytdlp' &&
-                        window.location.pathname.endsWith('/downloads')
-                      }
-                      icon={Download}
-                      label="Downloads"
-                      to={`${urlBase}/ytdlp/downloads`}
-                    />
-                  </>
-                )}
-              </div>
-
-              <div className="app-nav-footer">
-                {hasPending && (
                   <NavItem
-                    icon={AlertCircle}
-                    label="Pending Action"
-                    to={`${urlBase}/system/info`}
+                    icon={Palette}
+                    label={THEME_LABELS[theme] ?? 'Theme'}
+                    onClick={cycleTheme}
                   />
-                )}
-                {isUpdateAvailable && (
-                  <Modal
-                    centered
-                    closeIcon
-                    size="mini"
-                    trigger={
-                      <NavItem
-                        icon={Megaphone}
-                        label="New Version!"
-                      />
-                    }
-                  >
-                    <Modal.Header>New Version!</Modal.Header>
-                    <Modal.Content>
-                      <p>
-                        Running <strong>{current}</strong>, version{' '}
-                        <strong>{latest}</strong> is available.
-                      </p>
-                    </Modal.Content>
-                    <Modal.Actions>
-                      <Button
-                        fluid
-                        primary
-                        style={{ marginLeft: 0 }}
-                      >
-                        See Release Notes
-                      </Button>
-                    </Modal.Actions>
-                  </Modal>
-                )}
-                <NavItem
-                  badge={unreadCount}
-                  icon={Bell}
-                  label="Notifications"
-                  onClick={handleToggleNotificationPanel}
-                />
-                <NavItem
-                  active={page === 'system'}
-                  icon={Settings}
-                  label="System"
-                  to={`${urlBase}/system`}
-                />
-                <NavItem
-                  icon={Palette}
-                  label={THEME_LABELS[theme] ?? 'Theme'}
-                  onClick={cycleTheme}
-                />
-              </div>
-            </nav>
+                </div>
+              </nav>
 
-            <main className="app-main">
-              <div className="app-content">
-                <AppContext.Provider value={appContextValue}>
-                  {isAgent ? (
-                    <Switch>
-                      <Route
-                        path={`${urlBase}/system/:tab?`}
-                        render={(props) => (
-                          <System
-                            {...props}
-                            options={applicationOptions}
-                            state={applicationState}
-                          />
-                        )}
-                      />
-                      <Redirect
-                        from="*"
-                        to={`${urlBase}/system`}
-                      />
-                    </Switch>
-                  ) : (
-                    <Switch>
-                      <Route
-                        path={`${urlBase}/overview`}
-                        render={() => <Overview />}
-                      />
-                      <Route
-                        path={`${urlBase}/map`}
-                        render={() => <MapPage />}
-                      />
-                      <Route
-                        path={`${urlBase}/searches`}
-                        render={(props) => (
-                          <Searches
-                            server={applicationState.server}
-                            {...props}
-                          />
-                        )}
-                      />
-                      <Route
-                        path={`${urlBase}/browse`}
-                        render={(props) => <Browse {...props} />}
-                      />
-                      <Route
-                        path={`${urlBase}/users`}
-                        render={(props) => <Users {...props} />}
-                      />
-                      <Route
-                        path={`${urlBase}/chat`}
-                        render={(props) => (
-                          <Chat
-                            {...props}
-                            state={applicationState}
-                          />
-                        )}
-                      />
-                      <Route
-                        path={`${urlBase}/rooms`}
-                        render={(props) => <Rooms {...props} />}
-                      />
-                      <Route
-                        path={`${urlBase}/uploads`}
-                        render={(props) => (
-                          <div className="view">
-                            <Transfers
+              <main className="app-main">
+                <div className="app-content">
+                  <AppContext.Provider value={appContextValue}>
+                    {isAgent ? (
+                      <Switch>
+                        <Route
+                          path={`${urlBase}/system/:tab?`}
+                          render={(props) => (
+                            <System
                               {...props}
-                              direction="upload"
+                              options={applicationOptions}
+                              state={applicationState}
                             />
-                          </div>
-                        )}
-                      />
-                      <Route
-                        path={`${urlBase}/downloads`}
-                        render={(props) => (
-                          <div className="view">
-                            <Transfers
-                              {...props}
-                              direction="download"
+                          )}
+                        />
+                        <Redirect
+                          from="*"
+                          to={`${urlBase}/system`}
+                        />
+                      </Switch>
+                    ) : (
+                      <Switch>
+                        <Route
+                          path={`${urlBase}/overview`}
+                          render={() => <Overview />}
+                        />
+                        <Route
+                          path={`${urlBase}/map`}
+                          render={() => <MapPage />}
+                        />
+                        <Route
+                          path={`${urlBase}/searches`}
+                          render={(props) => (
+                            <Searches
                               server={applicationState.server}
+                              {...props}
                             />
-                          </div>
-                        )}
-                      />
-                      <Route
-                        path={`${urlBase}/library`}
-                        render={(props) => <Library {...props} />}
-                      />
-                      <Route
-                        path={`${urlBase}/trackanalysis`}
-                        render={(props) => <TrackAnalysis {...props} />}
-                      />
-                      <Redirect
-                        from={`${urlBase}/tagsanitization`}
-                        to={`${urlBase}/tags`}
-                      />
-                      <Route
-                        path={`${urlBase}/tags`}
-                        render={() => <Tags />}
-                      />
-                      <Route
-                        path={`${urlBase}/duplicates`}
-                        render={(props) => <Duplicates {...props} />}
-                      />
-                      <Route
-                        path={`${urlBase}/converter`}
-                        render={() => <Converter />}
-                      />
-                      <Route
-                        path={`${urlBase}/ytdlp/:view?`}
-                        render={(props) => (
-                          <div className="view">
-                            <YtDlp view={props.match.params.view} />
-                          </div>
-                        )}
-                      />
-                      <Route
-                        path={`${urlBase}/system/:tab?`}
-                        render={(props) => (
-                          <System
-                            {...props}
-                            options={applicationOptions}
-                            state={applicationState}
-                            theme={theme}
-                          />
-                        )}
-                      />
-                      <Redirect
-                        from="*"
-                        to={`${urlBase}/overview`}
-                      />
-                    </Switch>
-                  )}
-                </AppContext.Provider>
-              </div>
-              <MediaPlayer />
-            </main>
-            <AppQueuePanel />
+                          )}
+                        />
+                        <Route
+                          path={`${urlBase}/browse`}
+                          render={(props) => <Browse {...props} />}
+                        />
+                        <Route
+                          path={`${urlBase}/users`}
+                          render={(props) => <Users {...props} />}
+                        />
+                        <Route
+                          path={`${urlBase}/chat`}
+                          render={(props) => (
+                            <Chat
+                              {...props}
+                              state={applicationState}
+                            />
+                          )}
+                        />
+                        <Route
+                          path={`${urlBase}/rooms`}
+                          render={(props) => <Rooms {...props} />}
+                        />
+                        <Route
+                          path={`${urlBase}/uploads`}
+                          render={(props) => (
+                            <div className="view">
+                              <Transfers
+                                {...props}
+                                direction="upload"
+                              />
+                            </div>
+                          )}
+                        />
+                        <Route
+                          path={`${urlBase}/downloads`}
+                          render={(props) => (
+                            <div className="view">
+                              <Transfers
+                                {...props}
+                                direction="download"
+                                server={applicationState.server}
+                              />
+                            </div>
+                          )}
+                        />
+                        <Route
+                          path={`${urlBase}/library`}
+                          render={(props) => <Library {...props} />}
+                        />
+                        <Route
+                          path={`${urlBase}/trackanalysis`}
+                          render={(props) => <TrackAnalysis {...props} />}
+                        />
+                        <Redirect
+                          from={`${urlBase}/tagsanitization`}
+                          to={`${urlBase}/tags`}
+                        />
+                        <Route
+                          path={`${urlBase}/tags`}
+                          render={() => <Tags />}
+                        />
+                        <Route
+                          path={`${urlBase}/duplicates`}
+                          render={(props) => <Duplicates {...props} />}
+                        />
+                        <Route
+                          path={`${urlBase}/converter`}
+                          render={() => <Converter />}
+                        />
+                        <Route
+                          path={`${urlBase}/ytdlp/:view?`}
+                          render={(props) => (
+                            <div className="view">
+                              <YtDlp view={props.match.params.view} />
+                            </div>
+                          )}
+                        />
+                        <Route
+                          path={`${urlBase}/system/:tab?`}
+                          render={(props) => (
+                            <System
+                              {...props}
+                              options={applicationOptions}
+                              state={applicationState}
+                              theme={theme}
+                            />
+                          )}
+                        />
+                        <Redirect
+                          from="*"
+                          to={`${urlBase}/overview`}
+                        />
+                      </Switch>
+                    )}
+                  </AppContext.Provider>
+                </div>
+                <MediaPlayer />
+              </main>
+              <AppQueuePanel />
+            </div>
           </div>
-        </div>
 
-        {connectionOverlay}
+          {connectionOverlay}
 
-        <MetadataLookupWatcher />
+          <MetadataLookupWatcher />
 
-        {notificationPanelOpen && (
-          <NotificationCentre
-            notifications={notifications}
-            onClear={handleClearNotifications}
-            onClose={handleToggleNotificationPanel}
-            onSettingsChange={handleNotificationSettingsChange}
-            settings={notificationSettings}
+          {notificationPanelOpen && (
+            <NotificationCentre
+              notifications={notifications}
+              onClear={handleClearNotifications}
+              onClose={handleToggleNotificationPanel}
+              onSettingsChange={handleNotificationSettingsChange}
+              settings={notificationSettings}
+            />
+          )}
+
+          <ToastContainer
+            autoClose={5_000}
+            closeOnClick
+            draggable={false}
+            hideProgressBar={false}
+            newestOnTop
+            pauseOnFocusLoss
+            pauseOnHover
+            position="bottom-right"
+            rtl={false}
           />
-        )}
-
-        <ToastContainer
-          autoClose={5_000}
-          closeOnClick
-          draggable={false}
-          hideProgressBar={false}
-          newestOnTop
-          pauseOnFocusLoss
-          pauseOnHover
-          position="bottom-right"
-          rtl={false}
-        />
+        </TagEditActivityProvider>
       </PlayerProvider>
     </LibraryActivityProvider>
   );

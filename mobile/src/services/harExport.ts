@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import { File, Paths } from 'expo-file-system';
+import { Directory, File, Paths } from 'expo-file-system';
 import { getContentUriAsync } from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as IntentLauncher from 'expo-intent-launcher';
@@ -77,7 +77,8 @@ function timestampedName(): string {
 
 export interface HarExportResult {
   ok: boolean;
-  reason?: string;
+  reason?: string;   // error to surface
+  message?: string;  // success/info to surface (e.g. "Saved …")
 }
 
 const ANDROID_VIEW_ACTION = 'android.intent.action.VIEW';
@@ -116,6 +117,37 @@ export async function exportNetworkLogAsHar(entries: NetworkLogEntry[]): Promise
   const written = writeHarFile(entries);
   if ('error' in written) return { ok: false, reason: written.error };
   return shareFile(written.file);
+}
+
+/**
+ * Save the HAR to a folder the user picks (e.g. Downloads). Uses the Storage Access Framework
+ * directory picker on Android so the file lands somewhere the user can browse to and copy off the
+ * device — no share target required. On iOS (no SAF) it falls back to the share sheet's "Save to Files".
+ */
+export async function saveNetworkLogToFolder(entries: NetworkLogEntry[]): Promise<HarExportResult> {
+  if (entries.length === 0) return { ok: false, reason: 'No requests captured yet.' };
+
+  if (Platform.OS !== 'android') {
+    const written = writeHarFile(entries);
+    if ('error' in written) return { ok: false, reason: written.error };
+    return shareFile(written.file);
+  }
+
+  let dir: Directory;
+  try {
+    dir = await Directory.pickDirectoryAsync();
+  } catch {
+    return { ok: true }; // user dismissed the folder picker — not an error
+  }
+
+  try {
+    const name = timestampedName();
+    const file = dir.createFile(name, 'application/json');
+    file.write(JSON.stringify(buildHar(entries), null, 2));
+    return { ok: true, message: `Saved ${name} to the selected folder.` };
+  } catch (e) {
+    return { ok: false, reason: `Could not save — ${e instanceof Error ? e.message : 'unknown error'}` };
+  }
 }
 
 /**

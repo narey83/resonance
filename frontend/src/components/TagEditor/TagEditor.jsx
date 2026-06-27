@@ -1,6 +1,9 @@
 import './TagEditor.css';
+import { useTagEditActivity } from '../../context/TagEditActivityContext';
 import { lookup as lookupMetadata } from '../../lib/metadataLookup';
+import { guessFromFilename } from '../../lib/tagGuess';
 import {
+  getIncomplete,
   getTagged,
   getUntagged,
   renameDirectory,
@@ -56,38 +59,6 @@ const FOLDER_FORM_EMPTY = {
   year: '',
 };
 
-const MIX_PATTERN =
-  /\s(Original\sMix|Extended\sMix|Extended\sVersion|Club\sMix|Radio\sEdit|Radio\sMix|VIP\sMix|Dub\sMix|Album\sVersion|Single\sVersion|Instrumental)$/iu;
-
-const normalizeMixType = (title) => {
-  if (title.endsWith(')')) return title;
-  const match = title.match(MIX_PATTERN);
-  if (!match) return title;
-  return `${title.slice(0, -match[0].length)} (${match[1]})`;
-};
-
-const guessFromFilename = (filename, directory) => {
-  const base = filename.replace(/\.[^.]+$/u, '');
-  const directoryParts = directory ? directory.split('\\') : [];
-  const albumGuess = directoryParts.at(-1) ?? '';
-  const artistGuess = directoryParts.at(-2) ?? '';
-
-  let title = base;
-  let artist = artistGuess;
-
-  // eslint-disable-next-line regexp/no-super-linear-backtracking
-  const numbered = base.match(/^(\d+)[\s._-]+(.+)$/u);
-  if (numbered) title = numbered[2].trim();
-
-  if (title.includes(' - ')) {
-    const [firstPart, ...rest] = title.split(' - ');
-    artist = firstPart.trim();
-    title = rest.join(' - ').trim();
-  }
-
-  return { album: albumGuess, artist, title: normalizeMixType(title) };
-};
-
 const tagsToForm = (tags) => ({
   album: tags?.album ?? '',
   albumArtist: tags?.albumArtist ?? '',
@@ -105,6 +76,11 @@ const tagsToForm = (tags) => ({
 // Returns existingValue when formValue is blank, otherwise overwrites with formValue
 const pickTag = (formValue, existingValue, fallback = null) =>
   formValue === '' ? existingValue ?? fallback : formValue || fallback;
+
+// Mirrors the backend's incomplete predicate (Shares.IsIncomplete): only title and artist
+// are mandatory; album/year/genre are optional.
+const isIncomplete = (tags) =>
+  !tags || !`${tags.title ?? ''}`.trim() || !`${tags.artist ?? ''}`.trim();
 
 const applyFolderForm = (existing, form) => ({
   album: pickTag(form.album, existing.album),
@@ -671,9 +647,7 @@ const TagEditor = () => {
   const [errorMessage, setErrorMessage] = useState(null);
   const [search, setSearch] = useState('');
   const [collapsed, setCollapsed] = useState({});
-  const [autoFillingDirectories, setAutoFillingDirectories] = useState(
-    new Set(),
-  );
+  const { clearJob, jobs, startFolderAutoFill } = useTagEditActivity();
   const [renamingDirectory, setRenamingDirectory] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [renameError, setRenameError] = useState(null);
@@ -720,7 +694,12 @@ const TagEditor = () => {
     setLoading(true);
     setErrorMessage(null);
     try {
-      const data = mode === 'tagged' ? await getTagged() : await getUntagged();
+      const data =
+        mode === 'tagged'
+          ? await getTagged()
+          : mode === 'incomplete'
+            ? await getIncomplete()
+            : await getUntagged();
       setFiles(data);
       setCollapsed({});
       setSelected(null);
@@ -768,7 +747,11 @@ const TagEditor = () => {
     try {
       await writeTags({ maskedFilename, tags });
       setSavedCount((count) => count + 1);
-      if (mode === 'untagged') {
+      // Drop the file from the list once it no longer belongs there: always in untagged
+      // mode, and in incomplete mode once the edit has filled every core field.
+      const removeFromList =
+        mode === 'untagged' || (mode === 'incomplete' && !isIncomplete(tags));
+      if (removeFromList) {
         const remaining = files.filter(
           (f) => f.maskedFilename !== maskedFilename,
         );
@@ -860,68 +843,45 @@ const TagEditor = () => {
     setSelected(next);
   };
 
-  const handleFolderAutoFill = async (directory) => {
+  const handleFolderAutoFill = (directory) => {
     const directoryFiles = groups[directory];
     if (!directoryFiles?.length) return;
-
-    setAutoFillingDirectories((previous) => new Set(previous).add(directory));
     setErrorMessage(null);
-
-    let savedAny = false;
-    const errors = [];
-
-    for (const file of directoryFiles) {
-      const guessed = guessFromFilename(file.filename, file.directory);
-      try {
-        await writeTags({
-          maskedFilename: file.maskedFilename,
-          tags: {
-            album: guessed.album || null,
-            albumArtist: null,
-            artist: guessed.artist || null,
-            title: guessed.title || null,
-            trackNumber: 0,
-            year: 0,
-          },
-        });
-        savedAny = true;
-      } catch {
-        errors.push(file.filename);
-      }
-    }
-
-    if (savedAny) {
-      setSavedCount((count) => count + directoryFiles.length - errors.length);
-      const savedMasks = new Set(
-        directoryFiles
-          .filter((f) => !errors.includes(f.filename))
-          .map((f) => f.maskedFilename),
-      );
-      setFiles((previous) => {
-        const remaining = previous.filter(
-          (f) => !savedMasks.has(f.maskedFilename),
-        );
-        setSelected((sel) =>
-          sel && savedMasks.has(sel.maskedFilename)
-            ? remaining[0] ?? null
-            : sel,
-        );
-        return remaining;
-      });
-    }
-
-    if (errors.length > 0) {
-      setErrorMessage(
-        `Auto-fill failed for ${errors.length} file${errors.length === 1 ? '' : 's'}`,
-      );
-    }
-
-    setAutoFillingDirectories((previous) => {
-      const next = new Set(previous);
-      next.delete(directory);
-      return next;
-    });
+    // Runs in TagEditActivityContext so it survives navigation / tab switches.
+    startFolderAutoFill(directory, directoryFiles);
   };
+
+  // Reconcile finished background jobs into the local list (whether the job
+  // started here or completed while we were on another page).
+  useEffect(() => {
+    for (const [directory, job] of Object.entries(jobs)) {
+      if (job.status !== 'done') continue;
+
+      const savedMasks = new Set(job.savedMasks);
+      if (savedMasks.size > 0) {
+        setSavedCount((count) => count + savedMasks.size);
+        setFiles((previous) => {
+          const remaining = previous.filter(
+            (f) => !savedMasks.has(f.maskedFilename),
+          );
+          setSelected((sel) =>
+            sel && savedMasks.has(sel.maskedFilename)
+              ? remaining[0] ?? null
+              : sel,
+          );
+          return remaining;
+        });
+      }
+
+      if (job.errors.length > 0) {
+        setErrorMessage(
+          `Auto-fill failed for ${job.errors.length} file${job.errors.length === 1 ? '' : 's'}`,
+        );
+      }
+
+      clearJob(directory);
+    }
+  }, [clearJob, jobs]);
 
   const startRename = (directory, currentLeafName, clickEvent) => {
     clickEvent.stopPropagation();
@@ -1030,9 +990,10 @@ const TagEditor = () => {
         </ul>
         <p>
           Switch between <strong>Untagged</strong> (files with no metadata at
-          all) and <strong>Tagged</strong> (all files) using the toggle at the
-          top of the list. Running <strong>Tag Sanitization</strong> first is
-          recommended to ensure the tags you edit are written cleanly as
+          all), <strong>Incomplete</strong> (tagged files missing a title or
+          artist) and <strong>Tagged</strong> (all files) using the toggle at
+          the top of the list. Running <strong>Tag Sanitization</strong> first
+          is recommended to ensure the tags you edit are written cleanly as
           ID3v2.3.
         </p>
       </PageInfo>
@@ -1054,6 +1015,13 @@ const TagEditor = () => {
                   type="button"
                 >
                   Untagged
+                </button>
+                <button
+                  className={`te-mode-btn${mode === 'incomplete' ? ' te-mode-btn--active' : ''}`}
+                  onClick={() => handleModeChange('incomplete')}
+                  type="button"
+                >
+                  Incomplete
                 </button>
                 <button
                   className={`te-mode-btn${mode === 'tagged' ? ' te-mode-btn--active' : ''}`}
@@ -1092,7 +1060,7 @@ const TagEditor = () => {
             <div className="te-saved-notice">
               <CheckCircle size={13} />
               {savedCount} file{savedCount === 1 ? '' : 's'}{' '}
-              {mode === 'tagged' ? 'updated' : 'tagged'} this session
+              {mode === 'untagged' ? 'tagged' : 'updated'} this session
             </div>
           )}
 
@@ -1122,7 +1090,9 @@ const TagEditor = () => {
                 <p>
                   {mode === 'tagged'
                     ? 'No tagged files found.'
-                    : 'All files are tagged!'}
+                    : mode === 'incomplete'
+                      ? 'No incomplete files — every track has full tags!'
+                      : 'All files are tagged!'}
                 </p>
               </div>
             )}
@@ -1135,7 +1105,8 @@ const TagEditor = () => {
                 const leafName = directoryParts.at(-1) ?? directory;
                 const directoryLabel =
                   directoryParts.slice(1).join(' › ') || directory;
-                const isAutoFilling = autoFillingDirectories.has(directory);
+                const job = jobs[directory];
+                const isAutoFilling = job?.status === 'running';
                 const isRenaming = renamingDirectory === directory;
                 const isSelected = selectedFolder === directory;
                 const thisRenameError =
@@ -1257,6 +1228,11 @@ const TagEditor = () => {
                                 <Sparkles size={11} />
                               )}
                             </button>
+                          )}
+                          {isAutoFilling && (
+                            <span className="te-group-progress">
+                              {job.done}/{job.total}
+                            </span>
                           )}
                           <button
                             className="te-group-rename"

@@ -51,6 +51,14 @@ public class PlayRecord
     public required string Artist { get; init; }
     public required string Folder { get; init; }
     public string Source { get; init; } = string.Empty;
+
+    // Request-scoped artwork/stream signature stamped by the controller (see StreamUrlSigner).
+    // [NotMapped] so it is serialized to the client but never persisted.
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public string Sig { get; set; }
+
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public long Exp { get; set; }
 }
 
 public class LibraryActivityDbContext : DbContext

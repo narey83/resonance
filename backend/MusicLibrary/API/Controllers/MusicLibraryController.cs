@@ -102,6 +102,118 @@ namespace resonance.MusicLibrary.API
         private StreamUrlSigner UrlSigner { get; }
         private resonance.Common.Ffmpeg.IFfmpegService Ffmpeg { get; }
 
+        // ── List caching ────────────────────────────────────────────────────────
+        // The grouped artist/album/folder/genre/year lists are expensive to re-aggregate and
+        // re-serialize on every tab load (the album list alone is thousands of rows). They change
+        // only when the library is mutated, so we cache the raw service result for a few minutes
+        // and bump a generation token to invalidate on sync/rename/delete. Signatures are stamped
+        // per-request (outside the cache) so they never serve stale/expired.
+        private int ListCacheGeneration =>
+            Cache.GetOrCreate("music:list:gen", e =>
+            {
+                e.Priority = CacheItemPriority.NeverRemove;
+                return 0;
+            });
+
+        private void InvalidateListCaches() =>
+            Cache.Set("music:list:gen", ListCacheGeneration + 1, new MemoryCacheEntryOptions { Priority = CacheItemPriority.NeverRemove });
+
+        // Returns the cached list plus a content ETag computed over the UNSIGNED list. The ETag is
+        // stable across requests (it does NOT include the per-request rotating signatures) and
+        // changes only when the underlying data changes, so clients can issue conditional GETs and
+        // get 304 (~0 bytes) for any list that didn't actually change — incremental updates without
+        // re-pulling unchanged aggregates. The ETag is computed once per cache fill and cached with
+        // the list, so a 304 costs only a hash comparison.
+        private (System.Collections.Generic.IReadOnlyList<T> List, string ETag) GetCachedListWithETag<T>(string key, Func<System.Collections.Generic.IReadOnlyList<T>> factory) =>
+            Cache.GetOrCreate($"music:list:{ListCacheGeneration}:{key}", e =>
+            {
+                e.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5);
+                var list = factory();
+                return (list, ComputeListETag(list));
+            });
+
+        // Order-INDEPENDENT content ETag: the grouped queries only ORDER BY the group key, so tied
+        // rows can come back in different orders between runs — hashing the serialized list directly
+        // would then change the ETag every refill and defeat conditional GETs (every client would
+        // re-download in full). Instead XOR each row's hash (commutative → order doesn't matter) and
+        // fold in the row count, so the ETag is stable as long as the underlying data is.
+        private static string ComputeListETag<T>(System.Collections.Generic.IReadOnlyList<T> list)
+        {
+            var acc = new byte[20];
+            foreach (var item in list)
+            {
+                var rowHash = System.Security.Cryptography.SHA1.HashData(
+                    System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(item));
+                for (var i = 0; i < acc.Length; i++)
+                {
+                    acc[i] ^= rowHash[i];
+                }
+            }
+
+            var countBytes = BitConverter.GetBytes(list.Count);
+            var combined = new byte[countBytes.Length + acc.Length];
+            Buffer.BlockCopy(countBytes, 0, combined, 0, countBytes.Length);
+            Buffer.BlockCopy(acc, 0, combined, countBytes.Length, acc.Length);
+            return $"\"{Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(combined))}\"";
+        }
+
+        // True when the client's If-None-Match already matches the current ETag → respond 304.
+        private bool ClientHasETag(string etag)
+        {
+            var inm = Request.Headers.IfNoneMatch.ToString();
+            return !string.IsNullOrEmpty(inm) && (inm == etag || inm == "*");
+        }
+
+        // Sets the ETag header and returns a 304 if the client already has this exact data,
+        // otherwise null (caller returns the full signed body).
+        private IActionResult? NotModifiedOrNull(string etag)
+        {
+            Response.Headers.ETag = etag;
+            return ClientHasETag(etag) ? StatusCode(StatusCodes.Status304NotModified) : null;
+        }
+
+        // ── Signature stamping ──────────────────────────────────────────────────
+        // Embed a fresh path-scoped signature so the client can build signed artwork/stream URLs
+        // without a second POST /sign round-trip (which previously blocked every list render).
+        private MusicTrack SignTrack(MusicTrack t)
+        {
+            var (exp, sig) = UrlSigner.Sign(t.Path);
+            return t with { Exp = exp, Sig = sig };
+        }
+
+        private MusicAlbum SignAlbum(MusicAlbum a)
+        {
+            if (string.IsNullOrEmpty(a.CoverPath))
+            {
+                return a;
+            }
+
+            var (exp, sig) = UrlSigner.Sign(a.CoverPath);
+            return a with { Exp = exp, Sig = sig };
+        }
+
+        private MusicArtist SignArtist(MusicArtist a)
+        {
+            if (string.IsNullOrEmpty(a.CoverPath))
+            {
+                return a;
+            }
+
+            var (exp, sig) = UrlSigner.Sign(a.CoverPath);
+            return a with { Exp = exp, Sig = sig };
+        }
+
+        private MusicFolder SignFolder(MusicFolder f)
+        {
+            if (string.IsNullOrEmpty(f.CoverPath))
+            {
+                return f;
+            }
+
+            var (exp, sig) = UrlSigner.Sign(f.CoverPath);
+            return f with { Exp = exp, Sig = sig };
+        }
+
         /// <summary>Returns total track count and duration for the library.</summary>
         /// <returns></returns>
         [HttpGet("stats")]
@@ -112,6 +224,17 @@ namespace resonance.MusicLibrary.API
             var (total, totalDuration) = Service.GetStats();
             return Ok(new { total, totalDuration });
         }
+
+        /// <summary>
+        ///     A cheap content version of the library (track count + latest index time). Clients fetch
+        ///     this once on startup and skip the full list sync when it matches what they last synced —
+        ///     so the sync only does real work when the backend library actually changed.
+        /// </summary>
+        /// <returns></returns>
+        [HttpGet("version")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(200)]
+        public IActionResult GetVersion() => Ok(new { version = Service.GetLibraryVersion() });
 
         /// <summary>Returns the current sync state.</summary>
         /// <returns></returns>
@@ -136,6 +259,18 @@ namespace resonance.MusicLibrary.API
                 Service.TriggerSync();
             }
 
+            InvalidateListCaches();
+            return Accepted();
+        }
+
+        /// <summary>Cancels the in-flight scan (if any). Use to abort an accidental full/forced rescan.</summary>
+        /// <returns></returns>
+        [HttpPost("sync/cancel")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(202)]
+        public IActionResult CancelSync()
+        {
+            Service.CancelSync();
             return Accepted();
         }
 
@@ -163,7 +298,8 @@ namespace resonance.MusicLibrary.API
         {
             limit = Math.Max(1, limit);
             offset = Math.Max(0, offset);
-            return Ok(Service.QueryTracks(search, artist, album, genre, year, folder, missingKey, missingBpm, missingTitle, missingArtist, missingArtwork, limit, offset, sort, descending));
+            var result = Service.QueryTracks(search, artist, album, genre, year, folder, missingKey, missingBpm, missingTitle, missingArtist, missingArtwork, limit, offset, sort, descending);
+            return Ok(result with { Tracks = result.Tracks.Select(SignTrack).ToList() });
         }
 
         /// <summary>Returns all genres grouped from the music library.</summary>
@@ -171,21 +307,33 @@ namespace resonance.MusicLibrary.API
         [HttpGet("genres")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(typeof(System.Collections.Generic.IReadOnlyList<MusicGenre>), 200)]
-        public IActionResult GetGenres() => Ok(Service.GetGenres());
+        public IActionResult GetGenres()
+        {
+            var (list, etag) = GetCachedListWithETag("genres", () => Service.GetGenres());
+            return NotModifiedOrNull(etag) ?? Ok(list);
+        }
 
         /// <summary>Returns all years grouped from the music library.</summary>
         /// <returns></returns>
         [HttpGet("years")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(typeof(System.Collections.Generic.IReadOnlyList<MusicYear>), 200)]
-        public IActionResult GetYears() => Ok(Service.GetYears());
+        public IActionResult GetYears()
+        {
+            var (list, etag) = GetCachedListWithETag("years", () => Service.GetYears());
+            return NotModifiedOrNull(etag) ?? Ok(list);
+        }
 
         /// <summary>Returns all folders that contain tracks.</summary>
         /// <returns></returns>
         [HttpGet("folders")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(typeof(System.Collections.Generic.IReadOnlyList<MusicFolder>), 200)]
-        public IActionResult GetFolders() => Ok(Service.GetFolders());
+        public IActionResult GetFolders()
+        {
+            var (list, etag) = GetCachedListWithETag("folders", () => Service.GetFolders());
+            return NotModifiedOrNull(etag) ?? Ok(list.Select(SignFolder).ToList());
+        }
 
         /// <summary>Returns all albums grouped from the music library.</summary>
         /// <returns></returns>
@@ -193,7 +341,10 @@ namespace resonance.MusicLibrary.API
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(typeof(System.Collections.Generic.IReadOnlyList<MusicAlbum>), 200)]
         public IActionResult GetAlbums([FromQuery] string artist = null)
-            => Ok(Service.GetAlbums(artist));
+        {
+            var (list, etag) = GetCachedListWithETag($"albums:{artist}", () => Service.GetAlbums(artist));
+            return NotModifiedOrNull(etag) ?? Ok(list.Select(SignAlbum).ToList());
+        }
 
         /// <summary>Returns all artists grouped from the music library.</summary>
         /// <returns></returns>
@@ -201,7 +352,10 @@ namespace resonance.MusicLibrary.API
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(typeof(System.Collections.Generic.IReadOnlyList<MusicArtist>), 200)]
         public IActionResult GetArtists()
-            => Ok(Service.GetArtists());
+        {
+            var (list, etag) = GetCachedListWithETag("artists", () => Service.GetArtists());
+            return NotModifiedOrNull(etag) ?? Ok(list.Select(SignArtist).ToList());
+        }
 
         /// <summary>Returns recently added albums (by index time).</summary>
         /// <returns></returns>
@@ -211,7 +365,7 @@ namespace resonance.MusicLibrary.API
         public IActionResult GetRecentlyAdded([FromQuery] int limit = 20)
         {
             limit = Math.Clamp(limit, 1, 100);
-            return Ok(Service.GetRecentlyAdded(limit));
+            return Ok(Service.GetRecentlyAdded(limit).Select(SignAlbum).ToList());
         }
 
         /// <summary>Returns all tracks that have a key tag — used for harmonic auto-mix.</summary>
@@ -220,7 +374,7 @@ namespace resonance.MusicLibrary.API
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(typeof(System.Collections.Generic.IReadOnlyList<MusicTrack>), 200)]
         public IActionResult GetKeyedTracks()
-            => Ok(Service.GetKeyedTracks());
+            => Ok(Service.GetKeyedTracks().Select(SignTrack).ToList());
 
         /// <summary>
         ///     Issues short-lived, path-scoped signatures for the given library paths. Clients
@@ -737,6 +891,7 @@ namespace resonance.MusicLibrary.API
                 var parent = Path.GetDirectoryName(fullPath);
                 var newPath = Path.Combine(parent ?? string.Empty, request.NewName);
                 Service.RenameFolder(fullPath, request.NewName);
+                InvalidateListCaches();
                 var sep = Path.DirectorySeparatorChar.ToString();
                 Mixtapes.UpdateTrackPaths(fullPath + sep, newPath + sep);
                 try
@@ -802,6 +957,7 @@ namespace resonance.MusicLibrary.API
                 var dir = Path.GetDirectoryName(fullPath) ?? string.Empty;
                 var newPath = Path.Combine(dir, request.NewFilename);
                 Service.RenameTrack(fullPath, request.NewFilename);
+                InvalidateListCaches();
                 Mixtapes.UpdateTrackPaths(fullPath, newPath);
                 try
                 {
@@ -868,6 +1024,7 @@ namespace resonance.MusicLibrary.API
             try
             {
                 Service.DeleteTrack(decoded);
+                InvalidateListCaches();
                 try
                 {
                     Shares.RemoveLocalPath(decoded);
@@ -919,6 +1076,7 @@ namespace resonance.MusicLibrary.API
             try
             {
                 Service.DeleteFolder(decoded);
+                InvalidateListCaches();
                 try
                 {
                     Shares.RemoveLocalPath(decoded);
@@ -1004,6 +1162,7 @@ namespace resonance.MusicLibrary.API
 
             if (deleted > 0)
             {
+                InvalidateListCaches();
                 Service.TriggerImmediateSync();
             }
 
@@ -1069,6 +1228,7 @@ namespace resonance.MusicLibrary.API
 
             if (deleted > 0)
             {
+                InvalidateListCaches();
                 Service.TriggerImmediateSync();
             }
 

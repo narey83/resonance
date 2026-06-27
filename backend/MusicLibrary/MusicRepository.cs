@@ -147,11 +147,8 @@ namespace resonance.MusicLibrary
             }
         }
 
-        public void Upsert(MusicTrack t)
-        {
-            using var conn = OpenConnection();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = $@"
+        // Shared by Upsert and UpsertMany so the column/conflict handling can't drift between them.
+        private string UpsertSql => $@"
                 INSERT INTO {T}
                     (path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
                      title, artist, album_artist, album, year, track_number, disc_number,
@@ -168,6 +165,12 @@ namespace resonance.MusicLibrary
                     track_number=excluded.track_number, disc_number=excluded.disc_number,
                     genre=excluded.genre, bpm=excluded.bpm, key_sig=excluded.key_sig,
                     comment=excluded.comment, has_artwork=excluded.has_artwork, tag_types=excluded.tag_types";
+
+        public void Upsert(MusicTrack t)
+        {
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = UpsertSql;
 
             AddParam(cmd, "@path", t.Path);
             AddParam(cmd, "@filename", t.Filename);
@@ -191,6 +194,86 @@ namespace resonance.MusicLibrary
             AddParam(cmd, "@art", t.HasArtwork ? 1 : 0);
             AddParam(cmd, "@tagtypes", (object)t.TagTypes ?? DBNull.Value);
             cmd.ExecuteNonQuery();
+        }
+
+        /// <summary>
+        ///     Upserts many tracks over a single connection, committing in chunks. This replaces ~N
+        ///     connection-opens + auto-commits (one per <see cref="Upsert"/> call) with ~N/chunkSize commits,
+        ///     which is dramatically faster during a full/forced library scan — especially on Postgres,
+        ///     where each single-row commit is a network round-trip.
+        /// </summary>
+        /// <param name="tracks">The tracks to upsert.</param>
+        /// <param name="chunkSize">Rows committed per transaction.</param>
+        public void UpsertMany(IReadOnlyList<MusicTrack> tracks, int chunkSize = 500)
+        {
+            if (tracks is null || tracks.Count == 0)
+            {
+                return;
+            }
+
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = UpsertSql;
+
+            // Parameters are created once and their values reset per row; mirrors the untyped-parameter
+            // approach used by the single-row Upsert (Npgsql/Sqlite infer the type from the value).
+            foreach (var name in new[]
+            {
+                "@path", "@filename", "@dir", "@ext", "@size", "@mod", "@idx", "@dur",
+                "@title", "@artist", "@aartist", "@album", "@year", "@track", "@disc",
+                "@genre", "@bpm", "@key", "@comment", "@art", "@tagtypes",
+            })
+            {
+                var p = cmd.CreateParameter();
+                p.ParameterName = name;
+                cmd.Parameters.Add(p);
+            }
+
+            DbTransaction tx = null;
+
+            try
+            {
+                for (var i = 0; i < tracks.Count; i++)
+                {
+                    if (i % chunkSize == 0)
+                    {
+                        tx?.Commit();
+                        tx?.Dispose();
+                        tx = conn.BeginTransaction();
+                        cmd.Transaction = tx;
+                    }
+
+                    var t = tracks[i];
+                    cmd.Parameters["@path"].Value = t.Path;
+                    cmd.Parameters["@filename"].Value = t.Filename;
+                    cmd.Parameters["@dir"].Value = t.Directory;
+                    cmd.Parameters["@ext"].Value = t.Extension;
+                    cmd.Parameters["@size"].Value = t.FileSize;
+                    cmd.Parameters["@mod"].Value = t.FileModified;
+                    cmd.Parameters["@idx"].Value = t.IndexedAt;
+                    cmd.Parameters["@dur"].Value = (object)t.Duration ?? DBNull.Value;
+                    cmd.Parameters["@title"].Value = (object)t.Title ?? DBNull.Value;
+                    cmd.Parameters["@artist"].Value = (object)t.Artist ?? DBNull.Value;
+                    cmd.Parameters["@aartist"].Value = (object)t.AlbumArtist ?? DBNull.Value;
+                    cmd.Parameters["@album"].Value = (object)t.Album ?? DBNull.Value;
+                    cmd.Parameters["@year"].Value = (object)t.Year ?? DBNull.Value;
+                    cmd.Parameters["@track"].Value = (object)t.TrackNumber ?? DBNull.Value;
+                    cmd.Parameters["@disc"].Value = (object)t.DiscNumber ?? DBNull.Value;
+                    cmd.Parameters["@genre"].Value = (object)t.Genre ?? DBNull.Value;
+                    cmd.Parameters["@bpm"].Value = (object)t.Bpm ?? DBNull.Value;
+                    cmd.Parameters["@key"].Value = (object)t.Key ?? DBNull.Value;
+                    cmd.Parameters["@comment"].Value = (object)t.Comment ?? DBNull.Value;
+                    cmd.Parameters["@art"].Value = t.HasArtwork ? 1 : 0;
+                    cmd.Parameters["@tagtypes"].Value = (object)t.TagTypes ?? DBNull.Value;
+                    cmd.ExecuteNonQuery();
+                }
+
+                tx?.Commit();
+            }
+            finally
+            {
+                tx?.Dispose();
+            }
         }
 
         public void ClearAll()
@@ -505,6 +588,26 @@ namespace resonance.MusicLibrary
             return (0, 0.0);
         }
 
+        /// <summary>
+        /// A cheap content version of the whole library: track count + the latest index timestamp.
+        /// Changes on any add (count up + new indexed_at), update (re-index bumps indexed_at to the
+        /// new max) or delete (count down). Lets a client skip the full list sync when unchanged.
+        /// </summary>
+        /// <returns>A stable <c>"{count}:{maxIndexedAt}"</c> token.</returns>
+        public string GetLibraryVersion()
+        {
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"SELECT COUNT(*), COALESCE(MAX(indexed_at), 0) FROM {T}";
+            using var r = cmd.ExecuteReader();
+            if (r.Read())
+            {
+                return $"{Convert.ToInt64(r.GetValue(0))}:{Convert.ToInt64(r.GetValue(1))}";
+            }
+
+            return "0:0";
+        }
+
         public IReadOnlyList<MusicAlbum> GetAlbums(string artistFilter = null)
         {
             using var conn = OpenConnection();
@@ -694,6 +797,61 @@ namespace resonance.MusicLibrary
             AddParam(cmd, "@path", path);
             using var r = cmd.ExecuteReader();
             return r.Read() ? ReadRow(r) : null;
+        }
+
+        /// <summary>
+        /// Resolves many paths in one shot (chunked WHERE path IN (...)), preserving caller order and
+        /// skipping paths no longer in the library. Replaces a per-path GetByPath N+1 for callers like
+        /// loved-track resolution.
+        /// </summary>
+        /// <returns></returns>
+        public IReadOnlyList<MusicTrack> GetByPaths(IReadOnlyList<string> paths)
+        {
+            if (paths == null || paths.Count == 0)
+            {
+                return System.Array.Empty<MusicTrack>();
+            }
+
+            using var conn = OpenConnection();
+            var byPath = new Dictionary<string, MusicTrack>(StringComparer.Ordinal);
+
+            // Chunk to stay well under SQLite's bound-parameter ceiling (PG allows far more).
+            const int ChunkSize = 400;
+            for (var start = 0; start < paths.Count; start += ChunkSize)
+            {
+                var end = Math.Min(start + ChunkSize, paths.Count);
+                using var cmd = conn.CreateCommand();
+                var names = new List<string>(end - start);
+                for (var i = start; i < end; i++)
+                {
+                    var name = "@p" + i;
+                    names.Add(name);
+                    AddParam(cmd, name, paths[i]);
+                }
+
+                cmd.CommandText = $@"
+                    SELECT path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
+                           title, artist, album_artist, album, year, track_number, disc_number,
+                           genre, bpm, key_sig, comment, has_artwork, tag_types
+                    FROM {T} WHERE path IN ({string.Join(",", names)})";
+                using var r = cmd.ExecuteReader();
+                while (r.Read())
+                {
+                    var row = ReadRow(r);
+                    byPath[row.Path] = row;
+                }
+            }
+
+            var result = new List<MusicTrack>(paths.Count);
+            foreach (var p in paths)
+            {
+                if (byPath.TryGetValue(p, out var track))
+                {
+                    result.Add(track);
+                }
+            }
+
+            return result;
         }
 
         /// <summary>

@@ -12,7 +12,12 @@ import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import { useNetworkLog, NetworkLogEntry, NetworkLogKind } from '../../store/networkLogStore';
 import { useConnectionStore } from '../../services/connectionMonitor';
-import { exportNetworkLogAsHar, openNetworkLogInHarReader, HarExportResult } from '../../services/harExport';
+import {
+  exportNetworkLogAsHar,
+  openNetworkLogInHarReader,
+  saveNetworkLogToFolder,
+  HarExportResult,
+} from '../../services/harExport';
 
 // Latency thresholds for colour-coding (ms). Mirrors the connection monitor's SLOW_MS.
 const WARN_MS = 500;
@@ -63,7 +68,8 @@ export default function NetworkLogScreen() {
     setBusy(true);
     try {
       const result = await fn(useNetworkLog.getState().entries);
-      if (!result.ok && result.reason) Alert.alert('Export', result.reason);
+      const note = result.ok ? result.message : result.reason;
+      if (note) Alert.alert('Export', note);
     } catch (e) {
       Alert.alert('Export failed', e instanceof Error ? e.message : 'Unknown error');
     } finally {
@@ -152,7 +158,15 @@ export default function NetworkLogScreen() {
               style={({ pressed }) => [s.btn, pressed && s.btnPressed, exportDisabled && s.btnDisabled]}
             >
               <Ionicons color={colors.textPrimary} name="open-outline" size={15} />
-              <Text style={s.btnText}>{busy ? 'Working…' : 'Open in reader'}</Text>
+              <Text style={s.btnText}>Open</Text>
+            </Pressable>
+            <Pressable
+              disabled={exportDisabled}
+              onPress={() => runExport(saveNetworkLogToFolder)}
+              style={({ pressed }) => [s.btn, pressed && s.btnPressed, exportDisabled && s.btnDisabled]}
+            >
+              <Ionicons color={colors.textPrimary} name="download-outline" size={15} />
+              <Text style={s.btnText}>Save</Text>
             </Pressable>
             <Pressable
               disabled={exportDisabled}
@@ -160,7 +174,7 @@ export default function NetworkLogScreen() {
               style={({ pressed }) => [s.btn, pressed && s.btnPressed, exportDisabled && s.btnDisabled]}
             >
               <Ionicons color={colors.textPrimary} name="share-outline" size={15} />
-              <Text style={s.btnText}>Share .har</Text>
+              <Text style={s.btnText}>Share</Text>
             </Pressable>
           </View>
         </View>

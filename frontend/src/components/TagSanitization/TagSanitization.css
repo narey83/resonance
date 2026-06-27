@@ -186,8 +186,15 @@
   color: var(--text-primary);
 }
 
+.ts-btn--secondary {
+  background: transparent;
+  color: var(--accent, #5c8cf7);
+  border: 1px solid var(--accent, #5c8cf7);
+}
+
 .ts-btn--primary:hover:not(:disabled) { opacity: 0.85; }
 .ts-btn--cancel:hover:not(:disabled)  { opacity: 0.75; }
+.ts-btn--secondary:hover:not(:disabled) { opacity: 0.75; }
 
 .ts-dry-run-badge {
   font-size: 11px;

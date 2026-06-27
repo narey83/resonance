@@ -51,5 +51,12 @@ namespace resonance.Mixtapes
         string? Artist,
         string? Album,
         double? Duration,
-        int SortOrder);
+        int SortOrder)
+    {
+        // Request-scoped artwork/stream signature for FilePath (see StreamUrlSigner), stamped by
+        // the controller so clients skip the separate POST /sign round-trip. Not persisted.
+        public string? Sig { get; init; }
+
+        public long Exp { get; init; }
+    }
 }

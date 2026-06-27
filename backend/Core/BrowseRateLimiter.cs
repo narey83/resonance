@@ -118,6 +118,16 @@ public class BrowseRateLimiter
 
     public IReadOnlyList<BrowseRateLimitUser> GetUsers()
     {
+        // When disabled, IsRateLimited short-circuits and never touches the counters, so any
+        // users tracked or blocked while the feature was on would otherwise linger indefinitely.
+        // Clear them out so the UI doesn't keep "watching" users with the feature off.
+        if (!Options.CurrentValue.BrowseRateLimit.Enabled)
+        {
+            Counters.Clear();
+            Blocked.Clear();
+            return Array.Empty<BrowseRateLimitUser>();
+        }
+
         var now = DateTime.UtcNow;
         var result = new List<BrowseRateLimitUser>();
 

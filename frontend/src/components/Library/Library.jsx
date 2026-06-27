@@ -9,6 +9,7 @@ import * as mixtapesAPI from '../../lib/mixtapes';
 import {
   analyzeFolder,
   analyzeTrack,
+  cancelSync,
   deleteFolder,
   deleteTrack,
   deleteTrackBatchLocal,
@@ -58,6 +59,7 @@ import {
   Link2,
   List,
   ListMusic,
+  Loader2,
   PanelLeft,
   Pencil,
   Play,
@@ -2679,6 +2681,11 @@ const Library = () => {
   const libraryActivity = useLibraryActivity();
   const lovedPaths = libraryActivity?.lovedPaths ?? new Set();
   const libraryRevision = libraryActivity?.libraryRevision ?? 0;
+  const syncState = libraryActivity?.syncState ?? null;
+  const scanProgressPct =
+    syncState?.running && syncState.progress > 0
+      ? Math.round(syncState.progress * 100)
+      : null;
 
   const [allTracks, setAllTracks] = useState([]);
   const [lovedTracks, setLovedTracks] = useState([]);
@@ -2749,6 +2756,13 @@ const Library = () => {
     }
   }, []);
   const scrollRestoredRef = useRef(false);
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const searchRef = useRef(null);
   const viewScrollRef = useRef(null);
@@ -2776,6 +2790,7 @@ const Library = () => {
           getAlbums(),
           getLibraryStats().catch(() => null),
         ]);
+      if (!isMountedRef.current) return;
       setArtists(artistData ?? []);
       setGenres(genreData ?? []);
       setRecentlyAdded(recentData ?? []);
@@ -2784,7 +2799,7 @@ const Library = () => {
     } catch {
       // ignore
     } finally {
-      setLoadingArtists(false);
+      if (isMountedRef.current) setLoadingArtists(false);
     }
   }, []);
 
@@ -3781,6 +3796,39 @@ const Library = () => {
       )}
 
       <div className="jb-content">
+        {syncState?.running && (
+          <div
+            className="jb-scan-banner"
+            role="status"
+          >
+            <Loader2
+              className="jb-scan-spinner"
+              size={14}
+            />
+            <span className="jb-scan-label">
+              Scanning music library
+              {scanProgressPct === null ? '…' : ` — ${scanProgressPct}%`}
+            </span>
+            <div className="jb-scan-track">
+              <div
+                className="jb-scan-fill"
+                style={
+                  scanProgressPct === null
+                    ? undefined
+                    : { width: `${scanProgressPct}%` }
+                }
+              />
+            </div>
+            <button
+              className="jb-scan-stop"
+              onClick={() => cancelSync().catch(() => {})}
+              title="Stop scanning"
+              type="button"
+            >
+              Stop
+            </button>
+          </div>
+        )}
         <div className="jb-topbar">
           <button
             className={`jb-icon-btn${navOpen ? ' jb-icon-btn--active' : ''}`}

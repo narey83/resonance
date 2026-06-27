@@ -24,6 +24,7 @@ export const LibraryActivityProvider = ({ children }) => {
   const [playStats, setPlayStats] = useState(() => new Map());
   const [playHistory, setPlayHistory] = useState([]);
   const [libraryRevision, setLibraryRevision] = useState(0);
+  const [syncState, setSyncState] = useState(null);
   const hubRef = useRef(null);
 
   useEffect(() => {
@@ -69,6 +70,12 @@ export const LibraryActivityProvider = ({ children }) => {
 
     hub.on('LIBRARY_UPDATED', () => {
       setLibraryRevision((r) => r + 1);
+    });
+
+    // backend music-library scan progress; drives the "scanning…" banner. The list keeps showing
+    // whatever data is already loaded — this only surfaces that a (re)scan is in flight.
+    hub.on('SYNC_STATE', (state) => {
+      setSyncState(state);
     });
 
     hub.start().catch(() => {});
@@ -145,6 +152,7 @@ export const LibraryActivityProvider = ({ children }) => {
       playStats,
       playHistory,
       libraryRevision,
+      syncState,
       toggleLove,
       clearAllLoved,
       recordPlay,
@@ -160,6 +168,7 @@ export const LibraryActivityProvider = ({ children }) => {
       playHistory,
       playStats,
       recordPlay,
+      syncState,
       toggleLove,
     ],
   );

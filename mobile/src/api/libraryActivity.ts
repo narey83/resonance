@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import { seedSignatures } from './streamSignatures';
 
 export interface PlayStat {
   path: string;
@@ -14,6 +15,9 @@ export interface PlayRecord {
   artist: string;
   folder: string;
   source: string;
+  // Server-embedded signature for path (artwork in the history list) — seeds the signature cache.
+  sig?: string | null;
+  exp?: number | null;
 }
 
 export interface LibraryActivitySnapshot {
@@ -39,8 +43,11 @@ export const recordPlay = async (
 ): Promise<PlayStat> =>
   (await apiClient.post('/musiclibrary/plays', { path, ...meta })).data;
 
-export const getPlayHistory = async (limit = 100, offset = 0): Promise<PlayRecord[]> =>
-  (await apiClient.get('/musiclibrary/plays', { params: { limit, offset } })).data;
+export const getPlayHistory = async (limit = 100, offset = 0): Promise<PlayRecord[]> => {
+  const data: PlayRecord[] = (await apiClient.get('/musiclibrary/plays', { params: { limit, offset } })).data;
+  seedSignatures(data);
+  return data;
+};
 
 export const deletePlay = async (id: string): Promise<void> =>
   apiClient.delete(`/musiclibrary/plays/${encodeURIComponent(id)}`);

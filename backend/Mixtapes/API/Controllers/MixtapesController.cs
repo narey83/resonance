@@ -37,6 +37,7 @@ namespace resonance.Mixtapes.API
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Http;
     using Microsoft.AspNetCore.Mvc;
+    using resonance.MusicLibrary;
 
     public record CreateMixtapeRequest(string Name, string? Description);
     public record UpdateMixtapeRequest(string Name, string? Description);
@@ -51,16 +52,35 @@ namespace resonance.Mixtapes.API
     [Authorize(Policy = AuthPolicy.Any)]
     public class MixtapesController : ControllerBase
     {
-        public MixtapesController(IMixtapeService service)
+        public MixtapesController(IMixtapeService service, StreamUrlSigner urlSigner)
         {
             Service = service;
+            UrlSigner = urlSigner;
         }
 
         private IMixtapeService Service { get; }
 
+        private StreamUrlSigner UrlSigner { get; }
+
+        // Stamp each track's FilePath with a fresh artwork/stream signature so clients skip the
+        // separate POST /sign round-trip (see StreamUrlSigner / MusicLibraryController).
+        private MixtapeTrack SignTrack(MixtapeTrack t)
+        {
+            if (string.IsNullOrEmpty(t.FilePath))
+            {
+                return t;
+            }
+
+            var (exp, sig) = UrlSigner.Sign(t.FilePath);
+            return t with { Exp = exp, Sig = sig };
+        }
+
+        private Mixtape SignMixtape(Mixtape m) =>
+            m.Tracks == null ? m : m with { Tracks = m.Tracks.Select(SignTrack).ToList() };
+
         [HttpGet]
         [ProducesResponseType(typeof(IReadOnlyList<Mixtape>), 200)]
-        public IActionResult GetAll() => Ok(Service.GetAll());
+        public IActionResult GetAll() => Ok(Service.GetAll().Select(SignMixtape).ToList());
 
         [HttpPost]
         [ProducesResponseType(typeof(Mixtape), 201)]
@@ -76,7 +96,7 @@ namespace resonance.Mixtapes.API
         public IActionResult GetById(string id)
         {
             var m = Service.GetById(id);
-            return m == null ? NotFound() : Ok(m);
+            return m == null ? NotFound() : Ok(SignMixtape(m));
         }
 
         [HttpPut("{id}")]

@@ -13,6 +13,8 @@ export const getSyncState = async () =>
 
 export const triggerSync = async () => api.post('/musiclibrary/sync');
 
+export const cancelSync = async () => api.post('/musiclibrary/sync/cancel');
+
 export const getTracks = async (queryParameters) => {
   const data = (
     await api.get('/musiclibrary/tracks', { params: queryParameters })

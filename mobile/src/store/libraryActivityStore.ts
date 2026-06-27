@@ -14,6 +14,7 @@ import {
   type PlayRecord,
   type LibraryActivitySnapshot,
 } from '../api/libraryActivity';
+import type { MusicLibrarySyncState } from '../api/musicLibrary';
 import {
   createLibraryActivityHubConnection,
   LIBRARY_ACTIVITY_SNAPSHOT,
@@ -24,6 +25,7 @@ import {
   LIBRARY_ACTIVITY_PLAY_DELETED,
   LIBRARY_ACTIVITY_HISTORY_CLEARED,
   LIBRARY_ACTIVITY_LIBRARY_UPDATED,
+  LIBRARY_ACTIVITY_SYNC_STATE,
 } from '../api/libraryActivityHub';
 import { attachHubLogging, remoteLog } from '../api/remoteLogger';
 
@@ -33,6 +35,7 @@ interface LibraryActivityState {
   recentPlays: PlayRecord[];   // SignalR-sourced, prepended in real-time
   historyVersion: number;       // bumped on delete/clear so HistoryTab can reload
   libraryRevision: number;      // bumped when a library sync adds/removes tracks
+  syncState: MusicLibrarySyncState | null;  // server-side scan state, pushed via SYNC_STATE
 
   applySnapshot: (snapshot: LibraryActivitySnapshot) => void;
   applyLoved: (path: string) => void;
@@ -42,6 +45,7 @@ interface LibraryActivityState {
   applyPlayDeleted: (id: string) => void;
   applyHistoryCleared: () => void;
   bumpLibraryRevision: (payload?: { removed?: number; removedPaths?: string[] | null }) => void;
+  applySyncState: (state: MusicLibrarySyncState) => void;
 
   toggleLove: (path: string) => Promise<void>;
   clearAllLoved: () => Promise<void>;
@@ -56,6 +60,7 @@ export const useLibraryActivityStore = create<LibraryActivityState>((set, get) =
   recentPlays: [],
   historyVersion: 0,
   libraryRevision: 0,
+  syncState: null,
 
   applySnapshot: ({ lovedPaths, playStats }) => {
     set({
@@ -101,6 +106,10 @@ export const useLibraryActivityStore = create<LibraryActivityState>((set, get) =
       evictArtwork(payload.removedPaths);
     }
     set((s) => ({ libraryRevision: s.libraryRevision + 1 }));
+  },
+
+  applySyncState: (state) => {
+    set({ syncState: state });
   },
 
   toggleLove: async (path) => {
@@ -151,6 +160,7 @@ export const useLibraryActivityHub = () => {
     hub.on(LIBRARY_ACTIVITY_PLAY_DELETED,    store.applyPlayDeleted);
     hub.on(LIBRARY_ACTIVITY_HISTORY_CLEARED, store.applyHistoryCleared);
     hub.on(LIBRARY_ACTIVITY_LIBRARY_UPDATED, store.bumpLibraryRevision);
+    hub.on(LIBRARY_ACTIVITY_SYNC_STATE,      store.applySyncState);
 
     const startPromise = hub.start().catch((err: unknown) => {
       remoteLog('error', `[hub:libraryActivity] start failed — ${err instanceof Error ? err.message : String(err)}`);

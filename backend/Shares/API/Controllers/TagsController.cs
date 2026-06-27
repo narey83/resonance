@@ -87,6 +87,19 @@ namespace resonance.Shares.API
         }
 
         /// <summary>
+        ///     Returns tagged files whose metadata is incomplete (missing a core field).
+        /// </summary>
+        /// <response code="200">The request completed successfully.</response>
+        /// <returns></returns>
+        [HttpGet("incomplete")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(typeof(IEnumerable<TaggedFile>), 200)]
+        public IActionResult GetIncomplete()
+        {
+            return Ok(Shares.GetIncompleteFiles());
+        }
+
+        /// <summary>
         ///     Writes tag data to the specified file and updates the share cache.
         /// </summary>
         /// <param name="maskedFilename">The masked filename identifying the file.</param>

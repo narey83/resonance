@@ -61,6 +61,8 @@ namespace resonance
             }
         }
 
+        public void Clear() => Queue.Clear();
+
         public IEnumerator<T> GetEnumerator() => Queue.GetEnumerator();
 
         IEnumerator IEnumerable.GetEnumerator() => Queue.GetEnumerator();

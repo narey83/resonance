@@ -51,6 +51,21 @@ export const ensureSigned = async (paths: (string | null | undefined)[]): Promis
   }
 };
 
+/**
+ * Seed the cache with signatures the server embedded in a list response (artist/album/track/
+ * folder rows now carry their own { sig, exp }). This replaces the separate POST /sign round-trip
+ * the list fetchers used to block on. Rows without a usable signature are skipped silently.
+ */
+export const seedSignatures = (
+  entries: { path?: string | null; sig?: string | null; exp?: number | null }[],
+): void => {
+  for (const e of entries) {
+    if (e.path && e.sig && typeof e.exp === 'number') {
+      cache.set(e.path, { exp: e.exp, sig: e.sig });
+    }
+  }
+};
+
 /** Synchronous read of a cached signature, or undefined if the path isn't signed yet. */
 export const getSignature = (path: string | null | undefined): Signature | undefined =>
   path ? cache.get(path) : undefined;

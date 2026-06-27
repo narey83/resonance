@@ -14,6 +14,7 @@ export const LIBRARY_ACTIVITY_PLAYED          = 'TRACK_PLAYED';
 export const LIBRARY_ACTIVITY_PLAY_DELETED    = 'PLAY_DELETED';
 export const LIBRARY_ACTIVITY_HISTORY_CLEARED = 'HISTORY_CLEARED';
 export const LIBRARY_ACTIVITY_LIBRARY_UPDATED = 'LIBRARY_UPDATED';
+export const LIBRARY_ACTIVITY_SYNC_STATE      = 'SYNC_STATE';
 
 export const createLibraryActivityHubConnection = () => {
   const { serverUrl } = useAuthStore.getState();

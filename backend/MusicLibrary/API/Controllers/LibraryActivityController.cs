@@ -29,6 +29,7 @@
 
 namespace resonance.MusicLibrary.API
 {
+    using System.Linq;
     using System.Security.Claims;
     using System.Threading.Tasks;
     using Asp.Versioning;
@@ -48,14 +49,25 @@ namespace resonance.MusicLibrary.API
     [Authorize(Policy = AuthPolicy.Any)]
     public class LibraryActivityController : ControllerBase
     {
-        public LibraryActivityController(ILibraryActivityService service)
+        public LibraryActivityController(ILibraryActivityService service, StreamUrlSigner urlSigner)
         {
             Service = service;
+            UrlSigner = urlSigner;
         }
 
         private ILibraryActivityService Service { get; }
 
+        private StreamUrlSigner UrlSigner { get; }
+
         private string Username => User.FindFirstValue(ClaimTypes.Name) ?? string.Empty;
+
+        // Stamp a fresh path-scoped signature so the client can build signed artwork/stream URLs
+        // without a separate POST /sign round-trip (see StreamUrlSigner / MusicLibraryController).
+        private MusicTrack SignTrack(MusicTrack t)
+        {
+            var (exp, sig) = UrlSigner.Sign(t.Path);
+            return t with { Exp = exp, Sig = sig };
+        }
 
         // ── Loved ──────────────────────────────────────────────────────────────
         [HttpGet("loved")]
@@ -66,7 +78,7 @@ namespace resonance.MusicLibrary.API
         [HttpGet("loved/tracks")]
         [ProducesResponseType(typeof(MusicTrack[]), 200)]
         public IActionResult GetLovedTracks()
-            => Ok(Service.GetLovedTracks(Username));
+            => Ok(Service.GetLovedTracks(Username).Select(SignTrack).ToArray());
 
         [HttpPut("loved")]
         [ProducesResponseType(204)]
@@ -106,7 +118,15 @@ namespace resonance.MusicLibrary.API
         public IActionResult GetPlayHistory(
             [FromQuery] int limit = 100,
             [FromQuery] int offset = 0)
-            => Ok(Service.GetPlayHistory(Username, limit, offset));
+        {
+            var records = Service.GetPlayHistory(Username, limit, offset);
+            foreach (var r in records)
+            {
+                (r.Exp, r.Sig) = UrlSigner.Sign(r.Path);
+            }
+
+            return Ok(records);
+        }
 
         [HttpDelete("plays/{id}")]
         [ProducesResponseType(204)]

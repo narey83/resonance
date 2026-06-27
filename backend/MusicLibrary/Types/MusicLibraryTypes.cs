@@ -31,6 +31,9 @@ namespace resonance.MusicLibrary
 {
     using System.Collections.Generic;
 
+    // Sig/Exp are additive, request-scoped HMAC signatures (see StreamUrlSigner) the controller
+    // stamps onto each row so clients can build signed artwork/stream URLs without a second
+    // round-trip to the /sign endpoint. They are not persisted and default to null/0 when unset.
     public record MusicAlbum(
         string Album,
         string Artist,
@@ -41,7 +44,12 @@ namespace resonance.MusicLibrary
         string CoverPath,
         bool HasArtwork,
         long IndexedAt,
-        string Directory);
+        string Directory)
+    {
+        public string Sig { get; init; }
+
+        public long Exp { get; init; }
+    }
 
     public record MusicArtist(
         string Artist,
@@ -49,7 +57,12 @@ namespace resonance.MusicLibrary
         int TrackCount,
         string CoverPath,
         bool HasArtwork,
-        long IndexedAt);
+        long IndexedAt)
+    {
+        public string Sig { get; init; }
+
+        public long Exp { get; init; }
+    }
 
     public record MusicTrack(
         string Path,
@@ -72,11 +85,22 @@ namespace resonance.MusicLibrary
         string Key,
         string Comment,
         bool HasArtwork,
-        string TagTypes);
+        string TagTypes)
+    {
+        public string Sig { get; init; }
+
+        public long Exp { get; init; }
+    }
 
     public record MusicGenre(string Genre, int TrackCount, double? TotalDuration);
     public record MusicYear(int Year, int TrackCount, int AlbumCount);
-    public record MusicFolder(string Path, string Name, int TrackCount, string CoverPath, bool HasArtwork, long IndexedAt);
+
+    public record MusicFolder(string Path, string Name, int TrackCount, string CoverPath, bool HasArtwork, long IndexedAt)
+    {
+        public string Sig { get; init; }
+
+        public long Exp { get; init; }
+    }
 
     public record PlayStat(string Path, int PlayCount, long? LastPlayedAt);
     public record LibraryActivitySnapshot(string[] LovedPaths, PlayStat[] PlayStats);

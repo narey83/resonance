@@ -11,6 +11,7 @@ import {
   type MusicTrack,
   type MusicAlbum,
 } from '../api/musicLibrary';
+import { ARTWORK_THUMB_SIZE, PLAYER_ART_SIZE } from './artworkCache';
 import { getPlayHistory, type PlayRecord } from '../api/libraryActivity';
 import {
   getLocalAlbums,
@@ -90,7 +91,7 @@ const playableItem = (track: MusicTrack): BrowseItem => ({
   mediaId: track.path,
   title: getTrackTitle(track),
   subtitle: track.artist ?? undefined,
-  iconUri: track.hasArtwork ? (getArtworkUrl(track.path, 256) ?? undefined) : undefined,
+  iconUri: track.hasArtwork ? (getArtworkUrl(track.path, ARTWORK_THUMB_SIZE) ?? undefined) : undefined,
   mediaUri: getStreamUrl(track.path),
   playable: MediaItemPlayable.MediaPlayable,
 });
@@ -154,23 +155,23 @@ const loadNode = async (mediaId: string): Promise<void> => {
   } else if (mediaId === TAB_RECENT) {
     const albums = await getRecentlyAdded(30);
     tree[mediaId] = albums.map((a) =>
-      browsable(albumNodeId(a), a.album, a.artist, a.coverPath ? (getArtworkUrl(a.coverPath, 256) ?? undefined) : undefined),
+      browsable(albumNodeId(a), a.album, a.artist, a.coverPath ? (getArtworkUrl(a.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
     );
   } else if (mediaId === TAB_ARTISTS) {
     const artists = await getArtists();
     tree[mediaId] = artists.map((a) =>
-      browsable(PREFIX_ARTIST + encodeURIComponent(a.artist), a.artist, undefined, a.coverPath ? (getArtworkUrl(a.coverPath, 256) ?? undefined) : undefined),
+      browsable(PREFIX_ARTIST + encodeURIComponent(a.artist), a.artist, undefined, a.coverPath ? (getArtworkUrl(a.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
     );
   } else if (mediaId === TAB_FOLDERS) {
     const folders = await getFolders();
     tree[mediaId] = folders.map((f) =>
-      browsable(PREFIX_FOLDER + encodeURIComponent(f.path), f.name, undefined, f.coverPath ? (getArtworkUrl(f.coverPath, 256) ?? undefined) : undefined),
+      browsable(PREFIX_FOLDER + encodeURIComponent(f.path), f.name, undefined, f.coverPath ? (getArtworkUrl(f.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
     );
   } else if (mediaId.startsWith(PREFIX_ARTIST)) {
     const artist = decodeURIComponent(mediaId.slice(PREFIX_ARTIST.length));
     const albums = await getAlbums(artist);
     tree[mediaId] = albums.map((a) =>
-      browsable(albumNodeId(a), a.album, a.artist, a.coverPath ? (getArtworkUrl(a.coverPath, 256) ?? undefined) : undefined),
+      browsable(albumNodeId(a), a.album, a.artist, a.coverPath ? (getArtworkUrl(a.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
     );
   } else if (mediaId.startsWith(PREFIX_ALBUM)) {
     const [artistEnc, albumEnc] = mediaId.slice(PREFIX_ALBUM.length).split(SEP);
@@ -311,7 +312,7 @@ export const playAndroidAutoMediaId = async (mediaId: string): Promise<void> => 
       album: t.album ?? undefined,
       artwork: isLocalPath(t.path)
         ? (t.coverPath ?? undefined)
-        : (t.hasArtwork ? (getArtworkUrl(t.path, 512) ?? undefined) : undefined),
+        : (t.hasArtwork ? (getArtworkUrl(t.path, PLAYER_ART_SIZE) ?? undefined) : undefined),
       duration: t.duration ?? undefined,
       _source: t,
     }));

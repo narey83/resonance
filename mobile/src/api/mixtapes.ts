@@ -1,6 +1,6 @@
 import { apiClient } from './client';
 import { useAuthStore } from '../store/auth';
-import { ensureSigned } from './streamSignatures';
+import { seedSignatures } from './streamSignatures';
 
 export interface MixtapeTrack {
   id: string;
@@ -11,6 +11,9 @@ export interface MixtapeTrack {
   album: string | null;
   duration: number | null;
   sortOrder: number;
+  // Server-embedded signature for filePath (see streamSignatures) — seeds the signature cache.
+  sig?: string | null;
+  exp?: number | null;
 }
 
 export interface Mixtape {
@@ -51,14 +54,18 @@ export const getPublicZipUrl = (publicToken: string): string | null => {
   return `${serverUrl}/api/v0/public/mixtapes/${encodeURIComponent(publicToken)}/download.zip`;
 };
 
+// Mixtape tracks are signed by their filePath (used for both artwork and stream URLs).
+const seedTracks = (tracks: MixtapeTrack[]) =>
+  seedSignatures(tracks.map(t => ({ path: t.filePath, sig: t.sig, exp: t.exp })));
+
 export const getAll        = async (): Promise<Mixtape[]> => {
   const data = await apiClient.get<Mixtape[]>('/mixtapes').then(r => r.data);
-  await ensureSigned(data.flatMap(m => m.tracks.map(t => t.filePath)));
+  data.forEach(m => seedTracks(m.tracks));
   return data;
 };
 export const getById       = async (id: string): Promise<Mixtape> => {
   const data = await apiClient.get<Mixtape>(`/mixtapes/${encodeURIComponent(id)}`).then(r => r.data);
-  await ensureSigned(data.tracks.map(t => t.filePath));
+  seedTracks(data.tracks);
   return data;
 };
 export const create        = (name: string, description?: string) => apiClient.post<Mixtape>('/mixtapes', { name, description }).then(r => r.data);

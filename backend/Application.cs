@@ -523,21 +523,6 @@ namespace resonance
                 _ = CheckVersionAsync();
             }
 
-            if (!OptionsAtStartup.Flags.NoShareScan)
-            {
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await Shares.InitializeAsync(forceRescan: OptionsAtStartup.Flags.ForceShareScan);
-                    }
-                    catch (Exception)
-                    {
-                        Log.Error("Failed to initialize shares. Sharing is disabled");
-                    }
-                });
-            }
-
             // the placement of this may be a bit contentious long term; when the clock starts, all of the
             // scheduled tasks will fire for the first time. the clock EventArgs contain a FirstRun flag
             // to help timed logic decide whether to run, but as a safeguard the start is delayed until
@@ -549,39 +534,79 @@ namespace resonance
             await Clock.StartAsync();
             Log.Information("System clock started");
 
-            if (OptionsAtStartup.Relay.Enabled && OptionsAtStartup.Relay.Mode.ToEnum<RelayMode>() == RelayMode.Agent)
+            var isRelayAgent = OptionsAtStartup.Relay.Enabled && OptionsAtStartup.Relay.Mode.ToEnum<RelayMode>() == RelayMode.Agent;
+
+            if (isRelayAgent)
             {
                 Log.Information("Running in Agent relay mode; not connecting to the Soulseek server.");
                 await Relay.Client.StartAsync(cancellationToken);
             }
-            else
+            else if (OptionsAtStartup.Relay.Enabled)
             {
-                if (OptionsAtStartup.Relay.Enabled)
-                {
-                    Log.Information("Running in Controller relay mode.  Listening for incoming Agent connections.");
+                Log.Information("Running in Controller relay mode.  Listening for incoming Agent connections.");
 
-                    if (OptionsAtStartup.Relay.Mode.ToEnum<RelayMode>() == RelayMode.Debug)
-                    {
-                        Log.Warning("Running in Debug relay mode; connecting to controller");
-                        _ = Relay.Client.StartAsync(cancellationToken);
-                    }
-                }
-
-                if (OptionsAtStartup.Flags.NoConnect)
+                if (OptionsAtStartup.Relay.Mode.ToEnum<RelayMode>() == RelayMode.Debug)
                 {
-                    Log.Warning("Not connecting to the Soulseek server; 'no-connect' option is enabled");
-                }
-                else if (string.IsNullOrEmpty(OptionsAtStartup.Soulseek.Username) || string.IsNullOrEmpty(OptionsAtStartup.Soulseek.Password))
-                {
-                    Log.Warning($"Not connecting to the Soulseek server; username and/or password invalid.  Specify valid credentials and manually connect, or update config and restart.");
-                }
-                else
-                {
-                    ConnectionWatchdog.Start();
+                    Log.Warning("Running in Debug relay mode; connecting to controller");
+                    _ = Relay.Client.StartAsync(cancellationToken);
                 }
             }
 
+            // Scan shares in the background, then go live on the Soulseek network only once the scan
+            // succeeds — so peers never see an incomplete (or empty) browse/search index. A faulted scan
+            // stays offline (connect manually via the UI to override). Relay agents scan shares but never
+            // connect to the server. When share scanning is disabled there's nothing to wait for, so we
+            // connect immediately.
+            if (!OptionsAtStartup.Flags.NoShareScan)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Shares.InitializeAsync(forceRescan: OptionsAtStartup.Flags.ForceShareScan);
+
+                        if (!isRelayAgent)
+                        {
+                            Log.Information("Shares are ready; connecting to the Soulseek network");
+                            ConnectToSoulseekServerIfEligible();
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        Log.Error("Failed to initialize shares. Sharing is disabled; not connecting to the Soulseek network until shares are ready (connect manually to override)");
+                    }
+                });
+            }
+            else if (!isRelayAgent)
+            {
+                ConnectToSoulseekServerIfEligible();
+            }
+
             _ = ApplicationHub.BroadcastServerReadyAsync();
+        }
+
+        /// <summary>
+        ///     Connects to the Soulseek server if eligible; that is, unless connecting is disabled via the
+        ///     'no-connect' flag or valid credentials are not configured.
+        /// </summary>
+        /// <remarks>
+        ///     This is deferred until the share index is ready (see <see cref="IHostedService.StartAsync"/>) so that
+        ///     we don't go live on the network and answer browse/search requests with an incomplete or empty index.
+        /// </remarks>
+        private void ConnectToSoulseekServerIfEligible()
+        {
+            if (OptionsAtStartup.Flags.NoConnect)
+            {
+                Log.Warning("Not connecting to the Soulseek server; 'no-connect' option is enabled");
+            }
+            else if (string.IsNullOrEmpty(OptionsAtStartup.Soulseek.Username) || string.IsNullOrEmpty(OptionsAtStartup.Soulseek.Password))
+            {
+                Log.Warning($"Not connecting to the Soulseek server; username and/or password invalid.  Specify valid credentials and manually connect, or update config and restart.");
+            }
+            else
+            {
+                ConnectionWatchdog.Start();
+            }
         }
 
         async Task IHostedService.StopAsync(CancellationToken cancellationToken)

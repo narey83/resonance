@@ -1,4 +1,5 @@
 import './TagSanitization.css';
+import { runNow as runEnrichment } from '../../lib/metadataLookup';
 import * as api from '../../lib/tagSanitization';
 import PageInfo from '../Shared/PageInfo';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -33,6 +34,8 @@ const TagSanitization = () => {
   const [dryRun, setDryRun] = useState(false);
   const [loading, setLoading] = useState(true);
   const pollRef = useRef(null);
+  // When set, the online metadata lookup is kicked off once the scan completes successfully.
+  const enrichAfterRef = useRef(false);
 
   const fetchState = useCallback(async () => {
     try {
@@ -55,7 +58,25 @@ const TagSanitization = () => {
     if (pollRef.current) return;
     pollRef.current = setInterval(async () => {
       const s = await fetchState();
-      if (s && !s.scanning) stopPolling();
+      if (!s || s.scanning) return;
+
+      stopPolling();
+
+      // If this was a "Clean & enrich" run, start the online lookup now that the
+      // sanitize finished — but only on a clean completion, not a cancel.
+      if (enrichAfterRef.current) {
+        enrichAfterRef.current = false;
+        if (s.completed) {
+          try {
+            await runEnrichment();
+            toast.success('Tags sanitized — online lookup started.');
+          } catch {
+            toast.error(
+              'Sanitize finished, but the online lookup failed to start.',
+            );
+          }
+        }
+      }
     }, POLL_INTERVAL);
   };
 
@@ -71,9 +92,13 @@ const TagSanitization = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleStart = async () => {
+  const beginScan = async (enrich) => {
+    enrichAfterRef.current = enrich;
+    // "Clean & enrich" always writes; a dry run wouldn't change anything to enrich.
+    if (enrich) setDryRun(false);
+
     try {
-      await api.startScan({ workers, dryRun });
+      await api.startScan({ workers, dryRun: enrich ? false : dryRun });
       setScanState((previous) => ({
         ...previous,
         scanning: true,
@@ -82,6 +107,7 @@ const TagSanitization = () => {
       }));
       startPolling();
     } catch (error) {
+      enrichAfterRef.current = false;
       toast.error(error?.response?.data ?? 'Failed to start scan');
     }
   };
@@ -158,6 +184,12 @@ const TagSanitization = () => {
         <p>
           Enable <strong>Dry Run</strong> to see exactly what would change on
           each file before anything is written.
+        </p>
+        <p>
+          <strong>Clean &amp; enrich</strong> runs a sanitize and then
+          automatically kicks off the online metadata lookup, filling in any
+          missing album/year/genre once the tags are clean — a one-click way to
+          tidy and complete the whole library.
         </p>
       </PageInfo>
 
@@ -251,14 +283,25 @@ const TagSanitization = () => {
             Cancel Scan
           </button>
         ) : (
-          <button
-            className="ts-btn ts-btn--primary"
-            disabled={loading}
-            onClick={handleStart}
-            type="button"
-          >
-            {dryRun ? 'Analyse Library' : 'Sanitize Tags'}
-          </button>
+          <>
+            <button
+              className="ts-btn ts-btn--primary"
+              disabled={loading}
+              onClick={() => beginScan(false)}
+              type="button"
+            >
+              {dryRun ? 'Analyse Library' : 'Sanitize Tags'}
+            </button>
+            <button
+              className="ts-btn ts-btn--secondary"
+              disabled={loading}
+              onClick={() => beginScan(true)}
+              title="Sanitize all tags, then run the online metadata lookup"
+              type="button"
+            >
+              Clean &amp; enrich
+            </button>
+          </>
         )}
       </div>
 

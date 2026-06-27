@@ -46,6 +46,7 @@ namespace resonance.MusicLibrary.API
         public static readonly string PlayDeleted = "PLAY_DELETED";
         public static readonly string HistoryCleared = "HISTORY_CLEARED";
         public static readonly string LibraryUpdated = "LIBRARY_UPDATED";
+        public static readonly string SyncState = "SYNC_STATE";
     }
 
     public static class LibraryActivityHubExtensions
@@ -73,17 +74,23 @@ namespace resonance.MusicLibrary.API
 
         public static Task BroadcastHistoryClearedAsync(this IHubContext<LibraryActivityHub> hub, string username)
             => hub.Clients.Group(username).SendAsync(LibraryActivityHubMethods.HistoryCleared);
+
+        public static Task BroadcastSyncStateAsync(this IHubContext<LibraryActivityHub> hub, MusicLibrarySyncState state)
+            => hub.Clients.All.SendAsync(LibraryActivityHubMethods.SyncState, state);
     }
 
     [Authorize(Policy = AuthPolicy.Any)]
     public class LibraryActivityHub : Hub
     {
-        public LibraryActivityHub(ILibraryActivityService service)
+        public LibraryActivityHub(ILibraryActivityService service, IMusicLibraryService library)
         {
             Service = service;
+            Library = library;
         }
 
         private ILibraryActivityService Service { get; }
+
+        private IMusicLibraryService Library { get; }
 
         public override async Task OnConnectedAsync()
         {
@@ -99,6 +106,10 @@ namespace resonance.MusicLibrary.API
                 PlayStats: Service.GetPlayStats(username));
 
             await Clients.Caller.SendAsync(LibraryActivityHubMethods.Snapshot, snapshot);
+
+            // let the freshly-connected client know whether a library scan is currently running so it can
+            // show the scanning banner immediately rather than waiting for the next state transition
+            await Clients.Caller.SendAsync(LibraryActivityHubMethods.SyncState, Library.SyncState);
         }
     }
 }

@@ -1,12 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useRef } from 'react';
+import React, { useRef } from 'react';
 import { Image } from 'expo-image';
 import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import { getArtworkUrl, getTrackTitle } from '../api/musicLibrary';
 import { useCast } from '../context/CastContext';
 import { usePlaybackStatus, usePlayer } from '../context/PlayerContext';
 import { usePlayerUI } from '../store/playerUIStore';
-import { getArtworkCacheKey } from '../services/artworkCache';
+import { getArtworkCacheKey, ARTWORK_THUMB_SIZE } from '../services/artworkCache';
 import { Radius, Spacing, Typography } from '../theme';
 
 export function PlayerMiniBar() {
@@ -14,15 +14,6 @@ export function PlayerMiniBar() {
   const { isPlaying, positionSec, durationSec } = usePlaybackStatus();
   const { isCasting, isGoogleCasting, castIsPlaying, castTogglePlayPause } = useCast();
   const { expand } = usePlayerUI();
-
-  const prevPath = useRef<string | null>(null);
-  useEffect(() => {
-    if (track && track.path !== prevPath.current) {
-      prevPath.current = track.path;
-      expand();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [track?.path]);
 
   const swipePan = useRef(
     PanResponder.create({
@@ -38,8 +29,8 @@ export function PlayerMiniBar() {
   const multiTrack = queue.length > 1;
   const progress   = durationSec > 0 ? Math.min(positionSec / durationSec, 1) : 0;
   const isLocal    = track.path.startsWith('file://') || track.path.startsWith('content://');
-  const artUrl     = track.hasArtwork ? (isLocal ? track.coverPath : getArtworkUrl(track.path, 96)) : null;
-  const artCacheKey = track.hasArtwork && !isLocal ? getArtworkCacheKey(track.path, 96) : undefined;
+  const artUrl     = track.hasArtwork ? (isLocal ? track.coverPath : getArtworkUrl(track.path, ARTWORK_THUMB_SIZE)) : null;
+  const artCacheKey = track.hasArtwork && !isLocal ? getArtworkCacheKey(track.path, ARTWORK_THUMB_SIZE) : undefined;
 
   return (
     <View {...swipePan.panHandlers} style={styles.container}>

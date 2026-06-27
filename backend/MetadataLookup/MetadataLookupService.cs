@@ -41,6 +41,7 @@ namespace resonance.MetadataLookup
     using resonance.Events;
     using resonance.MusicLibrary;
     using resonance.Shares;
+    using resonance.TagSanitization;
     using Serilog;
 
     /// <summary>
@@ -433,8 +434,40 @@ namespace resonance.MetadataLookup
             }
         }
 
+        // True while a user-initiated tag sanitization scan is running. Per-file safety is
+        // guaranteed by FileWriteLock; this is an optimization to avoid spending provider
+        // lookups on files a sanitization scan is about to rewrite anyway.
+        private bool SanitizationActive => MusicLibrary?.IsQueueActive(TagSanitizationService.QueueName) == true;
+
+        // Re-arm the loop after a short delay so deferred/aborted passes resume once the
+        // sanitization scan releases the files (DeregisterQueue does not signal us directly).
+        private void ScheduleRetry(CancellationToken ct)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(30), ct);
+                    Signal();
+                }
+                catch (OperationCanceledException)
+                {
+                    // shutting down
+                }
+            });
+        }
+
         private async Task RunPassAsync(CancellationToken ct)
         {
+            // Don't start a fresh pass while a sanitization scan runs; retry shortly so enrichment
+            // resumes once it finishes. A pass already in flight is safe to continue (FileWriteLock).
+            if (SanitizationActive)
+            {
+                Log.Information("Metadata enrichment deferred — tag sanitization in progress.");
+                ScheduleRetry(ct);
+                return;
+            }
+
             var candidates = BuildCandidates();
 
             lock (StateLock)
@@ -520,14 +553,15 @@ namespace resonance.MetadataLookup
                     if (match == null)
                     {
                         RecordOutcome(candidate, MetadataItemStatus.NoMatch, "no confident match");
-                        RecordAttempt(candidate.OriginalPath);
+                        RecordAttempt(candidate.OriginalPath, BuildIdentity(candidate.Artist, candidate.Title, candidate.Album));
                         continue;
                     }
 
-                    WriteMatch(candidate.Masked, match);
+                    var written = WriteMatch(candidate.Masked, match);
 
-                    // record after writing so the cached fingerprint reflects the post-write file
-                    RecordAttempt(candidate.OriginalPath);
+                    // record against the post-write identity so the enriched file isn't re-queried
+                    // next pass (the write may have changed artist/title/album)
+                    RecordAttempt(candidate.OriginalPath, BuildIdentity(written.Artist, written.Title, written.Album));
                     RecordOutcome(candidate, MetadataItemStatus.Written, FormatSummary(match));
                 }
                 catch (OperationCanceledException)
@@ -542,10 +576,12 @@ namespace resonance.MetadataLookup
             }
         }
 
-        private void WriteMatch(string maskedFilename, MetadataMatch match)
+        private FileTags WriteMatch(string maskedFilename, MetadataMatch match)
         {
             var existing = ShareService.GetAllTags().TryGetValue(maskedFilename, out var tags) ? tags : null;
-            ShareService.WriteFileTags(maskedFilename, MergeTags(existing, match));
+            var merged = MergeTags(existing, match);
+            ShareService.WriteFileTags(maskedFilename, merged);
+            return merged;
         }
 
         /// <summary>
@@ -585,14 +621,16 @@ namespace resonance.MetadataLookup
                     continue;
                 }
 
-                if (AlreadyAttempted(file.OriginalFilename))
+                var (artist, title) = ResolveArtistTitle(file.Tags?.Artist, file.Tags?.Title, file.Filename);
+                var album = file.Tags?.Album;
+
+                if (AlreadyAttempted(file.OriginalFilename, BuildIdentity(artist, title, album)))
                 {
                     skipped++;
                     continue;
                 }
 
-                var (artist, title) = ResolveArtistTitle(file.Tags?.Artist, file.Tags?.Title, file.Filename);
-                result.Add(new Candidate(file.MaskedFilename, file.OriginalFilename, file.Filename, artist, title, file.Tags?.Album));
+                result.Add(new Candidate(file.MaskedFilename, file.OriginalFilename, file.Filename, artist, title, album));
             }
 
             foreach (var file in ShareService.GetUntaggedFiles())
@@ -602,17 +640,19 @@ namespace resonance.MetadataLookup
                     continue;
                 }
 
-                if (AlreadyAttempted(file.OriginalFilename))
+                var (artist, title) = ParseFilename(file.Filename);
+                if (string.IsNullOrWhiteSpace(title))
+                {
+                    continue;
+                }
+
+                if (AlreadyAttempted(file.OriginalFilename, BuildIdentity(artist, title, null)))
                 {
                     skipped++;
                     continue;
                 }
 
-                var (artist, title) = ParseFilename(file.Filename);
-                if (!string.IsNullOrWhiteSpace(title))
-                {
-                    result.Add(new Candidate(file.MaskedFilename, file.OriginalFilename, file.Filename, artist, title, null));
-                }
+                result.Add(new Candidate(file.MaskedFilename, file.OriginalFilename, file.Filename, artist, title, null));
             }
 
             if (skipped > 0)
@@ -623,41 +663,26 @@ namespace resonance.MetadataLookup
             return result;
         }
 
-        // true when the file has already been looked up by the active provider (same fingerprint,
-        // within the retry window). Switching providers gives every file a fresh attempt.
-        private bool AlreadyAttempted(string path)
-            => TryFingerprint(path, out var size, out var modified)
-                && AttemptCache.ShouldSkip(path, size, modified, ActiveProviderSet, RetryAfter);
+        // true when this query identity has already been looked up by the active provider within the
+        // retry window. Switching providers gives every file a fresh attempt. Keying on identity rather
+        // than file fingerprint means a cosmetic rewrite (e.g. tag sanitization) is not a re-query.
+        private bool AlreadyAttempted(string path, string identity)
+            => AttemptCache.ShouldSkip(path, identity, ActiveProviderSet, RetryAfter);
 
-        private static bool TryFingerprint(string path, out long size, out long modified)
+        // A stable, normalized identity for the lookup query (artist|title|album). Normalization
+        // (trim, collapse whitespace, lowercase) keeps trivial tag tidy-ups from looking like a change.
+        private static string BuildIdentity(string artist, string title, string album)
+            => string.Join('|', NormalizeField(artist), NormalizeField(title), NormalizeField(album));
+
+        private static string NormalizeField(string value)
+            => string.IsNullOrWhiteSpace(value)
+                ? string.Empty
+                : string.Join(' ', value.Split((char[])null, StringSplitOptions.RemoveEmptyEntries)).ToLowerInvariant();
+
+        // records the attempt (keyed by the given query identity) and persists periodically
+        private void RecordAttempt(string path, string identity)
         {
-            size = 0;
-            modified = 0;
-            try
-            {
-                var info = new System.IO.FileInfo(path);
-                if (!info.Exists)
-                {
-                    return false;
-                }
-
-                size = info.Length;
-                modified = info.LastWriteTimeUtc.Ticks;
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        // records the attempt (with the file's current, post-write fingerprint) and persists periodically
-        private void RecordAttempt(string path)
-        {
-            if (TryFingerprint(path, out var size, out var modified))
-            {
-                AttemptCache.Record(path, size, modified, ActiveProviderSet);
-            }
+            AttemptCache.Record(path, identity, ActiveProviderSet);
 
             if (Interlocked.Increment(ref sinceLastSave) >= SaveEvery)
             {

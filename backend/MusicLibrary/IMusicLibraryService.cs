@@ -44,6 +44,7 @@ namespace resonance.MusicLibrary
         bool IsLibraryPath(string path);
 
         (int Total, double TotalDuration) GetStats();
+        string GetLibraryVersion();
         MusicLibraryQueryResult QueryTracks(string search, string artist, string album, string genre, int? year, string folder, bool missingKey, bool missingBpm, bool missingTitle, bool missingArtist, bool missingArtwork, int limit, int offset, string sort = null, bool descending = false);
         IReadOnlyList<MusicAlbum> GetAlbums(string artistFilter = null);
         IReadOnlyList<MusicArtist> GetArtists();
@@ -61,6 +62,9 @@ namespace resonance.MusicLibrary
 
         /// <summary>Clears all indexed tracks and triggers an immediate full re-index from disk.</summary>
         void ForceResync();
+
+        /// <summary>Cancels the in-flight scan (if any) without stopping the background sync loop.</summary>
+        void CancelSync();
 
         /// <summary>Renames a folder on disk and bulk-updates all DB paths under it. Notifies clients via hub.</summary>
         void RenameFolder(string path, string newLeafName);
@@ -88,5 +92,8 @@ namespace resonance.MusicLibrary
 
         /// <summary>Deregisters an analysis queue and triggers an immediate sync.</summary>
         void DeregisterQueue(string name);
+
+        /// <summary>Returns whether an analysis queue with the given name is currently registered.</summary>
+        bool IsQueueActive(string name);
     }
 }

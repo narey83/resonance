@@ -19,6 +19,7 @@ export type StreamQuality = 'auto' | 'original' | 'saver';
 interface AppSettingsStore {
   theme:             ThemeName;
   remoteLogging:     boolean;
+  librarySyncDebug:  boolean;
   artworkBackground: boolean;
   streamQuality:     StreamQuality;
   notifications:     NotificationPrefs;
@@ -27,6 +28,7 @@ interface AppSettingsStore {
   load:                  () => Promise<void>;
   setTheme:              (theme: ThemeName) => Promise<void>;
   setRemoteLogging:      (enabled: boolean) => Promise<void>;
+  setLibrarySyncDebug:   (enabled: boolean) => Promise<void>;
   setArtworkBackground:  (enabled: boolean) => Promise<void>;
   setStreamQuality:      (quality: StreamQuality) => Promise<void>;
   setNotification:       (key: keyof NotificationPrefs, enabled: boolean) => Promise<void>;
@@ -42,6 +44,7 @@ const DEFAULT_NOTIFICATIONS: NotificationPrefs = {
 export const useAppSettings = create<AppSettingsStore>((set, get) => ({
   theme:             'system',
   remoteLogging:     false,
+  librarySyncDebug:  false,
   artworkBackground: true,
   streamQuality:     'auto',
   notifications:     DEFAULT_NOTIFICATIONS,
@@ -54,6 +57,7 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
       set({
         theme:             parsed.theme             ?? 'system',
         remoteLogging:     parsed.remoteLogging     ?? false,
+        librarySyncDebug:  parsed.librarySyncDebug  ?? false,
         artworkBackground: parsed.artworkBackground ?? true,
         streamQuality:     parsed.streamQuality     ?? 'auto',
         notifications:     { ...DEFAULT_NOTIFICATIONS, ...(parsed.notifications ?? {}) },
@@ -74,6 +78,11 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
     await persist(get());
   },
 
+  setLibrarySyncDebug: async (enabled) => {
+    set({ librarySyncDebug: enabled });
+    await persist(get());
+  },
+
   setArtworkBackground: async (enabled) => {
     set({ artworkBackground: enabled });
     await persist(get());
@@ -91,13 +100,14 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
   },
 }));
 
-async function persist(state: Pick<AppSettingsStore, 'theme' | 'remoteLogging' | 'artworkBackground' | 'streamQuality' | 'notifications'>) {
+async function persist(state: Pick<AppSettingsStore, 'theme' | 'remoteLogging' | 'librarySyncDebug' | 'artworkBackground' | 'streamQuality' | 'notifications'>) {
   try {
     await SecureStore.setItemAsync(
       STORE_KEY,
       JSON.stringify({
         theme:             state.theme,
         remoteLogging:     state.remoteLogging,
+        librarySyncDebug:  state.librarySyncDebug,
         artworkBackground: state.artworkBackground,
         streamQuality:     state.streamQuality,
         notifications:     state.notifications,

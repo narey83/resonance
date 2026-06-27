@@ -40,10 +40,16 @@ const RANGES = [
   { hours: 8_760, label: '1y' },
 ];
 
-const DIRECTION_OPTIONS = [
-  { label: 'Both', value: null },
-  { label: 'Downloads', value: 'download' },
-  { label: 'Uploads', value: 'upload' },
+// Sub-tabs within the Analytics view — one section each, so the page shows
+// one focused panel group at a time instead of a long scroll.
+const ANALYTICS_TABS = [
+  { id: 'glance', label: 'At a Glance' },
+  { id: 'activity', label: 'Transfer Activity' },
+  { id: 'reliability', label: 'Reliability' },
+  { id: 'top', label: 'Top Users & Content' },
+  { id: 'geography', label: 'Audience & Geography' },
+  { id: 'library', label: 'Library' },
+  { id: 'feed', label: 'Activity Feed' },
 ];
 
 // Refresh interval values are in milliseconds; 0 = off
@@ -77,15 +83,15 @@ const Overview = () => {
   const [activeTab, setActiveTab] = useState(() =>
     prefs.get('overview:tab', 'analytics'),
   );
+  const [analyticsTab, setAnalyticsTab] = useState(() => {
+    const saved = prefs.get('overview:analytics-tab', 'glance');
+    return ANALYTICS_TABS.some((t) => t.id === saved) ? saved : 'glance';
+  });
   const [downloads, setDownloads] = useState([]);
   const [uploads, setUploads] = useState([]);
   const [range, setRange] = useState(() => {
     const n = Number(prefs.get('overview:range-h', 168));
     return RANGES.some((r) => r.hours === n) ? n : 168;
-  });
-  const [direction, setDirection] = useState(() => {
-    const saved = prefs.get('overview:direction', null);
-    return saved === 'upload' || saved === 'download' ? saved : null;
   });
   const [refreshMs, setRefreshMs] = useState(() => {
     const n = Number(prefs.get('overview:refresh-ms', 60_000));
@@ -113,8 +119,8 @@ const Overview = () => {
   const [years, setYears] = useState([]);
   const [playStats, setPlayStats] = useState([]);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
-  // Frosted-glass transition overlay — shown only on user-initiated range/
-  // direction changes, not on background auto-refresh (which would flash it).
+  // Frosted-glass transition overlay — shown only on user-initiated range
+  // changes, not on background auto-refresh (which would flash it).
   const [transitioning, setTransitioning] = useState(false);
   const [analyticsRefresh, setAnalyticsRefresh] = useState(0);
 
@@ -152,13 +158,17 @@ const Overview = () => {
     };
   }, []);
 
-  // Events feed — load once on mount
+  // Events feed — scoped to the selected range
   useEffect(() => {
     const load = async () => {
+      const to = new Date().toISOString();
+      const from = new Date(Date.now() - range * 60 * 60 * 1_000).toISOString();
       try {
         const { events: loadedEvents } = await eventsAPI.list({
+          from,
           limit: 50,
           offset: 0,
+          to,
         });
         setEvents(loadedEvents ?? []);
       } catch {
@@ -167,7 +177,7 @@ const Overview = () => {
     };
 
     load();
-  }, []);
+  }, [analyticsRefresh, range]);
 
   // File type counts — load once on mount
   useEffect(() => {
@@ -183,8 +193,9 @@ const Overview = () => {
     load();
   }, []);
 
-  // Activity heatmap — fixed 90-day lookback so the day/hour pattern is meaningful
-  // regardless of the selected range (which can be as short as 1h).
+  // Activity heatmap — fixed 90-day lookback. The day-of-week × hour-of-day
+  // pattern only becomes meaningful over weeks, so it intentionally ignores
+  // the selected range (which can be as short as 1h).
   useEffect(() => {
     const load = async () => {
       const end = new Date().toISOString();
@@ -200,7 +211,7 @@ const Overview = () => {
     };
 
     load();
-  }, []);
+  }, [analyticsRefresh]);
 
   // Catalog coverage + local library composition — load once on mount (not time-windowed)
   useEffect(() => {
@@ -220,14 +231,12 @@ const Overview = () => {
     load();
   }, []);
 
-  // Analytics — reload when range, direction, or refresh interval changes
+  // Analytics — reload when range or refresh interval changes
   useEffect(() => {
     setAnalyticsLoading(true);
     const end = new Date().toISOString();
     const start = new Date(Date.now() - range * 60 * 60 * 1_000).toISOString();
     const interval = getHistogramInterval(range);
-
-    const apiDirection = direction ?? undefined;
 
     // previous equal-length window, for KPI deltas
     const prevEnd = start;
@@ -239,12 +248,9 @@ const Overview = () => {
       try {
         const [sum, hist, ldDown, ldUp, directories_, dlExc, ulExc, filesData] =
           await Promise.all([
-            reportsAPI
-              .getSummary({ direction: apiDirection, end, start })
-              .catch(() => null),
+            reportsAPI.getSummary({ end, start }).catch(() => null),
             reportsAPI
               .getHistogram({
-                direction: apiDirection,
                 end,
                 interval,
                 start,
@@ -294,11 +300,7 @@ const Overview = () => {
         const [prevSum, geo, retry, queue, peerData, socialData] =
           await Promise.all([
             reportsAPI
-              .getSummary({
-                direction: apiDirection,
-                end: prevEnd,
-                start: prevStart,
-              })
+              .getSummary({ end: prevEnd, start: prevStart })
               .catch(() => null),
             reportsAPI.getGeography({ end, limit: 8, start }).catch(() => null),
             reportsAPI.getRetryFunnel({ end, start }).catch(() => null),
@@ -331,7 +333,7 @@ const Overview = () => {
     }
 
     return undefined;
-  }, [analyticsRefresh, direction, range, refreshMs]);
+  }, [analyticsRefresh, range, refreshMs]);
 
   const allDownloads = flattenTransfers(downloads);
   const allUploads = flattenTransfers(uploads);
@@ -398,23 +400,6 @@ const Overview = () => {
                       </button>
                     ))}
                   </div>
-                  <div className="overview-pills">
-                    {DIRECTION_OPTIONS.map((d) => (
-                      <button
-                        className={`overview-pill${direction === d.value ? ' active' : ''}`}
-                        key={d.label}
-                        onClick={() => {
-                          if (direction === d.value) return;
-                          prefs.set('overview:direction', d.value ?? null);
-                          setTransitioning(true);
-                          setDirection(d.value);
-                        }}
-                        type="button"
-                      >
-                        {d.label}
-                      </button>
-                    ))}
-                  </div>
                 </div>
                 <div className="overview-refresh">
                   <span>Refresh</span>
@@ -439,6 +424,22 @@ const Overview = () => {
                 </div>
               </div>
 
+              <div className="overview-subtabs">
+                {ANALYTICS_TABS.map((t) => (
+                  <button
+                    className={`overview-subtab${analyticsTab === t.id ? ' active' : ''}`}
+                    key={t.id}
+                    onClick={() => {
+                      prefs.set('overview:analytics-tab', t.id);
+                      setAnalyticsTab(t.id);
+                    }}
+                    type="button"
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
               <div
                 className={`overview-sections${transitioning ? ' transitioning' : ''}`}
               >
@@ -450,92 +451,95 @@ const Overview = () => {
                     <div className="overview-glass-spinner" />
                   </div>
                 )}
-                <section className="overview-section">
-                  <h2 className="overview-section-title">At a Glance</h2>
-                  <KpiCards
-                    downloads={allDownloads}
-                    loading={analyticsLoading && !summary}
-                    prevSummary={prevSummary}
-                    summary={summary}
-                    uploads={allUploads}
-                  />
-                  <SocialPulse data={social} />
-                  <div className="overview-row">
-                    <RatioCard
-                      histogram={histogram}
+                {analyticsTab === 'glance' && (
+                  <section className="overview-section">
+                    <KpiCards
+                      downloads={allDownloads}
+                      loading={analyticsLoading && !summary}
+                      prevSummary={prevSummary}
                       summary={summary}
+                      uploads={allUploads}
                     />
-                    <CoverageCard
-                      totalFiles={totalSharedFiles}
-                      uploadedFiles={coverage?.uploadedFiles}
+                    <SocialPulse data={social} />
+                    <div className="overview-row">
+                      <RatioCard
+                        histogram={histogram}
+                        summary={summary}
+                      />
+                      <CoverageCard
+                        totalFiles={totalSharedFiles}
+                        uploadedFiles={coverage?.uploadedFiles}
+                      />
+                    </div>
+                  </section>
+                )}
+
+                {analyticsTab === 'activity' && (
+                  <section className="overview-section">
+                    <ActivityChart
+                      data={histogram}
+                      intervalMinutes={getHistogramInterval(range)}
+                      range={range}
                     />
-                  </div>
-                </section>
-
-                <section className="overview-section">
-                  <h2 className="overview-section-title">Transfer Activity</h2>
-                  <ActivityChart
-                    data={histogram}
-                    intervalMinutes={getHistogramInterval(range)}
-                    range={range}
-                  />
-                  <ActivityHeatmap data={heatmap} />
-                  <ErrorChart
-                    data={histogram}
-                    intervalMinutes={getHistogramInterval(range)}
-                  />
-                </section>
-
-                <section className="overview-section">
-                  <h2 className="overview-section-title">Reliability</h2>
-                  <div className="overview-row">
-                    <RetryFunnel data={retries} />
-                    <QueueWaitCard stats={queueWait} />
-                  </div>
-                  <TransferHealth
-                    dlExceptions={dlExceptions}
-                    summary={summary}
-                    ulExceptions={ulExceptions}
-                  />
-                </section>
-
-                <section className="overview-section">
-                  <h2 className="overview-section-title">
-                    Top Users &amp; Content
-                  </h2>
-                  <div className="overview-row">
-                    <UserLeaderboard leaderboard={leaderboard} />
-                    <PopularDirectories directories={directories} />
-                    <TopFiles files={topFiles} />
-                  </div>
-                </section>
-
-                <section className="overview-section">
-                  <h2 className="overview-section-title">
-                    Audience &amp; Geography
-                  </h2>
-                  <div className="overview-row">
-                    <GeographyCard geography={geography} />
-                    <PeerRetentionCard data={peers} />
-                  </div>
-                </section>
-
-                <section className="overview-section">
-                  <h2 className="overview-section-title">Library</h2>
-                  <div className="overview-row">
-                    <LibraryComposition
-                      genres={genres}
-                      playStats={playStats}
-                      years={years}
+                    <ActivityHeatmap data={heatmap} />
+                    <ErrorChart
+                      data={histogram}
+                      intervalMinutes={getHistogramInterval(range)}
                     />
-                    <FileTypeChart counts={fileTypeCounts} />
-                  </div>
-                </section>
+                  </section>
+                )}
 
-                <section className="overview-section overview-section--feed">
-                  <h2 className="overview-section-title">Activity Feed</h2>
-                  <NotificationFeed events={events} />
-                </section>
+                {analyticsTab === 'reliability' && (
+                  <section className="overview-section">
+                    <div className="overview-row">
+                      <RetryFunnel data={retries} />
+                      <QueueWaitCard stats={queueWait} />
+                    </div>
+                    <TransferHealth
+                      dlExceptions={dlExceptions}
+                      summary={summary}
+                      ulExceptions={ulExceptions}
+                    />
+                  </section>
+                )}
+
+                {analyticsTab === 'top' && (
+                  <section className="overview-section">
+                    <div className="overview-row">
+                      <UserLeaderboard leaderboard={leaderboard} />
+                      <PopularDirectories directories={directories} />
+                      <TopFiles files={topFiles} />
+                    </div>
+                  </section>
+                )}
+
+                {analyticsTab === 'geography' && (
+                  <section className="overview-section">
+                    <div className="overview-row">
+                      <GeographyCard geography={geography} />
+                      <PeerRetentionCard data={peers} />
+                    </div>
+                  </section>
+                )}
+
+                {analyticsTab === 'library' && (
+                  <section className="overview-section">
+                    <div className="overview-row">
+                      <LibraryComposition
+                        genres={genres}
+                        playStats={playStats}
+                        years={years}
+                      />
+                      <FileTypeChart counts={fileTypeCounts} />
+                    </div>
+                  </section>
+                )}
+
+                {analyticsTab === 'feed' && (
+                  <section className="overview-section overview-section--feed">
+                    <NotificationFeed events={events} />
+                  </section>
+                )}
               </div>
             </>
           )}

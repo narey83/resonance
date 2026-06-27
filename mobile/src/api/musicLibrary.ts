@@ -2,9 +2,17 @@ import { apiClient } from './client';
 import { useAuthStore } from '../store/auth';
 import { useAppSettings } from '../store/appSettingsStore';
 import { useConnectionStore } from '../services/connectionMonitor';
-import { ensureSigned, signedQuery } from './streamSignatures';
+import { seedSignatures, signedQuery } from './streamSignatures';
 
-export interface MusicArtist {
+// Server-embedded path signature (see backend StreamUrlSigner). Lets us build signed artwork/
+// stream URLs without a separate POST /sign round-trip — list fetchers seed the signature cache
+// from these fields. Optional so older payloads / other callers still typecheck.
+interface Signed {
+  sig?: string | null;
+  exp?: number | null;
+}
+
+export interface MusicArtist extends Signed {
   artist: string;
   albumCount: number;
   trackCount: number;
@@ -12,7 +20,7 @@ export interface MusicArtist {
   hasArtwork: boolean;
 }
 
-export interface MusicAlbum {
+export interface MusicAlbum extends Signed {
   album: string;
   artist: string;
   albumArtist: string | null;
@@ -21,9 +29,13 @@ export interface MusicAlbum {
   totalDuration: number | null;
   coverPath: string | null;
   hasArtwork: boolean;
+  // Source directory of the grouped album. Used to scope the track fetch by folder rather
+  // than artist — essential for Various-Artists albums where `artist` is the literal
+  // "Various Artists" and matches no individual track. Mirrors the web album track params.
+  directory?: string | null;
 }
 
-export interface MusicTrack {
+export interface MusicTrack extends Signed {
   path: string;
   filename: string;
   directory: string;
@@ -54,7 +66,7 @@ export interface MusicYear {
   albumCount: number;
 }
 
-export interface MusicFolder {
+export interface MusicFolder extends Signed {
   path: string;
   name: string;
   trackCount: number;
@@ -69,21 +81,55 @@ export interface TracksResult {
   tracks: MusicTrack[];
 }
 
+// Backend music-library scan state (BPM/key/metadata indexing on the server). Distinct from the
+// on-device cache sync in librarySyncStore — this reflects whether the *server* is scanning.
+export interface MusicLibrarySyncState {
+  running: boolean;
+  completed: boolean;
+  lastSyncAt: number | null;
+  totalTracks: number;
+  added: number;
+  updated: number;
+  removed: number;
+  unchanged: number;
+  failed: number;
+  progress: number;
+}
+
+export const getSyncState = async (): Promise<MusicLibrarySyncState> =>
+  (await apiClient.get('/musiclibrary/sync')).data;
+
+export const cancelSync = async (): Promise<void> => {
+  await apiClient.post('/musiclibrary/sync/cancel');
+};
+
+// Artwork covers (artists/albums/folders) are signed by their coverPath; tracks by their path.
+// Exported so the on-device list cache can re-seed signatures when painting cached rows.
+export const seedCoverSignatures = (
+  rows: { coverPath: string | null; sig?: string | null; exp?: number | null }[],
+) => seedSignatures(rows.map((r) => ({ path: r.coverPath, sig: r.sig, exp: r.exp })));
+
+export const seedTrackSignatures = (
+  rows: { path: string; sig?: string | null; exp?: number | null }[],
+) => seedSignatures(rows);
+
+const seedCover = seedCoverSignatures;
+
 export const getArtists = async (): Promise<MusicArtist[]> => {
   const data: MusicArtist[] = (await apiClient.get('/musiclibrary/artists')).data;
-  await ensureSigned(data.map((a) => a.coverPath));
+  seedCover(data);
   return data;
 };
 
 export const getAlbums = async (artist?: string): Promise<MusicAlbum[]> => {
   const data: MusicAlbum[] = (await apiClient.get('/musiclibrary/albums', { params: artist ? { artist } : {} })).data;
-  await ensureSigned(data.map((a) => a.coverPath));
+  seedCover(data);
   return data;
 };
 
 export const getTracks = async (params: Record<string, string | number>): Promise<TracksResult> => {
   const data: TracksResult = (await apiClient.get('/musiclibrary/tracks', { params })).data;
-  await ensureSigned(data.tracks.map((t) => t.path));
+  seedSignatures(data.tracks);
   return data;
 };
 
@@ -91,7 +137,7 @@ export const getTracks = async (params: Record<string, string | number>): Promis
 // Avoids downloading the entire library (20k+ tracks) just to show a handful of loved tracks.
 export const getLovedTracks = async (): Promise<MusicTrack[]> => {
   const data: MusicTrack[] = (await apiClient.get('/musiclibrary/loved/tracks')).data;
-  await ensureSigned(data.map((t) => t.path));
+  seedSignatures(data);
   return data;
 };
 
@@ -103,13 +149,13 @@ export const getYears = async (): Promise<MusicYear[]> =>
 
 export const getFolders = async (): Promise<MusicFolder[]> => {
   const data: MusicFolder[] = (await apiClient.get('/musiclibrary/folders')).data;
-  await ensureSigned(data.map((f) => f.coverPath));
+  seedCover(data);
   return data;
 };
 
 export const getRecentlyAdded = async (limit = 20): Promise<MusicAlbum[]> => {
   const data: MusicAlbum[] = (await apiClient.get('/musiclibrary/recentlyadded', { params: { limit } })).data;
-  await ensureSigned(data.map((a) => a.coverPath));
+  seedCover(data);
   return data;
 };
 

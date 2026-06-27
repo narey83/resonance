@@ -50,6 +50,7 @@ export default function SettingsScreen({ navigation }: Props) {
   const {
     theme, setTheme,
     remoteLogging, loaded, setRemoteLogging,
+    librarySyncDebug, setLibrarySyncDebug,
     streamQuality, setStreamQuality,
     notifications, setNotification,
   } = useAppSettings();
@@ -192,6 +193,19 @@ export default function SettingsScreen({ navigation }: Props) {
             thumbColor={colors.textPrimary}
             trackColor={{ false: colors.bgElevated, true: colors.accent }}
             value={remoteLogging}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Library sync debug"
+          subtitle="Log library load/sync timing to the server log viewer"
+          colors={colors}
+        >
+          <Switch
+            disabled={!loaded}
+            onValueChange={setLibrarySyncDebug}
+            thumbColor={colors.textPrimary}
+            trackColor={{ false: colors.bgElevated, true: colors.accent }}
+            value={librarySyncDebug}
           />
         </SettingRow>
         <Pressable

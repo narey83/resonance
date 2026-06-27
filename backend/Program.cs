@@ -268,6 +268,11 @@ namespace resonance
         public static ConcurrentFixedSizeQueue<LogRecord> LogBuffer { get; } = new ConcurrentFixedSizeQueue<LogRecord>(size: 100);
 
         /// <summary>
+        ///     Gets a buffer containing the last few HTTP requests, captured for HAR export.
+        /// </summary>
+        public static ConcurrentFixedSizeQueue<resonance.Core.Http.HttpCaptureEntry> HttpCaptureBuffer { get; } = new ConcurrentFixedSizeQueue<resonance.Core.Http.HttpCaptureEntry>(size: 500);
+
+        /// <summary>
         ///     Gets the master cancellation token source for the program.
         /// </summary>
         /// <remarks>
@@ -644,6 +649,21 @@ namespace resonance
                 builder.Services
                     .ConfigureAspDotNetServices()
                     .ConfigureDependencyInjectionContainer();
+
+                // Compress JSON responses. The grouped library lists are large (albums alone is
+                // ~2.5MB uncompressed) and were shipping raw over the wire on every load; JSON
+                // gzips ~7x. Fastest level keeps CPU low — these payloads are big, so a higher
+                // level would add real latency for little extra ratio. EnableForHttps because the
+                // app talks to Kestrel over TLS (private LAN + token auth → BREACH risk is moot).
+                builder.Services.AddResponseCompression(options =>
+                {
+                    options.EnableForHttps = true;
+                    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProvider>();
+                    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>();
+                    options.MimeTypes = new[] { "application/json", "text/json", "application/json; charset=utf-8" };
+                });
+                builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
+                builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
 
                 var app = builder.Build();
 
@@ -1368,6 +1388,9 @@ namespace resonance
 
             app.UseCors("AllowAll");
 
+            // Before anything writes a response body, so large JSON payloads go out compressed.
+            app.UseResponseCompression();
+
             if (OptionsAtStartup.Web.Https.Force)
             {
                 app.UseHttpsRedirection();
@@ -1382,6 +1405,11 @@ namespace resonance
 
             app.UsePathBase(urlBase);
             Log.Information("Using base url {UrlBase}", urlBase);
+
+            // Capture every request into an in-memory ring buffer for HAR export, so backend traffic can
+            // be compared against the mobile app's network log. Registered here so it wraps auth, routing
+            // and endpoint execution, yielding representative server-side processing times.
+            app.UseMiddleware<resonance.Core.Http.RequestCaptureMiddleware>();
 
             if (OptionsAtStartup.Web.Logging)
             {

@@ -86,12 +86,10 @@ public class LibraryActivityService : ILibraryActivityService
     {
         var paths = GetLovedPaths(username);
 
-        // Resolve each loved path against the library; skip entries whose file is gone (pruning
-        // happens lazily on the next ReconcileLovedTracksAsync, not here).
-        return paths
-            .Select(p => MusicRepo.GetByPath(p))
-            .Where(t => t != null)
-            .ToArray();
+        // Resolve all loved paths against the library in one batched query (not a per-path N+1);
+        // entries whose file is gone are skipped (pruning happens lazily on the next
+        // ReconcileLovedTracksAsync, not here).
+        return MusicRepo.GetByPaths(paths).ToArray();
     }
 
     public async Task LoveTrackAsync(string username, string path)

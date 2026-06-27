@@ -855,6 +855,39 @@ html.dark, html.amoled {
   color: var(--text-primary);
 }
 
+/* ─── Analytics sub-tabs (one section group per tab) ─────────────────────────── */
+.overview-subtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.overview-subtab {
+  padding: 5px 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+
+.overview-subtab:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.overview-subtab.active {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+  border-color: var(--border);
+  font-weight: 600;
+}
+
 /* ─── Frosted-glass transition overlay (range / direction change) ───────────── */
 .overview-sections {
   position: relative;
@@ -1910,7 +1943,10 @@ html.dark, html.amoled {
 .coverage-untouched { color: var(--text-muted); }
 
 /* Activity heatmap */
-.heatmap { padding: 12px 14px 14px; }
+.heatmap {
+  padding: 12px 14px 14px;
+  max-width: 1100px;
+}
 .heatmap-hours,
 .heatmap-row {
   display: grid;
@@ -1929,8 +1965,7 @@ html.dark, html.amoled {
   color: var(--text-muted);
 }
 .heatmap-cell {
-  aspect-ratio: 1 / 1;
-  min-height: 10px;
+  height: 22px;
   border-radius: 2px;
 }
 .heatmap-legend {
@@ -2059,9 +2094,12 @@ html.dark, html.amoled {
   margin-bottom: 12px;
 }
 
-/* Activity feed promoted from sidebar to a full-width section card */
+/* Activity feed promoted from sidebar to a full-width section card that
+   fills the remaining viewport height on its own tab. */
 .overview-section--feed .notif-feed {
   width: 100%;
+  height: calc(100vh - 220px);
+  min-height: 360px;
   border-left: none;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -2069,7 +2107,8 @@ html.dark, html.amoled {
   overflow: hidden;
 }
 .overview-section--feed .notif-list {
-  max-height: 440px;
+  flex: 1;
+  max-height: none;
 }
 
 .heatmap-window {

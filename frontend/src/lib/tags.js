@@ -8,6 +8,10 @@ export const getUntagged = async () => {
   return (await api.get('/tags/untagged')).data;
 };
 
+export const getIncomplete = async () => {
+  return (await api.get('/tags/incomplete')).data;
+};
+
 export const writeTags = async ({ maskedFilename, tags } = {}) => {
   if (!maskedFilename)
     throw new Error('unable to write tags: maskedFilename is missing');

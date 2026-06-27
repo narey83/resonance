@@ -284,12 +284,19 @@ const AlbumRow = ({ album, onAlbum, onContextMenu, onPlay, onShuffle }) => {
   };
 
   return (
-    <button
+    <div
       className="jb-album-row"
       onClick={() => onAlbum(album)}
       onContextMenu={onContextMenu ? (e) => onContextMenu(e, album) : undefined}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onAlbum(album);
+        }
+      }}
+      role="button"
       style={{ height: LIST_ROW_HEIGHT }}
-      type="button"
+      tabIndex={0}
     >
       <AlbumArt
         hasArtwork={album.hasArtwork}
@@ -329,7 +336,7 @@ const AlbumRow = ({ album, onAlbum, onContextMenu, onPlay, onShuffle }) => {
           <Play size={13} />
         </button>
       </div>
-    </button>
+    </div>
   );
 };
 
