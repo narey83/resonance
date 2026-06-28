@@ -39,10 +39,9 @@ namespace resonance.Shares
     using Soulseek;
 
     /// <summary>
-    ///     PostgreSQL-backed storage of shared files and metadata. A drop-in alternative to
-    ///     <see cref="SqliteShareRepository"/> that relies on Postgres' MVCC so scans (writers) and
-    ///     searches (readers) never block one another. One physical schema (<c>shares</c>) holds all
-    ///     hosts, distinguished by a <c>host</c> column (the SQLite repo used one file per host).
+    ///     PostgreSQL-backed storage of shared files and metadata. Relies on Postgres' MVCC so scans
+    ///     (writers) and searches (readers) never block one another. One physical schema (<c>shares</c>)
+    ///     holds all hosts, distinguished by a <c>host</c> column.
     /// </summary>
     public class PostgresShareRepository : IShareRepository
     {

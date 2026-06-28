@@ -524,10 +524,6 @@ namespace resonance
 
             Log.Information("Configuring application...");
 
-            // SQLite must have specific capabilities to function properly. this shouldn't be a concern for shrinkwrapped
-            // binaries or in Docker, but if someone builds from source weird things can happen.
-            InitSQLiteOrFailFast();
-
             Log.Information("Using application directory {AppDirectory}", AppDirectory);
             Log.Information("Using configuration file {ConfigurationFile}", ConfigurationFile);
 
@@ -667,50 +663,6 @@ namespace resonance
 
                 var app = builder.Build();
 
-                if (!OptionsAtStartup.Flags.Volatile && !OptionsAtStartup.Database.Type.Equals("postgresql", StringComparison.OrdinalIgnoreCase))
-                {
-                    Log.Debug($"Running Migrate()...");
-
-                    // note: if this ever throws, we've forgotten to register a Migrator following database DI config
-                    app.Services.GetService<Migrator>().Migrate(force: OptionsAtStartup.Flags.ForceMigrations);
-                }
-
-                var migrateDb = OptionsAtStartup.Flags.MigrateDb;
-                if (!string.IsNullOrWhiteSpace(migrateDb))
-                {
-                    var sqliteFile = Path.Combine(DataDirectory, "resonance.db");
-                    var pgConnStr = OptionsAtStartup.Database.ConnectionString;
-                    var migrator = new DatabaseMigrator();
-
-                    if (migrateDb.Equals("sqlite-to-postgres", StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (string.IsNullOrWhiteSpace(pgConnStr))
-                        {
-                            Log.Fatal("--migrate-db sqlite-to-postgres requires database.connection_string to be set in config");
-                            return;
-                        }
-
-                        migrator.MigrateToPostgres(DataDirectory, pgConnStr);
-                    }
-                    else if (migrateDb.Equals("postgres-to-sqlite", StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (string.IsNullOrWhiteSpace(pgConnStr))
-                        {
-                            Log.Fatal("--migrate-db postgres-to-sqlite requires database.connection_string to be set in config");
-                            return;
-                        }
-
-                        migrator.MigrateToSqlite(sqliteFile, pgConnStr);
-                    }
-                    else
-                    {
-                        Log.Fatal("Unknown --migrate-db value '{Value}'. Use 'sqlite-to-postgres' or 'postgres-to-sqlite'", migrateDb);
-                    }
-
-                    Log.Information("Database migration complete. Exiting.");
-                    return;
-                }
-
                 // ensure built-in permission roles are always seeded (idempotent)
                 app.Services.GetRequiredService<PermissionService>().EnsureBuiltinRoles();
 
@@ -821,37 +773,18 @@ namespace resonance
 
             // wire up all of the connection strings we'll use. this is somewhat annoying but necessary because of the
             // intersection of run-time options (volatile, non-volatile) and ORM/mappers in use (EF, Dapper)
-            var usePostgres = OptionsAtStartup.Database.Type.Equals("postgresql", StringComparison.OrdinalIgnoreCase);
-
             var connectionStringDictionary = new ConnectionStringDictionary(Database.List
-                .Select(database =>
-                {
-                    ConnectionString connStr;
+                .Select(database => new KeyValuePair<Database, ConnectionString>(database, OptionsAtStartup.Database.ConnectionString))
+                .ToDictionary(x => x.Key, x => x.Value));
 
-                    if (usePostgres)
-                    {
-                        connStr = OptionsAtStartup.Database.ConnectionString;
-                    }
-                    else
-                    {
-                        var pooling = OptionsAtStartup.Flags.NoSqlitePooling ? "False" : "True"; // don't invert and ToString this it is confusing
-
-                        connStr = OptionsAtStartup.Flags.Volatile
-                            ? $"Data Source=file:resonance?mode=memory&cache=shared;Pooling={pooling};"
-                            : $"Data Source={Path.Combine(DataDirectory, "resonance.db")};Pooling={pooling}";
-                    }
-
-                    return new KeyValuePair<Database, ConnectionString>(database, connStr);
-                })
-                .ToDictionary(x => x.Key, x => x.Value), usePostgres);
+            // The app is PostgreSQL-only; repositories that still carry a backend flag are always Postgres.
+            const bool usePostgres = true;
 
             services.AddDbContext<SearchDbContext>(connectionStringDictionary[Database.Search]);
             services.AddDbContext<TransfersDbContext>(connectionStringDictionary[Database.Transfers]);
 
-            if (usePostgres)
             {
-                // TransferNetworkInfo is a custom (non-EF) table managed by the SQLite migration system.
-                // For Postgres, create it here after the transfers schema is ready.
+                // TransferNetworkInfo is a custom (non-EF) table; create it after the transfers schema is ready.
                 using var pgConn = new Npgsql.NpgsqlConnection(connectionStringDictionary[Database.Transfers]);
                 pgConn.Open();
                 using var pgCmd = pgConn.CreateCommand();
@@ -886,16 +819,6 @@ namespace resonance
             services.AddSingleton<resonance.Core.BrowseRateLimiter>();
 
             services.AddSingleton<ConnectionStringDictionary>(connectionStringDictionary);
-
-            if (!OptionsAtStartup.Flags.Volatile && !usePostgres)
-            {
-                // we're working with non-volatile SQLite database files, so register a Migrator to be used later in the
-                // bootup process. the presence of a Migrator instance in DI determines whether a migration is needed.
-                // it's important that we keep this list of databases in sync with those used by the application; anything
-                // not in this list will not be able to be migrated.
-                // PostgreSQL starts fresh via EnsureCreated() and does not use this migration system.
-                services.AddSingleton<Migrator>(_ => new Migrator(databases: connectionStringDictionary));
-            }
 
             services.AddSingleton<EventService>();
             services.AddSingleton<EventBus>();
@@ -944,7 +867,7 @@ namespace resonance
             services.AddHostedService(sp => sp.GetRequiredService<resonance.WaveformAnalysis.WaveformService>());
             services.AddSingleton<resonance.Cast.ICastService, resonance.Cast.CastService>();
             services.AddSingleton<resonance.TagSanitization.ITagSanitizationService, resonance.TagSanitization.TagSanitizationService>();
-            services.AddTransient<IShareRepositoryFactory, SqliteShareRepositoryFactory>();
+            services.AddTransient<IShareRepositoryFactory, ShareRepositoryFactory>();
 
             services.AddSingleton<resonance.MusicLibrary.MusicRepository>(_ =>
             {
@@ -1008,31 +931,6 @@ namespace resonance
             services.AddSingleton(geoService);
 
             return services;
-        }
-
-        private static void InitSQLiteOrFailFast()
-        {
-            // initialize
-            // avoids: System.Exception: You need to call SQLitePCL.raw.SetProvider().  If you are using a bundle package, this is done by calling SQLitePCL.Batteries.Init().
-            SQLitePCL.Batteries.Init();
-
-            // check the threading mode set at compile time. if it is 0 it is unsafe to use in a multithreaded application, which resonance is.
-            // https://www.sqlite.org/compile.html#threadsafe
-            var threadSafe = SQLitePCL.raw.sqlite3_threadsafe();
-
-            if (threadSafe == 0)
-            {
-                throw new InvalidOperationException($"SQLite binary was not compiled with THREADSAFE={threadSafe}, which is not compatible with this application. Please create a GitHub issue to report this and include details about your environment.");
-            }
-
-            Log.Debug("SQLite was compiled with THREADSAFE={Mode}", threadSafe);
-
-            if (SQLitePCL.raw.sqlite3_config(SQLitePCL.raw.SQLITE_CONFIG_SERIALIZED) != SQLitePCL.raw.SQLITE_OK)
-            {
-                throw new InvalidOperationException($"SQLite threading mode could not be set to SERIALIZED ({SQLitePCL.raw.SQLITE_CONFIG_SERIALIZED}). Please create a GitHub issue to report this and include details about your environment.");
-            }
-
-            Log.Debug("SQLite threading mode set to {Mode} ({Number})", "SERIALIZED", SQLitePCL.raw.SQLITE_CONFIG_SERIALIZED);
         }
 
         private static IServiceCollection ConfigureAspDotNetServices(this IServiceCollection services)
@@ -1561,7 +1459,7 @@ namespace resonance
                         var record = new LogRecord()
                         {
                             Timestamp = logEvent.Timestamp.UtcDateTime,
-                            Context = logEvent.Properties["SourceContext"].ToString().TrimStart('"').TrimEnd('"'),
+                            Context = logEvent.Properties.ContainsKey("SourceContext") ? logEvent.Properties["SourceContext"].ToString().TrimStart('"').TrimEnd('"') : Logs.Application,
                             SubContext = logEvent.Properties.ContainsKey("SubContext") ? logEvent.Properties["SubContext"].ToString().TrimStart('"').TrimEnd('"') : null,
                             Level = logEvent.Level.ToString(),
                             Message = message.TrimStart('"').TrimEnd('"'),
@@ -1646,21 +1544,11 @@ namespace resonance
         {
             Log.Debug("Initializing database context {Name}", typeof(T).Name);
 
-            var usePostgres = OptionsAtStartup.Database.Type.Equals("postgresql", StringComparison.OrdinalIgnoreCase);
-
             try
             {
                 services.AddDbContextFactory<T>(options =>
                 {
-                    if (usePostgres)
-                    {
-                        options.UseNpgsql(connectionString);
-                    }
-                    else
-                    {
-                        options.UseSqlite(connectionString);
-                        options.AddInterceptors(new SqliteConnectionOpenedInterceptor());
-                    }
+                    options.UseNpgsql(connectionString);
 
                     if (OptionsAtStartup.Flags.LogSQL)
                     {
@@ -1688,27 +1576,21 @@ namespace resonance
                 var freshDb = ctx.Database.EnsureCreated();
                 if (!freshDb)
                 {
-                    if (usePostgres)
+                    var schema = ctx.Model.GetDefaultSchema();
+                    if (!string.IsNullOrEmpty(schema))
                     {
-                        var schema = ctx.Model.GetDefaultSchema();
-                        if (!string.IsNullOrEmpty(schema))
-                        {
-                            ctx.Database.ExecuteSql($"CREATE SCHEMA IF NOT EXISTS \"{schema}\"");
-                        }
+                        ctx.Database.ExecuteSql($"CREATE SCHEMA IF NOT EXISTS \"{schema}\"");
                     }
 
                     var script = ctx.Database.GenerateCreateScript();
 
-                    if (usePostgres)
-                    {
-                        // Npgsql emits DO $EF$...END $EF$; blocks for schema creation,
-                        // which we handle above. Strip them so the semicolon-split below works.
-                        script = System.Text.RegularExpressions.Regex.Replace(
-                            script,
-                            @"DO \$EF\$.*?END \$EF\$;",
-                            string.Empty,
-                            System.Text.RegularExpressions.RegexOptions.Singleline);
-                    }
+                    // Npgsql emits DO $EF$...END $EF$; blocks for schema creation, which we handle
+                    // above. Strip them so the semicolon-split below works.
+                    script = System.Text.RegularExpressions.Regex.Replace(
+                        script,
+                        @"DO \$EF\$.*?END \$EF\$;",
+                        string.Empty,
+                        System.Text.RegularExpressions.RegexOptions.Singleline);
 
                     script = System.Text.RegularExpressions.Regex.Replace(
                         script, @"\bCREATE TABLE\b", "CREATE TABLE IF NOT EXISTS");
@@ -1734,42 +1616,6 @@ namespace resonance
                             Log.Warning("Schema init skipped a statement for {Type}: {Ex}", typeof(T).Name, ex.Message);
                         }
                     }
-                }
-
-                if (!usePostgres)
-                {
-                    /*
-                        set (and validate) our desired PRAGMAs
-
-                        synchronous mode is also set upon every connection via SqliteConnectionOpenedInterceptor.
-                    */
-                    ctx.Database.OpenConnection();
-                    var conn = ctx.Database.GetDbConnection();
-
-                    Log.Debug("Setting PRAGMAs for {Contex}", typeof(T).Name);
-                    using var initCommand = conn.CreateCommand();
-                    initCommand.CommandText = "PRAGMA journal_mode=WAL; PRAGMA synchronous=1; PRAGMA optimize;";
-                    initCommand.ExecuteNonQuery();
-
-                    using var journalCmd = conn.CreateCommand();
-                    journalCmd.CommandText = "PRAGMA journal_mode;";
-                    var journalMode = journalCmd.ExecuteScalar()?.ToString();
-
-                    if (!journalMode.Equals("WAL", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Log.Warning("Failed to set database {Type} journal_mode PRAGMA to WAL; performance may be reduced", typeof(T).Name);
-                    }
-
-                    using var syncCmd = conn.CreateCommand();
-                    syncCmd.CommandText = "PRAGMA synchronous;";
-                    var sync = syncCmd.ExecuteScalar()?.ToString();
-
-                    if (!sync.Equals("1", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Log.Warning("Failed to set database {Type} synchronous PRAGMA to 1; performance may be reduced", typeof(T).Name);
-                    }
-
-                    Log.Debug("PRAGMAs for {Context}: journal_mode={JournalMode}, synchronous={Synchronous}", typeof(T).Name, journalMode, sync);
                 }
 
                 return services;

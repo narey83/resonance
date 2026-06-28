@@ -38,6 +38,8 @@ public sealed class GeoService : IDisposable
 {
     private DatabaseReader? reader;
 
+    private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Network);
+
     public bool IsAvailable => reader != null;
 
     public void Load(string path)

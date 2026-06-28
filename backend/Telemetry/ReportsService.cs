@@ -40,7 +40,6 @@ using System.Collections.Generic;
 using System.Data.Common;
 using System.Linq;
 using Dapper;
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Caching.Memory;
 using Npgsql;
 using resonance.Transfers;
@@ -90,9 +89,7 @@ public class ReportsService
 
     private DbConnection OpenConnection(Database database)
     {
-        DbConnection conn = UsePostgres
-            ? new NpgsqlConnection(ConnectionStrings[database])
-            : new SqliteConnection(ConnectionStrings[database]);
+        DbConnection conn = new NpgsqlConnection(ConnectionStrings[database]);
         conn.Open();
         return conn;
     }

@@ -546,16 +546,6 @@ namespace resonance
             public bool Volatile { get; init; } = false;
 
             /// <summary>
-            ///     Gets the direction of a one-shot database migration: 'sqlite-to-postgres' or 'postgres-to-sqlite'.
-            ///     When set, the application migrates all data in the specified direction and exits.
-            /// </summary>
-            [Argument(default, "migrate-db")]
-            [EnvironmentVariable("MIGRATE_DB")]
-            [Description("migrate all data between database backends (sqlite-to-postgres or postgres-to-sqlite) and exit")]
-            [RequiresRestart]
-            public string MigrateDb { get; init; } = null;
-
-            /// <summary>
             ///     Gets a value indicating whether user-defined regular expressions are case sensitive.
             /// </summary>
             [Argument(default, "case-sensitive-regex")]
@@ -581,14 +571,6 @@ namespace resonance
             [EnvironmentVariable("OPTIMISTIC_RELAY_FILE_INFO")]
             [Description("use uploaded relay shares as source of truth for file existence and size")]
             public bool OptimisticRelayFileInfo { get; init; } = false;
-
-            /// <summary>
-            ///     Gets a value indicating whether SQLite pooling should be disabled.
-            /// </summary>
-            [Argument(default, "no-sqlite-pooling")]
-            [EnvironmentVariable("NO_SQLITE_POOLING")]
-            [Description("disable SQLite pooling")]
-            public bool NoSqlitePooling { get; init; } = false;
         }
 
         /// <summary>
@@ -874,17 +856,6 @@ namespace resonance
             [EnvironmentVariable("SHARE_FILTER")]
             [Description("regular expressions to filter files from shares")]
             public string[] Filters { get; init; } = Array.Empty<string>();
-
-            /// <summary>
-            ///     Gets a value indicating whether the share cache should be stored in PostgreSQL
-            ///     instead of SQLite. Only takes effect when database.type is postgresql. Opt-in
-            ///     while the Postgres share repository is validated; SQLite remains the default.
-            /// </summary>
-            [Argument(default, "shares-postgres")]
-            [EnvironmentVariable("SHARES_POSTGRES")]
-            [Description("store the share cache in PostgreSQL instead of SQLite (requires database.type=postgresql)")]
-            [RequiresRestart]
-            public bool UsePostgres { get; init; } = false;
 
             /// <summary>
             ///     Share caching options.
@@ -2153,30 +2124,29 @@ namespace resonance
         public class DatabaseOptions : IValidatableObject
         {
             /// <summary>
-            ///     Gets the database type; 'sqlite' or 'postgresql'.
+            ///     Gets the database type. PostgreSQL is the only supported backend.
             /// </summary>
-            [Description("database type; sqlite or postgresql")]
-            public string Type { get; init; } = "sqlite";
+            [Description("database type; postgresql")]
+            public string Type { get; init; } = "postgresql";
 
             /// <summary>
-            ///     Gets the connection string for the database. Required when Type is 'postgresql'.
+            ///     Gets the connection string for the database.
             /// </summary>
-            [Description("connection string; required when type is postgresql")]
+            [Description("connection string; required")]
             [Secret]
             public string ConnectionString { get; init; } = null;
 
             public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
             {
-                var validTypes = new[] { "sqlite", "postgresql" };
-                if (!validTypes.Contains(Type, StringComparer.OrdinalIgnoreCase))
+                if (!Type.Equals("postgresql", StringComparison.OrdinalIgnoreCase))
                 {
-                    yield return new ValidationResult($"The database type must be one of: {string.Join(", ", validTypes)}");
+                    yield return new ValidationResult("The database type must be 'postgresql'; SQLite is no longer supported.");
                     yield break;
                 }
 
-                if (Type.Equals("postgresql", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(ConnectionString))
+                if (string.IsNullOrWhiteSpace(ConnectionString))
                 {
-                    yield return new ValidationResult("A connection_string is required when database type is postgresql");
+                    yield return new ValidationResult("A connection_string is required.");
                 }
             }
         }

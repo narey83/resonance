@@ -605,22 +605,15 @@ namespace resonance.Relay
         /// <returns>The operation context.</returns>
         public Task HandleShareUploadAsync(string agentName, Guid id, IEnumerable<Share> shares, string filename)
         {
-            Log.Information("Loading shares from agent {Agent}", agentName);
-
-            using var repository = ShareRepositoryFactory.CreateFromFile(filename);
-
-            if (!repository.TryValidate(out var problems))
-            {
-                throw new ShareValidationException("Invalid database: " + string.Join(", ", problems));
-            }
-
-            var destinationRepository = ShareRepositoryFactory.CreateFromHost(agentName);
-
-            destinationRepository.RestoreFrom(repository);
+            // Relay share-cache transfer relied on shipping a portable SQLite database file between controller and
+            // agent. With the move to PostgreSQL the share cache is no longer a portable file, so the cache upload is
+            // not supported. We still register the agent's advertised shares so browsing/search metadata works; only
+            // the pre-populated file cache is unavailable.
+            Log.Warning(
+                "Agent {Agent} uploaded a share cache, but share-cache transfer is not supported on PostgreSQL; registering advertised shares only.",
+                agentName);
 
             Shares.AddOrUpdateHost(new Host(agentName, shares));
-
-            Log.Information("Shares from agent {Agent} ready.", agentName);
 
             return Task.CompletedTask;
         }

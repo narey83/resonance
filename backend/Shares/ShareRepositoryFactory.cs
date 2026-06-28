@@ -34,26 +34,19 @@
 // </copyright>
 
 using System;
-using System.IO;
 using Microsoft.Extensions.Options;
 
 namespace resonance.Shares
 {
     /// <summary>
-    ///     Persistent storage of a shared file cache. Produces a PostgreSQL-backed repository when
-    ///     opted in via shares.use_postgres (and database.type is postgresql); SQLite otherwise.
+    ///     Produces PostgreSQL-backed share repositories.
     /// </summary>
-    public class SqliteShareRepositoryFactory : IShareRepositoryFactory
+    public class ShareRepositoryFactory : IShareRepositoryFactory
     {
-        public SqliteShareRepositoryFactory(IOptionsMonitor<Options> optionsMonitor)
+        public ShareRepositoryFactory(IOptionsMonitor<Options> optionsMonitor)
         {
-            var options = optionsMonitor.CurrentValue;
-            UsePostgres = options.Shares.UsePostgres
-                && options.Database.Type.Equals("postgresql", StringComparison.OrdinalIgnoreCase);
-            PostgresConnectionString = options.Database.ConnectionString;
+            PostgresConnectionString = optionsMonitor.CurrentValue.Database.ConnectionString;
         }
-
-        private bool UsePostgres { get; }
 
         private string PostgresConnectionString { get; }
 
@@ -63,28 +56,12 @@ namespace resonance.Shares
         /// <param name="name">The name of the agent.</param>
         /// <returns>The created repository.</returns>
         public IShareRepository CreateFromHost(string name)
-        {
-            if (UsePostgres)
-            {
-                return new PostgresShareRepository(PostgresConnectionString, host: name);
-            }
-
-            var file = Path.Combine(Program.DataDirectory, $"shares.{name}.db");
-
-            // Private cache (not Cache=shared): with shared cache SQLite uses table-level locks that
-            // raise SQLITE_LOCKED ("database table is locked") for readers the moment a scan writes —
-            // breaking concurrent searches and metadata lookups. WAL + private cache lets readers and
-            // a single writer run concurrently instead.
-            return new SqliteShareRepository($"Data Source={file}");
-        }
+            => new PostgresShareRepository(PostgresConnectionString, host: name);
 
         /// <summary>
-        ///     Create a repository for the specified <paramref name="filename"/>.
+        ///     Not supported on PostgreSQL — share caches aren't portable DB files.
         /// </summary>
-        /// <param name="filename">The fully qualified path of the filename.</param>
-        /// <param name="pooling">A value indicating whether pooling should be enabled.</param>
-        /// <returns>The created repository.</returns>
         public IShareRepository CreateFromFile(string filename, bool pooling = false)
-            => new SqliteShareRepository($"Data Source={filename};Pooling={pooling}");
+            => throw new NotSupportedException("File-based share repositories are not supported on PostgreSQL.");
     }
 }

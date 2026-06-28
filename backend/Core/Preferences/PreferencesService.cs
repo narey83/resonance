@@ -34,7 +34,6 @@ using System.Collections.Generic;
 using System.Data.Common;
 using System.Text.Json;
 using Dapper;
-using Microsoft.Data.Sqlite;
 using Npgsql;
 using Serilog;
 
@@ -51,9 +50,7 @@ public class PreferencesService
     private bool UsePostgres { get; }
     private ILogger Log { get; } = Serilog.Log.ForContext<PreferencesService>();
 
-    private DbConnection CreateConnection() => UsePostgres
-        ? new NpgsqlConnection(ConnectionStrings[Database.Preferences])
-        : new SqliteConnection(ConnectionStrings[Database.Preferences]);
+    private DbConnection CreateConnection() => new NpgsqlConnection(ConnectionStrings[Database.Preferences]);
 
     private string T => UsePostgres ? "preferences.\"Preferences\"" : "Preferences";
 

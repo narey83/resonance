@@ -575,80 +575,18 @@ namespace resonance.Relay
             _ => throw new ArgumentException($"Unexpected HubConnectionState {hub}"),
         };
 
-        private async Task UploadSharesAsync(CancellationToken cancellationToken = default)
+        private Task UploadSharesAsync(CancellationToken cancellationToken = default)
         {
             if (!LoggedIn)
             {
-                return;
+                return Task.CompletedTask;
             }
 
-            var temp = Path.Combine(Program.DataDirectory, "temp", $"share_backup_{Path.GetRandomFileName()}.db");
-
-            try
-            {
-                Log.Debug("Backing up shares to {Filename}", temp);
-
-                Directory.CreateDirectory(Path.GetDirectoryName(temp));
-
-                await Shares.DumpAsync(temp);
-
-                Log.Debug("Share backup successful");
-                Log.Debug("Requesting share upload token...");
-
-                Guid token = Guid.Empty;
-
-                // retry this a few times. it can throw if a race condition materializes
-                // between this logic and the authentication flow, and it'll almost certainly be
-                // worked out properly if we just wait a second and try again
-                await Retry.Do(task: async () =>
-                    {
-                        token = await HubConnection.InvokeAsync<Guid>(nameof(RelayHub.BeginShareUpload));
-                    },
-                    isRetryable: (_, _) => true,
-                    onFailure: (count, ex) => Log.Warning("Failed attempt #{Attempts} to obtain share upload token: {Message}", count, ex.Message),
-                    maxAttempts: 3,
-                    baseDelayInMilliseconds: 1000,
-                    maxDelayInMilliseconds: 5000,
-                    cancellationToken: cancellationToken);
-
-                Log.Debug("Share upload token {Token}", token);
-
-                var stream = new FileStream(temp, FileMode.Open, FileAccess.Read);
-
-                using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v0/relay/controller/shares/{token}");
-
-                request.Headers.Add("X-API-Key", OptionsMonitor.CurrentValue.Relay.Controller.ApiKey);
-                request.Headers.Add("X-Relay-Agent", OptionsMonitor.CurrentValue.InstanceName);
-                request.Headers.Add("X-Relay-Credential", ComputeCredential(token));
-
-                using var content = new MultipartFormDataContent
-                {
-                    { new StringContent(Shares.LocalHost.Shares.ToJson()), "shares" },
-                    { new StreamContent(stream), "database", "shares" },
-                };
-
-                request.Content = content;
-
-                var size = ((double)stream.Length).SizeSuffix();
-                var sw = new Stopwatch();
-                sw.Start();
-
-                Log.Information("Beginning upload of shares ({Size})", size);
-                Log.Debug("Shares: {Shares}", Shares.LocalHost.Shares.ToJson());
-                var response = await CreateHttpClient().SendAsync(request, cancellationToken);
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    throw new RelayException($"Failed to upload shares to relay controller: {response.StatusCode}");
-                }
-
-                sw.Stop();
-                Log.Information("Upload of shares succeeded ({Size} in {Duration}ms)", size, sw.ElapsedMilliseconds);
-            }
-            finally
-            {
-                File.Delete(temp);
-            }
+            // Relay share-cache upload shipped a portable SQLite database file to the controller. The share cache now
+            // lives in PostgreSQL and is no longer a portable file, so this transfer is not supported. Agent mode
+            // continues to advertise its shares via the share list; only the pre-populated file cache is unavailable.
+            Log.Warning("Share-cache upload is not supported on PostgreSQL; skipping. The controller will not receive a pre-populated file cache for this agent.");
+            return Task.CompletedTask;
         }
 
         private sealed class ControllerRetryPolicy : IRetryPolicy

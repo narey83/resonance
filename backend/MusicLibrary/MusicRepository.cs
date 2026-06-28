@@ -33,7 +33,6 @@ namespace resonance.MusicLibrary
     using System.Collections.Generic;
     using System.Data;
     using System.Data.Common;
-    using Microsoft.Data.Sqlite;
     using Npgsql;
 
     public class MusicRepository
@@ -894,9 +893,7 @@ namespace resonance.MusicLibrary
         // ── Helpers ───────────────────────────────────────────────────────────
         private DbConnection OpenConnection()
         {
-            DbConnection conn = UsePostgres
-                ? new NpgsqlConnection(ConnectionString)
-                : new SqliteConnection(ConnectionString);
+            DbConnection conn = new NpgsqlConnection(ConnectionString);
             conn.Open();
             return conn;
         }

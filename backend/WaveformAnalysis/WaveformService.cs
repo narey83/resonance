@@ -39,7 +39,6 @@ namespace resonance.WaveformAnalysis
     using System.Threading;
     using System.Threading.Channels;
     using System.Threading.Tasks;
-    using Microsoft.Data.Sqlite;
     using Microsoft.Extensions.Hosting;
     using Npgsql;
     using resonance.Common.Ffmpeg;
@@ -79,7 +78,7 @@ namespace resonance.WaveformAnalysis
 
         private DbConnection OpenConnection()
         {
-            DbConnection conn = UsePostgres ? new NpgsqlConnection(ConnectionString) : new SqliteConnection(ConnectionString);
+            DbConnection conn = new NpgsqlConnection(ConnectionString);
             conn.Open();
             return conn;
         }

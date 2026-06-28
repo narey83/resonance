@@ -42,13 +42,13 @@ using System.Collections.Generic;
 /// </summary>
 public class ConnectionStringDictionary
 {
-    public ConnectionStringDictionary(Dictionary<Database, ConnectionString> dictionary, bool usePostgres = false)
+    public ConnectionStringDictionary(Dictionary<Database, ConnectionString> dictionary)
     {
         Strings = dictionary;
-        UsePostgres = usePostgres;
     }
 
-    public bool UsePostgres { get; }
+    // The application is PostgreSQL-only; retained so dual-dialect services keep selecting Postgres SQL.
+    public bool UsePostgres => true;
     private Dictionary<Database, ConnectionString> Strings { get; } = [];
 
     public ConnectionString this[Database database] => Strings[database];

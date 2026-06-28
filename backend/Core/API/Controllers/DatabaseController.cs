@@ -38,7 +38,6 @@ namespace resonance.Core.API
     using Asp.Versioning;
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Mvc;
-    using Microsoft.Data.Sqlite;
     using Npgsql;
 
     [Route("api/v{version:apiVersion}/[controller]")]
@@ -84,21 +83,8 @@ namespace resonance.Core.API
             {
                 dict[db.Name] = new DbSource(
                     ConnectionString: ConnectionStrings[db].Value,
-                    IsPostgres: ConnectionStrings.UsePostgres,
-                    Schema: ConnectionStrings.UsePostgres ? PostgresSchema(db) : null);
-            }
-
-            // shares and music are always standalone SQLite files, even when the app is configured for PostgreSQL.
-            var sharesDb = Path.Combine(Program.DataDirectory, "shares.local.db");
-            if (System.IO.File.Exists(sharesDb))
-            {
-                dict["shares"] = new DbSource($"Data Source={sharesDb};Cache=shared", IsPostgres: false, Schema: null);
-            }
-
-            var musicDb = Path.Combine(Program.DataDirectory, "music.db");
-            if (System.IO.File.Exists(musicDb))
-            {
-                dict["music"] = new DbSource($"Data Source={musicDb};Cache=Shared", IsPostgres: false, Schema: null);
+                    IsPostgres: true,
+                    Schema: PostgresSchema(db));
             }
 
             return dict;
@@ -106,9 +92,7 @@ namespace resonance.Core.API
 
         private static DbConnection OpenConnection(DbSource source)
         {
-            DbConnection conn = source.IsPostgres
-                ? new NpgsqlConnection(source.ConnectionString)
-                : new SqliteConnection(source.ConnectionString);
+            DbConnection conn = new NpgsqlConnection(source.ConnectionString);
             conn.Open();
 
             // Scope unqualified table names (used by the viewer's generated queries) to the module's schema.
