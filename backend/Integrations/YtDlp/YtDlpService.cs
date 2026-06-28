@@ -79,6 +79,13 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     // rather than all at job end, so staging doesn't accumulate a whole large job's files.
     private const int BatchMoveSize = 100;
     private readonly SemaphoreSlim batchMoveLock = new(1, 1);
+
+    // Coalesce post-publish library/share rescans: touched folders accumulate and are scanned at
+    // most once per interval, so a steady stream of batch moves doesn't fire a scan every minute.
+    private static readonly TimeSpan RescanMinInterval = TimeSpan.FromMinutes(5);
+    private readonly object rescanGate = new();
+    private readonly HashSet<string> pendingRescanDirs = new(StringComparer.Ordinal);
+    private DateTime lastRescanAt = DateTime.MinValue;
     private SemaphoreSlim workerSlots;
     private CancellationTokenSource cts = new();
     private string? jsRuntimeArg;
@@ -857,6 +864,15 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             var title = root.TryGetProperty("title", out var titleProp) ? titleProp.GetString() ?? string.Empty : string.Empty;
             var uploader = root.TryGetProperty("uploader", out var uploaderProp) ? uploaderProp.GetString() ?? string.Empty : string.Empty;
             var thumbnail = root.TryGetProperty("thumbnail", out var thumbProp) ? thumbProp.GetString() : null;
+
+            // Name to use for the JOB title. Flat-playlist enumeration of a channel usually omits
+            // the per-entry uploader but exposes the playlist-level channel/uploader, so fall back
+            // to those (e.g. "HATE") instead of leaving the job showing its raw URL.
+            string JsonStr(string key) => root.TryGetProperty(key, out var p) ? p.GetString() ?? string.Empty : string.Empty;
+            var channelName = !string.IsNullOrEmpty(uploader)
+                ? uploader
+                : new[] { JsonStr("playlist_uploader"), JsonStr("playlist_channel"), JsonStr("channel") }
+                    .FirstOrDefault(s => !string.IsNullOrEmpty(s)) ?? string.Empty;
             var duration = root.TryGetProperty("duration", out var durProp) && durProp.TryGetInt32(out var dur) ? (int?)dur : null;
             var playlistIndex = root.TryGetProperty("playlist_index", out var idxProp) && idxProp.TryGetInt32(out var idx) ? (int?)idx : null;
 
@@ -866,11 +882,11 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 url = $"https://www.youtube.com/watch?v={videoId}";
             }
 
-            // Populate job title/uploader from first track if not set
-            if (string.IsNullOrEmpty(job.Title) && !string.IsNullOrEmpty(uploader))
+            // Populate job title/uploader from the first track/channel if not set
+            if (string.IsNullOrEmpty(job.Title) && !string.IsNullOrEmpty(channelName))
             {
-                job.Title = uploader;
-                job.Uploader = uploader;
+                job.Title = channelName;
+                job.Uploader = channelName;
                 job.ThumbnailUrl = thumbnail;
             }
 
@@ -936,6 +952,15 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 if (initialState == YtDlpTrackState.Skipped)
                 {
                     dbJob.SkippedTracks++;
+                }
+
+                // Persist the resolved title so it survives restarts (otherwise the job reloads
+                // with an empty title and the UI falls back to showing the raw URL).
+                if (string.IsNullOrEmpty(dbJob.Title) && !string.IsNullOrEmpty(job.Title))
+                {
+                    dbJob.Title = job.Title;
+                    dbJob.Uploader = job.Uploader;
+                    dbJob.ThumbnailUrl = job.ThumbnailUrl;
                 }
             }
 
@@ -1561,6 +1586,9 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                         await RescanOutputAsync(touched);
                     }
                 }
+
+                // Flush any folders still pending from a throttled earlier tick.
+                await FlushPendingRescanAsync();
             }
         }
         catch (OperationCanceledException)
@@ -1686,22 +1714,48 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         return moved;
     }
 
-    // Refreshes the music library and the Soulseek share cache for freshly-published folders.
-    // The share scan is TARGETED to just the directories that received files — scanning the whole
-    // music root here would walk tens of thousands of files and hold a long SQLite write lock on
-    // the shares cache, which breaks concurrent Soulseek search queries.
-    private async Task RescanOutputAsync(IReadOnlyCollection<string> directories)
+    // Queues freshly-published folders for a rescan. The actual library/share scan is coalesced
+    // and rate-limited (see FlushPendingRescanAsync) so a steady stream of batch moves can't fire
+    // a scan every minute — which would otherwise hammer the SQLite shares cache and stall searches.
+    private Task RescanOutputAsync(IReadOnlyCollection<string> directories)
     {
-        library.TriggerSync();
-
-        if (directories.Count == 0)
+        if (directories.Count > 0)
         {
-            return;
+            lock (rescanGate)
+            {
+                foreach (var d in directories)
+                {
+                    pendingRescanDirs.Add(d);
+                }
+            }
         }
+
+        return FlushPendingRescanAsync();
+    }
+
+    // Runs a TARGETED rescan of the accumulated folders, but only if at least RescanMinInterval has
+    // passed since the last one. Scanning just the touched folders (not the whole music root) keeps
+    // the SQLite write lock window short; the interval gate keeps it infrequent.
+    private async Task FlushPendingRescanAsync()
+    {
+        string[] toScan;
+        lock (rescanGate)
+        {
+            if (pendingRescanDirs.Count == 0 || DateTime.UtcNow - lastRescanAt < RescanMinInterval)
+            {
+                return;
+            }
+
+            lastRescanAt = DateTime.UtcNow;
+            toScan = pendingRescanDirs.ToArray();
+            pendingRescanDirs.Clear();
+        }
+
+        library.TriggerSync();
 
         try
         {
-            await shares.ScanDirectoriesAsync(directories);
+            await shares.ScanDirectoriesAsync(toScan);
         }
         catch (resonance.ShareScanInProgressException)
         {
@@ -2510,11 +2564,13 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             }
 
             var title = root.TryGetProperty("title", out var titleProp) ? titleProp.GetString() ?? string.Empty : string.Empty;
-            var uploader = root.TryGetProperty("uploader", out var upProp) ? upProp.GetString() ?? string.Empty : string.Empty;
-            if (string.IsNullOrEmpty(uploader) && root.TryGetProperty("channel", out var chProp))
-            {
-                uploader = chProp.GetString() ?? string.Empty;
-            }
+
+            // Resolve the channel/uploader name for the subscription title. Flat-playlist of a
+            // channel usually omits the per-entry uploader/channel but exposes the playlist-level
+            // ones (e.g. "HATE"), so fall back through those.
+            string EntryStr(string key) => root.TryGetProperty(key, out var p) ? p.GetString() ?? string.Empty : string.Empty;
+            var uploader = new[] { EntryStr("uploader"), EntryStr("channel"), EntryStr("playlist_uploader"), EntryStr("playlist_channel") }
+                .FirstOrDefault(s => !string.IsNullOrEmpty(s)) ?? string.Empty;
 
             var thumbnail = root.TryGetProperty("thumbnail", out var thumbProp) ? thumbProp.GetString() : null;
 

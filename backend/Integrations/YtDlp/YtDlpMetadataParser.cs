@@ -56,10 +56,10 @@ public static class YtDlpMetadataParser
             ? (int?)inTitleTrackNumber.Value
             : playlistIndex;
 
-        // Titles separate artist from track with a hyphen, en dash, or em dash.
-        // A hyphen needs spaces on both sides (to not split hyphenated words);
-        // en/em dashes are unambiguous and only need a space on one side.
-        var separatorMatch = Regex.Match(rawTitle, @"\s+-\s+|\s*[–—]\s+|\s+[–—]\s*");
+        // Titles separate artist from track with a hyphen, en dash, or em dash. Hyphens need
+        // spaces on both sides (to not split hyphenated words) but may be doubled/tripled
+        // (e.g. "Artist -- Title"); en/em dashes are unambiguous and need a space on one side.
+        var separatorMatch = Regex.Match(rawTitle, @"\s+-+\s+|\s*[–—]+\s+|\s+[–—]+\s*");
         var dashIdx = separatorMatch.Success ? separatorMatch.Index : -1;
 
         if (dashIdx > 0)
