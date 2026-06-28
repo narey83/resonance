@@ -1476,6 +1476,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         // Move any tracks still in staging (the final partial batch — most are already published
         // by the running batch moves) and then clear the job's staging directory entirely.
         var stagingDir = GetStagingDirectory(job.Id);
+        var touched = new HashSet<string>(StringComparer.Ordinal);
         if (Directory.Exists(stagingDir))
         {
             await batchMoveLock.WaitAsync(cancellationToken);
@@ -1496,7 +1497,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                     }
                 }
 
-                await MoveStagedTracksAsync(job, db, staged, convertFormat, cancellationToken);
+                await MoveStagedTracksAsync(job, db, staged, convertFormat, touched, cancellationToken);
             }
             finally
             {
@@ -1514,9 +1515,9 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         await db.SaveChangesAsync(cancellationToken);
 
-        // Refresh both indexes for the freshly-moved files (no-op for files already published and
-        // rescanned by the running batch moves).
-        await RescanOutputAsync(job.OutputDirectory);
+        // Refresh indexes for the final batch's folders (already-published files were rescanned
+        // by the running batch moves).
+        await RescanOutputAsync(touched);
 
         var verb = job.State == YtDlpJobState.Cancelled ? "Stopped" : "Done";
         await EmitEventAsync(job.Id, "success",
@@ -1544,20 +1545,20 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                         continue;
                     }
 
-                    // Drain accumulated completed tracks in batches, then rescan once. Rescanning
-                    // per batch would scan the whole music directory dozens of times for a backlog.
-                    var movedAny = false;
+                    // Drain accumulated completed tracks in batches, then rescan only the folders
+                    // that actually received files (a full-root scan every sweep locks the SQLite
+                    // shares cache for minutes and breaks concurrent searches).
+                    var touched = new HashSet<string>(StringComparer.Ordinal);
                     int batchMoved;
                     do
                     {
-                        batchMoved = await MoveCompletedBatchAsync(job.Id);
-                        movedAny |= batchMoved > 0;
+                        batchMoved = await MoveCompletedBatchAsync(job.Id, touched);
                     }
                     while (batchMoved == BatchMoveSize && !cancellationToken.IsCancellationRequested);
 
-                    if (movedAny)
+                    if (touched.Count > 0)
                     {
-                        await RescanOutputAsync(job.OutputDirectory);
+                        await RescanOutputAsync(touched);
                     }
                 }
             }
@@ -1573,7 +1574,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
     // Publishes up to BatchMoveSize completed tracks still sitting in staging out to the music
     // folder. Returns the number actually moved.
-    private async Task<int> MoveCompletedBatchAsync(Guid jobId)
+    private async Task<int> MoveCompletedBatchAsync(Guid jobId, ISet<string> touchedDirs)
     {
         await batchMoveLock.WaitAsync(cts.Token);
         try
@@ -1601,7 +1602,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             var convertFormat = (job.ConvertOnCompletionFormatOverride
                 ?? options.CurrentValue.Integrations.YtDlp.ConvertOnCompletionFormat)?.Trim();
 
-            var moved = await MoveStagedTracksAsync(job, db, staged, convertFormat, cts.Token);
+            var moved = await MoveStagedTracksAsync(job, db, staged, convertFormat, touchedDirs, cts.Token);
             await db.SaveChangesAsync(cts.Token);
 
             if (moved > 0)
@@ -1629,7 +1630,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     // Optionally converts, verifies artwork, then moves each staged track to the output directory,
     // updating its FilePath and removing the track's staging leftovers. Caller holds batchMoveLock.
     // Returns the number of tracks actually moved.
-    private async Task<int> MoveStagedTracksAsync(YtDlpJob job, YtDlpDbContext db, System.Collections.Generic.List<YtDlpTrack> tracks, string? convertFormat, CancellationToken cancellationToken)
+    private async Task<int> MoveStagedTracksAsync(YtDlpJob job, YtDlpDbContext db, System.Collections.Generic.List<YtDlpTrack> tracks, string? convertFormat, ISet<string> touchedDirs, CancellationToken cancellationToken)
     {
         if (tracks.Count == 0)
         {
@@ -1668,6 +1669,12 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 t.FilePath = dest;
                 moved++;
 
+                var destDir = Path.GetDirectoryName(dest);
+                if (destDir != null)
+                {
+                    touchedDirs.Add(destDir);
+                }
+
                 RemoveStagingSidecars(source);
             }
             catch (Exception ex)
@@ -1679,14 +1686,22 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         return moved;
     }
 
-    // Refreshes the music library and the Soulseek share cache for a freshly-published directory.
-    // Both only surface the files if the output directory sits within a configured share.
-    private async Task RescanOutputAsync(string outputDirectory)
+    // Refreshes the music library and the Soulseek share cache for freshly-published folders.
+    // The share scan is TARGETED to just the directories that received files — scanning the whole
+    // music root here would walk tens of thousands of files and hold a long SQLite write lock on
+    // the shares cache, which breaks concurrent Soulseek search queries.
+    private async Task RescanOutputAsync(IReadOnlyCollection<string> directories)
     {
         library.TriggerSync();
+
+        if (directories.Count == 0)
+        {
+            return;
+        }
+
         try
         {
-            await shares.ScanDirectoriesAsync(new[] { outputDirectory });
+            await shares.ScanDirectoriesAsync(directories);
         }
         catch (resonance.ShareScanInProgressException)
         {
@@ -1694,7 +1709,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warning("YtDlp: share rescan of {Dir} failed: {Error}", outputDirectory, ex.Message);
+            Log.Warning("YtDlp: targeted share rescan failed: {Error}", ex.Message);
         }
     }
 
