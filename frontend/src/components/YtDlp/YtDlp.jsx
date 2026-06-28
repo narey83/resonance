@@ -137,17 +137,23 @@ const YtDlp = ({ view }) => {
 
   const handleTrackProgress = useCallback((track) => {
     if (!mountedRef.current) return;
-    setJobs((previous) =>
-      previous.map((index) => {
-        if (index.id !== track.jobId) return index;
+    setJobs((previous) => {
+      // Only a job that has its rows loaded in shared state needs a live update.
+      // Returning the same array reference when nothing matches lets React skip the
+      // re-render, so progress ticks no longer rebuild large virtualized lists.
+      let changed = false;
+      const next = previous.map((job) => {
+        if (job.id !== track.jobId || !job._tracks) return job;
+        changed = true;
         return {
-          ...index,
-          _tracks: (index._tracks || []).map((t) =>
+          ...job,
+          _tracks: job._tracks.map((t) =>
             t.id === track.id ? { ...t, ...track } : t,
           ),
         };
-      }),
-    );
+      });
+      return changed ? next : previous;
+    });
   }, []);
 
   const handleJobLog = useCallback(({ isError, jobId, line }) => {
