@@ -9,6 +9,7 @@ import {
   CloudOff,
   FolderOpen,
   Globe,
+  Loader2,
   LogOut,
   Moon,
   Plug,
@@ -121,6 +122,26 @@ const StatusStrip = ({
   };
 
   const isConnected = server?.isLoggedIn;
+
+  // Surface what's happening before the user is logged in. Soulseek connection waits for the
+  // share cache to be ready, so a long scan shows as "Preparing shares…" before "Connecting…".
+  const connScanning = shares?.scanning || shares?.scanPending;
+  const connPhase = isConnected
+    ? null
+    : connScanning
+      ? `Preparing shares… ${Math.round((shares?.scanProgress ?? 0) * 100)}%`
+      : server?.isLoggingIn
+        ? 'Logging in to Soulseek…'
+        : server?.isConnecting || server?.isTransitioning
+          ? 'Connecting to Soulseek…'
+          : 'Offline';
+  const connBusy =
+    !isConnected &&
+    (connScanning ||
+      server?.isConnecting ||
+      server?.isLoggingIn ||
+      server?.isTransitioning);
+
   const username = user?.username;
   const isPrivileged = user?.privileges?.isPrivileged;
   // The Soulseek server reports privileges as seconds remaining, not days.
@@ -203,6 +224,23 @@ const StatusStrip = ({
           />
         )}
       </button>
+
+      {/* Connection phase — tells the user what's happening before login completes */}
+      {connPhase && (
+        <div
+          className={`status-strip-item status-conn-phase${connBusy ? ' busy' : ''}`}
+          title={connPhase}
+        >
+          {connBusy && (
+            <Loader2
+              className="status-icon status-spin"
+              size={12}
+              strokeWidth={2}
+            />
+          )}
+          <span className="status-conn-phase-text">{connPhase}</span>
+        </div>
+      )}
 
       {/* Username + status context menu */}
       {isConnected && username && (
@@ -343,7 +381,7 @@ const StatusStrip = ({
         <>
           <div className="status-strip-sep" />
           <button
-            className="status-strip-item status-strip-btn--label"
+            className="status-strip-btn status-strip-btn--label"
             disabled={portStatus === 'checking'}
             onClick={runPortCheck}
             title={
