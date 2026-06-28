@@ -407,6 +407,13 @@ const Duplicates = () => {
   const [deleting, setDeleting] = useState(false);
   const loadingRef = useRef(false);
   const searchWrapRef = useRef(null);
+  const mountedRef = useRef(true);
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+    },
+    [],
+  );
 
   const load = useCallback(async () => {
     if (loadingRef.current) return;
@@ -433,13 +440,15 @@ const Duplicates = () => {
         }
       }
 
-      setAllFiles(files);
-      setPage(0);
+      if (mountedRef.current) {
+        setAllFiles(files);
+        setPage(0);
+      }
     } catch (caughtError) {
       console.error(caughtError);
-      setError('Failed to load files.');
+      if (mountedRef.current) setError('Failed to load files.');
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
       // eslint-disable-next-line require-atomic-updates
       loadingRef.current = false;
     }
