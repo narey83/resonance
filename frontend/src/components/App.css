@@ -122,6 +122,35 @@
 
 }
 
+/* ─── Phase 0 primitives: motion · ambient art · frosted glass ───────────────── */
+/* Theme-agnostic. Each token references theme vars (--accent, --accent-rgb…) so
+   it resolves correctly under whichever theme class is active on :root. */
+:root {
+  /* Motion — normalise the ad-hoc transition timings across the app. */
+  --dur-fast:        120ms;
+  --dur-base:        220ms;
+  --dur-slow:        360ms;
+  --ease-standard:   cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring:     cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Ambient art accent — falls back to the theme accent until the album-art
+     colour engine (Phase 0/2) drives these live from the now-playing artwork. */
+  --art-accent:       var(--accent);
+  --art-accent-hover: var(--accent-hover);
+  --art-accent-rgb:   var(--accent-rgb);
+  --art-glow:         rgba(var(--accent-rgb), 0.30);
+
+  /* Frosted-glass chrome. Derived generically from each theme's own surface
+     colour via color-mix, so the frost works on every theme (light, dark, dim,
+     colour-nav) — no per-theme overrides needed. */
+  --glass-blur:      16px;
+  --nav-glass-bg:    color-mix(in srgb, var(--nav-bg) 72%, transparent);
+  --strip-glass-bg:  color-mix(in srgb, var(--bg-surface) 70%, transparent);
+  --player-glass-bg: color-mix(in srgb, var(--player-bg) 72%, transparent);
+  --glass-highlight: rgba(255, 255, 255, 0.06);
+}
+
 /* ─── Dim theme ─────────────────────────────────────────────────────────────── */
 :root.dim {
   --bg-primary:   #1a1d2e;
@@ -567,14 +596,18 @@ body {
 .app-nav {
   width: var(--nav-width);
   min-width: var(--nav-width);
-  background: var(--nav-bg);
+  background: var(--nav-glass-bg, var(--nav-bg));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--nav-border);
+  box-shadow: inset -1px 0 0 var(--glass-highlight);
   overflow: hidden;
   flex-shrink: 0;
   z-index: 100;
-  transition: width 0.22s ease, min-width 0.22s ease;
+  transition: width var(--dur-base) var(--ease-emphasized),
+              min-width var(--dur-base) var(--ease-emphasized);
 }
 
 /* ── Collapsed nav ─────────────────────────────────────────────── */
@@ -680,7 +713,9 @@ body {
   font-weight: 500;
   border-radius: 6px;
   margin: 1px 6px;
-  transition: background 0.12s, color 0.12s;
+  position: relative;
+  transition: background var(--dur-fast) var(--ease-standard),
+              color var(--dur-fast) var(--ease-standard);
   cursor: pointer;
   border: none;
   background: transparent;
@@ -693,13 +728,27 @@ body {
   color: var(--nav-item-hover-color);
 }
 
+/* Active item is driven by the ambient art accent so the nav breathes with
+   whatever is playing (falls back to the theme accent until the engine lands). */
 .app-nav-item.active {
-  background: var(--nav-item-active-bg);
-  color: var(--nav-item-active-color);
+  background: rgba(var(--art-accent-rgb), 0.14);
+  color: var(--art-accent-hover);
+}
+
+.app-nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--art-accent);
+  box-shadow: 0 0 10px var(--art-glow);
 }
 
 .app-nav-item.active .app-nav-icon {
-  color: var(--nav-item-active-icon);
+  color: var(--art-accent);
 }
 
 .app-nav-icon {
@@ -708,7 +757,7 @@ body {
   flex-shrink: 0;
   font-size: 14px;
   color: var(--nav-icon-color);
-  transition: color 0.12s;
+  transition: color var(--dur-fast) var(--ease-standard);
 }
 
 .app-nav-item:hover .app-nav-icon {
@@ -2081,4 +2130,14 @@ body {
 .ulink-item:only-child  { border-radius: 6px; }
 .ulink-item:hover { background: var(--surface-hover); }
 .ulink-item svg   { color: var(--text-muted); flex-shrink: 0; }
+
+/* ─── Accessibility: honour reduced-motion preference ────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 

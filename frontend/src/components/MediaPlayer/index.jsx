@@ -2,26 +2,36 @@ import './MediaPlayer.css';
 import { useLibraryActivity } from '../../context/LibraryActivityContext';
 import { usePlayer } from '../../context/PlayerContext';
 import { useCast } from '../../hooks/useCast';
+import {
+  applyAmbientColour,
+  clearAmbientColour,
+} from '../../lib/ambientColour';
 import * as castApi from '../../lib/cast';
 import { getLocalStreamUrl } from '../../lib/files';
+import { getArtworkUrl } from '../../lib/musicLibrary';
 import { getToken, isPassthroughEnabled } from '../../lib/token';
 import { formatAttributes, formatSeconds, getFileName } from '../../lib/util';
 import AlbumArt from '../Library/components/AlbumArt';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Cast,
+  ChevronDown,
   Heart,
   ListMusic,
+  Maximize2,
   Pause,
   Play,
   Repeat,
   Shuffle,
   SkipBack,
   SkipForward,
+  Trash2,
   Volume2,
   VolumeX,
   X,
 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'react-toastify';
 
 const CAST_CONTENT_TYPES = {
@@ -94,14 +104,125 @@ const parseTrackInfo = (filename) => {
   };
 };
 
+// Inline "Up Next" drawer for the immersive view. Virtualised so only the
+// visible rows (and their artwork) render — a long queue mounts a handful of
+// rows instead of hundreds. Rendered only while open, so its scroll ref
+// attaches cleanly on mount.
+const ExpandedQueue = ({
+  jumpTo,
+  onClose,
+  queueIndex,
+  removeFromQueue,
+  upNext,
+}) => {
+  const listRef = useRef(null);
+  const virtualizer = useVirtualizer({
+    count: upNext.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => 54,
+    overscan: 6,
+  });
+
+  return (
+    <div className="mp-expanded-queue">
+      <div className="mp-expanded-queue-header">
+        <span className="mp-expanded-queue-title">Up Next</span>
+        <span className="mp-expanded-queue-count">{upNext.length}</span>
+        <button
+          className="mp-expanded-queue-close"
+          onClick={onClose}
+          title="Hide queue"
+          type="button"
+        >
+          <X size={16} />
+        </button>
+      </div>
+      <div
+        className="mp-expanded-queue-list"
+        ref={listRef}
+      >
+        {upNext.length === 0 ? (
+          <div className="mp-expanded-queue-empty">Nothing up next</div>
+        ) : (
+          <div
+            style={{
+              height: virtualizer.getTotalSize(),
+              position: 'relative',
+            }}
+          >
+            {virtualizer.getVirtualItems().map((virtualItem) => {
+              const actualIndex = queueIndex + 1 + virtualItem.index;
+              const qTrack = upNext[virtualItem.index];
+              const qParsed = parseTrackInfo(qTrack.filename);
+              return (
+                <div
+                  key={virtualItem.key}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualItem.start}px)`,
+                  }}
+                >
+                  <div
+                    className="mp-expanded-queue-row"
+                    onClick={() => jumpTo(actualIndex)}
+                    onKeyDown={(event) =>
+                      event.key === 'Enter' && jumpTo(actualIndex)
+                    }
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <AlbumArt
+                      hasArtwork={qTrack.hasArtwork}
+                      name={qTrack.album || qTrack.artist || qParsed.title}
+                      path={qTrack.path}
+                      radius={4}
+                      size={40}
+                    />
+                    <div className="mp-expanded-queue-meta">
+                      <div className="mp-expanded-queue-row-title">
+                        {qTrack.title || qParsed.title}
+                      </div>
+                      <div className="mp-expanded-queue-row-artist">
+                        {qTrack.artist || qParsed.artist}
+                      </div>
+                    </div>
+                    <button
+                      className="mp-expanded-queue-remove"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        removeFromQueue(actualIndex);
+                      }}
+                      title="Remove from queue"
+                      type="button"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // eslint-disable-next-line complexity
 const MediaPlayer = () => {
   const googleCast = useCast();
   const {
     hasQueue,
+    jumpTo,
     next,
     prev,
+    queue,
+    queueIndex,
     queuePanelOpen,
+    removeFromQueue,
     restoredFromSession,
     setIsPlaying,
     shuffle,
@@ -135,15 +256,44 @@ const MediaPlayer = () => {
 
   const [scrubHover, setScrubHover] = useState(null);
   const [showCast, setShowCast] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
   useEffect(() => {
     repeatRef.current = repeat;
   }, [repeat]);
+
+  // The inline queue only exists within the immersive view.
+  useEffect(() => {
+    if (!expanded) setShowQueue(false);
+  }, [expanded]);
 
   // Stable refs so effects can read latest values without listing them as deps
   const googleCastRef = useRef(googleCast);
   googleCastRef.current = googleCast;
   const trackRef = useRef(track);
   trackRef.current = track;
+
+  // Ambient art-accent: when there's no track or it has no artwork, revert the
+  // --art-* vars to the theme accent. When art IS present, AlbumArt's onColour
+  // sets the live colour once the image loads, so the previous accent lingers
+  // briefly and then crossfades rather than flashing back to the theme blue.
+  useEffect(() => {
+    if (!track || !track.hasArtwork) clearAmbientColour();
+  }, [track]);
+
+  // Safety: revert when the player unmounts entirely.
+  useEffect(() => () => clearAmbientColour(), []);
+
+  // Collapse the immersive view on Escape.
+  useEffect(() => {
+    if (!expanded) return undefined;
+    const onKey = (event) => {
+      if (event.key === 'Escape') setExpanded(false);
+    };
+
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [expanded]);
 
   // When the player appears, any scrollable container that is near its bottom
   // edge will have content clipped by the player. Nudge those containers down
@@ -555,6 +705,7 @@ const MediaPlayer = () => {
     setDuration(0);
     setError(null);
     setStatusMessage(null);
+    setExpanded(false);
     stop();
     if (queuePanelOpen) toggleQueuePanel();
   };
@@ -584,6 +735,7 @@ const MediaPlayer = () => {
   const attributes = formatAttributes(track);
   const localFolder = getFolderInfo(track.localRelativePath);
   const artistMeta = [displayArtist, attributes].filter(Boolean).join(' · ');
+  const upNext = queueIndex == null ? [] : queue.slice(queueIndex + 1);
 
   return (
     <div
@@ -592,6 +744,211 @@ const MediaPlayer = () => {
     >
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <audio ref={audioRef} />
+
+      {/* ── Immersive expanded now-playing ──────────────────── */}
+      {/* Portalled to <body> so position:fixed escapes the player's
+          backdrop-filter containing block and covers the full viewport. */}
+      {expanded &&
+        createPortal(
+          <div
+            aria-label="Now playing"
+            className={
+              showQueue ? 'mp-expanded mp-expanded--with-queue' : 'mp-expanded'
+            }
+            role="dialog"
+          >
+            <div
+              className={
+                track.hasArtwork
+                  ? 'mp-expanded-backdrop'
+                  : 'mp-expanded-backdrop mp-expanded-backdrop--fallback'
+              }
+              style={
+                track.hasArtwork
+                  ? {
+                      backgroundImage: `url(${getArtworkUrl(track.path, 800)})`,
+                    }
+                  : undefined
+              }
+            />
+            <button
+              aria-label="Collapse player"
+              className="mp-expanded-scrim"
+              onClick={() => setExpanded(false)}
+              type="button"
+            />
+
+            <button
+              className="mp-expanded-collapse"
+              onClick={() => setExpanded(false)}
+              title="Collapse"
+              type="button"
+            >
+              <ChevronDown size={24} />
+            </button>
+
+            <div className="mp-expanded-content">
+              <div className="mp-expanded-art">
+                <AlbumArt
+                  hasArtwork={track.hasArtwork}
+                  name={displayAlbum || displayArtist || displayTitle}
+                  onColour={applyAmbientColour}
+                  path={track.path}
+                  radius={16}
+                  size={320}
+                />
+              </div>
+
+              <div className="mp-expanded-info">
+                <div className="mp-expanded-title">{displayTitle}</div>
+                {displayArtist && (
+                  <div className="mp-expanded-artist">{displayArtist}</div>
+                )}
+                {displayAlbum && (
+                  <div className="mp-expanded-album">{displayAlbum}</div>
+                )}
+              </div>
+
+              <div className="mp-expanded-scrub-row">
+                <span className="mp-expanded-time">
+                  {formatSeconds(effectiveTime)}
+                </span>
+                <div
+                  aria-label="Seek"
+                  aria-valuemax={displayDuration}
+                  aria-valuemin={0}
+                  aria-valuenow={effectiveTime}
+                  className="mp-expanded-scrubber"
+                  onClick={handleSeek}
+                  onKeyDown={handleSeekKey}
+                  role="slider"
+                  tabIndex={0}
+                >
+                  <div
+                    className="media-player-scrubber-buffered"
+                    style={{ width: `${bufferedPct}%` }}
+                  />
+                  <div
+                    className="media-player-scrubber-fill"
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </div>
+                <span className="mp-expanded-time">
+                  {formatSeconds(displayDuration)}
+                </span>
+              </div>
+
+              <div className="mp-expanded-controls">
+                <button
+                  className={
+                    shuffle
+                      ? 'mp-expanded-ctrl mp-expanded-ctrl--active'
+                      : 'mp-expanded-ctrl'
+                  }
+                  disabled={!hasQueue}
+                  onClick={toggleShuffle}
+                  title={shuffle ? 'Shuffle on' : 'Shuffle off'}
+                  type="button"
+                >
+                  <Shuffle size={20} />
+                </button>
+                <button
+                  className="mp-expanded-ctrl"
+                  disabled={!hasQueue}
+                  onClick={prev}
+                  title="Previous track"
+                  type="button"
+                >
+                  <SkipBack size={26} />
+                </button>
+                <button
+                  className="mp-expanded-play"
+                  disabled={Boolean(error)}
+                  onClick={togglePlay}
+                  title={effectivePlaying ? 'Pause' : 'Play'}
+                  type="button"
+                >
+                  {loading ? (
+                    <span className="media-player-spinner" />
+                  ) : effectivePlaying ? (
+                    <Pause size={28} />
+                  ) : (
+                    <Play size={28} />
+                  )}
+                </button>
+                <button
+                  className="mp-expanded-ctrl"
+                  disabled={!hasQueue}
+                  onClick={next}
+                  title="Next track"
+                  type="button"
+                >
+                  <SkipForward size={26} />
+                </button>
+                <button
+                  className={
+                    repeat
+                      ? 'mp-expanded-ctrl mp-expanded-ctrl--active'
+                      : 'mp-expanded-ctrl'
+                  }
+                  onClick={toggleRepeat}
+                  title={repeat ? 'Repeat: on' : 'Repeat: off'}
+                  type="button"
+                >
+                  <Repeat size={20} />
+                </button>
+              </div>
+
+              {track.path && (
+                <div className="mp-expanded-secondary">
+                  <button
+                    className={`mp-expanded-ctrl${activity?.lovedPaths?.has(track.path) ? ' mp-expanded-ctrl--active' : ''}`}
+                    onClick={() => activity?.toggleLove(track.path)}
+                    title={
+                      activity?.lovedPaths?.has(track.path)
+                        ? 'Remove from loved'
+                        : 'Love this track'
+                    }
+                    type="button"
+                  >
+                    <Heart
+                      fill={
+                        activity?.lovedPaths?.has(track.path)
+                          ? 'currentColor'
+                          : 'none'
+                      }
+                      size={20}
+                      strokeWidth={1.75}
+                    />
+                  </button>
+                  <button
+                    className={
+                      showQueue
+                        ? 'mp-expanded-ctrl mp-expanded-ctrl--active'
+                        : 'mp-expanded-ctrl'
+                    }
+                    onClick={() => setShowQueue((value) => !value)}
+                    title={showQueue ? 'Hide queue' : 'Show queue'}
+                    type="button"
+                  >
+                    <ListMusic size={20} />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {showQueue && (
+              <ExpandedQueue
+                jumpTo={jumpTo}
+                onClose={() => setShowQueue(false)}
+                queueIndex={queueIndex}
+                removeFromQueue={removeFromQueue}
+                upNext={upNext}
+              />
+            )}
+          </div>,
+          document.body,
+        )}
 
       {/* ── Cast panel ──────────────────────────────────────── */}
       {showCast && (
@@ -687,13 +1044,24 @@ const MediaPlayer = () => {
       {/* ── Main bar ─────────────────────────────────────────── */}
       <div className="media-player-bar">
         <div className="media-player-left">
-          <AlbumArt
-            hasArtwork={track.hasArtwork}
-            name={displayAlbum || displayArtist || displayTitle}
-            path={track.path}
-            radius={5}
-            size={64}
-          />
+          <button
+            className="media-player-art-btn"
+            onClick={() => setExpanded(true)}
+            title="Expand to full player"
+            type="button"
+          >
+            <AlbumArt
+              hasArtwork={track.hasArtwork}
+              name={displayAlbum || displayArtist || displayTitle}
+              onColour={applyAmbientColour}
+              path={track.path}
+              radius={5}
+              size={64}
+            />
+            <span className="media-player-art-expand">
+              <Maximize2 size={16} />
+            </span>
+          </button>
 
           <div className="media-player-info">
             <div className="media-player-title-row">

@@ -72,8 +72,9 @@ const extractDominantColour = (imgElement) => {
     }
 
     if (bestSat < 0) return null;
-    const clampedLightness = Math.min(0.45, Math.max(0.25, bestL));
-    return `hsl(${bestH}, ${Math.round(bestSat * 80)}%, ${Math.round(clampedLightness * 100)}%)`;
+    // Return the raw dominant hue/saturation/lightness; consumers decide how to
+    // clamp it (the ambient-colour engine brightens it into a legible accent).
+    return { h: bestH, s: bestSat, l: bestL };
   } catch {
     return null;
   }
