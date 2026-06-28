@@ -143,6 +143,40 @@ public static class YtDlpTagWriter
         }
     }
 
+    /// <summary>
+    ///     Best-effort guarantee that the file has embedded cover art: if it has none and a
+    ///     thumbnail sidecar is present, embeds it. Used as a safety net just before publishing.
+    /// </summary>
+    public static void EnsureArtwork(string filePath)
+    {
+        // No leftover thumbnail means there's nothing to recover — the cover was either already
+        // embedded at download time or no thumbnail was ever available. Skipping the (relatively
+        // expensive) TagLib open here keeps batch publishing fast.
+        var thumbnailPath = FindThumbnailSidecar(filePath);
+        if (thumbnailPath == null)
+        {
+            return;
+        }
+
+        try
+        {
+            using var file = TagLib.File.Create(filePath);
+            if (file.Tag.Pictures.Length == 0)
+            {
+                file.Tag.Pictures = [new Picture(thumbnailPath) { Type = PictureType.FrontCover }];
+                file.Save();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("EnsureArtwork failed for {File}: {Message}", filePath, ex.Message);
+        }
+        finally
+        {
+            TryDelete(thumbnailPath);
+        }
+    }
+
     private static string? FindThumbnailSidecar(string audioFilePath)
     {
         var stem = Path.Combine(

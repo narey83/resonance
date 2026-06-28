@@ -70,6 +70,15 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     private readonly ConcurrentQueue<YtDlpEvent> eventBuffer = new();
     private readonly ConcurrentDictionary<Guid, YtDlpSubscription> subscriptions = new();
     private readonly SemaphoreSlim subscriptionCheckLock = new(1, 1);
+
+    // Per-track auto-retry rounds, in memory (resets on restart, which also grants a fresh budget).
+    private const int MaxAutoRetryRounds = 10;
+    private readonly ConcurrentDictionary<Guid, int> autoRetryCounts = new();
+
+    // Completed tracks are published from staging to the music folder in batches of this size,
+    // rather than all at job end, so staging doesn't accumulate a whole large job's files.
+    private const int BatchMoveSize = 100;
+    private readonly SemaphoreSlim batchMoveLock = new(1, 1);
     private SemaphoreSlim workerSlots;
     private CancellationTokenSource cts = new();
     private string? jsRuntimeArg;
@@ -186,6 +195,8 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         }
 
         _ = Task.Run(() => RunSubscriptionPollLoopAsync(cts.Token), CancellationToken.None);
+        _ = Task.Run(() => RunAutoRetryLoopAsync(cts.Token), CancellationToken.None);
+        _ = Task.Run(() => RunBatchMoveLoopAsync(cts.Token), CancellationToken.None);
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
@@ -1462,47 +1473,34 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             dbJob.FailedTracks = failedCount;
         }
 
-        // Move all staged files to the final output directory and update DB paths
+        // Move any tracks still in staging (the final partial batch — most are already published
+        // by the running batch moves) and then clear the job's staging directory entirely.
         var stagingDir = GetStagingDirectory(job.Id);
         if (Directory.Exists(stagingDir))
         {
-            var completedTracks = await db.Tracks
-                .Where(t => t.JobId == job.Id && t.FilePath != null)
-                .ToListAsync(cancellationToken);
-
-            // Optional post-completion format conversion. Done here, in staging, *before* the
-            // go-live move below — so the output/share directory only ever sees the converted
-            // files and the subsequent library/share rescan indexes the final paths.
-            var convertFormat = (job.ConvertOnCompletionFormatOverride
-                ?? options.CurrentValue.Integrations.YtDlp.ConvertOnCompletionFormat)?.Trim();
-            if (AudioConverter.IsConvertibleTarget(convertFormat))
+            await batchMoveLock.WaitAsync(cancellationToken);
+            try
             {
-                var pending = completedTracks.Count(t => AudioConverter.NeedsConversion(t.FilePath, convertFormat!));
-                if (pending > 0)
+                var staged = await db.Tracks
+                    .Where(t => t.JobId == job.Id && t.FilePath != null && t.FilePath.StartsWith(stagingDir))
+                    .ToListAsync(cancellationToken);
+
+                var convertFormat = (job.ConvertOnCompletionFormatOverride
+                    ?? options.CurrentValue.Integrations.YtDlp.ConvertOnCompletionFormat)?.Trim();
+                if (AudioConverter.IsConvertibleTarget(convertFormat))
                 {
-                    await EmitEventAsync(job.Id, "info", $"Converting {pending} track(s) to {convertFormat} before publishing…", job);
+                    var pendingConv = staged.Count(t => AudioConverter.NeedsConversion(t.FilePath, convertFormat!));
+                    if (pendingConv > 0)
+                    {
+                        await EmitEventAsync(job.Id, "info", $"Converting {pendingConv} track(s) to {convertFormat} before publishing…", job);
+                    }
                 }
 
-                foreach (var t in completedTracks)
-                {
-                    await ConvertStagedTrackAsync(t, convertFormat!, job, cancellationToken);
-                }
+                await MoveStagedTracksAsync(job, db, staged, convertFormat, cancellationToken);
             }
-
-            foreach (var t in completedTracks)
+            finally
             {
-                try
-                {
-                    var relative = Path.GetRelativePath(stagingDir, t.FilePath!);
-                    var dest = Path.Combine(job.OutputDirectory, relative);
-                    Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-                    File.Move(t.FilePath!, dest, overwrite: true);
-                    t.FilePath = dest;
-                }
-                catch (Exception ex)
-                {
-                    Log.Warning("YtDlp: failed to move staged file {Path}: {Error}", t.FilePath, ex.Message);
-                }
+                batchMoveLock.Release();
             }
 
             try
@@ -1516,29 +1514,214 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         await db.SaveChangesAsync(cancellationToken);
 
-        // Refresh both indexes for the freshly-moved files: the music library
-        // (TriggerSync scans the configured share/library directories) and the
-        // Soulseek share cache (a targeted rescan of just the output directory).
-        // Both only pick up the new files if the output directory is within a
-        // configured share — see Shares.Directories.
-        library.TriggerSync();
-        try
-        {
-            await shares.ScanDirectoriesAsync(new[] { job.OutputDirectory });
-        }
-        catch (resonance.ShareScanInProgressException)
-        {
-            // A scan is already running — it will pick up the new files
-        }
-        catch (Exception ex)
-        {
-            Log.Warning("YtDlp: share rescan of {Dir} after job completion failed: {Error}", job.OutputDirectory, ex.Message);
-        }
+        // Refresh both indexes for the freshly-moved files (no-op for files already published and
+        // rescanned by the running batch moves).
+        await RescanOutputAsync(job.OutputDirectory);
 
         var verb = job.State == YtDlpJobState.Cancelled ? "Stopped" : "Done";
         await EmitEventAsync(job.Id, "success",
             $"{verb}: {job.Title ?? job.Url} ({job.CompletedTracks} completed, {job.FailedTracks} failed, {job.SkippedTracks} skipped)",
             job);
+    }
+
+    // yt-dlp leftovers that share a track's stem and should be removed from staging once moved.
+    private static readonly string[] SidecarExtensions =
+        [".webp", ".jpg", ".jpeg", ".png", ".part", ".ytdl", ".temp", ".info.json", ".description"];
+
+    // Periodically drains completed tracks out of staging into the music folder, in batches of
+    // BatchMoveSize, for every active job — including any backlog that built up before a restart.
+    private async Task RunBatchMoveLoopAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                foreach (var job in jobs.Values)
+                {
+                    if (job.State != YtDlpJobState.Active)
+                    {
+                        continue;
+                    }
+
+                    // Drain accumulated completed tracks in batches, then rescan once. Rescanning
+                    // per batch would scan the whole music directory dozens of times for a backlog.
+                    var movedAny = false;
+                    int batchMoved;
+                    do
+                    {
+                        batchMoved = await MoveCompletedBatchAsync(job.Id);
+                        movedAny |= batchMoved > 0;
+                    }
+                    while (batchMoved == BatchMoveSize && !cancellationToken.IsCancellationRequested);
+
+                    if (movedAny)
+                    {
+                        await RescanOutputAsync(job.OutputDirectory);
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "YtDlp: batch-move loop terminated unexpectedly");
+        }
+    }
+
+    // Publishes up to BatchMoveSize completed tracks still sitting in staging out to the music
+    // folder. Returns the number actually moved.
+    private async Task<int> MoveCompletedBatchAsync(Guid jobId)
+    {
+        await batchMoveLock.WaitAsync(cts.Token);
+        try
+        {
+            if (!jobs.TryGetValue(jobId, out var job))
+            {
+                return 0;
+            }
+
+            var stagingDir = GetStagingDirectory(jobId);
+
+            await using var db = await dbFactory.CreateDbContextAsync(cts.Token);
+            var staged = await db.Tracks
+                .Where(t => t.JobId == jobId && t.State == YtDlpTrackState.Completed
+                    && t.FilePath != null && t.FilePath.StartsWith(stagingDir))
+                .OrderBy(t => t.CompletedAt)
+                .Take(BatchMoveSize)
+                .ToListAsync(cts.Token);
+
+            if (staged.Count == 0)
+            {
+                return 0;
+            }
+
+            var convertFormat = (job.ConvertOnCompletionFormatOverride
+                ?? options.CurrentValue.Integrations.YtDlp.ConvertOnCompletionFormat)?.Trim();
+
+            var moved = await MoveStagedTracksAsync(job, db, staged, convertFormat, cts.Token);
+            await db.SaveChangesAsync(cts.Token);
+
+            if (moved > 0)
+            {
+                await EmitEventAsync(jobId, "info", $"Published {moved} completed track(s) to the music folder", job);
+            }
+
+            return moved;
+        }
+        catch (OperationCanceledException)
+        {
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "YtDlp: batch move failed for job {JobId}", jobId);
+            return 0;
+        }
+        finally
+        {
+            batchMoveLock.Release();
+        }
+    }
+
+    // Optionally converts, verifies artwork, then moves each staged track to the output directory,
+    // updating its FilePath and removing the track's staging leftovers. Caller holds batchMoveLock.
+    // Returns the number of tracks actually moved.
+    private async Task<int> MoveStagedTracksAsync(YtDlpJob job, YtDlpDbContext db, System.Collections.Generic.List<YtDlpTrack> tracks, string? convertFormat, CancellationToken cancellationToken)
+    {
+        if (tracks.Count == 0)
+        {
+            return 0;
+        }
+
+        var stagingDir = GetStagingDirectory(job.Id);
+
+        if (AudioConverter.IsConvertibleTarget(convertFormat))
+        {
+            foreach (var t in tracks)
+            {
+                await ConvertStagedTrackAsync(t, convertFormat!, job, cancellationToken);
+            }
+        }
+
+        var moved = 0;
+        foreach (var t in tracks)
+        {
+            var source = t.FilePath;
+            if (string.IsNullOrEmpty(source) || !File.Exists(source))
+            {
+                continue;
+            }
+
+            try
+            {
+                // Light artwork safety net before publishing — embeds a leftover thumbnail if the
+                // file somehow has no cover. Heavier tag writing already ran at download time.
+                YtDlpTagWriter.EnsureArtwork(source);
+
+                var relative = Path.GetRelativePath(stagingDir, source);
+                var dest = Path.Combine(job.OutputDirectory, relative);
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.Move(source, dest, overwrite: true);
+                t.FilePath = dest;
+                moved++;
+
+                RemoveStagingSidecars(source);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("YtDlp: failed to move staged file {Path}: {Error}", source, ex.Message);
+            }
+        }
+
+        return moved;
+    }
+
+    // Refreshes the music library and the Soulseek share cache for a freshly-published directory.
+    // Both only surface the files if the output directory sits within a configured share.
+    private async Task RescanOutputAsync(string outputDirectory)
+    {
+        library.TriggerSync();
+        try
+        {
+            await shares.ScanDirectoriesAsync(new[] { outputDirectory });
+        }
+        catch (resonance.ShareScanInProgressException)
+        {
+            // A scan is already running — it will pick up the new files.
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("YtDlp: share rescan of {Dir} failed: {Error}", outputDirectory, ex.Message);
+        }
+    }
+
+    // Deletes any leftover files in staging that share the moved track's stem.
+    private static void RemoveStagingSidecars(string movedStagingPath)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(movedStagingPath);
+            if (dir == null)
+            {
+                return;
+            }
+
+            var stem = Path.GetFileNameWithoutExtension(movedStagingPath);
+            foreach (var ext in SidecarExtensions)
+            {
+                var sidecar = Path.Combine(dir, stem + ext);
+                if (File.Exists(sidecar))
+                {
+                    File.Delete(sidecar);
+                }
+            }
+        }
+        catch
+        {
+        }
     }
 
     public async Task ReconcileJobAsync(Guid jobId)
@@ -1720,6 +1903,9 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         args.Append($" --audio-quality {opts.AudioQuality}");
         args.Append(" --no-embed-metadata");
         args.Append(" --write-thumbnail");
+        // YouTube serves webp thumbnails, which TagLib# fails to embed (silently, no APIC frame).
+        // Convert to jpg via ffmpeg so the tag writer can reliably embed cover art.
+        args.Append(" --convert-thumbnails jpg");
         args.Append(" --no-playlist");
         args.Append(" --newline");
         if (!string.IsNullOrEmpty(ffmpegLocation))
@@ -2384,6 +2570,130 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    // ── Auto-retry ────────────────────────────────────────────────────────────
+    // Ticks on a fixed interval and re-queues failed downloads. Most failures in a bulk
+    // channel pull are transient (dropped connections, throttling), so a periodic sweep
+    // recovers them without manual intervention. Clearly-permanent failures are skipped,
+    // and an in-memory per-track round cap keeps dead videos from retrying forever.
+    private async Task RunAutoRetryLoopAsync(CancellationToken cancellationToken)
+    {
+        var intervalMinutes = Math.Clamp(options.CurrentValue.Integrations.YtDlp.AutoRetryIntervalMinutes, 5, 1440);
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(intervalMinutes));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                var opts = options.CurrentValue.Integrations.YtDlp;
+                if (!opts.Enabled || !opts.AutoRetryFailed)
+                {
+                    continue;
+                }
+
+                await AutoRetryFailedTracksAsync(cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "YtDlp: auto-retry loop terminated unexpectedly");
+        }
+    }
+
+    private async Task AutoRetryFailedTracksAsync(CancellationToken cancellationToken)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        var failed = await db.Tracks
+            .Where(t => t.State == YtDlpTrackState.Failed)
+            .ToListAsync(cancellationToken);
+
+        var retried = new List<YtDlpTrack>();
+        var perJob = new Dictionary<Guid, int>();
+
+        foreach (var track in failed)
+        {
+            // Skip tracks whose job is gone or stopped, permanent failures, and over-budget tracks.
+            if (!jobs.TryGetValue(track.JobId, out var job) || job.State == YtDlpJobState.Cancelled)
+            {
+                continue;
+            }
+
+            if (IsPermanentFailure(track.Error))
+            {
+                continue;
+            }
+
+            var rounds = autoRetryCounts.GetValueOrDefault(track.Id, 0);
+            if (rounds >= MaxAutoRetryRounds)
+            {
+                continue;
+            }
+
+            autoRetryCounts[track.Id] = rounds + 1;
+            track.State = YtDlpTrackState.Queued;
+            track.AttemptCount = 0;
+            track.Error = null;
+            retried.Add(track);
+            perJob[track.JobId] = perJob.GetValueOrDefault(track.JobId, 0) + 1;
+        }
+
+        if (retried.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var (jobId, count) in perJob)
+        {
+            if (jobs.TryGetValue(jobId, out var job))
+            {
+                job.FailedTracks = Math.Max(0, job.FailedTracks - count);
+                job.State = YtDlpJobState.Active;
+            }
+
+            var dbJob = await db.Jobs.FindAsync([jobId], cancellationToken);
+            if (dbJob != null)
+            {
+                dbJob.FailedTracks = Math.Max(0, dbJob.FailedTracks - count);
+                dbJob.State = YtDlpJobState.Active;
+            }
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        await BroadcastJobsAsync();
+        await EmitEventAsync(null, "info", $"Auto-retrying {retried.Count} failed download(s)");
+
+        foreach (var track in retried)
+        {
+            _ = Task.Run(() => RunWorkerAsync(track, cts.Token), CancellationToken.None);
+        }
+    }
+
+    // Failures that won't be fixed by retrying — don't waste sweeps on them.
+    private static bool IsPermanentFailure(string? error)
+    {
+        if (string.IsNullOrWhiteSpace(error))
+        {
+            return false;
+        }
+
+        var e = error.ToLowerInvariant();
+        return e.Contains("age-restricted")
+            || e.Contains("age restricted")
+            || e.Contains("private video")
+            || e.Contains("video unavailable")
+            || e.Contains("this video is unavailable")
+            || e.Contains("has been removed")
+            || e.Contains("members-only")
+            || e.Contains("members only")
+            || e.Contains("sign in to confirm")
+            || e.Contains("copyright")
+            || e.Contains("account associated with this video has been terminated")
+            || e.Contains("removed by the uploader")
+            || e.Contains("no longer available");
+    }
+
     private Task BroadcastSubscriptionsAsync() => hub.BroadcastSubscriptionsAsync(ListSubscriptions());
 
     private sealed record ChannelEntry(string VideoId, string Url, string Title, string Uploader, string? ThumbnailUrl);
@@ -2403,5 +2713,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         cts.Dispose();
         workerSlots?.Dispose();
         subscriptionCheckLock.Dispose();
+        batchMoveLock.Dispose();
     }
 }

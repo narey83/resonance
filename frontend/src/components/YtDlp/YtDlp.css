@@ -867,3 +867,20 @@
   color: var(--text-primary);
   font-size: 12px;
 }
+
+/* ── Events: per-job tabs ────────────────────────────────────────────────── */
+.ytdlp-events-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+.ytdlp-events-tabs .ytdlp-tab {
+  flex: 0 0 auto;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

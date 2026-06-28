@@ -3638,6 +3638,24 @@ namespace resonance
                 [Description("number of most-recent channel videos inspected per subscription check")]
                 [Range(1, 100)]
                 public int SubscriptionCheckCount { get; init; } = 20;
+
+                /// <summary>
+                ///     Gets a value indicating whether failed downloads are periodically re-queued
+                ///     automatically (clearly-permanent failures are skipped).
+                /// </summary>
+                [Argument(default, "ytdlp-auto-retry")]
+                [EnvironmentVariable("YTDLP_AUTO_RETRY")]
+                [Description("periodically re-queue failed yt-dlp downloads automatically")]
+                public bool AutoRetryFailed { get; init; } = true;
+
+                /// <summary>
+                ///     Gets the interval, in minutes, between automatic retry sweeps of failed downloads.
+                /// </summary>
+                [Argument(default, "ytdlp-auto-retry-interval")]
+                [EnvironmentVariable("YTDLP_AUTO_RETRY_INTERVAL")]
+                [Description("minutes between automatic retry sweeps of failed yt-dlp downloads")]
+                [Range(5, 1440)]
+                public int AutoRetryIntervalMinutes { get; init; } = 30;
             }
         }
 

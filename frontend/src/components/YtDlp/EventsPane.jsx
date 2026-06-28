@@ -102,6 +102,7 @@ const JobGroup = ({ defaultOpen, group }) => {
 
 const EventsPane = ({ events, onClear }) => {
   const [levelFilter, setLevelFilter] = useState('structured');
+  const [activeJob, setActiveJob] = useState('all');
   const [autoScroll, setAutoScroll] = useState(true);
   const logRef = useRef(null);
   const endRef = useRef(null);
@@ -143,6 +144,16 @@ const EventsPane = ({ events, onClear }) => {
 
     return Array.from(groupMap.values());
   }, [events, levelFilter]);
+
+  // Fall back to "All" if the selected job's events have aged out of the buffer.
+  React.useEffect(() => {
+    if (activeJob !== 'all' && !groups.some((g) => g.id === activeJob)) {
+      setActiveJob('all');
+    }
+  }, [groups, activeJob]);
+
+  const visibleGroups =
+    activeJob === 'all' ? groups : groups.filter((g) => g.id === activeJob);
 
   const previousGroupCount = useRef(0);
   React.useEffect(() => {
@@ -188,6 +199,31 @@ const EventsPane = ({ events, onClear }) => {
           <Trash2 size={13} /> Clear
         </button>
       </div>
+      {groups.length > 0 && (
+        <div className="ytdlp-events-tabs">
+          <button
+            className={`ytdlp-tab${activeJob === 'all' ? ' ytdlp-tab--active' : ''}`}
+            onClick={() => setActiveJob('all')}
+            type="button"
+          >
+            All
+          </button>
+          {groups.map((group) => (
+            <button
+              className={`ytdlp-tab${activeJob === group.id ? ' ytdlp-tab--active' : ''}`}
+              key={group.id}
+              onClick={() => setActiveJob(group.id)}
+              title={group.title}
+              type="button"
+            >
+              {group.title}
+              {group.errorCount > 0 && (
+                <span className="ytdlp-tab-badge">{group.errorCount}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
       <div
         className="ytdlp-events-log"
         onScroll={handleScroll}
@@ -199,7 +235,7 @@ const EventsPane = ({ events, onClear }) => {
             No events yet. Start a download to see activity here.
           </div>
         )}
-        {groups.map((group) => (
+        {visibleGroups.map((group) => (
           <JobGroup
             defaultOpen
             group={group}

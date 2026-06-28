@@ -38,14 +38,6 @@ const handleRetryJob = async (job) => {
   }
 };
 
-const handleRemoveJob = async (jobId) => {
-  try {
-    await ytdlp.removeJob(jobId);
-  } catch (error) {
-    toast.error(`Remove failed: ${error.message}`);
-  }
-};
-
 const handleCancelJob = async (jobId) => {
   try {
     await ytdlp.cancelJob(jobId);
@@ -133,6 +125,17 @@ const YtDlp = ({ view }) => {
         ? previous.map((j) => (j.id === job.id ? { ...j, ...job } : j))
         : [job, ...previous],
     );
+  }, []);
+
+  // Optimistically drop the job so removal is reflected instantly, independent of the JOBS
+  // broadcast (a missed broadcast would otherwise leave the deleted job on screen).
+  const handleRemoveJob = useCallback(async (jobId) => {
+    setJobs((previous) => previous.filter((j) => j.id !== jobId));
+    try {
+      await ytdlp.removeJob(jobId);
+    } catch (error) {
+      toast.error(`Remove failed: ${error.response?.data || error.message}`);
+    }
   }, []);
 
   const handleTrackProgress = useCallback((track) => {
@@ -223,6 +226,25 @@ const YtDlp = ({ view }) => {
     setActiveTab(tabId);
   };
 
+  // Subscribe to the channel/playlist of an in-progress download, inheriting the job's settings.
+  const handleJobSubscribe = useCallback(async (job) => {
+    try {
+      await ytdlp.addSubscription({
+        channelUrl: job.url,
+        audioFormat: job.audioFormatOverride,
+        audioQuality: job.audioQualityOverride,
+        defaultGenre: job.defaultGenreOverride,
+        minTrackDurationSeconds: job.minTrackDurationSecondsOverride,
+        maxTrackDurationSeconds: job.maxTrackDurationSecondsOverride,
+        convertOnCompletionFormat: job.convertOnCompletionFormatOverride,
+        uploadedAfter: job.uploadedAfterOverride,
+      });
+      toast.success(`Subscribed: ${job.title || job.url}`);
+    } catch (error) {
+      toast.error(`Subscribe failed: ${error.response?.data || error.message}`);
+    }
+  }, []);
+
   const handleSearchSubscribe = useCallback(async (result, overrides) => {
     try {
       await ytdlp.addSubscription({
@@ -267,6 +289,8 @@ const YtDlp = ({ view }) => {
           onRetryFailed={handleRetryFailed}
           onRetryJob={handleRetryJob}
           onRetryTags={handleRetryTags}
+          onSubscribe={handleJobSubscribe}
+          subscriptions={subscriptions}
         />
       );
     if (activeTab === 'subscriptions')

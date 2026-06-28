@@ -1,6 +1,8 @@
 import * as ytdlp from '../../lib/ytdlp';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
+  Bell,
+  BellRing,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -34,6 +36,19 @@ const TRACK_STATE_CLASS = {
 };
 
 const TRACK_ROW_HEIGHT = 30;
+
+// Channel (/@handle, /channel/, /c/, /user/) or playlist (list=) URLs can be subscribed to;
+// a single-video job cannot.
+const SUBSCRIBABLE_URL = /\/(?:channel|c|user)\/|\/@|[?&]list=/iu;
+const isSubscribable = (url) => SUBSCRIBABLE_URL.test(url || '');
+
+// Normalize a channel/playlist URL for comparison: the backend appends a tab (e.g. /videos)
+// to channel URLs, so strip those and trailing slashes before matching against subscriptions.
+const canonicalChannel = (url) =>
+  (url || '')
+    .toLowerCase()
+    .replace(/\/+$/u, '')
+    .replace(/\/(?:videos|streams|shorts|playlists|featured|community)$/u, '');
 
 const useAvailableHeight = (ref) => {
   const [height, setHeight] = useState(400);
@@ -214,12 +229,29 @@ const JobRow = ({
   onRetryFailed,
   onRetryJob,
   onRetryTags,
+  onSubscribe,
+  subscriptions,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [tracks, setTracks] = useState(job._tracks || []);
   const [loadingTracks, setLoadingTracks] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
   const logEndRef = useRef(null);
+
+  const subscribed = (subscriptions || []).some(
+    (s) => canonicalChannel(s.channelUrl) === canonicalChannel(job.url),
+  );
+
+  const handleSubscribe = async (e) => {
+    e.stopPropagation();
+    setSubscribing(true);
+    try {
+      await onSubscribe(job);
+    } finally {
+      setSubscribing(false);
+    }
+  };
 
   useEffect(() => {
     if (job._tracks) setTracks(job._tracks);
@@ -387,6 +419,29 @@ const JobRow = ({
               <RotateCcw size={13} />
             </button>
           )}
+          {onSubscribe &&
+            isSubscribable(job.url) &&
+            (subscribed ? (
+              <button
+                className="ytdlp-btn ytdlp-btn--active"
+                disabled
+                title="Subscribed — new uploads download automatically"
+                type="button"
+              >
+                <BellRing size={13} /> Subscribed
+              </button>
+            ) : (
+              <button
+                className="ytdlp-btn"
+                disabled={subscribing}
+                onClick={handleSubscribe}
+                title="Subscribe — auto-download new uploads from this channel"
+                type="button"
+              >
+                <Bell size={13} />
+                {subscribing ? 'Subscribing…' : 'Subscribe'}
+              </button>
+            ))}
           <button
             className="ytdlp-btn ytdlp-btn--danger"
             onClick={(e) => {
@@ -454,6 +509,8 @@ const JobList = ({
   onRetryFailed,
   onRetryJob,
   onRetryTags,
+  onSubscribe,
+  subscriptions,
 }) => {
   if (jobs.length === 0) {
     return (
@@ -478,6 +535,8 @@ const JobList = ({
           onRetryFailed={onRetryFailed}
           onRetryJob={onRetryJob}
           onRetryTags={onRetryTags}
+          onSubscribe={onSubscribe}
+          subscriptions={subscriptions}
         />
       ))}
     </div>
