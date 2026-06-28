@@ -33,6 +33,7 @@ namespace resonance.Shares
     using System.Collections.Generic;
     using System.Globalization;
     using System.Linq;
+    using System.Text;
     using Npgsql;
     using Serilog;
     using Soulseek;
@@ -247,55 +248,55 @@ namespace resonance.Shares
                 cmd.ExecuteNonQuery();
             }
 
-            if (upserts.Count > 0)
+            // Insert in multi-row batches (one round-trip per ~500 files) rather than one statement
+            // per file — a full populate of tens of thousands of files is otherwise dominated by
+            // per-row round-trip latency, which also delays shares-ready (and Soulseek login).
+            const int batchSize = 500;
+            foreach (var batch in upserts.Chunk(batchSize))
             {
-                using var cmd = new NpgsqlCommand(
-                    "INSERT INTO shares.files (host, masked_filename, original_filename, size, touched_at, code, extension, attribute_json, tags_json, timestamp) "
-                    + "VALUES (@host, @masked, @original, @size, @touched, @code, @extension, @attribute, @tags, @timestamp) "
-                    + "ON CONFLICT (host, masked_filename) DO UPDATE SET original_filename = excluded.original_filename, size = excluded.size, "
-                    + "touched_at = excluded.touched_at, code = excluded.code, extension = excluded.extension, attribute_json = excluded.attribute_json, "
-                    + "tags_json = excluded.tags_json, timestamp = excluded.timestamp;", conn, txn);
+                var sql = new StringBuilder(
+                    "INSERT INTO shares.files (host, masked_filename, original_filename, size, touched_at, code, extension, attribute_json, tags_json, timestamp) VALUES ");
 
+                using var cmd = new NpgsqlCommand { Connection = conn, Transaction = txn };
                 cmd.Parameters.AddWithValue("host", Host);
-                var masked = cmd.Parameters.Add("masked", NpgsqlTypes.NpgsqlDbType.Text);
-                var original = cmd.Parameters.Add("original", NpgsqlTypes.NpgsqlDbType.Text);
-                var size = cmd.Parameters.Add("size", NpgsqlTypes.NpgsqlDbType.Bigint);
-                var touched = cmd.Parameters.Add("touched", NpgsqlTypes.NpgsqlDbType.Text);
-                var code = cmd.Parameters.Add("code", NpgsqlTypes.NpgsqlDbType.Integer);
-                var extension = cmd.Parameters.Add("extension", NpgsqlTypes.NpgsqlDbType.Text);
-                var attribute = cmd.Parameters.Add("attribute", NpgsqlTypes.NpgsqlDbType.Text);
-                var tags = cmd.Parameters.Add("tags", NpgsqlTypes.NpgsqlDbType.Text);
-                cmd.Parameters.AddWithValue("timestamp", timestamp);
-                cmd.Prepare();
+                cmd.Parameters.AddWithValue("ts", timestamp);
 
-                foreach (var upsert in upserts)
+                for (var i = 0; i < batch.Length; i++)
                 {
-                    masked.Value = upsert.MaskedFilename;
-                    original.Value = upsert.OriginalFilename;
-                    size.Value = upsert.File.Size;
-                    touched.Value = upsert.TouchedAt.ToString("O", CultureInfo.InvariantCulture);
-                    code.Value = upsert.File.Code;
-                    extension.Value = (object)upsert.File.Extension ?? DBNull.Value;
-                    attribute.Value = upsert.File.Attributes.ToJson();
-                    tags.Value = upsert.Tags != null ? upsert.Tags.ToJson() : (object)DBNull.Value;
-                    cmd.ExecuteNonQuery();
+                    var u = batch[i];
+                    if (i > 0)
+                    {
+                        sql.Append(',');
+                    }
+
+                    sql.Append($"(@host,@m{i},@o{i},@s{i},@t{i},@c{i},@e{i},@a{i},@g{i},@ts)");
+                    cmd.Parameters.AddWithValue($"m{i}", u.MaskedFilename);
+                    cmd.Parameters.AddWithValue($"o{i}", u.OriginalFilename);
+                    cmd.Parameters.AddWithValue($"s{i}", u.File.Size);
+                    cmd.Parameters.AddWithValue($"t{i}", u.TouchedAt.ToString("O", CultureInfo.InvariantCulture));
+                    cmd.Parameters.AddWithValue($"c{i}", u.File.Code);
+                    cmd.Parameters.AddWithValue($"e{i}", (object)u.File.Extension ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue($"a{i}", u.File.Attributes.ToJson());
+                    cmd.Parameters.AddWithValue($"g{i}", u.Tags != null ? u.Tags.ToJson() : (object)DBNull.Value);
                 }
+
+                sql.Append(" ON CONFLICT (host, masked_filename) DO UPDATE SET original_filename = excluded.original_filename, "
+                    + "size = excluded.size, touched_at = excluded.touched_at, code = excluded.code, extension = excluded.extension, "
+                    + "attribute_json = excluded.attribute_json, tags_json = excluded.tags_json, timestamp = excluded.timestamp;");
+
+                cmd.CommandText = sql.ToString();
+                cmd.ExecuteNonQuery();
             }
 
+            // Refresh unchanged files' timestamps in one statement via an array match.
             if (touchedFilenames.Count > 0)
             {
                 using var cmd = new NpgsqlCommand(
-                    "UPDATE shares.files SET timestamp = @timestamp WHERE host = @host AND masked_filename = @masked;", conn, txn);
+                    "UPDATE shares.files SET timestamp = @timestamp WHERE host = @host AND masked_filename = ANY(@names);", conn, txn);
                 cmd.Parameters.AddWithValue("host", Host);
                 cmd.Parameters.AddWithValue("timestamp", timestamp);
-                var masked = cmd.Parameters.Add("masked", NpgsqlTypes.NpgsqlDbType.Text);
-                cmd.Prepare();
-
-                foreach (var filename in touchedFilenames)
-                {
-                    masked.Value = filename;
-                    cmd.ExecuteNonQuery();
-                }
+                cmd.Parameters.AddWithValue("names", touchedFilenames.ToArray());
+                cmd.ExecuteNonQuery();
             }
 
             txn.Commit();
