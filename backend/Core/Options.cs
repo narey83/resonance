@@ -876,6 +876,17 @@ namespace resonance
             public string[] Filters { get; init; } = Array.Empty<string>();
 
             /// <summary>
+            ///     Gets a value indicating whether the share cache should be stored in PostgreSQL
+            ///     instead of SQLite. Only takes effect when database.type is postgresql. Opt-in
+            ///     while the Postgres share repository is validated; SQLite remains the default.
+            /// </summary>
+            [Argument(default, "shares-postgres")]
+            [EnvironmentVariable("SHARES_POSTGRES")]
+            [Description("store the share cache in PostgreSQL instead of SQLite (requires database.type=postgresql)")]
+            [RequiresRestart]
+            public bool UsePostgres { get; init; } = false;
+
+            /// <summary>
             ///     Share caching options.
             /// </summary>
             [Validate]

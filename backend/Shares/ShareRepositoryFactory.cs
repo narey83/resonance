@@ -33,15 +33,30 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+using System;
 using System.IO;
+using Microsoft.Extensions.Options;
 
 namespace resonance.Shares
 {
     /// <summary>
-    ///     Persistent storage of a shared file cache.
+    ///     Persistent storage of a shared file cache. Produces a PostgreSQL-backed repository when
+    ///     opted in via shares.use_postgres (and database.type is postgresql); SQLite otherwise.
     /// </summary>
     public class SqliteShareRepositoryFactory : IShareRepositoryFactory
     {
+        public SqliteShareRepositoryFactory(IOptionsMonitor<Options> optionsMonitor)
+        {
+            var options = optionsMonitor.CurrentValue;
+            UsePostgres = options.Shares.UsePostgres
+                && options.Database.Type.Equals("postgresql", StringComparison.OrdinalIgnoreCase);
+            PostgresConnectionString = options.Database.ConnectionString;
+        }
+
+        private bool UsePostgres { get; }
+
+        private string PostgresConnectionString { get; }
+
         /// <summary>
         ///     Create a repository for the specified <paramref name="name"/>.
         /// </summary>
@@ -49,6 +64,11 @@ namespace resonance.Shares
         /// <returns>The created repository.</returns>
         public IShareRepository CreateFromHost(string name)
         {
+            if (UsePostgres)
+            {
+                return new PostgresShareRepository(PostgresConnectionString, host: name);
+            }
+
             var file = Path.Combine(Program.DataDirectory, $"shares.{name}.db");
 
             // Private cache (not Cache=shared): with shared cache SQLite uses table-level locks that
