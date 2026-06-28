@@ -934,6 +934,15 @@ namespace resonance.Shares
 
             var conn = new SqliteConnection(connectionString);
             conn.Open();
+
+            // Wait up to 5s for a lock instead of immediately failing with "database is locked"
+            // when a scan and a query briefly contend.
+            using (var pragma = conn.CreateCommand())
+            {
+                pragma.CommandText = "PRAGMA busy_timeout=5000;";
+                pragma.ExecuteNonQuery();
+            }
+
             return conn;
         }
     }

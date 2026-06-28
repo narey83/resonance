@@ -50,7 +50,12 @@ namespace resonance.Shares
         public IShareRepository CreateFromHost(string name)
         {
             var file = Path.Combine(Program.DataDirectory, $"shares.{name}.db");
-            return new SqliteShareRepository($"Data Source={file};Cache=shared");
+
+            // Private cache (not Cache=shared): with shared cache SQLite uses table-level locks that
+            // raise SQLITE_LOCKED ("database table is locked") for readers the moment a scan writes —
+            // breaking concurrent searches and metadata lookups. WAL + private cache lets readers and
+            // a single writer run concurrently instead.
+            return new SqliteShareRepository($"Data Source={file}");
         }
 
         /// <summary>
