@@ -1115,13 +1115,26 @@ namespace resonance
 
             var logger = Loggers.GetOrAdd(source, Log.ForContext("Context", "Soulseek").ForContext("SubContext", source));
 
+            var level = TranslateLogLevel(args.Level);
+
+            // Benign peer churn: a remote peer dropped the TCP connection before we could
+            // respond to its message (e.g. a FolderContentsRequest). Don't surface this as a
+            // warning; it's normal Soulseek network behaviour. (see logging convention: P2P
+            // transfer failures = WRN, benign transport hops = DBG)
+            if (level == LogEventLevel.Warning
+                && args.Message.Contains("Error handling peer message")
+                && args.Message.Contains("connection is closed"))
+            {
+                level = LogEventLevel.Debug;
+            }
+
             if (args.IncludesException && OptionsAtStartup.Debug)
             {
-                logger.Write(TranslateLogLevel(args.Level), exception: args.Exception, "{@Message}", args.Message);
+                logger.Write(level, exception: args.Exception, "{@Message}", args.Message);
                 return;
             }
 
-            logger.Write(TranslateLogLevel(args.Level), "{@Message}", args.Message);
+            logger.Write(level, "{@Message}", args.Message);
         }
 
         private void Client_Disconnected(object sender, SoulseekClientDisconnectedEventArgs args)

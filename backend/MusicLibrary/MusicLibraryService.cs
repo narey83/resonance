@@ -678,7 +678,14 @@ namespace resonance.MusicLibrary
 
         private static IEnumerable<FileInfo> EnumerateAudio(string root)
             => new DirectoryInfo(root)
-                .EnumerateFiles("*", SearchOption.AllDirectories)
+                // IgnoreInaccessible so an unreadable subdir (e.g. a mount root's lost+found) is skipped
+                // rather than aborting the whole walk — same as the share scanner.
+                .EnumerateFiles("*", new EnumerationOptions
+                {
+                    RecurseSubdirectories = true,
+                    IgnoreInaccessible = true,
+                    AttributesToSkip = FileAttributes.Hidden | FileAttributes.System,
+                })
                 .Where(f => AudioExtensions.Contains(f.Extension.TrimStart('.').ToLowerInvariant()));
 
         private static string DetectTagTypes(TagLib.File tf)

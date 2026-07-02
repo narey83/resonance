@@ -140,6 +140,10 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
+        // SubscriptionId was added after first release; EnsureCreated won't alter an existing table.
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE ytdlp.\"Jobs\" ADD COLUMN IF NOT EXISTS \"SubscriptionId\" uuid", cancellationToken);
+
         // Reset any tracks that were in-progress when the app last shut down
         var stuckTracks = await db.Tracks
             .Where(t => t.State == YtDlpTrackState.InProgress)
@@ -229,7 +233,8 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
     public IReadOnlyList<YtDlpEvent> GetRecentEvents() => eventBuffer.ToArray();
 
-    public async Task<YtDlpJob> SubmitAsync(string url, string? outputDirectory = null, string? audioFormat = null, int? audioQuality = null, string? defaultGenre = null, int? minTrackDurationSeconds = null, int? maxTrackDurationSeconds = null, string? convertOnCompletionFormat = null, string? uploadedAfter = null, CancellationToken cancellationToken = default)
+    // ponytail: subscriptionId trails cancellationToken so the controller call site needs no change; only the poller sets it.
+    public async Task<YtDlpJob> SubmitAsync(string url, string? outputDirectory = null, string? audioFormat = null, int? audioQuality = null, string? defaultGenre = null, int? minTrackDurationSeconds = null, int? maxTrackDurationSeconds = null, string? convertOnCompletionFormat = null, string? uploadedAfter = null, CancellationToken cancellationToken = default, Guid? subscriptionId = null)
     {
         var opts = options.CurrentValue.Integrations.YtDlp;
         var outDir = !string.IsNullOrWhiteSpace(outputDirectory) ? outputDirectory
@@ -239,6 +244,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         var job = new YtDlpJob
         {
             Url = url,
+            SubscriptionId = subscriptionId,
             OutputDirectory = outDir,
             StartedAt = DateTime.UtcNow,
             AudioFormatOverride = audioFormat,
@@ -918,10 +924,12 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 url = $"https://www.youtube.com/watch?v={videoId}";
             }
 
-            // Populate job title/uploader from the first track/channel if not set
-            if (string.IsNullOrEmpty(job.Title) && !string.IsNullOrEmpty(channelName))
+            // Populate job title/uploader from the first track/channel if not set. Subscription
+            // auto-downloads are single videos, so show the video title rather than the channel.
+            var jobTitle = job.SubscriptionId != null && !string.IsNullOrEmpty(title) ? title : channelName;
+            if (string.IsNullOrEmpty(job.Title) && !string.IsNullOrEmpty(jobTitle))
             {
-                job.Title = channelName;
+                job.Title = jobTitle;
                 job.Uploader = channelName;
                 job.ThumbnailUrl = thumbnail;
             }
@@ -2492,7 +2500,8 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                     sub.MaxTrackDurationSecondsOverride,
                     sub.ConvertOnCompletionFormatOverride,
                     sub.UploadedAfterOverride,
-                    cancellationToken);
+                    cancellationToken,
+                    sub.Id);
                 queued++;
             }
 

@@ -926,3 +926,33 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.ytdlp-sub-group {
+  border: 1px solid var(--border, #333);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.ytdlp-sub-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.ytdlp-sub-group-header:hover {
+  background: var(--bg-primary);
+}
+.ytdlp-sub-group-title {
+  font-weight: 600;
+}
+.ytdlp-sub-group-count {
+  margin-left: auto;
+  opacity: 0.6;
+  font-size: 0.85em;
+}
