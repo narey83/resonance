@@ -66,8 +66,15 @@ public class YtDlpController : ControllerBase
             return BadRequest("url is required");
         }
 
-        var job = await Service.SubmitAsync(request.Url, request.OutputDirectory, request.AudioFormat, request.AudioQuality, request.DefaultGenre, request.MinTrackDurationSeconds, request.MaxTrackDurationSeconds, request.ConvertOnCompletionFormat, request.UploadedAfter, cancellationToken);
-        return Ok(job);
+        try
+        {
+            var job = await Service.SubmitAsync(request.Url, request.OutputDirectory, request.AudioFormat, request.AudioQuality, request.DefaultGenre, request.MinTrackDurationSeconds, request.MaxTrackDurationSeconds, request.ConvertOnCompletionFormat, request.UploadedAfter, cancellationToken);
+            return Ok(job);
+        }
+        catch (resonance.InsufficientDiskSpaceException ex)
+        {
+            return StatusCode(507, ex.Message);
+        }
     }
 
     [HttpGet("jobs/{jobId:guid}/tracks")]

@@ -38,6 +38,7 @@ import {
   CloudOff,
   FolderOpen,
   Globe,
+  HardDrive,
   Loader2,
   LogOut,
   Moon,
@@ -56,6 +57,7 @@ import { toast } from 'react-toastify';
 
 const StatusStrip = ({
   brand,
+  disk,
   downloads,
   isLoggedIn,
   networkInfo,
@@ -511,6 +513,33 @@ const StatusStrip = ({
           {formatBytes(ulSpeed)}/s
         </span>
       </div>
+
+      {/* Free disk space on the downloads volume */}
+      {disk?.totalBytes > 0 && (
+        <>
+          <div className="status-strip-sep" />
+          <div
+            className="status-strip-item"
+            title={
+              disk.downloadsBlocked
+                ? 'Downloads paused — free space is below the safe limit'
+                : `${formatBytes(disk.availableBytes)} free of ${formatBytes(disk.totalBytes)} on the downloads volume`
+            }
+          >
+            <HardDrive
+              className={`status-icon${disk.downloadsBlocked ? ' disconnected' : ''}`}
+              size={13}
+              strokeWidth={1.75}
+            />
+            <span className="status-strip-text">
+              {formatBytes(disk.availableBytes)} free
+            </span>
+            {disk.downloadsBlocked && (
+              <span className="status-chip danger">Downloads paused</span>
+            )}
+          </div>
+        </>
+      )}
 
       {networkInfo && (
         <>

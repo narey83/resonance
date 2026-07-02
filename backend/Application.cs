@@ -57,6 +57,7 @@ namespace resonance
     using Microsoft.AspNetCore.SignalR;
     using Microsoft.Extensions.Caching.Memory;
     using Microsoft.Extensions.Hosting;
+    using resonance.Common;
     using resonance.Configuration;
     using resonance.Core;
     using resonance.Core.API;
@@ -1370,7 +1371,21 @@ namespace resonance
                         },
                     },
                 },
+                Disk = GetDiskState(),
             });
+        }
+
+        private DiskState GetDiskState()
+        {
+            var downloads = Options.Directories.Downloads;
+            DiskSpace.TryGet(downloads, out var availableBytes, out var totalBytes);
+
+            return new DiskState
+            {
+                AvailableBytes = availableBytes,
+                TotalBytes = totalBytes,
+                DownloadsBlocked = DiskSpace.IsBelowLimit(downloads, Options.Disk.MinimumFreeMegabytes),
+            };
         }
 
         private void Clock_EveryFiveMinutes(object sender, ClockEventArgs e)

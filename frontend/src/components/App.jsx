@@ -947,6 +947,7 @@ const App = () => {
 
   // ── Main app shell ────────────────────────────────────────────────────────────
   const {
+    disk,
     pendingReconnect,
     pendingRestart,
     relay = {},
@@ -987,6 +988,7 @@ const App = () => {
                   <span className="status-brand-name">Resonance</span>
                 </div>
               }
+              disk={disk}
               downloads={downloads}
               isLoggedIn={isLoggedIn}
               networkInfo={networkInfo}
@@ -1043,6 +1045,7 @@ const App = () => {
                     )}
                   </div>
                 }
+                disk={disk}
                 downloads={downloads}
                 isLoggedIn={isLoggedIn}
                 networkInfo={networkInfo}

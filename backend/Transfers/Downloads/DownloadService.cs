@@ -48,6 +48,7 @@ namespace resonance.Transfers.Downloads
     using System.Threading;
     using System.Threading.Tasks;
     using Microsoft.EntityFrameworkCore;
+    using resonance.Common;
     using resonance.Events;
     using resonance.Files;
     using resonance.Integrations.FTP;
@@ -310,6 +311,13 @@ namespace resonance.Transfers.Downloads
             if (fileList.Count != fileList.Distinct().Count())
             {
                 throw new ArgumentException("Two or more files in request are duplicated", nameof(files));
+            }
+
+            var minimumFreeMegabytes = OptionsMonitor.CurrentValue.Disk.MinimumFreeMegabytes;
+
+            if (DiskSpace.IsBelowLimit(OptionsMonitor.CurrentValue.Directories.Incomplete, minimumFreeMegabytes))
+            {
+                throw new InsufficientDiskSpaceException($"Download rejected: free disk space is below the configured minimum of {minimumFreeMegabytes} MB");
             }
 
             IPEndPoint endpoint;

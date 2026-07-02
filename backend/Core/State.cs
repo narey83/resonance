@@ -61,8 +61,16 @@ namespace resonance
         public UserState User { get; init; } = new UserState();
         public DistributedNetworkState DistributedNetwork { get; init; } = new DistributedNetworkState();
         public ShareState Shares { get; init; } = new ShareState();
+        public DiskState Disk { get; init; } = new DiskState();
         public string[] Rooms { get; init; } = Array.Empty<string>();
         public User[] Users { get; init; } = Array.Empty<User>();
+    }
+
+    public record DiskState
+    {
+        public long AvailableBytes { get; init; }
+        public long TotalBytes { get; init; }
+        public bool DownloadsBlocked { get; init; }
     }
 
     public record HealthState

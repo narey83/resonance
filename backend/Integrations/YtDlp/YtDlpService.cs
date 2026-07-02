@@ -44,6 +44,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using resonance.Common;
 using resonance.Common.Audio;
 using Resonance.Integrations.YtDlp.API.Hubs;
 using Resonance.Integrations.YtDlp.Data;
@@ -240,6 +241,13 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         var outDir = !string.IsNullOrWhiteSpace(outputDirectory) ? outputDirectory
             : !string.IsNullOrWhiteSpace(opts.OutputDirectory) ? opts.OutputDirectory
             : options.CurrentValue.Directories.Downloads;
+
+        var minimumFreeMegabytes = options.CurrentValue.Disk.MinimumFreeMegabytes;
+
+        if (DiskSpace.IsBelowLimit(outDir, minimumFreeMegabytes))
+        {
+            throw new resonance.InsufficientDiskSpaceException($"Job rejected: free disk space is below the configured minimum of {minimumFreeMegabytes} MB");
+        }
 
         var job = new YtDlpJob
         {
@@ -924,12 +932,10 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 url = $"https://www.youtube.com/watch?v={videoId}";
             }
 
-            // Populate job title/uploader from the first track/channel if not set. Subscription
-            // auto-downloads are single videos, so show the video title rather than the channel.
-            var jobTitle = job.SubscriptionId != null && !string.IsNullOrEmpty(title) ? title : channelName;
-            if (string.IsNullOrEmpty(job.Title) && !string.IsNullOrEmpty(jobTitle))
+            // Populate job title/uploader from the first track/channel if not set
+            if (string.IsNullOrEmpty(job.Title) && !string.IsNullOrEmpty(channelName))
             {
-                job.Title = jobTitle;
+                job.Title = channelName;
                 job.Uploader = channelName;
                 job.ThumbnailUrl = thumbnail;
             }
@@ -2413,6 +2419,21 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             var opts = options.CurrentValue.Integrations.YtDlp;
             var count = Math.Clamp(opts.SubscriptionCheckCount, 1, 100);
 
+            // skip the check entirely while below the safe free-space limit, before LastVideoId advances,
+            // so blocked videos are picked up again once space frees up
+            var subOutDir = !string.IsNullOrWhiteSpace(sub.OutputDirectoryOverride) ? sub.OutputDirectoryOverride
+                : !string.IsNullOrWhiteSpace(opts.OutputDirectory) ? opts.OutputDirectory
+                : options.CurrentValue.Directories.Downloads;
+
+            if (DiskSpace.IsBelowLimit(subOutDir, options.CurrentValue.Disk.MinimumFreeMegabytes))
+            {
+                sub.LastError = $"Skipped: free disk space is below the configured minimum of {options.CurrentValue.Disk.MinimumFreeMegabytes} MB";
+                sub.LastCheckedAt = DateTime.UtcNow;
+                await PersistSubscriptionAsync(sub, CancellationToken.None);
+                await BroadcastSubscriptionsAsync();
+                return;
+            }
+
             List<ChannelEntry> entries;
             try
             {
@@ -2490,18 +2511,28 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                     continue;
                 }
 
-                await SubmitAsync(
-                    entry.Url,
-                    sub.OutputDirectoryOverride,
-                    sub.AudioFormatOverride,
-                    sub.AudioQualityOverride,
-                    sub.DefaultGenreOverride,
-                    sub.MinTrackDurationSecondsOverride,
-                    sub.MaxTrackDurationSecondsOverride,
-                    sub.ConvertOnCompletionFormatOverride,
-                    sub.UploadedAfterOverride,
-                    cancellationToken,
-                    sub.Id);
+                try
+                {
+                    await SubmitAsync(
+                        entry.Url,
+                        sub.OutputDirectoryOverride,
+                        sub.AudioFormatOverride,
+                        sub.AudioQualityOverride,
+                        sub.DefaultGenreOverride,
+                        sub.MinTrackDurationSecondsOverride,
+                        sub.MaxTrackDurationSecondsOverride,
+                        sub.ConvertOnCompletionFormatOverride,
+                        sub.UploadedAfterOverride,
+                        cancellationToken,
+                        sub.Id);
+                }
+                catch (resonance.InsufficientDiskSpaceException ex)
+                {
+                    // space dropped below the limit mid-loop; surface it and stop rather than killing the poll loop
+                    sub.LastError = ex.Message;
+                    break;
+                }
+
                 queued++;
             }
 
