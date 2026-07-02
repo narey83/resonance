@@ -481,6 +481,10 @@ namespace resonance
             IsRelayAgent = OptionsAtStartup.Relay.Enabled && OptionsAtStartup.Relay.Mode.ToEnum<RelayMode>() == RelayMode.Agent;
             Flags = OptionsAtStartup.Flags;
 
+            // Anchor the music-root path mapping so persistence stores paths relative to the music
+            // directory rather than absolute. Fixed at startup (Downloads requires a restart to change).
+            resonance.Common.MusicPath.Configure(OptionsAtStartup.Directories.Downloads);
+
             if (OptionsAtStartup.Logger.Disk && !OptionsAtStartup.Flags.NoLogo)
             {
                 try

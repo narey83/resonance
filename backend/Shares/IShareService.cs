@@ -35,6 +35,7 @@
 
 namespace resonance.Shares
 {
+    using System;
     using System.Collections.Generic;
     using System.Threading.Tasks;
     using Soulseek;
@@ -71,6 +72,25 @@ namespace resonance.Shares
         ///     When <paramref name="isExcluded"/> is true the path is excluded from shares instead.
         /// </summary>
         void SetManagedShare(string localPath, string alias, bool isExcluded = false);
+
+        /// <summary>
+        ///     Registers a provider that contributes virtual directories (masked→original) to every scan, so
+        ///     they persist across prunes without any files existing on disk. Replaces the symlink-folder approach.
+        /// </summary>
+        /// <param name="provider">A callback returning the current set of virtual directories.</param>
+        void RegisterVirtualShareProvider(Func<IEnumerable<VirtualShareDirectory>> provider);
+
+        /// <summary>
+        ///     Immediately materialises a virtual directory into the share cache, outside of a full scan.
+        /// </summary>
+        /// <param name="directory">The virtual directory to apply.</param>
+        void ApplyVirtualDirectory(VirtualShareDirectory directory);
+
+        /// <summary>
+        ///     Immediately removes a virtual directory (and its files) from the share cache by masked prefix.
+        /// </summary>
+        /// <param name="maskedDirectory">The masked directory to remove (e.g. <c>Mixtapes\My Set</c>).</param>
+        void RemoveVirtualDirectory(string maskedDirectory);
 
         /// <summary>
         ///     Removes a previously registered system-managed share.
