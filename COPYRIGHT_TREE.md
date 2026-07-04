@@ -1,0 +1,831 @@
+# Copyright tree
+Per-file copyright attribution for every source file in the project, generated from the actual `<copyright>` header found at the top of each file (not from intent or policy — this reflects what is literally written in each file). See [CHANGES.md](CHANGES.md) for the policy this implements and [FORKING.md](FORKING.md) for the license obligations it satisfies.
+
+## Legend
+- **JP Dillingham + John Narey** — file originates in upstream [slskd](https://github.com/slskd/slskd) and has been modified for Resonance; both copyrights apply.
+- **John Narey** — file is original to Resonance; no slskd equivalent exists.
+- **vendored** — third-party code carrying its own license, not covered by the two notices above.
+
+## Totals
+- 300 files: JP Dillingham + John Narey
+- 334 files: John Narey only
+- 2 files: vendored third-party code
+
+## Tree
+- **backend/**
+  - **BpmAnalysis/**
+    - **API/**
+      - **Controllers/**
+        - BpmAnalysisController.cs — John Narey
+    - **Types/**
+      - BpmAnalysisTypes.cs — John Narey
+    - BpmAnalysisService.cs — John Narey
+    - BpmDetector.cs — John Narey
+    - IBpmAnalysisService.cs — John Narey
+  - **Cast/**
+    - **API/**
+      - **Controllers/**
+        - CastController.cs — John Narey
+    - **Types/**
+      - CastTypes.cs — John Narey
+    - CastService.cs — John Narey
+    - ICastService.cs — John Narey
+  - **Common/**
+    - **Audio/**
+      - AudioConverter.cs — John Narey
+    - **Authentication/**
+      - ApiKeyAuthentication.cs — JP Dillingham + John Narey
+      - AuthPolicy.cs — JP Dillingham + John Narey
+      - AuthRole.cs — JP Dillingham + John Narey
+      - PassthroughAuthentication.cs — JP Dillingham + John Narey
+      - Role.cs — JP Dillingham + John Narey
+    - **Configuration/**
+      - CommandLineConfigurationSource.cs — JP Dillingham + John Narey
+      - DefaultValueConfigurationSource.cs — JP Dillingham + John Narey
+      - EnvironmentVariableConfigurationSource.cs — JP Dillingham + John Narey
+      - RequiresReconnectAttribute.cs — JP Dillingham + John Narey
+      - RequiresRestartAttribute.cs — JP Dillingham + John Narey
+      - VolatileOverlayConfigurationSource.cs — JP Dillingham + John Narey
+      - YamlConfigurationSource.cs — JP Dillingham + John Narey
+    - **Cryptography/**
+      - Aes.cs — JP Dillingham + John Narey
+      - Pbkdf2.cs — JP Dillingham + John Narey
+      - Random.cs — JP Dillingham + John Narey
+      - X509.cs — JP Dillingham + John Narey
+    - **Exceptions/**
+      - ApplicationShutdownException.cs — JP Dillingham + John Narey
+      - GitHubException.cs — JP Dillingham + John Narey
+      - IntentionalDisconnectException.cs — JP Dillingham + John Narey
+      - NotFoundException.cs — JP Dillingham + John Narey
+      - OutOfRangeException.cs — JP Dillingham + John Narey
+      - RelayException.cs — JP Dillingham + John Narey
+      - RetryException.cs — JP Dillingham + John Narey
+      - ShareInitializationException.cs — JP Dillingham + John Narey
+      - ShareScanInProgressException.cs — JP Dillingham + John Narey
+      - ShareValidationException.cs — JP Dillingham + John Narey
+      - SlskdException.cs — JP Dillingham + John Narey
+      - UnauthorizedException.cs — JP Dillingham + John Narey
+      - VPNClientException.cs — JP Dillingham + John Narey
+    - **Ffmpeg/**
+      - **API/**
+        - FfmpegController.cs — John Narey
+      - FfmpegService.cs — John Narey
+      - IFfmpegService.cs — John Narey
+    - **JsonConverters/**
+      - IPAddressConverter.cs — JP Dillingham + John Narey
+      - IPEndPointConverter.cs — JP Dillingham + John Narey
+      - KnownUnsupportedTypeConverter.cs — JP Dillingham + John Narey
+    - **Logging/**
+      - Checkpointer.cs — JP Dillingham + John Narey
+      - ConsoleWriteLineLogger.cs — JP Dillingham + John Narey
+      - DelegatingSink.cs — JP Dillingham + John Narey
+      - LogRecord.cs — JP Dillingham + John Narey
+      - Logs.cs — John Narey
+      - UtcTimestampEnricher.cs — John Narey
+    - **Middleware/**
+      - DisableFormValueModelBindingAttribute.cs — John Narey
+      - HTMLInjectionMiddleware.cs — JP Dillingham + John Narey
+      - HTMLRewriteMiddleware.cs — JP Dillingham + John Narey
+      - UrlEncodingModelBinder.cs — JP Dillingham + John Narey
+    - **OpenAPI/**
+      - ContentNegotiationOperationFilter.cs — JP Dillingham + John Narey
+    - **Validation/**
+      - AbsoluteFilePathAttribute.cs — JP Dillingham + John Narey
+      - CompositeValidationResult.cs — JP Dillingham + John Narey
+      - DirectoryExistsAttributes.cs — JP Dillingham + John Narey
+      - EnumAttribute.cs — JP Dillingham + John Narey
+      - Extensions.cs — JP Dillingham + John Narey
+      - FileDoesNotExistAttribute.cs — JP Dillingham + John Narey
+      - FileExistsAttribute.cs — JP Dillingham + John Narey
+      - IPAddressAttribute.cs — JP Dillingham + John Narey
+      - NotNullOrWhiteSpaceAttribute.cs — JP Dillingham + John Narey
+      - ValidateAttribute.cs — JP Dillingham + John Narey
+      - ValidationExtensions.cs — JP Dillingham + John Narey
+      - X509CertificateAttribute.cs — JP Dillingham + John Narey
+    - Base62Extensions.cs — vendored — 2016 - 2020 JoyMoe Interactive Entertainment Limited
+    - Base64Extensions.cs — JP Dillingham + John Narey
+    - ChannelReader.cs — JP Dillingham + John Narey
+    - CommonExtensions.cs — JP Dillingham + John Narey
+    - Compute.cs — JP Dillingham + John Narey
+    - ConcurrentFixedSizeQueue.cs — JP Dillingham + John Narey
+    - Dumper.cs — JP Dillingham + John Narey
+    - ExponentialMovingAverage.cs — JP Dillingham + John Narey
+    - FileWriteLock.cs — John Narey
+    - GitHub.cs — JP Dillingham + John Narey
+    - ManagedState.cs — JP Dillingham + John Narey
+    - RateLimiter.cs — JP Dillingham + John Narey
+    - Redactor.cs — JP Dillingham + John Narey
+    - Retry.cs — JP Dillingham + John Narey
+    - TimedCounter.cs — JP Dillingham + John Narey
+    - TokenBucket.cs — JP Dillingham + John Narey
+    - UserEndPointCache.cs — JP Dillingham + John Narey
+    - WaitKey.cs — JP Dillingham + John Narey
+    - Waiter.cs — JP Dillingham + John Narey
+  - **Core/**
+    - **API/**
+      - **Controllers/**
+        - AccountsController.cs — John Narey
+        - ApplicationController.cs — JP Dillingham + John Narey
+        - BrowseRateLimitController.cs — John Narey
+        - CredentialsController.cs — John Narey
+        - DatabaseController.cs — John Narey
+        - HttpCaptureController.cs — John Narey
+        - LogsController.cs — JP Dillingham + John Narey
+        - OptionsController.cs — JP Dillingham + John Narey
+        - PermissionsController.cs — John Narey
+        - PreferencesController.cs — John Narey
+        - ServerController.cs — JP Dillingham + John Narey
+        - SessionController.cs — JP Dillingham + John Narey
+      - **DTO/**
+        - LoginRequest.cs — JP Dillingham + John Narey
+        - ServerState.cs — JP Dillingham + John Narey
+        - TokenResponse.cs — JP Dillingham + John Narey
+      - **Hubs/**
+        - ApplicationHub.cs — JP Dillingham + John Narey
+        - LogsHub.cs — JP Dillingham + John Narey
+    - **Authentication/**
+      - AppUser.cs — John Narey
+      - AppUserService.cs — John Narey
+      - CustomRole.cs — John Narey
+      - Feature.cs — John Narey
+      - FeatureAuthorizationHandler.cs — John Narey
+      - FeaturePermission.cs — John Narey
+      - LoginRateLimiter.cs — John Narey
+      - PermissionService.cs — John Narey
+      - SessionService.cs — John Narey
+      - UserSession.cs — John Narey
+      - UsersDbContext.cs — John Narey
+    - **Data/**
+      - ConnectionString.cs — JP Dillingham + John Narey
+      - ConnectionStringDictionary.cs — JP Dillingham + John Narey
+      - Databases.cs — JP Dillingham + John Narey
+    - **Http/**
+      - HttpCaptureEntry.cs — John Narey
+      - RequestCaptureMiddleware.cs — John Narey
+    - **Logs/**
+      - LogPersistenceService.cs — John Narey
+      - LogsDbContext.cs — John Narey
+    - **Preferences/**
+      - PreferencesService.cs — John Narey
+    - **Security/**
+      - SecurityService.cs — JP Dillingham + John Narey
+    - Blacklist.cs — JP Dillingham + John Narey
+    - BrowseRateLimiter.cs — John Narey
+    - CacheKeys.cs — JP Dillingham + John Narey
+    - Clock.cs — JP Dillingham + John Narey
+    - ConnectionWatchdog.cs — JP Dillingham + John Narey
+    - Constants.cs — JP Dillingham + John Narey
+    - DiscoveryService.cs — John Narey
+    - Extensions.cs — JP Dillingham + John Narey
+    - Options.cs — JP Dillingham + John Narey
+    - OptionsOverlay.cs — JP Dillingham + John Narey
+    - State.cs — JP Dillingham + John Narey
+  - **Dlna/**
+    - DlnaContentDirectory.cs — John Narey
+    - DlnaDescriptions.cs — John Narey
+    - DlnaService.cs — John Narey
+  - **Events/**
+    - **API/**
+      - EventsController.cs — JP Dillingham + John Narey
+    - **Types/**
+      - EventRecord.cs — JP Dillingham + John Narey
+      - Events.cs — JP Dillingham + John Narey
+    - EventBus.cs — JP Dillingham + John Narey
+    - EventService.cs — JP Dillingham + John Narey
+    - EventsDbContext.cs — JP Dillingham + John Narey
+  - **Files/**
+    - **API/**
+      - FilesController.cs — JP Dillingham + John Narey
+    - **Types/**
+      - CreateFileOptions.cs — JP Dillingham + John Narey
+      - FilesystemDirectory.cs — JP Dillingham + John Narey
+      - FilesystemFile.cs — JP Dillingham + John Narey
+    - FileExtensions.cs — JP Dillingham + John Narey
+    - FileService.cs — JP Dillingham + John Narey
+  - **Integrations/**
+    - **FTP/**
+      - FTPClientFactory.cs — JP Dillingham + John Narey
+      - FTPService.cs — JP Dillingham + John Narey
+      - IFTPClientFactory.cs — JP Dillingham + John Narey
+      - IFTPService.cs — JP Dillingham + John Narey
+    - **Pushbullet/**
+      - IPushbulletService.cs — JP Dillingham + John Narey
+      - PushbulletService.cs — JP Dillingham + John Narey
+    - **Scripts/**
+      - ScriptService.cs — JP Dillingham + John Narey
+    - **Upnp/**
+      - UpnpProtocol.cs — John Narey
+      - UpnpService.cs — John Narey
+    - **VPN/**
+      - **Clients/**
+        - Gluetun.cs — JP Dillingham + John Narey
+      - IVPNClient.cs — JP Dillingham + John Narey
+      - VPNService.cs — JP Dillingham + John Narey
+      - VPNStatus.cs — JP Dillingham + John Narey
+    - **Webhooks/**
+      - WebhookService.cs — JP Dillingham + John Narey
+    - **YtDlp/**
+      - **API/**
+        - **Controllers/**
+          - YtDlpController.cs — John Narey
+        - **Hubs/**
+          - YtDlpHub.cs — John Narey
+      - **Data/**
+        - YtDlpDbContext.cs — John Narey
+      - **Types/**
+        - ParsedTrackMetadata.cs — John Narey
+        - YtDlpJob.cs — John Narey
+        - YtDlpSubscription.cs — John Narey
+        - YtDlpTrack.cs — John Narey
+      - IYtDlpService.cs — John Narey
+      - YtDlpMetadataParser.cs — John Narey
+      - YtDlpService.cs — John Narey
+      - YtDlpTagWriter.cs — John Narey
+  - **KeyAnalysis/**
+    - **API/**
+      - **Controllers/**
+        - KeyAnalysisController.cs — John Narey
+    - **Types/**
+      - KeyAnalysisTypes.cs — John Narey
+    - IKeyAnalysisService.cs — John Narey
+    - KeyAnalysisService.cs — John Narey
+    - KeyDetector.cs — John Narey
+    - KeyTagHelper.cs — John Narey
+  - **Messaging/**
+    - **API/**
+      - **Controllers/**
+        - ConversationsController.cs — JP Dillingham + John Narey
+        - RoomsController.cs — JP Dillingham + John Narey
+      - **DTO/**
+        - RoomInfoResponse.cs — JP Dillingham + John Narey
+        - RoomMessageResponse.cs — JP Dillingham + John Narey
+        - RoomResponse.cs — JP Dillingham + John Narey
+        - UserDataResponse.cs — JP Dillingham + John Narey
+    - **Types/**
+      - Conversation.cs — JP Dillingham + John Narey
+      - MessageDirection.cs — JP Dillingham + John Narey
+      - PrivateMessage.cs — JP Dillingham + John Narey
+      - Room.cs — JP Dillingham + John Narey
+      - RoomMessage.cs — JP Dillingham + John Narey
+    - ConversationService.cs — JP Dillingham + John Narey
+    - IRoomTracker.cs — JP Dillingham + John Narey
+    - MessagingDbContext.cs — JP Dillingham + John Narey
+    - MessagingService.cs — JP Dillingham + John Narey
+    - RoomService.cs — JP Dillingham + John Narey
+    - RoomTracker.cs — JP Dillingham + John Narey
+  - **MetadataLookup/**
+    - **API/**
+      - **Controllers/**
+        - MetadataLookupController.cs — John Narey
+    - **Types/**
+      - MetadataLookupTypes.cs — John Narey
+    - DeezerClient.cs — John Narey
+    - DiscogsClient.cs — John Narey
+    - IMetadataLookupService.cs — John Narey
+    - LastfmClient.cs — John Narey
+    - MetadataAttemptCache.cs — John Narey
+    - MetadataLookupService.cs — John Narey
+    - MusicBrainzClient.cs — John Narey
+  - **Mixtapes/**
+    - **API/**
+      - **Controllers/**
+        - MixtapesController.cs — John Narey
+        - PublicMixtapesController.cs — John Narey
+      - MixtapesHub.cs — John Narey
+    - **Types/**
+      - MixtapeTypes.cs — John Narey
+    - IMixtapeService.cs — John Narey
+    - MixtapeRepository.cs — John Narey
+    - MixtapeService.cs — John Narey
+  - **MusicLibrary/**
+    - **API/**
+      - **Controllers/**
+        - LibraryActivityController.cs — John Narey
+        - MusicLibraryController.cs — John Narey
+      - **Hubs/**
+        - LibraryActivityHub.cs — John Narey
+    - **Activity/**
+      - ILibraryActivityService.cs — John Narey
+      - LibraryActivityDbContext.cs — John Narey
+      - LibraryActivityService.cs — John Narey
+    - **Converter/**
+      - **API/**
+        - **Controllers/**
+          - ConverterController.cs — John Narey
+      - **Types/**
+        - ConverterJob.cs — John Narey
+      - ConverterService.cs — John Narey
+      - IConverterService.cs — John Narey
+    - **Types/**
+      - MusicLibraryTypes.cs — John Narey
+    - IMusicLibraryService.cs — John Narey
+    - MusicLibraryService.cs — John Narey
+    - MusicRepository.cs — John Narey
+    - StreamUrlSigner.cs — John Narey
+  - **Network/**
+    - GeoService.cs — John Narey
+    - NetworkController.cs — John Narey
+  - **Relay/**
+    - **API/**
+      - **Controllers/**
+        - RelayController.cs — JP Dillingham + John Narey
+      - **Hubs/**
+        - RelayHub.cs — JP Dillingham + John Narey
+    - **Types/**
+      - Agent.cs — JP Dillingham + John Narey
+      - RelayClientState.cs — JP Dillingham + John Narey
+      - RelayMode.cs — JP Dillingham + John Narey
+    - IRelayClient.cs — JP Dillingham + John Narey
+    - NullRelayClient.cs — JP Dillingham + John Narey
+    - RelayClient.cs — JP Dillingham + John Narey
+    - RelayService.cs — JP Dillingham + John Narey
+  - **Search/**
+    - **API/**
+      - **Controllers/**
+        - SearchesController.cs — JP Dillingham + John Narey
+      - **DTO/**
+        - SearchRequest.cs — JP Dillingham + John Narey
+      - **Hubs/**
+        - SearchHub.cs — JP Dillingham + John Narey
+    - **Types/**
+      - File.cs — JP Dillingham + John Narey
+      - Response.cs — JP Dillingham + John Narey
+      - Search.cs — JP Dillingham + John Narey
+    - Extensions.cs — JP Dillingham + John Narey
+    - SearchDbContext.cs — JP Dillingham + John Narey
+    - SearchResponseCache.cs — JP Dillingham + John Narey
+    - SearchService.cs — JP Dillingham + John Narey
+  - **Shares/**
+    - **API/**
+      - **Controllers/**
+        - SharesController.cs — JP Dillingham + John Narey
+        - TagsController.cs — John Narey
+    - **Types/**
+      - Host.cs — JP Dillingham + John Narey
+      - Scan.cs — JP Dillingham + John Narey
+      - Share.cs — JP Dillingham + John Narey
+    - IShareRepository.cs — JP Dillingham + John Narey
+    - IShareRepositoryFactory.cs — JP Dillingham + John Narey
+    - IShareService.cs — JP Dillingham + John Narey
+    - PostgresShareRepository.cs — John Narey
+    - ShareRepositoryFactory.cs — JP Dillingham + John Narey
+    - ShareScanner.cs — JP Dillingham + John Narey
+    - ShareService.cs — JP Dillingham + John Narey
+    - SoulseekFileFactory.cs — JP Dillingham + John Narey
+  - **TagSanitization/**
+    - **API/**
+      - **Controllers/**
+        - TagSanitizationController.cs — John Narey
+    - **Types/**
+      - TagSanitizationTypes.cs — John Narey
+    - ITagSanitizationService.cs — John Narey
+    - TagConsolidator.cs — John Narey
+    - TagSanitizationService.cs — John Narey
+  - **Telemetry/**
+    - **API/**
+      - MetricsController.cs — JP Dillingham + John Narey
+      - ReportsController.cs — JP Dillingham + John Narey
+    - **Types/**
+      - AnalyticsReports.cs — John Narey
+      - DirectoryDetail.cs — JP Dillingham + John Narey
+      - LeaderboardSorting.cs — JP Dillingham + John Narey
+      - PrometheusMetric.cs — JP Dillingham + John Narey
+      - SortOrder.cs — JP Dillingham + John Narey
+      - TransferExceptionDetail.cs — JP Dillingham + John Narey
+      - TransferExceptionSummary.cs — JP Dillingham + John Narey
+      - TransferSummary.cs — JP Dillingham + John Narey
+      - UserDirectionTransferSummary.cs — JP Dillingham + John Narey
+      - UserReport.cs — John Narey
+    - Metrics.cs — JP Dillingham + John Narey
+    - PrometheusService.cs — JP Dillingham + John Narey
+    - ReportsService.cs — JP Dillingham + John Narey
+    - TelemetryService.cs — JP Dillingham + John Narey
+  - **Transfers/**
+    - **API/**
+      - **Controllers/**
+        - StreamsController.cs — John Narey
+        - TransferErrorNotificationController.cs — John Narey
+        - TransfersController.cs — JP Dillingham + John Narey
+      - **DTO/**
+        - CreateFolderRequest.cs — John Narey
+        - DirectoryResponse.cs — JP Dillingham + John Narey
+        - EnqueueDownloadBatchRequest.cs — JP Dillingham + John Narey
+        - QueueDownloadRequest.cs — JP Dillingham + John Narey
+        - Transfer.cs — JP Dillingham + John Narey
+        - UserResponse.cs — JP Dillingham + John Narey
+    - **Downloads/**
+      - DownloadService.cs — JP Dillingham + John Narey
+    - **Types/**
+      - QueueStrategy.cs — JP Dillingham + John Narey
+      - RetryIncompleteStrategy.cs — JP Dillingham + John Narey
+      - Transfer.cs — JP Dillingham + John Narey
+      - TransferStateCategories.cs — JP Dillingham + John Narey
+      - Upload.cs — JP Dillingham + John Narey
+      - UploadGroup.cs — JP Dillingham + John Narey
+      - UserUploadStatistics.cs — JP Dillingham + John Narey
+    - **Uploads/**
+      - UploadGovernor.cs — JP Dillingham + John Narey
+      - UploadQueue.cs — JP Dillingham + John Narey
+      - UploadService.cs — JP Dillingham + John Narey
+    - Extensions.cs — JP Dillingham + John Narey
+    - TransferErrorNotificationService.cs — John Narey
+    - TransferService.cs — JP Dillingham + John Narey
+    - TransfersDbContext.cs — JP Dillingham + John Narey
+  - **Users/**
+    - **API/**
+      - **Controllers/**
+        - UsersController.cs — JP Dillingham + John Narey
+      - **DTO/**
+        - DirectoryContentsRequest.cs — JP Dillingham + John Narey
+        - UserDataResponse.cs — JP Dillingham + John Narey
+    - **Types/**
+      - Info.cs — JP Dillingham + John Narey
+      - Statistics.cs — JP Dillingham + John Narey
+      - Status.cs — JP Dillingham + John Narey
+      - User.cs — JP Dillingham + John Narey
+    - BrowseTracker.cs — JP Dillingham + John Narey
+    - Extensions.cs — JP Dillingham + John Narey
+    - IBrowseTracker.cs — JP Dillingham + John Narey
+    - IUserService.cs — JP Dillingham + John Narey
+    - UserService.cs — JP Dillingham + John Narey
+  - **WaveformAnalysis/**
+    - **API/**
+      - **Controllers/**
+        - WaveformController.cs — John Narey
+    - **Types/**
+      - WaveformTypes.cs — John Narey
+    - IWaveformService.cs — John Narey
+    - WaveformService.cs — John Narey
+  - Application.cs — JP Dillingham + John Narey
+  - Program.cs — JP Dillingham + John Narey
+- **extension/**
+  - background.js — John Narey
+  - browser-polyfill.js — vendored — Mozilla (webextension-polyfill, MPL-2.0)
+  - popup.js — John Narey
+- **frontend/**
+  - **src/**
+    - **components/**
+      - **BpmAnalysis/**
+        - BpmAnalysis.jsx — John Narey
+      - **Browse/**
+        - Browse.css — JP Dillingham + John Narey
+        - Browse.jsx — JP Dillingham + John Narey
+        - BrowseTree.jsx — John Narey
+        - Directory.jsx — JP Dillingham + John Narey
+        - DirectoryTree.jsx — JP Dillingham + John Narey
+      - **Chat/**
+        - Chat.css — JP Dillingham + John Narey
+        - Chat.jsx — JP Dillingham + John Narey
+        - ChatMenu.jsx — JP Dillingham + John Narey
+        - SendMessageModal.jsx — JP Dillingham + John Narey
+        - chatUtils.js — John Narey
+      - **Converter/**
+        - Converter.jsx — John Narey
+      - **Duplicates/**
+        - Duplicates.css — John Narey
+        - Duplicates.jsx — John Narey
+      - **KeyAnalysis/**
+        - KeyAnalysis.css — John Narey
+        - KeyAnalysis.jsx — John Narey
+      - **Library/**
+        - **components/**
+          - AlbumArt.jsx — John Narey
+          - AlbumDetail.jsx — John Narey
+          - AlbumsView.jsx — John Narey
+          - ArtistsView.jsx — John Narey
+          - FolderView.jsx — John Narey
+          - GenreView.jsx — John Narey
+          - PlayHistoryView.jsx — John Narey
+          - SortButton.jsx — John Narey
+          - TrackTable.jsx — John Narey
+          - YearView.jsx — John Narey
+        - Library.css — John Narey
+        - Library.jsx — John Narey
+      - **Map/**
+        - Map.css — John Narey
+        - index.jsx — JP Dillingham + John Narey
+      - **MediaPlayer/**
+        - MediaPlayer.css — John Narey
+        - index.jsx — JP Dillingham + John Narey
+      - **MetadataLookup/**
+        - MetadataLookup.css — John Narey
+        - MetadataLookup.jsx — John Narey
+        - MetadataLookupWatcher.jsx — John Narey
+      - **Notifications/**
+        - NotificationCentre.css — John Narey
+        - NotificationCentre.jsx — John Narey
+      - **Overview/**
+        - ActivityChart.jsx — John Narey
+        - ActivityHeatmap.jsx — John Narey
+        - CoverageCard.jsx — John Narey
+        - ErrorChart.jsx — John Narey
+        - FileTypeChart.jsx — John Narey
+        - GeographyCard.jsx — John Narey
+        - KpiCards.jsx — John Narey
+        - LibraryComposition.jsx — John Narey
+        - LiveTransferPanel.jsx — John Narey
+        - NotificationFeed.jsx — John Narey
+        - Overview.css — John Narey
+        - PeerRetentionCard.jsx — John Narey
+        - PopularDirectories.jsx — John Narey
+        - QueueWaitCard.jsx — John Narey
+        - RatioCard.jsx — John Narey
+        - RetryFunnel.jsx — John Narey
+        - SocialPulse.jsx — John Narey
+        - StatusStrip.jsx — John Narey
+        - TopFiles.jsx — John Narey
+        - TransferHealth.jsx — John Narey
+        - UserChatTab.jsx — John Narey
+        - UserFilesTab.jsx — John Narey
+        - UserLeaderboard.jsx — John Narey
+        - UserReportModal.jsx — John Narey
+        - UserReports.jsx — John Narey
+        - WorldMap.jsx — John Narey
+        - index.jsx — JP Dillingham + John Narey
+      - **PublicMixtape/**
+        - PublicMixtape.css — John Narey
+        - PublicMixtape.jsx — John Narey
+      - **Queue/**
+        - QueuePanel.css — John Narey
+        - QueuePanel.jsx — John Narey
+      - **Rooms/**
+        - RoomJoinModal.jsx — JP Dillingham + John Narey
+        - RoomMenu.jsx — JP Dillingham + John Narey
+        - RoomUserList.jsx — JP Dillingham + John Narey
+        - Rooms.css — JP Dillingham + John Narey
+        - Rooms.jsx — JP Dillingham + John Narey
+      - **Search/**
+        - **Detail/**
+          - FolderPickerModal.jsx — John Narey
+          - SearchDetail.jsx — JP Dillingham + John Narey
+          - SearchDetailHeader.jsx — JP Dillingham + John Narey
+        - **List/**
+          - SearchList.jsx — JP Dillingham + John Narey
+          - SearchListRow.jsx — JP Dillingham + John Narey
+        - Response.jsx — JP Dillingham + John Narey
+        - Search.css — JP Dillingham + John Narey
+        - SearchStatusIcon.jsx — JP Dillingham + John Narey
+        - Searches.jsx — JP Dillingham + John Narey
+      - **Shared/**
+        - CodeEditor.jsx — JP Dillingham + John Narey
+        - Div.jsx — JP Dillingham + John Narey
+        - ErrorSegment.jsx — JP Dillingham + John Narey
+        - FileList.jsx — JP Dillingham + John Narey
+        - FolderPicker.jsx — John Narey
+        - KeyFormatToggle.jsx — John Narey
+        - LoaderSegment.jsx — JP Dillingham + John Narey
+        - Logo.jsx — JP Dillingham + John Narey
+        - Nbsp.jsx — JP Dillingham + John Narey
+        - PageInfo.css — John Narey
+        - PageInfo.jsx — John Narey
+        - PlaceholderSegment.jsx — JP Dillingham + John Narey
+        - ResonanceMark.jsx — John Narey
+        - ShrinkableButton.jsx — JP Dillingham + John Narey
+        - ShrinkableDropdownButton.jsx — JP Dillingham + John Narey
+        - Switch.jsx — JP Dillingham + John Narey
+        - UsernameLink.jsx — John Narey
+        - index.js — JP Dillingham + John Narey
+      - **System/**
+        - **Data/**
+          - index.jsx — JP Dillingham + John Narey
+        - **DatabaseViewer/**
+          - DatabaseViewer.css — John Narey
+          - index.jsx — JP Dillingham + John Narey
+        - **Events/**
+          - index.jsx — JP Dillingham + John Narey
+        - **Files/**
+          - Explorer.jsx — JP Dillingham + John Narey
+          - Files.css — JP Dillingham + John Narey
+          - index.jsx — JP Dillingham + John Narey
+        - **Info/**
+          - index.jsx — JP Dillingham + John Narey
+        - **Logs/**
+          - index.jsx — JP Dillingham + John Narey
+        - **Options/**
+          - BrowseRateLimitSection.jsx — John Narey
+          - DebugModal.jsx — JP Dillingham + John Narey
+          - EditModal.jsx — JP Dillingham + John Narey
+          - FfmpegSection.jsx — John Narey
+          - QoSSection.jsx — John Narey
+          - SharesSection.jsx — John Narey
+          - TransferErrorNotificationSection.jsx — John Narey
+          - YtDlpOptionsSection.jsx — John Narey
+          - index.jsx — JP Dillingham + John Narey
+        - **Permissions/**
+          - index.jsx — JP Dillingham + John Narey
+        - **Shares/**
+          - ContentsModal.jsx — JP Dillingham + John Narey
+          - ExclusionTable.jsx — JP Dillingham + John Narey
+          - ShareTable.jsx — JP Dillingham + John Narey
+          - index.jsx — JP Dillingham + John Narey
+        - **UserManagement/**
+          - index.jsx — JP Dillingham + John Narey
+        - System.css — JP Dillingham + John Narey
+        - System.jsx — JP Dillingham + John Narey
+      - **TagEditor/**
+        - TagEditor.css — John Narey
+        - TagEditor.jsx — John Narey
+      - **TagSanitization/**
+        - TagSanitization.css — John Narey
+        - TagSanitization.jsx — John Narey
+      - **Tags/**
+        - Tags.css — John Narey
+        - Tags.jsx — John Narey
+      - **TrackAnalysis/**
+        - TrackAnalysis.css — John Narey
+        - TrackAnalysis.jsx — John Narey
+        - WaveformAnalysis.css — John Narey
+        - WaveformAnalysis.jsx — John Narey
+      - **Transfers/**
+        - ActivityLog.jsx — John Narey
+        - DownloadsTable.jsx — John Narey
+        - FindAlternateModal.jsx — John Narey
+        - TransferDetails.jsx — JP Dillingham + John Narey
+        - TransferGroup.jsx — JP Dillingham + John Narey
+        - TransferList.jsx — JP Dillingham + John Narey
+        - Transfers.css — JP Dillingham + John Narey
+        - Transfers.jsx — JP Dillingham + John Narey
+        - TransfersHeader.jsx — JP Dillingham + John Narey
+        - UploadsTable.jsx — John Narey
+      - **Users/**
+        - User.jsx — JP Dillingham + John Narey
+        - Users.css — JP Dillingham + John Narey
+        - Users.jsx — JP Dillingham + John Narey
+      - **YtDlp/**
+        - AddPane.jsx — John Narey
+        - EventsPane.jsx — John Narey
+        - JobList.jsx — John Narey
+        - SearchPane.jsx — John Narey
+        - SubscriptionsPane.jsx — John Narey
+        - TagErrorList.jsx — John Narey
+        - YtDlp.css — John Narey
+        - YtDlp.jsx — John Narey
+      - App.css — JP Dillingham + John Narey
+      - App.jsx — JP Dillingham + John Narey
+      - AppContext.js — JP Dillingham + John Narey
+      - ConnectionScreen.jsx — John Narey
+      - LoginForm.jsx — JP Dillingham + John Narey
+      - Setup.jsx — John Narey
+    - **context/**
+      - LibraryActivityContext.jsx — John Narey
+      - PlayerContext.jsx — John Narey
+      - TagEditActivityContext.jsx — John Narey
+    - **hooks/**
+      - useCast.js — John Narey
+      - useResizablePanel.js — John Narey
+    - **lib/**
+      - ambientColour.js — John Narey
+      - api.js — JP Dillingham + John Narey
+      - appUsers.js — John Narey
+      - application.js — JP Dillingham + John Narey
+      - autoMix.js — John Narey
+      - bpmAnalysis.js — John Narey
+      - camelot.js — John Narey
+      - cast.js — John Narey
+      - chartTheme.js — John Narey
+      - chat.js — JP Dillingham + John Narey
+      - chatEvents.js — John Narey
+      - converter.js — John Narey
+      - countryCentroids.js — John Narey
+      - credentials.js — John Narey
+      - database.js — John Narey
+      - dedup.js — John Narey
+      - dedup.test.js — John Narey
+      - events.js — JP Dillingham + John Narey
+      - ffmpeg.js — John Narey
+      - files.js — JP Dillingham + John Narey
+      - folderDedup.js — John Narey
+      - fuzzy.js — John Narey
+      - hubFactory.js — JP Dillingham + John Narey
+      - keyAnalysis.js — John Narey
+      - libraryActivity.js — John Narey
+      - logs.js — John Narey
+      - metadataLookup.js — John Narey
+      - metrics.js — John Narey
+      - mixtapes.js — John Narey
+      - musicLibrary.js — John Narey
+      - network.js — John Narey
+      - options.js — JP Dillingham + John Narey
+      - permissions.js — John Narey
+      - prefs.js — John Narey
+      - relay.js — JP Dillingham + John Narey
+      - reports.js — John Narey
+      - rooms.js — JP Dillingham + John Narey
+      - searchMetadata.js — John Narey
+      - searchMetadata.test.js — John Narey
+      - searches.js — JP Dillingham + John Narey
+      - searches.test.js — JP Dillingham + John Narey
+      - server.js — JP Dillingham + John Narey
+      - session.js — JP Dillingham + John Narey
+      - shares.js — JP Dillingham + John Narey
+      - sound.js — John Narey
+      - streamSignatures.js — John Narey
+      - tagGuess.js — John Narey
+      - tagSanitization.js — John Narey
+      - tags.js — John Narey
+      - token.js — JP Dillingham + John Narey
+      - transfers.js — JP Dillingham + John Narey
+      - useKeyFormat.js — John Narey
+      - users.js — JP Dillingham + John Narey
+      - util.js — JP Dillingham + John Narey
+      - util.test.js — JP Dillingham + John Narey
+      - ytdlp.js — John Narey
+    - config.js — JP Dillingham + John Narey
+    - index.jsx — JP Dillingham + John Narey
+    - setupProxy.js — John Narey
+- **mobile/**
+  - **plugins/**
+    - withAndroidAuto.js — John Narey
+    - withOldArch.js — John Narey
+  - **src/**
+    - **api/**
+      - application.ts — John Narey
+      - applicationHub.ts — John Narey
+      - chat.ts — John Narey
+      - client.ts — John Narey
+      - debugLog.ts — John Narey
+      - libraryActivity.ts — John Narey
+      - libraryActivityHub.ts — John Narey
+      - mixtapes.ts — John Narey
+      - mixtapesHub.ts — John Narey
+      - musicLibrary.ts — John Narey
+      - remoteLogger.ts — John Narey
+      - rooms.ts — John Narey
+      - searchHub.ts — John Narey
+      - searches.ts — John Narey
+      - session.ts — John Narey
+      - streamSignatures.ts — John Narey
+      - transfers.ts — John Narey
+      - users.ts — John Narey
+    - **components/**
+      - BottomSheet.tsx — John Narey
+      - ConnectionBanner.tsx — John Narey
+      - PlaceholderScreen.tsx — John Narey
+      - PlayerMiniBar.tsx — John Narey
+      - PlayerOverlay.tsx — John Narey
+    - **context/**
+      - CastContext.tsx — John Narey
+      - PlayerContext.tsx — John Narey
+      - ThemeContext.tsx — John Narey
+    - **lib/**
+      - haptics.ts — John Narey
+    - **navigation/**
+      - AuthStack.tsx — John Narey
+      - MainTabs.tsx — John Narey
+      - RootNavigator.tsx — John Narey
+    - **screens/**
+      - **auth/**
+        - ConnectScreen.tsx — John Narey
+        - LoginScreen.tsx — John Narey
+      - **library/**
+        - LibraryScreen.tsx — John Narey
+      - **more/**
+        - AnalysisScreen.tsx — John Narey
+        - BrowseScreen.tsx — John Narey
+        - ChatConversationScreen.tsx — John Narey
+        - ChatScreen.tsx — John Narey
+        - MoreScreen.tsx — John Narey
+        - NetworkLogScreen.tsx — John Narey
+        - OverviewScreen.tsx — John Narey
+        - RoomDetailScreen.tsx — John Narey
+        - RoomsScreen.tsx — John Narey
+        - SettingsScreen.tsx — John Narey
+        - SystemScreen.tsx — John Narey
+        - TagsScreen.tsx — John Narey
+      - **search/**
+        - BrowseFolderScreen.tsx — John Narey
+        - SearchHomeScreen.tsx — John Narey
+        - SearchResultsScreen.tsx — John Narey
+        - SearchScreen.tsx — John Narey
+      - **transfers/**
+        - TransfersScreen.tsx — John Narey
+    - **services/**
+      - androidAuto.ts — John Narey
+      - artworkCache.ts — John Narey
+      - batteryOptimization.ts — John Narey
+      - connectionMonitor.ts — John Narey
+      - harExport.ts — John Narey
+      - id3Reader.ts — John Narey
+      - libraryCache.ts — John Narey
+      - localMusicLibrary.ts — John Narey
+      - metadataDb.ts — John Narey
+      - notificationService.ts — John Narey
+      - playback-service.ts — John Narey
+      - playerSetup.ts — John Narey
+    - **store/**
+      - appSettingsStore.ts — John Narey
+      - auth.ts — John Narey
+      - conversationStore.ts — John Narey
+      - libraryActivityStore.ts — John Narey
+      - librarySettingsStore.ts — John Narey
+      - librarySyncStore.ts — John Narey
+      - mixtapeStore.ts — John Narey
+      - networkLogStore.ts — John Narey
+      - playerUIStore.ts — John Narey
+      - roomStore.ts — John Narey
+      - transferStore.ts — John Narey
+    - theme.ts — John Narey
+  - App.tsx — John Narey
+  - app.config.js — John Narey
+  - eslint.config.js — John Narey
+  - index.ts — John Narey
