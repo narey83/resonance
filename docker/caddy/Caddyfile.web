@@ -1,0 +1,8 @@
+# Static SPA hosting for the web image. No proxying — the stack's main Caddy
+# routes /api and /hub to the backend and everything else here.
+:80 {
+	root * /srv
+	encode gzip
+	try_files {path} /index.html
+	file_server
+}

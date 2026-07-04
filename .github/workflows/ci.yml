@@ -59,6 +59,20 @@ jobs:
           ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=no narey@192.168.0.254 \
             /home/narey/projects/resonance/bin/ci-deploy
 
+  images:
+    name: Build images
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build + smoke-test prod images on the server
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_KEY }}" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=no narey@192.168.0.254 \
+            /home/narey/projects/resonance/bin/ci-build-images
+
   mobile:
     name: Mobile (Expo)
     runs-on: ubuntu-latest

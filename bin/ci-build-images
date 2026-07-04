@@ -1,0 +1,53 @@
+#!/bin/bash
+# Runs ON the prod server (invoked over SSH by the CI images job).
+# Builds the production images from the already-deployed checkout and smoke
+# tests both before tagging :latest. Images stay in the local docker daemon;
+# prod still runs live-source — these accumulate until we cut over.
+set -euo pipefail
+
+cd /home/narey/projects/resonance
+sha=$(git rev-parse --short HEAD)
+
+docker build -q -f docker/prod.Dockerfile -t resonance-api:$sha .
+docker build -q -f docker/web.Dockerfile -t resonance-web:$sha .
+
+cleanup() { docker rm -f resonance-api-smoke resonance-web-smoke >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+cleanup
+
+# Bogus soulseek creds so the smoke instance can't log in and kick the live
+# client's session; the real DB is safe (EnsureCreated is a no-op).
+cat > /tmp/resonance-smoke.yml <<EOF
+database:
+  type: postgresql
+  connection_string: Host=192.168.0.254;Database=resonance;Username=resonance;Password=resonance
+soulseek:
+  username: resonance-image-smoke
+  password: bogus
+EOF
+
+docker run -d --name resonance-api-smoke -p 127.0.0.1:5099:5030 \
+  -v /tmp/resonance-smoke.yml:/smoke.yml:ro -e RESONANCE_CONFIG=/smoke.yml \
+  resonance-api:$sha >/dev/null
+docker run -d --name resonance-web-smoke -p 127.0.0.1:5098:80 \
+  resonance-web:$sha >/dev/null
+
+ok_api=; ok_web=
+for i in $(seq 1 30); do
+  api=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5099/api/v0/application || true)
+  web=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5098/ || true)
+  [ "$api" = "200" ] || [ "$api" = "401" ] && ok_api=1
+  [ "$web" = "200" ] && ok_web=1
+  [ -n "$ok_api" ] && [ -n "$ok_web" ] && break
+  sleep 4
+done
+
+if [ -z "$ok_api" ] || [ -z "$ok_web" ]; then
+  echo "smoke failed: api=${api:-?} web=${web:-?}" >&2
+  docker logs resonance-api-smoke 2>&1 | tail -20 >&2
+  exit 1
+fi
+
+docker tag resonance-api:$sha resonance-api:latest
+docker tag resonance-web:$sha resonance-web:latest
+echo "images ok: resonance-api:$sha resonance-web:$sha (smoke passed, tagged latest)"
