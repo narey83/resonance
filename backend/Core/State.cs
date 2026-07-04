@@ -62,6 +62,7 @@ namespace resonance
         public DistributedNetworkState DistributedNetwork { get; init; } = new DistributedNetworkState();
         public ShareState Shares { get; init; } = new ShareState();
         public DiskState Disk { get; init; } = new DiskState();
+        public SystemStatsState System { get; init; } = new SystemStatsState();
         public string[] Rooms { get; init; } = Array.Empty<string>();
         public User[] Users { get; init; } = Array.Empty<User>();
     }
@@ -71,6 +72,31 @@ namespace resonance
         public long AvailableBytes { get; init; }
         public long TotalBytes { get; init; }
         public bool DownloadsBlocked { get; init; }
+    }
+
+    public record SystemStatsState
+    {
+        public DateTime SampledAt { get; init; }
+        public double? HostCpuPercent { get; init; }
+        public long HostMemoryUsedBytes { get; init; }
+        public long HostMemoryTotalBytes { get; init; }
+        public ContainerStatsState[] Containers { get; init; } = Array.Empty<ContainerStatsState>();
+        public VolumeStatsState[] Volumes { get; init; } = Array.Empty<VolumeStatsState>();
+    }
+
+    public record VolumeStatsState
+    {
+        public string Name { get; init; }
+        public long UsedBytes { get; init; }
+        public long TotalBytes { get; init; }
+    }
+
+    public record ContainerStatsState
+    {
+        public string Name { get; init; }
+        public double CpuPercent { get; init; }
+        public long MemoryUsageBytes { get; init; }
+        public long MemoryLimitBytes { get; init; }
     }
 
     public record HealthState

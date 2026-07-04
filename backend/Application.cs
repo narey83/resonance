@@ -1373,6 +1373,47 @@ namespace resonance
                 },
                 Disk = GetDiskState(),
             });
+
+            _ = Task.Run(() => UpdateSystemStatsAsync())
+                .ContinueWith(task => Log.Error(task.Exception, "Failed to update system stats: {Message}", task.Exception?.Message), TaskContinuationOptions.OnlyOnFaulted);
+        }
+
+        private async Task UpdateSystemStatsAsync()
+        {
+            var results = await Task.WhenAll((Options.System.Containers ?? Array.Empty<string>())
+                .Select(async name => (Name: name, Stats: await SystemStats.GetContainerStatsAsync(name))));
+
+            var memory = SystemStats.GetHostMemory();
+
+            // ponytail: two fixed volumes (music + system disk); make configurable if more appear
+            var volumes = new (string Name, string Path)[] { ("Music", Options.Directories.Downloads), ("System", "/") }
+                .Select(v => DiskSpace.TryGet(v.Path, out var available, out var total)
+                    ? new VolumeStatsState { Name = v.Name, UsedBytes = total - available, TotalBytes = total }
+                    : null)
+                .Where(v => v is not null)
+                .ToArray();
+
+            State.SetValue(state => state with
+            {
+                System = new SystemStatsState
+                {
+                    Volumes = volumes,
+                    SampledAt = DateTime.UtcNow,
+                    HostCpuPercent = SystemStats.GetHostCpuPercent(),
+                    HostMemoryUsedBytes = memory?.UsedBytes ?? 0,
+                    HostMemoryTotalBytes = memory?.TotalBytes ?? 0,
+                    Containers = results
+                        .Where(r => r.Stats is not null)
+                        .Select(r => new ContainerStatsState
+                        {
+                            Name = r.Name,
+                            CpuPercent = r.Stats.Value.CpuPercent,
+                            MemoryUsageBytes = r.Stats.Value.MemoryUsageBytes,
+                            MemoryLimitBytes = r.Stats.Value.MemoryLimitBytes,
+                        })
+                        .ToArray(),
+                },
+            });
         }
 
         private DiskState GetDiskState()

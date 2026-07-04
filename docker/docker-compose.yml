@@ -18,6 +18,12 @@
 #
 # RESONANCE_SRC : project source checkout that gets bind-mounted (default: server path).
 # RESONANCE_SCRATCH : throwaway build-cache dir owned by 1000 (default below).
+# DOCKER_GID : gid of the host's docker group (`getent group docker`), so the
+#              backend (uid 1000) can read /var/run/docker.sock for the system
+#              stats shown on the Overview page. Wrong gid = feature silently off.
+#
+# postgres-db is shared infrastructure defined elsewhere; set its resource
+# limits where that container is defined, not here.
 #
 # Build contexts are local to this directory, so the stack is self-contained and
 # can live anywhere (e.g. /home/narey/containers/resonance) independent of the
@@ -32,6 +38,14 @@ services:
     container_name: resonance-backend
     network_mode: host
     user: "1000:1000"
+    # docker group, for read access to docker.sock (system stats monitoring).
+    group_add:
+      - "${DOCKER_GID:-990}"
+    # Resource ceilings are tunables — sized from observed usage (dotnet watch
+    # idles ~5g on the 2-core/15g server) so a runaway can't starve the host,
+    # which runs many other services.
+    mem_limit: 8g
+    cpus: 1.5
     working_dir: /src
     # --no-launch-profile: launchSettings.json hardcodes a host-only RESONANCE_APP_DIR
     # and would override the container env below. We supply the container values here.
@@ -55,6 +69,8 @@ services:
       # Downloads / incomplete live outside the project at absolute paths referenced by resonance.yml.
       - /mnt/data/music:/mnt/data/music
       - /mnt/data/incomplete:/mnt/data/incomplete
+      # Read-only Docker API access for per-container CPU/memory stats.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: unless-stopped
 
   frontend:
@@ -62,6 +78,8 @@ services:
     container_name: resonance-frontend
     network_mode: host
     user: "1000:1000"
+    mem_limit: 3g
+    cpus: 1
     working_dir: /src/frontend
     command: sh -c "npm install && npm start"
     environment:
@@ -91,6 +109,8 @@ services:
     image: resonance-caddy
     container_name: resonance-caddy
     network_mode: host
+    mem_limit: 256m
+    cpus: 0.5
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:

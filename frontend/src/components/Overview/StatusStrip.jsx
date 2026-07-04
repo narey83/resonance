@@ -36,6 +36,7 @@ import {
   ArrowUp,
   Check,
   CloudOff,
+  Cpu,
   FolderOpen,
   Globe,
   HardDrive,
@@ -66,6 +67,7 @@ const StatusStrip = ({
   onLogout,
   server,
   shares,
+  system,
   uploads,
   user,
 }) => {
@@ -537,6 +539,29 @@ const StatusStrip = ({
             {disk.downloadsBlocked && (
               <span className="status-chip danger">Downloads paused</span>
             )}
+          </div>
+        </>
+      )}
+
+      {/* Host CPU and memory */}
+      {system?.hostMemoryTotalBytes > 0 && (
+        <>
+          <div className="status-strip-sep" />
+          <div
+            className="status-strip-item"
+            title={`Host: ${formatBytes(system.hostMemoryUsedBytes)} of ${formatBytes(system.hostMemoryTotalBytes)} memory in use`}
+          >
+            <Cpu
+              className="status-icon"
+              size={13}
+              strokeWidth={1.75}
+            />
+            <span className="status-strip-text">
+              {system.hostCpuPercent == null
+                ? '—'
+                : `${system.hostCpuPercent.toFixed(0)}%`}{' '}
+              · {formatBytes(system.hostMemoryUsedBytes)}
+            </span>
           </div>
         </>
       )}

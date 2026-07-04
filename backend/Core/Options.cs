@@ -258,6 +258,12 @@ namespace resonance
         public DiskOptions Disk { get; init; } = new DiskOptions();
 
         /// <summary>
+        ///     Gets system monitoring options.
+        /// </summary>
+        [Validate]
+        public SystemOptions System { get; init; } = new SystemOptions();
+
+        /// <summary>
         ///     Gets share options.
         /// </summary>
         [Validate]
@@ -846,6 +852,18 @@ namespace resonance
             [Description("minimum free disk space in megabytes; new downloads are blocked below this (unset = disabled)")]
             [Range(1, int.MaxValue)]
             public int? MinimumFreeMegabytes { get; init; }
+        }
+
+        /// <summary>
+        ///     System monitoring options.
+        /// </summary>
+        public class SystemOptions
+        {
+            /// <summary>
+            ///     Gets the docker container names to monitor for CPU/memory.
+            /// </summary>
+            [Description("docker container names to monitor for cpu/memory (empty = disabled)")]
+            public string[] Containers { get; init; } = new[] { "resonance-backend", "resonance-frontend", "resonance-caddy", "postgres-db" };
         }
 
         /// <summary>
