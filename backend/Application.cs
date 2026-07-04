@@ -57,6 +57,7 @@ namespace resonance
     using Microsoft.AspNetCore.SignalR;
     using Microsoft.Extensions.Caching.Memory;
     using Microsoft.Extensions.Hosting;
+    using resonance.Common;
     using resonance.Configuration;
     using resonance.Core;
     using resonance.Core.API;
@@ -1115,13 +1116,26 @@ namespace resonance
 
             var logger = Loggers.GetOrAdd(source, Log.ForContext("Context", "Soulseek").ForContext("SubContext", source));
 
+            var level = TranslateLogLevel(args.Level);
+
+            // Benign peer churn: a remote peer dropped the TCP connection before we could
+            // respond to its message (e.g. a FolderContentsRequest). Don't surface this as a
+            // warning; it's normal Soulseek network behaviour. (see logging convention: P2P
+            // transfer failures = WRN, benign transport hops = DBG)
+            if (level == LogEventLevel.Warning
+                && args.Message.Contains("Error handling peer message")
+                && args.Message.Contains("connection is closed"))
+            {
+                level = LogEventLevel.Debug;
+            }
+
             if (args.IncludesException && OptionsAtStartup.Debug)
             {
-                logger.Write(TranslateLogLevel(args.Level), exception: args.Exception, "{@Message}", args.Message);
+                logger.Write(level, exception: args.Exception, "{@Message}", args.Message);
                 return;
             }
 
-            logger.Write(TranslateLogLevel(args.Level), "{@Message}", args.Message);
+            logger.Write(level, "{@Message}", args.Message);
         }
 
         private void Client_Disconnected(object sender, SoulseekClientDisconnectedEventArgs args)
@@ -1357,7 +1371,62 @@ namespace resonance
                         },
                     },
                 },
+                Disk = GetDiskState(),
             });
+
+            _ = Task.Run(() => UpdateSystemStatsAsync())
+                .ContinueWith(task => Log.Error(task.Exception, "Failed to update system stats: {Message}", task.Exception?.Message), TaskContinuationOptions.OnlyOnFaulted);
+        }
+
+        private async Task UpdateSystemStatsAsync()
+        {
+            var results = await Task.WhenAll((Options.System.Containers ?? Array.Empty<string>())
+                .Select(async name => (Name: name, Stats: await SystemStats.GetContainerStatsAsync(name))));
+
+            var memory = SystemStats.GetHostMemory();
+
+            // ponytail: two fixed volumes (music + system disk); make configurable if more appear
+            var volumes = new (string Name, string Path)[] { ("Music", Options.Directories.Downloads), ("System", "/") }
+                .Select(v => DiskSpace.TryGet(v.Path, out var available, out var total)
+                    ? new VolumeStatsState { Name = v.Name, UsedBytes = total - available, TotalBytes = total }
+                    : null)
+                .Where(v => v is not null)
+                .ToArray();
+
+            State.SetValue(state => state with
+            {
+                System = new SystemStatsState
+                {
+                    Volumes = volumes,
+                    SampledAt = DateTime.UtcNow,
+                    HostCpuPercent = SystemStats.GetHostCpuPercent(),
+                    HostMemoryUsedBytes = memory?.UsedBytes ?? 0,
+                    HostMemoryTotalBytes = memory?.TotalBytes ?? 0,
+                    Containers = results
+                        .Where(r => r.Stats is not null)
+                        .Select(r => new ContainerStatsState
+                        {
+                            Name = r.Name,
+                            CpuPercent = r.Stats.Value.CpuPercent,
+                            MemoryUsageBytes = r.Stats.Value.MemoryUsageBytes,
+                            MemoryLimitBytes = r.Stats.Value.MemoryLimitBytes,
+                        })
+                        .ToArray(),
+                },
+            });
+        }
+
+        private DiskState GetDiskState()
+        {
+            var downloads = Options.Directories.Downloads;
+            DiskSpace.TryGet(downloads, out var availableBytes, out var totalBytes);
+
+            return new DiskState
+            {
+                AvailableBytes = availableBytes,
+                TotalBytes = totalBytes,
+                DownloadsBlocked = DiskSpace.IsBelowLimit(downloads, Options.Disk.MinimumFreeMegabytes),
+            };
         }
 
         private void Clock_EveryFiveMinutes(object sender, ClockEventArgs e)

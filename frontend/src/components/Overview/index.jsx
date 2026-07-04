@@ -56,6 +56,7 @@ import QueueWaitCard from './QueueWaitCard';
 import RatioCard from './RatioCard';
 import RetryFunnel from './RetryFunnel';
 import SocialPulse from './SocialPulse';
+import SystemStatsCard from './SystemStatsCard';
 import TopFiles from './TopFiles';
 import TransferHealth from './TransferHealth';
 import UserLeaderboard from './UserLeaderboard';
@@ -506,6 +507,7 @@ const Overview = () => {
                         uploadedFiles={coverage?.uploadedFiles}
                       />
                     </div>
+                    <SystemStatsCard />
                   </section>
                 )}
 

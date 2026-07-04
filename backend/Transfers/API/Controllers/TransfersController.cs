@@ -275,6 +275,11 @@ namespace resonance.Transfers.API
 
                 return StatusCode(201, new { Enqueued = enqueued, Failed = failed });
             }
+            catch (InsufficientDiskSpaceException ex)
+            {
+                Log.Warning("Refused to enqueue {Count} files for {Username}: {Message}", requests.Count(), username, ex.Message);
+                return StatusCode(507, ex.Message);
+            }
             catch (Exception ex)
             {
                 Log.Error(ex, "Failed to enqueue {Count} files for {Username}: {Message}", requests.Count(), username, ex.Message);

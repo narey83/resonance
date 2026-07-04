@@ -60,6 +60,28 @@ public static class YtDlpMetadataParser
         // spaces on both sides (to not split hyphenated words) but may be doubled/tripled
         // (e.g. "Artist -- Title"); en/em dashes are unambiguous and need a space on one side.
         var separatorMatch = Regex.Match(rawTitle, @"\s+-+\s+|\s*[–—]+\s+|\s+[–—]+\s*");
+        if (!separatorMatch.Success)
+        {
+            // Dashes glued to one side: "Pfirter- Oppression", "nthng -There Is A Place For Me"
+            separatorMatch = Regex.Match(rawTitle, @"(?<=\S)-+\s+|\s+-+(?=\S)");
+        }
+
+        if (!separatorMatch.Success)
+        {
+            // Colon separator: "DJ Disrespect: Transition (Athletic Mix)"
+            separatorMatch = Regex.Match(rawTitle, @"(?<=\S):\s+");
+        }
+
+        if (!separatorMatch.Success)
+        {
+            // Last resort, bare dash with no spaces: "Artist-Title". Scoped to before any
+            // bracket so "(Some Remix)" and catalogue numbers like [TECH-UM003] can't split.
+            // ponytail: hyphenated artist names ("Hi-Tech") will mis-split; accepted trade-off.
+            var bracketIdx = rawTitle.IndexOfAny(['[', '(']);
+            var scope = bracketIdx >= 0 ? rawTitle[..bracketIdx] : rawTitle;
+            separatorMatch = Regex.Match(scope, @"(?<=\S)-+(?=\S)");
+        }
+
         var dashIdx = separatorMatch.Success ? separatorMatch.Index : -1;
 
         if (dashIdx > 0)

@@ -34,6 +34,7 @@ namespace resonance.Mixtapes
     using System.Data;
     using System.Data.Common;
     using Npgsql;
+    using resonance.Common;
 
     public class MixtapeRepository
     {
@@ -245,7 +246,7 @@ namespace resonance.Mixtapes
             cmd.CommandText = UsePostgres
                 ? $"SELECT DISTINCT mixtape_id FROM {MT} WHERE file_path LIKE @p"
                 : $"SELECT DISTINCT mixtape_id FROM {MT} WHERE file_path LIKE @p ESCAPE '\\'";
-            AddParam(cmd, "@p", EscapeLike(oldPrefix) + "%");
+            AddParam(cmd, "@p", EscapeLike(MusicPath.ToRelative(oldPrefix)) + "%");
             using var r = cmd.ExecuteReader();
             var ids = new List<string>();
             while (r.Read())
@@ -267,9 +268,10 @@ namespace resonance.Mixtapes
                 : $@"UPDATE {MT}
                      SET file_path = @new || SUBSTR(file_path, LENGTH(@old) + 1)
                      WHERE file_path LIKE @pattern ESCAPE '\'";
-            AddParam(cmd, "@old", oldPrefix);
-            AddParam(cmd, "@new", newPrefix);
-            AddParam(cmd, "@pattern", EscapeLike(oldPrefix) + "%");
+            var relOld = MusicPath.ToRelative(oldPrefix);
+            AddParam(cmd, "@old", relOld);
+            AddParam(cmd, "@new", MusicPath.ToRelative(newPrefix));
+            AddParam(cmd, "@pattern", EscapeLike(relOld) + "%");
             return cmd.ExecuteNonQuery();
         }
 
@@ -307,7 +309,7 @@ namespace resonance.Mixtapes
         {
             AddParam(cmd, "@id", t.Id);
             AddParam(cmd, "@mid", t.MixtapeId);
-            AddParam(cmd, "@path", t.FilePath);
+            AddParam(cmd, "@path", MusicPath.ToRelative(t.FilePath));
             AddParam(cmd, "@title", (object?)t.Title ?? DBNull.Value);
             AddParam(cmd, "@artist", (object?)t.Artist ?? DBNull.Value);
             AddParam(cmd, "@album", (object?)t.Album ?? DBNull.Value);
@@ -328,7 +330,7 @@ namespace resonance.Mixtapes
         private static MixtapeTrack ReadTrack(DbDataReader r) => new(
             r.GetString(0),
             r.GetString(1),
-            r.GetString(2),
+            MusicPath.ToAbsolute(r.GetString(2)),
             r.IsDBNull(3) ? null : r.GetString(3),
             r.IsDBNull(4) ? null : r.GetString(4),
             r.IsDBNull(5) ? null : r.GetString(5),

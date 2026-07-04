@@ -215,6 +215,16 @@ const SCHEMA = [
         placeholder: '3',
         type: 'number',
       },
+      {
+        description:
+          'Block new Soulseek and yt-dlp downloads when free disk space on the downloads volume falls below this many megabytes. Leave blank to disable.',
+        label: 'Safe Free-Space Limit (MB)',
+        min: 1,
+        nullable: true,
+        path: ['disk', 'minimum_free_megabytes'],
+        placeholder: 'disabled',
+        type: 'number',
+      },
     ],
     group: 'Transfers',
     title: 'Downloads',

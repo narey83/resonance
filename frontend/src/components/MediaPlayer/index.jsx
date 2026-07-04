@@ -598,6 +598,20 @@ const MediaPlayer = () => {
     }
   };
 
+  const handlePrev = () => {
+    const t = googleCast.connected
+      ? googleCast.castCurrentTime
+      : audioRef.current?.currentTime ?? 0;
+    // ponytail: standard back semantics — restart if >3s in, else previous track
+    if (t > 3 || !hasQueue) {
+      if (googleCast.connected) googleCast.castSeek(0);
+      else if (audioRef.current) audioRef.current.currentTime = 0;
+      return;
+    }
+
+    prev();
+  };
+
   const handleSeek = (event) => {
     const dur =
       googleCast.connected && googleCast.castDuration > 0
@@ -889,8 +903,7 @@ const MediaPlayer = () => {
                 </button>
                 <button
                   className="mp-expanded-ctrl hover-fx"
-                  disabled={!hasQueue}
-                  onClick={prev}
+                  onClick={handlePrev}
                   title="Previous track"
                   type="button"
                 >
@@ -1145,8 +1158,7 @@ const MediaPlayer = () => {
 
             <button
               className="media-player-btn media-player-ctrl-btn hover-fx"
-              disabled={!hasQueue}
-              onClick={prev}
+              onClick={handlePrev}
               title="Previous track"
               type="button"
             >

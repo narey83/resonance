@@ -31,6 +31,8 @@ namespace Resonance.Integrations.YtDlp.Data;
 
 using System;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using resonance.Common;
 using Resonance.Integrations.YtDlp.Types;
 
 public class YtDlpDbContext : DbContext
@@ -50,6 +52,23 @@ public class YtDlpDbContext : DbContext
         {
             modelBuilder.HasDefaultSchema("ytdlp");
         }
+
+        // Persist download output paths relative to the music root; resolve to absolute on read.
+        var pathConverter = new ValueConverter<string, string>(
+            v => MusicPath.ToRelative(v),
+            v => MusicPath.ToAbsolute(v));
+
+        modelBuilder.Entity<YtDlpJob>()
+            .Property(e => e.OutputDirectory)
+            .HasConversion(pathConverter);
+
+        modelBuilder.Entity<YtDlpTrack>()
+            .Property(e => e.FilePath)
+            .HasConversion(pathConverter);
+
+        modelBuilder.Entity<YtDlpSubscription>()
+            .Property(e => e.OutputDirectoryOverride)
+            .HasConversion(pathConverter);
 
         modelBuilder.Entity<YtDlpJob>()
             .Property(e => e.State)

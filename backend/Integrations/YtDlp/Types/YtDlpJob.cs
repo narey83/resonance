@@ -45,6 +45,10 @@ public class YtDlpJob
 {
     public Guid Id { get; init; } = Guid.NewGuid();
     public string Url { get; init; } = string.Empty;
+
+    // Set when the subscription poller auto-spawned this job; null for manual downloads.
+    // Lets the UI collapse auto-downloads under their subscription instead of listing them loose.
+    public Guid? SubscriptionId { get; init; }
     public string Title { get; set; } = string.Empty;
     public string Uploader { get; set; } = string.Empty;
     public string? ThumbnailUrl { get; set; }

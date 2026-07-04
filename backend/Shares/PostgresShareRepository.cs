@@ -35,6 +35,7 @@ namespace resonance.Shares
     using System.Linq;
     using System.Text;
     using Npgsql;
+    using resonance.Common;
     using Serilog;
     using Soulseek;
 
@@ -168,7 +169,7 @@ namespace resonance.Shares
                 return default;
             }
 
-            return (reader.GetString(0), reader.GetInt64(1));
+            return (MusicPath.ToAbsolute(reader.GetString(0)), reader.GetInt64(1));
         }
 
         public Scan FindLatestScan()
@@ -222,7 +223,7 @@ namespace resonance.Shares
 
                 var record = new CachedShareFile(
                     MaskedFilename: reader.GetString(0),
-                    OriginalFilename: reader.GetString(1),
+                    OriginalFilename: MusicPath.ToAbsolute(reader.GetString(1)),
                     Size: reader.GetInt64(2),
                     TouchedAt: touchedAt);
 
@@ -270,7 +271,7 @@ namespace resonance.Shares
 
                     sql.Append($"(@host,@m{i},@o{i},@s{i},@t{i},@c{i},@e{i},@a{i},@g{i},@ts)");
                     cmd.Parameters.AddWithValue($"m{i}", u.MaskedFilename);
-                    cmd.Parameters.AddWithValue($"o{i}", u.OriginalFilename);
+                    cmd.Parameters.AddWithValue($"o{i}", MusicPath.ToRelative(u.OriginalFilename));
                     cmd.Parameters.AddWithValue($"s{i}", u.File.Size);
                     cmd.Parameters.AddWithValue($"t{i}", u.TouchedAt.ToString("O", CultureInfo.InvariantCulture));
                     cmd.Parameters.AddWithValue($"c{i}", u.File.Code);
@@ -382,12 +383,17 @@ namespace resonance.Shares
             cmd.Parameters.AddWithValue("prefix", maskedDirectory + '\\');
 
             using var reader = cmd.ExecuteReader();
-            return reader.Read() ? System.IO.Path.GetDirectoryName(reader.GetString(0)) : null;
+            return reader.Read() ? System.IO.Path.GetDirectoryName(MusicPath.ToAbsolute(reader.GetString(0))) : null;
         }
 
         public void RenameDirectory(string oldMaskedDirectory, string newMaskedDirectory, string oldOriginalDirectory, string newOriginalDirectory)
         {
             using var conn = GetConnection();
+
+            // original_filename is stored relative to the music root; convert both sides so the
+            // substring offset matches the stored (relative) length.
+            var relOldOriginal = MusicPath.ToRelative(oldOriginalDirectory);
+            var relNewOriginal = MusicPath.ToRelative(newOriginalDirectory);
 
             using (var cmd = new NpgsqlCommand(
                 "UPDATE shares.files SET masked_filename = @newMasked || substr(masked_filename, @oldMaskedLen + 1), "
@@ -397,8 +403,8 @@ namespace resonance.Shares
                 cmd.Parameters.AddWithValue("host", Host);
                 cmd.Parameters.AddWithValue("newMasked", newMaskedDirectory);
                 cmd.Parameters.AddWithValue("oldMaskedLen", oldMaskedDirectory.Length);
-                cmd.Parameters.AddWithValue("newOrig", newOriginalDirectory);
-                cmd.Parameters.AddWithValue("oldOrigLen", oldOriginalDirectory.Length);
+                cmd.Parameters.AddWithValue("newOrig", relNewOriginal);
+                cmd.Parameters.AddWithValue("oldOrigLen", relOldOriginal.Length);
                 cmd.Parameters.AddWithValue("oldPrefix", oldMaskedDirectory + '\\');
                 cmd.ExecuteNonQuery();
             }
@@ -495,12 +501,15 @@ namespace resonance.Shares
         {
             using var conn = GetConnection();
 
+            // original_filename is stored relative to the music root.
+            var relOriginalPrefix = MusicPath.ToRelative(originalPathPrefix);
+
             using (var cmd = new NpgsqlCommand(
                 "DELETE FROM shares.files WHERE host = @host AND (original_filename = @orig OR starts_with(original_filename, @origPrefix));", conn))
             {
                 cmd.Parameters.AddWithValue("host", Host);
-                cmd.Parameters.AddWithValue("orig", originalPathPrefix);
-                cmd.Parameters.AddWithValue("origPrefix", originalPathPrefix.TrimEnd('/') + "/");
+                cmd.Parameters.AddWithValue("orig", relOriginalPrefix);
+                cmd.Parameters.AddWithValue("origPrefix", relOriginalPrefix.TrimEnd('/') + "/");
                 cmd.ExecuteNonQuery();
             }
 
@@ -510,6 +519,30 @@ namespace resonance.Shares
                 cmd.Parameters.AddWithValue("host", Host);
                 cmd.Parameters.AddWithValue("masked", maskedPathPrefix);
                 cmd.Parameters.AddWithValue("maskedPrefix", maskedPathPrefix.TrimEnd('\\') + "\\");
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        public void DeleteByMaskedPrefix(string maskedDirectory)
+        {
+            using var conn = GetConnection();
+            var prefix = maskedDirectory.TrimEnd('\\') + "\\";
+
+            using (var cmd = new NpgsqlCommand(
+                "DELETE FROM shares.files WHERE host = @host AND (masked_filename = @masked OR starts_with(masked_filename, @prefix));", conn))
+            {
+                cmd.Parameters.AddWithValue("host", Host);
+                cmd.Parameters.AddWithValue("masked", maskedDirectory);
+                cmd.Parameters.AddWithValue("prefix", prefix);
+                cmd.ExecuteNonQuery();
+            }
+
+            using (var cmd = new NpgsqlCommand(
+                "DELETE FROM shares.directories WHERE host = @host AND (name = @masked OR starts_with(name, @prefix));", conn))
+            {
+                cmd.Parameters.AddWithValue("host", Host);
+                cmd.Parameters.AddWithValue("masked", maskedDirectory);
+                cmd.Parameters.AddWithValue("prefix", prefix);
                 cmd.ExecuteNonQuery();
             }
         }

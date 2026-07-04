@@ -34,6 +34,7 @@ namespace resonance.MusicLibrary
     using System.Data;
     using System.Data.Common;
     using Npgsql;
+    using resonance.Common;
 
     public class MusicRepository
     {
@@ -192,9 +193,9 @@ namespace resonance.MusicLibrary
             using var cmd = conn.CreateCommand();
             cmd.CommandText = UpsertSql;
 
-            AddParam(cmd, "@path", t.Path);
+            AddParam(cmd, "@path", MusicPath.ToRelative(t.Path));
             AddParam(cmd, "@filename", t.Filename);
-            AddParam(cmd, "@dir", t.Directory);
+            AddParam(cmd, "@dir", MusicPath.ToRelative(t.Directory));
             AddParam(cmd, "@ext", t.Extension);
             AddParam(cmd, "@size", t.FileSize);
             AddParam(cmd, "@mod", t.FileModified);
@@ -268,9 +269,9 @@ namespace resonance.MusicLibrary
                     }
 
                     var t = tracks[i];
-                    cmd.Parameters["@path"].Value = t.Path;
+                    cmd.Parameters["@path"].Value = MusicPath.ToRelative(t.Path);
                     cmd.Parameters["@filename"].Value = t.Filename;
-                    cmd.Parameters["@dir"].Value = t.Directory;
+                    cmd.Parameters["@dir"].Value = MusicPath.ToRelative(t.Directory);
                     cmd.Parameters["@ext"].Value = t.Extension;
                     cmd.Parameters["@size"].Value = t.FileSize;
                     cmd.Parameters["@mod"].Value = t.FileModified;
@@ -324,7 +325,7 @@ namespace resonance.MusicLibrary
             cmd.Parameters.Add(p);
             foreach (var path in paths)
             {
-                p.Value = path;
+                p.Value = MusicPath.ToRelative(path);
                 cmd.ExecuteNonQuery();
             }
 
@@ -342,7 +343,7 @@ namespace resonance.MusicLibrary
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
-                result[r.GetString(0)] = (r.GetInt64(1), r.GetInt64(2));
+                result[MusicPath.ToAbsolute(r.GetString(0))] = (r.GetInt64(1), r.GetInt64(2));
             }
 
             return result;
@@ -451,8 +452,8 @@ namespace resonance.MusicLibrary
 
             if (hasFolder)
             {
-                AddParam(countCmd, "@folder", folder);
-                AddParam(countCmd, "@folderPrefix", folder.TrimEnd('/') + "/%");
+                AddParam(countCmd, "@folder", MusicPath.ToRelative(folder));
+                AddParam(countCmd, "@folderPrefix", MusicPath.ToRelative(folder).TrimEnd('/') + "/%");
             }
 
             var total = Convert.ToInt32(countCmd.ExecuteScalar());
@@ -505,8 +506,8 @@ namespace resonance.MusicLibrary
 
             if (hasFolder)
             {
-                AddParam(cmd, "@folder", folder);
-                AddParam(cmd, "@folderPrefix", folder.TrimEnd('/') + "/%");
+                AddParam(cmd, "@folder", MusicPath.ToRelative(folder));
+                AddParam(cmd, "@folderPrefix", MusicPath.ToRelative(folder).TrimEnd('/') + "/%");
             }
 
             AddParam(cmd, "@limit", limit);
@@ -587,13 +588,13 @@ namespace resonance.MusicLibrary
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
-                var path = r.GetString(0);
+                var path = MusicPath.ToAbsolute(r.GetString(0));
                 var name = System.IO.Path.GetFileName(path);
                 results.Add(new MusicFolder(
                     Path: path,
                     Name: string.IsNullOrEmpty(name) ? path : name,
                     TrackCount: r.GetInt32(1),
-                    CoverPath: r.IsDBNull(2) ? null : r.GetString(2),
+                    CoverPath: r.IsDBNull(2) ? null : MusicPath.ToAbsolute(r.GetString(2)),
                     HasArtwork: r.GetInt32(3) != 0,
                     IndexedAt: r.GetInt64(4)));
             }
@@ -676,10 +677,10 @@ namespace resonance.MusicLibrary
                     Year: r.IsDBNull(3) ? null : (int?)r.GetInt32(3),
                     TrackCount: r.GetInt32(4),
                     TotalDuration: r.IsDBNull(5) ? null : (double?)r.GetDouble(5),
-                    CoverPath: r.IsDBNull(6) ? null : r.GetString(6),
+                    CoverPath: r.IsDBNull(6) ? null : MusicPath.ToAbsolute(r.GetString(6)),
                     HasArtwork: r.GetInt32(7) != 0,
                     IndexedAt: r.GetInt64(8),
-                    Directory: r.IsDBNull(9) ? null : r.GetString(9)));
+                    Directory: r.IsDBNull(9) ? null : MusicPath.ToAbsolute(r.GetString(9))));
             }
 
             return results;
@@ -709,7 +710,7 @@ namespace resonance.MusicLibrary
                     Artist: r.IsDBNull(0) ? string.Empty : r.GetString(0),
                     AlbumCount: r.GetInt32(1),
                     TrackCount: r.GetInt32(2),
-                    CoverPath: r.IsDBNull(3) ? null : r.GetString(3),
+                    CoverPath: r.IsDBNull(3) ? null : MusicPath.ToAbsolute(r.GetString(3)),
                     HasArtwork: r.GetInt32(4) != 0,
                     IndexedAt: r.GetInt64(5)));
             }
@@ -752,10 +753,10 @@ namespace resonance.MusicLibrary
                     Year: r.IsDBNull(3) ? null : (int?)r.GetInt32(3),
                     TrackCount: r.GetInt32(4),
                     TotalDuration: r.IsDBNull(5) ? null : (double?)r.GetDouble(5),
-                    CoverPath: r.IsDBNull(6) ? null : r.GetString(6),
+                    CoverPath: r.IsDBNull(6) ? null : MusicPath.ToAbsolute(r.GetString(6)),
                     HasArtwork: r.GetInt32(7) != 0,
                     IndexedAt: r.GetInt64(8),
-                    Directory: r.IsDBNull(9) ? null : r.GetString(9)));
+                    Directory: r.IsDBNull(9) ? null : MusicPath.ToAbsolute(r.GetString(9))));
             }
 
             return results;
@@ -788,8 +789,8 @@ namespace resonance.MusicLibrary
             using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $"UPDATE {T} SET path = @newPath, filename = @newFilename WHERE path = @oldPath";
-            AddParam(cmd, "@oldPath", oldPath);
-            AddParam(cmd, "@newPath", newPath);
+            AddParam(cmd, "@oldPath", MusicPath.ToRelative(oldPath));
+            AddParam(cmd, "@newPath", MusicPath.ToRelative(newPath));
             AddParam(cmd, "@newFilename", newFilename);
             cmd.ExecuteNonQuery();
         }
@@ -798,17 +799,19 @@ namespace resonance.MusicLibrary
         public void RenameDirectory(string oldDir, string newDir)
         {
             using var conn = OpenConnection();
-            var prefixStart = oldDir.Length + 1; // substr is 1-indexed; +1 to skip the trailing slash
+            var relOldDir = MusicPath.ToRelative(oldDir);
+            var relNewDir = MusicPath.ToRelative(newDir);
+            var prefixStart = relOldDir.Length + 1; // substr is 1-indexed; +1 to skip the trailing slash
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $@"
                 UPDATE {T} SET
                     path      = @newDir || substr(path,      @start),
                     directory = @newDir || substr(directory, @start)
                 WHERE directory = @oldDir OR directory LIKE @prefix";
-            AddParam(cmd, "@oldDir", oldDir);
-            AddParam(cmd, "@newDir", newDir);
+            AddParam(cmd, "@oldDir", relOldDir);
+            AddParam(cmd, "@newDir", relNewDir);
             AddParam(cmd, "@start", prefixStart);
-            AddParam(cmd, "@prefix", oldDir.TrimEnd('/') + "/%");
+            AddParam(cmd, "@prefix", relOldDir.TrimEnd('/') + "/%");
             cmd.ExecuteNonQuery();
         }
 
@@ -821,7 +824,7 @@ namespace resonance.MusicLibrary
                        title, artist, album_artist, album, year, track_number, disc_number,
                        genre, bpm, key_sig, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth
                 FROM {T} WHERE path=@path";
-            AddParam(cmd, "@path", path);
+            AddParam(cmd, "@path", MusicPath.ToRelative(path));
             using var r = cmd.ExecuteReader();
             return r.Read() ? ReadRow(r) : null;
         }
@@ -853,7 +856,7 @@ namespace resonance.MusicLibrary
                 {
                     var name = "@p" + i;
                     names.Add(name);
-                    AddParam(cmd, name, paths[i]);
+                    AddParam(cmd, name, MusicPath.ToRelative(paths[i]));
                 }
 
                 cmd.CommandText = $@"
@@ -903,7 +906,7 @@ namespace resonance.MusicLibrary
                        title, artist, album_artist, album, year, track_number, disc_number,
                        genre, bpm, key_sig, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth
                 FROM {T} WHERE directory=@dir";
-            AddParam(cmd, "@dir", directory);
+            AddParam(cmd, "@dir", MusicPath.ToRelative(directory));
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
@@ -935,9 +938,9 @@ namespace resonance.MusicLibrary
         }
 
         private static MusicTrack ReadRow(DbDataReader r) => new(
-            Path: r.GetString(0),
+            Path: MusicPath.ToAbsolute(r.GetString(0)),
             Filename: r.GetString(1),
-            Directory: r.GetString(2),
+            Directory: MusicPath.ToAbsolute(r.GetString(2)),
             Extension: r.GetString(3),
             FileSize: r.GetInt64(4),
             FileModified: r.GetInt64(5),

@@ -40,7 +40,7 @@ public interface IYtDlpService : IHostedService
 {
     IReadOnlyList<YtDlpJob> ListJobs();
     IReadOnlyList<YtDlpEvent> GetRecentEvents();
-    Task<YtDlpJob> SubmitAsync(string url, string? outputDirectory = null, string? audioFormat = null, int? audioQuality = null, string? defaultGenre = null, int? minTrackDurationSeconds = null, int? maxTrackDurationSeconds = null, string? convertOnCompletionFormat = null, string? uploadedAfter = null, CancellationToken cancellationToken = default);
+    Task<YtDlpJob> SubmitAsync(string url, string? outputDirectory = null, string? audioFormat = null, int? audioQuality = null, string? defaultGenre = null, int? minTrackDurationSeconds = null, int? maxTrackDurationSeconds = null, string? convertOnCompletionFormat = null, string? uploadedAfter = null, CancellationToken cancellationToken = default, Guid? subscriptionId = null);
     Task<IReadOnlyList<YtDlpTrack>> GetTracksAsync(Guid jobId);
     Task<IReadOnlyList<YtDlpTrack>> GetTagErrorTracksAsync();
     Task CancelJobAsync(Guid jobId);
@@ -50,6 +50,7 @@ public interface IYtDlpService : IHostedService
     Task RemoveJobAsync(Guid jobId);
     Task RetryFailedTracksAsync(Guid jobId);
     Task RetryTagWritingAsync(Guid trackId);
+    Task SetTrackTagsAsync(Guid trackId, string artist, string title, string? album);
     Task<IReadOnlyList<YtDlpSearchResult>> SearchAsync(string query, int limit = 25, string? type = null, string? duration = null, string? uploadDate = null, string? sortBy = null, CancellationToken cancellationToken = default);
     Task<(string? YtDlpVersion, string? FfmpegVersion)> GetVersionsAsync(CancellationToken cancellationToken = default);
     Task<(string? Current, string? Latest, bool UpdateAvailable)> CheckForUpdateAsync(CancellationToken cancellationToken = default);

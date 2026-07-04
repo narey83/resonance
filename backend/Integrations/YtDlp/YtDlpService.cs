@@ -44,6 +44,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using resonance.Common;
 using resonance.Common.Audio;
 using Resonance.Integrations.YtDlp.API.Hubs;
 using Resonance.Integrations.YtDlp.Data;
@@ -140,6 +141,10 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
+        // SubscriptionId was added after first release; EnsureCreated won't alter an existing table.
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE ytdlp.\"Jobs\" ADD COLUMN IF NOT EXISTS \"SubscriptionId\" uuid", cancellationToken);
+
         // Reset any tracks that were in-progress when the app last shut down
         var stuckTracks = await db.Tracks
             .Where(t => t.State == YtDlpTrackState.InProgress)
@@ -229,16 +234,25 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
     public IReadOnlyList<YtDlpEvent> GetRecentEvents() => eventBuffer.ToArray();
 
-    public async Task<YtDlpJob> SubmitAsync(string url, string? outputDirectory = null, string? audioFormat = null, int? audioQuality = null, string? defaultGenre = null, int? minTrackDurationSeconds = null, int? maxTrackDurationSeconds = null, string? convertOnCompletionFormat = null, string? uploadedAfter = null, CancellationToken cancellationToken = default)
+    // ponytail: subscriptionId trails cancellationToken so the controller call site needs no change; only the poller sets it.
+    public async Task<YtDlpJob> SubmitAsync(string url, string? outputDirectory = null, string? audioFormat = null, int? audioQuality = null, string? defaultGenre = null, int? minTrackDurationSeconds = null, int? maxTrackDurationSeconds = null, string? convertOnCompletionFormat = null, string? uploadedAfter = null, CancellationToken cancellationToken = default, Guid? subscriptionId = null)
     {
         var opts = options.CurrentValue.Integrations.YtDlp;
         var outDir = !string.IsNullOrWhiteSpace(outputDirectory) ? outputDirectory
             : !string.IsNullOrWhiteSpace(opts.OutputDirectory) ? opts.OutputDirectory
             : options.CurrentValue.Directories.Downloads;
 
+        var minimumFreeMegabytes = options.CurrentValue.Disk.MinimumFreeMegabytes;
+
+        if (DiskSpace.IsBelowLimit(outDir, minimumFreeMegabytes))
+        {
+            throw new resonance.InsufficientDiskSpaceException($"Job rejected: free disk space is below the configured minimum of {minimumFreeMegabytes} MB");
+        }
+
         var job = new YtDlpJob
         {
             Url = url,
+            SubscriptionId = subscriptionId,
             OutputDirectory = outDir,
             StartedAt = DateTime.UtcNow,
             AudioFormatOverride = audioFormat,
@@ -501,7 +515,12 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         }
     }
 
-    public async Task RetryTagWritingAsync(Guid trackId)
+    public Task RetryTagWritingAsync(Guid trackId) => RewriteTagsAsync(trackId, overrides: null);
+
+    public Task SetTrackTagsAsync(Guid trackId, string artist, string title, string? album)
+        => RewriteTagsAsync(trackId, (artist, title, album));
+
+    private async Task RewriteTagsAsync(Guid trackId, (string Artist, string Title, string? Album)? overrides)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var track = await db.Tracks.FindAsync(trackId);
@@ -521,6 +540,11 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         var opts = options.CurrentValue.Integrations.YtDlp;
         var metadata = YtDlpMetadataParser.Parse(track.Title, track.Uploader, track.PlaylistIndex, track.UploadDate, opts.DefaultGenre);
+        if (overrides is { } o)
+        {
+            metadata = metadata with { Artist = o.Artist, Title = o.Title, Album = o.Album ?? metadata.Album };
+        }
+
         var error = YtDlpTagWriter.Write(track.FilePath, metadata, track.Url, out _);
 
         if (jobs.TryGetValue(track.JobId, out var job))
@@ -743,6 +767,11 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         return tag;
     }
 
+    // ponytail: substring heuristic covers youtube watch/youtu.be; extend the check if other hosts matter.
+    private static bool IsSingleVideoUrl(string url) =>
+        (url.Contains("watch?v=", StringComparison.OrdinalIgnoreCase) || url.Contains("youtu.be/", StringComparison.OrdinalIgnoreCase))
+        && !url.Contains("list=", StringComparison.OrdinalIgnoreCase);
+
     // ── Job execution ────────────────────────────────────────────────────────
     private async Task RunJobAsync(YtDlpJob job, CancellationToken cancellationToken)
     {
@@ -753,11 +782,15 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             Log.Information("YtDlp: enumerating {Url}", job.Url);
             await EmitEventAsync(job.Id, "info", $"Enumerating: {job.Url}", job);
 
+            // Flat enumeration lists a playlist/channel cheaply but omits per-video title. For a
+            // single video that title is exactly what we want to show, so extract it fully (one video).
+            var flat = IsSingleVideoUrl(job.Url) ? string.Empty : "--flat-playlist ";
+
             var process = new Process
             {
                 StartInfo = new ProcessStartInfo(opts.ExecutablePath)
                 {
-                    Arguments = $"--flat-playlist --dump-json{(jsRuntimeArg != null ? " " + jsRuntimeArg : string.Empty)} \"{job.Url}\"",
+                    Arguments = $"{flat}--dump-json{(jsRuntimeArg != null ? " " + jsRuntimeArg : string.Empty)} \"{job.Url}\"",
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardOutput = true,
@@ -918,10 +951,12 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 url = $"https://www.youtube.com/watch?v={videoId}";
             }
 
-            // Populate job title/uploader from the first track/channel if not set
-            if (string.IsNullOrEmpty(job.Title) && !string.IsNullOrEmpty(channelName))
+            // Populate job title/uploader if not set. A single-video job shows the video title;
+            // a playlist/channel job shows the channel name.
+            var jobTitle = IsSingleVideoUrl(job.Url) && !string.IsNullOrEmpty(title) ? title : channelName;
+            if (string.IsNullOrEmpty(job.Title) && !string.IsNullOrEmpty(jobTitle))
             {
-                job.Title = channelName;
+                job.Title = jobTitle;
                 job.Uploader = channelName;
                 job.ThumbnailUrl = thumbnail;
             }
@@ -2405,6 +2440,21 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             var opts = options.CurrentValue.Integrations.YtDlp;
             var count = Math.Clamp(opts.SubscriptionCheckCount, 1, 100);
 
+            // skip the check entirely while below the safe free-space limit, before LastVideoId advances,
+            // so blocked videos are picked up again once space frees up
+            var subOutDir = !string.IsNullOrWhiteSpace(sub.OutputDirectoryOverride) ? sub.OutputDirectoryOverride
+                : !string.IsNullOrWhiteSpace(opts.OutputDirectory) ? opts.OutputDirectory
+                : options.CurrentValue.Directories.Downloads;
+
+            if (DiskSpace.IsBelowLimit(subOutDir, options.CurrentValue.Disk.MinimumFreeMegabytes))
+            {
+                sub.LastError = $"Skipped: free disk space is below the configured minimum of {options.CurrentValue.Disk.MinimumFreeMegabytes} MB";
+                sub.LastCheckedAt = DateTime.UtcNow;
+                await PersistSubscriptionAsync(sub, CancellationToken.None);
+                await BroadcastSubscriptionsAsync();
+                return;
+            }
+
             List<ChannelEntry> entries;
             try
             {
@@ -2482,17 +2532,28 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                     continue;
                 }
 
-                await SubmitAsync(
-                    entry.Url,
-                    sub.OutputDirectoryOverride,
-                    sub.AudioFormatOverride,
-                    sub.AudioQualityOverride,
-                    sub.DefaultGenreOverride,
-                    sub.MinTrackDurationSecondsOverride,
-                    sub.MaxTrackDurationSecondsOverride,
-                    sub.ConvertOnCompletionFormatOverride,
-                    sub.UploadedAfterOverride,
-                    cancellationToken);
+                try
+                {
+                    await SubmitAsync(
+                        entry.Url,
+                        sub.OutputDirectoryOverride,
+                        sub.AudioFormatOverride,
+                        sub.AudioQualityOverride,
+                        sub.DefaultGenreOverride,
+                        sub.MinTrackDurationSecondsOverride,
+                        sub.MaxTrackDurationSecondsOverride,
+                        sub.ConvertOnCompletionFormatOverride,
+                        sub.UploadedAfterOverride,
+                        cancellationToken,
+                        sub.Id);
+                }
+                catch (resonance.InsufficientDiskSpaceException ex)
+                {
+                    // space dropped below the limit mid-loop; surface it and stop rather than killing the poll loop
+                    sub.LastError = ex.Message;
+                    break;
+                }
+
                 queued++;
             }
 

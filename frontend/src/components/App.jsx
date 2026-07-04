@@ -55,6 +55,7 @@ import { playMessageReceived } from '../lib/sound';
 import { getSessionId, isAdmin, isPassthroughEnabled } from '../lib/token';
 import * as transfersAPI from '../lib/transfers';
 import { parseUtcDate } from '../lib/util';
+import * as ytdlpAPI from '../lib/ytdlp';
 import AppContext from './AppContext';
 import Browse from './Browse/Browse';
 import Chat from './Chat/Chat';
@@ -313,6 +314,7 @@ const App = () => {
   );
   const [uploadCount, setUploadCount] = useState(0);
   const [uploads, setUploads] = useState([]);
+  const [ytdlpCount, setYtdlpCount] = useState(0);
 
   // ── Memoised derived values ───────────────────────────────────────────────────
   const appContextValue = useMemo(
@@ -698,9 +700,13 @@ const App = () => {
 
     const poll = async () => {
       try {
-        const [downloadGroups, uploadGroups] = await Promise.all([
+        const [downloadGroups, uploadGroups, ytdlpJobs] = await Promise.all([
           transfersAPI.getAll({ direction: 'download' }).catch(() => null),
           transfersAPI.getAll({ direction: 'upload' }).catch(() => null),
+          ytdlpAPI
+            .listJobs()
+            .then((r) => r.data)
+            .catch(() => null),
         ]);
         const countActive = (groups) => {
           if (!Array.isArray(groups)) return 0;
@@ -720,11 +726,36 @@ const App = () => {
           );
         };
 
+        // Tracks not yet resolved across in-flight yt-dlp jobs (mirrors the
+        // per-job "remaining" maths in YtDlp/JobList.jsx)
+        const countYtdlpRemaining = (jobsList) => {
+          if (!Array.isArray(jobsList)) return 0;
+          return jobsList
+            .filter((j) =>
+              ['active', 'enumerating', 'paused'].includes(
+                (j.state || '').toLowerCase(),
+              ),
+            )
+            .reduce(
+              (sum, j) =>
+                sum +
+                Math.max(
+                  0,
+                  j.totalTracks -
+                    j.completedTracks -
+                    j.failedTracks -
+                    j.skippedTracks,
+                ),
+              0,
+            );
+        };
+
         unstable_batchedUpdates(() => {
           setDownloadCount(countActive(downloadGroups));
           setDownloads(flattenTransfers(downloadGroups));
           setUploadCount(countActive(uploadGroups));
           setUploads(flattenTransfers(uploadGroups));
+          setYtdlpCount(countYtdlpRemaining(ytdlpJobs));
         });
       } catch {
         /* silently ignore */
@@ -947,11 +978,13 @@ const App = () => {
 
   // ── Main app shell ────────────────────────────────────────────────────────────
   const {
+    disk,
     pendingReconnect,
     pendingRestart,
     relay = {},
     server,
     shares = {},
+    system,
     user,
     version = {},
   } = applicationState;
@@ -987,6 +1020,7 @@ const App = () => {
                   <span className="status-brand-name">Resonance</span>
                 </div>
               }
+              disk={disk}
               downloads={downloads}
               isLoggedIn={isLoggedIn}
               networkInfo={networkInfo}
@@ -995,6 +1029,7 @@ const App = () => {
               onLogout={handleLogout}
               server={server}
               shares={shares}
+              system={system}
               uploads={uploads}
               user={user}
             />
@@ -1043,6 +1078,7 @@ const App = () => {
                     )}
                   </div>
                 }
+                disk={disk}
                 downloads={downloads}
                 isLoggedIn={isLoggedIn}
                 networkInfo={networkInfo}
@@ -1051,6 +1087,7 @@ const App = () => {
                 onLogout={handleLogout}
                 server={server}
                 shares={shares}
+                system={system}
                 uploads={uploads}
                 user={user}
               />
@@ -1176,6 +1213,7 @@ const App = () => {
                           page === 'ytdlp' &&
                           window.location.pathname.endsWith('/downloads')
                         }
+                        badge={ytdlpCount}
                         icon={Download}
                         label="Downloads"
                         to={`${urlBase}/ytdlp/downloads`}

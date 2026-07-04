@@ -41,6 +41,7 @@ namespace resonance.WaveformAnalysis
     using System.Threading.Tasks;
     using Microsoft.Extensions.Hosting;
     using Npgsql;
+    using resonance.Common;
     using resonance.Common.Ffmpeg;
     using resonance.Shares;
     using Serilog;
@@ -480,7 +481,7 @@ namespace resonance.WaveformAnalysis
                 SELECT num_bars, overall_peaks, low_peaks, mid_peaks, high_peaks
                 FROM {T}
                 WHERE masked_filename = @m AND file_size = @s";
-            AddParam(cmd, "@m", maskedFilename);
+            AddParam(cmd, "@m", MusicPath.ToRelative(maskedFilename));
             AddParam(cmd, "@s", fileSize);
 
             using var reader = cmd.ExecuteReader();
@@ -503,7 +504,7 @@ namespace resonance.WaveformAnalysis
             using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $"SELECT 1 FROM {T} WHERE masked_filename = @m LIMIT 1";
-            AddParam(cmd, "@m", maskedFilename);
+            AddParam(cmd, "@m", MusicPath.ToRelative(maskedFilename));
             return cmd.ExecuteScalar() != null;
         }
 
@@ -533,7 +534,7 @@ namespace resonance.WaveformAnalysis
                 : $@"INSERT OR REPLACE INTO {T}
                         (masked_filename, file_size, num_bars, overall_peaks, low_peaks, mid_peaks, high_peaks, analysed_at)
                     VALUES (@m, @s, @n, @op, @lp, @mp, @hp, @t)";
-            AddParam(cmd, "@m", maskedFilename);
+            AddParam(cmd, "@m", MusicPath.ToRelative(maskedFilename));
             AddParam(cmd, "@s", fileSize);
             AddParam(cmd, "@n", data.NumBars);
             AddParam(cmd, "@op", FloatsToBlob(data.OverallPeaks));

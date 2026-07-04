@@ -28,13 +28,16 @@
 // </copyright>
 
 import * as ytdlp from '../../lib/ytdlp';
-import { RefreshCw } from 'lucide-react';
+import { Pencil, RefreshCw } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
 
 const TagErrorList = ({ jobs, onRetryTags }) => {
   const [retryingAll, setRetryingAll] = useState(false);
   const [errorTracks, setErrorTracks] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ album: '', artist: '', title: '' });
+  const [saving, setSaving] = useState(false);
 
   const totalTagErrors = jobs.reduce(
     (n, job) => n + (job.tagFailedTracks || 0),
@@ -66,6 +69,41 @@ const TagErrorList = ({ jobs, onRetryTags }) => {
   const handleRetry = async (trackId) => {
     await onRetryTags(trackId);
     await refresh();
+  };
+
+  const startEdit = (t) => {
+    // Prefill: pull a [LABEL] out of the raw title as the album guess
+    const raw = t.title || '';
+    const open = raw.indexOf('[');
+    const close = raw.indexOf(']', open + 1);
+    const hasLabel = open >= 0 && close > open;
+    setForm({
+      album: hasLabel ? raw.slice(open + 1, close) : '',
+      artist: '',
+      title: hasLabel
+        ? `${raw.slice(0, open)} ${raw.slice(close + 1)}`.trim()
+        : raw,
+    });
+    setEditingId(t.id);
+  };
+
+  const handleSave = async () => {
+    if (!form.artist.trim() || !form.title.trim()) {
+      toast.error('Artist and title are required');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await ytdlp.setTags(editingId, form);
+      toast.success('Tags saved');
+      setEditingId(null);
+      await refresh();
+    } catch (error) {
+      toast.error(`Save failed: ${error.response?.data || error.message}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleRetryAll = async () => {
@@ -126,14 +164,71 @@ const TagErrorList = ({ jobs, onRetryTags }) => {
               >
                 {jobTitleById[t.jobId] || ''}
               </div>
+              {editingId === t.id && (
+                <div className="ytdlp-tag-fix">
+                  <input
+                    onChange={(event) =>
+                      setForm({ ...form, artist: event.target.value })
+                    }
+                    placeholder="Artist"
+                    type="text"
+                    value={form.artist}
+                  />
+                  <input
+                    onChange={(event) =>
+                      setForm({ ...form, title: event.target.value })
+                    }
+                    placeholder="Title"
+                    type="text"
+                    value={form.title}
+                  />
+                  <input
+                    onChange={(event) =>
+                      setForm({ ...form, album: event.target.value })
+                    }
+                    placeholder="Album (optional)"
+                    type="text"
+                    value={form.album}
+                  />
+                  <div className="ytdlp-tag-fix-actions">
+                    <button
+                      className="ytdlp-btn ytdlp-btn--primary"
+                      disabled={saving}
+                      onClick={handleSave}
+                      type="button"
+                    >
+                      {saving ? 'Saving…' : 'Save'}
+                    </button>
+                    <button
+                      className="ytdlp-btn"
+                      disabled={saving}
+                      onClick={() => setEditingId(null)}
+                      type="button"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-            <button
-              className="ytdlp-btn"
-              onClick={() => handleRetry(t.id)}
-              type="button"
-            >
-              <RefreshCw size={13} /> Retry
-            </button>
+            {editingId !== t.id && (
+              <>
+                <button
+                  className="ytdlp-btn"
+                  onClick={() => startEdit(t)}
+                  type="button"
+                >
+                  <Pencil size={13} /> Fix
+                </button>
+                <button
+                  className="ytdlp-btn"
+                  onClick={() => handleRetry(t.id)}
+                  type="button"
+                >
+                  <RefreshCw size={13} /> Retry
+                </button>
+              </>
+            )}
           </div>
         ))}
       </div>

@@ -557,6 +557,46 @@ const JobRow = ({
   );
 };
 
+// Collapses a subscription's auto-downloaded videos under one expandable header so they
+// don't flood the list. Collapsed by default; children are ordinary JobRows.
+const SubscriptionGroup = ({
+  jobLogs,
+  jobs,
+  rowProps,
+  subscription,
+  subscriptions,
+}) => {
+  const [expanded, setExpanded] = useState(false);
+  const title =
+    subscription?.channelTitle || subscription?.channelUrl || 'Subscription';
+  return (
+    <div className="ytdlp-sub-group">
+      <button
+        className="ytdlp-sub-group-header"
+        onClick={() => setExpanded((e) => !e)}
+        type="button"
+      >
+        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <Bell size={14} />
+        <span className="ytdlp-sub-group-title">{title}</span>
+        <span className="ytdlp-sub-group-count">
+          {jobs.length} auto-download{jobs.length === 1 ? '' : 's'}
+        </span>
+      </button>
+      {expanded &&
+        jobs.map((job) => (
+          <JobRow
+            job={job}
+            jobLog={jobLogs && jobLogs[job.id]}
+            key={job.id}
+            subscriptions={subscriptions}
+            {...rowProps}
+          />
+        ))}
+    </div>
+  );
+};
+
 const JobList = ({
   jobLogs,
   jobs,
@@ -579,25 +619,60 @@ const JobList = ({
     );
   }
 
+  const rowProps = {
+    onCancel,
+    onPause,
+    onReconcile,
+    onRemove,
+    onResume,
+    onRetryFailed,
+    onRetryJob,
+    onRetryTags,
+    onSubscribe,
+  };
+
+  // Bucket subscription-spawned jobs by their subscription id, keeping manual jobs loose.
+  const grouped = new Map();
+  for (const job of jobs) {
+    if (!job.subscriptionId) continue;
+    const list = grouped.get(job.subscriptionId) || [];
+    list.push(job);
+    grouped.set(job.subscriptionId, list);
+  }
+
+  const renderedGroups = new Set();
+
   return (
     <div className="ytdlp-job-list">
-      {jobs.map((job) => (
-        <JobRow
-          job={job}
-          jobLog={jobLogs && jobLogs[job.id]}
-          key={job.id}
-          onCancel={onCancel}
-          onPause={onPause}
-          onReconcile={onReconcile}
-          onRemove={onRemove}
-          onResume={onResume}
-          onRetryFailed={onRetryFailed}
-          onRetryJob={onRetryJob}
-          onRetryTags={onRetryTags}
-          onSubscribe={onSubscribe}
-          subscriptions={subscriptions}
-        />
-      ))}
+      {jobs.map((job) => {
+        if (!job.subscriptionId) {
+          return (
+            <JobRow
+              job={job}
+              jobLog={jobLogs && jobLogs[job.id]}
+              key={job.id}
+              subscriptions={subscriptions}
+              {...rowProps}
+            />
+          );
+        }
+
+        // Render each subscription's group once, at its first job's position.
+        if (renderedGroups.has(job.subscriptionId)) return null;
+        renderedGroups.add(job.subscriptionId);
+        return (
+          <SubscriptionGroup
+            jobLogs={jobLogs}
+            jobs={grouped.get(job.subscriptionId)}
+            key={`sub-${job.subscriptionId}`}
+            rowProps={rowProps}
+            subscription={(subscriptions || []).find(
+              (s) => s.id === job.subscriptionId,
+            )}
+            subscriptions={subscriptions}
+          />
+        );
+      })}
     </div>
   );
 };

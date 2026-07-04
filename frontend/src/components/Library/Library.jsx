@@ -2308,6 +2308,7 @@ const ISSUE_TYPES = [
 const HomeView = ({
   albums,
   artists,
+  cachedCounts = {},
   issueCounts,
   mixtapes,
   onAlbumContextMenu,
@@ -2339,7 +2340,7 @@ const HomeView = ({
           type="button"
         >
           <span className="jb-home-stat-num">
-            {artists.length.toLocaleString()}
+            {(artists.length || cachedCounts.artists || 0).toLocaleString()}
           </span>
           <span className="jb-home-stat-label">artists</span>
         </button>
@@ -2349,7 +2350,7 @@ const HomeView = ({
           type="button"
         >
           <span className="jb-home-stat-num">
-            {albums.length.toLocaleString()}
+            {(albums.length || cachedCounts.albums || 0).toLocaleString()}
           </span>
           <span className="jb-home-stat-label">albums</span>
         </button>
@@ -2722,6 +2723,16 @@ const Library = () => {
   const [albums, setAlbums] = useState([]);
   const [artists, setArtists] = useState([]);
   const [libraryStats, setLibraryStats] = useState(null);
+  // last-known home counts so the page doesn't flash zeros while the lists load
+  const cachedCounts = useMemo(() => {
+    try {
+      return (
+        JSON.parse(localStorage.getItem('resonance-library-home-counts')) ?? {}
+      );
+    } catch {
+      return {};
+    }
+  }, []);
   const [folders, setFolders] = useState([]);
   const [genres, setGenres] = useState([]);
   const [recentlyAdded, setRecentlyAdded] = useState([]);
@@ -2810,27 +2821,42 @@ const Library = () => {
 
   const loadInitialData = useCallback(async () => {
     setLoadingArtists(true);
+    // apply each result as it arrives so the cheap stats call (track count)
+    // isn't held up behind the heavy artists/albums list fetches
+    const apply = (promise, set) =>
+      promise.then((data) => {
+        if (isMountedRef.current && data != null) set(data);
+      });
     try {
-      const [artistData, genreData, recentData, albumData, statsData] =
-        await Promise.all([
-          getArtists(),
-          getGenres(),
-          getRecentlyAdded(16),
-          getAlbums(),
-          getLibraryStats().catch(() => null),
-        ]);
-      if (!isMountedRef.current) return;
-      setArtists(artistData ?? []);
-      setGenres(genreData ?? []);
-      setRecentlyAdded(recentData ?? []);
-      setAlbums(albumData ?? []);
-      setLibraryStats(statsData);
+      await Promise.all([
+        apply(getArtists(), setArtists),
+        apply(getGenres(), setGenres),
+        apply(getRecentlyAdded(16), setRecentlyAdded),
+        apply(getAlbums(), setAlbums),
+        apply(getLibraryStats(), setLibraryStats).catch(() => {}),
+      ]);
     } catch {
       // ignore
     } finally {
       if (isMountedRef.current) setLoadingArtists(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!libraryStats?.total || artists.length === 0) return;
+    try {
+      localStorage.setItem(
+        'resonance-library-home-counts',
+        JSON.stringify({
+          albums: albums.length,
+          artists: artists.length,
+          total: libraryStats.total,
+        }),
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [albums, artists, libraryStats]);
 
   useEffect(() => {
     loadInitialData();
@@ -3596,6 +3622,7 @@ const Library = () => {
           <HomeView
             albums={albums}
             artists={artists}
+            cachedCounts={cachedCounts}
             issueCounts={issueCounts}
             mixtapes={playlists}
             onAlbumContextMenu={openAlbumContextMenu}
@@ -3603,7 +3630,9 @@ const Library = () => {
             recentlyAdded={recentlyAdded}
             totalTracks={
               libraryStats?.total ??
-              artists.reduce((s, a) => s + a.trackCount, 0)
+              (artists.length
+                ? artists.reduce((s, a) => s + a.trackCount, 0)
+                : cachedCounts.total ?? 0)
             }
           />
         );

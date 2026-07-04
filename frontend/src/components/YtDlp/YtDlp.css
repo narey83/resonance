@@ -536,6 +536,34 @@
   margin-top: 3px;
 }
 
+.ytdlp-tag-fix {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ytdlp-tag-fix input {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.ytdlp-tag-fix input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ytdlp-tag-fix-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 .ytdlp-search-row {
   display: flex;
   gap: 8px;
@@ -925,4 +953,34 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ytdlp-sub-group {
+  border: 1px solid var(--border, #333);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.ytdlp-sub-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.ytdlp-sub-group-header:hover {
+  background: var(--bg-primary);
+}
+.ytdlp-sub-group-title {
+  font-weight: 600;
+}
+.ytdlp-sub-group-count {
+  margin-left: auto;
+  opacity: 0.6;
+  font-size: 0.85em;
 }

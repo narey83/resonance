@@ -1,0 +1,31 @@
+#!/bin/bash
+# Runs ON the prod server (invoked over SSH by the CI deploy job).
+# Prod runs live source: dotnet watch + webpack HMR on this checkout, so
+# deploying = update the checkout; only backend changes need a restart.
+set -euo pipefail
+
+cd /home/narey/projects/resonance
+git fetch -q origin main
+changed=$(git diff --name-only HEAD origin/main)
+git reset --hard -q origin/main
+echo "deployed $(git rev-parse --short HEAD)"
+
+if ! grep -q '^backend/' <<<"$changed"; then
+  echo "no backend changes; HMR picks up the rest"
+  exit 0
+fi
+
+# dotnet watch hot reload silently no-ops on rude edits, so always restart
+docker restart resonance-backend >/dev/null
+
+for i in $(seq 1 20); do
+  code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5030/api/v0/application || true)
+  if [ "$code" = "200" ] || [ "$code" = "401" ]; then
+    echo "backend up ($code) after ~$((i * 6))s"
+    exit 0
+  fi
+  sleep 6
+done
+
+echo "backend did not come up after restart" >&2
+exit 1

@@ -252,6 +252,18 @@ namespace resonance
         public DirectoriesOptions Directories { get; init; } = new DirectoriesOptions();
 
         /// <summary>
+        ///     Gets disk options.
+        /// </summary>
+        [Validate]
+        public DiskOptions Disk { get; init; } = new DiskOptions();
+
+        /// <summary>
+        ///     Gets system monitoring options.
+        /// </summary>
+        [Validate]
+        public SystemOptions System { get; init; } = new SystemOptions();
+
+        /// <summary>
         ///     Gets share options.
         /// </summary>
         [Validate]
@@ -826,6 +838,32 @@ namespace resonance
             [DirectoryExists(ensureWriteable: true)]
             [RequiresRestart]
             public string Downloads { get; init; } = Program.DefaultDownloadsDirectory;
+        }
+
+        /// <summary>
+        ///     Disk options.
+        /// </summary>
+        public class DiskOptions
+        {
+            /// <summary>
+            ///     Gets the minimum free disk space, in megabytes, below which new downloads are blocked.
+            /// </summary>
+            [EnvironmentVariable("DISK_MINIMUM_FREE_MB")]
+            [Description("minimum free disk space in megabytes; new downloads are blocked below this (unset = disabled)")]
+            [Range(1, int.MaxValue)]
+            public int? MinimumFreeMegabytes { get; init; }
+        }
+
+        /// <summary>
+        ///     System monitoring options.
+        /// </summary>
+        public class SystemOptions
+        {
+            /// <summary>
+            ///     Gets the docker container names to monitor for CPU/memory.
+            /// </summary>
+            [Description("docker container names to monitor for cpu/memory (empty = disabled)")]
+            public string[] Containers { get; init; } = new[] { "resonance-backend", "resonance-frontend", "resonance-caddy", "postgres-db" };
         }
 
         /// <summary>

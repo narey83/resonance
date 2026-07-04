@@ -79,6 +79,11 @@ namespace resonance.Mixtapes
             Directory.CreateDirectory(MixtapesBaseDir);
             ShareService.SetManagedShare(MixtapesBaseDir, MixtapesShareAlias);
 
+            // Shared mixtapes present their tracks as virtual share entries (masked → real file) rather
+            // than symlink folders, so they survive library moves and leave no artefacts on disk. This
+            // provider re-contributes them on every scan; live edits apply immediately (see WriteMixtapeFolder).
+            ShareService.RegisterVirtualShareProvider(BuildVirtualShares);
+
             // Migrate legacy GUID-named folders to friendly names, then rebuild M3U/symlinks
             var migrated = false;
             foreach (var m in Repository.GetAll())
@@ -231,6 +236,11 @@ namespace resonance.Mixtapes
             var dir = m != null ? MixtapeDir(m) : LegacyMixtapeDir(id);
             DeleteArtwork(id);
             Repository.DeleteMixtape(id);
+            if (m != null)
+            {
+                ShareService.RemoveVirtualDirectory(MaskedDir(m));
+            }
+
             RemoveMixtapeFolder(dir);
             _ = Hub.BroadcastUpdatedAsync();
         }
@@ -356,7 +366,7 @@ namespace resonance.Mixtapes
 
             var dir = MixtapeDir(updated);
             var tracks = Repository.GetTracks(id);
-            RemoveSymlinks(dir);
+            ShareService.RemoveVirtualDirectory(MaskedDir(updated));
             WriteM3U(dir, m.Name, tracks);
             _ = Hub.BroadcastUpdatedAsync();
         }
@@ -437,7 +447,7 @@ namespace resonance.Mixtapes
                 WriteM3U(dir, m.Name, tracks);
                 if (m.IsSoulseekShared)
                 {
-                    SyncSymlinks(dir, tracks);
+                    ShareService.ApplyVirtualDirectory(BuildVirtualDirectory(m, tracks));
                 }
             }
             catch (Exception ex)
@@ -482,60 +492,36 @@ namespace resonance.Mixtapes
             File.WriteAllText(m3uPath, sb.ToString(), Encoding.UTF8);
         }
 
-        private static void SyncSymlinks(string dir, IReadOnlyList<MixtapeTrack> tracks)
+        // ── Virtual share mapping ─────────────────────────────────────────────
+
+        /// <summary>
+        /// Enumerates every Soulseek-shared mixtape as a virtual share directory. Registered with the share
+        /// service so its tracks are re-materialised into the cache on every scan (surviving prunes) without
+        /// any files existing on disk at the masked paths.
+        /// </summary>
+        private IEnumerable<VirtualShareDirectory> BuildVirtualShares()
         {
-            Directory.CreateDirectory(dir);
-
-            foreach (var existing in Directory.GetFiles(dir).Where(f => !f.EndsWith(".m3u", StringComparison.OrdinalIgnoreCase)))
+            foreach (var m in Repository.GetAll().Where(m => m.IsSoulseekShared))
             {
-                var target = tracks.FirstOrDefault(t => SymlinkName(t) == Path.GetFileName(existing));
-                if (target == null)
-                {
-                    try
-                    {
-                        File.Delete(existing);
-                    }
-                    catch
-                    { /* non-fatal */
-                    }
-                }
-            }
-
-            foreach (var track in tracks)
-            {
-                var linkPath = Path.Combine(dir, SymlinkName(track));
-                if (!File.Exists(linkPath) && File.Exists(track.FilePath))
-                {
-                    try
-                    {
-                        File.CreateSymbolicLink(linkPath, track.FilePath);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Warning(ex, "Could not create symlink {Link} → {Target}", linkPath, track.FilePath);
-                    }
-                }
+                yield return BuildVirtualDirectory(m, Repository.GetTracks(m.Id));
             }
         }
 
-        private static void RemoveSymlinks(string dir)
+        private VirtualShareDirectory BuildVirtualDirectory(Mixtape m, IReadOnlyList<MixtapeTrack> tracks)
         {
-            if (!Directory.Exists(dir))
-            {
-                return;
-            }
-
-            foreach (var f in Directory.GetFiles(dir).Where(f => !f.EndsWith(".m3u", StringComparison.OrdinalIgnoreCase)))
-            {
-                try
-                {
-                    File.Delete(f);
-                }
-                catch
-                { /* non-fatal */
-                }
-            }
+            var files = tracks
+                .Select(t => new VirtualShareFile(MaskedFileName(m, t), t.FilePath))
+                .ToList();
+            return new VirtualShareDirectory(MaskedDir(m), files);
         }
+
+        // Masked (peer-visible) paths, derived exactly as the scanner would for a physical file under the
+        // managed mixtapes share, so virtual tracks land in the same browse folder as the mixtape's .m3u.
+        private string MaskedDir(Mixtape m)
+            => MixtapeDir(m).ReplaceFirst(MixtapesBaseDir, MixtapesShareAlias).NormalizePathForSoulseek();
+
+        private string MaskedFileName(Mixtape m, MixtapeTrack track)
+            => Path.Combine(MixtapeDir(m), MaskedLeafName(track)).ReplaceFirst(MixtapesBaseDir, MixtapesShareAlias).NormalizePathForSoulseek();
 
         private static void RemoveMixtapeFolder(string dir)
         {
@@ -554,7 +540,7 @@ namespace resonance.Mixtapes
             }
         }
 
-        private static string SymlinkName(MixtapeTrack track)
+        private static string MaskedLeafName(MixtapeTrack track)
         {
             var display = string.IsNullOrWhiteSpace(track.Title)
                 ? Path.GetFileName(track.FilePath)

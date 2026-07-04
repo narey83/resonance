@@ -36,8 +36,10 @@ import {
   ArrowUp,
   Check,
   CloudOff,
+  Cpu,
   FolderOpen,
   Globe,
+  HardDrive,
   Loader2,
   LogOut,
   Moon,
@@ -56,6 +58,7 @@ import { toast } from 'react-toastify';
 
 const StatusStrip = ({
   brand,
+  disk,
   downloads,
   isLoggedIn,
   networkInfo,
@@ -64,6 +67,7 @@ const StatusStrip = ({
   onLogout,
   server,
   shares,
+  system,
   uploads,
   user,
 }) => {
@@ -511,6 +515,56 @@ const StatusStrip = ({
           {formatBytes(ulSpeed)}/s
         </span>
       </div>
+
+      {/* Free disk space on the downloads volume */}
+      {disk?.totalBytes > 0 && (
+        <>
+          <div className="status-strip-sep" />
+          <div
+            className="status-strip-item"
+            title={
+              disk.downloadsBlocked
+                ? 'Downloads paused — free space is below the safe limit'
+                : `${formatBytes(disk.availableBytes)} free of ${formatBytes(disk.totalBytes)} on the downloads volume`
+            }
+          >
+            <HardDrive
+              className={`status-icon${disk.downloadsBlocked ? ' disconnected' : ''}`}
+              size={13}
+              strokeWidth={1.75}
+            />
+            <span className="status-strip-text">
+              {formatBytes(disk.availableBytes)} free
+            </span>
+            {disk.downloadsBlocked && (
+              <span className="status-chip danger">Downloads paused</span>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Host CPU and memory */}
+      {system?.hostMemoryTotalBytes > 0 && (
+        <>
+          <div className="status-strip-sep" />
+          <div
+            className="status-strip-item"
+            title={`Host: ${formatBytes(system.hostMemoryUsedBytes)} of ${formatBytes(system.hostMemoryTotalBytes)} memory in use`}
+          >
+            <Cpu
+              className="status-icon"
+              size={13}
+              strokeWidth={1.75}
+            />
+            <span className="status-strip-text">
+              {system.hostCpuPercent == null
+                ? '—'
+                : `${system.hostCpuPercent.toFixed(0)}%`}{' '}
+              · {formatBytes(system.hostMemoryUsedBytes)}
+            </span>
+          </div>
+        </>
+      )}
 
       {networkInfo && (
         <>

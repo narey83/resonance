@@ -30,6 +30,8 @@
 namespace resonance.MusicLibrary.Activity;
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using resonance.Common;
 
 public class LovedTrack
 {
@@ -78,13 +80,24 @@ public class LibraryActivityDbContext : DbContext
             modelBuilder.HasDefaultSchema("library_activity");
         }
 
+        // Persist file/folder paths relative to the music root; resolve to absolute on read.
+        var pathConverter = new ValueConverter<string, string>(
+            v => MusicPath.ToRelative(v),
+            v => MusicPath.ToAbsolute(v));
+
         modelBuilder.Entity<LovedTrack>()
             .HasKey(e => new { e.Path, e.Username });
+
+        modelBuilder.Entity<LovedTrack>().Property(e => e.Path).HasConversion(pathConverter);
+        modelBuilder.Entity<LovedTrack>().Property(e => e.Folder).HasConversion(pathConverter);
 
         modelBuilder.Entity<PlayRecord>()
             .HasKey(e => e.Id);
 
         modelBuilder.Entity<PlayRecord>()
             .HasIndex(e => new { e.Username, e.PlayedAt });
+
+        modelBuilder.Entity<PlayRecord>().Property(e => e.Path).HasConversion(pathConverter);
+        modelBuilder.Entity<PlayRecord>().Property(e => e.Folder).HasConversion(pathConverter);
     }
 }

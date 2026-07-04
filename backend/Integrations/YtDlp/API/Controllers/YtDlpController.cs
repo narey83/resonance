@@ -66,8 +66,15 @@ public class YtDlpController : ControllerBase
             return BadRequest("url is required");
         }
 
-        var job = await Service.SubmitAsync(request.Url, request.OutputDirectory, request.AudioFormat, request.AudioQuality, request.DefaultGenre, request.MinTrackDurationSeconds, request.MaxTrackDurationSeconds, request.ConvertOnCompletionFormat, request.UploadedAfter, cancellationToken);
-        return Ok(job);
+        try
+        {
+            var job = await Service.SubmitAsync(request.Url, request.OutputDirectory, request.AudioFormat, request.AudioQuality, request.DefaultGenre, request.MinTrackDurationSeconds, request.MaxTrackDurationSeconds, request.ConvertOnCompletionFormat, request.UploadedAfter, cancellationToken);
+            return Ok(job);
+        }
+        catch (resonance.InsufficientDiskSpaceException ex)
+        {
+            return StatusCode(507, ex.Message);
+        }
     }
 
     [HttpGet("jobs/{jobId:guid}/tracks")]
@@ -138,6 +145,20 @@ public class YtDlpController : ControllerBase
     public async Task<IActionResult> RetryTags(Guid trackId)
     {
         await Service.RetryTagWritingAsync(trackId);
+        return NoContent();
+    }
+
+    [HttpPost("tracks/{trackId:guid}/tags")]
+    [Consumes("application/json")]
+    public async Task<IActionResult> SetTrackTags(Guid trackId, [FromBody] SetTrackTagsRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Artist) || string.IsNullOrWhiteSpace(request.Title))
+        {
+            return BadRequest("artist and title are required");
+        }
+
+        var album = string.IsNullOrWhiteSpace(request.Album) ? null : request.Album.Trim();
+        await Service.SetTrackTagsAsync(trackId, request.Artist.Trim(), request.Title.Trim(), album);
         return NoContent();
     }
 
@@ -308,6 +329,10 @@ public class YtDlpController : ControllerBase
         return NoContent();
     }
 }
+
+// All props nullable: non-nullable ref-type props are implicitly [Required] under
+// <Nullable>annotations</Nullable> and would 400 before our own validation runs
+public record SetTrackTagsRequest(string? Artist, string? Title, string? Album);
 
 public record SubmitJobRequest(
     string Url,

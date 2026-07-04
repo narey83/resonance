@@ -507,6 +507,14 @@ const KeyAnalysis = () => {
   // true = "no scan pending finalization" (initial / already handled)
   // false = "a scan was started from this session and needs finalizing"
   const finalizingRef = useRef(true);
+  const mountedRef = useRef(true);
+
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+    },
+    [],
+  );
 
   const load = useCallback(async () => {
     setError(null);
@@ -515,6 +523,7 @@ const KeyAnalysis = () => {
         keyApi.getAll(),
         keyApi.getScanState().catch(() => null),
       ]);
+      if (!mountedRef.current) return;
       setTracks(data ?? []);
       setScanState(state);
       if (state?.scanning) {
@@ -524,9 +533,9 @@ const KeyAnalysis = () => {
         finalizingRef.current = false;
       }
     } catch {
-      setError('Failed to load key analysis data.');
+      if (mountedRef.current) setError('Failed to load key analysis data.');
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   }, []);
 
@@ -538,6 +547,7 @@ const KeyAnalysis = () => {
   const finalizeScan = useCallback(async () => {
     try {
       const data = await keyApi.getAll();
+      if (!mountedRef.current) return;
       const snapshot = keySnapshotRef.current;
       const updated = new Map();
       for (const t of data ?? []) {
@@ -598,6 +608,11 @@ const KeyAnalysis = () => {
       pollRef.current = setInterval(async () => {
         try {
           const state = await keyApi.getScanState();
+          if (!mountedRef.current) {
+            clearInterval(pollRef.current);
+            return;
+          }
+
           setScanState(state);
           if (!state.scanning) clearInterval(pollRef.current);
         } catch {
@@ -622,9 +637,11 @@ const KeyAnalysis = () => {
     try {
       await keyApi.startScan({ ...request, onlyFilenames: filenames ?? null });
       const state = await keyApi.getScanState();
+      if (!mountedRef.current) return;
       setScanState(state);
       // completion effect fires finalizeScan after this state update renders
     } catch {
+      if (!mountedRef.current) return;
       toast.error('Failed to start scan.');
       setScanningFiles(new Set());
     }
@@ -668,7 +685,7 @@ const KeyAnalysis = () => {
 
     try {
       const state = await keyApi.getScanState();
-      setScanState(state);
+      if (mountedRef.current) setScanState(state);
     } catch {
       /* ignore */
     }
