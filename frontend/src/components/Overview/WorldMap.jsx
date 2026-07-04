@@ -49,7 +49,7 @@ import {
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json';
 const BASE_SCALE = 160;
 const MIN_ZOOM = 0.6;
-const MAX_ZOOM = 6;
+const MAX_ZOOM = 24;
 const TOOLTIP_W = 260;
 const TOOLTIP_H = 280;
 
