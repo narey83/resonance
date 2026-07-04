@@ -148,6 +148,20 @@ public class YtDlpController : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("tracks/{trackId:guid}/tags")]
+    [Consumes("application/json")]
+    public async Task<IActionResult> SetTrackTags(Guid trackId, [FromBody] SetTrackTagsRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Artist) || string.IsNullOrWhiteSpace(request.Title))
+        {
+            return BadRequest("artist and title are required");
+        }
+
+        var album = string.IsNullOrWhiteSpace(request.Album) ? null : request.Album.Trim();
+        await Service.SetTrackTagsAsync(trackId, request.Artist.Trim(), request.Title.Trim(), album);
+        return NoContent();
+    }
+
     // ── Subscriptions ─────────────────────────────────────────────────────────
     [HttpGet("subscriptions")]
     public IActionResult ListSubscriptions() => Ok(Service.ListSubscriptions());
@@ -315,6 +329,10 @@ public class YtDlpController : ControllerBase
         return NoContent();
     }
 }
+
+// All props nullable: non-nullable ref-type props are implicitly [Required] under
+// <Nullable>annotations</Nullable> and would 400 before our own validation runs
+public record SetTrackTagsRequest(string? Artist, string? Title, string? Album);
 
 public record SubmitJobRequest(
     string Url,

@@ -79,6 +79,8 @@ export const cancelTrack = (trackId) => api.delete(`/ytdlp/tracks/${trackId}`);
 export const getTagErrors = () => api.get('/ytdlp/tag-errors');
 export const retryTags = (trackId) =>
   api.post(`/ytdlp/tracks/${trackId}/retry-tags`);
+export const setTags = (trackId, { album, artist, title }) =>
+  api.post(`/ytdlp/tracks/${trackId}/tags`, { album, artist, title });
 
 export const search = (
   q,

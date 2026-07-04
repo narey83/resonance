@@ -515,7 +515,12 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         }
     }
 
-    public async Task RetryTagWritingAsync(Guid trackId)
+    public Task RetryTagWritingAsync(Guid trackId) => RewriteTagsAsync(trackId, overrides: null);
+
+    public Task SetTrackTagsAsync(Guid trackId, string artist, string title, string? album)
+        => RewriteTagsAsync(trackId, (artist, title, album));
+
+    private async Task RewriteTagsAsync(Guid trackId, (string Artist, string Title, string? Album)? overrides)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var track = await db.Tracks.FindAsync(trackId);
@@ -535,6 +540,11 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         var opts = options.CurrentValue.Integrations.YtDlp;
         var metadata = YtDlpMetadataParser.Parse(track.Title, track.Uploader, track.PlaylistIndex, track.UploadDate, opts.DefaultGenre);
+        if (overrides is { } o)
+        {
+            metadata = metadata with { Artist = o.Artist, Title = o.Title, Album = o.Album ?? metadata.Album };
+        }
+
         var error = YtDlpTagWriter.Write(track.FilePath, metadata, track.Url, out _);
 
         if (jobs.TryGetValue(track.JobId, out var job))
@@ -757,6 +767,11 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         return tag;
     }
 
+    // ponytail: substring heuristic covers youtube watch/youtu.be; extend the check if other hosts matter.
+    private static bool IsSingleVideoUrl(string url) =>
+        (url.Contains("watch?v=", StringComparison.OrdinalIgnoreCase) || url.Contains("youtu.be/", StringComparison.OrdinalIgnoreCase))
+        && !url.Contains("list=", StringComparison.OrdinalIgnoreCase);
+
     // ── Job execution ────────────────────────────────────────────────────────
     private async Task RunJobAsync(YtDlpJob job, CancellationToken cancellationToken)
     {
@@ -767,11 +782,15 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             Log.Information("YtDlp: enumerating {Url}", job.Url);
             await EmitEventAsync(job.Id, "info", $"Enumerating: {job.Url}", job);
 
+            // Flat enumeration lists a playlist/channel cheaply but omits per-video title. For a
+            // single video that title is exactly what we want to show, so extract it fully (one video).
+            var flat = IsSingleVideoUrl(job.Url) ? string.Empty : "--flat-playlist ";
+
             var process = new Process
             {
                 StartInfo = new ProcessStartInfo(opts.ExecutablePath)
                 {
-                    Arguments = $"--flat-playlist --dump-json{(jsRuntimeArg != null ? " " + jsRuntimeArg : string.Empty)} \"{job.Url}\"",
+                    Arguments = $"{flat}--dump-json{(jsRuntimeArg != null ? " " + jsRuntimeArg : string.Empty)} \"{job.Url}\"",
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardOutput = true,
@@ -932,10 +951,12 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 url = $"https://www.youtube.com/watch?v={videoId}";
             }
 
-            // Populate job title/uploader from the first track/channel if not set
-            if (string.IsNullOrEmpty(job.Title) && !string.IsNullOrEmpty(channelName))
+            // Populate job title/uploader if not set. A single-video job shows the video title;
+            // a playlist/channel job shows the channel name.
+            var jobTitle = IsSingleVideoUrl(job.Url) && !string.IsNullOrEmpty(title) ? title : channelName;
+            if (string.IsNullOrEmpty(job.Title) && !string.IsNullOrEmpty(jobTitle))
             {
-                job.Title = channelName;
+                job.Title = jobTitle;
                 job.Uploader = channelName;
                 job.ThumbnailUrl = thumbnail;
             }

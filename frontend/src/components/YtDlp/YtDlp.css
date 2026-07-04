@@ -536,6 +536,34 @@
   margin-top: 3px;
 }
 
+.ytdlp-tag-fix {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ytdlp-tag-fix input {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.ytdlp-tag-fix input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ytdlp-tag-fix-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 .ytdlp-search-row {
   display: flex;
   gap: 8px;
