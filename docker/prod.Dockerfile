@@ -19,5 +19,7 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=build /app .
+# Empty; the backend is API-only but options validation insists web.content_path exists.
+RUN mkdir -p wwwroot
 EXPOSE 5030
 ENTRYPOINT ["dotnet", "resonance.dll"]
