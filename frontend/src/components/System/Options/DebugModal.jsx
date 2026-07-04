@@ -52,7 +52,12 @@ const DebugModal = ({ onClose, open, theme }) => {
         </Switch>
       </Modal.Content>
       <Modal.Actions>
-        <Button onClick={onClose}>Close</Button>
+        <Button
+          className="hover-fx"
+          onClick={onClose}
+        >
+          Close
+        </Button>
       </Modal.Actions>
     </Modal>
   );

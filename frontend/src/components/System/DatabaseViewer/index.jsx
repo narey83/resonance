@@ -353,7 +353,7 @@ const DatabaseViewer = () => {
           {databases.map((database) => (
             <div key={database}>
               <button
-                className={`dbv-db-item${selectedDatabase === database ? ' dbv-db-item--active' : ''}`}
+                className={`dbv-db-item hover-fx${selectedDatabase === database ? ' dbv-db-item--active' : ''}`}
                 onClick={() => selectDatabase(database)}
                 type="button"
               >
@@ -521,7 +521,7 @@ const DatabaseViewer = () => {
               value={limit}
             />
             <button
-              className={`dbv-icon-btn${showHistory ? ' dbv-icon-btn--active' : ''}`}
+              className={`dbv-icon-btn hover-fx${showHistory ? ' dbv-icon-btn--active' : ''}`}
               onClick={() => setShowHistory((v) => !v)}
               title="Query history"
               type="button"
@@ -529,7 +529,7 @@ const DatabaseViewer = () => {
               <Clock size={14} />
             </button>
             <button
-              className="dbv-run-btn"
+              className="dbv-run-btn hover-fx"
               disabled={!selectedDatabase || !sql.trim() || running}
               onClick={handleRun}
               type="button"
@@ -711,7 +711,7 @@ const DatabaseViewer = () => {
             <div className="dbv-cell-modal-header">
               <span className="dbv-cell-modal-col">{expandedCell.col}</span>
               <button
-                className="dbv-cell-modal-close"
+                className="dbv-cell-modal-close hover-fx"
                 onClick={() => setExpandedCell(null)}
                 type="button"
               >
@@ -727,7 +727,7 @@ const DatabaseViewer = () => {
             </div>
             <div className="dbv-cell-modal-footer">
               <button
-                className="dbv-cell-copy-btn"
+                className="dbv-cell-copy-btn hover-fx"
                 onClick={() => {
                   if (expandedCell.value != null)
                     navigator.clipboard.writeText(String(expandedCell.value));

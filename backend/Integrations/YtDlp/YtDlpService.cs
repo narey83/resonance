@@ -768,6 +768,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             process.Start();
 
             // Read stderr concurrently — if unread, the pipe buffer fills and the process deadlocks
+            var stderrLines = new List<string>();
             var stderrTask = Task.Run(async () =>
             {
                 string? errLine;
@@ -775,12 +776,14 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 {
                     if (!string.IsNullOrWhiteSpace(errLine))
                     {
+                        stderrLines.Add(errLine);
                         await hub.BroadcastJobLogAsync(job.Id, errLine, isError: false);
                         await EmitEventAsync(job.Id, "raw", errLine, job);
                     }
                 }
             }, CancellationToken.None);
 
+            var tracksFound = 0;
             string? line;
             while ((line = await process.StandardOutput.ReadLineAsync(cancellationToken)) != null)
             {
@@ -806,6 +809,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 var track = await ParseAndInsertTrackAsync(job, line, opts, cancellationToken);
                 if (track != null)
                 {
+                    tracksFound++;
                     await EmitEventAsync(job.Id, "info", $"Found: {track.Title}", job);
                     _ = Task.Run(() => RunWorkerAsync(track, cancellationToken), CancellationToken.None);
                 }
@@ -815,6 +819,35 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
             if (job.State == YtDlpJobState.Cancelled || !jobs.ContainsKey(job.Id))
             {
+                return;
+            }
+
+            // yt-dlp can exit 0 while still failing to produce anything (e.g. an expired/invalid
+            // cookie causing YouTube to hard-block the request) — treat "no tracks" as a failure
+            // instead of leaving the job stuck in Active forever with nothing to do.
+            if (tracksFound == 0)
+            {
+                var reason = process.ExitCode != 0
+                    ? $"yt-dlp exited with code {process.ExitCode} and found no tracks"
+                    : "yt-dlp found no tracks";
+                var detail = stderrLines.Count > 0 ? $"{reason}: {stderrLines[^1]}" : reason;
+
+                Log.Error("YtDlp: enumeration produced no tracks for {Url} ({Detail})", job.Url, detail);
+
+                job.State = YtDlpJobState.Failed;
+                job.CompletedAt = DateTime.UtcNow;
+
+                await using var failedDb = await dbFactory.CreateDbContextAsync(CancellationToken.None);
+                var failedDbJob = await failedDb.Jobs.FindAsync(job.Id);
+                if (failedDbJob != null)
+                {
+                    failedDbJob.State = job.State;
+                    failedDbJob.CompletedAt = job.CompletedAt;
+                    await failedDb.SaveChangesAsync();
+                }
+
+                await BroadcastJobsAsync();
+                await EmitEventAsync(job.Id, "error", detail, job);
                 return;
             }
 
@@ -873,8 +906,11 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 ? uploader
                 : new[] { JsonStr("playlist_uploader"), JsonStr("playlist_channel"), JsonStr("channel") }
                     .FirstOrDefault(s => !string.IsNullOrEmpty(s)) ?? string.Empty;
-            var duration = root.TryGetProperty("duration", out var durProp) && durProp.TryGetInt32(out var dur) ? (int?)dur : null;
-            var playlistIndex = root.TryGetProperty("playlist_index", out var idxProp) && idxProp.TryGetInt32(out var idx) ? (int?)idx : null;
+            // A standalone video (not part of a playlist) reports playlist_index as JSON null
+            // rather than omitting it, and TryGetInt32 throws (not just returns false) on a
+            // non-Number element — so the ValueKind check is required, not just belt-and-braces.
+            var duration = root.TryGetProperty("duration", out var durProp) && durProp.ValueKind == JsonValueKind.Number && durProp.TryGetInt32(out var dur) ? (int?)dur : null;
+            var playlistIndex = root.TryGetProperty("playlist_index", out var idxProp) && idxProp.ValueKind == JsonValueKind.Number && idxProp.TryGetInt32(out var idx) ? (int?)idx : null;
 
             // If the URL is just a video ID, build the full URL
             if (!url.StartsWith("http") && videoId.Length > 0)
@@ -1057,6 +1093,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         string? resolvedFilePath = null;
         bool filteredByDuration = false;
         string? stderrError = null;
+        var stderrLines = new List<string>();
 
         try
         {
@@ -1070,6 +1107,8 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 {
                     if (!string.IsNullOrWhiteSpace(errLine))
                     {
+                        stderrLines.Add(errLine);
+
                         if (errLine.Contains("age-restricted", StringComparison.OrdinalIgnoreCase) ||
                             errLine.Contains("Sign in to confirm your age", StringComparison.OrdinalIgnoreCase))
                         {
@@ -1135,7 +1174,9 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             }
             else
             {
-                await HandleFailureAsync(track, stderrError ?? "yt-dlp exited with code " + process.ExitCode, opts, db, job);
+                var reason = "yt-dlp exited with code " + process.ExitCode;
+                var detail = stderrError ?? (stderrLines.Count > 0 ? $"{reason}: {stderrLines[^1]}" : reason);
+                await HandleFailureAsync(track, detail, opts, db, job);
             }
         }
         catch (OperationCanceledException)

@@ -8,6 +8,7 @@ import {
 import { PlayerProvider, usePlayer } from '../context/PlayerContext';
 import { TagEditActivityProvider } from '../context/TagEditActivityContext';
 import * as chatAPI from '../lib/chat';
+import { emitPrivateMessage } from '../lib/chatEvents';
 import * as eventsAPI from '../lib/events';
 import { createApplicationHubConnection } from '../lib/hubFactory';
 import * as networkAPI from '../lib/network';
@@ -15,6 +16,7 @@ import * as prefs from '../lib/prefs';
 import * as roomsAPI from '../lib/rooms';
 import { connect, disconnect } from '../lib/server';
 import * as session from '../lib/session';
+import { playMessageReceived } from '../lib/sound';
 import { getSessionId, isAdmin, isPassthroughEnabled } from '../lib/token';
 import * as transfersAPI from '../lib/transfers';
 import { parseUtcDate } from '../lib/util';
@@ -106,12 +108,9 @@ const ALL_THEME_CLASSES = ['amoled', 'dark', 'dim'];
 const INIT_MAX_ATTEMPTS = 30;
 
 const DEFAULT_NOTIFICATION_SETTINGS = {
-  download: true,
-  upload: true,
   privateMessage: true,
   browsed: true,
   roomMention: true,
-  connection: true,
 };
 
 const loadNotificationSettings = () => {
@@ -134,26 +133,6 @@ const formatEventNotification = (record, lastReadAt) => {
   let message;
   let type;
   switch (record.type) {
-    case 'DownloadDirectoryComplete': {
-      const folder =
-        (d.remoteDirectoryName || '').split(/[/\\]/).filter(Boolean).pop() ||
-        d.remoteDirectoryName ||
-        '';
-      type = 'download';
-      message = `Downloaded "${folder}" from ${d.username || '?'}`;
-      break;
-    }
-
-    case 'UploadFileComplete': {
-      const file =
-        (d.remoteFilename || '').split(/[/\\]/).filter(Boolean).pop() ||
-        d.remoteFilename ||
-        '';
-      type = 'upload';
-      message = `Uploaded "${file}" to ${d.transfer?.username || '?'}`;
-      break;
-    }
-
     case 'PrivateMessageReceived': {
       const text = d.message?.message || '';
       const preview = text.length > 60 ? `${text.slice(0, 60)}…` : text;
@@ -174,14 +153,6 @@ const formatEventNotification = (record, lastReadAt) => {
       break;
     }
 
-    case 'SoulseekClientConnected':
-      type = 'connection';
-      message = 'Connected to server';
-      break;
-    case 'SoulseekClientDisconnected':
-      type = 'connection';
-      message = 'Disconnected from server';
-      break;
     default:
       return null;
   }
@@ -334,7 +305,12 @@ const App = () => {
     (
       type,
       message,
-      { skipToast = false, toastOptions = {}, toastType = 'info' } = {},
+      {
+        skipToast = false,
+        sound = false,
+        toastOptions = {},
+        toastType = 'info',
+      } = {},
     ) => {
       if (!notifSettingsRef.current[type]) return;
       const notification = {
@@ -345,6 +321,7 @@ const App = () => {
         read: false,
       };
       setNotifications((previous) => [notification, ...previous].slice(0, 100));
+      if (sound) playMessageReceived();
       if (!skipToast) toast[toastType](message, toastOptions);
     },
     [],
@@ -461,9 +438,6 @@ const App = () => {
     // Distinguishes deliberate hub.stop() (logout, unmount, retry-now) from a
     // genuine connection loss in onclose.
     let intentionalStop = false;
-    // True while we are recovering from a loss via manual start, so success
-    // announces "Reconnected" (initial start stays silent).
-    let recovering = false;
     let startRetryTimer = null;
     let startAttempt = 0;
 
@@ -479,28 +453,6 @@ const App = () => {
       onRetry: (context) => markReconnecting(context.previousRetryCount + 1),
     });
 
-    const announceReconnected = () => {
-      addNotificationRef.current('connection', 'Reconnected to server', {
-        skipToast: true,
-      });
-      if (notifSettingsRef.current.connection) {
-        if (toast.isActive('connection-status')) {
-          toast.update('connection-status', {
-            render: 'Reconnected',
-            type: toast.TYPE.SUCCESS,
-            autoClose: 4_000,
-          });
-        } else {
-          toast.success('Reconnected', {
-            toastId: 'connection-status',
-            autoClose: 4_000,
-          });
-        }
-      } else {
-        toast.dismiss('connection-status');
-      }
-    };
-
     // Manual start loop covering the two cases automatic reconnect does not:
     // a failed initial start, and onclose. Retries until it succeeds.
     const startWithRetry = async () => {
@@ -508,16 +460,11 @@ const App = () => {
         await hub.start();
         if (intentionalStop) return;
         startAttempt = 0;
-        if (recovering) {
-          recovering = false;
-          announceReconnected();
-        }
 
         setConnection({ attempt: 0, since: null, status: 'online' });
       } catch {
         if (intentionalStop) return;
         startAttempt += 1;
-        recovering = true;
         markReconnecting(startAttempt);
         startRetryTimer = setTimeout(
           startWithRetry,
@@ -555,46 +502,28 @@ const App = () => {
 
     hub.onreconnecting(() => {
       markReconnecting(1);
-      addNotificationRef.current('connection', 'Lost connection to server', {
-        skipToast: true,
-      });
     });
 
     hub.onclose(() => {
       if (intentionalStop) return;
       // Automatic reconnect gave up (or the connection was force-closed);
       // fall back to the manual start loop so we never dead-end.
-      recovering = true;
       markReconnecting(1);
       startWithRetry();
     });
 
     hub.onreconnected(() => {
       setConnection({ attempt: 0, since: null, status: 'online' });
-      announceReconnected();
-    });
-
-    hub.on('DOWNLOAD_DIRECTORY_COMPLETE', ({ directoryName, username }) => {
-      addNotificationRef.current(
-        'download',
-        `Downloaded "${directoryName}" from ${username}`,
-        { toastType: 'success' },
-      );
-    });
-
-    hub.on('UPLOAD_FILE_COMPLETE', ({ filename, username }) => {
-      addNotificationRef.current(
-        'upload',
-        `Uploaded "${filename}" to ${username}`,
-      );
     });
 
     hub.on('PRIVATE_MESSAGE', ({ message, username }) => {
+      emitPrivateMessage({ message, username });
       const preview =
         message.length > 60 ? `${message.slice(0, 60)}…` : message;
       addNotificationRef.current(
         'privateMessage',
         `Private message from ${username}: ${preview}`,
+        { sound: true },
       );
     });
 
@@ -655,7 +584,6 @@ const App = () => {
       }
 
       intentionalStop = false;
-      recovering = true;
       startWithRetry();
     };
 
@@ -1054,7 +982,7 @@ const App = () => {
                 brand={
                   <div className="status-brand">
                     <button
-                      className="app-nav-toggle"
+                      className="app-nav-toggle hover-fx"
                       onClick={handleToggleNav}
                       title={
                         navCollapsed ? 'Expand sidebar' : 'Collapse sidebar'
@@ -1250,6 +1178,7 @@ const App = () => {
                       </Modal.Content>
                       <Modal.Actions>
                         <Button
+                          className="hover-fx"
                           fluid
                           primary
                           style={{ marginLeft: 0 }}

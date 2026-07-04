@@ -9,14 +9,23 @@
 /* Controls bar between status strip and map */
 .map-controls {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 16px;
-  height: 40px;
-  min-height: 40px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 16px;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+.map-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 24px;
+}
+
+.map-controls-filters {
+  flex-wrap: wrap;
 }
 
 .map-controls-label {
@@ -58,6 +67,73 @@
   margin-left: auto;
   font-size: 11px;
   color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.map-search {
+  width: 180px;
+  padding: 3px 9px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.map-search::placeholder {
+  color: var(--text-muted);
+}
+
+.map-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.map-custom-range {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.map-custom-range-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.map-custom-range-field input {
+  padding: 3px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.map-custom-range-apply,
+.map-custom-range-cancel {
+  padding: 3px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.map-custom-range-apply {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.map-custom-range-cancel:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
 .map-controls-resolving {

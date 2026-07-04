@@ -276,7 +276,7 @@ const TagSanitization = () => {
       <div className="ts-action-bar">
         {scanning ? (
           <button
-            className="ts-btn ts-btn--cancel"
+            className="ts-btn ts-btn--cancel hover-fx"
             onClick={handleCancel}
             type="button"
           >
@@ -285,7 +285,7 @@ const TagSanitization = () => {
         ) : (
           <>
             <button
-              className="ts-btn ts-btn--primary"
+              className="ts-btn ts-btn--primary hover-fx"
               disabled={loading}
               onClick={() => beginScan(false)}
               type="button"
@@ -293,7 +293,7 @@ const TagSanitization = () => {
               {dryRun ? 'Analyse Library' : 'Sanitize Tags'}
             </button>
             <button
-              className="ts-btn ts-btn--secondary"
+              className="ts-btn ts-btn--secondary hover-fx"
               disabled={loading}
               onClick={() => beginScan(true)}
               title="Sanitize all tags, then run the online metadata lookup"

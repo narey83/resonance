@@ -354,7 +354,7 @@ const Pager = ({ onPage, page, totalPages }) =>
   totalPages > 1 ? (
     <div className="dupes-pager">
       <button
-        className="dupes-pager-btn"
+        className="dupes-pager-btn hover-fx"
         disabled={page === 0}
         onClick={() => onPage(0)}
         type="button"
@@ -362,7 +362,7 @@ const Pager = ({ onPage, page, totalPages }) =>
         «
       </button>
       <button
-        className="dupes-pager-btn"
+        className="dupes-pager-btn hover-fx"
         disabled={page === 0}
         onClick={() => onPage((p) => p - 1)}
         type="button"
@@ -373,7 +373,7 @@ const Pager = ({ onPage, page, totalPages }) =>
         {page + 1} / {totalPages}
       </span>
       <button
-        className="dupes-pager-btn"
+        className="dupes-pager-btn hover-fx"
         disabled={page === totalPages - 1}
         onClick={() => onPage((p) => p + 1)}
         type="button"
@@ -381,7 +381,7 @@ const Pager = ({ onPage, page, totalPages }) =>
         ›
       </button>
       <button
-        className="dupes-pager-btn"
+        className="dupes-pager-btn hover-fx"
         disabled={page === totalPages - 1}
         onClick={() => onPage(totalPages - 1)}
         type="button"
@@ -646,7 +646,7 @@ const Duplicates = () => {
               <option value="folder">By folder</option>
             </select>
             <button
-              className="dupes-refresh-btn"
+              className="dupes-refresh-btn hover-fx"
               disabled={loading}
               onClick={() => {
                 loadingRef.current = false;
@@ -670,7 +670,7 @@ const Duplicates = () => {
               <Search size={12} />
               <span>{activeFilterLabel}</span>
               <button
-                className="dupes-filter-clear"
+                className="dupes-filter-clear hover-fx"
                 onClick={clearFilter}
                 type="button"
               >
@@ -696,7 +696,7 @@ const Duplicates = () => {
               />
               {searchQuery && (
                 <button
-                  className="dupes-search-clear"
+                  className="dupes-search-clear hover-fx"
                   onClick={() => {
                     setSearchQuery('');
                     setShowSuggestions(false);
@@ -1084,7 +1084,7 @@ const Duplicates = () => {
               onClick={(clickEvent) => clickEvent.stopPropagation()}
             >
               <button
-                className="dupes-deletion-action-btn dupes-deletion-action-btn--delete"
+                className="dupes-deletion-action-btn dupes-deletion-action-btn--delete hover-fx"
                 disabled={deleting}
                 onClick={handleDeleteQueued}
                 type="button"
@@ -1095,7 +1095,7 @@ const Duplicates = () => {
                   : `Delete ${deletionQueue.size} file${deletionQueue.size !== 1 ? 's' : ''}`}
               </button>
               <button
-                className="dupes-deletion-action-btn dupes-deletion-action-btn--clear"
+                className="dupes-deletion-action-btn dupes-deletion-action-btn--clear hover-fx"
                 onClick={() => {
                   setDeletionQueue(new Set());
                   setShowDeletionList(false);

@@ -168,7 +168,7 @@ const SubscriptionsPane = ({ subscriptions }) => {
                   ))}
                 </select>
                 <button
-                  className="ytdlp-btn ytdlp-btn--xs"
+                  className="ytdlp-btn hover-fx ytdlp-btn--xs"
                   disabled={busy[sub.id]}
                   onClick={() => handleCheck(sub)}
                   title="Check now"
@@ -177,7 +177,7 @@ const SubscriptionsPane = ({ subscriptions }) => {
                   <RefreshCw size={13} />
                 </button>
                 <button
-                  className="ytdlp-btn ytdlp-btn--xs"
+                  className="ytdlp-btn hover-fx ytdlp-btn--xs"
                   disabled={busy[sub.id]}
                   onClick={() => handleToggle(sub)}
                   title={sub.enabled ? 'Pause' : 'Resume'}
@@ -186,7 +186,7 @@ const SubscriptionsPane = ({ subscriptions }) => {
                   {sub.enabled ? <Pause size={13} /> : <Play size={13} />}
                 </button>
                 <button
-                  className="ytdlp-btn ytdlp-btn--xs ytdlp-btn--danger"
+                  className="ytdlp-btn hover-fx ytdlp-btn--xs ytdlp-btn--danger"
                   disabled={busy[sub.id]}
                   onClick={() => handleRemove(sub)}
                   title="Unsubscribe"

@@ -130,7 +130,7 @@ const AlphaStrip = ({ handlerRef }) => (
   <div className="jb-alpha-strip">
     {ALPHA_LETTERS.map((l) => (
       <button
-        className="jb-alpha-btn"
+        className="jb-alpha-btn hover-fx"
         key={l}
         onClick={() => handlerRef.current?.(l)}
         type="button"
@@ -2295,7 +2295,7 @@ const HomeView = ({
       {/* Stats */}
       <div className="jb-home-stats">
         <button
-          className="jb-home-stat"
+          className="jb-home-stat hover-fx"
           onClick={() => onNavigate(VIEWS.TRACKS)}
           type="button"
         >
@@ -2305,7 +2305,7 @@ const HomeView = ({
           <span className="jb-home-stat-label">tracks</span>
         </button>
         <button
-          className="jb-home-stat"
+          className="jb-home-stat hover-fx"
           onClick={() => onNavigate(VIEWS.ARTISTS)}
           type="button"
         >
@@ -2315,7 +2315,7 @@ const HomeView = ({
           <span className="jb-home-stat-label">artists</span>
         </button>
         <button
-          className="jb-home-stat"
+          className="jb-home-stat hover-fx"
           onClick={() => onNavigate(VIEWS.ALBUMS)}
           type="button"
         >
@@ -2325,7 +2325,7 @@ const HomeView = ({
           <span className="jb-home-stat-label">albums</span>
         </button>
         <button
-          className="jb-home-stat"
+          className="jb-home-stat hover-fx"
           onClick={() => onNavigate(VIEWS.MIXTAPES)}
           type="button"
         >
@@ -2336,7 +2336,7 @@ const HomeView = ({
         </button>
         {lovedCount > 0 && (
           <button
-            className="jb-home-stat"
+            className="jb-home-stat hover-fx"
             onClick={() => onNavigate(VIEWS.LOVED)}
             type="button"
           >
@@ -2349,7 +2349,7 @@ const HomeView = ({
         {ISSUE_TYPES.map(({ id, label }) =>
           (issueCounts[id] ?? 0) > 0 ? (
             <button
-              className="jb-home-stat jb-home-stat--warn"
+              className="jb-home-stat hover-fx jb-home-stat--warn"
               key={id}
               onClick={() => onNavigate(VIEWS.ISSUES, { initialIssue: id })}
               type="button"
@@ -3772,7 +3772,7 @@ const Library = () => {
         <div className="jb-nav-section">Library</div>
         {NAV_ITEMS.map(({ icon: Icon, id, label }) => (
           <button
-            className={`jb-nav-item${activeView === id ? ' jb-nav-item--active' : ''}`}
+            className={`jb-nav-item hover-fx${activeView === id ? ' jb-nav-item--active' : ''}`}
             key={id}
             onClick={() => navTo(id)}
             title={navOpen ? undefined : label}
@@ -3820,7 +3820,7 @@ const Library = () => {
               />
             </div>
             <button
-              className="jb-scan-stop"
+              className="jb-scan-stop hover-fx"
               onClick={() => cancelSync().catch(() => {})}
               title="Stop scanning"
               type="button"
@@ -3831,7 +3831,7 @@ const Library = () => {
         )}
         <div className="jb-topbar">
           <button
-            className={`jb-icon-btn${navOpen ? ' jb-icon-btn--active' : ''}`}
+            className={`jb-icon-btn hover-fx${navOpen ? ' jb-icon-btn--active' : ''}`}
             onClick={toggleNav}
             title={navOpen ? 'Hide library pane' : 'Show library pane'}
             type="button"
@@ -3856,7 +3856,7 @@ const Library = () => {
             />
             {searchQuery && (
               <button
-                className="jb-search-clear"
+                className="jb-search-clear hover-fx"
                 onClick={clearSearch}
                 type="button"
               >
@@ -3867,7 +3867,7 @@ const Library = () => {
 
           <div className="jb-topbar-right">
             <button
-              className={`jb-icon-btn${currentTrack?.key ? ' jb-icon-btn--active' : ''}`}
+              className={`jb-icon-btn hover-fx${currentTrack?.key ? ' jb-icon-btn--active' : ''}`}
               onClick={() =>
                 currentTrack
                   ? handleAutoMix(currentTrack)
@@ -3884,7 +3884,7 @@ const Library = () => {
             </button>
 
             <button
-              className={`jb-icon-btn${queuePanelOpen ? ' jb-icon-btn--active' : ''}`}
+              className={`jb-icon-btn hover-fx${queuePanelOpen ? ' jb-icon-btn--active' : ''}`}
               onClick={toggleQueuePanel}
               title="Toggle queue"
               type="button"
@@ -3893,7 +3893,7 @@ const Library = () => {
             </button>
 
             <button
-              className="jb-icon-btn"
+              className="jb-icon-btn hover-fx"
               disabled={syncing}
               onClick={handleRefresh}
               title="Refresh library"
@@ -3908,7 +3908,7 @@ const Library = () => {
             {hasTileList && (
               <div className="jb-btn-group">
                 <button
-                  className="jb-icon-btn"
+                  className="jb-icon-btn hover-fx"
                   disabled={tileListDisabled}
                   onClick={handleToggleViewMode}
                   title={
@@ -3925,7 +3925,7 @@ const Library = () => {
                   )}
                 </button>
                 <button
-                  className="jb-icon-btn"
+                  className="jb-icon-btn hover-fx"
                   disabled={
                     tileListDisabled || viewMode !== 'tile' || tileSize <= 120
                   }
@@ -3940,7 +3940,7 @@ const Library = () => {
                   <ZoomOut size={15} />
                 </button>
                 <button
-                  className="jb-icon-btn"
+                  className="jb-icon-btn hover-fx"
                   disabled={
                     tileListDisabled || viewMode !== 'tile' || tileSize >= 300
                   }

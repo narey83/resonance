@@ -101,7 +101,10 @@ namespace resonance.MusicLibrary
                     key_sig      TEXT,
                     comment      TEXT,
                     has_artwork  INTEGER NOT NULL DEFAULT 0,
-                    tag_types    TEXT
+                    tag_types    TEXT,
+                    bit_rate     INTEGER,
+                    sample_rate  INTEGER,
+                    bit_depth    INTEGER
                 );
                 CREATE INDEX IF NOT EXISTS idx_tracks_directory ON {T}(directory);
                 CREATE INDEX IF NOT EXISTS idx_tracks_artist    ON {T}(lower(artist));
@@ -127,7 +130,10 @@ namespace resonance.MusicLibrary
                     key_sig      TEXT,
                     comment      TEXT,
                     has_artwork  INTEGER NOT NULL DEFAULT 0,
-                    tag_types    TEXT
+                    tag_types    TEXT,
+                    bit_rate     INTEGER,
+                    sample_rate  INTEGER,
+                    bit_depth    INTEGER
                 );
                 CREATE INDEX IF NOT EXISTS idx_tracks_directory ON {T}(directory);
                 CREATE INDEX IF NOT EXISTS idx_tracks_artist    ON {T}(artist COLLATE NOCASE);
@@ -144,6 +150,20 @@ namespace resonance.MusicLibrary
             catch (Exception)
             { /* column already exists */
             }
+
+            // Migration: add bit_rate/sample_rate/bit_depth columns if they don't exist yet
+            foreach (var column in new[] { "bit_rate", "sample_rate", "bit_depth" })
+            {
+                try
+                {
+                    using var alter = conn.CreateCommand();
+                    alter.CommandText = $"ALTER TABLE {T} ADD COLUMN {column} INTEGER";
+                    alter.ExecuteNonQuery();
+                }
+                catch (Exception)
+                { /* column already exists */
+                }
+            }
         }
 
         // Shared by Upsert and UpsertMany so the column/conflict handling can't drift between them.
@@ -151,11 +171,11 @@ namespace resonance.MusicLibrary
                 INSERT INTO {T}
                     (path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
                      title, artist, album_artist, album, year, track_number, disc_number,
-                     genre, bpm, key_sig, comment, has_artwork, tag_types)
+                     genre, bpm, key_sig, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth)
                 VALUES
                     (@path, @filename, @dir, @ext, @size, @mod, @idx, @dur,
                      @title, @artist, @aartist, @album, @year, @track, @disc,
-                     @genre, @bpm, @key, @comment, @art, @tagtypes)
+                     @genre, @bpm, @key, @comment, @art, @tagtypes, @bitrate, @samplerate, @bitdepth)
                 ON CONFLICT(path) DO UPDATE SET
                     filename=excluded.filename, directory=excluded.directory, extension=excluded.extension,
                     file_size=excluded.file_size, file_modified=excluded.file_modified, indexed_at=excluded.indexed_at,
@@ -163,7 +183,8 @@ namespace resonance.MusicLibrary
                     album_artist=excluded.album_artist, album=excluded.album, year=excluded.year,
                     track_number=excluded.track_number, disc_number=excluded.disc_number,
                     genre=excluded.genre, bpm=excluded.bpm, key_sig=excluded.key_sig,
-                    comment=excluded.comment, has_artwork=excluded.has_artwork, tag_types=excluded.tag_types";
+                    comment=excluded.comment, has_artwork=excluded.has_artwork, tag_types=excluded.tag_types,
+                    bit_rate=excluded.bit_rate, sample_rate=excluded.sample_rate, bit_depth=excluded.bit_depth";
 
         public void Upsert(MusicTrack t)
         {
@@ -192,6 +213,9 @@ namespace resonance.MusicLibrary
             AddParam(cmd, "@comment", (object)t.Comment ?? DBNull.Value);
             AddParam(cmd, "@art", t.HasArtwork ? 1 : 0);
             AddParam(cmd, "@tagtypes", (object)t.TagTypes ?? DBNull.Value);
+            AddParam(cmd, "@bitrate", (object)t.BitRate ?? DBNull.Value);
+            AddParam(cmd, "@samplerate", (object)t.SampleRate ?? DBNull.Value);
+            AddParam(cmd, "@bitdepth", (object)t.BitDepth ?? DBNull.Value);
             cmd.ExecuteNonQuery();
         }
 
@@ -221,6 +245,7 @@ namespace resonance.MusicLibrary
                 "@path", "@filename", "@dir", "@ext", "@size", "@mod", "@idx", "@dur",
                 "@title", "@artist", "@aartist", "@album", "@year", "@track", "@disc",
                 "@genre", "@bpm", "@key", "@comment", "@art", "@tagtypes",
+                "@bitrate", "@samplerate", "@bitdepth",
             })
             {
                 var p = cmd.CreateParameter();
@@ -264,6 +289,9 @@ namespace resonance.MusicLibrary
                     cmd.Parameters["@comment"].Value = (object)t.Comment ?? DBNull.Value;
                     cmd.Parameters["@art"].Value = t.HasArtwork ? 1 : 0;
                     cmd.Parameters["@tagtypes"].Value = (object)t.TagTypes ?? DBNull.Value;
+                    cmd.Parameters["@bitrate"].Value = (object)t.BitRate ?? DBNull.Value;
+                    cmd.Parameters["@samplerate"].Value = (object)t.SampleRate ?? DBNull.Value;
+                    cmd.Parameters["@bitdepth"].Value = (object)t.BitDepth ?? DBNull.Value;
                     cmd.ExecuteNonQuery();
                 }
 
@@ -446,7 +474,7 @@ namespace resonance.MusicLibrary
             cmd.CommandText = $@"
                 SELECT path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
                        title, artist, album_artist, album, year, track_number, disc_number,
-                       genre, bpm, key_sig, comment, has_artwork, tag_types
+                       genre, bpm, key_sig, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth
                 FROM {T} {where}
                 ORDER BY {orderBy}
                 LIMIT @limit OFFSET @offset";
@@ -740,7 +768,7 @@ namespace resonance.MusicLibrary
             cmd.CommandText = $@"
                 SELECT path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
                        title, artist, album_artist, album, year, track_number, disc_number,
-                       genre, bpm, key_sig, comment, has_artwork, tag_types
+                       genre, bpm, key_sig, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth
                 FROM {T}
                 WHERE key_sig IS NOT NULL AND key_sig != ''
                 ORDER BY {OrdBy("artist")}";
@@ -791,7 +819,7 @@ namespace resonance.MusicLibrary
             cmd.CommandText = $@"
                 SELECT path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
                        title, artist, album_artist, album, year, track_number, disc_number,
-                       genre, bpm, key_sig, comment, has_artwork, tag_types
+                       genre, bpm, key_sig, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth
                 FROM {T} WHERE path=@path";
             AddParam(cmd, "@path", path);
             using var r = cmd.ExecuteReader();
@@ -831,7 +859,7 @@ namespace resonance.MusicLibrary
                 cmd.CommandText = $@"
                     SELECT path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
                            title, artist, album_artist, album, year, track_number, disc_number,
-                           genre, bpm, key_sig, comment, has_artwork, tag_types
+                           genre, bpm, key_sig, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth
                     FROM {T} WHERE path IN ({string.Join(",", names)})";
                 using var r = cmd.ExecuteReader();
                 while (r.Read())
@@ -873,7 +901,7 @@ namespace resonance.MusicLibrary
             cmd.CommandText = $@"
                 SELECT path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
                        title, artist, album_artist, album, year, track_number, disc_number,
-                       genre, bpm, key_sig, comment, has_artwork, tag_types
+                       genre, bpm, key_sig, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth
                 FROM {T} WHERE directory=@dir";
             AddParam(cmd, "@dir", directory);
             using var r = cmd.ExecuteReader();
@@ -927,6 +955,9 @@ namespace resonance.MusicLibrary
             Key: r.IsDBNull(17) ? null : r.GetString(17),
             Comment: r.IsDBNull(18) ? null : r.GetString(18),
             HasArtwork: r.GetInt32(19) != 0,
-            TagTypes: r.IsDBNull(20) ? null : r.GetString(20));
+            TagTypes: r.IsDBNull(20) ? null : r.GetString(20),
+            BitRate: r.IsDBNull(21) ? null : r.GetInt32(21),
+            SampleRate: r.IsDBNull(22) ? null : r.GetInt32(22),
+            BitDepth: r.IsDBNull(23) ? null : r.GetInt32(23));
     }
 }

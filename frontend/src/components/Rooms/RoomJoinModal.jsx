@@ -165,8 +165,14 @@ const RoomJoinModal = ({ joinRoom: parentJoinRoom, ...modalOptions }) => {
         )}
       </Modal.Content>
       <Modal.Actions>
-        <Button onClick={() => setOpen(false)}>Cancel</Button>
         <Button
+          className="hover-fx"
+          onClick={() => setOpen(false)}
+        >
+          Cancel
+        </Button>
+        <Button
+          className="hover-fx"
           disabled={!selected}
           onClick={() => joinRoom()}
           positive

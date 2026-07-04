@@ -85,7 +85,10 @@ namespace resonance.MusicLibrary
         string Key,
         string Comment,
         bool HasArtwork,
-        string TagTypes)
+        string TagTypes,
+        int? BitRate,
+        int? SampleRate,
+        int? BitDepth)
     {
         public string Sig { get; init; }
 

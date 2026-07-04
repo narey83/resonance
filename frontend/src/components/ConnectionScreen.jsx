@@ -61,6 +61,7 @@ const ConnectionScreen = ({
       )}
       {onRetryNow && (
         <Button
+          className="hover-fx"
           onClick={onRetryNow}
           size="small"
         >

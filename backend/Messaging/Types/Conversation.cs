@@ -35,6 +35,7 @@
 
 namespace resonance.Messaging
 {
+    using System;
     using System.Collections.Generic;
 
     public class Conversation
@@ -43,6 +44,7 @@ namespace resonance.Messaging
         public bool IsActive { get; set; } = true;
         public int UnAcknowledgedMessageCount { get; set; }
         public bool HasUnAcknowledgedMessages => UnAcknowledgedMessageCount > 0;
+        public DateTime? LastMessageTimestamp { get; set; }
         public IEnumerable<PrivateMessage> Messages { get; set; }
     }
 }

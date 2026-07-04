@@ -1,11 +1,12 @@
 import { usePlayer } from '../../../context/PlayerContext';
 import { groupFoldersByName } from '../../../lib/folderDedup';
 import * as prefs from '../../../lib/prefs';
+import { getResponses } from '../../../lib/searches';
 import {
-  filterResponse,
-  getResponses,
-  parseFiltersFromString,
-} from '../../../lib/searches';
+  extractMetadata,
+  getPathDepth,
+  matchesMetaFilters,
+} from '../../../lib/searchMetadata';
 import * as transfers from '../../../lib/transfers';
 import { getDirectoryContents, getStatus } from '../../../lib/users';
 import {
@@ -19,12 +20,12 @@ import {
 import UsernameLink from '../../Shared/UsernameLink';
 import FolderPickerModal from './FolderPickerModal';
 import SearchDetailHeader from './SearchDetailHeader';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ChevronDown,
   ChevronRight,
   CloudOff,
   Download,
-  Filter,
   Folder,
   FolderSearch,
   Layers,
@@ -40,6 +41,7 @@ import React, {
   useState,
 } from 'react';
 import { toast } from 'react-toastify';
+import { Dropdown } from 'semantic-ui-react';
 
 const useDebounce = (value, delay) => {
   const [debounced, setDebounced] = useState(value);
@@ -104,17 +106,6 @@ const saveRecentFolder = (folder) => {
   prefs.set(RECENT_FOLDERS_KEY, recent);
 };
 
-const getPathDepth = (filepath) => {
-  const parts = filepath
-    .replaceAll('\\', '/')
-    .split('/')
-    .filter((p) => p && !/^[A-Za-z]:$/.test(p));
-  return {
-    artist: parts.length >= 3 ? parts[parts.length - 3] : '',
-    album: parts.length >= 2 ? parts[parts.length - 2] : '',
-  };
-};
-
 const suggestDestinationFolder = (files) => {
   if (files.length === 0) return '';
   const parts = files.map((f) => getPathDepth(f.filename));
@@ -168,7 +159,10 @@ const FileRow = React.memo(({ checked, disabled, file, onToggleFile }) => {
       </div>
 
       <div className="sr-file-name">
-        <span className="sr-file-name-text">
+        <span
+          className="sr-file-name-text"
+          title={file.filename}
+        >
           {file.locked && (
             <Lock
               className="sr-file-lock-icon"
@@ -550,12 +544,16 @@ const SearchDetail = ({
 
   const [resultSort, setResultSort] = useState('uploadSpeed');
   const [activeFilters, setActiveFilters] = useState(new Set());
-  const [showAdvancedFilter, setShowAdvancedFilter] = useState(false);
+  const [selectedExtensions, setSelectedExtensions] = useState([]);
   const [groupSimilar, setGroupSimilar] = useState(false);
-  const [resultFilters, setResultFilters] = useState('');
-  const debouncedFilters = useDebounce(resultFilters, 200);
+  const [metaFilters, setMetaFilters] = useState({
+    artist: '',
+    folder: '',
+    title: '',
+    year: '',
+  });
+  const debouncedMetaFilters = useDebounce(metaFilters, 200);
   const [selected, setSelected] = useState(new Map());
-  const [visibleGroupCount, setVisibleGroupCount] = useState(50);
   const [destinationFolder, setDestinationFolder] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const lastSuggestionRef = useRef('');
@@ -619,10 +617,8 @@ const SearchDetail = ({
       uploadSpeed: { field: 'uploadSpeed', order: 'desc' },
     };
     const { field, order } = sortOptions[resultSort];
-    const filters = parseFiltersFromString(debouncedFilters);
 
     return results
-      .map((response) => filterResponse({ filters, response }))
       .filter((r) => r.fileCount + r.lockedFileCount > 0)
       .sort((a, b) =>
         order === 'asc' ? a[field] - b[field] : b[field] - a[field],
@@ -630,52 +626,55 @@ const SearchDetail = ({
       .flatMap((r) =>
         r.files.map((f) => ({
           ...f,
+          ...extractMetadata(f.filename),
+          _directory: getDirectoryName(f.filename),
           _hasFreeUploadSlot: r.hasFreeUploadSlot,
           _uploadSpeed: r.uploadSpeed,
           _username: r.username,
         })),
       );
-  }, [debouncedFilters, resultSort, results]);
+  }, [resultSort, results]);
 
   const availableFormats = useMemo(() => {
     const extensions = new Set();
     for (const f of allFiles) {
-      const extension = f.filename.split('.').pop().toLowerCase();
-      if (AUDIO_EXTENSIONS.has(extension))
-        extensions.add(extension.toUpperCase());
+      if (f._extension) extensions.add(f._extension.toUpperCase());
     }
 
     return [...extensions].sort();
   }, [allFiles]);
 
   const filteredByPills = useMemo(() => {
-    if (activeFilters.size === 0) return allFiles;
+    if (activeFilters.size === 0 && selectedExtensions.length === 0)
+      return allFiles;
 
     const activeStatic = STATIC_FILTERS.filter((sf) =>
       activeFilters.has(sf.key),
     );
-    const activeFormats = [...activeFilters].filter(
-      (k) => !STATIC_FILTERS.some((sf) => sf.key === k),
-    );
 
     return allFiles.filter((file) => {
-      const extension = file.filename.split('.').pop().toUpperCase();
       const passesFormat =
-        activeFormats.length === 0 || activeFormats.includes(extension);
+        selectedExtensions.length === 0 ||
+        selectedExtensions.includes(file._extension.toUpperCase());
       const passesStatic = activeStatic.every((sf) => sf.match(file));
       return passesFormat && passesStatic;
     });
-  }, [activeFilters, allFiles]);
+  }, [activeFilters, allFiles, selectedExtensions]);
 
-  useEffect(() => {
-    setVisibleGroupCount(50);
-  }, [filteredByPills, groupSimilar]);
+  const filteredByMeta = useMemo(() => {
+    const { artist, folder, title, year } = debouncedMetaFilters;
+    if (!artist && !folder && !title && !year) return filteredByPills;
+
+    return filteredByPills.filter((file) =>
+      matchesMetaFilters(file, debouncedMetaFilters),
+    );
+  }, [debouncedMetaFilters, filteredByPills]);
 
   const folderGroups = useMemo(() => {
     const byDirectory = new Map();
 
-    for (const file of filteredByPills) {
-      const directory = getDirectoryName(file.filename);
+    for (const file of filteredByMeta) {
+      const directory = file._directory;
 
       if (!byDirectory.has(directory)) {
         byDirectory.set(directory, {
@@ -696,12 +695,26 @@ const SearchDetail = ({
     }
 
     return [...byDirectory.values()].sort((a, b) => b.bestSpeed - a.bestSpeed);
-  }, [filteredByPills]);
+  }, [filteredByMeta]);
 
   const albumGroups = useMemo(
     () => (groupSimilar ? groupFoldersByName(folderGroups) : null),
     [folderGroups, groupSimilar],
   );
+
+  const visibleGroups =
+    groupSimilar && albumGroups ? albumGroups : folderGroups;
+  const resultsScrollRef = useRef(null);
+  const rowVirtualizer = useVirtualizer({
+    count: visibleGroups.length,
+    estimateSize: () => 90,
+    getItemKey: (index) =>
+      groupSimilar && albumGroups
+        ? visibleGroups[index].normalizedName
+        : visibleGroups[index].directory,
+    getScrollElement: () => resultsScrollRef.current,
+    overscan: 6,
+  });
 
   const toggleFile = useCallback((file) => {
     const key = fileKey(file);
@@ -787,13 +800,12 @@ const SearchDetail = ({
     setError(undefined);
     setResults([]);
     setSelected(new Map());
-    setVisibleGroupCount(50);
     setDestinationFolder('');
     setPickerOpen(false);
     setActiveFilters(new Set());
-    setShowAdvancedFilter(false);
+    setSelectedExtensions([]);
     setGroupSimilar(false);
-    setResultFilters('');
+    setMetaFilters({ artist: '', folder: '', title: '', year: '' });
     lastSuggestionRef.current = '';
   };
 
@@ -866,7 +878,7 @@ const SearchDetail = ({
               <div className="sr-filter-pills">
                 {STATIC_FILTERS.map((sf) => (
                   <button
-                    className={`sr-filter-pill${activeFilters.has(sf.key) ? ' sr-filter-pill--active' : ''}`}
+                    className={`sr-filter-pill hover-fx${activeFilters.has(sf.key) ? ' sr-filter-pill--active' : ''}`}
                     key={sf.key}
                     onClick={() => toggleFilter(sf.key)}
                     type="button"
@@ -874,24 +886,9 @@ const SearchDetail = ({
                     {sf.label}
                   </button>
                 ))}
-                {availableFormats.length > 0 && (
-                  <>
-                    <span className="sr-filter-pill-sep" />
-                    {availableFormats.map((fmt) => (
-                      <button
-                        className={`sr-filter-pill${activeFilters.has(fmt) ? ' sr-filter-pill--active' : ''}`}
-                        key={fmt}
-                        onClick={() => toggleFilter(fmt)}
-                        type="button"
-                      >
-                        {fmt}
-                      </button>
-                    ))}
-                  </>
-                )}
                 {activeFilters.size > 0 && (
                   <button
-                    className="sr-filter-pill-clear"
+                    className="sr-filter-pill-clear hover-fx"
                     onClick={() => setActiveFilters(new Set())}
                     type="button"
                   >
@@ -901,17 +898,26 @@ const SearchDetail = ({
                 )}
               </div>
 
-              <button
-                className={`sr-filter-adv-btn${showAdvancedFilter ? ' sr-filter-adv-btn--active' : ''}`}
-                onClick={() => setShowAdvancedFilter((v) => !v)}
-                title="Advanced text filter"
-                type="button"
-              >
-                <Filter size={13} />
-              </button>
+              {availableFormats.length > 0 && (
+                <Dropdown
+                  className="sr-ext-dropdown"
+                  clearable
+                  multiple
+                  onChange={(_, { value }) => setSelectedExtensions(value)}
+                  options={availableFormats.map((fmt) => ({
+                    key: fmt,
+                    text: fmt,
+                    value: fmt,
+                  }))}
+                  placeholder="Extension"
+                  search
+                  selection
+                  value={selectedExtensions}
+                />
+              )}
 
               <button
-                className={`sr-filter-adv-btn${groupSimilar ? ' sr-filter-adv-btn--active' : ''}`}
+                className={`sr-filter-adv-btn hover-fx${groupSimilar ? ' sr-filter-adv-btn--active' : ''}`}
                 onClick={() => setGroupSimilar((v) => !v)}
                 title="Group similar folders by album"
                 type="button"
@@ -921,8 +927,8 @@ const SearchDetail = ({
 
               {folderGroups.length > 0 && (
                 <span className="sr-file-count">
-                  {filteredByPills.length}{' '}
-                  {filteredByPills.length === 1 ? 'file' : 'files'}
+                  {filteredByMeta.length}{' '}
+                  {filteredByMeta.length === 1 ? 'file' : 'files'}
                   {' · '}
                   {groupSimilar && albumGroups
                     ? `${albumGroups.length} ${albumGroups.length === 1 ? 'album' : 'albums'}`
@@ -931,33 +937,53 @@ const SearchDetail = ({
               )}
             </div>
 
-            {showAdvancedFilter && (
-              <div className="sr-filter-input-wrap">
-                <Filter
-                  className="sr-filter-icon"
-                  size={13}
-                />
-                <input
-                  className="sr-filter-input"
-                  onChange={(e) => setResultFilters(e.target.value)}
-                  placeholder="lackluster container -bothersome iscbr|isvbr islossless minbitrate:320"
-                  type="text"
-                  value={resultFilters}
-                />
-                {resultFilters && (
-                  <button
-                    className="sr-filter-clear"
-                    onClick={() => setResultFilters('')}
-                    type="button"
-                  >
-                    <X size={13} />
-                  </button>
-                )}
-              </div>
-            )}
+            <div className="sr-meta-filter-row">
+              {[
+                { key: 'artist', placeholder: 'Artist' },
+                { key: 'title', placeholder: 'Title' },
+                { key: 'folder', placeholder: 'Folder' },
+                { key: 'year', placeholder: 'Year' },
+              ].map(({ key, placeholder }) => (
+                <div
+                  className="sr-meta-filter-wrap"
+                  key={key}
+                >
+                  <input
+                    className="sr-meta-filter-input"
+                    onChange={(e) => {
+                      const { value } = e.target;
+                      setMetaFilters((previous) => ({
+                        ...previous,
+                        [key]: value,
+                      }));
+                    }}
+                    placeholder={placeholder}
+                    type="text"
+                    value={metaFilters[key]}
+                  />
+                  {metaFilters[key] && (
+                    <button
+                      className="sr-filter-clear hover-fx"
+                      onClick={() =>
+                        setMetaFilters((previous) => ({
+                          ...previous,
+                          [key]: '',
+                        }))
+                      }
+                      type="button"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
 
-          <div className="sr-results">
+          <div
+            className="sr-results"
+            ref={resultsScrollRef}
+          >
             {folderGroups.length > 0 && (
               <>
                 <div className="sr-file-table-head">
@@ -969,44 +995,48 @@ const SearchDetail = ({
                   <div className="sr-file-length">Length</div>
                   <div className="sr-file-source">Source</div>
                 </div>
-                {groupSimilar && albumGroups
-                  ? albumGroups.slice(0, visibleGroupCount).map((ag) => (
-                      <AlbumGroup
-                        albumGroup={ag}
-                        disabled={disabled}
-                        downloadedFolders={downloadedFolders}
-                        key={ag.normalizedName}
-                        onToggleFile={toggleFile}
-                        onToggleFolder={toggleFolder}
-                        selected={selected}
-                      />
-                    ))
-                  : folderGroups.slice(0, visibleGroupCount).map((group) => (
-                      <FolderGroup
-                        disabled={disabled}
-                        downloadedFolders={downloadedFolders}
-                        group={group}
-                        key={group.directory}
-                        onToggleFile={toggleFile}
-                        onToggleFolder={toggleFolder}
-                        selected={selected}
-                      />
-                    ))}
-                {(() => {
-                  const list =
-                    groupSimilar && albumGroups ? albumGroups : folderGroups;
-                  const noun = groupSimilar && albumGroups ? 'album' : 'folder';
-                  return visibleGroupCount < list.length ? (
-                    <button
-                      className="sr-show-more-btn"
-                      onClick={() => setVisibleGroupCount((n) => n + 50)}
-                      type="button"
+                <div
+                  style={{
+                    height: rowVirtualizer.getTotalSize(),
+                    position: 'relative',
+                    width: '100%',
+                  }}
+                >
+                  {rowVirtualizer.getVirtualItems().map((vItem) => (
+                    <div
+                      data-index={vItem.index}
+                      key={vItem.key}
+                      ref={rowVirtualizer.measureElement}
+                      style={{
+                        left: 0,
+                        position: 'absolute',
+                        top: 0,
+                        transform: `translateY(${vItem.start}px)`,
+                        width: '100%',
+                      }}
                     >
-                      Show {Math.min(50, list.length - visibleGroupCount)} more{' '}
-                      {noun}s ({list.length - visibleGroupCount} remaining)
-                    </button>
-                  ) : null;
-                })()}
+                      {groupSimilar && albumGroups ? (
+                        <AlbumGroup
+                          albumGroup={visibleGroups[vItem.index]}
+                          disabled={disabled}
+                          downloadedFolders={downloadedFolders}
+                          onToggleFile={toggleFile}
+                          onToggleFolder={toggleFolder}
+                          selected={selected}
+                        />
+                      ) : (
+                        <FolderGroup
+                          disabled={disabled}
+                          downloadedFolders={downloadedFolders}
+                          group={visibleGroups[vItem.index]}
+                          onToggleFile={toggleFile}
+                          onToggleFolder={toggleFolder}
+                          selected={selected}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
               </>
             )}
             {folderGroups.length === 0 && isComplete && !loading && (
@@ -1022,7 +1052,7 @@ const SearchDetail = ({
               </span>
               <div className="sr-dest-wrap">
                 <button
-                  className="sr-dest-btn"
+                  className="sr-dest-btn hover-fx"
                   onClick={() => setPickerOpen(true)}
                   title="Choose destination folder"
                   type="button"
@@ -1038,7 +1068,7 @@ const SearchDetail = ({
                 </button>
                 {destinationFolder && (
                   <button
-                    className="sr-dest-clear"
+                    className="sr-dest-clear hover-fx"
                     onClick={() => {
                       setDestinationFolder('');
                       lastSuggestionRef.current = '';
@@ -1051,7 +1081,7 @@ const SearchDetail = ({
                 )}
               </div>
               <button
-                className="sr-download-bar-btn"
+                className="sr-download-bar-btn hover-fx"
                 disabled={disabled}
                 onClick={downloadSelected}
                 type="button"
@@ -1060,7 +1090,7 @@ const SearchDetail = ({
                 Download
               </button>
               <button
-                className="sr-download-bar-clear"
+                className="sr-download-bar-clear hover-fx"
                 onClick={() => setSelected(new Map())}
                 title="Clear selection"
                 type="button"

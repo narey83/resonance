@@ -212,7 +212,7 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
             />
           </div>
           <button
-            className="ytdlp-btn ytdlp-btn--primary"
+            className="ytdlp-btn hover-fx ytdlp-btn--primary"
             disabled={loading || !query.trim()}
             type="submit"
           >
@@ -306,6 +306,7 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
               key={h}
             >
               <button
+                className="hover-fx"
                 onClick={() => handleHistoryClick(h)}
                 type="button"
               >
@@ -313,7 +314,7 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
               </button>
               <button
                 aria-label={`Remove ${h} from history`}
-                className="ytdlp-history-chip-remove"
+                className="ytdlp-history-chip-remove hover-fx"
                 onClick={() => removeFromHistory(h)}
                 type="button"
               >
@@ -322,7 +323,7 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
             </span>
           ))}
           <button
-            className="ytdlp-history-clear"
+            className="ytdlp-history-clear hover-fx"
             onClick={clearHistory}
             type="button"
           >

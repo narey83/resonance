@@ -170,7 +170,7 @@ const StepAccount = ({ onDone }) => {
         </div>
         {error && <div className="auth-error">{error}</div>}
         <button
-          className="auth-submit"
+          className="auth-submit hover-fx"
           disabled={!ready}
           type="submit"
         >
@@ -285,7 +285,7 @@ const StepSoulseek = ({ onDone }) => {
 
         <div className="auth-button-row">
           <button
-            className="auth-submit auth-submit--secondary"
+            className="auth-submit auth-submit--secondary hover-fx"
             disabled={!canTest}
             onClick={handleTest}
             type="button"
@@ -303,7 +303,7 @@ const StepSoulseek = ({ onDone }) => {
             )}
           </button>
           <button
-            className="auth-submit"
+            className="auth-submit hover-fx"
             disabled={!tested}
             onClick={onDone}
             type="button"
@@ -537,7 +537,7 @@ const StepDirectories = ({ onDone }) => {
         </div>
         {error && <div className="auth-error">{error}</div>}
         <button
-          className="auth-submit"
+          className="auth-submit hover-fx"
           onClick={onDone}
           type="button"
         >
@@ -588,7 +588,7 @@ const StepDirectories = ({ onDone }) => {
               value={downloadDirectory}
             />
             <button
-              className="auth-browse-btn"
+              className="auth-browse-btn hover-fx"
               disabled={loading}
               onClick={() => setPicker({ type: 'download' })}
               type="button"
@@ -639,7 +639,7 @@ const StepDirectories = ({ onDone }) => {
             </div>
           ))}
           <button
-            className="auth-add-dir-btn"
+            className="auth-add-dir-btn hover-fx"
             disabled={loading}
             onClick={addShareDirectory}
             type="button"
@@ -650,7 +650,7 @@ const StepDirectories = ({ onDone }) => {
 
         {error && <div className="auth-error">{error}</div>}
         <button
-          className="auth-submit"
+          className="auth-submit hover-fx"
           disabled={loading}
           type="submit"
         >

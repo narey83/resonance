@@ -63,17 +63,35 @@ const recencyColor = (lastSeen) => {
   return RECENCY_BUCKETS.find((b) => age < b.maxAgeHours * HOUR_MS).color;
 };
 
+// Past-peer dot radius scales (sqrt) with total bytes transferred, so heavy
+// peers stand out without active/idle live dots (fixed size) changing. Sqrt
+// (not log) keeps the bulk of small/typical transfers visually compact —
+// log1p barely differentiates a 30MB peer from a 4GB one at this scale.
+const VOLUME_MIN_R = 1;
+const VOLUME_MAX_R = 3;
+const VOLUME_MAX_BYTES = 2 * 1_024 ** 3; // 2 GB+ maxes out the scale
+
+const volumeRadius = (peer) => {
+  const bytes = (peer.uploadBytes ?? 0) + (peer.downloadBytes ?? 0);
+  if (bytes <= 0) return VOLUME_MIN_R;
+  const t = Math.min(1, Math.sqrt(bytes / VOLUME_MAX_BYTES));
+  return VOLUME_MIN_R + t * (VOLUME_MAX_R - VOLUME_MIN_R);
+};
+
 const flatFiles = (groups) =>
   (groups ?? []).flatMap((g) =>
     (g.directories ?? []).flatMap((d) => d.files ?? []),
   );
 
 const WorldMap = ({
+  direction = 'all',
   downloads,
   pastPeers = [],
+  search = '',
   serverLat,
   serverLon,
   uploads,
+  vpnOnly = false,
 }) => {
   const geoCache = useRef({});
   const wrapRef = useRef(null);
@@ -89,16 +107,17 @@ const WorldMap = ({
     if (svg) svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
   });
 
-  const allPeers = useMemo(
-    () =>
-      [
-        ...collectPeers(downloads, 'download'),
-        ...collectPeers(uploads, 'upload'),
-      ].filter(
-        (p, index, array) => array.findIndex((q) => q.ip === p.ip) === index,
-      ),
-    [downloads, uploads],
-  );
+  const allPeers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return [
+      ...(direction === 'upload' ? [] : collectPeers(downloads, 'download')),
+      ...(direction === 'download' ? [] : collectPeers(uploads, 'upload')),
+    ]
+      .filter(
+        (p, index, array) => array.findIndex((q2) => q2.ip === p.ip) === index,
+      )
+      .filter((p) => !q || p.username?.toLowerCase().includes(q));
+  }, [direction, downloads, search, uploads]);
 
   const peerKey = allPeers.map((p) => `${p.ip}:${p.active}`).join(',');
 
@@ -128,6 +147,7 @@ const WorldMap = ({
             lon: info.lon,
             city: info.city,
             country: info.country,
+            isVpn: info.isVpn,
           });
       }
 
@@ -157,9 +177,12 @@ const WorldMap = ({
   );
 
   const hasServer = serverLat != null && serverLon != null;
-  const activePeers = peerLocations.filter((p) => p.active && hasServer);
-  const idlePeers = peerLocations.filter((p) => !p.active || !hasServer);
-  const totalConnections = peerLocations.length;
+  const vpnFiltered = vpnOnly
+    ? peerLocations.filter((p) => p.isVpn)
+    : peerLocations;
+  const activePeers = vpnFiltered.filter((p) => p.active && hasServer);
+  const idlePeers = vpnFiltered.filter((p) => !p.active || !hasServer);
+  const totalConnections = vpnFiltered.length;
 
   const showTooltip = (peer, e) => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
@@ -275,7 +298,7 @@ const WorldMap = ({
               <circle
                 fill={recencyColor(peer.lastSeen)}
                 opacity={0.9}
-                r={1.4 * k}
+                r={volumeRadius(peer) * k}
               />
             </Marker>
           ))}
@@ -429,6 +452,22 @@ const WorldMap = ({
           />
           Upload
         </div>
+        <div className="map-legend-divider" />
+        <div className="map-legend-title">Size = data transferred</div>
+        <div className="map-legend-item map-legend-item--size">
+          <span
+            className="map-legend-dot map-legend-dot--size-sm"
+            style={{ background: 'var(--map-dot-past)' }}
+          />
+          <span
+            className="map-legend-dot map-legend-dot--size-md"
+            style={{ background: 'var(--map-dot-past)' }}
+          />
+          <span
+            className="map-legend-dot map-legend-dot--size-lg"
+            style={{ background: 'var(--map-dot-past)' }}
+          />
+        </div>
       </div>
 
       {/* Zoom controls — bottom right */}
@@ -487,7 +526,7 @@ const WorldMap = ({
             >
               <div className="map-tooltip-header">
                 <span className="map-tooltip-user">{p.username}</span>
-                {p.isVpn === 1 && <span className="map-tooltip-vpn">VPN</span>}
+                {p.isVpn ? <span className="map-tooltip-vpn">VPN</span> : null}
                 {p.active && <span className="map-tooltip-active">●</span>}
               </div>
 

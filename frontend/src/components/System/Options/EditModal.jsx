@@ -124,6 +124,7 @@ const EditModal = ({ onClose, open, theme }) => {
           </Message>
         )}
         <Button
+          className="hover-fx"
           disabled={!isDirty}
           onClick={() => save(yaml)}
           primary
@@ -132,6 +133,7 @@ const EditModal = ({ onClose, open, theme }) => {
           Save
         </Button>
         <Button
+          className="hover-fx"
           negative
           onClick={onClose}
         >

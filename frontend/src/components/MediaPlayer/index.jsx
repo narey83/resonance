@@ -129,7 +129,7 @@ const ExpandedQueue = ({
         <span className="mp-expanded-queue-title">Up Next</span>
         <span className="mp-expanded-queue-count">{upNext.length}</span>
         <button
-          className="mp-expanded-queue-close"
+          className="mp-expanded-queue-close hover-fx"
           onClick={onClose}
           title="Hide queue"
           type="button"
@@ -779,7 +779,7 @@ const MediaPlayer = () => {
             />
 
             <button
-              className="mp-expanded-collapse"
+              className="mp-expanded-collapse hover-fx"
               onClick={() => setExpanded(false)}
               title="Collapse"
               type="button"
@@ -842,8 +842,8 @@ const MediaPlayer = () => {
                 <button
                   className={
                     shuffle
-                      ? 'mp-expanded-ctrl mp-expanded-ctrl--active'
-                      : 'mp-expanded-ctrl'
+                      ? 'mp-expanded-ctrl mp-expanded-ctrl--active hover-fx'
+                      : 'mp-expanded-ctrl hover-fx'
                   }
                   disabled={!hasQueue}
                   onClick={toggleShuffle}
@@ -853,7 +853,7 @@ const MediaPlayer = () => {
                   <Shuffle size={20} />
                 </button>
                 <button
-                  className="mp-expanded-ctrl"
+                  className="mp-expanded-ctrl hover-fx"
                   disabled={!hasQueue}
                   onClick={prev}
                   title="Previous track"
@@ -877,7 +877,7 @@ const MediaPlayer = () => {
                   )}
                 </button>
                 <button
-                  className="mp-expanded-ctrl"
+                  className="mp-expanded-ctrl hover-fx"
                   disabled={!hasQueue}
                   onClick={next}
                   title="Next track"
@@ -888,8 +888,8 @@ const MediaPlayer = () => {
                 <button
                   className={
                     repeat
-                      ? 'mp-expanded-ctrl mp-expanded-ctrl--active'
-                      : 'mp-expanded-ctrl'
+                      ? 'mp-expanded-ctrl mp-expanded-ctrl--active hover-fx'
+                      : 'mp-expanded-ctrl hover-fx'
                   }
                   onClick={toggleRepeat}
                   title={repeat ? 'Repeat: on' : 'Repeat: off'}
@@ -902,7 +902,7 @@ const MediaPlayer = () => {
               {track.path && (
                 <div className="mp-expanded-secondary">
                   <button
-                    className={`mp-expanded-ctrl${activity?.lovedPaths?.has(track.path) ? ' mp-expanded-ctrl--active' : ''}`}
+                    className={`mp-expanded-ctrl hover-fx${activity?.lovedPaths?.has(track.path) ? ' mp-expanded-ctrl--active' : ''}`}
                     onClick={() => activity?.toggleLove(track.path)}
                     title={
                       activity?.lovedPaths?.has(track.path)
@@ -924,8 +924,8 @@ const MediaPlayer = () => {
                   <button
                     className={
                       showQueue
-                        ? 'mp-expanded-ctrl mp-expanded-ctrl--active'
-                        : 'mp-expanded-ctrl'
+                        ? 'mp-expanded-ctrl mp-expanded-ctrl--active hover-fx'
+                        : 'mp-expanded-ctrl hover-fx'
                     }
                     onClick={() => setShowQueue((value) => !value)}
                     title={showQueue ? 'Hide queue' : 'Show queue'}
@@ -960,7 +960,7 @@ const MediaPlayer = () => {
             />
             <span>Cast to Device</span>
             <button
-              className="media-player-btn media-player-cast-close"
+              className="media-player-btn media-player-cast-close hover-fx"
               onClick={() => setShowCast(false)}
               title="Close"
               type="button"
@@ -981,7 +981,7 @@ const MediaPlayer = () => {
                     <Cast size={13} />
                     <span>{googleCast.deviceName}</span>
                     <button
-                      className="media-player-cast-stop"
+                      className="media-player-cast-stop hover-fx"
                       onClick={handleStopCast}
                       type="button"
                     >
@@ -990,7 +990,7 @@ const MediaPlayer = () => {
                   </div>
                 ) : (
                   <button
-                    className="media-player-cast-device media-player-cast-google-btn"
+                    className="media-player-cast-device media-player-cast-google-btn hover-fx"
                     onClick={handleGoogleCast}
                     type="button"
                   >
@@ -1045,7 +1045,7 @@ const MediaPlayer = () => {
       <div className="media-player-bar">
         <div className="media-player-left">
           <button
-            className="media-player-art-btn"
+            className="media-player-art-btn hover-fx"
             onClick={() => setExpanded(true)}
             title="Expand to full player"
             type="button"
@@ -1097,8 +1097,8 @@ const MediaPlayer = () => {
             <button
               className={
                 shuffle
-                  ? 'media-player-btn media-player-ctrl-btn media-player-ctrl-btn--active'
-                  : 'media-player-btn media-player-ctrl-btn'
+                  ? 'media-player-btn media-player-ctrl-btn media-player-ctrl-btn--active hover-fx'
+                  : 'media-player-btn media-player-ctrl-btn hover-fx'
               }
               disabled={!hasQueue}
               onClick={toggleShuffle}
@@ -1109,7 +1109,7 @@ const MediaPlayer = () => {
             </button>
 
             <button
-              className="media-player-btn media-player-ctrl-btn"
+              className="media-player-btn media-player-ctrl-btn hover-fx"
               disabled={!hasQueue}
               onClick={prev}
               title="Previous track"
@@ -1135,7 +1135,7 @@ const MediaPlayer = () => {
             </button>
 
             <button
-              className="media-player-btn media-player-ctrl-btn"
+              className="media-player-btn media-player-ctrl-btn hover-fx"
               disabled={!hasQueue}
               onClick={next}
               title="Next track"
@@ -1147,8 +1147,8 @@ const MediaPlayer = () => {
             <button
               className={
                 repeat
-                  ? 'media-player-btn media-player-ctrl-btn media-player-ctrl-btn--active'
-                  : 'media-player-btn media-player-ctrl-btn'
+                  ? 'media-player-btn media-player-ctrl-btn media-player-ctrl-btn--active hover-fx'
+                  : 'media-player-btn media-player-ctrl-btn hover-fx'
               }
               onClick={toggleRepeat}
               title={repeat ? 'Repeat: on' : 'Repeat: off'}
@@ -1159,7 +1159,7 @@ const MediaPlayer = () => {
 
             {track.path && (
               <button
-                className={`media-player-btn media-player-ctrl-btn media-player-love-btn${activity?.lovedPaths?.has(track.path) ? ' jb-love-btn--loved' : ''}`}
+                className={`media-player-btn media-player-ctrl-btn media-player-love-btn hover-fx${activity?.lovedPaths?.has(track.path) ? ' jb-love-btn--loved' : ''}`}
                 onClick={() => activity?.toggleLove(track.path)}
                 title={
                   activity?.lovedPaths?.has(track.path)
@@ -1192,8 +1192,8 @@ const MediaPlayer = () => {
           <button
             className={
               queuePanelOpen
-                ? 'media-player-btn media-player-ctrl-btn--active'
-                : 'media-player-btn'
+                ? 'media-player-btn media-player-ctrl-btn--active hover-fx'
+                : 'media-player-btn hover-fx'
             }
             onClick={toggleQueuePanel}
             title={queuePanelOpen ? 'Hide queue' : 'Show queue'}
@@ -1205,8 +1205,8 @@ const MediaPlayer = () => {
           <button
             className={
               showCast || googleCast.connected
-                ? 'media-player-btn media-player-ctrl-btn--active'
-                : 'media-player-btn'
+                ? 'media-player-btn media-player-ctrl-btn--active hover-fx'
+                : 'media-player-btn hover-fx'
             }
             onClick={handleOpenCast}
             title={
@@ -1220,7 +1220,7 @@ const MediaPlayer = () => {
           </button>
 
           <button
-            className="media-player-btn"
+            className="media-player-btn hover-fx"
             onClick={toggleMute}
             title={
               googleCast.connected
@@ -1259,7 +1259,7 @@ const MediaPlayer = () => {
           />
 
           <button
-            className="media-player-btn media-player-close-btn"
+            className="media-player-btn media-player-close-btn hover-fx"
             onClick={handleClose}
             title="Close player"
             type="button"

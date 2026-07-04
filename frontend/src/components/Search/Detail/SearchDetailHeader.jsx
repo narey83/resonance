@@ -38,7 +38,7 @@ const SearchDetailHeader = ({
       <div className="sr-detail-header-actions">
         {loaded && (
           <button
-            className="sr-btn"
+            className="sr-btn hover-fx"
             disabled={disabled || working}
             onClick={onRestart}
             title="Update Search"
@@ -52,7 +52,7 @@ const SearchDetailHeader = ({
           </button>
         )}
         <button
-          className="sr-btn sr-btn--danger"
+          className="sr-btn hover-fx sr-btn--danger"
           disabled={working}
           onClick={stopOrRemove}
           title={isComplete ? 'Delete' : 'Stop'}

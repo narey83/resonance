@@ -34,7 +34,7 @@ const RoomMenu = ({ active, joined, onRoomChange, ...rest }) => {
           size="small"
           trigger={
             <Button
-              className="add-button"
+              className="add-button hover-fx"
               icon
             >
               <Icon name="plus" />

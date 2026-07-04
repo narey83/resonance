@@ -65,6 +65,7 @@ const AddUserModal = ({ onAdd }) => {
       size="tiny"
       trigger={
         <Button
+          className="hover-fx"
           primary
           size="small"
         >
@@ -122,6 +123,7 @@ const AddUserModal = ({ onAdd }) => {
       </Modal.Content>
       <Modal.Actions>
         <Button
+          className="hover-fx"
           onClick={() => {
             setOpen(false);
             reset();
@@ -130,6 +132,7 @@ const AddUserModal = ({ onAdd }) => {
           Cancel
         </Button>
         <Button
+          className="hover-fx"
           loading={loading}
           onClick={handleSubmit}
           primary
@@ -257,8 +260,14 @@ const EditUserModal = ({ isSelf, onUpdate, user }) => {
         </Form>
       </Modal.Content>
       <Modal.Actions>
-        <Button onClick={() => setOpen(false)}>Cancel</Button>
         <Button
+          className="hover-fx"
+          onClick={() => setOpen(false)}
+        >
+          Cancel
+        </Button>
+        <Button
+          className="hover-fx"
           disabled={!hasChanges}
           loading={loading}
           onClick={handleSubmit}

@@ -97,7 +97,7 @@ const MetadataLookup = () => {
           </div>
         </div>
         <button
-          className="ml-btn"
+          className="ml-btn hover-fx"
           disabled={starting || status?.scanning}
           onClick={handleRunNow}
           type="button"

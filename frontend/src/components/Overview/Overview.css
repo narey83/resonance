@@ -525,6 +525,26 @@ html.dark, html.amoled {
   margin: 2px 0;
 }
 
+.map-legend-item--size {
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.map-legend-dot--size-sm {
+  width: 5px;
+  height: 5px;
+}
+
+.map-legend-dot--size-md {
+  width: 9px;
+  height: 9px;
+}
+
+.map-legend-dot--size-lg {
+  width: 15px;
+  height: 15px;
+}
+
 /* ── Zoom controls ── */
 .map-zoom {
   position: absolute;

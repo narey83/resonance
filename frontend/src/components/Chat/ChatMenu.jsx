@@ -42,7 +42,7 @@ const ChatMenu = ({ active, conversations, onConversationChange, ...rest }) => {
           size="small"
           trigger={
             <Button
-              className="add-button"
+              className="add-button hover-fx"
               icon
             >
               <Icon name="plus" />

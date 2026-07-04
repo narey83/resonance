@@ -28,9 +28,9 @@ async function syncCookies() {
     const cookies = await chrome.cookies.getAll({ domain: '.youtube.com' });
     const lines = ['# Netscape HTTP Cookie File'];
     for (const c of cookies) {
-      const httpOnly = c.httpOnly ? 'TRUE' : 'FALSE';
+      const secure = c.secure ? 'TRUE' : 'FALSE';
       const expiry = c.expirationDate ? Math.round(c.expirationDate) : 0;
-      lines.push(`${c.domain}\tTRUE\t${c.path}\t${httpOnly}\t${expiry}\t${c.name}\t${c.value}`);
+      lines.push(`${c.domain}\tTRUE\t${c.path}\t${secure}\t${expiry}\t${c.name}\t${c.value}`);
     }
     const fileContent = lines.join('\n');
     const blob = new Blob([fileContent], { type: 'text/plain' });
@@ -39,7 +39,7 @@ async function syncCookies() {
 
     const response = await fetch(`${serverUrl.replace(/\/$/, '')}/api/v0/ytdlp/cookies`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}` },
+      headers: { 'X-API-Key': apiKey },
       body: formData,
     });
 

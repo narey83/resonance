@@ -7,7 +7,10 @@ const ShrinkableButton = ({ children, icon, loading, mediaQuery, ...rest }) => {
 
   if (!shouldShrink) {
     return (
-      <Button {...rest}>
+      <Button
+        className="hover-fx"
+        {...rest}
+      >
         <Icon
           loading={loading}
           name={icon}
@@ -22,6 +25,7 @@ const ShrinkableButton = ({ children, icon, loading, mediaQuery, ...rest }) => {
       content={children}
       trigger={
         <Button
+          className="hover-fx"
           icon
           {...rest}
         >

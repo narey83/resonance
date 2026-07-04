@@ -280,7 +280,7 @@ const FolderEditorForm = ({ directory, files, onSave, saving }) => {
       <div className="te-form-actions">
         <div className="te-form-actions-right">
           <button
-            className={`te-btn te-btn--primary${saving ? ' te-btn--loading' : ''}`}
+            className={`te-btn te-btn--primary hover-fx${saving ? ' te-btn--loading' : ''}`}
             disabled={saving || !Object.values(form).some(Boolean)}
             type="submit"
           >
@@ -580,7 +580,7 @@ const TagEditorForm = ({ file, mode, onSave, onSkip, saving }) => {
 
       <div className="te-form-actions">
         <button
-          className="te-btn te-btn--ghost"
+          className="te-btn te-btn--ghost hover-fx"
           onClick={handleAutoFill}
           title="Guess tags from filename and folder structure"
           type="button"
@@ -589,7 +589,7 @@ const TagEditorForm = ({ file, mode, onSave, onSkip, saving }) => {
           Auto-fill
         </button>
         <button
-          className="te-btn te-btn--ghost"
+          className="te-btn te-btn--ghost hover-fx"
           disabled={looking}
           onClick={handleLookup}
           title="Look up track details online (MusicBrainz)"
@@ -608,7 +608,7 @@ const TagEditorForm = ({ file, mode, onSave, onSkip, saving }) => {
 
         <div className="te-form-actions-right">
           <button
-            className="te-btn te-btn--ghost"
+            className="te-btn te-btn--ghost hover-fx"
             onClick={onSkip}
             type="button"
           >
@@ -616,7 +616,7 @@ const TagEditorForm = ({ file, mode, onSave, onSkip, saving }) => {
             Skip
           </button>
           <button
-            className={`te-btn te-btn--primary${saving ? ' te-btn--loading' : ''}`}
+            className={`te-btn te-btn--primary hover-fx${saving ? ' te-btn--loading' : ''}`}
             disabled={saving || !Object.values(form).some(Boolean)}
             type="submit"
           >
@@ -1042,7 +1042,7 @@ const TagEditor = () => {
                 value={search}
               />
               <button
-                className="te-icon-btn"
+                className="te-icon-btn hover-fx"
                 disabled={loading}
                 onClick={loadFiles}
                 title="Refresh"

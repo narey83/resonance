@@ -444,7 +444,7 @@ const TrackPicker = ({ libraryTracks, onSelect, selectedTrack }) => {
         />
         {selectedTrack && !query && (
           <button
-            className="wa-picker-clear"
+            className="wa-picker-clear hover-fx"
             onClick={() => onSelect(null)}
             title="Clear selection"
             type="button"
@@ -908,7 +908,7 @@ const WaveformAnalysis = () => {
               {Math.round(scanState.progress * 100)}%
             </span>
             <button
-              className="wa-scan-cancel"
+              className="wa-scan-cancel hover-fx"
               onClick={handleCancelScan}
               title="Cancel scan"
               type="button"
@@ -926,7 +926,7 @@ const WaveformAnalysis = () => {
               {scanState.analysed} tracks cached
             </span>
             <button
-              className="wa-scan-btn"
+              className="wa-scan-btn hover-fx"
               onClick={handleStartScan}
               type="button"
             >
@@ -942,7 +942,7 @@ const WaveformAnalysis = () => {
                 : 'No waveforms cached'}
             </span>
             <button
-              className="wa-scan-btn"
+              className="wa-scan-btn hover-fx"
               onClick={handleStartScan}
               type="button"
             >
@@ -959,7 +959,7 @@ const WaveformAnalysis = () => {
             <div className="wa-mode-group">
               {Object.entries(MODE_META).map(([key, { icon: Icon, label }]) => (
                 <button
-                  className={`wa-mode-btn${mode === key ? ' wa-mode-btn--active' : ''}`}
+                  className={`wa-mode-btn hover-fx${mode === key ? ' wa-mode-btn--active' : ''}`}
                   key={key}
                   onClick={() => setMode(key)}
                   type="button"
@@ -972,7 +972,7 @@ const WaveformAnalysis = () => {
 
             <div className="wa-overlay-group">
               <button
-                className={`wa-overlay-btn${showBpmGrid ? ' wa-overlay-btn--active' : ''}`}
+                className={`wa-overlay-btn hover-fx${showBpmGrid ? ' wa-overlay-btn--active' : ''}`}
                 disabled={!selectedTrack?.bpm}
                 onClick={() => setShowBpmGrid((c) => !c)}
                 title={selectedTrack?.bpm ? 'BPM grid' : 'No BPM data'}
@@ -982,7 +982,7 @@ const WaveformAnalysis = () => {
                 BPM grid
               </button>
               <button
-                className={`wa-overlay-btn${showKeyBadge ? ' wa-overlay-btn--active' : ''}`}
+                className={`wa-overlay-btn hover-fx${showKeyBadge ? ' wa-overlay-btn--active' : ''}`}
                 disabled={!selectedTrack?.key}
                 onClick={() => setShowKeyBadge((c) => !c)}
                 title={selectedTrack?.key ? 'Key badge' : 'No key data'}
@@ -995,7 +995,7 @@ const WaveformAnalysis = () => {
 
             <div className="wa-zoom-group">
               <button
-                className="wa-zoom-btn"
+                className="wa-zoom-btn hover-fx"
                 disabled={zoom === ZOOM_LEVELS[0]}
                 onClick={handleZoomOut}
                 title="Zoom out"
@@ -1005,7 +1005,7 @@ const WaveformAnalysis = () => {
               </button>
               <span className="wa-zoom-label">{zoom}×</span>
               <button
-                className="wa-zoom-btn"
+                className="wa-zoom-btn hover-fx"
                 disabled={zoom === ZOOM_LEVELS[ZOOM_LEVELS.length - 1]}
                 onClick={handleZoomIn}
                 title="Zoom in"
@@ -1016,7 +1016,7 @@ const WaveformAnalysis = () => {
             </div>
 
             <button
-              className="wa-export-btn"
+              className="wa-export-btn hover-fx"
               disabled={!audioDuration}
               onClick={handleExport}
               title="Export PNG"

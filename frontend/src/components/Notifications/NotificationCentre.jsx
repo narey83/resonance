@@ -2,30 +2,15 @@ import './NotificationCentre.css';
 import { parseUtcDate } from '../../lib/util';
 import {
   Bell,
-  Download,
   FolderOpen,
   MessageCircle,
   MessageSquare,
   Trash2,
-  Upload,
-  Wifi,
   X,
 } from 'lucide-react';
 import React, { useState } from 'react';
 
 const NOTIFICATION_TYPES = [
-  {
-    key: 'download',
-    label: 'Folder downloads',
-    description: 'When a downloaded folder completes',
-    Icon: Download,
-  },
-  {
-    key: 'upload',
-    label: 'File uploads',
-    description: 'When you finish uploading to someone',
-    Icon: Upload,
-  },
   {
     key: 'privateMessage',
     label: 'Private messages',
@@ -43,12 +28,6 @@ const NOTIFICATION_TYPES = [
     label: 'Room mentions',
     description: 'When someone mentions you in a chat room',
     Icon: MessageSquare,
-  },
-  {
-    key: 'connection',
-    label: 'Connection status',
-    description: 'Server connect and reconnect events',
-    Icon: Wifi,
   },
 ];
 
@@ -83,7 +62,7 @@ const NotificationCentre = ({
         <div className="nc-header">
           <span className="nc-title">Notifications</span>
           <button
-            className="nc-icon-btn"
+            className="nc-icon-btn hover-fx"
             onClick={onClose}
             title="Close"
             type="button"
@@ -94,14 +73,14 @@ const NotificationCentre = ({
 
         <div className="nc-tabs">
           <button
-            className={`nc-tab${tab === 'feed' ? ' active' : ''}`}
+            className={`nc-tab hover-fx${tab === 'feed' ? ' active' : ''}`}
             onClick={() => setTab('feed')}
             type="button"
           >
             Feed
           </button>
           <button
-            className={`nc-tab${tab === 'settings' ? ' active' : ''}`}
+            className={`nc-tab hover-fx${tab === 'settings' ? ' active' : ''}`}
             onClick={() => setTab('settings')}
             type="button"
           >
@@ -142,7 +121,7 @@ const NotificationCentre = ({
                 </div>
                 <div className="nc-feed-footer">
                   <button
-                    className="nc-clear-btn"
+                    className="nc-clear-btn hover-fx"
                     onClick={onClear}
                     type="button"
                   >

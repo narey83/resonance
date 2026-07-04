@@ -61,6 +61,7 @@ const AddRoleModal = ({ onAdd }) => {
       size="mini"
       trigger={
         <Button
+          className="hover-fx"
           primary
           size="small"
         >
@@ -90,6 +91,7 @@ const AddRoleModal = ({ onAdd }) => {
       </Modal.Content>
       <Modal.Actions>
         <Button
+          className="hover-fx"
           onClick={() => {
             setOpen(false);
             reset();
@@ -98,6 +100,7 @@ const AddRoleModal = ({ onAdd }) => {
           Cancel
         </Button>
         <Button
+          className="hover-fx"
           loading={loading}
           onClick={handleSubmit}
           primary

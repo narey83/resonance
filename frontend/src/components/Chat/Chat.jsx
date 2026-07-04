@@ -2,6 +2,7 @@ import './Chat.css';
 import '../Search/Search.css';
 import { activeChatKey } from '../../config';
 import * as chat from '../../lib/chat';
+import { onPrivateMessage } from '../../lib/chatEvents';
 import * as prefs from '../../lib/prefs';
 import {
   avatarColor,
@@ -49,6 +50,50 @@ const ContextMenu = ({ friends, menu, onAddFriend, onBrowse }) => {
     </div>
   );
 };
+
+// ── Conversation list item ──────────────────────────────────────────────────────
+
+const ConversationItem = ({
+  active,
+  conv,
+  onContextMenu,
+  onDelete,
+  onSelect,
+}) => (
+  <div
+    className={`chat-conv-item sr-search-item${active === conv.username ? ' sr-search-item--active' : ''}`}
+    onClick={() => onSelect(conv.username)}
+    onContextMenu={(e) => onContextMenu(e, conv.username)}
+    onKeyDown={(e) => e.key === 'Enter' && onSelect(conv.username)}
+    role="button"
+    tabIndex={0}
+  >
+    <div
+      className="chat-conv-avatar"
+      style={{ background: avatarColor(conv.username) }}
+    >
+      {avatarInitial(conv.username)}
+    </div>
+    <span className="sr-search-item-text">{conv.username}</span>
+    {conv.unAcknowledgedMessageCount > 0 && (
+      <span className="chat-conv-badge">{conv.unAcknowledgedMessageCount}</span>
+    )}
+    <button
+      className="chat-conv-delete"
+      onClick={(e) => {
+        e.stopPropagation();
+        onDelete(conv.username);
+      }}
+      title="Delete conversation"
+      type="button"
+    >
+      <X
+        size={12}
+        strokeWidth={2}
+      />
+    </button>
+  </div>
+);
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -201,9 +246,14 @@ const Chat = ({ history, location }) => {
 
     intervalRef.current = window.setInterval(fetchConversations, 5_000);
 
+    // Push-triggered refresh so incoming messages land as soon as the
+    // notification does, instead of waiting for the next poll tick.
+    const unsubscribe = onPrivateMessage(() => fetchConversations());
+
     return () => {
       clearInterval(intervalRef.current);
       document.removeEventListener('click', onDocumentClick);
+      unsubscribe();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -293,7 +343,24 @@ const Chat = ({ history, location }) => {
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
-  const convList = Object.values(conversations);
+  const sortedConvList = useMemo(() => {
+    const lastActivity = (conv) =>
+      conv.lastMessageTimestamp
+        ? new Date(conv.lastMessageTimestamp).getTime()
+        : Date.now();
+
+    return Object.values(conversations).sort(
+      (a, b) => lastActivity(b) - lastActivity(a),
+    );
+  }, [conversations]);
+
+  const newConvList = sortedConvList.filter(
+    (conv) => conv.unAcknowledgedMessageCount > 0,
+  );
+  const otherConvList = sortedConvList.filter(
+    (conv) => !(conv.unAcknowledgedMessageCount > 0),
+  );
+
   const messages = conversations[active]?.messages || [];
   const groups = groupByDate(messages);
 
@@ -355,7 +422,7 @@ const Chat = ({ history, location }) => {
               size="small"
               trigger={
                 <button
-                  className="sr-create-btn"
+                  className="sr-create-btn hover-fx"
                   title="New conversation"
                   type="button"
                 >
@@ -366,49 +433,45 @@ const Chat = ({ history, location }) => {
           </div>
 
           <div className="sr-search-list">
-            {convList.length === 0 ? (
+            {sortedConvList.length === 0 ? (
               <div className="sr-search-list-empty">No conversations yet</div>
             ) : (
-              convList.map((conv) => (
-                <div
-                  className={`chat-conv-item sr-search-item${active === conv.username ? ' sr-search-item--active' : ''}`}
-                  key={conv.username}
-                  onClick={() => selectConversation(conv.username)}
-                  onContextMenu={(e) => openContextMenu(e, conv.username)}
-                  onKeyDown={(e) =>
-                    e.key === 'Enter' && selectConversation(conv.username)
-                  }
-                  role="button"
-                  tabIndex={0}
-                >
-                  <div
-                    className="chat-conv-avatar"
-                    style={{ background: avatarColor(conv.username) }}
-                  >
-                    {avatarInitial(conv.username)}
-                  </div>
-                  <span className="sr-search-item-text">{conv.username}</span>
-                  {conv.unAcknowledgedMessageCount > 0 && (
-                    <span className="chat-conv-badge">
-                      {conv.unAcknowledgedMessageCount}
-                    </span>
-                  )}
-                  <button
-                    className="chat-conv-delete"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteConversation(conv.username);
-                    }}
-                    title="Delete conversation"
-                    type="button"
-                  >
-                    <X
-                      size={12}
-                      strokeWidth={2}
-                    />
-                  </button>
-                </div>
-              ))
+              <>
+                {newConvList.length > 0 && (
+                  <>
+                    <div className="chat-conv-section-label">New</div>
+                    {newConvList.map((conv) => (
+                      <ConversationItem
+                        active={active}
+                        conv={conv}
+                        key={conv.username}
+                        onContextMenu={openContextMenu}
+                        onDelete={deleteConversation}
+                        onSelect={selectConversation}
+                      />
+                    ))}
+                  </>
+                )}
+                {otherConvList.length > 0 && (
+                  <>
+                    {newConvList.length > 0 && (
+                      <div className="chat-conv-section-label">
+                        Conversations
+                      </div>
+                    )}
+                    {otherConvList.map((conv) => (
+                      <ConversationItem
+                        active={active}
+                        conv={conv}
+                        key={conv.username}
+                        onContextMenu={openContextMenu}
+                        onDelete={deleteConversation}
+                        onSelect={selectConversation}
+                      />
+                    ))}
+                  </>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -438,7 +501,7 @@ const Chat = ({ history, location }) => {
                 </div>
                 <div className="sr-detail-header-actions">
                   <button
-                    className="sr-btn sr-btn--danger"
+                    className="sr-btn sr-btn--danger hover-fx"
                     onClick={() => deleteConversation(active)}
                     title="Delete conversation"
                     type="button"
@@ -558,7 +621,7 @@ const Chat = ({ history, location }) => {
                   value={message}
                 />
                 <button
-                  className="chat-send-btn"
+                  className="chat-send-btn hover-fx"
                   disabled={!active || !message.trim()}
                   onClick={sendReply}
                   title="Send"
@@ -584,7 +647,7 @@ const Chat = ({ history, location }) => {
                 size="small"
                 trigger={
                   <button
-                    className="chat-start-btn"
+                    className="chat-start-btn hover-fx"
                     type="button"
                   >
                     New Conversation

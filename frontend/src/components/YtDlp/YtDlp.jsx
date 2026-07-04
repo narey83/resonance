@@ -337,7 +337,7 @@ const YtDlp = ({ view }) => {
                 : 0;
           return (
             <button
-              className={`ytdlp-tab${activeTab === id ? ' ytdlp-tab--active' : ''}`}
+              className={`ytdlp-tab hover-fx${activeTab === id ? ' ytdlp-tab--active' : ''}`}
               key={id}
               onClick={() => handleTabChange(id)}
               type="button"

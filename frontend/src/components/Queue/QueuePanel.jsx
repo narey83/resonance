@@ -72,7 +72,7 @@ const QueuePanel = ({ onClose }) => {
         <span className="queue-panel-count">{queue.length}</span>
         {upNext.length > 0 && (
           <button
-            className="queue-panel-close"
+            className="queue-panel-close hover-fx"
             onClick={clearQueue}
             title="Clear queue"
             type="button"
@@ -81,7 +81,7 @@ const QueuePanel = ({ onClose }) => {
           </button>
         )}
         <button
-          className="queue-panel-close"
+          className="queue-panel-close hover-fx"
           onClick={onClose}
           title="Close queue"
           type="button"

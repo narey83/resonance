@@ -241,7 +241,7 @@ const AddPane = ({ onSubmit }) => {
 
       <div>
         <button
-          className="ytdlp-btn ytdlp-btn--primary"
+          className="ytdlp-btn hover-fx ytdlp-btn--primary"
           disabled={loading || !url.trim()}
           type="submit"
         >

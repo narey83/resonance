@@ -25,7 +25,7 @@ const TrackAnalysis = () => {
       <div className="ta-tabs">
         {TABS.map(({ icon: Icon, id, label }) => (
           <button
-            className={`ta-tab${activeTab === id ? ' ta-tab--active' : ''}`}
+            className={`ta-tab hover-fx${activeTab === id ? ' ta-tab--active' : ''}`}
             key={id}
             onClick={() => setActiveTab(id)}
             type="button"

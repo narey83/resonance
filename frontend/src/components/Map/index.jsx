@@ -6,7 +6,7 @@ import * as prefs from '../../lib/prefs';
 import * as reportsAPI from '../../lib/reports';
 import * as transfersAPI from '../../lib/transfers';
 import WorldMap from '../Overview/WorldMap';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 const RANGES = [
   { hours: 1, label: '1h' },
@@ -19,6 +19,20 @@ const RANGES = [
   { hours: 8_760, label: '1y' },
 ];
 
+const DIRECTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'download', label: 'Downloads' },
+  { value: 'upload', label: 'Uploads' },
+];
+
+const pad2 = (n) => String(n).padStart(2, '0');
+
+// <input type="datetime-local"> wants local time with no timezone suffix.
+const toDatetimeLocal = (isoOrDate) => {
+  const d = isoOrDate ? new Date(isoOrDate) : new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+
 const MapPage = () => {
   const [downloads, setDownloads] = useState([]);
   const [uploads, setUploads] = useState([]);
@@ -29,9 +43,19 @@ const MapPage = () => {
     const n = Number(prefs.get('overview:range-h', 24));
     return RANGES.some((r) => r.hours === n) ? n : 24;
   });
+  // When set, overrides `range` with an explicit [start, end] window.
+  const [customRange, setCustomRange] = useState(null);
+  const [showCustomPicker, setShowCustomPicker] = useState(false);
+  const [customStartInput, setCustomStartInput] = useState('');
+  const [customEndInput, setCustomEndInput] = useState('');
   const [pastPeers, setPastPeers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [resolving, setResolving] = useState(false);
+
+  // Filters — applied client-side across both past and live-active peers.
+  const [search, setSearch] = useState('');
+  const [direction, setDirection] = useState('all');
+  const [vpnOnly, setVpnOnly] = useState(false);
 
   // Server location
   useEffect(() => {
@@ -92,18 +116,41 @@ const MapPage = () => {
   // Past connections
   useEffect(() => {
     let cancelled = false;
-    const end = new Date().toISOString();
-    const start = new Date(Date.now() - range * 60 * 60 * 1_000).toISOString();
+    const end = customRange ? customRange.end : new Date().toISOString();
+    const start = customRange
+      ? customRange.start
+      : new Date(Date.now() - range * 60 * 60 * 1_000).toISOString();
+
+    const PAGE_SIZE = 500;
+    const MAX_PEERS = 5_000;
 
     const load = async () => {
       try {
-        const { items } = await reportsAPI.getUserList({
-          start,
-          end,
-          limit: 500,
-          sortBy: 'LastSeen',
-        });
-        if (cancelled) return;
+        // The wider the range, the more distinct peers can match — page
+        // through the result set (sorted by LastSeen) instead of taking a
+        // single page, otherwise larger ranges just re-show the same most
+        // recent 500 peers and never surface older ones.
+        let items = [];
+        let offset = 0;
+        for (;;) {
+          const page = await reportsAPI.getUserList({
+            start,
+            end,
+            limit: PAGE_SIZE,
+            offset,
+            sortBy: 'LastSeen',
+          });
+          if (cancelled) return;
+          items = items.concat(page.items ?? []);
+          offset += PAGE_SIZE;
+          if (
+            (page.items ?? []).length < PAGE_SIZE ||
+            offset >= (page.total ?? 0) ||
+            items.length >= MAX_PEERS
+          ) {
+            break;
+          }
+        }
 
         const users = (items ?? []).map((u) => ({
           username: u.username ?? u.Username,
@@ -200,46 +247,163 @@ const MapPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [range]);
+  }, [customRange, range]);
+
+  // Client-side filters — search / direction / VPN-only — applied to the
+  // already-fetched past-connection set.
+  const filteredPastPeers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return pastPeers.filter((p) => {
+      if (vpnOnly && !p.isVpn) return false;
+      if (direction === 'upload' && !(p.uploadCount > 0)) return false;
+      if (direction === 'download' && !(p.downloadCount > 0)) return false;
+      if (q && !p.username?.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [direction, pastPeers, search, vpnOnly]);
+
+  const applyCustomRange = () => {
+    if (!customStartInput || !customEndInput) return;
+    const start = new Date(customStartInput);
+    const end = new Date(customEndInput);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return;
+    if (start >= end) return;
+    setCustomRange({ start: start.toISOString(), end: end.toISOString() });
+    setShowCustomPicker(false);
+  };
+
+  const openCustomPicker = () => {
+    setCustomStartInput(
+      customRange?.start
+        ? toDatetimeLocal(customRange.start)
+        : toDatetimeLocal(new Date(Date.now() - 24 * 60 * 60 * 1_000)),
+    );
+    setCustomEndInput(
+      customRange?.end ? toDatetimeLocal(customRange.end) : toDatetimeLocal(),
+    );
+    setShowCustomPicker((v) => !v);
+  };
+
+  const hasCustomRange = customRange != null;
 
   return (
     <div className="map-page">
       <div className="map-controls">
-        <span className="map-controls-label">Range</span>
-        <div className="map-controls-pills">
-          {RANGES.map((r) => (
+        <div className="map-controls-row">
+          <span className="map-controls-label">Range</span>
+          <div className="map-controls-pills">
+            {RANGES.map((r) => (
+              <button
+                className={`map-pill hover-fx${!hasCustomRange && range === r.hours ? ' active' : ''}`}
+                key={r.hours}
+                onClick={() => {
+                  prefs.set('overview:range-h', r.hours);
+                  setCustomRange(null);
+                  setShowCustomPicker(false);
+                  setRange(r.hours);
+                }}
+                type="button"
+              >
+                {r.label}
+              </button>
+            ))}
             <button
-              className={`map-pill${range === r.hours ? ' active' : ''}`}
-              key={r.hours}
-              onClick={() => {
-                prefs.set('overview:range-h', r.hours);
-                setRange(r.hours);
-              }}
+              className={`map-pill hover-fx${hasCustomRange ? ' active' : ''}`}
+              onClick={openCustomPicker}
               type="button"
             >
-              {r.label}
+              Custom…
             </button>
-          ))}
+          </div>
+          <span className="map-controls-count">
+            {loading && <span className="map-controls-loading">Loading…</span>}
+            {resolving && (
+              <span className="map-controls-loading">Resolving locations…</span>
+            )}
+            {!loading &&
+              !resolving &&
+              pastPeers.length > 0 &&
+              (filteredPastPeers.length === pastPeers.length
+                ? `${pastPeers.length} peers`
+                : `${filteredPastPeers.length} of ${pastPeers.length} peers`)}
+          </span>
         </div>
-        <span className="map-controls-count">
-          {loading && <span className="map-controls-loading">Loading…</span>}
-          {resolving && (
-            <span className="map-controls-loading">Resolving locations…</span>
-          )}
-          {!loading &&
-            !resolving &&
-            pastPeers.length > 0 &&
-            `${pastPeers.length} peers`}
-        </span>
+
+        {showCustomPicker && (
+          <div className="map-custom-range">
+            <label className="map-custom-range-field">
+              From
+              <input
+                onChange={(e) => setCustomStartInput(e.target.value)}
+                type="datetime-local"
+                value={customStartInput}
+              />
+            </label>
+            <label className="map-custom-range-field">
+              To
+              <input
+                onChange={(e) => setCustomEndInput(e.target.value)}
+                type="datetime-local"
+                value={customEndInput}
+              />
+            </label>
+            <button
+              className="map-custom-range-apply hover-fx"
+              onClick={applyCustomRange}
+              type="button"
+            >
+              Apply
+            </button>
+            <button
+              className="map-custom-range-cancel hover-fx"
+              onClick={() => setShowCustomPicker(false)}
+              type="button"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        <div className="map-controls-row map-controls-filters">
+          <input
+            className="map-search"
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Filter by username…"
+            type="text"
+            value={search}
+          />
+          <div className="map-controls-pills">
+            {DIRECTIONS.map((d) => (
+              <button
+                className={`map-pill hover-fx${direction === d.value ? ' active' : ''}`}
+                key={d.value}
+                onClick={() => setDirection(d.value)}
+                type="button"
+              >
+                {d.label}
+              </button>
+            ))}
+          </div>
+          <button
+            className={`map-pill hover-fx${vpnOnly ? ' active' : ''}`}
+            onClick={() => setVpnOnly((v) => !v)}
+            type="button"
+          >
+            VPN only
+          </button>
+        </div>
       </div>
 
       <div className="map-canvas">
         <WorldMap
+          direction={direction}
           downloads={downloads}
-          pastPeers={pastPeers}
+          pastPeers={filteredPastPeers}
+          search={search}
           serverLat={serverLat}
           serverLon={serverLon}
           uploads={uploads}
+          vpnOnly={vpnOnly}
         />
       </div>
     </div>

@@ -45,7 +45,7 @@ const BrowseModal = ({ onBrowse, onClose, open }) => {
         <div className="smm-header">
           <span className="smm-title">Browse User</span>
           <button
-            className="smm-close"
+            className="smm-close hover-fx"
             onClick={onClose}
             type="button"
           >
@@ -67,14 +67,14 @@ const BrowseModal = ({ onBrowse, onClose, open }) => {
         </div>
         <div className="smm-footer">
           <button
-            className="smm-btn smm-btn--cancel"
+            className="smm-btn smm-btn--cancel hover-fx"
             onClick={onClose}
             type="button"
           >
             Cancel
           </button>
           <button
-            className="smm-btn smm-btn--send"
+            className="smm-btn smm-btn--send hover-fx"
             disabled={!value.trim()}
             onClick={handle}
             type="button"
@@ -350,7 +350,7 @@ const Browse = ({ history, location }) => {
               />
             )}
             <button
-              className="sr-create-btn"
+              className="sr-create-btn hover-fx"
               onClick={() => setBrowseModalOpen(true)}
               title="Browse user"
               type="button"
@@ -359,7 +359,7 @@ const Browse = ({ history, location }) => {
             </button>
             {browseState !== 'idle' && (
               <button
-                className="sr-create-btn br-clear-btn"
+                className="sr-create-btn br-clear-btn hover-fx"
                 onClick={clear}
                 title="Clear"
                 type="button"
@@ -440,7 +440,7 @@ const Browse = ({ history, location }) => {
               </p>
               {browseState === 'idle' && (
                 <button
-                  className="chat-start-btn"
+                  className="chat-start-btn hover-fx"
                   onClick={() => setBrowseModalOpen(true)}
                   type="button"
                 >

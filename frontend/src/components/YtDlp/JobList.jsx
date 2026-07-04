@@ -50,6 +50,28 @@ const canonicalChannel = (url) =>
     .replace(/\/+$/u, '')
     .replace(/\/(?:videos|streams|shorts|playlists|featured|community)$/u, '');
 
+// Jobs that never got past enumeration (e.g. a cookie/auth failure) have no title and no
+// tracks — showing the raw URL as if it were a title reads as a real completed download, so
+// fall back to a compact, clearly-untitled label instead.
+const jobDisplayTitle = (job) => {
+  if (job.title) {
+    return job.title;
+  }
+
+  let videoId = job.url;
+  try {
+    const u = new URL(job.url);
+    videoId =
+      u.searchParams.get('v') ||
+      u.pathname.split('/').filter(Boolean).pop() ||
+      job.url;
+  } catch {
+    // not a valid URL; fall through to using it as-is
+  }
+
+  return `(untitled — ${videoId})`;
+};
+
 const useAvailableHeight = (ref) => {
   const [height, setHeight] = useState(400);
   useLayoutEffect(() => {
@@ -279,6 +301,10 @@ const JobRow = ({
   const stateKey = (job.state || '').toLowerCase();
   const pct = jobProgress(job);
   const ChevronIcon = expanded ? ChevronDown : ChevronRight;
+  // A single-video job always has exactly one track whose title mirrors the job's own
+  // title — expanding it just repeats the same title back. Jobs with zero tracks (including
+  // older records that never got a track count backfilled) have nothing to expand into either.
+  const isExpandable = job.totalTracks > 1;
   const isActive = stateKey === 'active';
   const isComplete = stateKey === 'completed';
   const remaining = isActive
@@ -294,16 +320,20 @@ const JobRow = ({
   return (
     <div className="ytdlp-job">
       <div
-        className="ytdlp-job-header"
-        onClick={handleExpand}
+        className={`ytdlp-job-header${isExpandable ? '' : ' ytdlp-job-header--static'}`}
+        onClick={isExpandable ? handleExpand : undefined}
       >
-        <ChevronIcon
-          size={14}
-          strokeWidth={1.75}
-        />
-        <span className="ytdlp-job-title">{job.title || job.url}</span>
+        {isExpandable ? (
+          <ChevronIcon
+            size={14}
+            strokeWidth={1.75}
+          />
+        ) : (
+          <span className="ytdlp-job-chevron-spacer" />
+        )}
+        <span className="ytdlp-job-title">{jobDisplayTitle(job)}</span>
         <span className="ytdlp-job-meta">
-          {job.completedTracks}/{job.totalTracks}
+          {isExpandable && `${job.completedTracks}/${job.totalTracks}`}
           {isActive && remaining > 0 && (
             <span className="ytdlp-job-remaining">
               {' '}

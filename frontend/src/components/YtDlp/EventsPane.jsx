@@ -191,7 +191,7 @@ const EventsPane = ({ events, onClear }) => {
           {groups.length !== 1 ? 's' : ''}
         </span>
         <button
-          className="ytdlp-btn"
+          className="ytdlp-btn hover-fx"
           onClick={onClear}
           title="Clear events"
           type="button"
@@ -202,7 +202,7 @@ const EventsPane = ({ events, onClear }) => {
       {groups.length > 0 && (
         <div className="ytdlp-events-tabs">
           <button
-            className={`ytdlp-tab${activeJob === 'all' ? ' ytdlp-tab--active' : ''}`}
+            className={`ytdlp-tab hover-fx${activeJob === 'all' ? ' ytdlp-tab--active' : ''}`}
             onClick={() => setActiveJob('all')}
             type="button"
           >
@@ -210,7 +210,7 @@ const EventsPane = ({ events, onClear }) => {
           </button>
           {groups.map((group) => (
             <button
-              className={`ytdlp-tab${activeJob === group.id ? ' ytdlp-tab--active' : ''}`}
+              className={`ytdlp-tab hover-fx${activeJob === group.id ? ' ytdlp-tab--active' : ''}`}
               key={group.id}
               onClick={() => setActiveJob(group.id)}
               title={group.title}

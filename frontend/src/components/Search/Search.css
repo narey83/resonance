@@ -422,6 +422,35 @@
   border-color: var(--accent);
 }
 
+.sr-ext-dropdown.ui.dropdown {
+  min-height: unset;
+  min-width: 130px;
+  max-width: 280px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.sr-ext-dropdown.ui.selection.dropdown {
+  padding: 4px 24px 4px 8px;
+  border-radius: 5px;
+  min-height: unset;
+}
+
+.sr-ext-dropdown.ui.selection.dropdown > .dropdown.icon {
+  padding: 0;
+  top: 6px;
+}
+
+.sr-ext-dropdown .menu {
+  font-size: 12px;
+}
+
+.sr-ext-dropdown > .label {
+  font-size: 10.5px;
+  padding: 2px 6px;
+  margin: 1px 4px 1px 0;
+}
+
 /* ── Filter pills ────────────────────────────────────────────── */
 .sr-filter-pills {
   align-items: center;
@@ -457,14 +486,6 @@
 
 .sr-filter-pill--active:hover {
   filter: brightness(1.1);
-}
-
-.sr-filter-pill-sep {
-  background: var(--border);
-  flex-shrink: 0;
-  height: 16px;
-  margin: 0 3px;
-  width: 1px;
 }
 
 .sr-filter-pill-clear {
@@ -507,41 +528,6 @@
   color: var(--accent);
 }
 
-.sr-filter-input-wrap {
-  margin-top: 8px;
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.sr-filter-icon {
-  position: absolute;
-  left: 8px;
-  color: var(--text-muted);
-  pointer-events: none;
-}
-
-.sr-filter-input {
-  width: 100%;
-  background: var(--surface-input);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-primary);
-  font-size: 12px;
-  padding: 5px 28px 5px 28px;
-  outline: none;
-  transition: border-color 0.15s;
-}
-
-.sr-filter-input:focus {
-  border-color: var(--accent);
-}
-
-.sr-filter-input::placeholder {
-  color: var(--text-muted);
-  font-size: 11.5px;
-}
-
 .sr-filter-clear {
   position: absolute;
   right: 6px;
@@ -559,6 +545,43 @@
   color: var(--text-primary);
 }
 
+/* ── Metadata filter row (artist/title/folder/year) ───────────── */
+.sr-meta-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.sr-meta-filter-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 140px;
+  min-width: 100px;
+}
+
+.sr-meta-filter-input {
+  width: 100%;
+  background: var(--surface-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 5px 26px 5px 8px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.sr-meta-filter-input:focus {
+  border-color: var(--accent);
+}
+
+.sr-meta-filter-input::placeholder {
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
 /* ── Results area ────────────────────────────────────────────── */
 .sr-results {
   flex: 1;
@@ -571,24 +594,6 @@
   font-size: 13px;
   color: var(--text-muted);
   text-align: center;
-}
-
-.sr-show-more-btn {
-  display: block;
-  width: 100%;
-  padding: 10px 16px;
-  font-size: 12px;
-  color: var(--text-muted);
-  background: none;
-  border: none;
-  border-top: 1px solid var(--border);
-  cursor: pointer;
-  text-align: center;
-}
-
-.sr-show-more-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
 }
 
 .sr-file-count {

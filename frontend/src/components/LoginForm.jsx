@@ -125,7 +125,7 @@ const LoginForm = ({ error, loading, onLoginAttempt }) => {
               )}
 
               <button
-                className="auth-submit"
+                className="auth-submit hover-fx"
                 disabled={!ready}
                 type="submit"
               >

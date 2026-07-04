@@ -131,7 +131,7 @@ const Events = () => {
           value={dateTo}
         />
         <button
-          className="shares-add-btn"
+          className="shares-add-btn hover-fx"
           onClick={applyFilters}
           style={{ fontSize: 12 }}
           type="button"
@@ -140,7 +140,7 @@ const Events = () => {
         </button>
         {hasFilters && (
           <button
-            className="shares-add-btn"
+            className="shares-add-btn hover-fx"
             onClick={clearFilters}
             style={{ fontSize: 12 }}
             type="button"

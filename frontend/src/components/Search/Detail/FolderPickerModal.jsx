@@ -125,7 +125,7 @@ const FolderPickerModal = ({
         <div className="fpm-body">
           <div className="fpm-breadcrumb">
             <button
-              className={`fpm-crumb${pathSegments.length === 0 ? ' fpm-crumb--active' : ''}`}
+              className={`fpm-crumb hover-fx${pathSegments.length === 0 ? ' fpm-crumb--active' : ''}`}
               onClick={navigateToRoot}
               type="button"
             >
@@ -139,7 +139,7 @@ const FolderPickerModal = ({
                   size={11}
                 />
                 <button
-                  className={`fpm-crumb${index === pathSegments.length - 1 ? ' fpm-crumb--active' : ''}`}
+                  className={`fpm-crumb hover-fx${index === pathSegments.length - 1 ? ' fpm-crumb--active' : ''}`}
                   onClick={() => navigateToBreadcrumb(index)}
                   type="button"
                 >
@@ -249,14 +249,14 @@ const FolderPickerModal = ({
           </div>
           <div className="fpm-footer-actions">
             <button
-              className="fpm-btn fpm-btn--cancel"
+              className="fpm-btn hover-fx fpm-btn--cancel"
               onClick={onClose}
               type="button"
             >
               Cancel
             </button>
             <button
-              className="fpm-btn fpm-btn--confirm"
+              className="fpm-btn hover-fx fpm-btn--confirm"
               onClick={confirm}
               type="button"
             >

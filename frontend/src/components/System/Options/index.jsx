@@ -1063,7 +1063,7 @@ const FolderField = ({ disabled, onChange, placeholder, value }) => {
           value={value ?? ''}
         />
         <button
-          className="opt-browse-btn"
+          className="opt-browse-btn hover-fx"
           disabled={disabled}
           onClick={() => setPickerOpen(true)}
           type="button"
@@ -1872,7 +1872,7 @@ const Options = ({ options, state = {}, theme }) => {
                 <div className="opts-nav-group-title">{group}</div>
                 {items.map(({ index, section }) => (
                   <button
-                    className={`opts-nav-item${activeSection === index ? ' opts-nav-item--active' : ''}`}
+                    className={`opts-nav-item hover-fx${activeSection === index ? ' opts-nav-item--active' : ''}`}
                     key={section.title}
                     onClick={() => setActiveSection(index)}
                     type="button"

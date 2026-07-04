@@ -1,6 +1,10 @@
 import { useLibraryActivity } from '../../../context/LibraryActivityContext';
 import { usePlayer } from '../../../context/PlayerContext';
-import { formatIndexedAt, formatSeconds } from '../../../lib/util';
+import {
+  formatAttributes,
+  formatIndexedAt,
+  formatSeconds,
+} from '../../../lib/util';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ChevronDown,
@@ -99,6 +103,11 @@ const TrackTable = ({
       else if (sortCol === 'key')
         cmp = (a.key || '').localeCompare(b.key || '');
       else if (sortCol === 'bpm') cmp = (a.bpm ?? 0) - (b.bpm ?? 0);
+      else if (sortCol === 'ext')
+        cmp = (a.extension || '').localeCompare(b.extension || '');
+      else if (sortCol === 'quality')
+        cmp =
+          (a.bitRate ?? a.sampleRate ?? 0) - (b.bitRate ?? b.sampleRate ?? 0);
       else if (sortCol === 'duration')
         cmp = (a.duration ?? 0) - (b.duration ?? 0);
       else if (sortCol === 'plays')
@@ -379,6 +388,8 @@ const TrackTable = ({
           {colHeader('album', 'Album', 'jb-tt-album')}
           {plainSortHeader('key', 'Key', 'jb-tt-key')}
           {plainSortHeader('bpm', 'BPM', 'jb-tt-bpm')}
+          {plainSortHeader('ext', 'Ext', 'jb-tt-ext')}
+          {plainSortHeader('quality', 'Quality', 'jb-tt-quality')}
           {plainSortHeader('duration', 'Time', 'jb-tt-dur')}
           {plainSortHeader('plays', 'Plays', 'jb-tt-plays')}
           {showAdded && plainSortHeader('added', 'Added', 'jb-tt-added')}
@@ -505,6 +516,12 @@ const TrackTable = ({
                     <div className="jb-tt-album">{track.album || '–'}</div>
                     <div className="jb-tt-key">{track.key || '–'}</div>
                     <div className="jb-tt-bpm">{track.bpm ?? '–'}</div>
+                    <div className="jb-tt-ext">
+                      {track.extension?.toUpperCase() || '–'}
+                    </div>
+                    <div className="jb-tt-quality">
+                      {formatAttributes(track) || '–'}
+                    </div>
                     <div className="jb-track-duration">
                       {track.duration ? formatSeconds(track.duration) : '–'}
                     </div>

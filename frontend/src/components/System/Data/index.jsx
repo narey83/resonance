@@ -31,6 +31,7 @@ const Data = () => {
         </span>
       </p>
       <Button
+        className="hover-fx"
         loading={up}
         onClick={() => clear({ direction: 'upload', setState: setUp })}
         primary
@@ -39,6 +40,7 @@ const Data = () => {
         Clear All Completed Uploads
       </Button>
       <Button
+        className="hover-fx"
         loading={down}
         onClick={() => clear({ direction: 'download', setState: setDown })}
         primary

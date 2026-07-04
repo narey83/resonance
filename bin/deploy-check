@@ -1,0 +1,103 @@
+#!/bin/bash
+# Prod (192.168.0.254) runs a separate, hand-maintained checkout that has
+# diverged from this repo's history — some files there carry fixes/features
+# not present here. Blindly overwriting a diverged file during deploy loses
+# that work, so this script checks before anything gets pushed.
+#
+# For each given file (or every changed backend/frontend file, if none given):
+#   - scp prod's live copy into a scratch dir
+#   - diff it against this repo's HEAD version of the same file
+#   - SAFE      -> prod matches HEAD, your local edit can overwrite it directly
+#   - DIVERGED  -> prod has its own changes; hand-patch your edit onto prod's
+#                  copy instead of overwriting (see the scratch copy printed)
+#   - NEW       -> file doesn't exist on prod yet, safe to create
+#
+# Usage:
+#   bin/deploy-check                       # check all changed backend/frontend files
+#   bin/deploy-check path/to/file ...      # check specific files
+#   bin/deploy-check --push [file ...]     # after checking, scp every SAFE file to prod
+
+set -euo pipefail
+
+REMOTE_HOST="narey@192.168.0.254"
+REMOTE_BASE="/home/narey/projects/resonance"
+SCRATCH="$(mktemp -d /tmp/resonance-deploy-check.XXXXXX)"
+
+cd "$(git rev-parse --show-toplevel)"
+
+PUSH=0
+FILES=()
+for arg in "$@"; do
+  if [ "$arg" = "--push" ]; then
+    PUSH=1
+  else
+    FILES+=("$arg")
+  fi
+done
+
+if [ ${#FILES[@]} -eq 0 ]; then
+  while IFS= read -r f; do
+    [ -n "$f" ] && FILES+=("$f")
+  done < <(git status --porcelain | awk '{print $2}' | grep -E '^(backend|frontend)/' || true)
+fi
+
+if [ ${#FILES[@]} -eq 0 ]; then
+  echo "No changed files under backend/ or frontend/ to check."
+  exit 0
+fi
+
+safe=()
+diverged=()
+
+for f in "${FILES[@]}"; do
+  mkdir -p "$SCRATCH/$(dirname "$f")"
+
+  if ! scp -q "$REMOTE_HOST:$REMOTE_BASE/$f" "$SCRATCH/$f" 2>/dev/null; then
+    echo "NEW      $f  (not on prod yet -- safe to create)"
+    safe+=("$f")
+    continue
+  fi
+
+  if git cat-file -e "HEAD:$f" 2>/dev/null; then
+    if diff -q <(git show "HEAD:$f") "$SCRATCH/$f" >/dev/null 2>&1; then
+      echo "SAFE     $f  (prod matches local HEAD)"
+      safe+=("$f")
+    else
+      echo "DIVERGED $f  (prod differs from local HEAD -- hand-patch required)"
+      echo "         scratch copy: $SCRATCH/$f"
+      echo "         diff:  diff <(git show HEAD:$f) $SCRATCH/$f"
+      diverged+=("$f")
+    fi
+  else
+    echo "CONFLICT $f  (untracked locally, but a file with this name exists on prod -- check by hand)"
+    echo "         scratch copy: $SCRATCH/$f"
+    diverged+=("$f")
+  fi
+done
+
+echo
+echo "${#safe[@]} safe, ${#diverged[@]} diverged"
+
+if [ "$PUSH" -eq 1 ] && [ ${#safe[@]} -gt 0 ]; then
+  echo
+  echo "Pushing ${#safe[@]} safe file(s) to prod..."
+  for f in "${safe[@]}"; do
+    scp -q "$f" "$REMOTE_HOST:$REMOTE_BASE/$f"
+    echo "  pushed $f"
+  done
+fi
+
+if [ ${#diverged[@]} -gt 0 ]; then
+  echo
+  echo "Diverged files were NOT pushed. Hand-patch your changes onto prod's copy:"
+  for f in "${diverged[@]}"; do
+    echo "  - $f"
+  done
+  echo
+  echo "Workflow: edit the scratch copy (add just your new hunk), diff it against"
+  echo "prod's live file again to confirm only your change landed, then scp it back:"
+  echo "  scp \"$SCRATCH/<file>\" $REMOTE_HOST:$REMOTE_BASE/<file>"
+fi
+
+echo
+echo "Scratch dir (kept for inspection): $SCRATCH"

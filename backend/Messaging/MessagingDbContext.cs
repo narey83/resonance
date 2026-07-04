@@ -60,6 +60,7 @@ namespace resonance.Messaging
             modelBuilder.Entity<Conversation>().Ignore(e => e.Messages);
             modelBuilder.Entity<Conversation>().Ignore(e => e.UnAcknowledgedMessageCount);
             modelBuilder.Entity<Conversation>().Ignore(e => e.HasUnAcknowledgedMessages);
+            modelBuilder.Entity<Conversation>().Ignore(e => e.LastMessageTimestamp);
 
             modelBuilder
                 .Entity<PrivateMessage>()

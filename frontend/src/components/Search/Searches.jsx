@@ -264,7 +264,7 @@ const Searches = ({ server } = {}) => {
             />
           </div>
           <button
-            className={`sr-create-btn${isSearching ? ' sr-create-btn--searching' : ''}`}
+            className={`sr-create-btn hover-fx${isSearching ? ' sr-create-btn--searching' : ''}`}
             disabled={creating || !server?.isConnected}
             onClick={() => create()}
             title="New Search"

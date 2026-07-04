@@ -183,6 +183,17 @@
   user-select: none;
 }
 
+.ytdlp-job-header--static {
+  cursor: default;
+}
+
+.ytdlp-job-chevron-spacer {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
 .ytdlp-job-title {
   flex: 1;
   font-weight: 600;

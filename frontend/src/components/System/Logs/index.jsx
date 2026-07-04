@@ -376,7 +376,7 @@ const LiveTab = () => {
           <div className="logs-chip-group">
             {LEVEL_ORDER.map((level) => (
               <button
-                className={`logs-chip logs-chip--mono${levels[level] ? '' : ' logs-chip--off'}`}
+                className={`logs-chip logs-chip--mono hover-fx${levels[level] ? '' : ' logs-chip--off'}`}
                 key={level}
                 onClick={() => toggleLevel(level)}
                 type="button"
@@ -393,7 +393,7 @@ const LiveTab = () => {
           </span>
 
           <button
-            className={`logs-pause-btn${isPaused ? ' logs-pause-btn--paused' : ''}`}
+            className={`logs-pause-btn hover-fx${isPaused ? ' logs-pause-btn--paused' : ''}`}
             onClick={togglePause}
             title={isPaused ? 'Resume live stream' : 'Pause live stream'}
             type="button"
@@ -405,7 +405,7 @@ const LiveTab = () => {
 
           {hasFilters && (
             <button
-              className="shares-add-btn"
+              className="shares-add-btn hover-fx"
               onClick={clearAll}
               style={{ fontSize: 11 }}
               type="button"
@@ -419,7 +419,7 @@ const LiveTab = () => {
           <div className="logs-toolbar-row logs-context-row">
             {seenContexts.map((ctx) => (
               <button
-                className={`logs-chip${activeContexts.length > 0 && !activeContexts.includes(ctx) ? ' logs-chip--off' : activeContexts.includes(ctx) ? ' logs-chip--active' : ''}`}
+                className={`logs-chip hover-fx${activeContexts.length > 0 && !activeContexts.includes(ctx) ? ' logs-chip--off' : activeContexts.includes(ctx) ? ' logs-chip--active' : ''}`}
                 key={ctx}
                 onClick={() => toggleContext(ctx)}
                 title={ctx}
@@ -441,7 +441,7 @@ const LiveTab = () => {
               value={messageFilter}
             />
             <button
-              className={`logs-regex-btn${regexMode ? ' logs-regex-btn--on' : ''}`}
+              className={`logs-regex-btn hover-fx${regexMode ? ' logs-regex-btn--on' : ''}`}
               onClick={() => setRegexMode((prev) => !prev)}
               title="Toggle regex mode"
               type="button"
@@ -701,7 +701,7 @@ const HistoryTab = () => {
           <div className="logs-chip-group">
             {LEVEL_ORDER.map((level) => (
               <button
-                className={`logs-chip logs-chip--mono${levels[level] ? '' : ' logs-chip--off'}`}
+                className={`logs-chip logs-chip--mono hover-fx${levels[level] ? '' : ' logs-chip--off'}`}
                 key={level}
                 onClick={() => toggleLevel(level)}
                 type="button"
@@ -730,7 +730,7 @@ const HistoryTab = () => {
           <span style={{ flex: 1 }} />
 
           <button
-            className="shares-add-btn"
+            className="shares-add-btn hover-fx"
             onClick={applyFilters}
             style={{ fontSize: 11 }}
             type="button"
@@ -740,7 +740,7 @@ const HistoryTab = () => {
 
           {hasFilters && (
             <button
-              className="shares-add-btn"
+              className="shares-add-btn hover-fx"
               onClick={clearAll}
               style={{ fontSize: 11 }}
               type="button"
@@ -771,7 +771,7 @@ const HistoryTab = () => {
               value={messageFilter}
             />
             <button
-              className={`logs-regex-btn${regexMode ? ' logs-regex-btn--on' : ''}`}
+              className={`logs-regex-btn hover-fx${regexMode ? ' logs-regex-btn--on' : ''}`}
               onClick={() => setRegexMode((prev) => !prev)}
               title="Toggle regex mode"
               type="button"
@@ -883,14 +883,14 @@ const Logs = () => {
     <div className="logs">
       <div className="logs-tabs">
         <button
-          className={`logs-tab${mode === 'live' ? ' logs-tab--active' : ''}`}
+          className={`logs-tab hover-fx${mode === 'live' ? ' logs-tab--active' : ''}`}
           onClick={() => setMode('live')}
           type="button"
         >
           Live
         </button>
         <button
-          className={`logs-tab${mode === 'history' ? ' logs-tab--active' : ''}`}
+          className={`logs-tab hover-fx${mode === 'history' ? ' logs-tab--active' : ''}`}
           onClick={() => setMode('history')}
           type="button"
         >
@@ -898,7 +898,7 @@ const Logs = () => {
         </button>
         <span style={{ flex: 1 }} />
         <button
-          className="logs-tab"
+          className="logs-tab hover-fx"
           disabled={exporting}
           onClick={exportHar}
           title="Export captured backend HTTP traffic as a HAR file for comparison with the mobile network log"

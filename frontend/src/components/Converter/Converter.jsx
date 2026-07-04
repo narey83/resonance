@@ -219,6 +219,7 @@ const Converter = () => {
             </select>
           </div>
           <button
+            className="hover-fx"
             disabled={selectionCount === 0 || isRunning}
             onClick={handleConvert}
             style={button({
@@ -274,6 +275,7 @@ const Converter = () => {
               </strong>
               {isRunning && (
                 <button
+                  className="hover-fx"
                   onClick={handleCancel}
                   style={button({ padding: '3px 10px', fontSize: 12 })}
                   type="button"

@@ -214,7 +214,7 @@ const SessionsPanel = () => {
       {sessions && sessions.length > 0 && (
         <div className="session-footer">
           <button
-            className="shares-add-btn shares-add-btn--danger"
+            className="shares-add-btn shares-add-btn--danger hover-fx"
             disabled={revoking === 'all'}
             onClick={handleRevokeAll}
             type="button"
@@ -387,7 +387,7 @@ const Info = ({ state }) => {
       <div className="info-actions">
         <div className="info-actions-left">
           <button
-            className="info-action-btn"
+            className="info-action-btn hover-fx"
             onClick={() => getVersion({ forceCheck: true })}
             type="button"
           >
@@ -395,7 +395,7 @@ const Info = ({ state }) => {
             Check for Updates
           </button>
           <button
-            className="info-action-btn"
+            className="info-action-btn hover-fx"
             onClick={() =>
               window.open(
                 `http://www.slsknet.org/qtlogin.php?username=${user?.username}`,
@@ -410,7 +410,7 @@ const Info = ({ state }) => {
         </div>
         <div className="info-actions-right">
           <button
-            className={`info-action-btn info-action-btn--warn${pendingRestart ? ' info-action-btn--warn-active' : ''}`}
+            className={`info-action-btn info-action-btn--warn hover-fx${pendingRestart ? ' info-action-btn--warn-active' : ''}`}
             onClick={() => setConfirm('restart')}
             type="button"
           >
@@ -418,7 +418,7 @@ const Info = ({ state }) => {
             Restart
           </button>
           <button
-            className="info-action-btn info-action-btn--danger"
+            className="info-action-btn info-action-btn--danger hover-fx"
             onClick={() => setConfirm('shutdown')}
             type="button"
           >

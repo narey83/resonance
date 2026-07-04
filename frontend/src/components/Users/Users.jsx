@@ -71,7 +71,7 @@ const LookupModal = ({ onClose, onLookup, open }) => {
         <div className="smm-header">
           <span className="smm-title">Look Up User</span>
           <button
-            className="smm-close"
+            className="smm-close hover-fx"
             onClick={onClose}
             type="button"
           >
@@ -93,14 +93,14 @@ const LookupModal = ({ onClose, onLookup, open }) => {
         </div>
         <div className="smm-footer">
           <button
-            className="smm-btn smm-btn--cancel"
+            className="smm-btn smm-btn--cancel hover-fx"
             onClick={onClose}
             type="button"
           >
             Cancel
           </button>
           <button
-            className="smm-btn smm-btn--send"
+            className="smm-btn smm-btn--send hover-fx"
             disabled={!value.trim()}
             onClick={handle}
             type="button"
@@ -169,7 +169,7 @@ const UserDetail = ({ onBrowse, onChat, onClose, userData, username }) => {
         <span className="sr-detail-header-title">{username}</span>
         <div className="sr-detail-header-actions">
           <button
-            className="sr-btn"
+            className="sr-btn hover-fx"
             onClick={onChat}
             type="button"
           >
@@ -177,7 +177,7 @@ const UserDetail = ({ onBrowse, onChat, onClose, userData, username }) => {
           </button>
           {onBrowse && (
             <button
-              className="sr-btn"
+              className="sr-btn hover-fx"
               onClick={onBrowse}
               type="button"
             >
@@ -185,7 +185,7 @@ const UserDetail = ({ onBrowse, onChat, onClose, userData, username }) => {
             </button>
           )}
           <button
-            className="sr-btn"
+            className="sr-btn hover-fx"
             onClick={onClose}
             title="Close"
             type="button"
@@ -427,7 +427,7 @@ const Users = () => {
               />
             )}
             <button
-              className="sr-create-btn"
+              className="sr-create-btn hover-fx"
               onClick={() => setLookupModalOpen(true)}
               title="Look up user"
               type="button"
@@ -436,7 +436,7 @@ const Users = () => {
             </button>
             {selectedUsername && (
               <button
-                className="sr-create-btn br-clear-btn"
+                className="sr-create-btn br-clear-btn hover-fx"
                 onClick={clear}
                 title="Clear"
                 type="button"
@@ -526,7 +526,7 @@ const Users = () => {
               />
               <p>Look up a user to view their info</p>
               <button
-                className="chat-start-btn"
+                className="chat-start-btn hover-fx"
                 onClick={() => setLookupModalOpen(true)}
                 type="button"
               >

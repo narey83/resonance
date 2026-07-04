@@ -221,6 +221,9 @@ namespace resonance.Messaging
                 {
                     conversation.Messages = await ListMessagesAsync(m => m.Username == conversation.Username);
                     conversation.UnAcknowledgedMessageCount = conversation.Messages.Count(m => !m.IsAcknowledged);
+
+                    // Messages come back ordered ascending by timestamp, so the last one is the most recent.
+                    conversation.LastMessageTimestamp = conversation.Messages.LastOrDefault()?.Timestamp;
                 }
                 else
                 {
@@ -265,20 +268,29 @@ namespace resonance.Messaging
                 .Where(m => !m.IsAcknowledged)
                 .ToList();
 
+            var lastMessageTimestamps = context.PrivateMessages
+                .AsNoTracking()
+                .GroupBy(m => m.Username)
+                .Select(g => new { Username = g.Key, Timestamp = g.Max(m => m.Timestamp) })
+                .ToDictionary(g => g.Username, g => g.Timestamp);
+
             var conversations = context.Conversations
                 .AsNoTracking()
                 .Where(expression)
-                .OrderBy(c => c.Username)
                 .ToList();
 
-            var response = conversations.Select(c => new Conversation
-            {
-                Username = c.Username,
-                IsActive = c.IsActive,
-                UnAcknowledgedMessageCount = unAckedMessages.Count(m => m.Username == c.Username),
-            });
+            var response = conversations
+                .Select(c => new Conversation
+                {
+                    Username = c.Username,
+                    IsActive = c.IsActive,
+                    UnAcknowledgedMessageCount = unAckedMessages.Count(m => m.Username == c.Username),
+                    LastMessageTimestamp = lastMessageTimestamps.TryGetValue(c.Username, out var timestamp) ? timestamp : null,
+                })
+                .OrderByDescending(c => c.LastMessageTimestamp ?? DateTime.MinValue)
+                .ThenBy(c => c.Username);
 
-            return Task.FromResult(response);
+            return Task.FromResult<IEnumerable<Conversation>>(response);
         }
 
         /// <summary>

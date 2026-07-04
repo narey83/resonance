@@ -149,7 +149,7 @@ const PublicMixtape = ({ token }) => {
             <div className="pm-share">
               {typeof navigator.share === 'function' ? (
                 <button
-                  className="pm-share-btn pm-share-btn--primary"
+                  className="pm-share-btn pm-share-btn--primary hover-fx"
                   onClick={handleNativeShare}
                   type="button"
                 >
@@ -158,7 +158,7 @@ const PublicMixtape = ({ token }) => {
                 </button>
               ) : (
                 <button
-                  className="pm-share-btn pm-share-btn--primary"
+                  className="pm-share-btn pm-share-btn--primary hover-fx"
                   onClick={handleCopy}
                   type="button"
                 >
@@ -168,7 +168,7 @@ const PublicMixtape = ({ token }) => {
               )}
               {typeof navigator.share === 'function' && (
                 <button
-                  className="pm-share-btn"
+                  className="pm-share-btn hover-fx"
                   onClick={handleCopy}
                   type="button"
                 >
@@ -182,7 +182,7 @@ const PublicMixtape = ({ token }) => {
             {(mixtape.tracks ?? []).length > 0 && (
               <div className="pm-dl-all">
                 <a
-                  className="pm-dl-all-btn"
+                  className="pm-dl-all-btn hover-fx"
                   download
                   href={publicM3uUrl(token)}
                   title="Download playlist file for use in any music player"
@@ -191,7 +191,7 @@ const PublicMixtape = ({ token }) => {
                   Download M3U playlist
                 </a>
                 <a
-                  className="pm-dl-all-btn"
+                  className="pm-dl-all-btn hover-fx"
                   download
                   href={publicZipUrl(token)}
                   title="Download all tracks and the M3U playlist as a zip"

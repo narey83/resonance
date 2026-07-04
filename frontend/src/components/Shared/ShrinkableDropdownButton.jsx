@@ -30,7 +30,7 @@ const ShrinkableDropdownButton = ({
         {children}
       </ShrinkableButton>
       <Dropdown
-        className="button icon"
+        className="button icon hover-fx"
         disabled={disabled}
         onChange={onChange}
         options={options}

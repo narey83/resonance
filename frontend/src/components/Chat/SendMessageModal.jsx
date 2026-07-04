@@ -46,7 +46,7 @@ const SendMessageModal = ({ initiateConversation, ...rest }) => {
         <div className="smm-header">
           <span className="smm-title">New Conversation</span>
           <button
-            className="smm-close"
+            className="smm-close hover-fx"
             onClick={() => setOpen(false)}
             title="Close"
             type="button"
@@ -92,14 +92,14 @@ const SendMessageModal = ({ initiateConversation, ...rest }) => {
 
         <div className="smm-footer">
           <button
-            className="smm-btn smm-btn--cancel"
+            className="smm-btn smm-btn--cancel hover-fx"
             onClick={() => setOpen(false)}
             type="button"
           >
             Cancel
           </button>
           <button
-            className="smm-btn smm-btn--send"
+            className="smm-btn smm-btn--send hover-fx"
             disabled={!username.trim()}
             onClick={handleStart}
             type="button"

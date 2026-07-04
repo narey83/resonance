@@ -41,7 +41,7 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
       <div className="ka-panel-header">
         <span>Scan Settings</span>
         <button
-          className="ka-icon-btn"
+          className="ka-icon-btn hover-fx"
           onClick={onClose}
           type="button"
         >
@@ -86,7 +86,7 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
         <label className="ka-toggle-row">
           <span className="ka-field-label">Skip already-tagged tracks</span>
           <button
-            className={`ka-toggle${skipTagged ? ' on' : ''}`}
+            className={`ka-toggle hover-fx${skipTagged ? ' on' : ''}`}
             onClick={() => {
               setSkipTagged((v) => !v);
               if (!skipTagged) setResetAll(false);
@@ -101,7 +101,7 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
         <label className="ka-toggle-row">
           <span className="ka-field-label">Reset & re-scan all tracks</span>
           <button
-            className={`ka-toggle${resetAll ? ' on' : ''}`}
+            className={`ka-toggle hover-fx${resetAll ? ' on' : ''}`}
             onClick={() => {
               setResetAll((v) => !v);
               if (!resetAll) setSkipTagged(false);
@@ -121,14 +121,14 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
 
       <div className="ka-panel-footer">
         <button
-          className="ka-btn"
+          className="ka-btn hover-fx"
           onClick={onClose}
           type="button"
         >
           Cancel
         </button>
         <button
-          className="ka-btn ka-btn--primary"
+          className="ka-btn ka-btn--primary hover-fx"
           disabled={scanning}
           onClick={() => onStart({ skipTagged, resetAll, algorithm, workers })}
           type="button"
@@ -813,7 +813,7 @@ const BpmAnalysis = () => {
         />
         <span>{error}</span>
         <button
-          className="ka-btn"
+          className="ka-btn hover-fx"
           onClick={load}
           type="button"
         >
@@ -908,7 +908,7 @@ const BpmAnalysis = () => {
         )}
         {scanning && (
           <button
-            className="ka-btn ka-btn--scanning"
+            className="ka-btn ka-btn--scanning hover-fx"
             onClick={handleCancelScan}
             type="button"
           >
@@ -922,7 +922,7 @@ const BpmAnalysis = () => {
 
         <div className="ka-spacer" />
         <button
-          className="ka-btn"
+          className="ka-btn hover-fx"
           onClick={load}
           title="Refresh"
           type="button"
@@ -930,7 +930,7 @@ const BpmAnalysis = () => {
           <RefreshCw size={13} />
         </button>
         <button
-          className={`ka-btn${showSettings ? ' ka-btn--active' : ''}`}
+          className={`ka-btn hover-fx${showSettings ? ' ka-btn--active' : ''}`}
           disabled={scanning}
           onClick={() => setShowSettings((v) => !v)}
           type="button"
@@ -964,7 +964,7 @@ const BpmAnalysis = () => {
           />
           {search && (
             <button
-              className="ka-search-clear"
+              className="ka-search-clear hover-fx"
               onClick={() => setSearch('')}
               type="button"
             >
@@ -976,7 +976,7 @@ const BpmAnalysis = () => {
         <div className="ka-filter-group">
           {['all', 'tagged', 'untagged'].map((f) => (
             <button
-              className={`ka-filter-btn${filter === f ? ' active' : ''}`}
+              className={`ka-filter-btn hover-fx${filter === f ? ' active' : ''}`}
               key={f}
               onClick={() => setFilter(f)}
               type="button"
@@ -986,7 +986,7 @@ const BpmAnalysis = () => {
           ))}
           {recentlyUpdated.size > 0 && (
             <button
-              className={`ka-filter-btn ka-filter-btn--updated${filter === 'updated' ? ' active' : ''}`}
+              className={`ka-filter-btn ka-filter-btn--updated hover-fx${filter === 'updated' ? ' active' : ''}`}
               onClick={() => setFilter('updated')}
               type="button"
             >
@@ -1003,7 +1003,7 @@ const BpmAnalysis = () => {
 
         {pagedGroups.length > 0 && (
           <button
-            className="ka-btn ka-btn--sm"
+            className="ka-btn ka-btn--sm hover-fx"
             onClick={toggleAllFolders}
             type="button"
           >
@@ -1041,7 +1041,7 @@ const BpmAnalysis = () => {
         </div>
         <div className="ka-col-key">
           <button
-            className="ka-sort-btn"
+            className="ka-sort-btn hover-fx"
             onClick={() => toggleSort('bpm')}
             type="button"
           >
@@ -1055,7 +1055,7 @@ const BpmAnalysis = () => {
         </div>
         <div className="ka-col-info">
           <button
-            className="ka-sort-btn"
+            className="ka-sort-btn hover-fx"
             onClick={() => toggleSort('title')}
             type="button"
           >
@@ -1068,7 +1068,7 @@ const BpmAnalysis = () => {
           </button>
           <span className="ka-col-sep"> / </span>
           <button
-            className="ka-sort-btn"
+            className="ka-sort-btn hover-fx"
             onClick={() => toggleSort('artist')}
             type="button"
           >
@@ -1125,7 +1125,7 @@ const BpmAnalysis = () => {
       {totalPages > 1 && (
         <div className="ka-pagination">
           <button
-            className="ka-page-btn"
+            className="ka-page-btn hover-fx"
             disabled={page === 1}
             onClick={() => setPage(1)}
             title="First page"
@@ -1134,7 +1134,7 @@ const BpmAnalysis = () => {
             «
           </button>
           <button
-            className="ka-page-btn"
+            className="ka-page-btn hover-fx"
             disabled={page === 1}
             onClick={() => setPage((p) => p - 1)}
             type="button"
@@ -1147,7 +1147,7 @@ const BpmAnalysis = () => {
             {allGrouped.length}
           </span>
           <button
-            className="ka-page-btn"
+            className="ka-page-btn hover-fx"
             disabled={page === totalPages}
             onClick={() => setPage((p) => p + 1)}
             type="button"
@@ -1155,7 +1155,7 @@ const BpmAnalysis = () => {
             Next ›
           </button>
           <button
-            className="ka-page-btn"
+            className="ka-page-btn hover-fx"
             disabled={page === totalPages}
             onClick={() => setPage(totalPages)}
             title="Last page"

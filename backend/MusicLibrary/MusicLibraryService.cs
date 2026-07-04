@@ -758,7 +758,10 @@ namespace resonance.MusicLibrary
                 Key: key,
                 Comment: Trim(tag.Comment),
                 HasArtwork: HasServableArtwork(tag),
-                TagTypes: DetectTagTypes(tf));
+                TagTypes: DetectTagTypes(tf),
+                BitRate: tf.Properties?.AudioBitrate is int br && br > 0 ? br : null,
+                SampleRate: tf.Properties?.AudioSampleRate is int sr && sr > 0 ? sr : null,
+                BitDepth: tf.Properties?.BitsPerSample is int bd && bd > 0 ? bd : null);
         }
 
         private static bool HasServableArtwork(TagLib.Tag tag)

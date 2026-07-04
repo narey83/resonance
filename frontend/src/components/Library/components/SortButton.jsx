@@ -3,7 +3,7 @@ import React from 'react';
 
 const SortButton = ({ field, label, onSort, sortBy, sortDir }) => (
   <button
-    className={`jb-sort-btn${sortBy === field ? ' jb-sort-btn--active' : ''}`}
+    className={`jb-sort-btn hover-fx${sortBy === field ? ' jb-sort-btn--active' : ''}`}
     onClick={() => onSort(field)}
     type="button"
   >
