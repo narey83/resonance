@@ -33,6 +33,7 @@ namespace resonance.MusicLibrary
     using System.Collections.Generic;
     using System.Data;
     using System.Data.Common;
+    using System.Linq;
     using Npgsql;
     using resonance.Common;
 
@@ -845,18 +846,22 @@ namespace resonance.MusicLibrary
             using var conn = OpenConnection();
             var byPath = new Dictionary<string, MusicTrack>(StringComparer.Ordinal);
 
+            // Relative form is both what's stored and what we key lookups by below — paths[i] may be
+            // absolute (e.g. loved-track entries resolved back to absolute by their EF ValueConverter).
+            var relativePaths = paths.Select(MusicPath.ToRelative).ToArray();
+
             // Chunk to stay well under SQLite's bound-parameter ceiling (PG allows far more).
             const int ChunkSize = 400;
-            for (var start = 0; start < paths.Count; start += ChunkSize)
+            for (var start = 0; start < relativePaths.Length; start += ChunkSize)
             {
-                var end = Math.Min(start + ChunkSize, paths.Count);
+                var end = Math.Min(start + ChunkSize, relativePaths.Length);
                 using var cmd = conn.CreateCommand();
                 var names = new List<string>(end - start);
                 for (var i = start; i < end; i++)
                 {
                     var name = "@p" + i;
                     names.Add(name);
-                    AddParam(cmd, name, MusicPath.ToRelative(paths[i]));
+                    AddParam(cmd, name, relativePaths[i]);
                 }
 
                 cmd.CommandText = $@"
@@ -873,7 +878,7 @@ namespace resonance.MusicLibrary
             }
 
             var result = new List<MusicTrack>(paths.Count);
-            foreach (var p in paths)
+            foreach (var p in relativePaths)
             {
                 if (byPath.TryGetValue(p, out var track))
                 {

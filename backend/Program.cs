@@ -1583,7 +1583,7 @@ namespace resonance
                     var schema = ctx.Model.GetDefaultSchema();
                     if (!string.IsNullOrEmpty(schema))
                     {
-                        ctx.Database.ExecuteSql($"CREATE SCHEMA IF NOT EXISTS \"{schema}\"");
+                        ctx.Database.ExecuteSqlRaw($"CREATE SCHEMA IF NOT EXISTS \"{schema}\"");
                     }
 
                     var script = ctx.Database.GenerateCreateScript();
