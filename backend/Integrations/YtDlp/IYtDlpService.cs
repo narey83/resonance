@@ -52,6 +52,7 @@ public interface IYtDlpService : IHostedService
     Task RetryTagWritingAsync(Guid trackId);
     Task SetTrackTagsAsync(Guid trackId, string artist, string title, string? album);
     Task<IReadOnlyList<YtDlpSearchResult>> SearchAsync(string query, int limit = 25, string? type = null, string? duration = null, string? uploadDate = null, string? sortBy = null, CancellationToken cancellationToken = default);
+    Task<YtDlpSearchResult?> ResolveUrlAsync(string url, CancellationToken cancellationToken = default);
     Task<(string? YtDlpVersion, string? FfmpegVersion)> GetVersionsAsync(CancellationToken cancellationToken = default);
     Task<(string? Current, string? Latest, bool UpdateAvailable)> CheckForUpdateAsync(CancellationToken cancellationToken = default);
     Task<string> UpdateYtDlpAsync(CancellationToken cancellationToken = default);

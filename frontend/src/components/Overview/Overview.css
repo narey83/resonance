@@ -476,6 +476,9 @@ html.dark, html.amoled {
 }
 
 /* ── Stats overlay ── */
+/* No backdrop-filter on any map overlay: the SVG beneath animates constantly
+   (arc dashes, pulses), so a blur forces an expensive backdrop recompute
+   every frame. A more opaque background keeps text legible instead. */
 .map-overlay {
   position: absolute;
   bottom: 14px;
@@ -483,8 +486,7 @@ html.dark, html.amoled {
   display: flex;
   gap: 16px;
   align-items: center;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(6px);
+  background: rgba(8, 12, 20, 0.75);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 8px;
   padding: 7px 14px;
@@ -524,8 +526,7 @@ html.dark, html.amoled {
   display: flex;
   flex-direction: column;
   gap: 5px;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(6px);
+  background: rgba(8, 12, 20, 0.75);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 8px;
   padding: 8px 12px;
@@ -588,6 +589,7 @@ html.dark, html.amoled {
   right: 16px;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 4px;
 }
 
@@ -596,8 +598,7 @@ html.dark, html.amoled {
   height: 28px;
   border: 1px solid rgba(255,255,255,0.15);
   border-radius: 6px;
-  background: rgba(0,0,0,0.45);
-  backdrop-filter: blur(6px);
+  background: rgba(8,12,20,0.75);
   color: rgba(255,255,255,0.7);
   font-size: 16px;
   line-height: 1;
@@ -613,6 +614,62 @@ html.dark, html.amoled {
   color: #fff;
 }
 
+/* Vertical zoom slider between the +/− buttons */
+.map-zoom-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 28px;
+  height: 96px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.map-zoom-slider::-webkit-slider-runnable-track {
+  width: 4px;
+  border-radius: 2px;
+  background: rgba(8,12,20,0.75);
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+.map-zoom-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.85);
+  border: 1px solid rgba(0,0,0,0.35);
+  transition: background 0.12s;
+}
+
+.map-zoom-slider::-webkit-slider-thumb:hover {
+  background: #fff;
+}
+
+.map-zoom-slider::-moz-range-track {
+  width: 4px;
+  border-radius: 2px;
+  background: rgba(8,12,20,0.75);
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+.map-zoom-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.85);
+  border: 1px solid rgba(0,0,0,0.35);
+}
+
+.map-zoom-slider::-moz-range-thumb:hover {
+  background: #fff;
+}
+
 /* ── Tooltip ── */
 .map-tooltip {
   position: fixed;
@@ -622,7 +679,6 @@ html.dark, html.amoled {
   border-radius: 7px;
   padding: 10px 14px;
   pointer-events: auto;
-  backdrop-filter: blur(10px);
   box-shadow: 0 6px 20px var(--tip-shadow);
   min-width: 240px;
 }
@@ -633,7 +689,8 @@ html.dark, html.amoled {
   gap: 6px;
 }
 
-.map-tooltip-user {
+.map-tooltip-user,
+.map-tooltip-user .ulink-name {
   font-size: 13px;
   font-weight: 700;
   color: var(--tip-user);
@@ -1693,24 +1750,25 @@ html.dark, html.amoled {
   font-weight: 600;
 }
 
+.user-report-modal-tab--link {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
 /* Fixed height keeps the modal the same size across every tab so it doesn't
-   jump when switching. Shorter tabs scroll within; Files/Chat fill it. */
+   jump when switching. Shorter tabs scroll within; Chat fills it. */
 .user-report-modal-body {
   height: 460px;
   overflow-y: auto;
 }
 
-.user-report-modal-body .user-files-tab,
 .user-report-modal-body .user-chat-tab {
   height: 100%;
   border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
-}
-
-.user-files-sidebar {
-  width: 240px;
-  min-width: 240px;
 }
 
 .user-chat-tab {

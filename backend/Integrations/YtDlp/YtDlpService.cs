@@ -532,10 +532,22 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         if (!File.Exists(track.FilePath))
         {
-            track.TagWritingError = "File no longer exists on disk.";
-            await db.SaveChangesAsync();
-            await BroadcastJobsAsync();
-            return;
+            // The stored path can go stale if the file was re-encoded to a different container
+            // after completion (e.g. a convert-on-completion run, or a manual conversion) without
+            // this row's FilePath being updated. Before giving up, look for a sibling file with
+            // the same name under any format we know how to tag.
+            var resolved = FindTrackFileUnderKnownExtensions(track.FilePath);
+            if (resolved != null)
+            {
+                track.FilePath = resolved;
+            }
+            else
+            {
+                track.TagWritingError = "File no longer exists on disk.";
+                await db.SaveChangesAsync();
+                await BroadcastJobsAsync();
+                return;
+            }
         }
 
         var opts = options.CurrentValue.Integrations.YtDlp;
@@ -564,6 +576,25 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         await BroadcastJobsAsync();
     }
 
+    // Formats the tag writer (and AudioConverter) know how to handle — checked in order when a
+    // track's recorded extension no longer matches what's on disk.
+    private static readonly string[] KnownAudioExtensions = [".mp3", ".opus", ".m4a", ".flac", ".ogg", ".wav"];
+
+    private static string? FindTrackFileUnderKnownExtensions(string filePath)
+    {
+        var stem = Path.ChangeExtension(filePath, null);
+        foreach (var ext in KnownAudioExtensions)
+        {
+            var candidate = stem + ext;
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
     public async Task<IReadOnlyList<YtDlpSearchResult>> SearchAsync(string query, int limit = 25, string? type = null, string? duration = null, string? uploadDate = null, string? sortBy = null, CancellationToken cancellationToken = default)
     {
         var opts = options.CurrentValue.Integrations.YtDlp;
@@ -581,6 +612,9 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         {
             args.Append($" {jsRuntimeArg}");
         }
+
+        AppendExtractorArgs(args, opts);
+        AppendPluginDirs(args, opts);
 
         var cookieFile = AcquireCookieFile();
         if (cookieFile != null)
@@ -692,6 +726,133 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         return Convert.ToBase64String(bytes.ToArray());
     }
 
+    public async Task<YtDlpSearchResult?> ResolveUrlAsync(string url, CancellationToken cancellationToken = default)
+    {
+        var opts = options.CurrentValue.Integrations.YtDlp;
+
+        // The url is interpolated into the argument string, so reject anything that could
+        // escape the quotes and smuggle extra yt-dlp options (e.g. --exec)
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            || url.Any(c => c == '"' || char.IsWhiteSpace(c)))
+        {
+            throw new ArgumentException("Not a valid http(s) URL.");
+        }
+
+        // --playlist-items 1 keeps channel/playlist resolution to a single cheap entry;
+        // --ignore-no-formats-error dumps video metadata even when format selection fails
+        var args = new System.Text.StringBuilder("--flat-playlist --dump-single-json --playlist-items 1 --ignore-no-formats-error");
+        if (jsRuntimeArg != null)
+        {
+            args.Append($" {jsRuntimeArg}");
+        }
+
+        AppendExtractorArgs(args, opts);
+        AppendPluginDirs(args, opts);
+
+        var cookieFile = AcquireCookieFile();
+        if (cookieFile != null)
+        {
+            args.Append($" --cookies \"{cookieFile}\"");
+        }
+
+        args.Append($" \"{url}\"");
+
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo(opts.ExecutablePath)
+            {
+                Arguments = args.ToString(),
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            },
+        };
+
+        try
+        {
+            process.Start();
+
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+            var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+            await process.WaitForExitAsync(cancellationToken);
+            var stdout = await stdoutTask;
+
+            if (string.IsNullOrWhiteSpace(stdout))
+            {
+                Log.Warning("YtDlp: resolve of {Url} failed (exit {ExitCode}): {Stderr}", url, process.ExitCode, (await stderrTask).Trim());
+                return null;
+            }
+
+            return ParseResolvedUrl(stdout);
+        }
+        finally
+        {
+            ReleaseCookieFile(cookieFile);
+        }
+    }
+
+    private static YtDlpSearchResult? ParseResolvedUrl(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            var id = root.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? string.Empty : string.Empty;
+            var title = root.TryGetProperty("title", out var t) ? t.GetString() ?? string.Empty : string.Empty;
+            var uploader = root.TryGetProperty("uploader", out var up) ? up.GetString() ?? string.Empty : string.Empty;
+            var pageUrl = root.TryGetProperty("webpage_url", out var wu) ? wu.GetString() ?? string.Empty : string.Empty;
+
+            if (pageUrl.Length == 0 || title.Length == 0)
+            {
+                return null;
+            }
+
+            // Channels and playlists both dump as _type "playlist"; only real playlist
+            // URLs contain "/playlist". Videos dump as "video" (or omit _type entirely).
+            var isListing = root.TryGetProperty("_type", out var typeEl) && typeEl.GetString() == "playlist";
+            var resultType = !isListing ? "video"
+                : pageUrl.Contains("/playlist", StringComparison.OrdinalIgnoreCase) ? "playlist"
+                : "channel";
+
+            var thumbnail = root.TryGetProperty("thumbnail", out var th) ? th.GetString() : null;
+
+            // Channel/playlist dumps have no top-level "thumbnail", only a "thumbnails" array (smallest first)
+            if (thumbnail is null
+                && root.TryGetProperty("thumbnails", out var thumbs)
+                && thumbs.ValueKind == JsonValueKind.Array
+                && thumbs.GetArrayLength() > 0
+                && thumbs[thumbs.GetArrayLength() - 1].TryGetProperty("url", out var thumbUrl))
+            {
+                thumbnail = thumbUrl.GetString();
+            }
+
+            var duration = root.TryGetProperty("duration", out var dur) && dur.ValueKind == JsonValueKind.Number
+                ? (int?)(int)dur.GetDouble()
+                : null;
+
+            // A video dump also carries its uploader's follower count; only meaningful for channels
+            var subscriberCount = resultType == "channel"
+                && root.TryGetProperty("channel_follower_count", out var followers)
+                && followers.ValueKind == JsonValueKind.Number
+                ? (long?)followers.GetInt64()
+                : null;
+
+            if (resultType == "channel" && string.IsNullOrEmpty(uploader))
+            {
+                uploader = root.TryGetProperty("uploader_id", out var handle) ? handle.GetString() ?? string.Empty : string.Empty;
+            }
+
+            return new YtDlpSearchResult(id, pageUrl, title, uploader, thumbnail, duration, resultType, subscriberCount);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<(string? YtDlpVersion, string? FfmpegVersion)> GetVersionsAsync(CancellationToken cancellationToken = default)
     {
         var opts = options.CurrentValue.Integrations.YtDlp;
@@ -790,7 +951,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             {
                 StartInfo = new ProcessStartInfo(opts.ExecutablePath)
                 {
-                    Arguments = $"{flat}--dump-json{(jsRuntimeArg != null ? " " + jsRuntimeArg : string.Empty)} \"{job.Url}\"",
+                    Arguments = $"{flat}--dump-json{(jsRuntimeArg != null ? " " + jsRuntimeArg : string.Empty)}{ExtractorArgsFlag(opts)}{PluginDirsFlag(opts)} \"{job.Url}\"",
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardOutput = true,
@@ -1560,11 +1721,16 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     {
         var failedCount = await db.Tracks.CountAsync(t => t.JobId == job.Id && t.State == YtDlpTrackState.Failed, cancellationToken);
 
+        // Recomputed from the actual rows rather than trusting the running increment/decrement
+        // counter, which can drift out of sync after restarts or concurrency conflicts on retry.
+        var tagFailedCount = await db.Tracks.CountAsync(t => t.JobId == job.Id && t.TagWritingError != null, cancellationToken);
+
         // A stopped job stays Cancelled; everything else finalizes as Completed
         var finalState = job.State == YtDlpJobState.Cancelled ? YtDlpJobState.Cancelled : YtDlpJobState.Completed;
         job.State = finalState;
         job.CompletedAt ??= DateTime.UtcNow;
         job.FailedTracks = failedCount;
+        job.TagFailedTracks = tagFailedCount;
 
         var dbJob = await db.Jobs.FindAsync([job.Id], cancellationToken);
         if (dbJob != null)
@@ -1572,6 +1738,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             dbJob.State = finalState;
             dbJob.CompletedAt = job.CompletedAt;
             dbJob.FailedTracks = failedCount;
+            dbJob.TagFailedTracks = tagFailedCount;
         }
 
         // Move any tracks still in staging (the final partial batch — most are already published
@@ -2063,6 +2230,9 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             args.Append($" {jsRuntimeArg}");
         }
 
+        AppendExtractorArgs(args, opts);
+        AppendPluginDirs(args, opts);
+
         args.Append(" --progress-template \"download:%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.speed)s|%(progress.eta)s|%(progress._percent_str)s\"");
         args.Append($" --output \"{outputTemplate}\"");
 
@@ -2117,6 +2287,35 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         args.Append($" \"{url}\"");
         return args.ToString();
     }
+
+    // Operator-controlled config value (not user input), so it's trusted the same as
+    // ExecutablePath/BandwidthLimit elsewhere in this file — interpolated as-is.
+    private static string ExtractorArgsFlag(resonance.Options.IntegrationsOptions.YtDlpOptions opts) =>
+        string.IsNullOrWhiteSpace(opts.ExtractorArgs) ? string.Empty : $" --extractor-args \"{opts.ExtractorArgs}\"";
+
+    private static void AppendExtractorArgs(System.Text.StringBuilder args, resonance.Options.IntegrationsOptions.YtDlpOptions opts) =>
+        args.Append(ExtractorArgsFlag(opts));
+
+    // yt-dlp only auto-discovers plugins under its OS config dir or PYTHONPATH, neither of
+    // which applies to our standalone binary — so point it at the folder next to the binary
+    // itself. --plugin-dirs takes the *parent* of a "yt-dlp-plugins" folder, matching how
+    // yt-dlp's own default search dirs work. Currently ships the bgutil PO-token provider
+    // (backend/tools/yt-dlp-plugins), which talks to the bgutil-provider sidecar container
+    // (docker/docker-compose.yml) at its default http://127.0.0.1:4416. No-ops if the
+    // executable is a bare PATH name or the plugins folder isn't present next to it.
+    private static string PluginDirsFlag(resonance.Options.IntegrationsOptions.YtDlpOptions opts)
+    {
+        var dir = Path.GetDirectoryName(opts.ExecutablePath);
+        if (string.IsNullOrEmpty(dir) || !Directory.Exists(Path.Combine(dir, "yt-dlp-plugins")))
+        {
+            return string.Empty;
+        }
+
+        return $" --plugin-dirs \"{dir}\"";
+    }
+
+    private static void AppendPluginDirs(System.Text.StringBuilder args, resonance.Options.IntegrationsOptions.YtDlpOptions opts) =>
+        args.Append(PluginDirsFlag(opts));
 
     // yt-dlp rewrites the cookie file on every run to persist updated cookies, so concurrent
     // workers sharing the master file corrupt it. Each invocation gets a private throwaway
@@ -2583,6 +2782,9 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         {
             args.Append($" {jsRuntimeArg}");
         }
+
+        AppendExtractorArgs(args, opts);
+        AppendPluginDirs(args, opts);
 
         var cookieFile = AcquireCookieFile();
         if (cookieFile != null)

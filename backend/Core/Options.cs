@@ -3667,6 +3667,17 @@ namespace resonance
                 [Description("minutes between automatic retry sweeps of failed yt-dlp downloads")]
                 [Range(5, 1440)]
                 public int AutoRetryIntervalMinutes { get; init; } = 30;
+
+                /// <summary>
+                ///     Gets a raw value for yt-dlp's --extractor-args, passed through unmodified
+                ///     (e.g. "youtube:player_client=default,-tv_simply;po_token=web+abc123"). Lets an
+                ///     operator react to YouTube changes (e.g. SABR-only client rollouts, PO token
+                ///     requirements) without a code change or redeploy. Empty = yt-dlp's own defaults.
+                /// </summary>
+                [Argument(default, "ytdlp-extractor-args")]
+                [EnvironmentVariable("YTDLP_EXTRACTOR_ARGS")]
+                [Description("raw value for yt-dlp --extractor-args, e.g. \"youtube:player_client=default,-tv_simply\" (empty = yt-dlp defaults)")]
+                public string ExtractorArgs { get; init; } = string.Empty;
             }
         }
 

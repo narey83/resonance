@@ -38,11 +38,36 @@ const KEYS = {
   deviceName:   'resonance_device_name',
 };
 
+// ASP.NET Core issues the role claim under the long claim-type URI, not a
+// short "role" key — matches the decoding done by the web frontend's
+// lib/token.js so both clients agree on who's an admin.
+const ROLE_CLAIM = 'http://schemas.microsoft.com/ws/2008/06/identity/claims/role';
+
+interface DecodedToken {
+  role:      string | null;
+  expiresAt: number | null; // ms epoch
+}
+
+const decodeToken = (token: string | null): DecodedToken => {
+  if (!token) return { role: null, expiresAt: null };
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const role = payload?.[ROLE_CLAIM] ?? payload?.role ?? null;
+    const expiresAt = typeof payload?.exp === 'number' ? payload.exp * 1000 : null;
+    return { role, expiresAt };
+  } catch {
+    return { role: null, expiresAt: null };
+  }
+};
+
 interface AuthState {
   serverUrl:    string | null;
   accessToken:  string | null;
   refreshToken: string | null;
   sessionId:    string | null;
+  role:         string | null;
+  isAdmin:      boolean;
+  tokenExpiresAt: number | null; // ms epoch, decoded from the JWT `exp` claim
   isReady:      boolean; // true once SecureStore has been read on startup
 
   hydrate: ()                                                                    => Promise<void>;
@@ -57,6 +82,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   accessToken:  null,
   refreshToken: null,
   sessionId:    null,
+  role:         null,
+  isAdmin:      false,
+  tokenExpiresAt: null,
   isReady:      false,
 
   hydrate: async () => {
@@ -66,7 +94,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       SecureStore.getItemAsync(KEYS.refreshToken),
       SecureStore.getItemAsync(KEYS.sessionId),
     ]);
-    set({ serverUrl, accessToken, refreshToken, sessionId, isReady: true });
+    const { role, expiresAt } = decodeToken(accessToken);
+    set({ serverUrl, accessToken, refreshToken, sessionId, role, isAdmin: role === 'Administrator', tokenExpiresAt: expiresAt, isReady: true });
   },
 
   setServerUrl: async (url) => {
@@ -81,7 +110,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     ];
     if (sessionId != null) ops.push(SecureStore.setItemAsync(KEYS.sessionId, sessionId));
     await Promise.all(ops);
-    set((s) => ({ accessToken: access, refreshToken: refresh, sessionId: sessionId ?? s.sessionId }));
+    const { role, expiresAt } = decodeToken(access);
+    set((s) => ({
+      accessToken: access,
+      refreshToken: refresh,
+      sessionId: sessionId ?? s.sessionId,
+      role,
+      isAdmin: role === 'Administrator',
+      tokenExpiresAt: expiresAt,
+    }));
   },
 
   clearTokens: async () => {
@@ -90,12 +127,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       SecureStore.deleteItemAsync(KEYS.refreshToken),
       SecureStore.deleteItemAsync(KEYS.sessionId),
     ]);
-    set({ accessToken: null, refreshToken: null, sessionId: null });
+    set({ accessToken: null, refreshToken: null, sessionId: null, role: null, isAdmin: false, tokenExpiresAt: null });
   },
 
   clearAll: async () => {
     await Promise.all(Object.values(KEYS).map((k) => SecureStore.deleteItemAsync(k)));
-    set({ serverUrl: null, accessToken: null, refreshToken: null, sessionId: null });
+    set({ serverUrl: null, accessToken: null, refreshToken: null, sessionId: null, role: null, isAdmin: false, tokenExpiresAt: null });
   },
 }));
 

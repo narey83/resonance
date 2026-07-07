@@ -574,6 +574,7 @@ const App = () => {
       addNotificationRef.current(
         'roomMention',
         `${username} mentioned you in ${roomName}: ${preview}`,
+        { sound: true },
       );
     });
 
@@ -1008,7 +1009,7 @@ const App = () => {
       />
     ) : null;
 
-  if (window.location.pathname.endsWith('/map')) {
+  if (window.location.pathname.endsWith('/map') && isAdmin()) {
     return (
       <LibraryActivityProvider>
         <PlayerProvider>
@@ -1309,7 +1310,13 @@ const App = () => {
                         />
                         <Route
                           path={`${urlBase}/map`}
-                          render={() => <MapPage />}
+                          render={() =>
+                            isAdmin() ? (
+                              <MapPage />
+                            ) : (
+                              <Redirect to={`${urlBase}/searches`} />
+                            )
+                          }
                         />
                         <Route
                           path={`${urlBase}/searches`}

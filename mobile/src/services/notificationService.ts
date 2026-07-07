@@ -131,6 +131,18 @@ export async function notifyServerReady() {
   await send('Server ready', 'Resonance backend is back online.');
 }
 
+export async function notifyPrivateMessage(username: string, message: string) {
+  const { notifications } = useAppSettings.getState();
+  if (!notifications.privateMessage) return;
+  await send(`Message from ${username}`, message);
+}
+
+export async function notifyRoomMention(roomName: string, username: string, message: string) {
+  const { notifications } = useAppSettings.getState();
+  if (!notifications.roomMention) return;
+  await send(`Mentioned in ${roomName}`, `${username}: ${message}`);
+}
+
 // Hook — mount once at the top of the authenticated app to trigger native notifications
 export const useNotificationHub = () => {
   useEffect(() => {
@@ -146,8 +158,14 @@ export const useNotificationHub = () => {
 
     // Re-fetch conversations on any incoming private message so all logged-in
     // sessions stay in sync (messages sent from the web will appear here too).
-    hub.on('PRIVATE_MESSAGE', () => {
+    // Also refresh the thread itself if it's already loaded, otherwise a
+    // conversation open on screen never sees the new message until reopened.
+    hub.on('PRIVATE_MESSAGE', ({ username, message }: { username: string; message: string }) => {
       useConversationStore.getState().loadConversations();
+      if (username in useConversationStore.getState().messages) {
+        useConversationStore.getState().loadMessages(username);
+      }
+      notifyPrivateMessage(username, message);
     });
 
     hub.on('SESSION_REVOKED', (revokedIds: string[]) => {
@@ -188,8 +206,10 @@ export const useNotificationHub = () => {
       notifyServerReady();
     });
 
-    hub.on('BROWSED',      () => {});
-    hub.on('ROOM_MENTION', () => {});
+    hub.on('BROWSED', () => {});
+    hub.on('ROOM_MENTION', ({ roomName, username, message }: { roomName: string; username: string; message: string }) => {
+      notifyRoomMention(roomName, username, message);
+    });
 
     hub.onreconnected(() => {
       notifyServerReady();

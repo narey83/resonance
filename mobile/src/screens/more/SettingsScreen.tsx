@@ -192,7 +192,6 @@ export default function SettingsScreen({ navigation }: Props) {
           label="Server disconnect"
           subtitle="Alert when the server loses its connection"
           colors={colors}
-          last
         >
           <Switch
             disabled={!loaded}
@@ -200,6 +199,33 @@ export default function SettingsScreen({ navigation }: Props) {
             thumbColor={colors.textPrimary}
             trackColor={{ false: colors.bgElevated, true: colors.accent }}
             value={notifications.serverDisconnect}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Private messages"
+          subtitle="Play a sound for new private messages"
+          colors={colors}
+        >
+          <Switch
+            disabled={!loaded}
+            onValueChange={(v) => setNotification('privateMessage', v)}
+            thumbColor={colors.textPrimary}
+            trackColor={{ false: colors.bgElevated, true: colors.accent }}
+            value={notifications.privateMessage}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Room mentions"
+          subtitle="Play a sound when you're mentioned in a room"
+          colors={colors}
+          last
+        >
+          <Switch
+            disabled={!loaded}
+            onValueChange={(v) => setNotification('roomMention', v)}
+            thumbColor={colors.textPrimary}
+            trackColor={{ false: colors.bgElevated, true: colors.accent }}
+            value={notifications.roomMention}
           />
         </SettingRow>
       </View>

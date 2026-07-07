@@ -28,13 +28,14 @@
 // </copyright>
 
 import React from 'react';
-import { createBottomTabNavigator , BottomTabBar } from '@react-navigation/bottom-tabs';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Ionicons } from '@expo/vector-icons';
+import type { NavigatorScreenParams } from '@react-navigation/native';
 import { View } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { makeScreenOptions } from '../theme';
 import { PlayerMiniBar } from '../components/PlayerMiniBar';
+import { FloatingTabBar } from '../components/FloatingTabBar';
 import { useConversationStore } from '../store/conversationStore';
 
 // Screens
@@ -43,6 +44,7 @@ import TransfersScreen           from '../screens/transfers/TransfersScreen';
 import LibraryScreen             from '../screens/library/LibraryScreen';
 import MoreScreen                from '../screens/more/MoreScreen';
 import OverviewScreen            from '../screens/more/OverviewScreen';
+import ConnectionScreen          from '../screens/more/ConnectionScreen';
 import BrowseScreen              from '../screens/more/BrowseScreen';
 import RoomsScreen               from '../screens/more/RoomsScreen';
 import RoomDetailScreen          from '../screens/more/RoomDetailScreen';
@@ -55,15 +57,16 @@ import SettingsScreen            from '../screens/more/SettingsScreen';
 import NetworkLogScreen          from '../screens/more/NetworkLogScreen';
 
 export type MainTabParamList = {
+  OverviewTab:  undefined;
   SearchTab:    undefined;
   TransfersTab: undefined;
   LibraryTab:   undefined;
-  MoreTab:      undefined;
+  MoreTab:      NavigatorScreenParams<MoreStackParamList> | undefined;
 };
 
 export type MoreStackParamList = {
   More:             undefined;
-  Overview:         undefined;
+  Connection:       undefined;
   Browse:           undefined;
   Rooms:            undefined;
   RoomDetail:       { roomName: string };
@@ -85,7 +88,7 @@ function MoreStack() {
   return (
     <More.Navigator screenOptions={navOpts}>
       <More.Screen name="More"             component={MoreScreen}             options={{ title: 'More' }} />
-      <More.Screen name="Overview"         component={OverviewScreen}         options={{ title: 'Overview' }} />
+      <More.Screen name="Connection"       component={ConnectionScreen}       options={{ title: 'Connection' }} />
       <More.Screen name="Browse"           component={BrowseScreen}           options={{ title: 'Browse' }} />
       <More.Screen name="Rooms"            component={RoomsScreen}            options={{ title: 'Rooms' }} />
       <More.Screen name="RoomDetail"       component={RoomDetailScreen}       options={{ title: '' }} />
@@ -100,47 +103,31 @@ function MoreStack() {
   );
 }
 
-type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
-
-const TAB_ICONS: Record<string, { active: IoniconName; inactive: IoniconName }> = {
-  SearchTab:    { active: 'search',        inactive: 'search-outline' },
-  TransfersTab: { active: 'arrow-down',    inactive: 'arrow-down-outline' },
-  LibraryTab:   { active: 'musical-notes', inactive: 'musical-notes-outline' },
-  MoreTab:      { active: 'grid',          inactive: 'grid-outline' },
-};
-
 export default function MainTabs() {
   const { colors } = useTheme();
   const totalUnread = useConversationStore((s) => s.totalUnread);
 
   return (
     <Tab.Navigator
+      initialRouteName="OverviewTab"
       tabBar={(props) => (
         <View>
           <PlayerMiniBar />
-          <BottomTabBar {...props} />
+          <FloatingTabBar {...props} />
         </View>
       )}
-      screenOptions={({ route }) => ({
+      screenOptions={{
         ...makeScreenOptions(colors),
-        tabBarIcon: ({ focused, color, size }) => {
-          const icons = TAB_ICONS[route.name];
-          const name  = focused ? icons.active : icons.inactive;
-          return <Ionicons color={color} name={name} size={size} />;
-        },
-        tabBarActiveTintColor:   colors.accent,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: {
-          backgroundColor: colors.tabBar,
-          borderTopColor:  colors.tabBarBorder,
-          borderTopWidth:  1,
-        },
-        tabBarLabelStyle: { fontSize: 10 },
         headerStyle:      { backgroundColor: colors.header },
         headerTintColor:  colors.textPrimary,
         headerShadowVisible: false,
-      })}
+      }}
     >
+      <Tab.Screen
+        component={OverviewScreen}
+        name="OverviewTab"
+        options={{ title: 'Overview' }}
+      />
       <Tab.Screen
         component={SearchScreen}
         name="SearchTab"

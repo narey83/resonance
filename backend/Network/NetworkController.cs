@@ -124,7 +124,7 @@ public class NetworkController : ControllerBase
     /// <summary>Resolve many IPs at once using the local GeoLite2 database.</summary>
     /// <returns></returns>
     [HttpPost("batch")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     public IActionResult Batch([FromBody] string[] ips)
     {
         if (ips == null || ips.Length == 0)

@@ -50,28 +50,59 @@ type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 type ParamlessScreen = { [K in keyof MoreStackParamList]: MoreStackParamList[K] extends undefined ? K : never }[keyof MoreStackParamList];
 
 interface MenuItem {
-  label:    string;
-  icon:     IoniconName;
-  screen:   ParamlessScreen;
-  subtitle: string;
+  label:     string;
+  icon:      IoniconName;
+  screen:    ParamlessScreen;
+  subtitle:  string;
+  adminOnly?: boolean;
 }
 
-const MENU: MenuItem[] = [
-  { label: 'Overview',  icon: 'bar-chart-outline',  screen: 'Overview', subtitle: 'Stats & activity' },
-  { label: 'Browse',    icon: 'folder-outline',      screen: 'Browse',   subtitle: 'Browse user shares' },
-  { label: 'Rooms',     icon: 'chatbubbles-outline', screen: 'Rooms',    subtitle: 'Soulseek chat rooms' },
-  { label: 'Chat',      icon: 'chatbubble-outline',  screen: 'Chat',     subtitle: 'Private messages' },
-  { label: 'Tags',      icon: 'pricetag-outline',    screen: 'Tags',     subtitle: 'Edit ID3 tags' },
-  { label: 'Analysis',  icon: 'pulse-outline',       screen: 'Analysis', subtitle: 'Key · BPM · Waveform' },
-  { label: 'System',    icon: 'server-outline',      screen: 'System',   subtitle: 'Config & logs' },
-  { label: 'Settings',  icon: 'settings-outline',    screen: 'Settings', subtitle: 'App preferences' },
+interface MenuSection {
+  title: string;
+  items: MenuItem[];
+}
+
+const MENU_SECTIONS: MenuSection[] = [
+  {
+    title: 'Soulseek',
+    items: [
+      { label: 'Browse', icon: 'folder-outline',      screen: 'Browse', subtitle: 'Browse user shares' },
+      { label: 'Rooms',  icon: 'chatbubbles-outline', screen: 'Rooms',  subtitle: 'Soulseek chat rooms' },
+      { label: 'Chat',   icon: 'chatbubble-outline',  screen: 'Chat',   subtitle: 'Private messages' },
+    ],
+  },
+  {
+    title: 'Library',
+    items: [
+      { label: 'Tags',     icon: 'pricetag-outline', screen: 'Tags',     subtitle: 'Edit ID3 tags' },
+      { label: 'Analysis', icon: 'pulse-outline',    screen: 'Analysis', subtitle: 'Key · BPM · Waveform' },
+    ],
+  },
+  {
+    title: 'App',
+    items: [
+      { label: 'Connection', icon: 'wifi-outline',     screen: 'Connection', subtitle: 'Server & session status' },
+      { label: 'System',     icon: 'server-outline',   screen: 'System',     subtitle: 'Config & logs' },
+      { label: 'Settings',   icon: 'settings-outline', screen: 'Settings',   subtitle: 'App preferences' },
+    ],
+  },
 ];
 
 export default function MoreScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
-  const { refreshToken, clearTokens } = useAuthStore();
+  const { refreshToken, clearTokens, isAdmin } = useAuthStore();
+  const sections = useMemo(
+    () =>
+      MENU_SECTIONS
+        .map((section) => ({
+          ...section,
+          items: section.items.filter((item) => !item.adminOnly || isAdmin),
+        }))
+        .filter((section) => section.items.length > 0),
+    [isAdmin],
+  );
 
   const handleLogout = async () => {
     try { if (refreshToken) await logout(refreshToken); } catch {}
@@ -80,29 +111,33 @@ export default function MoreScreen({ navigation }: Props) {
 
   return (
     <ScrollView contentContainerStyle={s.container} style={s.scroll}>
-      <View style={s.group}>
-        {MENU.map((item, i) => (
-          <Pressable
-            key={item.screen}
-            onPress={() => navigation.navigate(item.screen)}
-            style={({ pressed }) => [
-              s.row,
-              i === 0 && s.rowFirst,
-              i === MENU.length - 1 && s.rowLast,
-              pressed && s.rowPressed,
-            ]}
-          >
-            <View style={s.iconWrap}>
-              <Ionicons color={colors.accent} name={item.icon} size={20} />
-            </View>
-            <View style={s.rowText}>
-              <Text style={s.rowLabel}>{item.label}</Text>
-              <Text style={s.rowSub}>{item.subtitle}</Text>
-            </View>
-            <Ionicons color={colors.textDim} name="chevron-forward" size={16} />
-          </Pressable>
-        ))}
-      </View>
+      {sections.map((section) => (
+        <View key={section.title}>
+          <Text style={s.sectionTitle}>{section.title.toUpperCase()}</Text>
+          <View style={s.group}>
+            {section.items.map((item, i) => (
+              <Pressable
+                key={item.screen}
+                onPress={() => navigation.navigate(item.screen)}
+                style={({ pressed }) => [
+                  s.row,
+                  i === section.items.length - 1 && s.rowLast,
+                  pressed && s.rowPressed,
+                ]}
+              >
+                <View style={s.iconWrap}>
+                  <Ionicons color={colors.accent} name={item.icon} size={20} />
+                </View>
+                <View style={s.rowText}>
+                  <Text style={s.rowLabel}>{item.label}</Text>
+                  <Text style={s.rowSub}>{item.subtitle}</Text>
+                </View>
+                <Ionicons color={colors.textDim} name="chevron-forward" size={16} />
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      ))}
 
       <Pressable
         onPress={handleLogout}
@@ -118,6 +153,14 @@ function makeStyles(c: ThemeColors) {
   return StyleSheet.create({
     scroll:     { flex: 1, backgroundColor: c.bgPrimary },
     container:  { padding: Spacing.lg, gap: Spacing.lg },
+    sectionTitle: {
+      fontSize: Typography.xs,
+      fontWeight: '600',
+      letterSpacing: 0.8,
+      color: c.textMuted,
+      paddingHorizontal: Spacing.sm,
+      paddingBottom: Spacing.xs,
+    },
     group: {
       backgroundColor: c.bgSurface,
       borderRadius: Radius.lg,
@@ -133,7 +176,6 @@ function makeStyles(c: ThemeColors) {
       borderBottomWidth: 1,
       borderBottomColor: c.border,
     },
-    rowFirst:   {},
     rowLast:    { borderBottomWidth: 0 },
     rowPressed: { backgroundColor: c.bgElevated },
     iconWrap: {

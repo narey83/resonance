@@ -41,6 +41,7 @@ import * as prefs from '../../lib/prefs';
 import * as reportsAPI from '../../lib/reports';
 import * as sharesAPI from '../../lib/shares';
 import * as transfersAPI from '../../lib/transfers';
+import AppContext from '../AppContext';
 import ActivityChart from './ActivityChart';
 import ActivityHeatmap from './ActivityHeatmap';
 import CoverageCard from './CoverageCard';
@@ -51,6 +52,7 @@ import KpiCards from './KpiCards';
 import LibraryComposition from './LibraryComposition';
 import NotificationFeed from './NotificationFeed';
 import PeerRetentionCard from './PeerRetentionCard';
+import PersonalSummary from './PersonalSummary';
 import PopularDirectories from './PopularDirectories';
 import QueueWaitCard from './QueueWaitCard';
 import RatioCard from './RatioCard';
@@ -61,7 +63,7 @@ import TopFiles from './TopFiles';
 import TransferHealth from './TransferHealth';
 import UserLeaderboard from './UserLeaderboard';
 import UserReports from './UserReports';
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 
 // Range values are in hours
@@ -115,7 +117,7 @@ const flattenTransfers = (groups) => {
   );
 };
 
-const Overview = () => {
+const AdminOverview = () => {
   const [activeTab, setActiveTab] = useState(() =>
     prefs.get('overview:tab', 'analytics'),
   );
@@ -586,4 +588,20 @@ const Overview = () => {
   );
 };
 
-export default React.memo(Overview);
+const MemoizedAdminOverview = React.memo(AdminOverview);
+
+// Overview is the default landing page for every role, but only admins get
+// the full analytics dashboard — everyone else gets a small personal
+// summary (see PersonalSummary.jsx). Branching here, above the admin
+// dashboard's many data-fetching effects, means those effects (and their
+// now-role-gated backend calls) never run at all for non-admins.
+const Overview = () => {
+  const { isAdmin, state } = useContext(AppContext);
+  return isAdmin ? (
+    <MemoizedAdminOverview />
+  ) : (
+    <PersonalSummary state={state} />
+  );
+};
+
+export default Overview;

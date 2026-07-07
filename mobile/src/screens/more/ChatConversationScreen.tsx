@@ -27,10 +27,9 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   FlatList,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   StyleSheet,
@@ -38,6 +37,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -49,6 +49,23 @@ import type { MoreStackParamList } from '../../navigation/MainTabs';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'ChatConversation'>;
 
+const dayKey = (iso: string) => iso.slice(0, 10);
+
+function formatDayLabel(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86_400_000);
+
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  return d.toLocaleDateString([], {
+    month: 'long',
+    day: 'numeric',
+    year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+  });
+}
+
 export default function ChatConversationScreen({ navigation, route }: Props) {
   const { username } = route.params;
   const { colors } = useTheme();
@@ -57,9 +74,15 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
   const { messages, loadMessages, sendMessage, acknowledge } = useConversationStore();
   const thread = messages[username] ?? [];
 
+  // Rendered newest-first into an `inverted` FlatList: the viewport is anchored
+  // to index 0, so the latest message is always what's on screen (and stays
+  // there as new ones arrive) without needing scrollToEnd — which, driven off
+  // a virtualized list that only renders the first ~10 items, would keep
+  // firing before the real last item was even measured.
+  const reversedThread = useMemo(() => [...thread].reverse(), [thread]);
+
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
-  const listRef = useRef<FlatList>(null);
 
   React.useLayoutEffect(() => {
     navigation.setOptions({ title: username });
@@ -72,13 +95,6 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
       });
     }, [username, loadMessages, acknowledge])
   );
-
-  // Scroll to bottom when new messages arrive
-  useEffect(() => {
-    if (thread.length > 0) {
-      listRef.current?.scrollToEnd({ animated: false });
-    }
-  }, [thread.length]);
 
   const handleSend = async () => {
     const msg = text.trim();
@@ -94,25 +110,38 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
 
   const renderMessage = ({ item, index }: { item: PrivateMessage; index: number }) => {
     const isSelf = item.direction === 'Out';
-    const prev   = thread[index - 1];
+    // Chronologically-previous message: one index further along in the
+    // reversed (newest-first) array — rendered above `item` on screen since
+    // the list is inverted.
+    const prev   = reversedThread[index + 1];
     const showSender = !isSelf && prev?.direction !== 'In';
+    // No older message, or the older one falls on a different day: `item` is
+    // the first message of its day, so the separator belongs above it.
+    const showDateSeparator = !prev || dayKey(prev.timestamp) !== dayKey(item.timestamp);
 
     const ts = new Date(item.timestamp);
     const timeStr = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     return (
-      <View style={[s.messageRow, isSelf ? s.messageRowSelf : s.messageRowOther]}>
-        {!isSelf && (
-          <View style={[s.avatarSmall, !showSender && s.avatarInvisible]}>
-            <Ionicons color={colors.accent} name="person" size={14} />
+      <View>
+        {showDateSeparator && (
+          <View style={s.daySeparator}>
+            <Text style={s.daySeparatorText}>{formatDayLabel(item.timestamp)}</Text>
           </View>
         )}
-        <View style={[s.bubble, isSelf ? s.bubbleSelf : s.bubbleOther]}>
-          {showSender && (
-            <Text style={s.senderName}>{item.username}</Text>
+        <View style={[s.messageRow, isSelf ? s.messageRowSelf : s.messageRowOther]}>
+          {!isSelf && (
+            <View style={[s.avatarSmall, !showSender && s.avatarInvisible]}>
+              <Ionicons color={colors.accent} name="person" size={14} />
+            </View>
           )}
-          <Text style={[s.messageText, isSelf && s.messageTextSelf]}>{item.message}</Text>
-          <Text style={[s.timestamp, isSelf && s.timestampSelf]}>{timeStr}</Text>
+          <View style={[s.bubble, isSelf ? s.bubbleSelf : s.bubbleOther]}>
+            {showSender && (
+              <Text style={s.senderName}>{item.username}</Text>
+            )}
+            <Text style={[s.messageText, isSelf && s.messageTextSelf]}>{item.message}</Text>
+            <Text style={[s.timestamp, isSelf && s.timestampSelf]}>{timeStr}</Text>
+          </View>
         </View>
       </View>
     );
@@ -120,14 +149,14 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      automaticOffset
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={s.container}
     >
       <FlatList
-        ref={listRef}
-        data={thread}
-        keyExtractor={(item) => String(item.id)}
+        data={reversedThread}
+        inverted
+        keyExtractor={(item, index) => `${item.direction}-${item.id}-${item.timestamp}-${index}`}
         renderItem={renderMessage}
         contentContainerStyle={s.list}
         onRefresh={() => loadMessages(username)}
@@ -169,7 +198,6 @@ function makeStyles(c: ThemeColors) {
       padding: Spacing.md,
       gap: Spacing.xs,
       flexGrow: 1,
-      justifyContent: 'flex-end',
     },
 
     messageRow:      { flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.xs, marginVertical: 2 },
@@ -202,35 +230,56 @@ function makeStyles(c: ThemeColors) {
     timestamp:       { fontSize: Typography.xs, color: c.textMuted, alignSelf: 'flex-end', marginTop: 2 },
     timestampSelf:   { color: 'rgba(255,255,255,0.65)' },
 
+    daySeparator:     { alignItems: 'center', marginVertical: Spacing.md },
+    daySeparatorText: {
+      fontSize: Typography.xs,
+      fontWeight: '600',
+      color: c.textMuted,
+      backgroundColor: c.bgElevated,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: 4,
+      borderRadius: Radius.full,
+      overflow: 'hidden',
+    },
+
     inputBar: {
       flexDirection: 'row',
       alignItems: 'flex-end',
       gap: Spacing.sm,
-      padding: Spacing.md,
-      borderTopWidth: 1,
-      borderTopColor: c.border,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
       backgroundColor: c.bgSurface,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.border,
     },
     input: {
       flex: 1,
+      minHeight: 42,
       backgroundColor: c.bgElevated,
-      borderRadius: Radius.lg,
-      borderWidth: 1,
-      borderColor: c.border,
-      paddingHorizontal: Spacing.md,
+      borderRadius: Radius.full,
+      paddingHorizontal: Spacing.lg,
       paddingVertical: Platform.OS === 'ios' ? Spacing.sm : Spacing.xs,
       fontSize: Typography.base,
       color: c.textPrimary,
       maxHeight: 120,
     },
     sendBtn: {
-      width: 36,
-      height: 36,
+      width: 40,
+      height: 40,
       borderRadius: Radius.full,
       backgroundColor: c.accent,
       justifyContent: 'center',
       alignItems: 'center',
+      shadowColor: c.accent,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.35,
+      shadowRadius: 6,
+      elevation: 3,
     },
-    sendBtnDisabled: { backgroundColor: c.bgElevated },
+    sendBtnDisabled: {
+      backgroundColor: c.bgElevated,
+      shadowOpacity: 0,
+      elevation: 0,
+    },
   });
 }

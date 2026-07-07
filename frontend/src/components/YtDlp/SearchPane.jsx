@@ -31,6 +31,7 @@ import { getCurrent as getOptions } from '../../lib/options';
 import * as ytdlp from '../../lib/ytdlp';
 import { Bell, Download, Search, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
+import { toast } from 'react-toastify';
 
 const HISTORY_KEY = 'ytdlp.searchHistory';
 const HISTORY_MAX = 12;
@@ -70,6 +71,9 @@ const formatCount = (n) => {
 
 const TYPE_LABELS = { channel: 'Channel', playlist: 'Playlist' };
 
+// A pasted URL skips the search and resolves to a single result card instead
+const isUrl = (q) => /^https?:\/\//iu.test(q);
+
 const resultSubtitle = (r) => {
   if (r.type === 'channel') {
     const subs =
@@ -105,6 +109,7 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
   const [downloading, setDownloading] = useState({});
   const [subscribing, setSubscribing] = useState({});
   const [history, setHistory] = useState(loadHistory);
+  const [urlMode, setUrlMode] = useState(false);
 
   // Default the format selector to the configured global format so it reflects what would
   // be used otherwise; the user can override it per download/subscription.
@@ -135,6 +140,25 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
   };
 
   const runSearch = async (q, overrides = {}) => {
+    setLoading(true);
+    setResults([]);
+    if (isUrl(q)) {
+      setUrlMode(true);
+      try {
+        const res = await ytdlp.resolveUrl(q);
+        setResults(res.data ? [res.data] : []);
+      } catch (error) {
+        setResults([]);
+        toast.error(`Resolve failed: ${error.response?.data || error.message}`);
+      } finally {
+        setSearched(true);
+        setLoading(false);
+      }
+
+      return;
+    }
+
+    setUrlMode(false);
     const options = {
       limit,
       sort,
@@ -142,8 +166,6 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
       uploadDate: type === 'video' ? uploadDate : '',
       ...overrides,
     };
-    setLoading(true);
-    setResults([]);
     try {
       const res = await ytdlp.search(q, options);
       setResults(res.data || []);
@@ -164,8 +186,10 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
     const { value } = e.target;
     setter(key === 'limit' ? Number(value) : value);
     // For channels/playlists, upload date is a download-time filter (not a search filter),
-    // so changing it shouldn't re-run the search.
-    const skipResearch = key === 'uploadDate' && type !== 'video';
+    // so changing it shouldn't re-run the search. A pasted URL always resolves to the same
+    // single result, so filter changes never warrant a re-resolve.
+    const skipResearch =
+      (key === 'uploadDate' && type !== 'video') || isUrl(query.trim());
     if (!skipResearch && searched && query.trim() && !loading) {
       await runSearch(query.trim(), {
         [key]: key === 'limit' ? Number(value) : value,
@@ -180,9 +204,10 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
 
   const preset = ytdlp.DURATION_PRESETS.find((p) => p.value === mixPreset);
 
-  // Only hide rows by length for video results — channel/playlist rows have no duration.
+  // Only hide rows by length for video results — channel/playlist rows have no duration,
+  // and a URL-resolved video was asked for explicitly so it's never hidden.
   const visibleResults =
-    preset && type === 'video'
+    preset && type === 'video' && !urlMode
       ? results.filter(
           (r) =>
             r.duration &&
@@ -191,23 +216,27 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
         )
       : results;
 
-  // Settings forwarded to downloads/subscriptions: chosen length (maxSeconds 0 = no upper bound),
-  // chosen audio format, and — for channels/playlists — an upload-date lower bound.
-  const downloadOverrides = {
-    ...(preset
+  // Settings forwarded to downloads/subscriptions: chosen length (maxSeconds 0 = no upper
+  // bound), chosen audio format, and — for channels/playlists — an upload-date lower bound.
+  // A URL-resolved single video skips the length filter: it was asked for explicitly, so a
+  // hidden duration cutoff would silently produce an empty download.
+  const overridesFor = (result) => ({
+    ...(preset && !(urlMode && result.type === 'video')
       ? {
           minTrackDurationSeconds: preset.minSeconds,
           maxTrackDurationSeconds: preset.maxSeconds,
         }
       : {}),
     ...(audioFormat ? { audioFormat } : {}),
-    ...(type !== 'video' && uploadDate ? { uploadedAfter: uploadDate } : {}),
-  };
+    ...(result.type !== 'video' && uploadDate
+      ? { uploadedAfter: uploadDate }
+      : {}),
+  });
 
   const handleDownload = async (result) => {
     setDownloading((previous) => ({ ...previous, [result.videoId]: true }));
     try {
-      await onDownload(result, downloadOverrides);
+      await onDownload(result, overridesFor(result));
     } finally {
       setDownloading((previous) => ({ ...previous, [result.videoId]: false }));
     }
@@ -216,7 +245,7 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
   const handleSubscribe = async (result) => {
     setSubscribing((previous) => ({ ...previous, [result.videoId]: true }));
     try {
-      await onSubscribe(result, downloadOverrides);
+      await onSubscribe(result, overridesFor(result));
     } finally {
       setSubscribing((previous) => ({ ...previous, [result.videoId]: false }));
     }
@@ -235,7 +264,7 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
               autoFocus
               disabled={loading}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Artist, track, or channel name…"
+              placeholder="Artist, track, channel name, or a YouTube URL…"
               type="text"
               value={query}
             />
@@ -361,10 +390,16 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
         </div>
       )}
 
-      {loading && <div className="ytdlp-empty">Searching YouTube…</div>}
+      {loading && (
+        <div className="ytdlp-empty">
+          {urlMode ? 'Resolving URL…' : 'Searching YouTube…'}
+        </div>
+      )}
 
       {visibleResults.length === 0 && !loading && searched && (
-        <div className="ytdlp-empty">No results</div>
+        <div className="ytdlp-empty">
+          {urlMode ? 'Could not resolve that URL' : 'No results'}
+        </div>
       )}
 
       <div className="ytdlp-search-results">

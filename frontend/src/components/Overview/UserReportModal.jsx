@@ -31,8 +31,9 @@ import * as reportsAPI from '../../lib/reports';
 import { formatBytes, formatDate, getFileName } from '../../lib/util';
 import UsernameLink from '../Shared/UsernameLink';
 import UserChatTab from './UserChatTab';
-import UserFilesTab from './UserFilesTab';
+import { ExternalLink } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
+import { useHistory } from 'react-router-dom';
 import { Header, Modal } from 'semantic-ui-react';
 
 const PAGE_SIZE = 25;
@@ -379,6 +380,7 @@ const BrowseTab = ({ username }) => {
 };
 
 const UserReportModal = ({ initialTab, onClose, seed, username }) => {
+  const history = useHistory();
   const [activeTab, setActiveTab] = useState(initialTab || 'overview');
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(true);
@@ -453,9 +455,13 @@ const UserReportModal = ({ initialTab, onClose, seed, username }) => {
     { id: 'overview', label: 'Overview' },
     { id: 'transfers', label: 'Transfers' },
     { id: 'browse', label: 'Browse History' },
-    { id: 'files', label: 'Files' },
     { id: 'chat', label: 'Chat' },
   ];
+
+  const openBrowse = () => {
+    onClose();
+    history.push('/browse', { user: username });
+  };
 
   return (
     <Modal
@@ -506,6 +512,15 @@ const UserReportModal = ({ initialTab, onClose, seed, username }) => {
               {tab.label}
             </button>
           ))}
+          <button
+            className="user-report-modal-tab user-report-modal-tab--link"
+            onClick={openBrowse}
+            title="Open this user's shared files in Browse"
+            type="button"
+          >
+            Files
+            <ExternalLink size={11} />
+          </button>
         </div>
         <div className="user-report-modal-body">
           {activeTab === 'overview' && (
@@ -516,12 +531,6 @@ const UserReportModal = ({ initialTab, onClose, seed, username }) => {
           )}
           {activeTab === 'transfers' && <TransfersTab username={username} />}
           {activeTab === 'browse' && <BrowseTab username={username} />}
-          {activeTab === 'files' && (
-            <UserFilesTab
-              onChat={() => setActiveTab('chat')}
-              username={username}
-            />
-          )}
           {activeTab === 'chat' && <UserChatTab username={username} />}
         </div>
       </Modal.Content>

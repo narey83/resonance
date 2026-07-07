@@ -33,9 +33,12 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import '../Chat/Chat.css';
 import { activeRoomKey } from '../../config';
 import * as rooms from '../../lib/rooms';
 import { parseUtcDate } from '../../lib/util';
+import { groupByDate } from '../Chat/chatUtils';
+import EmojiPickerButton from '../Shared/EmojiPickerButton';
 import PlaceholderSegment from '../Shared/PlaceholderSegment';
 import UsernameLink from '../Shared/UsernameLink';
 import RoomMenu from './RoomMenu';
@@ -78,29 +81,39 @@ const initialState = {
 
 const RoomMessageHistory = React.memo(
   ({ formatTimestamp, messages, onHandleContextMenu }) => {
+    const groups = groupByDate(messages);
     return (
       <>
-        {messages.map((message) => (
-          <div
-            key={`${message.timestamp}+${message.message}`}
-            onContextMenu={(clickEvent) =>
-              onHandleContextMenu(clickEvent, message)
-            }
-          >
-            <List.Content
-              className={`room-message ${message.self ? 'room-message-self' : ''}`}
-            >
-              <span className="room-message-time">
-                {formatTimestamp(message.timestamp)}
-              </span>
-              <UsernameLink
-                className="room-message-name"
-                username={message.username}
-              />
-              <span className="room-message-name-sep">: </span>
-              <span className="room-message-message">{message.message}</span>
-            </List.Content>
-          </div>
+        {groups.map((group) => (
+          <React.Fragment key={group.label}>
+            <div className="chat-date-sep">
+              <span>{group.label}</span>
+            </div>
+            {group.messages.map((message) => (
+              <div
+                key={`${message.timestamp}+${message.message}`}
+                onContextMenu={(clickEvent) =>
+                  onHandleContextMenu(clickEvent, message)
+                }
+              >
+                <List.Content
+                  className={`room-message ${message.self ? 'room-message-self' : ''}`}
+                >
+                  <span className="room-message-time">
+                    {formatTimestamp(message.timestamp)}
+                  </span>
+                  <UsernameLink
+                    className="room-message-name"
+                    username={message.username}
+                  />
+                  <span className="room-message-name-sep">: </span>
+                  <span className="room-message-message">
+                    {message.message}
+                  </span>
+                </List.Content>
+              </div>
+            ))}
+          </React.Fragment>
         ))}
         <List.Content id="room-history-scroll-anchor" />
       </>
@@ -238,10 +251,8 @@ class Rooms extends Component {
   formatTimestamp = (timestamp) => {
     const date = parseUtcDate(timestamp);
     const dtfUS = new Intl.DateTimeFormat('en', {
-      day: 'numeric',
       hour: 'numeric',
       minute: '2-digit',
-      month: 'numeric',
     });
 
     return dtfUS.format(date);
@@ -256,6 +267,23 @@ class Rooms extends Component {
 
     await rooms.sendMessage({ message, roomName: active });
     this.setState({ message: '' });
+  };
+
+  handleEmojiSelect = (emoji) => {
+    const input = this.messageRef?.current;
+    const { message } = this.state;
+    const start = input?.selectionStart ?? message.length;
+    const end = input?.selectionEnd ?? message.length;
+
+    this.setState(
+      { message: message.slice(0, start) + emoji + message.slice(end) },
+      () => {
+        if (!input) return;
+        input.focus();
+        const cursor = start + emoji.length;
+        input.setSelectionRange(cursor, cursor);
+      },
+    );
   };
 
   handleContextMenu = (clickEvent, message) => {
@@ -405,6 +433,7 @@ class Rooms extends Component {
                         </Ref>
                       </Segment>
                       <Segment className="room-input">
+                        <EmojiPickerButton onSelect={this.handleEmojiSelect} />
                         <Input
                           action={{
                             className: 'room-message-button',

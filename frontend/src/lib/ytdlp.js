@@ -94,6 +94,9 @@ export const search = (
   return api.get(`/ytdlp/search?${params.toString()}`);
 };
 
+export const resolveUrl = (url) =>
+  api.get(`/ytdlp/resolve?url=${encodeURIComponent(url)}`);
+
 export const listSubscriptions = () => api.get('/ytdlp/subscriptions');
 export const addSubscription = ({
   channelUrl,

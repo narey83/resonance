@@ -99,6 +99,19 @@ services:
       - backend
     restart: unless-stopped
 
+  # PO Token provider for yt-dlp's youtube extractor. YouTube increasingly requires a
+  # Proof-of-Origin token (bound to SABR-only client responses) before it will serve
+  # real media URLs; this generates them on request. Host networking puts it at
+  # 127.0.0.1:4416, which is the bgutil:http plugin's built-in default base_url, so
+  # no extra config is needed on the yt-dlp side beyond --plugin-dirs.
+  bgutil-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider
+    container_name: resonance-bgutil-pot-provider
+    network_mode: host
+    mem_limit: 256m
+    cpus: 0.5
+    restart: unless-stopped
+
   # Resonance's own reverse proxy. Owns all app routing, rate limiting, security
   # headers and body limits, so the outer/main proxy only has to terminate TLS
   # and forward the hostname to host port 8930.

@@ -122,8 +122,9 @@ const SubscriptionsPane = ({ subscriptions }) => {
           <Bell size={28} />
           <p>No subscriptions yet.</p>
           <p>
-            Search for a channel under <strong>Search</strong> and hit Subscribe
-            — new uploads then download automatically.
+            Search for a channel — or paste its URL — under{' '}
+            <strong>Search</strong> and hit Subscribe: new uploads then download
+            automatically.
           </p>
         </div>
       ) : (

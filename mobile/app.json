@@ -26,6 +26,7 @@
     "plugins": [
       "expo-dev-client",
       "./plugins/withAndroidAuto",
+      "./plugins/withGradleWrapperVersion",
       [
         "react-native-google-cast",
         {

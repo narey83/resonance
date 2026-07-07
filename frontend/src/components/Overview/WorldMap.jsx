@@ -29,8 +29,10 @@
 
 import { lookupIp } from '../../lib/network';
 import { formatBytes, parseUtcDate } from '../../lib/util';
+import UsernameLink from '../Shared/UsernameLink';
 import UserReportModal from './UserReportModal';
 import React, {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -46,12 +48,45 @@ import {
   ZoomableGroup,
 } from 'react-simple-maps';
 
-const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json';
+// 110m resolution has ~10x fewer vertices than 50m, which dominates paint
+// cost when the whole world (plus thousands of dots) is visible. Zoomed in,
+// most geometry clips out but 110m borders look chunky — so swap detail by
+// zoom level, with hysteresis so crossing the threshold doesn't ping-pong.
+const GEO_URL_110 =
+  'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
+const GEO_URL_50 =
+  'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json';
+const DETAIL_ZOOM_IN = 4; // switch to 50m at or above this zoom
+const DETAIL_ZOOM_OUT = 2.5; // back to 110m at or below this zoom
 const BASE_SCALE = 160;
 const MIN_ZOOM = 0.6;
 const MAX_ZOOM = 24;
+const LOG_MIN_ZOOM = Math.log(MIN_ZOOM);
+const LOG_MAX_ZOOM = Math.log(MAX_ZOOM);
 const TOOLTIP_W = 260;
 const TOOLTIP_H = 280;
+
+// Hoisted so the React.memo on Geography isn't defeated by a fresh style
+// object every render — otherwise all ~180 country paths re-render (and
+// recompute their d3 path strings) on every state change.
+const GEO_STYLE = {
+  default: {
+    fill: 'var(--map-land)',
+    outline: 'none',
+    stroke: 'var(--map-border)',
+    strokeWidth: 0.4,
+    vectorEffect: 'non-scaling-stroke',
+  },
+  hover: { fill: 'var(--map-land-hover)', outline: 'none' },
+  pressed: { fill: 'var(--map-land)', outline: 'none' },
+};
+
+// Markers/strokes live inside the zoom transform, so they must be divided by
+// the zoom to keep a constant on-screen size. Doing that through a CSS custom
+// property (--map-k, set on the wrapper div) instead of React props means a
+// zoom change is just a style recalc — the marker layers (potentially
+// thousands of nodes) are memoized and never re-render for zoom.
+const kx = (px) => `calc(${px}px * var(--map-k, 1))`;
 
 const collectPeers = (groups, direction) => {
   const peers = [];
@@ -128,24 +163,44 @@ const WorldMap = ({
   const [tooltip, setTooltip] = useState(null);
   const [modalUser, setModalUser] = useState(null);
   const hideTimerRef = useRef(null);
+  const moveFrameRef = useRef(null);
   const [position, setPosition] = useState({ coordinates: [0, 15], zoom: 1 });
+  // Tracks the zoom live during wheel/pinch gestures (position.zoom only
+  // updates on gesture end); drives --map-k and the slider position.
+  const [liveZoom, setLiveZoom] = useState(1);
   const [dragging, setDragging] = useState(false);
+  const [geoUrl, setGeoUrl] = useState(GEO_URL_110);
+
+  useEffect(() => {
+    if (liveZoom >= DETAIL_ZOOM_IN) setGeoUrl(GEO_URL_50);
+    else if (liveZoom <= DETAIL_ZOOM_OUT) setGeoUrl(GEO_URL_110);
+  }, [liveZoom]);
 
   useLayoutEffect(() => {
     const svg = wrapRef.current?.querySelector('svg');
     if (svg) svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
-  });
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (moveFrameRef.current != null)
+        cancelAnimationFrame(moveFrameRef.current);
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    },
+    [],
+  );
 
   const allPeers = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const seen = new Set();
     return [
       ...(direction === 'upload' ? [] : collectPeers(downloads, 'download')),
       ...(direction === 'download' ? [] : collectPeers(uploads, 'upload')),
-    ]
-      .filter(
-        (p, index, array) => array.findIndex((q2) => q2.ip === p.ip) === index,
-      )
-      .filter((p) => !q || p.username?.toLowerCase().includes(q));
+    ].filter((p) => {
+      if (seen.has(p.ip)) return false;
+      seen.add(p.ip);
+      return !q || p.username?.toLowerCase().includes(q);
+    });
   }, [direction, downloads, search, uploads]);
 
   const peerKey = allPeers.map((p) => `${p.ip}:${p.active}`).join(',');
@@ -206,21 +261,29 @@ const WorldMap = ({
   );
 
   const hasServer = serverLat != null && serverLon != null;
-  const vpnFiltered = vpnOnly
-    ? peerLocations.filter((p) => p.isVpn)
-    : peerLocations;
-  const activePeers = vpnFiltered.filter((p) => p.active && hasServer);
-  const idlePeers = vpnFiltered.filter((p) => !p.active || !hasServer);
+  const vpnFiltered = useMemo(
+    () => (vpnOnly ? peerLocations.filter((p) => p.isVpn) : peerLocations),
+    [peerLocations, vpnOnly],
+  );
+  const activePeers = useMemo(
+    () => vpnFiltered.filter((p) => p.active && hasServer),
+    [hasServer, vpnFiltered],
+  );
+  const idlePeers = useMemo(
+    () => vpnFiltered.filter((p) => !p.active || !hasServer),
+    [hasServer, vpnFiltered],
+  );
   const totalConnections = vpnFiltered.length;
 
-  const showTooltip = (peer, e) => {
+  // Stable references so the memoized marker layers below survive re-renders.
+  const showTooltip = useCallback((peer, e) => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     setTooltip({ peer, x: e.clientX, y: e.clientY });
-  };
+  }, []);
 
-  const scheduleHide = () => {
+  const scheduleHide = useCallback(() => {
     hideTimerRef.current = setTimeout(() => setTooltip(null), 120);
-  };
+  }, []);
 
   const cancelHide = () => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
@@ -242,32 +305,196 @@ const WorldMap = ({
     });
   };
 
-  const handleZoomIn = () =>
-    setPosition((p) => ({ ...p, zoom: Math.min(p.zoom * 1.6, MAX_ZOOM) }));
-  const handleZoomOut = () =>
-    setPosition((p) => {
-      const next = Math.max(p.zoom / 1.6, MIN_ZOOM);
-      return {
-        coordinates: next <= 1 ? [0, 15] : p.coordinates,
-        zoom: next,
-      };
-    });
+  const applyZoom = useCallback((zoom) => {
+    const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+    setLiveZoom(next);
+    setPosition((p) => ({
+      coordinates: next <= 1 ? [0, 15] : p.coordinates,
+      zoom: next,
+    }));
+  }, []);
+
+  const handleZoomIn = () => applyZoom(liveZoom * 1.6);
+  const handleZoomOut = () => applyZoom(liveZoom / 1.6);
 
   const onMoveStart = () => setDragging(true);
+  // d3-zoom fires per gesture tick; coalesce to one state update per frame so
+  // the marker counter-scaling tracks wheel/pinch live without a render storm.
+  const onMove = ({ zoom }) => {
+    if (moveFrameRef.current != null) return;
+    moveFrameRef.current = requestAnimationFrame(() => {
+      moveFrameRef.current = null;
+      setLiveZoom(zoom);
+    });
+  };
+
   const onMoveEnd = ({ coordinates, zoom }) => {
+    if (moveFrameRef.current != null) {
+      cancelAnimationFrame(moveFrameRef.current);
+      moveFrameRef.current = null;
+    }
+
     setDragging(false);
+    setLiveZoom(zoom);
     setPosition({ coordinates, zoom });
   };
 
-  // Markers/strokes live inside the zoom transform, so divide out the zoom
-  // to keep them the same size on screen.
-  const k = 1 / position.zoom;
+  // Layers are memoized so tooltip hovers, zoom changes, and the 5s transfer
+  // poll don't re-render every country path and peer marker. On-screen sizes
+  // stay constant across zoom via --map-k (see kx above).
+  const geographyLayer = useMemo(
+    () => (
+      <Geographies geography={geoUrl}>
+        {({ geographies }) =>
+          geographies.map((geo) => (
+            <Geography
+              geography={geo}
+              key={geo.rsmKey}
+              style={GEO_STYLE}
+            />
+          ))
+        }
+      </Geographies>
+    ),
+    [geoUrl],
+  );
+
+  // Past connection dots — rendered first so active markers sit on top
+  const pastLayer = useMemo(
+    () =>
+      pastPeers.map((peer) => (
+        <Marker
+          coordinates={[peer.lon, peer.lat]}
+          key={`past-${peer.username}-${peer.ip}`}
+          onMouseEnter={(e) =>
+            showTooltip({ ...peer, direction: 'past', active: false }, e)
+          }
+          onMouseLeave={scheduleHide}
+        >
+          <circle
+            fill={recencyColor(peer.lastSeen)}
+            opacity={0.9}
+            r={volumeRadius(peer)}
+            style={{ r: kx(volumeRadius(peer)) }}
+          />
+        </Marker>
+      )),
+    [pastPeers, scheduleHide, showTooltip],
+  );
+
+  // Arcs: server → active peers
+  const arcLayer = useMemo(
+    () =>
+      hasServer
+        ? activePeers.map((peer) => (
+            <Line
+              className={
+                peer.direction === 'download' ? 'map-arc--dl' : 'map-arc--ul'
+              }
+              from={[serverLon, serverLat]}
+              key={`arc-${peer.ip}`}
+              stroke={
+                peer.direction === 'download'
+                  ? 'var(--map-arc-dl)'
+                  : 'var(--map-arc-ul)'
+              }
+              strokeLinecap="round"
+              strokeWidth={1.5}
+              style={{
+                strokeDasharray: `${kx(6)} ${kx(4)}`,
+                strokeWidth: kx(1.5),
+              }}
+              to={[peer.lon, peer.lat]}
+            />
+          ))
+        : null,
+    [activePeers, hasServer, serverLat, serverLon],
+  );
+
+  // Idle peer dots
+  const idleLayer = useMemo(
+    () =>
+      idlePeers.map((peer) => (
+        <Marker
+          coordinates={[peer.lon, peer.lat]}
+          key={`idle-${peer.ip}`}
+          onMouseEnter={(e) => showTooltip(peer, e)}
+          onMouseLeave={scheduleHide}
+        >
+          <circle
+            fill={
+              peer.direction === 'download'
+                ? 'var(--map-arc-dl)'
+                : 'var(--map-arc-ul)'
+            }
+            opacity={0.85}
+            r={4}
+            stroke="var(--map-dot-stroke)"
+            strokeWidth={1.2}
+            style={{ r: kx(4), strokeWidth: kx(1.2) }}
+          />
+        </Marker>
+      )),
+    [idlePeers, scheduleHide, showTooltip],
+  );
+
+  // Active peer dots
+  const activeLayer = useMemo(
+    () =>
+      activePeers.map((peer) => (
+        <Marker
+          coordinates={[peer.lon, peer.lat]}
+          key={`active-${peer.ip}`}
+          onMouseEnter={(e) => showTooltip(peer, e)}
+          onMouseLeave={scheduleHide}
+        >
+          <circle
+            className="map-peer-pulse"
+            fill={
+              peer.direction === 'download'
+                ? 'var(--map-arc-dl)'
+                : 'var(--map-arc-ul)'
+            }
+            r={3}
+            stroke="var(--map-dot-stroke)"
+            strokeWidth={1}
+            style={{ r: kx(3), strokeWidth: kx(1) }}
+          />
+        </Marker>
+      )),
+    [activePeers, scheduleHide, showTooltip],
+  );
+
+  const serverLayer = useMemo(
+    () =>
+      hasServer ? (
+        <Marker coordinates={[serverLon, serverLat]}>
+          <circle
+            fill="#fff"
+            opacity={0.95}
+            r={2.5}
+            style={{ r: kx(2.5) }}
+          />
+          <circle
+            className="map-server-ring"
+            fill="none"
+            opacity={0.3}
+            r={5}
+            stroke="#fff"
+            strokeWidth={1}
+            style={{ r: kx(5), strokeWidth: kx(1) }}
+          />
+        </Marker>
+      ) : null,
+    [hasServer, serverLat, serverLon],
+  );
 
   return (
     <div
       className="world-map-wrap"
       ref={wrapRef}
       style={{
+        '--map-k': 1 / liveZoom,
         cursor: dragging ? 'grabbing' : 'crosshair',
         userSelect: dragging ? 'none' : undefined,
       }}
@@ -283,6 +510,7 @@ const WorldMap = ({
           center={position.coordinates}
           maxZoom={MAX_ZOOM}
           minZoom={MIN_ZOOM}
+          onMove={onMove}
           onMoveEnd={onMoveEnd}
           onMoveStart={onMoveStart}
           translateExtent={[
@@ -291,131 +519,12 @@ const WorldMap = ({
           ]}
           zoom={position.zoom}
         >
-          <Geographies geography={GEO_URL}>
-            {({ geographies }) =>
-              geographies.map((geo) => (
-                <Geography
-                  geography={geo}
-                  key={geo.rsmKey}
-                  style={{
-                    default: {
-                      fill: 'var(--map-land)',
-                      outline: 'none',
-                      stroke: 'var(--map-border)',
-                      strokeWidth: 0.4,
-                      vectorEffect: 'non-scaling-stroke',
-                    },
-                    hover: { fill: 'var(--map-land-hover)', outline: 'none' },
-                    pressed: { fill: 'var(--map-land)', outline: 'none' },
-                  }}
-                />
-              ))
-            }
-          </Geographies>
-
-          {/* Past connection dots — rendered first so active markers sit on top */}
-          {pastPeers.map((peer) => (
-            <Marker
-              coordinates={[peer.lon, peer.lat]}
-              key={`past-${peer.username}-${peer.ip}`}
-              onMouseEnter={(e) =>
-                showTooltip({ ...peer, direction: 'past', active: false }, e)
-              }
-              onMouseLeave={scheduleHide}
-              style={{ cursor: 'crosshair' }}
-            >
-              <circle
-                fill={recencyColor(peer.lastSeen)}
-                opacity={0.9}
-                r={volumeRadius(peer) * k}
-              />
-            </Marker>
-          ))}
-
-          {/* Arcs: server → active peers */}
-          {activePeers.map((peer) => (
-            <Line
-              className={
-                peer.direction === 'download' ? 'map-arc--dl' : 'map-arc--ul'
-              }
-              from={[serverLon, serverLat]}
-              key={`arc-${peer.ip}`}
-              stroke={
-                peer.direction === 'download'
-                  ? 'var(--map-arc-dl)'
-                  : 'var(--map-arc-ul)'
-              }
-              strokeDasharray={`${6 * k} ${4 * k}`}
-              strokeLinecap="round"
-              strokeWidth={1.5 * k}
-              to={[peer.lon, peer.lat]}
-            />
-          ))}
-
-          {/* Idle peer dots */}
-          {idlePeers.map((peer) => (
-            <Marker
-              coordinates={[peer.lon, peer.lat]}
-              key={`idle-${peer.ip}`}
-              onMouseEnter={(e) => showTooltip(peer, e)}
-              onMouseLeave={scheduleHide}
-              style={{ cursor: 'crosshair' }}
-            >
-              <circle
-                fill={
-                  peer.direction === 'download'
-                    ? 'var(--map-arc-dl)'
-                    : 'var(--map-arc-ul)'
-                }
-                opacity={0.85}
-                r={4 * k}
-                stroke="var(--map-dot-stroke)"
-                strokeWidth={1.2 * k}
-              />
-            </Marker>
-          ))}
-
-          {/* Active peer dots */}
-          {activePeers.map((peer) => (
-            <Marker
-              coordinates={[peer.lon, peer.lat]}
-              key={`active-${peer.ip}`}
-              onMouseEnter={(e) => showTooltip(peer, e)}
-              onMouseLeave={scheduleHide}
-              style={{ cursor: 'crosshair' }}
-            >
-              <circle
-                className="map-peer-pulse"
-                fill={
-                  peer.direction === 'download'
-                    ? 'var(--map-arc-dl)'
-                    : 'var(--map-arc-ul)'
-                }
-                r={3 * k}
-                stroke="var(--map-dot-stroke)"
-                strokeWidth={Number(k)}
-              />
-            </Marker>
-          ))}
-
-          {/* Server marker */}
-          {hasServer && (
-            <Marker coordinates={[serverLon, serverLat]}>
-              <circle
-                fill="#fff"
-                opacity={0.95}
-                r={2.5 * k}
-              />
-              <circle
-                className="map-server-ring"
-                fill="none"
-                opacity={0.3}
-                r={5 * k}
-                stroke="#fff"
-                strokeWidth={Number(k)}
-              />
-            </Marker>
-          )}
+          {geographyLayer}
+          {pastLayer}
+          {arcLayer}
+          {idleLayer}
+          {activeLayer}
+          {serverLayer}
         </ZoomableGroup>
       </ComposableMap>
 
@@ -509,6 +618,17 @@ const WorldMap = ({
         >
           +
         </button>
+        <input
+          aria-label="Zoom level"
+          className="map-zoom-slider"
+          max={LOG_MAX_ZOOM}
+          min={LOG_MIN_ZOOM}
+          onChange={(e) => applyZoom(Math.exp(Number(e.target.value)))}
+          step="any"
+          title="Zoom"
+          type="range"
+          value={Math.log(liveZoom)}
+        />
         <button
           className="map-zoom-btn"
           onClick={handleZoomOut}
@@ -554,7 +674,14 @@ const WorldMap = ({
               style={{ left, top }}
             >
               <div className="map-tooltip-header">
-                <span className="map-tooltip-user">{p.username}</span>
+                {p.username ? (
+                  <UsernameLink
+                    className="map-tooltip-user"
+                    username={p.username}
+                  />
+                ) : (
+                  <span className="map-tooltip-user">Unknown</span>
+                )}
                 {p.isVpn ? <span className="map-tooltip-vpn">VPN</span> : null}
                 {p.active && <span className="map-tooltip-active">●</span>}
               </div>

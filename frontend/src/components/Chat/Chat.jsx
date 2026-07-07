@@ -39,6 +39,8 @@ import { activeChatKey } from '../../config';
 import * as chat from '../../lib/chat';
 import { onPrivateMessage } from '../../lib/chatEvents';
 import * as prefs from '../../lib/prefs';
+import EmojiPickerButton from '../Shared/EmojiPickerButton';
+import UsernameLink from '../Shared/UsernameLink';
 import {
   avatarColor,
   avatarInitial,
@@ -302,6 +304,25 @@ const Chat = ({ history, location }) => {
     fetchConversations();
   }, [active, fetchConversations, message]);
 
+  const handleEmojiSelect = useCallback(
+    (emoji) => {
+      const input = inputRef.current;
+      const start = input?.selectionStart ?? message.length;
+      const end = input?.selectionEnd ?? message.length;
+
+      setMessage(
+        (previous) => previous.slice(0, start) + emoji + previous.slice(end),
+      );
+
+      setTimeout(() => {
+        input?.focus();
+        const cursor = start + emoji.length;
+        input?.setSelectionRange(cursor, cursor);
+      }, 0);
+    },
+    [message],
+  );
+
   const deleteConversation = useCallback(
     async (username) => {
       try {
@@ -532,7 +553,10 @@ const Chat = ({ history, location }) => {
                   {avatarInitial(active)}
                 </div>
                 <div className="chat-header-info">
-                  <span className="chat-header-name">{active}</span>
+                  <UsernameLink
+                    className="chat-header-name"
+                    username={active}
+                  />
                 </div>
                 <div className="sr-detail-header-actions">
                   <button
@@ -639,6 +663,7 @@ const Chat = ({ history, location }) => {
 
               {/* Input bar */}
               <div className="chat-input-bar">
+                <EmojiPickerButton onSelect={handleEmojiSelect} />
                 <input
                   autoComplete="off"
                   className="chat-input-field"

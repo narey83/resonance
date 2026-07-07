@@ -158,7 +158,18 @@
 }
 
 .room-input {
+  align-items: center;
+  display: flex;
+  gap: 8px;
   padding: 0px 0px 0px 1em !important;
+}
+
+.room-input .emoji-picker-anchor {
+  margin-left: -8px;
+}
+
+.room-input .ui.input {
+  flex: 1;
 }
 
 .room-message-button {

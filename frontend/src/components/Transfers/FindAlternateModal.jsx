@@ -29,6 +29,7 @@
 
 import * as searchesLibrary from '../../lib/searches';
 import { formatBytes, getFileName } from '../../lib/util';
+import UsernameLink from '../Shared/UsernameLink';
 import { Download, Search, User, X } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
@@ -211,7 +212,10 @@ const FindAlternateModal = ({
                     size={12}
                     style={{ flexShrink: 0, opacity: 0.6 }}
                   />
-                  <span className="fam-result-user">{result.username}</span>
+                  <UsernameLink
+                    className="fam-result-user"
+                    username={result.username}
+                  />
                   <span className="fam-result-meta">
                     {result.files.length} file
                     {result.files.length === 1 ? '' : 's'}

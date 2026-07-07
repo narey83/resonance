@@ -38,6 +38,8 @@ export interface NotificationPrefs {
   uploadComplete:    boolean;
   shareScanComplete: boolean;
   serverDisconnect:  boolean;
+  privateMessage:    boolean;
+  roomMention:       boolean;
 }
 
 // 'auto'     — full quality on wifi, transcode to low bitrate on cellular / slow links
@@ -68,6 +70,8 @@ const DEFAULT_NOTIFICATIONS: NotificationPrefs = {
   uploadComplete:    false,
   shareScanComplete: false,
   serverDisconnect:  true,
+  privateMessage:    true,
+  roomMention:       true,
 };
 
 export const useAppSettings = create<AppSettingsStore>((set, get) => ({

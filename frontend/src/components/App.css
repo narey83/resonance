@@ -2207,51 +2207,38 @@ body {
 /* ── UsernameLink ─────────────────────────────────────────────────────────── */
 
 .ulink-root {
-  display: inline-block;
-  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
 }
 
-.ulink-trigger {
-  background: none;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  padding: 0;
-  text-align: left;
+.ulink-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.ulink-trigger:hover { text-decoration: underline; text-decoration-style: dotted; }
-
-.ulink-menu {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
-  min-width: 140px;
-  z-index: 9999;
-}
-
-.ulink-item {
+.ulink-icon-btn {
   align-items: center;
   background: none;
   border: none;
-  color: var(--text-primary);
+  border-radius: 4px;
+  color: var(--text-muted);
   cursor: pointer;
   display: flex;
-  font-size: 12.5px;
-  gap: 8px;
-  padding: 8px 12px;
-  text-align: left;
-  transition: background 0.1s;
-  width: 100%;
+  flex-shrink: 0;
+  padding: 2px;
+  transition: background 0.1s, color 0.1s;
 }
 
-.ulink-item:first-child { border-radius: 6px 6px 0 0; }
-.ulink-item:last-child  { border-radius: 0 0 6px 6px; }
-.ulink-item:only-child  { border-radius: 6px; }
-.ulink-item:hover { background: var(--surface-hover); }
-.ulink-item svg   { color: var(--text-muted); flex-shrink: 0; }
+.ulink-icon-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
 
 /* ─── Accessibility: honour reduced-motion preference ────────────────────────── */
 @media (prefers-reduced-motion: reduce) {

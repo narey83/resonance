@@ -103,3 +103,9 @@ export const getUsername = () => {
 };
 
 export const isAdmin = () => getRole() === 'Administrator';
+
+// Returns the JWT's `exp` claim as a JS epoch (ms), or null.
+export const getTokenExpiry = () => {
+  const p = decodeJwtPayload();
+  return typeof p?.exp === 'number' ? p.exp * 1_000 : null;
+};

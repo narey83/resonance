@@ -38,10 +38,12 @@ namespace resonance.Telemetry;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using Asp.Versioning;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using resonance.Authentication;
 using Serilog;
 using Soulseek;
 
@@ -81,6 +83,7 @@ public class ReportsController : ControllerBase
     [Authorize(Policy = AuthPolicy.Any)]
     [ProducesResponseType(typeof(Dictionary<TransferDirection, Dictionary<TransferStates, TransferSummary>>), 200)]
     [ProducesResponseType(typeof(string), 400)]
+    [ProducesResponseType(403)]
     [ProducesResponseType(typeof(string), 500)]
     public IActionResult GetTransferSummary(
         [FromQuery] DateTime? start = null,
@@ -88,6 +91,14 @@ public class ReportsController : ControllerBase
         [FromQuery] string direction = null,
         [FromQuery] string username = null)
     {
+        // Anyone may fetch their own summary (e.g. the personal Overview
+        // page); the global aggregate (no username) or another user's
+        // summary remains Administrator-only.
+        if (!IsAdminOrSelf(username))
+        {
+            return Forbid();
+        }
+
         var now = DateTime.UtcNow;
 
         start ??= now.AddDays(-7);
@@ -139,7 +150,7 @@ public class ReportsController : ControllerBase
     /// <response code="400">Bad request.</response>
     /// <response code="500">An error occurred.</response>
     [HttpGet("transfers/histogram")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(Dictionary<DateTime, Dictionary<TransferDirection, Dictionary<TransferStates, TransferSummary>>>), 200)]
     [ProducesResponseType(typeof(string), 400)]
     [ProducesResponseType(typeof(string), 500)]
@@ -218,7 +229,7 @@ public class ReportsController : ControllerBase
     /// <response code="400">Bad request.</response>
     /// <response code="500">An error occurred.</response>
     [HttpGet("transfers/leaderboard")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(List<TransferSummary>), 200)]
     [ProducesResponseType(typeof(string), 400)]
     [ProducesResponseType(typeof(string), 500)]
@@ -298,7 +309,7 @@ public class ReportsController : ControllerBase
     /// <response code="400">Bad request.</response>
     /// <response code="500">An error occurred.</response>
     [HttpGet("transfers/users/{username}")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(Dictionary<TransferDirection, UserDirectionTransferSummary>), 200)]
     [ProducesResponseType(typeof(string), 400)]
     [ProducesResponseType(typeof(string), 500)]
@@ -380,7 +391,7 @@ public class ReportsController : ControllerBase
     /// <response code="400">Bad request.</response>
     /// <response code="500">An error occurred.</response>
     [HttpGet("transfers/exceptions")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(List<TransferExceptionDetail>), 200)]
     [ProducesResponseType(typeof(string), 400)]
     [ProducesResponseType(typeof(string), 500)]
@@ -458,7 +469,7 @@ public class ReportsController : ControllerBase
     /// <response code="400">Bad request.</response>
     /// <response code="500">An error occurred.</response>
     [HttpGet("transfers/exceptions/pareto")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(List<TransferExceptionSummary>), 200)]
     [ProducesResponseType(typeof(string), 400)]
     [ProducesResponseType(typeof(string), 500)]
@@ -531,7 +542,7 @@ public class ReportsController : ControllerBase
     /// <response code="400">Bad request.</response>
     /// <response code="500">An error occurred.</response>
     [HttpGet("transfers/users")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(List<UserReportSummary>), 200)]
     [ProducesResponseType(typeof(string), 400)]
     [ProducesResponseType(typeof(string), 500)]
@@ -613,7 +624,7 @@ public class ReportsController : ControllerBase
     /// <response code="400">Bad request.</response>
     /// <response code="500">An error occurred.</response>
     [HttpGet("transfers/users/{username}/transfers")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(List<UserTransferRecord>), 200)]
     [ProducesResponseType(typeof(string), 400)]
     [ProducesResponseType(typeof(string), 500)]
@@ -700,7 +711,7 @@ public class ReportsController : ControllerBase
     /// <response code="400">Bad request.</response>
     /// <response code="500">An error occurred.</response>
     [HttpGet("transfers/users/{username}/browse")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(List<DateTime>), 200)]
     [ProducesResponseType(typeof(string), 400)]
     [ProducesResponseType(typeof(string), 500)]
@@ -758,7 +769,7 @@ public class ReportsController : ControllerBase
     /// </summary>
     /// <returns></returns>
     [HttpGet("transfers/files")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(List<TransferFileSummary>), 200)]
     [ProducesResponseType(typeof(string), 400)]
     [ProducesResponseType(typeof(string), 500)]
@@ -805,7 +816,7 @@ public class ReportsController : ControllerBase
     /// <response code="400">Bad request.</response>
     /// <response code="500">An error occurred.</response>
     [HttpGet("transfers/directories")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(List<TransferDirectorySummary>), 200)]
     [ProducesResponseType(typeof(string), 400)]
     [ProducesResponseType(typeof(string), 500)]
@@ -851,7 +862,7 @@ public class ReportsController : ControllerBase
     }
 
     [HttpGet("transfers/users/{username}/network")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(UserNetworkInfo), 200)]
     [ProducesResponseType(404)]
     public IActionResult GetUserNetworkInfo([FromRoute, UrlEncoded] string username)
@@ -873,7 +884,7 @@ public class ReportsController : ControllerBase
     /// <summary>Returns browse and chat event counts for a batch of usernames.</summary>
     /// <returns></returns>
     [HttpPost("users/event-counts")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(Dictionary<string, UserEventCounts>), 200)]
     public IActionResult GetUserEventCounts([FromBody] string[] usernames, [FromQuery] string start)
     {
@@ -891,7 +902,7 @@ public class ReportsController : ControllerBase
     /// </summary>
     /// <returns></returns>
     [HttpGet("transfers/heatmap")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(List<HeatmapCell>), 200)]
     [ProducesResponseType(typeof(string), 400)]
     [ProducesResponseType(typeof(string), 500)]
@@ -936,7 +947,7 @@ public class ReportsController : ControllerBase
     /// </summary>
     /// <returns></returns>
     [HttpGet("transfers/geography")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(GeographyReport), 200)]
     [ProducesResponseType(typeof(string), 400)]
     [ProducesResponseType(typeof(string), 500)]
@@ -975,7 +986,7 @@ public class ReportsController : ControllerBase
     /// </summary>
     /// <returns></returns>
     [HttpGet("transfers/retries")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(List<RetryBucket>), 200)]
     [ProducesResponseType(typeof(string), 400)]
     [ProducesResponseType(typeof(string), 500)]
@@ -1008,7 +1019,7 @@ public class ReportsController : ControllerBase
     /// </summary>
     /// <returns></returns>
     [HttpGet("transfers/queue-wait")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(QueueWaitStats), 200)]
     [ProducesResponseType(typeof(string), 400)]
     [ProducesResponseType(typeof(string), 500)]
@@ -1041,7 +1052,7 @@ public class ReportsController : ControllerBase
     /// </summary>
     /// <returns></returns>
     [HttpGet("transfers/peers")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(PeerRetention), 200)]
     [ProducesResponseType(typeof(string), 400)]
     [ProducesResponseType(typeof(string), 500)]
@@ -1074,7 +1085,7 @@ public class ReportsController : ControllerBase
     /// </summary>
     /// <returns></returns>
     [HttpGet("transfers/coverage")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(CoverageReport), 200)]
     [ProducesResponseType(typeof(string), 500)]
     public IActionResult GetCatalogCoverage()
@@ -1095,7 +1106,7 @@ public class ReportsController : ControllerBase
     /// </summary>
     /// <returns></returns>
     [HttpGet("social")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
     [ProducesResponseType(typeof(SocialActivity), 200)]
     [ProducesResponseType(typeof(string), 400)]
     [ProducesResponseType(typeof(string), 500)]
@@ -1121,6 +1132,23 @@ public class ReportsController : ControllerBase
             Log.Error(ex, "Error fetching social activity: {Message}", ex.Message);
             return StatusCode(500, ex.Message);
         }
+    }
+
+    /// <summary>
+    ///     Returns true if the caller is an Administrator, or if <paramref name="username"/> is their own.
+    ///     A blank/null <paramref name="username"/> (i.e. a global, all-users query) is only permitted for
+    ///     Administrators.
+    /// </summary>
+    private bool IsAdminOrSelf(string username)
+    {
+        var callerRole = User.FindFirstValue(ClaimTypes.Role);
+        if (callerRole == Role.Administrator.ToString())
+        {
+            return true;
+        }
+
+        var callerName = User.FindFirstValue(ClaimTypes.Name);
+        return !string.IsNullOrWhiteSpace(username) && callerName == username;
     }
 }
 

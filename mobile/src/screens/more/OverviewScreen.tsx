@@ -27,9 +27,17 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+// The default landing screen for every role. Admins get the full analytics
+// dashboard below; everyone else gets a small personal summary instead (see
+// PersonalSummary.tsx) — not the same global/other-users data. Basic
+// connection/server/system status (open to every user, matching the
+// backend's own permission boundary) lives in the separate ConnectionScreen
+// instead — see that file.
+
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -37,168 +45,222 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import type { MainTabParamList } from '../../navigation/MainTabs';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
-import { getApplicationState, getKpis, AppState, KpiMetric } from '../../api/application';
+import { useAuthStore } from '../../store/auth';
+import * as analytics from '../../api/analytics';
+import * as sharesApi from '../../api/shares';
+import * as musicLibraryApi from '../../api/musicLibrary';
+import * as libraryActivityApi from '../../api/libraryActivity';
+import * as eventsApi from '../../api/events';
+import { SectionHeader } from '../../components/overview/shared';
+import type { Histogram } from '../../components/overview/histogramUtils';
+import KpiCards from '../../components/overview/KpiCards';
+import SocialPulse from '../../components/overview/SocialPulse';
+import RatioCard from '../../components/overview/RatioCard';
+import CoverageCard from '../../components/overview/CoverageCard';
+import ActivityChart from '../../components/overview/ActivityChart';
+import ActivityHeatmap from '../../components/overview/ActivityHeatmap';
+import ErrorChart from '../../components/overview/ErrorChart';
+import RetryFunnel from '../../components/overview/RetryFunnel';
+import QueueWaitCard from '../../components/overview/QueueWaitCard';
+import TransferHealth from '../../components/overview/TransferHealth';
+import UserLeaderboard from '../../components/overview/UserLeaderboard';
+import PopularDirectories from '../../components/overview/PopularDirectories';
+import TopFiles from '../../components/overview/TopFiles';
+import UserReports from '../../components/overview/UserReports';
+import GeographyCard from '../../components/overview/GeographyCard';
+import WorldMap from '../../components/overview/WorldMap';
+import PeerRetentionCard from '../../components/overview/PeerRetentionCard';
+import LibraryComposition from '../../components/overview/LibraryComposition';
+import FileTypeChart from '../../components/overview/FileTypeChart';
+import NotificationFeed from '../../components/overview/NotificationFeed';
+import UserReportModal from '../../components/overview/UserReportModal';
+import PersonalSummary from '../../components/overview/PersonalSummary';
 
-// ── Formatting helpers ────────────────────────────────────────────────────────
+const RANGES = [
+  { hours: 1, label: '1h' },
+  { hours: 6, label: '6h' },
+  { hours: 24, label: '24h' },
+  { hours: 168, label: '7d' },
+  { hours: 720, label: '30d' },
+];
 
-function fmtBytes(bytes: number): string {
-  if (bytes < 1024)        return `${bytes} B`;
-  if (bytes < 1024 ** 2)   return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 ** 3)   return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-}
+const TABS = [
+  { id: 'glance', label: 'At a Glance' },
+  { id: 'activity', label: 'Activity' },
+  { id: 'reliability', label: 'Reliability' },
+  { id: 'top', label: 'Top Users' },
+  { id: 'geography', label: 'Geography' },
+  { id: 'library', label: 'Library' },
+  { id: 'feed', label: 'Feed' },
+] as const;
+type TabId = (typeof TABS)[number]['id'];
 
-function fmtNum(n: number): string {
-  return n.toLocaleString();
-}
-
-// The Soulseek server reports privileges as seconds remaining (protocol
-// CheckPrivileges), not days. Render the largest sensible unit.
-function fmtPrivileges(seconds: number): string {
-  const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'} remaining`;
-  if (seconds >= 86_400) return plural(Math.floor(seconds / 86_400), 'day');
-  if (seconds >= 3_600) return plural(Math.floor(seconds / 3_600), 'hour');
-  if (seconds >= 60) return plural(Math.floor(seconds / 60), 'minute');
-  return plural(seconds, 'second');
-}
-
-function sampleValue(metric: KpiMetric | undefined): number | null {
-  if (!metric) return null;
-  const v = metric.samples?.[0]?.value;
-  return v !== undefined ? v : (metric.sum ?? null);
-}
-
-function sampleValueByLabel(
-  metric: KpiMetric | undefined,
-  labelKey: string,
-  labelValue: string,
-): number | null {
-  if (!metric?.samples) return null;
-  const s = metric.samples.find(s => s.labels?.[labelKey] === labelValue);
-  return s?.value ?? null;
-}
-
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-function SectionHeader({ title, colors }: { title: string; colors: ThemeColors }) {
-  return (
-    <Text style={[sectionHeaderStyle, { color: colors.textMuted }]}>
-      {title.toUpperCase()}
-    </Text>
-  );
-}
-
-const sectionHeaderStyle = {
-  fontSize: Typography.xs,
-  fontWeight: '600' as const,
-  letterSpacing: 0.8,
-  paddingHorizontal: Spacing.sm,
-  paddingBottom: Spacing.xs,
+const histogramInterval = (hours: number) => {
+  if (hours <= 1) return 5;
+  if (hours <= 6) return 15;
+  if (hours <= 24) return 60;
+  if (hours <= 168) return 360;
+  return 1_440;
 };
 
-function StatRow({
-  label,
-  value,
-  valueColor,
-  last = false,
-  colors,
-}: {
-  label: string;
-  value: string | React.ReactNode;
-  valueColor?: string;
-  last?: boolean;
-  colors: ThemeColors;
-}) {
-  const s = useMemo(() => makeRowStyles(colors, last), [colors, last]);
-  return (
-    <View style={s.row}>
-      <Text style={s.label}>{label}</Text>
-      {typeof value === 'string' ? (
-        <Text style={[s.value, valueColor ? { color: valueColor } : null]}>{value}</Text>
-      ) : value}
-    </View>
-  );
+interface AnalyticsData {
+  summary:      Record<string, Record<string, analytics.TransferSummary>> | null;
+  prevSummary:  Record<string, Record<string, analytics.TransferSummary>> | null;
+  histogram:    Histogram | null;
+  leaderboard:  { download: analytics.TransferSummary[]; upload: analytics.TransferSummary[] };
+  topFiles:     analytics.TransferFileSummary[];
+  directories:  analytics.TransferDirectorySummary[];
+  exceptions:   analytics.TransferExceptionSummaryEntry[];
+  heatmap:      analytics.HeatmapCell[];
+  geography:    analytics.GeographyReport | null;
+  retryFunnel:  analytics.RetryBucket[];
+  queueWait:    analytics.QueueWaitStats | null;
+  peerRetention: analytics.PeerRetention | null;
+  social:       analytics.SocialActivity | null;
+  mapUsers:     analytics.UserReportSummary[];
 }
 
-function makeRowStyles(c: ThemeColors, last: boolean) {
-  return StyleSheet.create({
-    row: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: Spacing.md,
-      borderBottomWidth: last ? 0 : 1,
-      borderBottomColor: c.border,
-    },
-    label: { fontSize: Typography.base, color: c.textMuted, flex: 1 },
-    value: { fontSize: Typography.base, color: c.textPrimary, fontWeight: '500', textAlign: 'right', flexShrink: 1, marginLeft: Spacing.sm },
-  });
-}
+const emptyAnalytics: AnalyticsData = {
+  summary: null,
+  prevSummary: null,
+  histogram: null,
+  leaderboard: { download: [], upload: [] },
+  topFiles: [],
+  directories: [],
+  exceptions: [],
+  heatmap: [],
+  geography: null,
+  retryFunnel: [],
+  queueWait: null,
+  peerRetention: null,
+  social: null,
+  mapUsers: [],
+};
 
-function Card({ children, colors }: { children: React.ReactNode; colors: ThemeColors }) {
-  return (
-    <View style={{
-      backgroundColor: colors.bgSurface,
-      borderRadius: Radius.lg,
-      borderWidth: 1,
-      borderColor: colors.border,
-      overflow: 'hidden',
-    }}>
-      {children}
-    </View>
-  );
-}
+type Props = BottomTabScreenProps<MainTabParamList, 'OverviewTab'>;
 
-function StatusBadge({ connected, colors }: { connected: boolean; colors: ThemeColors }) {
-  const color = connected ? colors.success : colors.danger;
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-      <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: color }} />
-      <Text style={{ fontSize: Typography.base, color, fontWeight: '500' }}>
-        {connected ? 'Connected' : 'Disconnected'}
-      </Text>
-    </View>
-  );
-}
-
-// ── Main screen ───────────────────────────────────────────────────────────────
-
-export default function OverviewScreen() {
+export default function OverviewScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
+  const isAdmin = useAuthStore((state) => state.isAdmin);
 
-  const [appState, setAppState]   = useState<AppState | null>(null);
-  const [kpis, setKpis]           = useState<Record<string, KpiMetric> | null>(null);
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError]         = useState<string | null>(null);
 
-  const fetch = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
+  const [rangeHours, setRangeHours] = useState(24);
+  const [tab, setTab] = useState<TabId>('glance');
+  const [data, setData] = useState<AnalyticsData>(emptyAnalytics);
+  const [selectedUser, setSelectedUser] = useState<string | null>(null);
+
+  const [fileTypeCounts, setFileTypeCounts] = useState<Record<string, number>>({});
+  const [coverage, setCoverage] = useState<analytics.CoverageReport | null>(null);
+  const [genres, setGenres] = useState<musicLibraryApi.MusicGenre[]>([]);
+  const [years, setYears] = useState<musicLibraryApi.MusicYear[]>([]);
+  const [playStats, setPlayStats] = useState<libraryActivityApi.PlayStat[]>([]);
+  const [events, setEvents] = useState<eventsApi.EventRecord[]>([]);
+
+  const fetchAnalytics = useCallback(async () => {
+    if (!isAdmin) { setLoading(false); return; }
     setError(null);
+    const now = new Date();
+    const end = now.toISOString();
+    const start = new Date(now.getTime() - rangeHours * 3_600_000).toISOString();
+    const prevEnd = start;
+    const prevStart = new Date(now.getTime() - 2 * rangeHours * 3_600_000).toISOString();
+    const interval = histogramInterval(rangeHours);
+    const range = { start, end };
+
     try {
-      const [state, metrics] = await Promise.all([getApplicationState(), getKpis()]);
-      setAppState(state);
-      setKpis(metrics);
+      const [
+        summary, prevSummary, histogram,
+        dlBoard, ulBoard, topFiles, directories,
+        dlExceptions, ulExceptions, heatmap, geography,
+        retryFunnel, queueWait, peerRetention, social, mapUsersPage,
+      ] = await Promise.all([
+        analytics.getSummary(range),
+        analytics.getSummary({ start: prevStart, end: prevEnd }),
+        analytics.getHistogram({ ...range, interval }),
+        analytics.getLeaderboard({ ...range, direction: 'Download' }),
+        analytics.getLeaderboard({ ...range, direction: 'Upload' }),
+        analytics.getTopFiles(range),
+        analytics.getDirectories(range),
+        analytics.getExceptionsPareto({ ...range, direction: 'Download' }),
+        analytics.getExceptionsPareto({ ...range, direction: 'Upload' }),
+        analytics.getHeatmap(range),
+        analytics.getGeography(range),
+        analytics.getRetryFunnel(range),
+        analytics.getQueueWait(range),
+        analytics.getPeerRetention(range),
+        analytics.getSocialActivity(range),
+        analytics.getUserList({ ...range, sortBy: 'DownloadBytes', limit: 100 }),
+      ]);
+
+      setData({
+        summary, prevSummary, histogram,
+        leaderboard: { download: dlBoard, upload: ulBoard },
+        topFiles, directories,
+        exceptions: [...dlExceptions, ...ulExceptions],
+        heatmap, geography, retryFunnel, queueWait, peerRetention, social,
+        mapUsers: mapUsersPage.items,
+      });
     } catch {
-      setError('Could not load stats. Check your connection.');
+      setError('Could not load analytics. Check your connection.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [isAdmin, rangeHours]);
 
-  useFocusEffect(useCallback(() => { fetch(); }, [fetch]));
+  const fetchLibraryOnce = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      const [counts, cov, g, y, p] = await Promise.all([
+        sharesApi.getFileTypeCounts(),
+        analytics.getCoverage(),
+        musicLibraryApi.getGenres(),
+        musicLibraryApi.getYears(),
+        libraryActivityApi.getPlayStats(),
+      ]);
+      setFileTypeCounts(counts);
+      setCoverage(cov);
+      setGenres(g);
+      setYears(y);
+      setPlayStats(p);
+    } catch {
+      // Non-critical — library composition tab just stays empty.
+    }
+  }, [isAdmin]);
 
-  useEffect(() => {
-    const interval = setInterval(() => fetch(true), 15_000);
-    return () => clearInterval(interval);
-  }, [fetch]);
+  const fetchFeed = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      setEvents(await eventsApi.list({ limit: 50 }));
+    } catch {
+      // Non-critical.
+    }
+  }, [isAdmin]);
 
-  if (loading && !appState) {
+  useEffect(() => { fetchAnalytics(); }, [fetchAnalytics]);
+  useEffect(() => { fetchLibraryOnce(); }, [fetchLibraryOnce]);
+  useEffect(() => { fetchFeed(); }, [fetchFeed]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    Promise.all([fetchAnalytics(), fetchFeed()]).finally(() => setRefreshing(false));
+  };
+
+  // Only admins get the full analytics dashboard; everyone else gets a
+  // small personal summary instead (mirrors the web frontend's Overview).
+  if (!isAdmin) {
+    return <PersonalSummary colors={colors} />;
+  }
+
+  if (loading && !data.summary) {
     return (
       <View style={s.center}>
         <ActivityIndicator color={colors.accent} size="large" />
@@ -206,7 +268,7 @@ export default function OverviewScreen() {
     );
   }
 
-  if (error && !appState) {
+  if (error && !data.summary) {
     return (
       <View style={s.center}>
         <Ionicons name="alert-circle-outline" size={40} color={colors.danger} />
@@ -215,135 +277,155 @@ export default function OverviewScreen() {
     );
   }
 
-  const cpu    = sampleValue(kpis?.system_runtime_cpu_usage);
-  const ws     = sampleValue(kpis?.process_working_set_bytes);
-  const managed = sampleValue(kpis?.dotnet_total_memory_bytes);
-  const diskFree = sampleValueByLabel(kpis?.node_filesystem_avail_bytes, 'mountpoint', '/')
-                ?? sampleValue(kpis?.node_filesystem_avail_bytes);
-  const tcpConn = sampleValue(kpis?.system_net_sockets_established_total);
-
   return (
-    <ScrollView
-      style={s.scroll}
-      contentContainerStyle={s.container}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={() => { setRefreshing(true); fetch(); }}
-          tintColor={colors.accent}
-        />
-      }
-    >
-      {/* Server */}
-      <SectionHeader title="Server" colors={colors} />
-      <Card colors={colors}>
-        <StatRow
-          label="Connection"
-          value={<StatusBadge connected={appState?.server.isConnected ?? false} colors={colors} />}
-          colors={colors}
-        />
-        {appState?.user.username ? (
-          <StatRow label="Account" value={appState.user.username} colors={colors} />
-        ) : null}
-        {appState?.server.address ? (
-          <StatRow label="Address" value={appState.server.address} colors={colors} />
-        ) : null}
-        {appState?.user.privileges.isPrivileged ? (
-          <StatRow
-            label="Privileges"
-            value={fmtPrivileges(appState.user.privileges.privilegesRemaining)}
-            valueColor={colors.success}
-            colors={colors}
-            last
-          />
-        ) : (
-          <StatRow label="Privileges" value="None" valueColor={colors.textMuted} colors={colors} last />
-        )}
-      </Card>
+    <>
+      <ScrollView
+        style={s.scroll}
+        contentContainerStyle={s.container}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+      >
+        {/* Range picker */}
+        <View style={s.segWrapper}>
+          {RANGES.map((r) => {
+            const active = rangeHours === r.hours;
+            return (
+              <Pressable key={r.label} onPress={() => setRangeHours(r.hours)} style={[s.segPill, active && { backgroundColor: colors.accent }]}>
+                <Text style={[s.segLabel, { color: active ? '#fff' : colors.textMuted }]}>{r.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
 
-      {/* Shares */}
-      <SectionHeader title="Library" colors={colors} />
-      <Card colors={colors}>
-        <StatRow
-          label="Directories"
-          value={fmtNum(appState?.shares.directories ?? 0)}
-          colors={colors}
-        />
-        <StatRow
-          label="Files"
-          value={fmtNum(appState?.shares.files ?? 0)}
-          colors={colors}
-        />
-        <StatRow
-          label="Scan"
-          value={
-            appState?.shares.scanning    ? 'Scanning…'  :
-            appState?.shares.scanPending ? 'Pending'    :
-            appState?.shares.faulted     ? 'Faulted'    :
-            appState?.shares.ready       ? 'Ready'      : 'Unknown'
-          }
-          valueColor={
-            appState?.shares.scanning    ? colors.warning  :
-            appState?.shares.faulted     ? colors.danger   :
-            appState?.shares.ready       ? colors.success  : colors.textMuted
-          }
-          colors={colors}
-          last
-        />
-      </Card>
+        {/* Analytics tabs */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabScroll}>
+          {TABS.map((t) => {
+            const active = tab === t.id;
+            return (
+              <Pressable
+                key={t.id}
+                onPress={() => setTab(t.id)}
+                style={[s.tabPill, { borderColor: active ? colors.accent : colors.border }, active && { backgroundColor: colors.accent + '22' }]}
+              >
+                <Text style={[s.tabLabel, { color: active ? colors.accent : colors.textMuted }]}>{t.label}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
 
-      {/* System Resources */}
-      <SectionHeader title="System" colors={colors} />
-      <Card colors={colors}>
-        {cpu !== null && (
-          <StatRow
-            label="CPU"
-            value={`${(cpu * 100).toFixed(1)}%`}
-            colors={colors}
-          />
-        )}
-        {ws !== null && (
-          <StatRow label="Working Set" value={fmtBytes(ws)} colors={colors} />
-        )}
-        {managed !== null && (
-          <StatRow label="Managed Heap" value={fmtBytes(managed)} colors={colors} />
-        )}
-        {tcpConn !== null && (
-          <StatRow label="TCP Connections" value={fmtNum(tcpConn)} colors={colors} />
-        )}
-        {diskFree !== null && (
-          <StatRow label="Disk Free" value={fmtBytes(diskFree)} colors={colors} last />
-        )}
-        {cpu === null && ws === null && managed === null && diskFree === null && (
-          <StatRow label="Metrics" value="Unavailable" valueColor={colors.textMuted} colors={colors} last />
-        )}
-      </Card>
+        <View style={s.tabContent}>
+          {tab === 'glance' && (
+            <>
+              <KpiCards summary={data.summary} prevSummary={data.prevSummary} colors={colors} />
+              <SectionHeader title="Ratio" colors={colors} />
+              <RatioCard summary={data.summary} colors={colors} />
+              <SectionHeader title="Catalog Coverage" colors={colors} />
+              <CoverageCard
+                totalFiles={Object.values(fileTypeCounts).reduce((a, b) => a + b, 0)}
+                uploadedFiles={coverage?.uploadedFiles ?? 0}
+                colors={colors}
+              />
+              <SectionHeader title="Social" colors={colors} />
+              <SocialPulse data={data.social} colors={colors} />
+            </>
+          )}
+          {tab === 'activity' && (
+            <>
+              <SectionHeader title="Transfer Volume" colors={colors} />
+              <ActivityChart data={data.histogram} colors={colors} />
+              <SectionHeader title="Activity Heatmap (90d)" colors={colors} />
+              <ActivityHeatmap data={data.heatmap} colors={colors} />
+            </>
+          )}
+          {tab === 'reliability' && (
+            <>
+              <SectionHeader title="Errors Over Time" colors={colors} />
+              <ErrorChart data={data.histogram} colors={colors} />
+              <SectionHeader title="Retry Funnel (Downloads)" colors={colors} />
+              <RetryFunnel data={data.retryFunnel} colors={colors} />
+              <SectionHeader title="Upload Queue Wait" colors={colors} />
+              <QueueWaitCard stats={data.queueWait} colors={colors} />
+              <SectionHeader title="Transfer Health" colors={colors} />
+              <TransferHealth summary={data.summary} exceptions={data.exceptions} colors={colors} />
+            </>
+          )}
+          {tab === 'top' && (
+            <>
+              <SectionHeader title="Leaderboard" colors={colors} />
+              <UserLeaderboard leaderboard={data.leaderboard} colors={colors} onSelectUser={setSelectedUser} />
+              <SectionHeader title="Popular Directories" colors={colors} />
+              <PopularDirectories directories={data.directories} colors={colors} />
+              <SectionHeader title="Most Downloaded Files" colors={colors} />
+              <TopFiles files={data.topFiles} colors={colors} />
+              <SectionHeader title="All Users" colors={colors} />
+              <UserReports colors={colors} onSelectUser={setSelectedUser} />
+            </>
+          )}
+          {tab === 'geography' && (
+            <>
+              <SectionHeader title="Peer Map" colors={colors} />
+              <WorldMap users={data.mapUsers} colors={colors} onSelectUser={setSelectedUser} />
+              <SectionHeader title="By Country" colors={colors} />
+              <GeographyCard geography={data.geography} colors={colors} />
+              <SectionHeader title="Peer Retention" colors={colors} />
+              <PeerRetentionCard data={data.peerRetention} colors={colors} />
+            </>
+          )}
+          {tab === 'library' && (
+            <>
+              <SectionHeader title="Composition" colors={colors} />
+              <LibraryComposition genres={genres} years={years} playStats={playStats} colors={colors} />
+              <SectionHeader title="File Types" colors={colors} />
+              <FileTypeChart counts={fileTypeCounts} colors={colors} />
+            </>
+          )}
+          {tab === 'feed' && (
+            <>
+              <SectionHeader title="Recent Activity" colors={colors} />
+              <NotificationFeed events={events} colors={colors} />
+            </>
+          )}
+        </View>
+      </ScrollView>
 
-      {/* Version */}
-      <SectionHeader title="Version" colors={colors} />
-      <Card colors={colors}>
-        <StatRow label="Running" value={appState?.version.current ?? '—'} colors={colors} />
-        {appState?.version.isUpdateAvailable && appState.version.latest ? (
-          <StatRow
-            label="Update Available"
-            value={appState.version.latest}
-            valueColor={colors.warning}
-            colors={colors}
-            last
-          />
-        ) : (
-          <StatRow label="Up to date" value="Yes" valueColor={colors.success} colors={colors} last />
-        )}
-      </Card>
-    </ScrollView>
+      <UserReportModal
+        username={selectedUser}
+        colors={colors}
+        onClose={() => setSelectedUser(null)}
+        onOpenChat={(username) => {
+          setSelectedUser(null);
+          navigation.navigate('MoreTab', { screen: 'ChatConversation', params: { username } });
+        }}
+      />
+    </>
   );
 }
 
 function makeStyles(c: ThemeColors) {
   return StyleSheet.create({
-    scroll:     { flex: 1, backgroundColor: c.bgPrimary },
-    container:  { padding: Spacing.lg, gap: Spacing.sm, paddingBottom: Spacing.xxl },
-    center:     { flex: 1, backgroundColor: c.bgPrimary, justifyContent: 'center', alignItems: 'center', gap: Spacing.md },
-    errorText:  { fontSize: Typography.base, color: c.textMuted, textAlign: 'center', paddingHorizontal: Spacing.xl },
+    scroll:    { flex: 1, backgroundColor: c.bgPrimary },
+    container: { padding: Spacing.lg, gap: Spacing.sm, paddingBottom: Spacing.xxl },
+    center:    { flex: 1, backgroundColor: c.bgPrimary, justifyContent: 'center', alignItems: 'center', gap: Spacing.md },
+    errorText: { fontSize: Typography.base, color: c.textMuted, textAlign: 'center', paddingHorizontal: Spacing.xl },
+    segWrapper: {
+      flexDirection: 'row',
+      borderRadius: Radius.full,
+      borderWidth: 1,
+      borderColor: c.border,
+      backgroundColor: c.bgElevated,
+      overflow: 'hidden',
+      padding: 2,
+    },
+    segPill:  { flex: 1, paddingVertical: Spacing.sm, alignItems: 'center', borderRadius: Radius.full },
+    segLabel: { fontSize: Typography.sm, fontWeight: '600' },
+    tabScroll: { marginTop: Spacing.sm, flexGrow: 0 },
+    tabPill: {
+      borderWidth: 1,
+      borderRadius: Radius.full,
+      paddingVertical: Spacing.xs,
+      paddingHorizontal: Spacing.md,
+      marginRight: Spacing.sm,
+    },
+    tabLabel: { fontSize: Typography.sm, fontWeight: '600' },
+    tabContent: { gap: Spacing.sm, marginTop: Spacing.sm },
   });
 }

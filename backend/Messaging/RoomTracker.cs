@@ -96,7 +96,10 @@ namespace resonance.Messaging
         {
             if (Rooms.TryGetValue(roomName, out var room))
             {
-                room.Users.Add(userData);
+                // The Soulseek server can send a join notification for a user who is
+                // already tracked as a room member (e.g. a reconnect); replace rather
+                // than append so the list can't accrue duplicate-username entries.
+                room.Users = room.Users.Where(u => u.Username != userData.Username).Append(userData).ToList();
             }
         }
 

@@ -232,6 +232,27 @@ public class YtDlpController : ControllerBase
         return Ok(results);
     }
 
+    [HttpGet("resolve")]
+    public async Task<IActionResult> Resolve([FromQuery] string url, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return BadRequest("url is required");
+        }
+
+        try
+        {
+            var result = await Service.ResolveUrlAsync(url.Trim(), cancellationToken);
+            return result is null
+                ? NotFound("Could not resolve that URL — check it and try again.")
+                : Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
     // ── Versions ─────────────────────────────────────────────────────────────
     [HttpGet("versions")]
     public async Task<IActionResult> GetVersions(CancellationToken cancellationToken)

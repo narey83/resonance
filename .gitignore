@@ -23,10 +23,19 @@ coverage.json
 /backend/logs/
 /backend/resonance.pid
 /backend/resonance.yml
-/backend/resonance.yml.bak
+/backend/resonance.yml.bak*
+/backend/resonance.yml.pre-*
 /backend/config.yml
 /backend/config.yml.bak
+/backend/config/config.yml
 /backend/scripts/
+/backend/tools/ffprobe
+/backend/tools/yt-dlp
+/backend/tools/yt-dlp-plugins/
+/backend/tools/ffmpeg-release.txt
+
+# Local editor workspace files
+*.code-workspace
 
 # Frontend build output
 /frontend/build/

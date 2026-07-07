@@ -40,14 +40,18 @@
     "react-native": "0.85.3",
     "react-native-gesture-handler": "^2.31.2",
     "react-native-google-cast": "^4.9.1",
+    "react-native-keyboard-controller": "1.21.6",
+    "react-native-reanimated": "4.3.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "^4.25.2",
     "react-native-svg": "15.15.4",
     "react-native-track-player": "^5.0.0-alpha0",
+    "topojson-client": "^3.1.0",
     "zustand": "^5.0.13"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "@types/topojson-client": "^3.1.5",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~56.0.4",
     "patch-package": "^8.0.1",

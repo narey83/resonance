@@ -34,12 +34,15 @@
 // </copyright>
 
 import { usePlayer } from '../../../context/PlayerContext';
+import useDebounce from '../../../hooks/useDebounce';
+import {
+  saveRecentFolder,
+  suggestDestinationFolder,
+} from '../../../lib/downloadDestination';
 import { groupFoldersByName } from '../../../lib/folderDedup';
-import * as prefs from '../../../lib/prefs';
 import { getResponses } from '../../../lib/searches';
 import {
   extractMetadata,
-  getPathDepth,
   matchesMetaFilters,
 } from '../../../lib/searchMetadata';
 import * as transfers from '../../../lib/transfers';
@@ -78,15 +81,6 @@ import React, {
 import { toast } from 'react-toastify';
 import { Dropdown } from 'semantic-ui-react';
 
-const useDebounce = (value, delay) => {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(timer);
-  }, [delay, value]);
-  return debounced;
-};
-
 const AUDIO_EXTENSIONS = new Set([
   'aac',
   'aif',
@@ -124,36 +118,6 @@ const isAudio = (filename) =>
   AUDIO_EXTENSIONS.has(filename.split('.').pop().toLowerCase());
 
 const fileKey = (file) => `${file._username}::${file.filename}`;
-
-const RECENT_FOLDERS_KEY = 'resonance-recent-dest-folders';
-
-const getRecentFolders = () => {
-  const value = prefs.get(RECENT_FOLDERS_KEY, []);
-  return Array.isArray(value) ? value : [];
-};
-
-const saveRecentFolder = (folder) => {
-  if (!folder?.trim()) return;
-  const recent = [
-    folder,
-    ...getRecentFolders().filter((f) => f !== folder),
-  ].slice(0, 10);
-  prefs.set(RECENT_FOLDERS_KEY, recent);
-};
-
-const suggestDestinationFolder = (files) => {
-  if (files.length === 0) return '';
-  const parts = files.map((f) => getPathDepth(f.filename));
-  const artists = new Set(parts.map((p) => p.artist).filter(Boolean));
-  const albums = new Set(parts.map((p) => p.album).filter(Boolean));
-  const album = albums.size === 1 ? [...albums][0] : '';
-  const artist = artists.size === 1 ? [...artists][0] : '';
-  if (artists.size > 1 && album) return `VA - Various Artists/${album}`;
-  if (artist && album) return `${artist}/${album}`;
-  if (artist) return artist;
-  if (album) return album;
-  return '';
-};
 
 // ── File row ──────────────────────────────────────────────────────────────────
 
@@ -594,7 +558,8 @@ const SearchDetail = ({
   const lastSuggestionRef = useRef('');
 
   const suggestion = useMemo(
-    () => suggestDestinationFolder([...selected.values()]),
+    () =>
+      suggestDestinationFolder([...selected.values()].map((f) => f.filename)),
     [selected],
   );
 

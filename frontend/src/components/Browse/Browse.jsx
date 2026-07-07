@@ -35,19 +35,25 @@
 
 import './Browse.css';
 import '../Search/Search.css';
+import { flattenDirectories } from '../../lib/browseFiles';
+import {
+  addToBrowseHistory,
+  getBrowseHistory,
+  removeFromBrowseHistory,
+} from '../../lib/browseHistory';
 import * as prefs from '../../lib/prefs';
 import * as users from '../../lib/users';
-import { buildTree, collectAllPaths, FilesPanel, TreeNode } from './BrowseTree';
-import { FolderOpen, Plus, X } from 'lucide-react';
+import BrowseResults from './BrowseResults';
+import { FolderOpen, Plus, User, X } from 'lucide-react';
 import * as lzString from 'lz-string';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { withRouter } from 'react-router-dom';
 import { Modal } from 'semantic-ui-react';
 
-const SIDEBAR_WIDTH_KEY = 'resonance-browse-sidebar-width';
 const BROWSE_STATE_KEY = 'soulseek-example-browse-state';
+const SIDEBAR_WIDTH_KEY = 'resonance-browse-sidebar-width';
 const SIDEBAR_MIN = 180;
-const SIDEBAR_MAX = 600;
+const SIDEBAR_MAX = 500;
 
 // ── Browse modal ──────────────────────────────────────────────────────────────
 
@@ -128,21 +134,19 @@ const Browse = ({ history, location }) => {
   const [browseState, setBrowseState] = useState('idle');
   const [browseStatus, setBrowseStatus] = useState(0);
   const [username, setUsername] = useState('');
-  const [tree, setTree] = useState([]);
+  const [files, setFiles] = useState([]);
   const [info, setInfo] = useState({
     directories: 0,
     files: 0,
     lockedDirectories: 0,
     lockedFiles: 0,
   });
-  const [separator, setSeparator] = useState('\\');
-  const [selectedDirectory, setSelectedDirectory] = useState(null);
-  const [expandedPaths, setExpandedPaths] = useState(new Set());
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const saved = Number(prefs.get(SIDEBAR_WIDTH_KEY, 260));
-    return Number.isFinite(saved) ? saved : 260;
-  });
   const [browseModalOpen, setBrowseModalOpen] = useState(false);
+  const [browseHistory, setBrowseHistory] = useState(() => getBrowseHistory());
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = Number(prefs.get(SIDEBAR_WIDTH_KEY, 220));
+    return Number.isFinite(saved) ? saved : 220;
+  });
 
   const rootRef = useRef(null);
   const dividerMoveRef = useRef(null);
@@ -188,6 +192,7 @@ const Browse = ({ history, location }) => {
     browseStateRef.current = 'pending';
     usernameRef.current = usernameToUse;
     setUsername(usernameToUse);
+    setBrowseHistory(addToBrowseHistory(usernameToUse));
 
     users
       .browse({ username: usernameToUse })
@@ -213,11 +218,8 @@ const Browse = ({ history, location }) => {
         const allDirectories = directories.concat(
           lockedDirectories.map((d) => ({ ...d, locked: true })),
         );
-        const builtTree = buildTree(allDirectories, separator_);
 
-        setTree(builtTree);
-        setSeparator(separator_);
-        setExpandedPaths(collectAllPaths(builtTree));
+        setFiles(flattenDirectories(allDirectories, separator_));
         setInfo({
           directories: directories.length,
           files: directories.reduce(
@@ -242,13 +244,23 @@ const Browse = ({ history, location }) => {
   const clear = useCallback(() => {
     setBrowseState('idle');
     browseStateRef.current = 'idle';
-    setTree([]);
-    setSelectedDirectory(null);
-    setExpandedPaths(new Set());
+    setFiles([]);
     setUsername('');
     usernameRef.current = '';
     setInfo({ directories: 0, files: 0, lockedDirectories: 0, lockedFiles: 0 });
   }, []);
+
+  // Removing the user currently being browsed also closes their file list,
+  // rather than leaving the main panel showing a browse no longer in history.
+  const removeHistoryEntry = useCallback(
+    (user) => {
+      setBrowseHistory(removeFromBrowseHistory(user));
+      if (user.toLowerCase() === usernameRef.current.toLowerCase()) {
+        clear();
+      }
+    },
+    [clear],
+  );
 
   // ── Status polling ────────────────────────────────────────────────────────
   const fetchStatus = useCallback(() => {
@@ -275,14 +287,12 @@ const Browse = ({ history, location }) => {
         );
         if (stored) {
           if (stored.browseState === 'pending') {
-            stored.browseState = stored.tree?.length > 0 ? 'complete' : 'idle';
+            stored.browseState = stored.files?.length > 0 ? 'complete' : 'idle';
           }
 
           setBrowseState(stored.browseState || 'idle');
           browseStateRef.current = stored.browseState || 'idle';
-          const restoredTree = stored.tree || [];
-          setTree(restoredTree);
-          setSeparator(stored.separator || '\\');
+          setFiles(stored.files || []);
           setInfo(
             stored.info || {
               directories: 0,
@@ -295,9 +305,6 @@ const Browse = ({ history, location }) => {
             setUsername(stored.username);
             usernameRef.current = stored.username;
           }
-
-          if (restoredTree.length > 0)
-            setExpandedPaths(collectAllPaths(restoredTree));
         }
       } catch {
         // ignore
@@ -319,9 +326,8 @@ const Browse = ({ history, location }) => {
             JSON.stringify({
               browseState,
               browseStatus,
+              files,
               info,
-              separator,
-              tree,
               username,
             }),
           ),
@@ -333,7 +339,7 @@ const Browse = ({ history, location }) => {
 
     if (window.requestIdleCallback) window.requestIdleCallback(store);
     else Promise.resolve().then(store);
-  }, [browseState, browseStatus, info, separator, tree, username]);
+  }, [browseState, browseStatus, files, info, username]);
 
   // ── Escape to clear ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -345,25 +351,8 @@ const Browse = ({ history, location }) => {
     return () => document.removeEventListener('keyup', onKey, false);
   }, [clear]);
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
-  const handleToggle = useCallback(
-    (path) =>
-      setExpandedPaths((previous) => {
-        const next = new Set(previous);
-        if (next.has(path)) next.delete(path);
-        else next.add(path);
-        return next;
-      }),
-    [],
-  );
-
-  const handleSelect = useCallback(
-    (node) => setSelectedDirectory({ ...node, children: [] }),
-    [],
-  );
-
   const pending = browseState === 'pending';
-  const hasResults = tree.length > 0;
+  const hasResults = files.length > 0;
 
   return (
     <>
@@ -377,7 +366,7 @@ const Browse = ({ history, location }) => {
           style={{ width: sidebarWidth, minWidth: sidebarWidth }}
         >
           <div className="sr-sidebar-top">
-            <span className="sr-sidebar-title">{username || 'Browse'}</span>
+            <span className="sr-sidebar-title">Browse</span>
             {pending && (
               <span
                 className="sr-searching-spinner"
@@ -423,21 +412,37 @@ const Browse = ({ history, location }) => {
           )}
 
           <div className="sr-search-list">
-            {browseState === 'complete' && !hasResults && (
-              <div className="sr-search-list-empty">
-                User is not sharing any files
-              </div>
+            {browseHistory.length === 0 && (
+              <div className="sr-search-list-empty">No users browsed yet</div>
             )}
-            {tree.map((node) => (
-              <TreeNode
-                depth={0}
-                expandedPaths={expandedPaths}
-                key={node.name}
-                node={node}
-                onSelect={handleSelect}
-                onToggle={handleToggle}
-                selectedName={selectedDirectory?.name}
-              />
+            {browseHistory.map((user) => (
+              <div
+                aria-selected={user === username}
+                className={`sr-search-item${user === username ? ' sr-search-item--active' : ''}`}
+                key={user}
+                onClick={() => doBrowse(user)}
+                onKeyDown={(e) => e.key === 'Enter' && doBrowse(user)}
+                role="option"
+                tabIndex={0}
+                title={user}
+              >
+                <span className="sr-search-item-icon">
+                  <User size={13} />
+                </span>
+                <span className="sr-search-item-text">{user}</span>
+                <button
+                  aria-label="Remove from history"
+                  className="sr-search-item-action"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeHistoryEntry(user);
+                  }}
+                  title="Remove"
+                  type="button"
+                >
+                  <X size={12} />
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -452,12 +457,11 @@ const Browse = ({ history, location }) => {
 
         {/* ── Main panel ── */}
         <div className="sr-main">
-          {selectedDirectory ? (
-            <FilesPanel
-              directory={selectedDirectory}
+          {browseState === 'complete' && hasResults ? (
+            <BrowseResults
+              files={files}
+              key={username}
               onChat={() => history.push('/chat', { user: username })}
-              onClose={() => setSelectedDirectory(null)}
-              separator={separator}
               username={username}
             />
           ) : (
@@ -471,7 +475,9 @@ const Browse = ({ history, location }) => {
                   ? 'Browse a user to view their shared files'
                   : pending
                     ? 'Downloading file list…'
-                    : 'Select a folder to view its files'}
+                    : browseState === 'error'
+                      ? `Failed to browse ${username}`
+                      : 'User is not sharing any files'}
               </p>
               {browseState === 'idle' && (
                 <button
