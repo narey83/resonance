@@ -38,6 +38,7 @@ using Microsoft.Extensions.Options;
 namespace resonance.Core.API
 {
     using System;
+    using System.Collections.Generic;
     using System.Threading.Tasks;
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.SignalR;
@@ -54,6 +55,7 @@ namespace resonance.Core.API
         public static readonly string ServerRestarting = "SERVER_RESTARTING";
         public static readonly string ServerReady = "SERVER_READY";
         public static readonly string SessionRevoked = "SESSION_REVOKED";
+        public static readonly string BlockedUsers = "BLOCKED_USERS";
     }
 
     /// <summary>
@@ -122,6 +124,11 @@ namespace resonance.Core.API
         {
             return hub.Clients.All.SendAsync(ApplicationHubMethods.SessionRevoked, (object)sessionIds);
         }
+
+        public static Task BroadcastBlockedUsersAsync(this IHubContext<ApplicationHub> hub, IReadOnlyList<resonance.Users.Blocking.BlockedUser> users, resonance.Users.Blocking.BlockedUserOptions options)
+        {
+            return hub.Clients.All.SendAsync(ApplicationHubMethods.BlockedUsers, new { users, options });
+        }
     }
 
     /// <summary>
@@ -132,19 +139,23 @@ namespace resonance.Core.API
     {
         public ApplicationHub(
             IStateMonitor<State> stateMonitor,
-            IOptionsMonitor<Options> optionsMonitor)
+            IOptionsMonitor<Options> optionsMonitor,
+            resonance.Users.Blocking.BlockedUsersService blockedUsersService)
         {
             StateMonitor = stateMonitor;
             OptionsMonitor = optionsMonitor;
+            BlockedUsers = blockedUsersService;
         }
 
         private IStateMonitor<State> StateMonitor { get; }
         private IOptionsMonitor<Options> OptionsMonitor { get; }
+        private resonance.Users.Blocking.BlockedUsersService BlockedUsers { get; }
 
         public override async Task OnConnectedAsync()
         {
             await Clients.Caller.SendAsync(ApplicationHubMethods.State, StateMonitor.CurrentValue);
             await Clients.Caller.SendAsync(ApplicationHubMethods.Options, OptionsMonitor.CurrentValue.Redact());
+            await Clients.Caller.SendAsync(ApplicationHubMethods.BlockedUsers, new { users = BlockedUsers.GetAll(), options = BlockedUsers.GetOptions() });
         }
     }
 }

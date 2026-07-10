@@ -47,6 +47,7 @@ import type { RoomMessage, RoomUser } from '../../api/rooms';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import type { MoreStackParamList } from '../../navigation/MainTabs';
+import UserActionSheet from '../../components/UserActionSheet';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'RoomDetail'>;
 
@@ -84,6 +85,14 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [showUsers, setShowUsers] = useState(false);
+  const [actionUser, setActionUser] = useState<string | null>(null);
+
+  // Close the user-list modal before opening the action sheet — stacked
+  // visible Modals are unreliable on iOS.
+  const openUserActions = (username: string) => {
+    setShowUsers(false);
+    setActionUser(username);
+  };
 
   React.useLayoutEffect(() => {
     navigation.setOptions({
@@ -140,7 +149,10 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
             <Text style={s.daySeparatorText}>{formatDayLabel(item.timestamp)}</Text>
           </View>
         )}
-        <View style={[s.messageRow, isSelf ? s.messageRowSelf : s.messageRowOther]}>
+        <Pressable
+          style={[s.messageRow, isSelf ? s.messageRowSelf : s.messageRowOther]}
+          onLongPress={isSelf ? undefined : () => openUserActions(item.username)}
+        >
           {!isSelf && (
             <View style={[s.avatarSmall, !showSender && s.avatarInvisible]}>
               <Text style={s.avatarInitial}>
@@ -155,7 +167,7 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
             <Text style={[s.messageText, isSelf && s.messageTextSelf]}>{item.message}</Text>
             <Text style={[s.timestamp, isSelf && s.timestampSelf]}>{timeStr}</Text>
           </View>
-        </View>
+        </Pressable>
       </View>
     );
   };
@@ -163,12 +175,16 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
   const renderUser = ({ item, index }: { item: RoomUser; index: number }) => {
     const isLast = index === (room?.users.length ?? 0) - 1;
     return (
-      <View style={[s.userRow, isLast && s.userRowLast]}>
+      <Pressable
+        style={({ pressed }) => [s.userRow, isLast && s.userRowLast, pressed && !item.self && { opacity: 0.6 }]}
+        onPress={item.self ? undefined : () => openUserActions(item.username)}
+        onLongPress={item.self ? undefined : () => openUserActions(item.username)}
+      >
         <View style={s.userAvatar}>
           <Text style={s.avatarInitial}>{item.username.charAt(0).toUpperCase()}</Text>
         </View>
         <Text style={s.userName}>{item.self ? `${item.username} (you)` : item.username}</Text>
-      </View>
+      </Pressable>
     );
   };
 
@@ -243,6 +259,8 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <UserActionSheet username={actionUser} onClose={() => setActionUser(null)} />
     </KeyboardAvoidingView>
   );
 }

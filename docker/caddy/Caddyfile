@@ -4,8 +4,12 @@
 # forwards a hostname here over plain HTTP, and this Caddy fans requests out to
 # the backend (API/hub) and frontend (web UI / HMR socket).
 #
-# Listens on :8930 (HTTP only; TLS is the outer proxy's job). Under the stack's
-# host networking the backend/frontend are reachable on localhost.
+# Listens on :8930 (HTTP only; TLS is the outer proxy's job). This container
+# sits on proxy_backend_net rather than host networking, so :8930 is
+# published explicitly to 192.168.0.254 (see docker-compose.yml) for the
+# outer proxy to keep reaching it exactly as before. backend/frontend are
+# still host-networked (Soulseek P2P/DLNA/UPnP need it), so they're reached
+# here via host.docker.internal rather than localhost.
 {
 	admin off
 	auto_https off
@@ -46,10 +50,15 @@
 	}
 }
 
-:8930 {
+(app_routes) {
 	log
 	import security_headers
 	import body_limits
+
+	# Compress responses (web UI assets, and any API response not already
+	# compressed by Kestrel). Caddy skips responses that already carry a
+	# Content-Encoding and never compresses WebSocket upgrades.
+	encode zstd gzip
 
 	# Auth endpoints — rate limited.
 	@auth_post {
@@ -58,28 +67,48 @@
 	}
 	handle @auth_post {
 		import rate_limit_auth
-		reverse_proxy localhost:5030
+		reverse_proxy host.docker.internal:5030
 	}
 
 	# REST API.
 	handle /api/* {
-		reverse_proxy localhost:5030
+		reverse_proxy host.docker.internal:5030
 	}
 
 	# SignalR hubs — disable response buffering for server-sent streams.
 	handle /hub/* {
-		reverse_proxy localhost:5030 {
+		reverse_proxy host.docker.internal:5030 {
 			flush_interval -1
 		}
 	}
 
 	# Webpack/craco HMR socket (frontend).
 	handle /ws {
-		reverse_proxy localhost:3000
+		reverse_proxy host.docker.internal:3000
 	}
 
 	# Everything else → the web UI (craco dev server).
-	reverse_proxy localhost:3000 {
+	reverse_proxy host.docker.internal:3000 {
 		flush_interval -1
 	}
+}
+
+# Behind the outer/main proxy — plain HTTP, TLS is the outer proxy's job.
+:8930 {
+	import app_routes
+}
+
+# Dedicated IP, port 8443 — this Caddy terminates TLS itself and is the
+# *only* thing listening here. Now that this container is on proxy_backend_net
+# (not host networking), the IP-scoping to 192.168.0.253 is handled by
+# Docker's port publish (see docker-compose.yml) rather than a Caddy `bind` —
+# inside the container this is just a normal wildcard listener on :8443.
+#
+# Address is a bare port (":8443"), not "192.168.0.253:8443" — a literal IP
+# in the site address acts as a Host/SNI matcher, not just a bind
+# restriction, so it only matched requests whose SNI was literally the
+# string "192.168.0.253" (never true — browsers send the actual hostname).
+:8443 {
+	tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem
+	import app_routes
 }

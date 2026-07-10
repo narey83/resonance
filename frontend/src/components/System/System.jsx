@@ -37,6 +37,7 @@ import './System.css';
 import { urlBase } from '../../config';
 import AppContext from '../AppContext';
 import { Switch } from '../Shared';
+import BlockedUsers from './BlockedUsers';
 import Events from './Events';
 import Info from './Info';
 import Logs from './Logs';
@@ -142,6 +143,19 @@ const System = ({ options = {}, state = {}, theme }) => {
         </Tab.Pane>
       ),
       route: 'users',
+    },
+    {
+      menuItem: {
+        content: 'Blocked',
+        icon: 'ban',
+        key: 'blocked',
+      },
+      render: () => (
+        <Tab.Pane>
+          <BlockedUsers />
+        </Tab.Pane>
+      ),
+      route: 'blocked',
     },
     {
       adminOnly: true,

@@ -54,6 +54,9 @@ services:
       DOTNET_USE_POLLING_FILE_WATCHER: "1"
       ASPNETCORE_ENVIRONMENT: Development
       RESONANCE_APP_DIR: /src/backend
+      # Canonical config lives outside the repo on the host (~/.local/share/resonance);
+      # without this override the app would fall back to /src/backend/resonance.yml.
+      RESONANCE_CONFIG: /config/config.yml
       HOME: /home/dev
       DOTNET_CLI_HOME: /home/dev
       NUGET_PACKAGES: /home/dev/.nuget
@@ -66,9 +69,11 @@ services:
       - ${RESONANCE_SCRATCH:-/home/narey/.local/share/resonance-dev}/backend-obj:/src/backend/obj
       - ${RESONANCE_SCRATCH:-/home/narey/.local/share/resonance-dev}/backend-bin:/src/backend/bin
       - ${RESONANCE_SCRATCH:-/home/narey/.local/share/resonance-dev}/backend-home:/home/dev
-      # Downloads / incomplete live outside the project at absolute paths referenced by resonance.yml.
-      - /mnt/data/music:/mnt/data/music
-      - /mnt/data/incomplete:/mnt/data/incomplete
+      # Canonical config directory (config.yml); mounted rw so in-app option edits persist to the host.
+      - /home/narey/.local/share/resonance:/config
+      # Downloads / incomplete live outside the project at absolute paths referenced by config.yml.
+      - /mnt/music:/downloads
+      - /mnt/music/incomplete:/downloads/incomplete
       # Read-only Docker API access for per-container CPU/memory stats.
       - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: unless-stopped
@@ -113,20 +118,37 @@ services:
     restart: unless-stopped
 
   # Resonance's own reverse proxy. Owns all app routing, rate limiting, security
-  # headers and body limits, so the outer/main proxy only has to terminate TLS
-  # and forward the hostname to host port 8930.
+  # headers and body limits. Unlike backend/frontend/bgutil-provider, this one
+  # is NOT on host networking — it sits on proxy_backend_net instead. The
+  # outer/main proxy (unchanged) keeps reaching it the same way it always
+  # did, via 192.168.0.254:8930 — published explicitly here since bridge
+  # networking no longer exposes it implicitly. This container still reaches
+  # backend/frontend (which ARE host-networked, for Soulseek P2P/DLNA/UPnP)
+  # via host.docker.internal.
   caddy:
     build:
       context: caddy
       dockerfile: Dockerfile
     image: resonance-caddy
     container_name: resonance-caddy
-    network_mode: host
+    networks:
+      - proxy_backend_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "192.168.0.254:8930:8930"
+      - "192.168.0.253:8443:8443"
+      - "192.168.0.253:8443:8443/udp"
     mem_limit: 256m
     cpus: 0.5
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /home/narey/containers/caddy/certs:/etc/caddy/certs:ro
     depends_on:
       - backend
       - frontend
     restart: unless-stopped
+
+networks:
+  proxy_backend_net:
+    external: true

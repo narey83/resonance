@@ -63,3 +63,15 @@ export const getUserStatus = (username: string): Promise<UserStatus> =>
 
 export const getUserStatuses = (usernames: string[]): Promise<Record<string, UserStatus>> =>
   apiClient.post<Record<string, UserStatus>>('/users/statuses', usernames).then(r => r.data);
+
+export interface UserInfo {
+  description: string | null;
+  hasFreeUploadSlot: boolean;
+  hasPicture: boolean;
+  picture: string | null;
+  queueLength: number;
+  uploadSlots: number;
+}
+
+export const getUserInfo = (username: string): Promise<UserInfo> =>
+  apiClient.get<UserInfo>(`/users/${encodeURIComponent(username)}/info`).then(r => r.data);

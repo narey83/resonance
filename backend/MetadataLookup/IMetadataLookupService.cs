@@ -50,5 +50,11 @@ namespace resonance.MetadataLookup
 
         /// <summary>Requests an immediate enrichment pass, regardless of the enabled schedule.</summary>
         void RequestRun();
+
+        /// <summary>
+        ///     Stops the in-flight enrichment pass, if any. The service keeps running and a later
+        ///     pass picks up where this one left off (already-enriched tracks are skipped).
+        /// </summary>
+        void RequestStop();
     }
 }

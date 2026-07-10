@@ -46,6 +46,7 @@ import type { ThemeColors } from '../../theme';
 import { Radius, Spacing, Typography } from '../../theme';
 import { useTransferStore } from '../../store/transferStore';
 import type { Transfer, TransferDir } from '../../api/transfers';
+import UserActionSheet from '../../components/UserActionSheet';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -357,6 +358,7 @@ export default function TransfersScreen() {
   const [filter, setFilter]         = useState<FilterType>('all');
   const [refreshing, setRefreshing] = useState(false);
   const [openFolder, setOpenFolder] = useState<string | null>(null);
+  const [actionUser, setActionUser] = useState<string | null>(null);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -429,14 +431,14 @@ export default function TransfersScreen() {
   const renderItem = useCallback(({ item }: { item: FlatItem }) => {
     if (item.type === 'user') {
       return (
-        <View style={styles.userHeader}>
+        <Pressable style={styles.userHeader} onLongPress={() => setActionUser(item.username)}>
           <View style={styles.userHeaderRow}>
             <Ionicons name="person-outline" size={12} color={colors.textMuted} />
             <Text style={styles.userLabel}>{item.username}</Text>
             <Text style={styles.headerCount}>({item.transfers.length})</Text>
           </View>
           <StateBar transfers={item.transfers} colors={colors} />
-        </View>
+        </Pressable>
       );
     }
 
@@ -464,7 +466,7 @@ export default function TransfersScreen() {
     }
 
     return <TransferItem transfer={item.transfer} dir={dir} onAction={onAction} />;
-  }, [styles, colors, dir, onAction, toggleFolder]);
+  }, [styles, colors, dir, onAction, toggleFolder, setActionUser]);
 
   return (
     <View style={styles.root}>
@@ -547,6 +549,8 @@ export default function TransfersScreen() {
           removeClippedSubviews
         />
       )}
+
+      <UserActionSheet username={actionUser} onClose={() => setActionUser(null)} />
     </View>
   );
 }

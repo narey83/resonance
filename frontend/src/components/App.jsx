@@ -42,6 +42,7 @@ import {
 } from '../context/LibraryActivityContext';
 import { PlayerProvider, usePlayer } from '../context/PlayerContext';
 import { TagEditActivityProvider } from '../context/TagEditActivityContext';
+import { applyBlockedUsers } from '../lib/blockedUsers';
 import * as chatAPI from '../lib/chat';
 import { emitPrivateMessage } from '../lib/chatEvents';
 import * as eventsAPI from '../lib/events';
@@ -536,6 +537,7 @@ const App = () => {
       pendingOptions = options;
       if (!flushTimeout) flushTimeout = setTimeout(flushPending, 0);
     });
+    hub.on('BLOCKED_USERS', applyBlockedUsers);
 
     hub.onreconnecting(() => {
       markReconnecting(1);

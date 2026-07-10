@@ -41,6 +41,7 @@ import {
   Heart,
   ListFilter,
   Play,
+  Save,
   Trash2,
   X,
 } from 'lucide-react';
@@ -76,6 +77,7 @@ const TrackTable = ({
   loading,
   onContextMenu,
   onDeleteTracks,
+  onExportTracks,
   scrollContainerRef,
   showAdded = true,
   tracks = [],
@@ -98,6 +100,7 @@ const TrackTable = ({
   const [sortDir, setSortDir] = useState('asc');
   const [selectedPaths, setSelectedPaths] = useState(new Set());
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const containerRef = useRef(null);
   const lastClickIndex = useRef(null);
@@ -197,7 +200,7 @@ const TrackTable = ({
     setActiveCol(null);
   };
 
-  const selectMode = Boolean(onDeleteTracks && isEditMode);
+  const selectMode = Boolean((onDeleteTracks || onExportTracks) && isEditMode);
   const someSelected = selectedPaths.size > 0;
   const allSelected =
     sortedTracks.length > 0 &&
@@ -253,6 +256,19 @@ const TrackTable = ({
       setDeleting(false);
     }
   }, [deleting, onDeleteTracks, selectedPaths]);
+
+  const handleExportSelected = useCallback(async () => {
+    if (!onExportTracks || exporting) return;
+    setExporting(true);
+    try {
+      const selected = sortedTracks.filter((t) => selectedPaths.has(t.path));
+      await onExportTracks(selected);
+      setSelectedPaths(new Set());
+      setIsEditMode(false);
+    } finally {
+      setExporting(false);
+    }
+  }, [exporting, onExportTracks, selectedPaths, sortedTracks]);
 
   const clearSelection = useCallback(() => {
     setSelectedPaths(new Set());
@@ -375,7 +391,7 @@ const TrackTable = ({
 
   return (
     <>
-      {onDeleteTracks && (
+      {(onDeleteTracks || onExportTracks) && (
         <div className="jb-tt-mode-bar">
           <button
             className={`jb-icon-btn${isEditMode ? ' jb-icon-btn--active' : ''}`}
@@ -383,7 +399,7 @@ const TrackTable = ({
               if (isEditMode) clearSelection();
               else setIsEditMode(true);
             }}
-            title={isEditMode ? 'Cancel' : 'Select tracks to delete'}
+            title={isEditMode ? 'Cancel' : 'Select tracks'}
             type="button"
           >
             {isEditMode ? <X size={15} /> : <Trash2 size={15} />}
@@ -595,20 +611,32 @@ const TrackTable = ({
           </span>
           <button
             className="jb-btn"
-            disabled={deleting}
+            disabled={deleting || exporting}
             onClick={clearSelection}
             type="button"
           >
             Clear
           </button>
-          <button
-            className="jb-btn jb-btn--danger"
-            disabled={deleting}
-            onClick={handleDeleteSelected}
-            type="button"
-          >
-            <Trash2 size={13} /> {deleting ? 'Deleting…' : 'Delete'}
-          </button>
+          {onExportTracks && (
+            <button
+              className="jb-btn"
+              disabled={deleting || exporting}
+              onClick={handleExportSelected}
+              type="button"
+            >
+              <Save size={13} /> {exporting ? 'Exporting…' : 'Export'}
+            </button>
+          )}
+          {onDeleteTracks && (
+            <button
+              className="jb-btn jb-btn--danger"
+              disabled={deleting || exporting}
+              onClick={handleDeleteSelected}
+              type="button"
+            >
+              <Trash2 size={13} /> {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          )}
         </div>
       )}
     </>

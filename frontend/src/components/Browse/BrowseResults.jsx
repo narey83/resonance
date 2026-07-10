@@ -158,33 +158,33 @@ const FileRow = React.memo(
   },
 );
 
-// ── Folder group ──────────────────────────────────────────────────────────────
+// ── Folder header row ───────────────────────────────────────────────────────────
 
-const FolderGroup = ({
-  disabled,
-  downloadedFolders,
-  group,
-  onToggleFile,
-  onToggleFolder,
-  onToggleOpen,
-  open,
-  play,
-  selected,
-  username,
-}) => {
-  const checkboxRef = useRef(null);
-  const dlStatus = downloadedFolders?.get(group.label.toLowerCase());
+const FOLDER_ROW_HEIGHT = 34;
+const FILE_ROW_HEIGHT = 37;
 
-  const allSelected = group.files.every((f) => selected.has(f.fullPath));
-  const someSelected =
-    !allSelected && group.files.some((f) => selected.has(f.fullPath));
+const FolderHeaderRow = React.memo(
+  ({
+    disabled,
+    downloadedFolders,
+    group,
+    onToggleFolder,
+    onToggleOpen,
+    open,
+    selected,
+  }) => {
+    const checkboxRef = useRef(null);
+    const dlStatus = downloadedFolders?.get(group.label.toLowerCase());
 
-  useEffect(() => {
-    if (checkboxRef.current) checkboxRef.current.indeterminate = someSelected;
-  }, [someSelected]);
+    const allSelected = group.files.every((f) => selected.has(f.fullPath));
+    const someSelected =
+      !allSelected && group.files.some((f) => selected.has(f.fullPath));
 
-  return (
-    <div className="sr-folder-group">
+    useEffect(() => {
+      if (checkboxRef.current) checkboxRef.current.indeterminate = someSelected;
+    }, [someSelected]);
+
+    return (
       <div className="sr-folder-header">
         <input
           checked={allSelected}
@@ -236,25 +236,9 @@ const FolderGroup = ({
           {group.files.length} {group.files.length === 1 ? 'file' : 'files'}
         </span>
       </div>
-
-      {open && (
-        <div className="sr-folder-files">
-          {group.files.map((file) => (
-            <FileRow
-              checked={selected.has(file.fullPath)}
-              disabled={disabled}
-              file={file}
-              key={file.fullPath}
-              onToggleFile={onToggleFile}
-              play={play}
-              username={username}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
+    );
+  },
+);
 
 // ── BrowseResults ──────────────────────────────────────────────────────────────
 
@@ -263,7 +247,8 @@ const BrowseResults = ({ disabled, files, onChat, username }) => {
   const [downloadedFolders, setDownloadedFolders] = useState(new Map());
   const [activeFilters, setActiveFilters] = useState(new Set());
   const [selectedExtensions, setSelectedExtensions] = useState([]);
-  const [collapsedFolders, setCollapsedFolders] = useState(new Set());
+  // Folders start closed; expanding is opt-in per folder or via expand-all.
+  const [expandedFolders, setExpandedFolders] = useState(new Set());
   const [metaFilters, setMetaFilters] = useState({
     artist: '',
     folder: '',
@@ -362,16 +347,16 @@ const BrowseResults = ({ disabled, files, onChat, username }) => {
 
   const allCollapsed =
     folderGroups.length > 0 &&
-    folderGroups.every((g) => collapsedFolders.has(g.directory));
+    folderGroups.every((g) => !expandedFolders.has(g.directory));
 
   const toggleAllFolders = useCallback(() => {
-    setCollapsedFolders(
-      allCollapsed ? new Set() : new Set(folderGroups.map((g) => g.directory)),
+    setExpandedFolders(
+      allCollapsed ? new Set(folderGroups.map((g) => g.directory)) : new Set(),
     );
   }, [allCollapsed, folderGroups]);
 
   const toggleFolderOpen = useCallback((directory) => {
-    setCollapsedFolders((previous) => {
+    setExpandedFolders((previous) => {
       const next = new Set(previous);
       if (next.has(directory)) next.delete(directory);
       else next.add(directory);
@@ -379,12 +364,31 @@ const BrowseResults = ({ disabled, files, onChat, username }) => {
     });
   }, []);
 
+  // Flattens folders + their files into a single list of rows so the
+  // virtualizer only ever renders what's on screen — including within a
+  // single large expanded folder — instead of virtualizing folders only and
+  // rendering every file inside each one regardless of scroll position.
+  const flatRows = useMemo(() => {
+    const rows = [];
+    for (const group of folderGroups) {
+      rows.push({ group, key: group.directory, type: 'folder' });
+      if (expandedFolders.has(group.directory)) {
+        for (const file of group.files) {
+          rows.push({ file, group, key: file.fullPath, type: 'file' });
+        }
+      }
+    }
+
+    return rows;
+  }, [expandedFolders, folderGroups]);
+
   const rowVirtualizer = useVirtualizer({
-    count: folderGroups.length,
-    estimateSize: () => 90,
-    getItemKey: (index) => folderGroups[index].directory,
+    count: flatRows.length,
+    estimateSize: (index) =>
+      flatRows[index].type === 'folder' ? FOLDER_ROW_HEIGHT : FILE_ROW_HEIGHT,
+    getItemKey: (index) => flatRows[index].key,
     getScrollElement: () => resultsScrollRef.current,
-    overscan: 6,
+    overscan: 12,
   });
 
   const toggleFile = useCallback((file) => {
@@ -619,37 +623,46 @@ const BrowseResults = ({ disabled, files, onChat, username }) => {
                 width: '100%',
               }}
             >
-              {rowVirtualizer.getVirtualItems().map((vItem) => (
-                <div
-                  data-index={vItem.index}
-                  key={vItem.key}
-                  ref={rowVirtualizer.measureElement}
-                  style={{
-                    left: 0,
-                    position: 'absolute',
-                    top: 0,
-                    transform: `translateY(${vItem.start}px)`,
-                    width: '100%',
-                  }}
-                >
-                  <FolderGroup
-                    disabled={disabled}
-                    downloadedFolders={downloadedFolders}
-                    group={folderGroups[vItem.index]}
-                    onToggleFile={toggleFile}
-                    onToggleFolder={toggleFolder}
-                    onToggleOpen={() =>
-                      toggleFolderOpen(folderGroups[vItem.index].directory)
-                    }
-                    open={
-                      !collapsedFolders.has(folderGroups[vItem.index].directory)
-                    }
-                    play={play}
-                    selected={selected}
-                    username={username}
-                  />
-                </div>
-              ))}
+              {rowVirtualizer.getVirtualItems().map((vItem) => {
+                const row = flatRows[vItem.index];
+                return (
+                  <div
+                    data-index={vItem.index}
+                    key={vItem.key}
+                    style={{
+                      height: vItem.size,
+                      left: 0,
+                      position: 'absolute',
+                      top: 0,
+                      transform: `translateY(${vItem.start}px)`,
+                      width: '100%',
+                    }}
+                  >
+                    {row.type === 'folder' ? (
+                      <FolderHeaderRow
+                        disabled={disabled}
+                        downloadedFolders={downloadedFolders}
+                        group={row.group}
+                        onToggleFolder={toggleFolder}
+                        onToggleOpen={() =>
+                          toggleFolderOpen(row.group.directory)
+                        }
+                        open={expandedFolders.has(row.group.directory)}
+                        selected={selected}
+                      />
+                    ) : (
+                      <FileRow
+                        checked={selected.has(row.file.fullPath)}
+                        disabled={disabled}
+                        file={row.file}
+                        onToggleFile={toggleFile}
+                        play={play}
+                        username={username}
+                      />
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </>
         ) : (

@@ -46,6 +46,7 @@ import MoreScreen                from '../screens/more/MoreScreen';
 import OverviewScreen            from '../screens/more/OverviewScreen';
 import ConnectionScreen          from '../screens/more/ConnectionScreen';
 import BrowseScreen              from '../screens/more/BrowseScreen';
+import BrowseUserScreen          from '../screens/more/BrowseUserScreen';
 import RoomsScreen               from '../screens/more/RoomsScreen';
 import RoomDetailScreen          from '../screens/more/RoomDetailScreen';
 import ChatScreen                from '../screens/more/ChatScreen';
@@ -68,6 +69,7 @@ export type MoreStackParamList = {
   More:             undefined;
   Connection:       undefined;
   Browse:           undefined;
+  BrowseUser:       { username: string };
   Rooms:            undefined;
   RoomDetail:       { roomName: string };
   Chat:             undefined;
@@ -90,6 +92,7 @@ function MoreStack() {
       <More.Screen name="More"             component={MoreScreen}             options={{ title: 'More' }} />
       <More.Screen name="Connection"       component={ConnectionScreen}       options={{ title: 'Connection' }} />
       <More.Screen name="Browse"           component={BrowseScreen}           options={{ title: 'Browse' }} />
+      <More.Screen name="BrowseUser"       component={BrowseUserScreen}       options={{ title: '' }} />
       <More.Screen name="Rooms"            component={RoomsScreen}            options={{ title: 'Rooms' }} />
       <More.Screen name="RoomDetail"       component={RoomDetailScreen}       options={{ title: '' }} />
       <More.Screen name="Chat"             component={ChatScreen}             options={{ title: 'Chat' }} />

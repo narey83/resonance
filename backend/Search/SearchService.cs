@@ -47,6 +47,7 @@ namespace resonance.Search
     using Microsoft.AspNetCore.SignalR;
     using Microsoft.EntityFrameworkCore;
     using resonance.Search.API;
+    using resonance.Users.Blocking;
     using Serilog;
     using Soulseek;
     using SearchOptions = Soulseek.SearchOptions;
@@ -136,22 +137,26 @@ namespace resonance.Search
         /// <param name="optionsMonitor"></param>
         /// <param name="soulseekClient"></param>
         /// <param name="contextFactory">The database context to use.</param>
+        /// <param name="blockedUsersService"></param>
         public SearchService(
             IHubContext<SearchHub> searchHub,
             IOptionsMonitor<Options> optionsMonitor,
             ISoulseekClient soulseekClient,
-            IDbContextFactory<SearchDbContext> contextFactory)
+            IDbContextFactory<SearchDbContext> contextFactory,
+            BlockedUsersService blockedUsersService)
         {
             SearchHub = searchHub;
             OptionsMonitor = optionsMonitor;
             Client = soulseekClient;
             ContextFactory = contextFactory;
+            Blocked = blockedUsersService;
         }
 
         private ConcurrentDictionary<Guid, CancellationTokenSource> CancellationTokens { get; }
             = new ConcurrentDictionary<Guid, CancellationTokenSource>();
 
         private ISoulseekClient Client { get; }
+        private BlockedUsersService Blocked { get; }
         private IDbContextFactory<SearchDbContext> ContextFactory { get; }
         private ILogger Log { get; set; } = Serilog.Log.ForContext("SourceContext", Logs.Search);
         private IOptionsMonitor<Options> OptionsMonitor { get; }
@@ -325,7 +330,13 @@ namespace resonance.Search
                 // the client state (e.g. disconnected) or a problem with the search (e.g. no terms)
                 var soulseekSearchTask = Client.SearchAsync(
                     query,
-                    responseHandler: (response) => responses.Add(response),
+                    responseHandler: (response) =>
+                    {
+                        if (!Blocked.IsBlocked(response.Username, BlockedUserScope.SearchResults))
+                        {
+                            responses.Add(response);
+                        }
+                    },
                     scope,
                     token,
                     options,
@@ -502,6 +513,11 @@ namespace resonance.Search
                 query,
                 responseHandler: (response) =>
                 {
+                    if (Blocked.IsBlocked(response.Username, BlockedUserScope.SearchResults))
+                    {
+                        return;
+                    }
+
                     search.Responses = (search.Responses ?? new List<Response>())
                         .Append(Response.FromSoulseekSearchResponse(response));
                 },

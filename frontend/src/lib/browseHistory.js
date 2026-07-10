@@ -27,34 +27,27 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import * as prefs from './prefs';
+import api from './api';
 
-const BROWSE_HISTORY_KEY = 'resonance-browse-history';
-const MAX_HISTORY = 25;
+// Server-backed browse history, shared across web and mobile. Every mutation
+// is broadcast over /hub/browse so all connected clients update instantly;
+// each function also resolves to the updated list for the caller's own state.
 
-export const getBrowseHistory = () => {
-  const value = prefs.get(BROWSE_HISTORY_KEY, []);
-  return Array.isArray(value) ? value : [];
+export const getBrowseHistory = async () => {
+  const { data } = await api.get('/browsehistory');
+  return Array.isArray(data) ? data : [];
 };
 
-// Moves `username` to the front, case-insensitively deduplicated, and returns
-// the updated list so callers can sync it straight into state.
-export const addToBrowseHistory = (username) => {
-  if (!username?.trim()) return getBrowseHistory();
-  const next = [
-    username,
-    ...getBrowseHistory().filter(
-      (u) => u.toLowerCase() !== username.toLowerCase(),
-    ),
-  ].slice(0, MAX_HISTORY);
-  prefs.set(BROWSE_HISTORY_KEY, next);
-  return next;
-};
-
-export const removeFromBrowseHistory = (username) => {
-  const next = getBrowseHistory().filter(
-    (u) => u.toLowerCase() !== username.toLowerCase(),
+export const addToBrowseHistory = async (username) => {
+  const { data } = await api.put(
+    `/browsehistory/${encodeURIComponent(username)}`,
   );
-  prefs.set(BROWSE_HISTORY_KEY, next);
-  return next;
+  return Array.isArray(data) ? data : [];
+};
+
+export const removeFromBrowseHistory = async (username) => {
+  const { data } = await api.delete(
+    `/browsehistory/${encodeURIComponent(username)}`,
+  );
+  return Array.isArray(data) ? data : [];
 };

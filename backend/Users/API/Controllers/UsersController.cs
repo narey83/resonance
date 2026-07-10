@@ -162,6 +162,60 @@ namespace resonance.Users.API
         }
 
         /// <summary>
+        ///     Retrieves only the folder names and file counts shared by the specified <paramref name="username"/>.
+        /// </summary>
+        /// <remarks>
+        ///     Large shares serialize to tens of MB with full file detail, which mobile clients
+        ///     cannot parse without freezing; they fetch this slim list first and load each
+        ///     folder's files on demand via the directory endpoint.
+        /// </remarks>
+        /// <param name="username">The username of the user.</param>
+        /// <returns></returns>
+        [HttpGet("{username}/browse/folders")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(200)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> BrowseFolders([FromRoute, UrlEncoded, Required] string username)
+        {
+            if (Program.IsRelayAgent)
+            {
+                return Forbid();
+            }
+
+            if (Users.IsBlacklisted(username))
+            {
+                return NotFound();
+            }
+
+            try
+            {
+                var result = await Client.BrowseAsync(username);
+
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(5000);
+                    BrowseTracker.TryRemove(username);
+                });
+
+                var folders = result.Directories
+                    .Select(d => new { name = d.Name, fileCount = d.FileCount, locked = false })
+                    .Concat(result.LockedDirectories
+                        .Select(d => new { name = d.Name, fileCount = d.FileCount, locked = true }));
+
+                return Ok(folders);
+            }
+            catch (UserOfflineException ex)
+            {
+                return NotFound(ex.Message);
+            }
+            catch (SoulseekClientException ex)
+            {
+                Log.Information("Failed to browse user {User}: {Message}", username, ex.Message);
+                return StatusCode(StatusCodes.Status504GatewayTimeout, ex.Message);
+            }
+        }
+
+        /// <summary>
         ///     Retrieves the status of the current browse operation for the specified <paramref name="username"/>, if any.
         /// </summary>
         /// <param name="username">The username of the user.</param>

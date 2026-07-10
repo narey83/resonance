@@ -31,13 +31,10 @@ import * as reportsAPI from '../../lib/reports';
 import { formatBytes, formatDate } from '../../lib/util';
 import UsernameLink from '../Shared/UsernameLink';
 import UserReportModal from './UserReportModal';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import React, { useEffect, useRef, useState } from 'react';
 
-const ROW_HEIGHT = 33;
-const FETCH_LIMIT = 500;
+const PAGE_SIZE = 50;
 const AUTO_REFRESH_MS = 30_000;
-const COL_COUNT = 12;
 
 const SORT_COLS = [
   { key: 'LastSeen', label: 'Last Seen' },
@@ -78,6 +75,7 @@ const UserReports = () => {
   );
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [page, setPage] = useState(0);
   const [tick, setTick] = useState(0);
   const debounceRef = useRef(null);
   const scrollRef = useRef(null);
@@ -89,8 +87,8 @@ const UserReports = () => {
         search: search || undefined,
         sortBy,
         sortOrder,
-        limit: FETCH_LIMIT,
-        offset: 0,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
       })
       .then(({ items: rows, total: t }) => {
         if (!cancelled) {
@@ -109,27 +107,20 @@ const UserReports = () => {
     return () => {
       cancelled = true;
     };
-  }, [search, sortBy, sortOrder, tick]);
+  }, [page, search, sortBy, sortOrder, tick]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
+    }
+  }, [page]);
 
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), AUTO_REFRESH_MS);
     return () => clearInterval(id);
   }, []);
 
-  const rowVirtualizer = useVirtualizer({
-    count: items.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT,
-    overscan: 10,
-  });
-
-  const virtualItems = rowVirtualizer.getVirtualItems();
-  const totalSize = rowVirtualizer.getTotalSize();
-  const paddingTop = virtualItems.length > 0 ? virtualItems[0].start : 0;
-  const paddingBottom =
-    virtualItems.length > 0
-      ? totalSize - virtualItems[virtualItems.length - 1].end
-      : 0;
+  const pageCount = Math.ceil(total / PAGE_SIZE);
 
   const handleSearchChange = (e) => {
     const value = e.target.value;
@@ -139,12 +130,14 @@ const UserReports = () => {
       setSearch(value);
       setLoading(true);
       setItems([]);
+      setPage(0);
     }, 300);
   };
 
   const handleSort = (col) => {
     setLoading(true);
     setItems([]);
+    setPage(0);
     if (col === sortBy) {
       setSortOrder((o) => (o === 'DESC' ? 'ASC' : 'DESC'));
     } else {
@@ -203,23 +196,14 @@ const UserReports = () => {
                 </tr>
               </thead>
               <tbody>
-                {paddingTop > 0 && (
-                  <tr>
-                    <td
-                      colSpan={COL_COUNT}
-                      style={{ height: paddingTop, padding: 0, border: 'none' }}
-                    />
-                  </tr>
-                )}
-                {virtualItems.map((vRow) => {
-                  const u = items[vRow.index];
+                {items.map((u, index) => {
                   const errors =
                     (u.uploadErrorCount ?? u.UploadErrorCount ?? 0) +
                     (u.downloadErrorCount ?? u.DownloadErrorCount ?? 0);
                   const lastSeen = u.lastSeen ?? u.LastSeen;
                   return (
                     <tr
-                      key={vRow.key}
+                      key={u.username ?? u.Username ?? index}
                       onClick={() => setSelectedUser(u.username ?? u.Username)}
                     >
                       <td className="leaderboard-username">
@@ -274,20 +258,32 @@ const UserReports = () => {
                     </tr>
                   );
                 })}
-                {paddingBottom > 0 && (
-                  <tr>
-                    <td
-                      colSpan={COL_COUNT}
-                      style={{
-                        height: paddingBottom,
-                        padding: 0,
-                        border: 'none',
-                      }}
-                    />
-                  </tr>
-                )}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {pageCount > 1 && (
+          <div className="user-reports-pagination">
+            <button
+              className="user-report-page-btn"
+              disabled={page === 0}
+              onClick={() => setPage((p) => p - 1)}
+              type="button"
+            >
+              ‹
+            </button>
+            <span className="user-report-page-info">
+              {page + 1} / {pageCount}
+            </span>
+            <button
+              className="user-report-page-btn"
+              disabled={page >= pageCount - 1}
+              onClick={() => setPage((p) => p + 1)}
+              type="button"
+            >
+              ›
+            </button>
           </div>
         )}
       </div>

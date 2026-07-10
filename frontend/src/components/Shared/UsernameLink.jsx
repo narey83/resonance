@@ -27,26 +27,46 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import { FolderSearch, MessageSquare } from 'lucide-react';
+import {
+  blockUser,
+  isBlocked,
+  unblockUser,
+  useBlockedUsers,
+} from '../../lib/blockedUsers';
+import { Ban, FolderSearch, MessageSquare } from 'lucide-react';
 import React from 'react';
 import { useHistory } from 'react-router-dom';
 
 const UsernameLink = ({ className, style, username }) => {
   const history = useHistory();
 
+  // Subscribe so the icon flips live when this user is (un)blocked anywhere,
+  // including from another client.
+  useBlockedUsers();
+  const blocked = isBlocked(username);
+
   const go = (e, path) => {
     e.stopPropagation();
     history.push(path, { user: username });
   };
 
+  const toggleBlocked = (e) => {
+    e.stopPropagation();
+    if (blocked) {
+      unblockUser(username);
+    } else {
+      blockUser(username);
+    }
+  };
+
   return (
     <span
-      className={`ulink-root${className ? ` ${className}` : ''}`}
+      className={`ulink-root${blocked ? ' ulink-root-blocked' : ''}${className ? ` ${className}` : ''}`}
       style={style}
     >
       <span
         className="ulink-name"
-        title={username}
+        title={blocked ? `${username} (blocked)` : username}
       >
         {username}
       </span>
@@ -68,6 +88,17 @@ const UsernameLink = ({ className, style, username }) => {
         type="button"
       >
         <FolderSearch
+          size={12}
+          strokeWidth={1.75}
+        />
+      </button>
+      <button
+        className={`ulink-icon-btn hover-fx${blocked ? ' ulink-blocked' : ''}`}
+        onClick={toggleBlocked}
+        title={blocked ? 'Unblock user' : 'Block user'}
+        type="button"
+      >
+        <Ban
           size={12}
           strokeWidth={1.75}
         />

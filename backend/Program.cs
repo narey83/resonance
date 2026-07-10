@@ -454,8 +454,11 @@ namespace resonance
             // load and validate the configuration
             try
             {
+                // reloadOnChange must be true here: this root (not the WebApplication builder's) is
+                // what DI binds IOptionsMonitor<Options> to, so with false, edits to the config file
+                // on disk are never observed — only API-driven overlay changes were.
                 Configuration = new ConfigurationBuilder()
-                    .AddConfigurationProviders(EnvironmentVariablePrefix, ConfigurationFile, reloadOnChange: false)
+                    .AddConfigurationProviders(EnvironmentVariablePrefix, ConfigurationFile, reloadOnChange: true)
                     .Build();
 
                 Configuration.GetSection(AppName)
@@ -827,6 +830,8 @@ namespace resonance
             services.AddSingleton<EventService>();
             services.AddSingleton<EventBus>();
             services.AddSingleton<resonance.Core.Preferences.PreferencesService>();
+            services.AddSingleton<resonance.Core.BrowseHistory.BrowseHistoryService>();
+            services.AddSingleton<resonance.Users.Blocking.BlockedUsersService>();
 
             services.AddSingleton<PrometheusService>();
             services.AddSingleton<ReportsService>();
@@ -1345,6 +1350,7 @@ namespace resonance
                 endpoints.MapHub<SearchHub>("/hub/search");
                 endpoints.MapHub<RelayHub>("/hub/relay");
                 endpoints.MapHub<resonance.Mixtapes.API.MixtapesHub>("/hub/mixtapes");
+                endpoints.MapHub<resonance.Core.API.BrowseHub>("/hub/browse");
                 endpoints.MapHub<resonance.MusicLibrary.API.LibraryActivityHub>("/hub/libraryactivity");
                 endpoints.MapHub<Resonance.Integrations.YtDlp.API.Hubs.YtDlpHub>("/hub/ytdlp");
 
@@ -1522,7 +1528,15 @@ namespace resonance
                     targetType: typeof(Options),
                     optional: true,
                     reloadOnChange: reloadOnChange,
-                    provider: new PhysicalFileProvider(Path.GetDirectoryName(configurationFile), ExclusionFilters.None))
+                    // The config lives on a Docker bind mount where inotify events from host-side
+                    // edits don't reach the container reliably; active polling is required for
+                    // on-disk changes to trigger a reload (UsePollingFileWatcher alone only
+                    // affects token creation, not callback delivery).
+                    provider: new PhysicalFileProvider(Path.GetDirectoryName(configurationFile), ExclusionFilters.None)
+                    {
+                        UsePollingFileWatcher = true,
+                        UseActivePolling = true,
+                    })
                 .AddCommandLine(
                     targetType: typeof(Options),
                     multiValuedArguments,

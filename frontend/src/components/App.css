@@ -2240,6 +2240,17 @@ body {
   color: var(--text-primary);
 }
 
+/* Blocked users: struck-through name, persistent red ban icon */
+.ulink-root-blocked .ulink-name {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+.ulink-icon-btn.ulink-blocked,
+.ulink-icon-btn.ulink-blocked:hover {
+  color: var(--danger, #e04f5f);
+}
+
 /* ─── Accessibility: honour reduced-motion preference ────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

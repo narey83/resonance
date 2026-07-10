@@ -86,5 +86,16 @@ namespace resonance.MetadataLookup.API
             Service.RequestRun();
             return Accepted();
         }
+
+        /// <summary>Stops the in-flight enrichment pass, if any.</summary>
+        /// <returns></returns>
+        [HttpPost("stop")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(202)]
+        public IActionResult Stop()
+        {
+            Service.RequestStop();
+            return Accepted();
+        }
     }
 }

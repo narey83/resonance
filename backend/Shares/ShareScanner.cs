@@ -331,6 +331,21 @@ namespace resonance.Shares
 
                     State.SetValue(state => state with { Directories = unmaskedDirectories.Count, ExcludedDirectories = excludedDirectories.Count() });
                     Log.Information("Found {Directories} shared directories (and {Excluded} were excluded) in {Elapsed}ms.  Starting file scan.", unmaskedDirectories.Count, excludedDirectories.Count(), sw.ElapsedMilliseconds - swSnapshot);
+
+                    // a full scan prunes everything not touched by this pass (see below), so if none of the
+                    // configured shares resolved to an existing directory, something is transiently wrong
+                    // (an unmounted volume, a config reload race, etc). abort instead of pruning the entire
+                    // cache to near-nothing on the strength of a single bad reading.
+                    if (Shares.Any() && !unmaskedDirectories.Any())
+                    {
+                        Log.Error(
+                            "Aborting shared file scan; none of the {Count} configured share(s) resolved to an existing directory. " +
+                            "This usually indicates a transient mount or filesystem issue; the existing cache has been preserved.",
+                            Shares.Count);
+                        repository.UpdateScan(timestamp, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                        State.SetValue(state => state with { Filling = false, Faulted = true, Filled = true, FillProgress = 1 });
+                        return;
+                    }
                 }
 
                 Volatile.Write(ref totalDirectories, unmaskedDirectories.Count);

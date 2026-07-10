@@ -1646,7 +1646,8 @@ html.dark, html.amoled {
 .user-reports-th { white-space: nowrap; }
 .user-reports-th.active { color: var(--text-primary); }
 
-.user-reports-num {
+.user-reports-num,
+.user-reports-table th.user-reports-num {
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1919,7 +1920,8 @@ html.dark, html.amoled {
 
 .user-report-state { font-size: 11px; }
 
-.user-report-num {
+.user-report-num,
+.user-report-table th.user-report-num {
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

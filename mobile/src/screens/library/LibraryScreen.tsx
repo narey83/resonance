@@ -75,6 +75,7 @@ import {
   getAllLocalTracks, getLocalFolders, getLocalFolderTracks,
   isLocalPath, forceRescanLocalTracks, setScanProgressCallback,
 } from '../../services/localMusicLibrary';
+import { exportTrackToUsb, exportTracksToUsb } from '../../services/usbExport';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { getArtworkCacheKey, ARTWORK_THUMB_SIZE, PLAYER_ART_SIZE } from '../../services/artworkCache';
@@ -902,6 +903,17 @@ function TrackActionSheet({
                 onPress={() => { onRename(track); onClose(); }}
               />
             )}
+            {isLocalPath(track.path) && (
+              <SheetRow
+                icon="save-outline"
+                label="Export to USB"
+                onPress={async () => {
+                  onClose();
+                  const result = await exportTrackToUsb(track);
+                  Alert.alert('Export to USB', result.message ?? result.reason ?? 'Done');
+                }}
+              />
+            )}
             <View style={s.sheetDivider} />
             {track.artist && (
               <SheetRow
@@ -958,6 +970,8 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
   } = useLibrarySettings();
   const bumpLibraryRevision = useLibraryActivityStore((s) => s.bumpLibraryRevision);
   const [rescanning, setRescanning] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState({ done: 0, total: 0 });
 
   const handleRescan = async () => {
     if (rescanning) return;
@@ -966,6 +980,18 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
     await getAllLocalTracks(); // returns immediately; background scan fires _onScanProgress batches
     bumpLibraryRevision();
     setRescanning(false);
+  };
+
+  const handleExportAll = async () => {
+    if (exporting) return;
+    setExporting(true);
+    setExportProgress({ done: 0, total: 0 });
+    const tracks = await getAllLocalTracks();
+    const result = await exportTracksToUsb(tracks, (done, total) => setExportProgress({ done, total }));
+    setExporting(false);
+    Alert.alert('Export to USB', result.ok
+      ? `Exported ${result.exported}, skipped ${result.skipped}, failed ${result.failed}.`
+      : result.reason ?? 'Export failed.');
   };
 
   const toggle = (tab: LibraryTab) => {
@@ -1034,6 +1060,22 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
                 <Text style={s.sheetMetaSub}>Re-read metadata and artwork from all local files</Text>
               </View>
               <Ionicons name="refresh" size={20} color={c.textMuted} />
+            </Pressable>
+          )}
+
+          {includeLocalLibrary && (
+            <Pressable
+              onPress={handleExportAll}
+              disabled={exporting}
+              style={[s.sheetBtn, { justifyContent: 'space-between', opacity: exporting ? 0.5 : 1 }]}
+            >
+              <View>
+                <Text style={s.sheetBtnText}>
+                  {exporting ? `Exporting… (${exportProgress.done}/${exportProgress.total})` : 'Export All Local Tracks to USB'}
+                </Text>
+                <Text style={s.sheetMetaSub}>Copy all local tracks to a folder on a USB drive</Text>
+              </View>
+              <Ionicons name="save-outline" size={20} color={c.textMuted} />
             </Pressable>
           )}
 

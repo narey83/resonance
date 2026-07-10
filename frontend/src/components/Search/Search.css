@@ -657,8 +657,10 @@
 .sr-folder-header {
   align-items: center;
   background: var(--bg-primary);
+  box-sizing: border-box;
   display: flex;
   gap: 6px;
+  min-height: 34px;
   padding: 6px 16px;
   transition: background 0.1s;
 }

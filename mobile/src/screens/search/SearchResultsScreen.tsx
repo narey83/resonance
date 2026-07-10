@@ -56,6 +56,7 @@ import { usePlaybackStatus, usePlayer } from '../../context/PlayerContext';
 import { createSearchHubConnection } from '../../api/searchHub';
 import * as usersApi from '../../api/users';
 import type { UserPresence, UserStatus } from '../../api/users';
+import UserActionSheet from '../../components/UserActionSheet';
 import type { SearchStackParamList } from './SearchScreen';
 
 type Props = NativeStackScreenProps<SearchStackParamList, 'SearchResults'>;
@@ -428,7 +429,7 @@ const pillStyles = StyleSheet.create({
 // ─── Track row (Tracks view — selectable) ─────────────────────────────────────
 
 function TrackRow({
-  item, selected, presence, colors, s, onToggle, onBrowseFolder, onPlayPreview, isPreviewing,
+  item, selected, presence, colors, s, onToggle, onBrowseFolder, onPlayPreview, onLongPressUser, isPreviewing,
 }: {
   item: TrackItem;
   selected: boolean;
@@ -438,6 +439,7 @@ function TrackRow({
   onToggle: () => void;
   onBrowseFolder: () => void;
   onPlayPreview: () => void;
+  onLongPressUser: () => void;
   isPreviewing: boolean;
 }) {
   const name        = getFileName(item.file.filename);
@@ -451,7 +453,7 @@ function TrackRow({
     <Pressable
       style={({ pressed }) => [s.row, selected && s.rowSelected, pressed && s.rowPressed, isLocked && s.rowLocked]}
       onPress={isLocked ? undefined : onToggle}
-      disabled={isLocked}
+      onLongPress={onLongPressUser}
     >
       {/* Line 1: username */}
       <View style={s.userLine}>
@@ -566,7 +568,7 @@ const makeTrackStyles = (c: ThemeColors) => StyleSheet.create({
 // ─── Response header row (Peers view) ────────────────────────────────────────
 
 function ResponseHeader({
-  response, isExpanded, presence, colors, s, onToggle, onDownloadAll,
+  response, isExpanded, presence, colors, s, onToggle, onDownloadAll, onLongPressUser,
 }: {
   response: SearchResponse;
   isExpanded: boolean;
@@ -575,6 +577,7 @@ function ResponseHeader({
   s: ReturnType<typeof makeHeaderStyles>;
   onToggle: () => void;
   onDownloadAll: () => void;
+  onLongPressUser: () => void;
 }) {
   const isOffline = presence === 'Offline';
 
@@ -582,6 +585,7 @@ function ResponseHeader({
     <Pressable
       style={({ pressed }) => [s.row, pressed && s.pressed]}
       onPress={onToggle}
+      onLongPress={onLongPressUser}
     >
       <PresenceIndicator presence={presence} size={12} />
       <View style={s.info}>
@@ -740,7 +744,7 @@ const makeAlbumHeaderStyles = (c: ThemeColors) => StyleSheet.create({
 // ─── Album source row (inside an expanded album) ──────────────────────────────
 
 function AlbumSourceRow({
-  folder, presence, colors, s, onDownloadAll, onBrowseFolder,
+  folder, presence, colors, s, onDownloadAll, onBrowseFolder, onLongPressUser,
 }: {
   folder: MobileFolderGroup;
   presence: UserPresence | undefined;
@@ -748,10 +752,11 @@ function AlbumSourceRow({
   s: ReturnType<typeof makeAlbumSourceStyles>;
   onDownloadAll: () => void;
   onBrowseFolder: () => void;
+  onLongPressUser: () => void;
 }) {
   const isOffline = presence === 'Offline';
   return (
-    <View style={s.row}>
+    <Pressable style={s.row} onLongPress={onLongPressUser}>
       <PresenceIndicator presence={presence} size={10} />
       <View style={s.info}>
         <Text style={[s.username, isOffline && { color: colors.textMuted }]} numberOfLines={1}>
@@ -781,7 +786,7 @@ function AlbumSourceRow({
       >
         <Ionicons name="arrow-down-circle-outline" size={20} color={colors.accent} />
       </Pressable>
-    </View>
+    </Pressable>
   );
 }
 
@@ -993,6 +998,7 @@ export default function SearchResultsScreen({ route, navigation }: Props) {
 
   // Cached presence per username
   const [userStatuses, setUserStatuses] = useState<Record<string, UserPresence>>({});
+  const [actionUser, setActionUser]     = useState<string | null>(null);
   // Track which usernames have already been queued so we never double-fetch
   const statusFetchQueued = useRef<Set<string>>(new Set());
 
@@ -1414,6 +1420,7 @@ export default function SearchResultsScreen({ route, navigation }: Props) {
                   onToggle={() => toggleTrack(item.key)}
                   onBrowseFolder={() => openBrowse(item.username, item.file.filename)}
                   onPlayPreview={() => onPlayPreview(item)}
+                  onLongPressUser={() => setActionUser(item.username)}
                   isPreviewing={
                     playerTrack?.path === buildSoulseekPath(item.username, item.file.filename, item.file.size) && isPlaying
                   }
@@ -1445,6 +1452,7 @@ export default function SearchResultsScreen({ route, navigation }: Props) {
                         [{ username: item.response.username, files: item.response.files }],
                         `${item.response.files.length} file${item.response.files.length !== 1 ? 's' : ''} from ${item.response.username}`,
                       )}
+                      onLongPressUser={() => setActionUser(item.response.username)}
                     />
                   );
                 }
@@ -1498,6 +1506,7 @@ export default function SearchResultsScreen({ route, navigation }: Props) {
                       );
                     }}
                     onBrowseFolder={() => openBrowse(item.folder.username, item.folder.files[0]?.filename ?? '')}
+                    onLongPressUser={() => setActionUser(item.folder.username)}
                   />
                 );
               }}
@@ -1539,6 +1548,8 @@ export default function SearchResultsScreen({ route, navigation }: Props) {
         downloading={downloading}
         colors={colors}
       />
+
+      <UserActionSheet username={actionUser} onClose={() => setActionUser(null)} />
     </View>
   );
 }

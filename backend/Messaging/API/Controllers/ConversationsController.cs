@@ -67,18 +67,21 @@ namespace resonance.Messaging.API
             IStateMonitor<State> applicationStateMonitor,
             IMessagingService messagingService,
             IUserService userService,
-            IOptionsSnapshot<Options> optionsSnapshot)
+            IOptionsSnapshot<Options> optionsSnapshot,
+            resonance.Users.Blocking.BlockedUsersService blockedUsersService)
         {
             ApplicationStateMonitor = applicationStateMonitor;
             Messages = messagingService;
             Users = userService;
             OptionsSnapshot = optionsSnapshot;
+            Blocked = blockedUsersService;
         }
 
         private IStateMonitor<State> ApplicationStateMonitor { get; }
         private IMessagingService Messages { get; }
         private IUserService Users { get; }
         private IOptionsSnapshot<Options> OptionsSnapshot { get; }
+        private resonance.Users.Blocking.BlockedUsersService Blocked { get; }
 
         /// <summary>
         ///     Acknowledges the given message id for the given username.
@@ -276,6 +279,11 @@ namespace resonance.Messaging.API
             if (Users.IsBlacklisted(username))
             {
                 return StatusCode(200);
+            }
+
+            if (Blocked.IsBlocked(username, resonance.Users.Blocking.BlockedUserScope.PrivateMessages))
+            {
+                return StatusCode(403, "User is blocked; unblock them to send messages");
             }
 
             if (string.IsNullOrEmpty(message))

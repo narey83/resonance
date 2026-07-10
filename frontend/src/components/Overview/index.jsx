@@ -284,49 +284,71 @@ const AdminOverview = () => {
 
     const load = async () => {
       try {
-        const [sum, hist, ldDown, ldUp, directories_, dlExc, ulExc, filesData] =
-          await Promise.all([
-            reportsAPI.getSummary({ end, start }).catch(() => null),
-            reportsAPI
-              .getHistogram({
-                end,
-                interval,
-                start,
-              })
-              .catch(() => null),
-            reportsAPI
-              .getLeaderboard({
-                direction: 'download',
-                end,
-                limit: 10,
-                sortBy: 'TotalBytes',
-                start,
-              })
-              .catch(() => null),
-            reportsAPI
-              .getLeaderboard({
-                direction: 'upload',
-                end,
-                limit: 10,
-                sortBy: 'TotalBytes',
-                start,
-              })
-              .catch(() => null),
-            reportsAPI
-              .getDirectories({ end, limit: 10, start })
-              .catch(() => null),
-            reportsAPI
-              .getExceptionsPareto({
-                direction: 'download',
-                end,
-                start,
-              })
-              .catch(() => null),
-            reportsAPI
-              .getExceptionsPareto({ direction: 'upload', end, start })
-              .catch(() => null),
-            reportsAPI.getTopFiles({ end, limit: 10, start }).catch(() => null),
-          ]);
+        const [
+          sum,
+          hist,
+          ldDown,
+          ldUp,
+          directories_,
+          dlExc,
+          ulExc,
+          filesData,
+          prevSum,
+          geo,
+          retry,
+          queue,
+          peerData,
+          socialData,
+        ] = await Promise.all([
+          reportsAPI.getSummary({ end, start }).catch(() => null),
+          reportsAPI
+            .getHistogram({
+              end,
+              interval,
+              start,
+            })
+            .catch(() => null),
+          reportsAPI
+            .getLeaderboard({
+              direction: 'download',
+              end,
+              limit: 10,
+              sortBy: 'TotalBytes',
+              start,
+            })
+            .catch(() => null),
+          reportsAPI
+            .getLeaderboard({
+              direction: 'upload',
+              end,
+              limit: 10,
+              sortBy: 'TotalBytes',
+              start,
+            })
+            .catch(() => null),
+          reportsAPI
+            .getDirectories({ end, limit: 10, start })
+            .catch(() => null),
+          reportsAPI
+            .getExceptionsPareto({
+              direction: 'download',
+              end,
+              start,
+            })
+            .catch(() => null),
+          reportsAPI
+            .getExceptionsPareto({ direction: 'upload', end, start })
+            .catch(() => null),
+          reportsAPI.getTopFiles({ end, limit: 10, start }).catch(() => null),
+          reportsAPI
+            .getSummary({ end: prevEnd, start: prevStart })
+            .catch(() => null),
+          reportsAPI.getGeography({ end, limit: 8, start }).catch(() => null),
+          reportsAPI.getRetryFunnel({ end, start }).catch(() => null),
+          reportsAPI.getQueueWait({ end, start }).catch(() => null),
+          reportsAPI.getPeerRetention({ end, start }).catch(() => null),
+          reportsAPI.getSocialActivity({ end, start }).catch(() => null),
+        ]);
         setSummary(sum);
         setHistogram(hist);
         setLeaderboard({ download: ldDown ?? [], upload: ldUp ?? [] });
@@ -334,18 +356,6 @@ const AdminOverview = () => {
         setDlExceptions(dlExc ?? []);
         setUlExceptions(ulExc ?? []);
         setTopFiles(filesData ?? []);
-
-        const [prevSum, geo, retry, queue, peerData, socialData] =
-          await Promise.all([
-            reportsAPI
-              .getSummary({ end: prevEnd, start: prevStart })
-              .catch(() => null),
-            reportsAPI.getGeography({ end, limit: 8, start }).catch(() => null),
-            reportsAPI.getRetryFunnel({ end, start }).catch(() => null),
-            reportsAPI.getQueueWait({ end, start }).catch(() => null),
-            reportsAPI.getPeerRetention({ end, start }).catch(() => null),
-            reportsAPI.getSocialActivity({ end, start }).catch(() => null),
-          ]);
         setPrevSummary(prevSum);
         setGeography(geo);
         setRetries(retry ?? []);

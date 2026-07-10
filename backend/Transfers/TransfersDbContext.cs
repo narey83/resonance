@@ -121,6 +121,16 @@ namespace resonance.Transfers
                 .Entity<Transfer>()
                 .HasIndex(e => new { e.Username, e.Direction, e.EndedAt, e.StartedAt, e.State, e.Size })
                 .HasDatabaseName("IDX_Transfers_UserUploadStatistics");
+
+            // covers the analytics/reports queries (ReportsService), which all filter on EndedAt
+            // and aggregate the included columns; INCLUDE keeps the scans index-only so they never
+            // touch the (Filename-heavy, much larger) heap
+            modelBuilder
+                .Entity<Transfer>()
+                .HasIndex(e => e.EndedAt)
+                .HasDatabaseName("IDX_Transfers_Reports")
+                .HasFilter("\"EndedAt\" IS NOT NULL")
+                .IncludeProperties(e => new { e.Direction, e.State, e.StateDescription, e.Size, e.Username, e.AverageSpeed, e.StartedAt, e.EnqueuedAt });
         }
     }
 }

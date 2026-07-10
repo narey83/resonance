@@ -41,19 +41,25 @@ import {
   getBrowseHistory,
   removeFromBrowseHistory,
 } from '../../lib/browseHistory';
+import { createBrowseHubConnection } from '../../lib/hubFactory';
 import * as prefs from '../../lib/prefs';
 import * as users from '../../lib/users';
 import BrowseResults from './BrowseResults';
 import { FolderOpen, Plus, User, X } from 'lucide-react';
-import * as lzString from 'lz-string';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { withRouter } from 'react-router-dom';
 import { Modal } from 'semantic-ui-react';
 
-const BROWSE_STATE_KEY = 'soulseek-example-browse-state';
+const LEGACY_BROWSE_STATE_KEY = 'soulseek-example-browse-state';
 const SIDEBAR_WIDTH_KEY = 'resonance-browse-sidebar-width';
 const SIDEBAR_MIN = 180;
 const SIDEBAR_MAX = 500;
+
+// In-memory cache of the last completed browse, so navigating away from the
+// page and back restores the results instantly. Deliberately NOT persisted:
+// a large share flattens to tens of MB of JSON, and compressing that for
+// localStorage/server prefs blocked the main thread for seconds per update.
+let sessionCache = null;
 
 // ── Browse modal ──────────────────────────────────────────────────────────────
 
@@ -142,7 +148,7 @@ const Browse = ({ history, location }) => {
     lockedFiles: 0,
   });
   const [browseModalOpen, setBrowseModalOpen] = useState(false);
-  const [browseHistory, setBrowseHistory] = useState(() => getBrowseHistory());
+  const [browseHistory, setBrowseHistory] = useState([]);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = Number(prefs.get(SIDEBAR_WIDTH_KEY, 220));
     return Number.isFinite(saved) ? saved : 220;
@@ -192,7 +198,17 @@ const Browse = ({ history, location }) => {
     browseStateRef.current = 'pending';
     usernameRef.current = usernameToUse;
     setUsername(usernameToUse);
-    setBrowseHistory(addToBrowseHistory(usernameToUse));
+    // Optimistic local insert; the server PUT broadcasts the canonical list
+    // over the browse hub, which reconciles this (and every other client).
+    setBrowseHistory((previous) => [
+      usernameToUse,
+      ...previous.filter(
+        (u) => u.toLowerCase() !== usernameToUse.toLowerCase(),
+      ),
+    ]);
+    addToBrowseHistory(usernameToUse)
+      .then(setBrowseHistory)
+      .catch(() => {});
 
     users
       .browse({ username: usernameToUse })
@@ -254,7 +270,12 @@ const Browse = ({ history, location }) => {
   // rather than leaving the main panel showing a browse no longer in history.
   const removeHistoryEntry = useCallback(
     (user) => {
-      setBrowseHistory(removeFromBrowseHistory(user));
+      setBrowseHistory((previous) =>
+        previous.filter((u) => u.toLowerCase() !== user.toLowerCase()),
+      );
+      removeFromBrowseHistory(user)
+        .then(setBrowseHistory)
+        .catch(() => {});
       if (user.toLowerCase() === usernameRef.current.toLowerCase()) {
         clear();
       }
@@ -275,40 +296,24 @@ const Browse = ({ history, location }) => {
 
   // ── Mount ─────────────────────────────────────────────────────────────────
   useEffect(() => {
+    // One-time cleanup of the legacy persisted blob, which grew to hundreds of
+    // KB compressed and was re-synced to the server prefs on every save.
+    if (prefs.get(LEGACY_BROWSE_STATE_KEY, '')) {
+      prefs.set(LEGACY_BROWSE_STATE_KEY, '');
+    }
+
     const queryUser = new URLSearchParams(location?.search).get('user');
     if (queryUser) {
       doBrowse(queryUser);
     } else if (location?.state?.user) {
       doBrowse(location.state.user);
-    } else {
-      try {
-        const stored = JSON.parse(
-          lzString.decompress(prefs.get(BROWSE_STATE_KEY, '') || ''),
-        );
-        if (stored) {
-          if (stored.browseState === 'pending') {
-            stored.browseState = stored.files?.length > 0 ? 'complete' : 'idle';
-          }
-
-          setBrowseState(stored.browseState || 'idle');
-          browseStateRef.current = stored.browseState || 'idle';
-          setFiles(stored.files || []);
-          setInfo(
-            stored.info || {
-              directories: 0,
-              files: 0,
-              lockedDirectories: 0,
-              lockedFiles: 0,
-            },
-          );
-          if (stored.username && stored.browseState !== 'idle') {
-            setUsername(stored.username);
-            usernameRef.current = stored.username;
-          }
-        }
-      } catch {
-        // ignore
-      }
+    } else if (sessionCache) {
+      setBrowseState('complete');
+      browseStateRef.current = 'complete';
+      setFiles(sessionCache.files);
+      setInfo(sessionCache.info);
+      setUsername(sessionCache.username);
+      usernameRef.current = sessionCache.username;
     }
 
     intervalRef.current = window.setInterval(fetchStatus, 500);
@@ -316,30 +321,31 @@ const Browse = ({ history, location }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Persist state ─────────────────────────────────────────────────────────
+  // ── History: initial fetch + live sync over SignalR ─────────────────────────
   useEffect(() => {
-    const store = () => {
-      try {
-        prefs.set(
-          BROWSE_STATE_KEY,
-          lzString.compress(
-            JSON.stringify({
-              browseState,
-              browseStatus,
-              files,
-              info,
-              username,
-            }),
-          ),
-        );
-      } catch {
-        /* ignore */
-      }
-    };
+    getBrowseHistory()
+      .then(setBrowseHistory)
+      .catch(() => {});
 
-    if (window.requestIdleCallback) window.requestIdleCallback(store);
-    else Promise.resolve().then(store);
-  }, [browseState, browseStatus, files, info, username]);
+    const hub = createBrowseHubConnection();
+    hub.on('HISTORY', (list) => {
+      if (Array.isArray(list)) setBrowseHistory(list);
+    });
+    hub.start().catch(() => {});
+
+    return () => {
+      hub.stop().catch(() => {});
+    };
+  }, []);
+
+  // ── Cache completed results in memory ───────────────────────────────────────
+  useEffect(() => {
+    if (browseState === 'complete' && files.length > 0) {
+      sessionCache = { files, info, username };
+    } else if (browseState === 'idle') {
+      sessionCache = null;
+    }
+  }, [browseState, files, info, username]);
 
   // ── Escape to clear ────────────────────────────────────────────────────────
   useEffect(() => {

@@ -48,11 +48,21 @@ export default function UserReports({ colors, onSelectUser }: { colors: ThemeCol
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadingMoreRef = useRef(false);
+  const requestSeqRef = useRef(0);
 
   const load = useCallback(async (query: string, offset: number) => {
+    const seq = ++requestSeqRef.current;
     const page = await getUserList({ search: query || undefined, limit: PAGE_SIZE, offset });
+    if (seq !== requestSeqRef.current) return; // superseded by a newer request
     setTotal(page.total);
-    setItems((prev) => (offset === 0 ? page.items : [...prev, ...page.items]));
+    setItems((prev) => {
+      if (offset === 0) return page.items;
+      // The list is sorted by LastSeen over live data, so page boundaries can
+      // shift between fetches; drop users we already have to keep keys unique.
+      const seen = new Set(prev.map((u) => u.username));
+      return [...prev, ...page.items.filter((u) => !seen.has(u.username))];
+    });
   }, []);
 
   useEffect(() => {
@@ -66,14 +76,18 @@ export default function UserReports({ colors, onSelectUser }: { colors: ThemeCol
   }, [search]);
 
   const loadMore = useCallback(async () => {
-    if (loadingMore || items.length >= total) return;
+    // onEndReached can fire several times per frame on a non-scrolling
+    // FlatList; the ref guards synchronously where state would lag a render.
+    if (loadingMoreRef.current || items.length >= total) return;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
       await load(search, items.length);
     } finally {
+      loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [items.length, total, loadingMore, load, search]);
+  }, [items.length, total, load, search]);
 
   return (
     <View style={{ gap: Spacing.sm }}>

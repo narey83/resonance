@@ -6,12 +6,16 @@ import {
 import { formatBytes } from '../../lib/util';
 import AppContext from '../AppContext';
 import { Cpu } from 'lucide-react';
-import React, { useContext, useEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip } from 'recharts';
 
 // Sparkline history is client-side only: last 40 of the 30-second STATE
-// samples, so roughly a 20-minute window that resets on page reload.
+// samples, so roughly a 20-minute window. Kept at module scope so switching
+// Overview tabs (which unmounts this card) doesn't blank the charts; only a
+// full page reload resets it. Samples still only accumulate while mounted.
 const MAX_SAMPLES = 40;
+const buffers = {};
+let lastSample = null;
 
 const Sparkline = ({ color, data, formatter }) => (
   <ResponsiveContainer
@@ -65,20 +69,17 @@ const SystemStatsCard = () => {
   const { state } = useContext(AppContext);
   const system = state?.system;
 
-  const buffersRef = useRef({});
-  const lastSampleRef = useRef(null);
   // eslint-disable-next-line react/hook-use-state -- value unused; state only forces a re-render after buffering
   const [, setTick] = useState(0);
 
   useEffect(() => {
     // STATE broadcasts fire on unrelated changes too; only buffer new samples.
-    if (!system?.sampledAt || system.sampledAt === lastSampleRef.current) {
+    if (!system?.sampledAt || system.sampledAt === lastSample) {
       return;
     }
 
-    lastSampleRef.current = system.sampledAt;
+    lastSample = system.sampledAt;
 
-    const buffers = buffersRef.current;
     const append = (key, cpu, mem) => {
       const buffer = buffers[key] ?? (buffers[key] = []);
       buffer.push({ cpu: { v: cpu ?? 0 }, mem: { v: mem } });
@@ -146,7 +147,7 @@ const SystemStatsCard = () => {
         </thead>
         <tbody>
           {rows.map((row) => {
-            const buffer = buffersRef.current[row.key] ?? [];
+            const buffer = buffers[row.key] ?? [];
             const usedPct =
               row.memLimit > 0 ? (row.mem / row.memLimit) * 100 : null;
             return (

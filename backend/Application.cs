@@ -71,6 +71,7 @@ namespace resonance
     using resonance.Telemetry;
     using resonance.Transfers;
     using resonance.Users;
+    using resonance.Users.Blocking;
     using Serilog;
     using Serilog.Events;
     using Soulseek;
@@ -136,7 +137,8 @@ namespace resonance
             BrowseRateLimiter browseRateLimiter,
             IHttpClientFactory httpClientFactory,
             ConnectionStringDictionary connectionStrings,
-            resonance.Network.GeoService geoService)
+            resonance.Network.GeoService geoService,
+            BlockedUsersService blockedUsersService)
         {
             GeoService = geoService;
             Console.CancelKeyPress += (_, args) =>
@@ -221,6 +223,7 @@ namespace resonance
 
             RoomService = roomService;
             Users = userService;
+            Blocked = blockedUsersService;
             Messaging = messagingService;
             ApplicationHub = applicationHub;
 
@@ -304,6 +307,7 @@ namespace resonance
         private IHubContext<LogsHub> LogHub { get; set; }
         private EventBus EventBus { get; }
         private IUserService Users { get; set; }
+        private BlockedUsersService Blocked { get; set; }
         private IShareService Shares { get; set; }
         private resonance.MusicLibrary.IMusicLibraryService MusicLibrary { get; set; }
         private ISearchService Search { get; set; }
@@ -765,6 +769,12 @@ namespace resonance
                     throw new DownloadEnqueueException("File not shared.");
                 }
 
+                if (Blocked.IsBlocked(username, BlockedUserScope.Transfers))
+                {
+                    Log.Information("Rejected enqueue request for blocked user {Username} ({IP})", username, endpoint.Address);
+                    throw new DownloadEnqueueException("File not shared.");
+                }
+
                 /*
                     for limits to work properly (and to help alleviate strain from the db, make incoming requests 'fair' among competing users),
                     we need to ensure that we process only one request per user at a time.
@@ -1042,6 +1052,12 @@ namespace resonance
                 return new BrowseResponse();
             }
 
+            if (Blocked.IsBlocked(username, BlockedUserScope.Browse))
+            {
+                Log.Information("Returned empty browse listing for blocked user {Username} ({IP})", username, endpoint.Address);
+                return new BrowseResponse();
+            }
+
             try
             {
                 var sw = new Stopwatch();
@@ -1265,6 +1281,12 @@ namespace resonance
                 // todo: raise blacklisted message event?
             }
 
+            if (Blocked.IsBlocked(args.Username, BlockedUserScope.PrivateMessages))
+            {
+                Log.Debug("Ignored private message from blocked user {Username}: {Message}", args.Username, args.Message);
+                return;
+            }
+
             Messaging.Conversations.HandleMessageAsync(args.Username, PrivateMessage.FromEventArgs(args));
 
             if (!args.Replayed)
@@ -1285,6 +1307,11 @@ namespace resonance
             // this handler is only used for pushbullet.
             // todo: refactor pushbullet so that it uses events
             if (Users.IsBlacklisted(args.Username))
+            {
+                return;
+            }
+
+            if (Blocked.IsBlocked(args.Username, BlockedUserScope.RoomMessages))
             {
                 return;
             }
@@ -1806,6 +1833,11 @@ namespace resonance
                 return Task.FromResult<int?>(null);
             }
 
+            if (Blocked.IsBlocked(username, BlockedUserScope.Transfers))
+            {
+                return Task.FromResult<int?>(null);
+            }
+
             try
             {
                 var place = Transfers.Uploads.Queue.EstimatePosition(username, filename);
@@ -1835,6 +1867,12 @@ namespace resonance
             if (Users.IsBlacklisted(username, endpoint.Address))
             {
                 Log.Information("Returned empty directory listing for blacklisted user {Username} ({IP})", username, endpoint.Address);
+                return [new Soulseek.Directory(directory)];
+            }
+
+            if (Blocked.IsBlocked(username, BlockedUserScope.Browse))
+            {
+                Log.Information("Returned empty directory listing for blocked user {Username} ({IP})", username, endpoint.Address);
                 return [new Soulseek.Directory(directory)];
             }
 
@@ -2091,6 +2129,11 @@ namespace resonance
                 // opportunistically try and avoid performing the search if we have a cached blacklisted value, otherwise
                 // hold off on computing it and filling the cache until we have the user's IP
                 if (Users.IsBlacklisted(username, bypassCache: false))
+                {
+                    return null;
+                }
+
+                if (Blocked.IsBlocked(username, BlockedUserScope.SearchResponses))
                 {
                     return null;
                 }
@@ -2354,7 +2397,7 @@ namespace resonance
                 }
             }
 
-            if (Users.IsBlacklisted(username, endpoint.Address))
+            if (Users.IsBlacklisted(username, endpoint.Address) || Blocked.IsBlocked(username, BlockedUserScope.Transfers))
             {
                 return new UserInfo(
                     description: Options.Soulseek.Description,

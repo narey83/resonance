@@ -57,6 +57,11 @@ import {
 } from '../../lib/musicLibrary';
 import * as prefs from '../../lib/prefs';
 import { create as createSearch, stripRemixInfo } from '../../lib/searches';
+import {
+  exportTracksToUsb,
+  exportTrackToUsb,
+  isUsbExportSupported,
+} from '../../lib/usbExport';
 import { formatSeconds } from '../../lib/util';
 import AlbumArt from './components/AlbumArt';
 import AlbumDetail from './components/AlbumDetail';
@@ -94,6 +99,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Save,
   Search,
   Share2,
   Shuffle,
@@ -198,6 +204,7 @@ const ContextMenu = ({
   onClose,
   onCreate,
   onDeleteTrack,
+  onExportTrack,
   onGoToArtist,
   onPlayNext,
   onRenameTrack,
@@ -372,6 +379,19 @@ const ContextMenu = ({
         <Pencil size={13} />
         Rename track…
       </button>
+      {isUsbExportSupported() && (
+        <button
+          className="jb-context-item"
+          onClick={() => {
+            onExportTrack(track);
+            onClose();
+          }}
+          type="button"
+        >
+          <Save size={13} />
+          Export to USB
+        </button>
+      )}
 
       <div className="jb-context-sep" />
       <div className="jb-context-section">Add to mixtape</div>
@@ -526,6 +546,7 @@ const FolderContextMenu = ({
   onClose,
   onCreateMixtape,
   onDeleteFolder,
+  onExportFolder,
   onRenameFolder,
   playlists = [],
   x,
@@ -681,6 +702,19 @@ const FolderContextMenu = ({
         <Pencil size={13} />
         Rename folder…
       </button>
+      {isUsbExportSupported() && (
+        <button
+          className="jb-context-item"
+          onClick={() => {
+            onExportFolder(folder);
+            onClose();
+          }}
+          type="button"
+        >
+          <Save size={13} />
+          Export to USB
+        </button>
+      )}
 
       <div className="jb-context-sep" />
 
@@ -734,6 +768,7 @@ const AlbumContextMenu = ({
   onClose,
   onCreateMixtape,
   onDeleteAlbum,
+  onExportAlbum,
   onGoToArtist,
   onPlay,
   onSearchArtist,
@@ -879,6 +914,19 @@ const AlbumContextMenu = ({
         <FolderSearch size={13} />
         Show in folder
       </button>
+      {isUsbExportSupported() && (
+        <button
+          className="jb-context-item"
+          onClick={() => {
+            onExportAlbum(album);
+            onClose();
+          }}
+          type="button"
+        >
+          <Save size={13} />
+          Export to USB
+        </button>
+      )}
 
       <div className="jb-context-sep" />
       <div className="jb-context-section">Add to mixtape</div>
@@ -1919,6 +1967,7 @@ const TracksView = ({
   loading,
   onContextMenu,
   onDeleteTracks,
+  onExportTracks,
   tracks = [],
 }) => (
   <div className="jb-tracks-view">
@@ -1931,6 +1980,7 @@ const TracksView = ({
       loading={loading}
       onContextMenu={onContextMenu}
       onDeleteTracks={onDeleteTracks}
+      onExportTracks={onExportTracks}
       tracks={tracks}
     />
   </div>
@@ -3451,6 +3501,66 @@ const Library = () => {
     }
   }, []);
 
+  const USB_EXPORT_TOAST_ID = 'usb-export';
+
+  const runBulkUsbExport = useCallback(async (tracks) => {
+    if (tracks.length === 0) {
+      toast.info('Nothing to export.');
+      return;
+    }
+
+    toast.info(`Exporting… (0/${tracks.length})`, {
+      autoClose: false,
+      toastId: USB_EXPORT_TOAST_ID,
+    });
+    const result = await exportTracksToUsb(tracks, (done, total) =>
+      toast.update(USB_EXPORT_TOAST_ID, {
+        render: `Exporting… (${done}/${total})`,
+      }),
+    );
+    toast.update(USB_EXPORT_TOAST_ID, {
+      autoClose: 4_000,
+      render: result.ok
+        ? `Exported ${result.exported}, skipped ${result.skipped}, failed ${result.failed}.`
+        : result.reason ?? 'Export failed.',
+      type: result.ok ? toast.TYPE.SUCCESS : toast.TYPE.ERROR,
+    });
+  }, []);
+
+  const handleExportTrack = useCallback(async (track) => {
+    const result = await exportTrackToUsb(track);
+    if (result.ok) toast.success(result.message ?? 'Done');
+    else toast.error(result.reason ?? 'Export failed.');
+  }, []);
+
+  const handleExportFolder = useCallback(
+    async (folder) => {
+      const { getTracks } = await import('../../lib/musicLibrary');
+      const result = await getTracks({ folder: folder.path, limit: 500_000 });
+      await runBulkUsbExport(result.tracks ?? []);
+    },
+    [runBulkUsbExport],
+  );
+
+  const handleExportAlbum = useCallback(
+    async (album) => {
+      const { getTracks } = await import('../../lib/musicLibrary');
+      const result = await getTracks({
+        ...albumTrackParams(album),
+        limit: 500_000,
+      });
+      await runBulkUsbExport(result.tracks ?? []);
+    },
+    [runBulkUsbExport],
+  );
+
+  const handleExportTracks = useCallback(
+    async (tracks) => {
+      await runBulkUsbExport(tracks);
+    },
+    [runBulkUsbExport],
+  );
+
   const [lastDeletedPath, setLastDeletedPath] = useState(null);
   const [renamingFolder, setRenamingFolder] = useState(null); // { folder, name }
   const [renamingTrack, setRenamingTrack] = useState(null); // { track, name }
@@ -3708,6 +3818,9 @@ const Library = () => {
             loading={loadingTracks}
             onContextMenu={openContextMenu}
             onDeleteTracks={handleDeleteTracks}
+            onExportTracks={
+              isUsbExportSupported() ? handleExportTracks : undefined
+            }
             tracks={allTracks}
           />
         );
@@ -4105,6 +4218,7 @@ const Library = () => {
             handleCreatePlaylistFromTrack(name, contextMenu.track)
           }
           onDeleteTrack={handleDeleteTrack}
+          onExportTrack={handleExportTrack}
           onGoToArtist={(dir) => handleShowInFolders(dir)}
           onPlayNext={(track) => addToQueueNext(track)}
           onRenameTrack={(track) =>
@@ -4133,6 +4247,7 @@ const Library = () => {
             handleCreateMixtapeFromFolder(folderContextMenu.folder, name)
           }
           onDeleteFolder={handleDeleteFolder}
+          onExportFolder={handleExportFolder}
           onRenameFolder={(folder) =>
             setRenamingFolder({ folder, name: folder.name })
           }
@@ -4155,6 +4270,7 @@ const Library = () => {
             handleCreateMixtapeFromAlbum(albumContextMenu.album, name)
           }
           onDeleteAlbum={handleDeleteAlbum}
+          onExportAlbum={handleExportAlbum}
           onGoToArtist={goToArtist}
           onPlay={(album) => playQuery(albumTrackParams(album))}
           onSearchArtist={handleSearchArtist}

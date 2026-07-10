@@ -29,7 +29,6 @@
 
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-  FlatList,
   Platform,
   Pressable,
   StyleSheet,
@@ -37,7 +36,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import { KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -46,6 +46,7 @@ import type { PrivateMessage } from '../../api/chat';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import type { MoreStackParamList } from '../../navigation/MainTabs';
+import UserActionSheet from '../../components/UserActionSheet';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'ChatConversation'>;
 
@@ -83,10 +84,27 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
 
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [actionUser, setActionUser] = useState<string | null>(null);
+
+  // Reserves scroll space above the (inverted) list's newest message equal to
+  // the live keyboard height, so it isn't left hidden behind the keyboard —
+  // paired with `KeyboardStickyView` below, which pins the input bar itself
+  // to the top of the keyboard. `height` runs 0 (closed) to -keyboardHeight.
+  const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
+  const listAnimatedStyle = useAnimatedStyle(() => ({
+    paddingTop: -keyboardHeight.value,
+  }));
 
   React.useLayoutEffect(() => {
-    navigation.setOptions({ title: username });
-  }, [navigation, username]);
+    navigation.setOptions({
+      title: username,
+      headerRight: () => (
+        <Pressable hitSlop={8} onPress={() => setActionUser(username)}>
+          <Ionicons color={colors.accent} name="ellipsis-horizontal" size={22} />
+        </Pressable>
+      ),
+    });
+  }, [navigation, username, colors]);
 
   useFocusEffect(
     useCallback(() => {
@@ -148,46 +166,50 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
   };
 
   return (
-    <KeyboardAvoidingView
-      automaticOffset
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={s.container}
-    >
-      <FlatList
+    <View style={s.container}>
+      <Animated.FlatList
         data={reversedThread}
         inverted
         keyExtractor={(item, index) => `${item.direction}-${item.id}-${item.timestamp}-${index}`}
         renderItem={renderMessage}
-        contentContainerStyle={s.list}
+        contentContainerStyle={[s.list, listAnimatedStyle]}
         onRefresh={() => loadMessages(username)}
         refreshing={false}
       />
-      <View style={s.inputBar}>
-        <TextInput
-          multiline
-          onChangeText={setText}
-          onSubmitEditing={handleSend}
-          placeholder="Message…"
-          placeholderTextColor={colors.textMuted}
-          returnKeyType="send"
-          style={s.input}
-          value={text}
-          blurOnSubmit={false}
-        />
-        <Pressable
-          disabled={!text.trim() || sending}
-          hitSlop={8}
-          onPress={handleSend}
-          style={[s.sendBtn, (!text.trim() || sending) && s.sendBtnDisabled]}
-        >
-          <Ionicons
-            color={!text.trim() || sending ? colors.textDim : '#fff'}
-            name="send"
-            size={18}
+      <KeyboardStickyView>
+        <View style={s.inputBar}>
+          <TextInput
+            multiline
+            onChangeText={setText}
+            onSubmitEditing={handleSend}
+            placeholder="Message…"
+            placeholderTextColor={colors.textMuted}
+            returnKeyType="send"
+            style={s.input}
+            value={text}
+            blurOnSubmit={false}
           />
-        </Pressable>
-      </View>
-    </KeyboardAvoidingView>
+          <Pressable
+            disabled={!text.trim() || sending}
+            hitSlop={8}
+            onPress={handleSend}
+            style={[s.sendBtn, (!text.trim() || sending) && s.sendBtnDisabled]}
+          >
+            <Ionicons
+              color={!text.trim() || sending ? colors.textDim : '#fff'}
+              name="send"
+              size={18}
+            />
+          </Pressable>
+        </View>
+      </KeyboardStickyView>
+
+      <UserActionSheet
+        username={actionUser}
+        onClose={() => setActionUser(null)}
+        hide={['chat']}
+      />
+    </View>
   );
 }
 

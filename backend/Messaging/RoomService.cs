@@ -43,6 +43,7 @@ namespace resonance.Messaging
     using System.Threading.Tasks;
     using resonance.Events;
     using resonance.Users;
+    using resonance.Users.Blocking;
     using Serilog;
     using Soulseek;
 
@@ -90,13 +91,15 @@ namespace resonance.Messaging
         /// <param name="roomTracker"></param>
         /// <param name="userService"></param>
         /// <param name="eventBus"></param>
+        /// <param name="blockedUsersService"></param>
         public RoomService(
             ISoulseekClient soulseekClient,
             IOptionsMonitor<Options> optionsMonitor,
             IStateMutator<State> stateMutator,
             IRoomTracker roomTracker,
             IUserService userService,
-            EventBus eventBus)
+            EventBus eventBus,
+            BlockedUsersService blockedUsersService)
         {
             Client = soulseekClient;
 
@@ -107,6 +110,7 @@ namespace resonance.Messaging
 
             Users = userService;
             EventBus = eventBus;
+            Blocked = blockedUsersService;
 
             Client.LoggedIn += Client_LoggedIn;
 
@@ -122,6 +126,7 @@ namespace resonance.Messaging
         private IRoomTracker RoomTracker { get; set; }
         private IUserService Users { get; set; }
         private EventBus EventBus { get; }
+        private BlockedUsersService Blocked { get; }
 
         /// <summary>
         ///     Joins the specified <paramref name="roomName"/>.
@@ -245,6 +250,12 @@ namespace resonance.Messaging
             if (Users.IsBlacklisted(args.Username))
             {
                 Logger.Debug("Ignored message from blacklisted user {Username} in {Room}: {Message}", args.Username, args.RoomName, args.Message);
+                return;
+            }
+
+            if (Blocked.IsBlocked(args.Username, BlockedUserScope.RoomMessages))
+            {
+                Logger.Debug("Ignored message from blocked user {Username} in {Room}: {Message}", args.Username, args.RoomName, args.Message);
                 return;
             }
 

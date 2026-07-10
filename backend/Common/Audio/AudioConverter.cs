@@ -109,7 +109,22 @@ public static class AudioConverter
             return new ConversionResult(false, null, "file is already in the target format");
         }
 
-        var args = $"-y -loglevel error -i \"{sourcePath}\" -vn -map_metadata 0 {spec.Value.CodecArgs(quality)} \"{dest}\"";
+        // Ogg-family sources (opus/ogg) carry their vorbis comments on the audio stream, not the
+        // container, so global metadata alone arrives empty — map both. An empty stream-level
+        // source does not clobber container tags, so this is safe for flac/mp3 inputs too.
+        var metadataArgs = "-map_metadata 0 -map_metadata 0:s:a:0";
+
+        // Targets whose muxer supports attached pictures get the (optional) embedded cover
+        // carried through as jpeg; the rest stay audio-only. Sources are audio files, so any
+        // video stream present is cover art rather than actual video.
+        var artworkArgs = spec.Value.Extension switch
+        {
+            "mp3" => "-map 0:a -map 0:v? -c:v mjpeg -disposition:v:0 attached_pic -id3v2_version 3",
+            "flac" or "m4a" => "-map 0:a -map 0:v? -c:v mjpeg -disposition:v:0 attached_pic",
+            _ => "-vn",
+        };
+
+        var args = $"-y -loglevel error -i \"{sourcePath}\" {artworkArgs} {metadataArgs} {spec.Value.CodecArgs(quality)} \"{dest}\"";
 
         try
         {

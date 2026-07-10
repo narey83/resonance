@@ -120,3 +120,6 @@ export const createLibraryActivityHubConnection = () =>
 
 export const createYtDlpHubConnection = () =>
   createHubConnection({ url: `${hubBaseUrl}/ytdlp` });
+
+export const createBrowseHubConnection = () =>
+  createHubConnection({ url: `${hubBaseUrl}/browse` });

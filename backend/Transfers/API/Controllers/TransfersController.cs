@@ -69,17 +69,20 @@ namespace resonance.Transfers.API
         public TransfersController(
             ITransferService transferService,
             IUserService userService,
-            IOptionsSnapshot<Options> optionsSnapshot)
+            IOptionsSnapshot<Options> optionsSnapshot,
+            resonance.Users.Blocking.BlockedUsersService blockedUsersService)
         {
             Transfers = transferService;
             Users = userService;
             OptionsSnapshot = optionsSnapshot;
+            Blocked = blockedUsersService;
         }
 
         private static SemaphoreSlim DownloadRequestLimiter { get; } = new SemaphoreSlim(2, 2);
         private ITransferService Transfers { get; }
         private IUserService Users { get; }
         private IOptionsSnapshot<Options> OptionsSnapshot { get; }
+        private resonance.Users.Blocking.BlockedUsersService Blocked { get; }
         private ILogger Log { get; set; } = Serilog.Log.ForContext("SourceContext", Logs.Transfers.Downloads);
 
         /// <summary>
@@ -263,6 +266,11 @@ namespace resonance.Transfers.API
 
             try
             {
+                if (Blocked.IsBlocked(username, resonance.Users.Blocking.BlockedUserScope.Transfers))
+                {
+                    return StatusCode(403, "User is blocked; unblock them to download");
+                }
+
                 var endpoint = await Users.GetIPEndPointAsync(username);
 
                 if (Users.IsBlacklisted(username, endpoint.Address))

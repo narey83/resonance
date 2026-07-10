@@ -116,6 +116,13 @@ namespace resonance.MusicLibrary
         private readonly HashSet<string> activeQueues = new(StringComparer.OrdinalIgnoreCase);
         private readonly object queueLock = new();
 
+        // Long-running queues (e.g. a metadata enrichment pass over the whole library) can hold
+        // their registration for days; without a cap they'd starve the sync entirely and the
+        // library would stop reflecting the filesystem. After this long, sync runs anyway — the
+        // worst case is indexing a file mid-tag-write, which the next sync corrects.
+        private static readonly TimeSpan MaxSyncDeferral = TimeSpan.FromMinutes(10);
+        private DateTime? syncDeferredSinceUtc;
+
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> syncExcluded =
             new(StringComparer.OrdinalIgnoreCase);
 
@@ -419,9 +426,22 @@ namespace resonance.MusicLibrary
             {
                 if (activeQueues.Count > 0)
                 {
-                    Log.Debug("Music library sync deferred — active queues: {Queues}", string.Join(", ", activeQueues));
-                    return;
+                    syncDeferredSinceUtc ??= DateTime.UtcNow;
+                    var deferredFor = DateTime.UtcNow - syncDeferredSinceUtc.Value;
+
+                    if (deferredFor < MaxSyncDeferral)
+                    {
+                        Log.Information("Music library sync deferred — active queues: {Queues}", string.Join(", ", activeQueues));
+                        return;
+                    }
+
+                    Log.Information(
+                        "Music library sync proceeding despite active queues ({Queues}) — deferred for {Minutes:F0} minutes",
+                        string.Join(", ", activeQueues),
+                        deferredFor.TotalMinutes);
                 }
+
+                syncDeferredSinceUtc = null;
             }
 
             if (CurrentState.Running)

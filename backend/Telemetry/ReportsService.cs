@@ -36,9 +36,11 @@
 namespace resonance.Telemetry;
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Linq;
+using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Extensions.Caching.Memory;
 using Npgsql;
@@ -65,9 +67,7 @@ public class ReportsService
     private bool UsePostgres => ConnectionStrings.UsePostgres;
     private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Telemetry);
 
-    // Truncate timestamps to the nearest minute so requests within the same window share a cache key.
-    private static DateTime Bucket(DateTime t) =>
-        new DateTime(t.Ticks / TimeSpan.TicksPerMinute * TimeSpan.TicksPerMinute, t.Kind);
+    private static readonly ConcurrentDictionary<string, byte> RefreshesInFlight = new();
 
     // Longer TTL for wider time windows — no point refreshing a 30-day summary every 30s.
     private static TimeSpan GetCacheTtl(DateTime start, DateTime end)
@@ -85,6 +85,53 @@ public class ReportsService
         }
 
         return TimeSpan.FromMinutes(2);
+    }
+
+    // Identifies the requested window *relative to now*, quantized by the TTL, rather than by
+    // absolute wall-clock minutes. The dashboard always requests windows anchored at "now", so
+    // absolute keys changed on every visit and defeated the TTL entirely.
+    private static string WindowKey(DateTime s, DateTime e)
+    {
+        var ttl = GetCacheTtl(s, e);
+        var range = (long)Math.Round((e - s).TotalSeconds / ttl.TotalSeconds);
+        var offset = (long)Math.Round((DateTime.UtcNow - e).TotalSeconds / ttl.TotalSeconds);
+        return $"{range}r{offset}";
+    }
+
+    // Serve-stale-while-revalidate: an entry past its TTL is returned immediately and refreshed on
+    // a background thread, so requests only block on the database the very first time a window is
+    // asked for (or after the entry has gone unused for several TTLs and been evicted).
+    private T GetOrCreateReport<T>(string cacheKey, DateTime start, DateTime end, Func<T> factory)
+    {
+        var ttl = GetCacheTtl(start, end);
+
+        if (Cache.TryGetValue<StaleWhileRevalidateEntry>(cacheKey, out var cached))
+        {
+            if (DateTime.UtcNow > cached.FreshUntil && RefreshesInFlight.TryAdd(cacheKey, 0))
+            {
+                _ = Task.Run(() =>
+                {
+                    try
+                    {
+                        Cache.Set(cacheKey, new StaleWhileRevalidateEntry(factory(), DateTime.UtcNow + ttl), ttl * 6);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning("Background refresh of {CacheKey} failed: {Message}", cacheKey, ex.Message);
+                    }
+                    finally
+                    {
+                        RefreshesInFlight.TryRemove(cacheKey, out _);
+                    }
+                });
+            }
+
+            return (T)cached.Value;
+        }
+
+        var value = factory();
+        Cache.Set(cacheKey, new StaleWhileRevalidateEntry(value, DateTime.UtcNow + ttl), ttl * 6);
+        return value;
     }
 
     private DbConnection OpenConnection(Database database)
@@ -117,11 +164,9 @@ public class ReportsService
             throw new ArgumentException("End time must be later than start time");
         }
 
-        var cacheKey = $"reports:summary:{Bucket(s):O}:{Bucket(e):O}:{direction}:{username}";
-        return Cache.GetOrCreate(cacheKey, entry =>
+        var cacheKey = $"reports:summary:{WindowKey(s, e)}:{direction}:{username}";
+        return GetOrCreateReport(cacheKey, s, e, () =>
         {
-            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
-
             var dict = new Dictionary<TransferDirection, Dictionary<TransferStates, TransferSummary>>()
             {
                 { TransferDirection.Download, new Dictionary<TransferStates, TransferSummary>() },
@@ -223,11 +268,9 @@ public class ReportsService
             throw new ArgumentException("End time must be later than start time");
         }
 
-        var cacheKey = $"reports:histogram:{Bucket(s):O}:{Bucket(e):O}:{(int)interval.TotalSeconds}:{direction}:{username}";
-        return Cache.GetOrCreate(cacheKey, entry =>
+        var cacheKey = $"reports:histogram:{WindowKey(s, e)}:{(int)interval.TotalSeconds}:{direction}:{username}";
+        return GetOrCreateReport(cacheKey, s, e, () =>
         {
-            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
-
             var dict = new Dictionary<DateTime, Dictionary<TransferDirection, Dictionary<TransferStates, TransferSummary>>>();
 
             // fill the dictionary with gapless intervals and empty dictionaries
@@ -360,11 +403,9 @@ public class ReportsService
             throw new ArgumentOutOfRangeException("Limit must be greater than zero");
         }
 
-        var cacheKey = $"reports:leaderboard:{Bucket(s):O}:{Bucket(e):O}:{direction}:{sortBy}:{sortOrder}:{limit}:{offset}";
-        return Cache.GetOrCreate(cacheKey, entry =>
+        var cacheKey = $"reports:leaderboard:{WindowKey(s, e)}:{direction}:{sortBy}:{sortOrder}:{limit}:{offset}";
+        return GetOrCreateReport(cacheKey, s, e, () =>
         {
-            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
-
             string sql;
             if (UsePostgres)
             {
@@ -574,11 +615,9 @@ public class ReportsService
             throw new ArgumentOutOfRangeException("Limit must be greater than zero");
         }
 
-        var cacheKey = $"reports:exceptions-pareto:{Bucket(s):O}:{Bucket(e):O}:{direction}:{username}:{limit}:{offset}";
-        return Cache.GetOrCreate(cacheKey, entry =>
+        var cacheKey = $"reports:exceptions-pareto:{WindowKey(s, e)}:{direction}:{username}:{limit}:{offset}";
+        return GetOrCreateReport(cacheKey, s, e, () =>
         {
-            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
-
             string sql;
             if (UsePostgres)
             {
@@ -681,11 +720,9 @@ public class ReportsService
             throw new ArgumentOutOfRangeException("Limit must be greater than zero");
         }
 
-        var cacheKey = $"reports:directories:{Bucket(s):O}:{Bucket(e):O}:{username}:{sortOrder}:{limit}:{offset}";
-        return Cache.GetOrCreate(cacheKey, entry =>
+        var cacheKey = $"reports:directories:{WindowKey(s, e)}:{username}:{sortOrder}:{limit}:{offset}";
+        return GetOrCreateReport(cacheKey, s, e, () =>
         {
-            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
-
             string sql;
             if (UsePostgres)
             {
@@ -765,11 +802,9 @@ public class ReportsService
         var s = Utc(start ?? DateTime.MinValue);
         var e = Utc(end ?? DateTime.MaxValue);
 
-        var cacheKey = $"reports:files:{Bucket(s):O}:{Bucket(e):O}:{limit}:{offset}";
-        return Cache.GetOrCreate(cacheKey, entry =>
+        var cacheKey = $"reports:files:{WindowKey(s, e)}:{limit}:{offset}";
+        return GetOrCreateReport(cacheKey, s, e, () =>
         {
-            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
-
             string sql;
             if (UsePostgres)
             {
@@ -883,7 +918,7 @@ public class ReportsService
                 FROM aggregated a
                 LEFT JOIN transfers.""TransferNetworkInfo"" n ON n.""Username"" = a.""Username""
                 WHERE 1=1 {searchClause}
-                ORDER BY {sortColumn} {sortOrder}
+                ORDER BY {sortColumn} {sortOrder}, a.""Username"" DESC
                 LIMIT @Limit
                 OFFSET @Offset
             ";
@@ -919,17 +954,15 @@ public class ReportsService
                 FROM aggregated a
                 LEFT JOIN TransferNetworkInfo n ON n.Username = a.Username
                 WHERE 1=1 {searchClause}
-                ORDER BY {sortColumn} {sortOrder}
+                ORDER BY {sortColumn} {sortOrder}, a.Username DESC
                 LIMIT @Limit
                 OFFSET @Offset
             ";
         }
 
-        var cacheKey = $"reports:users:{Bucket(s):O}:{Bucket(e):O}:{search}:{sortBy}:{sortOrder}:{limit}:{offset}";
-        return Cache.GetOrCreate(cacheKey, entry =>
+        var cacheKey = $"reports:users:{WindowKey(s, e)}:{search}:{sortBy}:{sortOrder}:{limit}:{offset}";
+        return GetOrCreateReport(cacheKey, s, e, () =>
         {
-            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
-
             using var connection = OpenConnection(Database.Transfers);
 
             var param = new
@@ -1244,11 +1277,9 @@ public class ReportsService
             throw new ArgumentException("End time must be later than start time");
         }
 
-        var cacheKey = $"reports:heatmap:{Bucket(s):O}:{Bucket(e):O}:{direction}";
-        return Cache.GetOrCreate(cacheKey, entry =>
+        var cacheKey = $"reports:heatmap:{WindowKey(s, e)}:{direction}";
+        return GetOrCreateReport(cacheKey, s, e, () =>
         {
-            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
-
             string sql;
             if (UsePostgres)
             {
@@ -1311,11 +1342,9 @@ public class ReportsService
             throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than zero");
         }
 
-        var cacheKey = $"reports:geography:{Bucket(s):O}:{Bucket(e):O}:{limit}";
-        return Cache.GetOrCreate(cacheKey, entry =>
+        var cacheKey = $"reports:geography:{WindowKey(s, e)}:{limit}";
+        return GetOrCreateReport(cacheKey, s, e, () =>
         {
-            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
-
             string countrySql, vpnSql;
             if (UsePostgres)
             {
@@ -1418,11 +1447,9 @@ public class ReportsService
             throw new ArgumentException("End time must be later than start time");
         }
 
-        var cacheKey = $"reports:retries:{Bucket(s):O}:{Bucket(e):O}";
-        return Cache.GetOrCreate(cacheKey, entry =>
+        var cacheKey = $"reports:retries:{WindowKey(s, e)}";
+        return GetOrCreateReport(cacheKey, s, e, () =>
         {
-            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
-
             string sql;
             if (UsePostgres)
             {
@@ -1476,11 +1503,9 @@ public class ReportsService
             throw new ArgumentException("End time must be later than start time");
         }
 
-        var cacheKey = $"reports:queue-wait:{Bucket(s):O}:{Bucket(e):O}";
-        return Cache.GetOrCreate(cacheKey, entry =>
+        var cacheKey = $"reports:queue-wait:{WindowKey(s, e)}";
+        return GetOrCreateReport(cacheKey, s, e, () =>
         {
-            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
-
             using var connection = OpenConnection(Database.Transfers);
 
             if (UsePostgres)
@@ -1559,11 +1584,9 @@ public class ReportsService
             throw new ArgumentException("End time must be later than start time");
         }
 
-        var cacheKey = $"reports:peers:{Bucket(s):O}:{Bucket(e):O}";
-        return Cache.GetOrCreate(cacheKey, entry =>
+        var cacheKey = $"reports:peers:{WindowKey(s, e)}";
+        return GetOrCreateReport(cacheKey, s, e, () =>
         {
-            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
-
             string sql;
             if (UsePostgres)
             {
@@ -1664,11 +1687,9 @@ public class ReportsService
             throw new ArgumentException("End time must be later than start time");
         }
 
-        var cacheKey = $"reports:social:{Bucket(s):O}:{Bucket(e):O}";
-        return Cache.GetOrCreate(cacheKey, entry =>
+        var cacheKey = $"reports:social:{WindowKey(s, e)}";
+        return GetOrCreateReport(cacheKey, s, e, () =>
         {
-            entry.AbsoluteExpirationRelativeToNow = GetCacheTtl(s, e);
-
             string sql;
             if (UsePostgres)
             {
@@ -1699,6 +1720,8 @@ public class ReportsService
             return connection.QueryFirstOrDefault<SocialActivity>(sql, new { Start = s, End = e }) ?? new SocialActivity();
         });
     }
+
+    private sealed record StaleWhileRevalidateEntry(object Value, DateTime FreshUntil);
 
     private record VpnRow
     {

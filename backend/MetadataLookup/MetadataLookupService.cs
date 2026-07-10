@@ -100,6 +100,7 @@ namespace resonance.MetadataLookup
         });
 
         private CancellationTokenSource Cts { get; set; }
+        private CancellationTokenSource PassCts { get; set; }
         private Task LoopTask { get; set; }
         private Task SweepTask { get; set; }
         private IDisposable OptionsSubscription { get; set; }
@@ -209,6 +210,18 @@ namespace resonance.MetadataLookup
         {
             Interlocked.Exchange(ref forceRequested, 1);
             Signal();
+        }
+
+        public void RequestStop()
+        {
+            try
+            {
+                PassCts?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // the pass finished between the null check and Cancel(); nothing to do
+            }
         }
 
         public async Task<IReadOnlyList<MetadataMatch>> LookupAsync(MetadataLookupRequest request)
@@ -497,19 +510,26 @@ namespace resonance.MetadataLookup
             Log.Information("Metadata enrichment pass started for {Count} track(s)", candidates.Count);
             MusicLibrary?.RegisterQueue("metadata");
 
+            // A pass over a large backlog can run for days; give it its own token so RequestStop()
+            // (and a mid-pass config disable, checked in WorkerAsync) can end just this pass
+            // without tearing down the service.
+            using var passCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            PassCts = passCts;
+            var passToken = passCts.Token;
+
             try
             {
                 var workers = Math.Max(1, Options.CurrentValue.MetadataLookup.Workers);
                 var channel = Channel.CreateUnbounded<Candidate>();
                 foreach (var candidate in candidates)
                 {
-                    await channel.Writer.WriteAsync(candidate, ct);
+                    await channel.Writer.WriteAsync(candidate, passToken);
                 }
 
                 channel.Writer.Complete();
 
                 var tasks = Enumerable.Range(0, workers)
-                    .Select(_ => Task.Run(() => WorkerAsync(channel.Reader, ct), ct))
+                    .Select(_ => Task.Run(() => WorkerAsync(channel.Reader, passToken), passToken))
                     .ToArray();
 
                 await Task.WhenAll(tasks);
@@ -520,12 +540,13 @@ namespace resonance.MetadataLookup
             }
             finally
             {
+                PassCts = null;
                 MusicLibrary?.DeregisterQueue("metadata");
                 AttemptCache.Save();
                 lock (StateLock)
                 {
                     Scanning = false;
-                    Completed = !ct.IsCancellationRequested;
+                    Completed = !passToken.IsCancellationRequested;
                     InFlightItems.Clear();
                 }
 
@@ -539,7 +560,9 @@ namespace resonance.MetadataLookup
 
             await foreach (var candidate in reader.ReadAllAsync(ct))
             {
-                if (ct.IsCancellationRequested)
+                // Honour a mid-pass disable from config; without this a pass over a large
+                // backlog keeps hitting providers for days after the feature is switched off.
+                if (ct.IsCancellationRequested || !Options.CurrentValue.MetadataLookup.Enabled)
                 {
                     break;
                 }

@@ -43,6 +43,8 @@ import { useAuthStore } from '../store/auth';
 import { createApplicationHubConnection } from '../api/applicationHub';
 import { attachHubLogging, remoteLog } from '../api/remoteLogger';
 import { useConversationStore } from '../store/conversationStore';
+import { useBlockedUsersStore } from '../store/blockedUsersStore';
+import type { BlockedUsersPayload } from '../api/blockedUsers';
 
 let notificationsModule: typeof import('expo-notifications') | null = null;
 
@@ -207,6 +209,9 @@ export const useNotificationHub = () => {
     });
 
     hub.on('BROWSED', () => {});
+    hub.on('BLOCKED_USERS', (payload: BlockedUsersPayload) => {
+      useBlockedUsersStore.getState().apply(payload);
+    });
     hub.on('ROOM_MENTION', ({ roomName, username, message }: { roomName: string; username: string; message: string }) => {
       notifyRoomMention(roomName, username, message);
     });

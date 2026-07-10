@@ -29,7 +29,6 @@
 
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -46,6 +45,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import type { MoreStackParamList } from '../../navigation/MainTabs';
 import BottomSheet from '../../components/BottomSheet';
+import UserActionSheet from '../../components/UserActionSheet';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'Chat'>;
 
@@ -56,6 +56,7 @@ export default function ChatScreen({ navigation }: Props) {
   const { conversations, isLoading, loadConversations } = useConversationStore();
   const [composing, setComposing] = useState(false);
   const [newUsername, setNewUsername] = useState('');
+  const [actionUser, setActionUser] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -78,14 +79,7 @@ export default function ChatScreen({ navigation }: Props) {
   };
 
   const handleLongPress = (item: Conversation) => {
-    Alert.alert(item.username, undefined, [
-      {
-        text: 'Close conversation',
-        style: 'destructive',
-        onPress: () => useConversationStore.getState().removeConversation(item.username),
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    setActionUser(item.username);
   };
 
   const handleCompose = () => {
@@ -169,6 +163,21 @@ export default function ChatScreen({ navigation }: Props) {
           </View>
         </View>
       </BottomSheet>
+
+      <UserActionSheet
+        username={actionUser}
+        onClose={() => setActionUser(null)}
+        extraActions={[
+          {
+            label: 'Close Conversation',
+            icon: 'trash-outline',
+            destructive: true,
+            onPress: () => {
+              if (actionUser) useConversationStore.getState().removeConversation(actionUser);
+            },
+          },
+        ]}
+      />
     </View>
   );
 }
