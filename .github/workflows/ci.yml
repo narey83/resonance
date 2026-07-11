@@ -137,7 +137,9 @@ jobs:
       - name: Build APK
         working-directory: mobile/android
         run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
-      - uses: actions/upload-artifact@v4
+      # Gitea's act_runner artifact backend only implements the v3 protocol;
+      # upload-artifact@v4 fails with GHESNotSupportedError. Keep this at v3.
+      - uses: actions/upload-artifact@v3
         with:
           name: resonance-mobile-apk
           path: mobile/android/app/build/outputs/apk/release/app-release.apk

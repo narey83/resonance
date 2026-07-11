@@ -778,6 +778,10 @@ namespace resonance
             services.AddSingleton<IWaiter, Waiter>();
             services.AddSingleton<ConnectionWatchdog, ConnectionWatchdog>();
 
+            // actively probes the server connection so a silently stalled ("half-open") connection is detected and
+            // reconnected instead of appearing healthy forever; see ServerConnectionMonitor for the full rationale.
+            services.AddHostedService<ServerConnectionMonitor>();
+
             // wire up all of the connection strings we'll use. this is somewhat annoying but necessary because of the
             // intersection of run-time options (volatile, non-volatile) and ORM/mappers in use (EF, Dapper)
             var connectionStringDictionary = new ConnectionStringDictionary(Database.List
