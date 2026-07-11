@@ -468,6 +468,8 @@ namespace resonance.MusicLibrary
                 "year" => $"year {dir}, {OrdBy("artist")}, {OrdBy("album")}, track_number",
                 "duration" => $"duration {dir}, {OrdBy("title")}",
                 "bpm" => $"bpm {dir}, {OrdBy("title")}",
+                // Group tracks of the same musical key together (tracks with no detected key sort last).
+                "key" => $"CASE WHEN key_sig IS NULL OR key_sig = '' THEN 1 ELSE 0 END, {OrdBy("key_sig", dir)}, {OrdBy("title")}",
                 "added" => $"indexed_at {dir}, {OrdBy("title")}",
                 _ => $"{OrdBy("artist", dir)}, {OrdBy("album")}, disc_number, track_number, {OrdBy("title")}",
             };
