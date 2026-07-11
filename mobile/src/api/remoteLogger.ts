@@ -58,7 +58,15 @@ function formatArgs(args: unknown[]): string {
   return args
     .map((a) => {
       if (typeof a === 'string') return a;
-      try { return JSON.stringify(a); } catch { return String(a); }
+      // Error's `message`/`stack` are non-enumerable, so JSON.stringify(err)
+      // yields "{}" and drops the actual failure. Pull them out explicitly —
+      // this is what makes React render-error reports diagnosable server-side.
+      if (a instanceof Error) return a.stack || `${a.name}: ${a.message}`;
+      try {
+        return JSON.stringify(a, (_key, value) =>
+          value instanceof Error ? (value.stack || `${value.name}: ${value.message}`) : value,
+        );
+      } catch { return String(a); }
     })
     .join(' ');
 }
