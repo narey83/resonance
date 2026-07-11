@@ -207,6 +207,7 @@ namespace resonance.Shares
                 // cadence by the reporter loop so the UI sees steady growth regardless of directory sizes
                 var enumeratedDirectories = 0;
                 var totalDirectories = 0;
+                var totalFiles = 0;
                 var current = 0;
                 var found = 0;
                 var reused = 0;
@@ -224,12 +225,28 @@ namespace resonance.Shares
                             await Task.Delay(500, reporterToken);
 
                             var total = Volatile.Read(ref totalDirectories);
+                            var totalF = Volatile.Read(ref totalFiles);
+
+                            // Report progress by files processed, not directories. Directory-weighted progress
+                            // stalls at high % on the few directories that hold most of the files; file-weighted
+                            // progress advances smoothly. filtered files are counted alongside found so the ratio
+                            // reaches 1.0. Until the file pre-count is available, fall back to directory progress.
+                            var processed = Volatile.Read(ref found) + Volatile.Read(ref filtered);
+                            double progress;
+                            if (totalF > 0)
+                            {
+                                progress = Math.Min(1.0, processed / (double)totalF);
+                            }
+                            else
+                            {
+                                progress = total > 0 ? Volatile.Read(ref current) / (double)total : 0;
+                            }
 
                             State.SetValue(state => state with
                             {
                                 Directories = total > 0 ? total : Volatile.Read(ref enumeratedDirectories),
                                 ScannedDirectories = Volatile.Read(ref current),
-                                FillProgress = total > 0 ? Volatile.Read(ref current) / (double)total : 0,
+                                FillProgress = progress,
                                 Files = Volatile.Read(ref found),
                             });
                         }
@@ -365,6 +382,34 @@ namespace resonance.Shares
                 }
 
                 Volatile.Write(ref totalDirectories, unmaskedDirectories.Count);
+
+                // pre-count the files across the directories we're about to scan so progress can be reported by
+                // files rather than directories. this is a cheap listing (no file opens / tag reads) and runs
+                // before the expensive metadata pass, so it costs little relative to the scan it makes legible.
+                var fileCountEnumerationOptions = new EnumerationOptions()
+                {
+                    AttributesToSkip = FileAttributes.Hidden | FileAttributes.System,
+                    IgnoreInaccessible = true,
+                    RecurseSubdirectories = false,
+                };
+
+                var precountedFiles = 0;
+                foreach (var directory in unmaskedDirectories)
+                {
+                    try
+                    {
+                        precountedFiles += System.IO.Directory
+                            .EnumerateFiles(directory, "*", fileCountEnumerationOptions)
+                            .Count();
+                    }
+                    catch (Exception ex)
+                    {
+                        // best-effort; the worker pass logs any real access errors for this directory
+                        Log.Debug("Failed to pre-count files in {Directory}: {Message}", directory, ex.Message);
+                    }
+                }
+
+                Volatile.Write(ref totalFiles, precountedFiles);
                 swSnapshot = sw.ElapsedMilliseconds;
 
                 // set up a channel to fan out for directory scanning

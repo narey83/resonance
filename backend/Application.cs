@@ -2302,7 +2302,7 @@ namespace resonance
 
                 if (currentProgress != lastProgress)
                 {
-                    Log.Information("Scanned {Percent}% of shared directories. Found {Files} files so far.", currentProgress, current.Files);
+                    Log.Information("Scanned {Percent}% of shared files. Found {Files} files so far.", currentProgress, current.Files);
                 }
             }
 
