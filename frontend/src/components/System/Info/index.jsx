@@ -54,7 +54,7 @@ import {
   Smartphone,
   Star,
 } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 const Badge = ({ label, ok }) => (
   <span className={`info-badge info-badge--${ok ? 'ok' : 'warn'}`}>
@@ -135,17 +135,26 @@ const SessionsPanel = () => {
   const [revoking, setRevoking] = useState(null);
   const [error, setError] = useState(null);
   const mySessionId = getSessionId();
+  // Shared by the mount effect and the revoke handlers, so a per-effect
+  // cancelled flag can't cover every caller — guard setState with a ref
+  // that flips on unmount.
+  const mountedRef = useRef(true);
 
   const load = async () => {
     try {
-      setSessions(await sessionAPI.getSessions());
+      const data = await sessionAPI.getSessions();
+      if (mountedRef.current) setSessions(data);
     } catch {
-      setError('Failed to load sessions');
+      if (mountedRef.current) setError('Failed to load sessions');
     }
   };
 
   useEffect(() => {
+    mountedRef.current = true;
     load();
+    return () => {
+      mountedRef.current = false;
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRevoke = async (id) => {
@@ -160,9 +169,9 @@ const SessionsPanel = () => {
 
       await load();
     } catch {
-      setError('Failed to revoke session');
+      if (mountedRef.current) setError('Failed to revoke session');
     } finally {
-      setRevoking(null);
+      if (mountedRef.current) setRevoking(null);
     }
   };
 
@@ -173,8 +182,10 @@ const SessionsPanel = () => {
       await sessionAPI.logout();
       window.location.reload();
     } catch {
-      setError('Failed to revoke all sessions');
-      setRevoking(null);
+      if (mountedRef.current) {
+        setError('Failed to revoke all sessions');
+        setRevoking(null);
+      }
     }
   };
 
@@ -266,15 +277,20 @@ const KpiPanel = () => {
   const [kpis, setKpis] = useState(null);
 
   useEffect(() => {
+    let cancelled = false;
     const load = async () => {
       try {
-        setKpis(await metricsAPI.getKpis());
+        const data = await metricsAPI.getKpis();
+        if (!cancelled) setKpis(data);
       } catch {
         // metrics may not be available in all deployments
       }
     };
 
     load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (!kpis) return null;

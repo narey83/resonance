@@ -199,6 +199,7 @@ const AdminOverview = () => {
 
   // Events feed — scoped to the selected range
   useEffect(() => {
+    let cancelled = false;
     const load = async () => {
       const to = new Date().toISOString();
       const from = new Date(Date.now() - range * 60 * 60 * 1_000).toISOString();
@@ -209,33 +210,41 @@ const AdminOverview = () => {
           offset: 0,
           to,
         });
-        setEvents(loadedEvents ?? []);
+        if (!cancelled) setEvents(loadedEvents ?? []);
       } catch {
         // silently ignore
       }
     };
 
     load();
+    return () => {
+      cancelled = true;
+    };
   }, [analyticsRefresh, range]);
 
   // File type counts — load once on mount
   useEffect(() => {
+    let cancelled = false;
     const load = async () => {
       try {
         const counts = await sharesAPI.getFileTypeCounts();
-        setFileTypeCounts(counts);
+        if (!cancelled) setFileTypeCounts(counts);
       } catch {
         // silently ignore
       }
     };
 
     load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Activity heatmap — fixed 90-day lookback. The day-of-week × hour-of-day
   // pattern only becomes meaningful over weeks, so it intentionally ignores
   // the selected range (which can be as short as 1h).
   useEffect(() => {
+    let cancelled = false;
     const load = async () => {
       const end = new Date().toISOString();
       const start = new Date(
@@ -243,17 +252,21 @@ const AdminOverview = () => {
       ).toISOString();
       try {
         const heat = await reportsAPI.getHeatmap({ end, start });
-        setHeatmap(heat ?? []);
+        if (!cancelled) setHeatmap(heat ?? []);
       } catch {
         // silently ignore
       }
     };
 
     load();
+    return () => {
+      cancelled = true;
+    };
   }, [analyticsRefresh]);
 
   // Catalog coverage + local library composition — load once on mount (not time-windowed)
   useEffect(() => {
+    let cancelled = false;
     const load = async () => {
       const [cov, gen, yrs, plays] = await Promise.all([
         reportsAPI.getCoverage().catch(() => null),
@@ -261,6 +274,7 @@ const AdminOverview = () => {
         musicLibraryAPI.getYears().catch(() => null),
         libraryActivityAPI.getPlayStats().catch(() => null),
       ]);
+      if (cancelled) return;
       setCoverage(cov);
       setGenres(gen ?? []);
       setYears(yrs ?? []);
@@ -268,10 +282,14 @@ const AdminOverview = () => {
     };
 
     load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Analytics — reload when range or refresh interval changes
   useEffect(() => {
+    let cancelled = false;
     setAnalyticsLoading(true);
     const end = new Date().toISOString();
     const start = new Date(Date.now() - range * 60 * 60 * 1_000).toISOString();
@@ -350,6 +368,7 @@ const AdminOverview = () => {
           reportsAPI.getPeerRetention({ end, start }).catch(() => null),
           reportsAPI.getSocialActivity({ end, start }).catch(() => null),
         ]);
+        if (cancelled) return;
         setSummary(sum);
         setHistogram(hist);
         setLeaderboard({ download: ldDown ?? [], upload: ldUp ?? [] });
@@ -366,22 +385,24 @@ const AdminOverview = () => {
       } catch {
         // silently ignore
       } finally {
-        setAnalyticsLoading(false);
-        setTransitioning(false);
+        if (!cancelled) {
+          setAnalyticsLoading(false);
+          setTransitioning(false);
+        }
       }
     };
 
     load();
 
-    if (refreshMs > 0) {
-      const refreshId = setInterval(
-        () => setAnalyticsRefresh((c) => c + 1),
-        refreshMs,
-      );
-      return () => clearInterval(refreshId);
-    }
+    const refreshId =
+      refreshMs > 0
+        ? setInterval(() => setAnalyticsRefresh((c) => c + 1), refreshMs)
+        : undefined;
 
-    return undefined;
+    return () => {
+      cancelled = true;
+      if (refreshId) clearInterval(refreshId);
+    };
   }, [analyticsRefresh, range, refreshMs]);
 
   const allDownloads = flattenTransfers(downloads);
