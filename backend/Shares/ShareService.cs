@@ -383,6 +383,24 @@ namespace resonance.Shares
                 tagFile?.Dispose();
             }
 
+            // Every tag update must leave exactly one clean ID3v2.3 tag: the consolidator migrates
+            // any ID3v2.4/ID3v1 data across, strips the leftover blocks (including the physical
+            // trailing ID3v1 block TagLib's Save leaves behind) and verifies that version 2.3
+            // actually persisted on disk. FileWriteLock is Monitor-based, so re-acquiring it inside
+            // Consolidate on this thread is safe.
+            try
+            {
+                var consolidation = TagSanitization.TagConsolidator.Consolidate(originalFilename, maskedFilename);
+                if (consolidation.Changed)
+                {
+                    Log.Debug("Consolidated tags to ID3v2.3 for {File}: {Changes}", originalFilename, string.Join("; ", consolidation.Changes));
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("Tag consolidation after write failed for {File}: {Message}", originalFilename, ex.Message);
+            }
+
             Local.Repository.UpdateFileTags(maskedFilename, tags);
             MusicLibrary?.TriggerSync();
         }
@@ -909,7 +927,24 @@ namespace resonance.Shares
 
         private void ApplySharesList(Options options)
         {
-            var userShares = options.Shares.Directories
+            var configuredDirectories = options.Shares.Directories ?? Enumerable.Empty<string>();
+
+            // guard against a spurious config reload that reports no share directories. with a polling file
+            // watcher on a mounted config, a hot-reload can fire while the file is mid-rewrite and momentarily
+            // bind an empty directories list. rebuilding from that would drop the user's real shares (e.g.
+            // /downloads), collapsing the advertised share to just managed/virtual shares (e.g. Mixtapes) until
+            // the next good reload. if we currently have configured (non-managed) shares and the incoming set is
+            // empty, treat it as spurious and keep what we have. a genuinely empty config still applies at
+            // startup, when no user shares have been established yet.
+            var haveUserShares = (Local.Host.Shares ?? Enumerable.Empty<Share>()).Any(s => !s.IsManaged);
+
+            if (!configuredDirectories.Any() && haveUserShares)
+            {
+                Log.Warning("Ignoring share configuration with no directories; keeping existing shares (likely a transient config reload)");
+                return;
+            }
+
+            var userShares = configuredDirectories
                 .Select(share => share.TrimEnd('/', '\\'))
                 .ToHashSet()
                 .Select(share => new Share(share))
