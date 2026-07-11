@@ -243,6 +243,14 @@ namespace resonance.Transfers.Uploads
         private ConcurrentDictionary<string, bool> Locks { get; } = new();
         private ConcurrentDictionary<string, string> PeerAddresses { get; } = new();
 
+        // when an upload fails because the remote user is offline, we stamp the username here. subsequent enqueue
+        // requests for that user are cheaply rejected until the cooldown expires, instead of resolving files, hitting
+        // the database, watching the user, and attempting a doomed upload. a misbehaving remote client that re-requests
+        // a large queue thousands of times per minute while unreachable would otherwise trigger all of that work per
+        // request. the user's own client will re-request once it is actually reachable again, after the cooldown.
+        private static readonly TimeSpan OfflineCooldownDuration = TimeSpan.FromSeconds(60);
+        private ConcurrentDictionary<string, DateTime> OfflineCooldowns { get; } = new();
+
         /// <summary>
         ///     Gets the last known IP address for the specified <paramref name="username"/>.
         /// </summary>
@@ -490,6 +498,9 @@ namespace resonance.Transfers.Uploads
                     Transfer = transfer,
                 });
 
+                // a successful upload proves the user is reachable; lift any lingering offline cooldown immediately
+                OfflineCooldowns.TryRemove(transfer.Username, out _);
+
                 return transfer;
             }
             catch (NotFoundException ex)
@@ -515,6 +526,14 @@ namespace resonance.Transfers.Uploads
                 else
                 {
                     Log.Error(ex, "Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
+                }
+
+                // if the user is offline, start a cooldown so we stop attempting (and re-resolving/re-watching) on
+                // every subsequent request until they are actually reachable again.
+                if (IsUserOffline(ex))
+                {
+                    OfflineCooldowns[transfer.Username] = DateTime.UtcNow;
+                    Log.Debug("Started offline cooldown for {Username}", transfer.Username);
                 }
 
                 TryFail(transfer.Id, exception: ex);
@@ -574,6 +593,14 @@ namespace resonance.Transfers.Uploads
             if (string.IsNullOrEmpty(filename))
             {
                 throw new ArgumentNullException(nameof(filename), "Filename is required");
+            }
+
+            // if we recently failed to upload to this user because they were offline, don't do any work; a reachable
+            // client re-requests on its own once it reconnects, so retrying on their behalf just churns resources.
+            if (IsInOfflineCooldown(username))
+            {
+                Log.Debug("Skipping upload enqueue of {Filename} to {Username}; user is in offline cooldown", filename, username);
+                return null;
             }
 
             var lockName = $"{nameof(EnqueueAsync)}:{username}:{filename}";
@@ -994,6 +1021,51 @@ namespace resonance.Transfers.Uploads
                 {
                     return aggregate.Flatten().InnerExceptions.All(IsExpectedPeerFailure);
                 }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        ///     Determines whether the given <paramref name="exception"/> indicates that the remote user is offline.
+        /// </summary>
+        /// <param name="exception">The exception to classify.</param>
+        /// <returns>A value indicating whether the failure was caused by the user being offline.</returns>
+        private static bool IsUserOffline(Exception exception)
+        {
+            for (var ex = exception; ex is not null; ex = ex.InnerException)
+            {
+                if (ex is UserOfflineException)
+                {
+                    return true;
+                }
+
+                if (ex is AggregateException aggregate)
+                {
+                    return aggregate.Flatten().InnerExceptions.Any(IsUserOffline);
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        ///     Determines whether the specified <paramref name="username"/> is within the offline cooldown window
+        ///     following a recent failed upload. Expired entries are removed as a side effect.
+        /// </summary>
+        /// <param name="username">The username to check.</param>
+        /// <returns>A value indicating whether the user is currently in an offline cooldown.</returns>
+        private bool IsInOfflineCooldown(string username)
+        {
+            if (OfflineCooldowns.TryGetValue(username, out var lastOfflineAt))
+            {
+                if (DateTime.UtcNow - lastOfflineAt < OfflineCooldownDuration)
+                {
+                    return true;
+                }
+
+                // cooldown expired; clean up so the dictionary doesn't grow unbounded
+                OfflineCooldowns.TryRemove(username, out _);
             }
 
             return false;
