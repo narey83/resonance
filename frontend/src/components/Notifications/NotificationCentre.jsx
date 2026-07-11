@@ -35,6 +35,7 @@ import {
   FolderOpen,
   MessageCircle,
   MessageSquare,
+  ShieldAlert,
   Trash2,
   Upload,
   X,
@@ -71,6 +72,12 @@ const NOTIFICATION_TYPES = [
     label: 'Upload complete',
     description: 'When someone finishes downloading a file from you',
     Icon: Upload,
+  },
+  {
+    key: 'userBlocked',
+    label: 'Blocked-user alerts',
+    description: 'When a user is auto-blocked for ban evasion (same IP)',
+    Icon: ShieldAlert,
   },
 ];
 

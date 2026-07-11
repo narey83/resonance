@@ -149,6 +149,8 @@ const DEFAULT_NOTIFICATION_SETTINGS = {
   privateMessage: true,
   browsed: true,
   roomMention: true,
+  // Ban-evasion auto-blocks are rare and security-relevant, so on by default.
+  userBlocked: true,
   // Transfer-completion toasts can be frequent on a busy server, so both are
   // opt-in to avoid a flood of notifications.
   downloadComplete: false,
@@ -552,9 +554,10 @@ const App = () => {
     });
     hub.on('BLOCKED_USERS', applyBlockedUsers);
     hub.on('BLOCKED_USER_ALERT', ({ ip, username }) => {
-      toast.warn(
-        `Blocked "${username}" automatically — same IP (${ip}) as a blocked user.`,
-        { autoClose: false },
+      addNotificationRef.current(
+        'userBlocked',
+        `${username} was auto-blocked — same IP (${ip}) as a blocked user`,
+        { toastOptions: { autoClose: false }, toastType: 'warn' },
       );
     });
 

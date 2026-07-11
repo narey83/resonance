@@ -40,6 +40,7 @@ export interface NotificationPrefs {
   serverDisconnect:  boolean;
   privateMessage:    boolean;
   roomMention:       boolean;
+  userBlocked:       boolean;
 }
 
 // 'auto'     — full quality on wifi, transcode to low bitrate on cellular / slow links
@@ -72,6 +73,7 @@ const DEFAULT_NOTIFICATIONS: NotificationPrefs = {
   serverDisconnect:  true,
   privateMessage:    true,
   roomMention:       true,
+  userBlocked:       true,
 };
 
 export const useAppSettings = create<AppSettingsStore>((set, get) => ({

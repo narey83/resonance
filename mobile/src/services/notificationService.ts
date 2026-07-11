@@ -145,6 +145,12 @@ export async function notifyRoomMention(roomName: string, username: string, mess
   await send(`Mentioned in ${roomName}`, `${username}: ${message}`);
 }
 
+export async function notifyUserBlocked(username: string, ip: string) {
+  const { notifications } = useAppSettings.getState();
+  if (!notifications.userBlocked) return;
+  await send('Ban evasion blocked', `"${username}" was auto-blocked — same IP (${ip}) as a blocked user.`);
+}
+
 // Hook — mount once at the top of the authenticated app to trigger native notifications
 export const useNotificationHub = () => {
   useEffect(() => {
@@ -213,7 +219,7 @@ export const useNotificationHub = () => {
       useBlockedUsersStore.getState().apply(payload);
     });
     hub.on('BLOCKED_USER_ALERT', ({ username, ip }: { username: string; ip: string }) => {
-      send('Ban evasion blocked', `"${username}" was auto-blocked — same IP (${ip}) as a blocked user.`);
+      notifyUserBlocked(username, ip);
     });
     hub.on('ROOM_MENTION', ({ roomName, username, message }: { roomName: string; username: string; message: string }) => {
       notifyRoomMention(roomName, username, message);

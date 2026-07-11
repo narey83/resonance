@@ -218,7 +218,6 @@ export default function SettingsScreen({ navigation }: Props) {
           label="Room mentions"
           subtitle="Play a sound when you're mentioned in a room"
           colors={colors}
-          last
         >
           <Switch
             disabled={!loaded}
@@ -226,6 +225,20 @@ export default function SettingsScreen({ navigation }: Props) {
             thumbColor={colors.textPrimary}
             trackColor={{ false: colors.bgElevated, true: colors.accent }}
             value={notifications.roomMention}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Blocked-user alerts"
+          subtitle="Alert when a user is auto-blocked for ban evasion"
+          colors={colors}
+          last
+        >
+          <Switch
+            disabled={!loaded}
+            onValueChange={(v) => setNotification('userBlocked', v)}
+            thumbColor={colors.textPrimary}
+            trackColor={{ false: colors.bgElevated, true: colors.accent }}
+            value={notifications.userBlocked}
           />
         </SettingRow>
       </View>
