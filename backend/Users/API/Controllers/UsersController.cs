@@ -37,6 +37,7 @@ using Microsoft.Extensions.Options;
 
 namespace resonance.Users.API
 {
+    using System;
     using System.Collections.Generic;
     using System.ComponentModel.DataAnnotations;
     using System.Linq;
@@ -159,6 +160,12 @@ namespace resonance.Users.API
                 Log.Information("Failed to browse user {User}: {Message}", username, ex.Message);
                 return StatusCode(StatusCodes.Status504GatewayTimeout, ex.Message);
             }
+            catch (InvalidOperationException ex)
+            {
+                // our own connection to the Soulseek server is down (e.g. mid-restart or reconnecting).
+                Log.Information("Failed to browse user {User}: {Message}", username, ex.Message);
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, ex.Message);
+            }
         }
 
         /// <summary>
@@ -212,6 +219,12 @@ namespace resonance.Users.API
             {
                 Log.Information("Failed to browse user {User}: {Message}", username, ex.Message);
                 return StatusCode(StatusCodes.Status504GatewayTimeout, ex.Message);
+            }
+            catch (InvalidOperationException ex)
+            {
+                // our own connection to the Soulseek server is down (e.g. mid-restart or reconnecting).
+                Log.Information("Failed to browse user {User}: {Message}", username, ex.Message);
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, ex.Message);
             }
         }
 
@@ -282,6 +295,12 @@ namespace resonance.Users.API
             {
                 Log.Information("Failed to retrieve directory contents from user {User}: {Message}", username, ex.Message);
                 return StatusCode(StatusCodes.Status504GatewayTimeout, ex.Message);
+            }
+            catch (InvalidOperationException ex)
+            {
+                // our own connection to the Soulseek server is down (e.g. mid-restart or reconnecting).
+                Log.Information("Failed to retrieve directory contents from user {User}: {Message}", username, ex.Message);
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, ex.Message);
             }
         }
 

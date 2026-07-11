@@ -28,21 +28,28 @@
 // </copyright>
 
 import {
+  blockIp,
+  blockPlace,
   blockUser,
   fetchBlockedUsers,
+  fetchKnownLocations,
   setBlockedUserOptions,
+  unblockIp,
+  unblockPlace,
   unblockUser,
   useBlockedUsers,
 } from '../../../lib/blockedUsers';
 import { parseUtcDate } from '../../../lib/util';
 import AppContext from '../../AppContext';
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Checkbox,
+  Dropdown,
   Form,
   Header,
   Icon,
+  Label,
   Message,
   Segment,
   Table,
@@ -80,20 +87,55 @@ const OPTION_FIELDS = [
     key: 'hideSearchResults',
     label: 'Hide their search results',
   },
+  {
+    description:
+      'Learn the IPs blocked users connect from, auto-block new usernames appearing from those IPs, and alert you when it happens',
+    key: 'blockSameIp',
+    label: 'Catch ban evasion (same IP)',
+  },
 ];
 
 const BlockedUsers = () => {
   const { isAdmin } = useContext(AppContext);
-  const { options, users } = useBlockedUsers();
+  const { geoAvailable, ips, options, places, users } = useBlockedUsers();
 
   const [username, setUsername] = useState('');
   const [reason, setReason] = useState('');
+  const [cidr, setCidr] = useState('');
+  const [cidrReason, setCidrReason] = useState('');
+  const [country, setCountry] = useState('');
+  const [city, setCity] = useState('');
+  const [placeReason, setPlaceReason] = useState('');
+  const [locations, setLocations] = useState({
+    citiesByCountry: {},
+    countries: [],
+  });
   const [working, setWorking] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     fetchBlockedUsers().catch(() => {});
+    fetchKnownLocations()
+      .then(setLocations)
+      .catch(() => {});
   }, []);
+
+  // Country/city options come from real observed peer locations (MaxMind); both allow
+  // typing a value that hasn't been seen yet.
+  const countryOptions = useMemo(
+    () => locations.countries.map((c) => ({ key: c, text: c, value: c })),
+    [locations.countries],
+  );
+
+  const cityOptions = useMemo(
+    () =>
+      (locations.citiesByCountry[country] ?? []).map((c) => ({
+        key: c,
+        text: c,
+        value: c,
+      })),
+    [locations.citiesByCountry, country],
+  );
 
   const handleBlock = async () => {
     if (!username.trim()) return;
@@ -129,8 +171,63 @@ const BlockedUsers = () => {
     }
   };
 
+  const handleBlockIp = async () => {
+    if (!cidr.trim()) return;
+
+    setWorking(true);
+    setError(null);
+    try {
+      await blockIp(cidr.trim(), cidrReason.trim() || undefined);
+      setCidr('');
+      setCidrReason('');
+    } catch (error_) {
+      setError(error_.response?.data ?? 'Failed to block IP');
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const handleUnblockIp = async (value) => {
+    setError(null);
+    try {
+      await unblockIp(value);
+    } catch (error_) {
+      setError(error_.response?.data ?? 'Failed to unblock IP');
+    }
+  };
+
+  const handleBlockPlace = async () => {
+    if (!country.trim()) return;
+
+    setWorking(true);
+    setError(null);
+    try {
+      await blockPlace(
+        country.trim(),
+        city.trim() || undefined,
+        placeReason.trim() || undefined,
+      );
+      setCountry('');
+      setCity('');
+      setPlaceReason('');
+    } catch (error_) {
+      setError(error_.response?.data ?? 'Failed to block location');
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const handleUnblockPlace = async (id) => {
+    setError(null);
+    try {
+      await unblockPlace(id);
+    } catch (error_) {
+      setError(error_.response?.data ?? 'Failed to unblock location');
+    }
+  };
+
   return (
-    <div>
+    <div className="blocked-admin">
       <Header size="small">
         <Icon name="ban" />
         Blocked Users
@@ -174,40 +271,257 @@ const BlockedUsers = () => {
           </Form.Group>
         </Form>
 
+        <div className="blocked-scroll">
+          <Table
+            basic="very"
+            compact
+          >
+            <Table.Header>
+              <Table.Row>
+                <Table.HeaderCell>Username</Table.HeaderCell>
+                <Table.HeaderCell>Known IPs</Table.HeaderCell>
+                <Table.HeaderCell>Location</Table.HeaderCell>
+                <Table.HeaderCell>Blocked</Table.HeaderCell>
+                <Table.HeaderCell>Reason</Table.HeaderCell>
+                <Table.HeaderCell textAlign="right" />
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {users.length === 0 && (
+                <Table.Row>
+                  <Table.Cell
+                    colSpan={6}
+                    textAlign="center"
+                  >
+                    No blocked users
+                  </Table.Cell>
+                </Table.Row>
+              )}
+              {users.map((user) => (
+                <Table.Row key={user.username}>
+                  <Table.Cell>{user.username}</Table.Cell>
+                  <Table.Cell>
+                    {user.ips?.length ? (
+                      user.ips.map((ip) => (
+                        <Label
+                          key={ip}
+                          onClick={() => blockIp(ip).catch(() => {})}
+                          size="tiny"
+                          style={{ cursor: 'pointer', marginBottom: 2 }}
+                          title="Block this IP"
+                        >
+                          {ip}
+                        </Label>
+                      ))
+                    ) : (
+                      <span style={{ opacity: 0.4 }}>—</span>
+                    )}
+                  </Table.Cell>
+                  <Table.Cell>
+                    {user.city || user.country ? (
+                      [user.city, user.country].filter(Boolean).join(', ')
+                    ) : (
+                      <span style={{ opacity: 0.4 }}>—</span>
+                    )}
+                  </Table.Cell>
+                  <Table.Cell>
+                    {parseUtcDate(user.blockedAt)?.toLocaleString()}
+                  </Table.Cell>
+                  <Table.Cell>{user.reason}</Table.Cell>
+                  <Table.Cell textAlign="right">
+                    <Button
+                      className="hover-fx"
+                      onClick={() => handleUnblock(user.username)}
+                      size="mini"
+                    >
+                      Unblock
+                    </Button>
+                  </Table.Cell>
+                </Table.Row>
+              ))}
+            </Table.Body>
+          </Table>
+        </div>
+      </Segment>
+
+      <Header size="small">
+        <Icon name="shield" />
+        Blocked IPs
+      </Header>
+      <Segment>
+        <Form onSubmit={handleBlockIp}>
+          <Form.Group>
+            <Form.Input
+              onChange={(_, { value }) => setCidr(value)}
+              placeholder="IP or CIDR (e.g. 1.2.3.4 or 1.2.3.0/24)"
+              value={cidr}
+              width={4}
+            />
+            <Form.Input
+              onChange={(_, { value }) => setCidrReason(value)}
+              placeholder="Reason (optional)"
+              value={cidrReason}
+              width={8}
+            />
+            <Form.Button
+              disabled={!cidr.trim() || working}
+              loading={working}
+              negative
+            >
+              <Icon name="ban" />
+              Block IP
+            </Form.Button>
+          </Form.Group>
+        </Form>
+
         <Table
           basic="very"
           compact
         >
           <Table.Header>
             <Table.Row>
-              <Table.HeaderCell>Username</Table.HeaderCell>
+              <Table.HeaderCell>IP / Range</Table.HeaderCell>
               <Table.HeaderCell>Blocked</Table.HeaderCell>
               <Table.HeaderCell>Reason</Table.HeaderCell>
               <Table.HeaderCell textAlign="right" />
             </Table.Row>
           </Table.Header>
           <Table.Body>
-            {users.length === 0 && (
+            {ips.length === 0 && (
               <Table.Row>
                 <Table.Cell
                   colSpan={4}
                   textAlign="center"
                 >
-                  No blocked users
+                  No blocked IPs
                 </Table.Cell>
               </Table.Row>
             )}
-            {users.map((user) => (
-              <Table.Row key={user.username}>
-                <Table.Cell>{user.username}</Table.Cell>
+            {ips.map((ip) => (
+              <Table.Row key={ip.cidr}>
+                <Table.Cell>{ip.cidr}</Table.Cell>
                 <Table.Cell>
-                  {parseUtcDate(user.blockedAt)?.toLocaleString()}
+                  {parseUtcDate(ip.blockedAt)?.toLocaleString()}
                 </Table.Cell>
-                <Table.Cell>{user.reason}</Table.Cell>
+                <Table.Cell>{ip.reason}</Table.Cell>
                 <Table.Cell textAlign="right">
                   <Button
                     className="hover-fx"
-                    onClick={() => handleUnblock(user.username)}
+                    onClick={() => handleUnblockIp(ip.cidr)}
+                    size="mini"
+                  >
+                    Unblock
+                  </Button>
+                </Table.Cell>
+              </Table.Row>
+            ))}
+          </Table.Body>
+        </Table>
+      </Segment>
+
+      <Header size="small">
+        <Icon name="globe" />
+        Blocked Locations
+      </Header>
+      <Segment>
+        {!geoAvailable && (
+          <Message warning>
+            The geo database (GeoLite2-City.mmdb) is not loaded, so location
+            rules have no effect.
+          </Message>
+        )}
+        <p style={{ opacity: 0.7 }}>
+          Country accepts a name or two-letter code (e.g. &quot;Germany&quot; or
+          &quot;DE&quot;); add a city to narrow the rule. IPs the geo database
+          has no country or city for never match a location rule.
+        </p>
+        <Form onSubmit={handleBlockPlace}>
+          <Form.Group>
+            <Form.Field width={3}>
+              <Dropdown
+                allowAdditions
+                clearable
+                fluid
+                onAddItem={(_, { value }) => setCountry(value)}
+                onChange={(_, { value }) => {
+                  setCountry(value);
+                  setCity('');
+                }}
+                options={countryOptions}
+                placeholder="Country"
+                search
+                selection
+                value={country}
+              />
+            </Form.Field>
+            <Form.Field width={3}>
+              <Dropdown
+                allowAdditions
+                clearable
+                disabled={!country}
+                fluid
+                onAddItem={(_, { value }) => setCity(value)}
+                onChange={(_, { value }) => setCity(value)}
+                options={cityOptions}
+                placeholder="City (optional)"
+                search
+                selection
+                value={city}
+              />
+            </Form.Field>
+            <Form.Input
+              onChange={(_, { value }) => setPlaceReason(value)}
+              placeholder="Reason (optional)"
+              value={placeReason}
+              width={6}
+            />
+            <Form.Button
+              disabled={!country || working}
+              loading={working}
+              negative
+            >
+              <Icon name="ban" />
+              Block Location
+            </Form.Button>
+          </Form.Group>
+        </Form>
+
+        <Table
+          basic="very"
+          compact
+        >
+          <Table.Header>
+            <Table.Row>
+              <Table.HeaderCell>Country</Table.HeaderCell>
+              <Table.HeaderCell>City</Table.HeaderCell>
+              <Table.HeaderCell>Blocked</Table.HeaderCell>
+              <Table.HeaderCell>Reason</Table.HeaderCell>
+              <Table.HeaderCell textAlign="right" />
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
+            {places.length === 0 && (
+              <Table.Row>
+                <Table.Cell
+                  colSpan={5}
+                  textAlign="center"
+                >
+                  No blocked locations
+                </Table.Cell>
+              </Table.Row>
+            )}
+            {places.map((place) => (
+              <Table.Row key={place.id}>
+                <Table.Cell>{place.country}</Table.Cell>
+                <Table.Cell>{place.city ?? 'Any'}</Table.Cell>
+                <Table.Cell>
+                  {parseUtcDate(place.blockedAt)?.toLocaleString()}
+                </Table.Cell>
+                <Table.Cell>{place.reason}</Table.Cell>
+                <Table.Cell textAlign="right">
+                  <Button
+                    className="hover-fx"
+                    onClick={() => handleUnblockPlace(place.id)}
                     size="mini"
                   >
                     Unblock

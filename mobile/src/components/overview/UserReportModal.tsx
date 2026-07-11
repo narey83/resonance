@@ -35,6 +35,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 import {
@@ -59,6 +60,7 @@ export default function UserReportModal({
   onOpenChat: (username: string) => void;
 }) {
   const s = React.useMemo(() => makeStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
   const [detail, setDetail] = useState<Record<string, UserDirectionTransferSummary> | null>(null);
   const [network, setNetwork] = useState<UserNetworkInfo | null>(null);
   const [transfers, setTransfers] = useState<UserTransferRecord[]>([]);
@@ -87,7 +89,7 @@ export default function UserReportModal({
   return (
     <Modal visible={username != null} animationType="slide" onRequestClose={onClose} transparent={false}>
       <View style={[s.container, { backgroundColor: colors.bgPrimary }]}>
-        <View style={s.header}>
+        <View style={[s.header, { paddingTop: insets.top + Spacing.lg }]}>
           <Text style={s.title} numberOfLines={1}>{username}</Text>
           <Pressable onPress={onClose} hitSlop={12}>
             <Ionicons name="close" size={24} color={colors.textMuted} />
@@ -115,14 +117,16 @@ export default function UserReportModal({
               />
             </Card>
 
-            <SectionHeader title="Downloads (from us)" colors={colors} />
+            {/* Direction is server-centric (matches Direction.Download/Upload everywhere else in the
+                app): Download = we pulled the file from this peer, Upload = we served it to them. */}
+            <SectionHeader title="Downloads (from them)" colors={colors} />
             <Card colors={colors}>
               <StatRow label="Total" value={fmtNum(dl?.statistics.total ?? 0)} colors={colors} />
               <StatRow label="Successful" value={fmtNum(dl?.statistics.successful ?? 0)} valueColor={colors.success} colors={colors} />
               <StatRow label="Errored" value={fmtNum(dl?.statistics.errored ?? 0)} valueColor={colors.danger} colors={colors} last />
             </Card>
 
-            <SectionHeader title="Uploads (to us)" colors={colors} />
+            <SectionHeader title="Uploads (to them)" colors={colors} />
             <Card colors={colors}>
               <StatRow label="Total" value={fmtNum(ul?.statistics.total ?? 0)} colors={colors} />
               <StatRow label="Successful" value={fmtNum(ul?.statistics.successful ?? 0)} valueColor={colors.success} colors={colors} />

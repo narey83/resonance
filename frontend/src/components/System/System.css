@@ -803,6 +803,13 @@
   padding: 10px 14px;
 }
 
+.session-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 14px;
+}
+
 /* ─── Button danger/warn variants ─────────────────────────────────────────── */
 
 .shares-add-btn--danger:hover:not(:disabled) {
@@ -1789,4 +1796,74 @@
   font-size: 13px;
   margin-bottom: 14px;
   padding: 10px 14px;
+}
+
+/* Blocked-users admin: the form inputs/dropdowns default to --bg-primary, the same
+   colour as the segment they sit in, so they vanish in dark themes. Lift them onto
+   --bg-elevated with a clear border so the entry boxes are always visible. */
+.blocked-admin .ui.form input[type='text'],
+.blocked-admin .ui.form input:not([type]),
+.blocked-admin .ui.selection.dropdown {
+  background: var(--bg-elevated) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text-primary) !important;
+}
+
+.blocked-admin .ui.form input::placeholder,
+.blocked-admin .ui.selection.dropdown > .default.text {
+  color: var(--text-muted) !important;
+  opacity: 1;
+}
+
+.blocked-admin .ui.selection.dropdown > .text {
+  color: var(--text-primary) !important;
+}
+
+/* the dropdown menu that pops open */
+.blocked-admin .ui.selection.dropdown .menu {
+  background: var(--bg-elevated) !important;
+  border-color: var(--border) !important;
+}
+
+.blocked-admin .ui.selection.dropdown .menu > .item {
+  color: var(--text-primary) !important;
+  border-color: var(--border) !important;
+}
+
+.blocked-admin .ui.selection.dropdown .menu > .item:hover {
+  background: var(--bg-surface) !important;
+}
+
+/* Keep the (potentially long) blocked-users list from growing the whole page:
+   cap it and scroll internally, with the column header pinned. */
+.blocked-scroll {
+  max-height: 320px;
+  overflow-y: scroll;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.blocked-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.blocked-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.blocked-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 2px solid var(--bg-surface);
+  border-radius: 6px;
+}
+
+.blocked-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+.blocked-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-surface) !important;
 }

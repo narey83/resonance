@@ -48,8 +48,13 @@ namespace resonance.MetadataLookup
         /// <returns>The candidate matches, best first.</returns>
         Task<IReadOnlyList<MetadataMatch>> LookupAsync(MetadataLookupRequest request);
 
-        /// <summary>Requests an immediate enrichment pass, regardless of the enabled schedule.</summary>
-        void RequestRun();
+        /// <summary>
+        ///     Requests an immediate enrichment pass, regardless of the enabled schedule. When
+        ///     <paramref name="fullRescan"/> is true the attempt cache is bypassed, so tracks the
+        ///     providers previously found no match for are queried again.
+        /// </summary>
+        /// <param name="fullRescan">Whether to bypass the attempt cache and re-query every candidate.</param>
+        void RequestRun(bool fullRescan = false);
 
         /// <summary>
         ///     Stops the in-flight enrichment pass, if any. The service keeps running and a later

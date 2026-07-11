@@ -50,25 +50,31 @@ namespace resonance.Users.API
     [Authorize(Policy = AuthPolicy.Any)]
     public class BlockedUsersController : ControllerBase
     {
-        public BlockedUsersController(BlockedUsersService blockedUsersService, IHubContext<ApplicationHub> applicationHub)
+        public BlockedUsersController(BlockedUsersService blockedUsersService, IHubContext<ApplicationHub> applicationHub, resonance.Telemetry.ReportsService reports)
         {
             BlockedUsers = blockedUsersService;
             ApplicationHub = applicationHub;
+            Reports = reports;
         }
 
         private BlockedUsersService BlockedUsers { get; }
         private IHubContext<ApplicationHub> ApplicationHub { get; }
+        private resonance.Telemetry.ReportsService Reports { get; }
 
         /// <summary>
-        ///     Gets the list of blocked users along with the blocking options.
+        ///     Gets the block lists (users, IPs, places) along with the blocking options.
         /// </summary>
         [HttpGet]
-        [ProducesResponseType(typeof(BlockedUsersResponse), 200)]
-        public IActionResult Get() => Ok(new BlockedUsersResponse
-        {
-            Users = BlockedUsers.GetAll(),
-            Options = BlockedUsers.GetOptions(),
-        });
+        [ProducesResponseType(200)]
+        public IActionResult Get() => Ok(ApplicationHubExtensions.BuildBlockedUsersPayload(BlockedUsers));
+
+        /// <summary>
+        ///     Gets the distinct countries and cities observed from peer connections, for the
+        ///     block-by-location dropdowns.
+        /// </summary>
+        [HttpGet("geo")]
+        [ProducesResponseType(200)]
+        public IActionResult GetKnownLocations() => Ok(Reports.GetKnownLocations());
 
         /// <summary>
         ///     Updates the blocking options.
@@ -79,8 +85,85 @@ namespace resonance.Users.API
         public async Task<IActionResult> SetOptions([FromBody] BlockedUserOptions options)
         {
             var updated = BlockedUsers.SetOptions(options);
-            await ApplicationHub.BroadcastBlockedUsersAsync(BlockedUsers.GetAll(), updated);
+            await ApplicationHub.BroadcastBlockedUsersAsync(BlockedUsers);
             return Ok(updated);
+        }
+
+        /// <summary>
+        ///     Blocks the specified IP address or CIDR range.
+        /// </summary>
+        [HttpPost("ips")]
+        [ProducesResponseType(typeof(IReadOnlyList<BlockedIp>), 200)]
+        [ProducesResponseType(400)]
+        public async Task<IActionResult> BlockIp([FromBody] BlockIpRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request?.Cidr))
+            {
+                return BadRequest("An IP address or CIDR range is required");
+            }
+
+            IReadOnlyList<BlockedIp> ips;
+
+            try
+            {
+                ips = BlockedUsers.BlockIp(request.Cidr, request.Reason);
+            }
+            catch (System.ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+
+            await ApplicationHub.BroadcastBlockedUsersAsync(BlockedUsers);
+            return Ok(ips);
+        }
+
+        /// <summary>
+        ///     Unblocks the specified IP address or CIDR range (passed as a query parameter
+        ///     because CIDRs contain slashes).
+        /// </summary>
+        [HttpDelete("ips")]
+        [ProducesResponseType(typeof(IReadOnlyList<BlockedIp>), 200)]
+        [ProducesResponseType(400)]
+        public async Task<IActionResult> UnblockIp([FromQuery] string cidr)
+        {
+            if (string.IsNullOrWhiteSpace(cidr))
+            {
+                return BadRequest("An IP address or CIDR range is required");
+            }
+
+            var ips = BlockedUsers.UnblockIp(cidr);
+            await ApplicationHub.BroadcastBlockedUsersAsync(BlockedUsers);
+            return Ok(ips);
+        }
+
+        /// <summary>
+        ///     Blocks a location (country, optionally narrowed to a city).
+        /// </summary>
+        [HttpPost("places")]
+        [ProducesResponseType(typeof(IReadOnlyList<BlockedPlace>), 200)]
+        [ProducesResponseType(400)]
+        public async Task<IActionResult> BlockPlace([FromBody] BlockPlaceRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request?.Country))
+            {
+                return BadRequest("A country is required");
+            }
+
+            var places = BlockedUsers.BlockPlace(request.Country, request.City, request.Reason);
+            await ApplicationHub.BroadcastBlockedUsersAsync(BlockedUsers);
+            return Ok(places);
+        }
+
+        /// <summary>
+        ///     Unblocks the location with the specified id.
+        /// </summary>
+        [HttpDelete("places/{id:int}")]
+        [ProducesResponseType(typeof(IReadOnlyList<BlockedPlace>), 200)]
+        public async Task<IActionResult> UnblockPlace([FromRoute] int id)
+        {
+            var places = BlockedUsers.UnblockPlace(id);
+            await ApplicationHub.BroadcastBlockedUsersAsync(BlockedUsers);
+            return Ok(places);
         }
 
         /// <summary>
@@ -97,7 +180,7 @@ namespace resonance.Users.API
             }
 
             var users = BlockedUsers.Block(username.Trim(), request?.Reason);
-            await ApplicationHub.BroadcastBlockedUsersAsync(users, BlockedUsers.GetOptions());
+            await ApplicationHub.BroadcastBlockedUsersAsync(BlockedUsers);
             return Ok(users);
         }
 
@@ -115,9 +198,46 @@ namespace resonance.Users.API
             }
 
             var users = BlockedUsers.Unblock(username.Trim());
-            await ApplicationHub.BroadcastBlockedUsersAsync(users, BlockedUsers.GetOptions());
+            await ApplicationHub.BroadcastBlockedUsersAsync(BlockedUsers);
             return Ok(users);
         }
+    }
+
+    /// <summary>
+    ///     The request body for blocking an IP address or CIDR range.
+    /// </summary>
+    public class BlockIpRequest
+    {
+        /// <summary>
+        ///     Gets or sets the address or CIDR range to block.
+        /// </summary>
+        public string Cidr { get; set; }
+
+        /// <summary>
+        ///     Gets or sets an optional note describing why the address was blocked.
+        /// </summary>
+        public string Reason { get; set; }
+    }
+
+    /// <summary>
+    ///     The request body for blocking a location.
+    /// </summary>
+    public class BlockPlaceRequest
+    {
+        /// <summary>
+        ///     Gets or sets the country name or two-letter ISO code to block.
+        /// </summary>
+        public string Country { get; set; }
+
+        /// <summary>
+        ///     Gets or sets the optional city narrowing the rule.
+        /// </summary>
+        public string City { get; set; }
+
+        /// <summary>
+        ///     Gets or sets an optional note describing why the location was blocked.
+        /// </summary>
+        public string Reason { get; set; }
     }
 
     /// <summary>
@@ -131,20 +251,4 @@ namespace resonance.Users.API
         public string Reason { get; set; }
     }
 
-    /// <summary>
-    ///     The blocked users list and options, returned together so clients can
-    ///     seed their state in a single request.
-    /// </summary>
-    public class BlockedUsersResponse
-    {
-        /// <summary>
-        ///     Gets or sets the blocked users, most recently blocked first.
-        /// </summary>
-        public IReadOnlyList<BlockedUser> Users { get; set; }
-
-        /// <summary>
-        ///     Gets or sets the blocking options.
-        /// </summary>
-        public BlockedUserOptions Options { get; set; }
-    }
 }

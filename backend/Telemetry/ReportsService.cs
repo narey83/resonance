@@ -1321,6 +1321,47 @@ public class ReportsService
     }
 
     /// <summary>
+    ///     Returns the distinct countries and cities observed from peer geo-lookups (populated by
+    ///     the MaxMind database as peers connect), for populating the block-by-location dropdowns.
+    ///     Cached for an hour; the set changes slowly.
+    /// </summary>
+    /// <returns>The known countries and, per country, the observed cities.</returns>
+    public KnownLocations GetKnownLocations()
+    {
+        const string cacheKey = "reports:knownlocations";
+
+        if (Cache.TryGetValue<KnownLocations>(cacheKey, out var cached))
+        {
+            return cached;
+        }
+
+        var table = UsePostgres ? "transfers.\"TransferNetworkInfo\"" : "TransferNetworkInfo";
+        var countryCol = UsePostgres ? "\"Country\"" : "Country";
+        var cityCol = UsePostgres ? "\"City\"" : "City";
+
+        using var connection = OpenConnection(Database.Transfers);
+        var rows = connection.Query<(string Country, string City)>(
+            $"SELECT DISTINCT {countryCol} AS Country, {cityCol} AS City FROM {table} " +
+            $"WHERE {countryCol} IS NOT NULL AND {countryCol} <> ''").ToList();
+
+        var countries = rows.Select(r => r.Country).Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList();
+
+        var citiesByCountry = rows
+            .Where(r => !string.IsNullOrWhiteSpace(r.City))
+            .GroupBy(r => r.Country, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<string>)g.Select(r => r.City).Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList(),
+                StringComparer.OrdinalIgnoreCase);
+
+        var result = new KnownLocations(countries, citiesByCountry);
+        Cache.Set(cacheKey, result, TimeSpan.FromHours(1));
+        return result;
+    }
+
+    /// <summary>
     ///     Returns the top countries by upload volume plus VPN usage among peers active in the window.
     /// </summary>
     /// <returns></returns>

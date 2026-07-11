@@ -44,6 +44,7 @@ import * as transfersAPI from '../../lib/transfers';
 import AppContext from '../AppContext';
 import ActivityChart from './ActivityChart';
 import ActivityHeatmap from './ActivityHeatmap';
+import BlockedUsersCard from './BlockedUsersCard';
 import CoverageCard from './CoverageCard';
 import ErrorChart from './ErrorChart';
 import FileTypeChart from './FileTypeChart';
@@ -567,6 +568,9 @@ const AdminOverview = () => {
                     <div className="overview-row">
                       <GeographyCard geography={geography} />
                       <PeerRetentionCard data={peers} />
+                    </div>
+                    <div className="overview-row">
+                      <BlockedUsersCard />
                     </div>
                   </section>
                 )}

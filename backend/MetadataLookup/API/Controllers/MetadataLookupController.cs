@@ -76,14 +76,18 @@ namespace resonance.MetadataLookup.API
             return Ok(await Service.LookupAsync(request));
         }
 
-        /// <summary>Forces an immediate enrichment pass.</summary>
+        /// <summary>
+        ///     Forces an immediate enrichment pass. Pass <paramref name="full"/> to bypass the
+        ///     attempt cache and re-query tracks that previously had no match.
+        /// </summary>
+        /// <param name="full">Whether to re-query every candidate, including previous no-matches.</param>
         /// <returns></returns>
         [HttpPost("run")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(202)]
-        public IActionResult Run()
+        public IActionResult Run([FromQuery] bool full = false)
         {
-            Service.RequestRun();
+            Service.RequestRun(full);
             return Accepted();
         }
 

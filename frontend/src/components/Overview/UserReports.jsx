@@ -28,6 +28,7 @@
 // </copyright>
 
 import * as reportsAPI from '../../lib/reports';
+import { onTransferComplete } from '../../lib/transferEvents';
 import { formatBytes, formatDate } from '../../lib/util';
 import UsernameLink from '../Shared/UsernameLink';
 import UserReportModal from './UserReportModal';
@@ -35,6 +36,9 @@ import React, { useEffect, useRef, useState } from 'react';
 
 const PAGE_SIZE = 50;
 const AUTO_REFRESH_MS = 30_000;
+// A busy server can complete many transfers per second; coalesce the resulting
+// live-refresh triggers so we never refetch the list more than once per window.
+const LIVE_REFRESH_COOLDOWN_MS = 2_500;
 
 const SORT_COLS = [
   { key: 'LastSeen', label: 'Last Seen' },
@@ -77,11 +81,17 @@ const UserReports = () => {
   const [selectedUser, setSelectedUser] = useState(null);
   const [page, setPage] = useState(0);
   const [tick, setTick] = useState(0);
+  const [newUsernames, setNewUsernames] = useState(() => new Set());
   const debounceRef = useRef(null);
   const scrollRef = useRef(null);
+  // Tracks the usernames last seen for the current view (page/search/sort).
+  // Used to flash rows that appear on a background auto-refresh; reset to null
+  // whenever the view context changes so we don't flash the whole list.
+  const seenRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
+    const ctxKey = `${page}|${search}|${sortBy}|${sortOrder}`;
     reportsAPI
       .getUserList({
         search: search || undefined,
@@ -92,6 +102,20 @@ const UserReports = () => {
       })
       .then(({ items: rows, total: t }) => {
         if (!cancelled) {
+          const keys = rows
+            .map((r) => r.username ?? r.Username)
+            .filter(Boolean);
+          const prev = seenRef.current;
+          // Only flash on refreshes within the same view; a fresh context
+          // (first load, new search/sort/page) seeds the baseline silently.
+          if (prev && prev.ctx === ctxKey) {
+            const fresh = keys.filter((k) => !prev.set.has(k));
+            setNewUsernames(new Set(fresh));
+          } else {
+            setNewUsernames(new Set());
+          }
+
+          seenRef.current = { ctx: ctxKey, set: new Set(keys) };
           setItems(rows);
           setTotal(t);
           setLoading(false);
@@ -118,6 +142,40 @@ const UserReports = () => {
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), AUTO_REFRESH_MS);
     return () => clearInterval(id);
+  }, []);
+
+  // Live refresh: a completed peer transfer means the user list just changed,
+  // so refetch immediately instead of waiting for the poll. Leading-edge
+  // throttle — refresh at once on the first event, then coalesce any burst
+  // into a single trailing refresh per cooldown window.
+  useEffect(() => {
+    let cooldownTimer = null;
+    let pending = false;
+
+    const settle = () => {
+      if (pending) {
+        pending = false;
+        setTick((t) => t + 1);
+        cooldownTimer = setTimeout(settle, LIVE_REFRESH_COOLDOWN_MS);
+      } else {
+        cooldownTimer = null;
+      }
+    };
+
+    const off = onTransferComplete(() => {
+      if (cooldownTimer) {
+        pending = true;
+        return;
+      }
+
+      setTick((t) => t + 1);
+      cooldownTimer = setTimeout(settle, LIVE_REFRESH_COOLDOWN_MS);
+    });
+
+    return () => {
+      off();
+      if (cooldownTimer) clearTimeout(cooldownTimer);
+    };
   }, []);
 
   const pageCount = Math.ceil(total / PAGE_SIZE);
@@ -201,10 +259,16 @@ const UserReports = () => {
                     (u.uploadErrorCount ?? u.UploadErrorCount ?? 0) +
                     (u.downloadErrorCount ?? u.DownloadErrorCount ?? 0);
                   const lastSeen = u.lastSeen ?? u.LastSeen;
+                  const username = u.username ?? u.Username;
                   return (
                     <tr
-                      key={u.username ?? u.Username ?? index}
-                      onClick={() => setSelectedUser(u.username ?? u.Username)}
+                      className={
+                        newUsernames.has(username)
+                          ? 'user-reports-row--new'
+                          : undefined
+                      }
+                      key={username ?? index}
+                      onClick={() => setSelectedUser(username)}
                     >
                       <td className="leaderboard-username">
                         <UsernameLink username={u.username ?? u.Username} />

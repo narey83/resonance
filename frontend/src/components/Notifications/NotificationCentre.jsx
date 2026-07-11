@@ -31,10 +31,12 @@ import './NotificationCentre.css';
 import { parseUtcDate } from '../../lib/util';
 import {
   Bell,
+  Download,
   FolderOpen,
   MessageCircle,
   MessageSquare,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import React, { useState } from 'react';
@@ -57,6 +59,18 @@ const NOTIFICATION_TYPES = [
     label: 'Room mentions',
     description: 'When someone mentions you in a chat room',
     Icon: MessageSquare,
+  },
+  {
+    key: 'downloadComplete',
+    label: 'Download complete',
+    description: 'When one of your downloads finishes',
+    Icon: Download,
+  },
+  {
+    key: 'uploadComplete',
+    label: 'Upload complete',
+    description: 'When someone finishes downloading a file from you',
+    Icon: Upload,
   },
 ];
 

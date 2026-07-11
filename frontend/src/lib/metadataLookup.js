@@ -44,6 +44,11 @@ export const lookup = async ({ maskedFilename, artist, title, album } = {}) => {
   ).data;
 };
 
-export const runNow = async () => {
-  return (await api.post('/metadatalookup/run')).data;
+export const runNow = async (full = false) => {
+  return (await api.post(`/metadatalookup/run${full ? '?full=true' : ''}`))
+    .data;
+};
+
+export const stopNow = async () => {
+  return (await api.post('/metadatalookup/stop')).data;
 };

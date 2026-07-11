@@ -332,7 +332,10 @@ export default function BrowseUserScreen({ route, navigation }: Props) {
             fileCount: f.fileCount,
             files: null,
           }))
-          .sort((a, b) => a.path.localeCompare(b.path)));
+          // PERF: plain operators on the precomputed lowercase key — localeCompare on
+          // Hermes goes through ICU per call and froze the JS thread for 30s+ on
+          // multi-thousand-folder shares (see sortList in LibraryScreen).
+          .sort((a, b) => (a.searchText < b.searchText ? -1 : a.searchText > b.searchText ? 1 : 0)));
       })
       .catch(() => {
         if (!cancelled) setError('Could not browse this user — they may be offline or unreachable');

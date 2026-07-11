@@ -212,6 +212,9 @@ export const useNotificationHub = () => {
     hub.on('BLOCKED_USERS', (payload: BlockedUsersPayload) => {
       useBlockedUsersStore.getState().apply(payload);
     });
+    hub.on('BLOCKED_USER_ALERT', ({ username, ip }: { username: string; ip: string }) => {
+      send('Ban evasion blocked', `"${username}" was auto-blocked — same IP (${ip}) as a blocked user.`);
+    });
     hub.on('ROOM_MENTION', ({ roomName, username, message }: { roomName: string; username: string; message: string }) => {
       notifyRoomMention(roomName, username, message);
     });

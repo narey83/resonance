@@ -1342,6 +1342,19 @@ namespace resonance
             // starting with .NET 7 the framework *really* wants you to use top level endpoint mapping
             // for whatever reason this breaks everything, and i just can't bring myself to care unless
             // UseEndpoints is going to be deprecated or if there's some material benefit
+            // Same-IP auto-blocks happen deep in the network guards; push the alert and the
+            // refreshed block lists to every connected client so the user hears about the
+            // evasion attempt immediately.
+            {
+                var blockedUsers = app.Services.GetRequiredService<resonance.Users.Blocking.BlockedUsersService>();
+                var applicationHub = app.Services.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<ApplicationHub>>();
+                blockedUsers.AutoBlocked += (username, ip) =>
+                {
+                    _ = applicationHub.BroadcastBlockedUserAlertAsync(username, ip);
+                    _ = applicationHub.BroadcastBlockedUsersAsync(blockedUsers);
+                };
+            }
+
 #pragma warning disable ASP0014 // Suggest using top level route registrations
             app.UseEndpoints(endpoints =>
             {

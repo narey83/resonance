@@ -17,7 +17,7 @@ public class MetadataMergeTests
         => new(title, artist, album, albumArtist, year, track, disc, genre, Score: 100, RecordingMbid: "mbid");
 
     [Fact]
-    public void MergeTags_Overwrites_Matched_Fields()
+    public void MergeTags_Never_Overwrites_Existing_Values()
     {
         var existing = new FileTags(
             Artist: "Old Artist",
@@ -32,21 +32,49 @@ public class MetadataMergeTests
             Comment: "keep me",
             DiscNumber: 2);
 
+        // the lookup is fill-only: every field already in the file survives, even
+        // when the match supplies a different value
         var result = MetadataLookupService.MergeTags(existing, Match());
 
-        Assert.Equal("New Title", result.Title);
-        Assert.Equal("New Artist", result.Artist);
-        Assert.Equal("New Album", result.Album);
-        Assert.Equal("New Album Artist", result.AlbumArtist);
-        Assert.Equal(1999u, result.Year);
-        Assert.Equal(7u, result.TrackNumber);
-        Assert.Equal(1u, result.DiscNumber);
-        Assert.Equal("Jazz", result.Genre);
+        Assert.Equal("Old Title", result.Title);
+        Assert.Equal("Old Artist", result.Artist);
+        Assert.Equal("Old Album", result.Album);
+        Assert.Equal("Old Album Artist", result.AlbumArtist);
+        Assert.Equal(2000u, result.Year);
+        Assert.Equal(5u, result.TrackNumber);
+        Assert.Equal(2u, result.DiscNumber);
+        Assert.Equal("Rock", result.Genre);
 
         // fields the lookup does not provide are preserved
         Assert.Equal("8A", result.Key);
         Assert.Equal(120u, result.Bpm);
         Assert.Equal("keep me", result.Comment);
+    }
+
+    [Fact]
+    public void MergeTags_Fills_Only_Empty_Fields()
+    {
+        var existing = new FileTags(
+            Artist: "Old Artist",
+            AlbumArtist: null,
+            Album: null,
+            Title: "Old Title",
+            TrackNumber: 0,
+            Year: 0,
+            Genre: null);
+
+        var result = MetadataLookupService.MergeTags(existing, Match());
+
+        // existing values survive…
+        Assert.Equal("Old Title", result.Title);
+        Assert.Equal("Old Artist", result.Artist);
+
+        // …and only the gaps are filled from the match
+        Assert.Equal("New Album", result.Album);
+        Assert.Equal("New Album Artist", result.AlbumArtist);
+        Assert.Equal(1999u, result.Year);
+        Assert.Equal(7u, result.TrackNumber);
+        Assert.Equal("Jazz", result.Genre);
     }
 
     [Fact]
@@ -121,7 +149,9 @@ public class MetadataMergeTests
         Assert.Equal("Real Title", result.Title);
         Assert.Equal("Real Artist", result.Artist);
         Assert.Equal("Real Album Artist", result.AlbumArtist);
-        Assert.Equal("Discovered Album", result.Album);
+
+        // fill-only: the album already in the file wins over the discovered one
+        Assert.Equal("Old Album", result.Album);
         Assert.Equal(1998u, result.Year);
         Assert.Equal("Techno", result.Genre);
     }

@@ -769,7 +769,7 @@ namespace resonance
                     throw new DownloadEnqueueException("File not shared.");
                 }
 
-                if (Blocked.IsBlocked(username, BlockedUserScope.Transfers))
+                if (Blocked.IsBlocked(username, endpoint.Address, BlockedUserScope.Transfers))
                 {
                     Log.Information("Rejected enqueue request for blocked user {Username} ({IP})", username, endpoint.Address);
                     throw new DownloadEnqueueException("File not shared.");
@@ -1052,7 +1052,7 @@ namespace resonance
                 return new BrowseResponse();
             }
 
-            if (Blocked.IsBlocked(username, BlockedUserScope.Browse))
+            if (Blocked.IsBlocked(username, endpoint.Address, BlockedUserScope.Browse))
             {
                 Log.Information("Returned empty browse listing for blocked user {Username} ({IP})", username, endpoint.Address);
                 return new BrowseResponse();
@@ -1833,7 +1833,7 @@ namespace resonance
                 return Task.FromResult<int?>(null);
             }
 
-            if (Blocked.IsBlocked(username, BlockedUserScope.Transfers))
+            if (Blocked.IsBlocked(username, endpoint.Address, BlockedUserScope.Transfers))
             {
                 return Task.FromResult<int?>(null);
             }
@@ -1870,7 +1870,7 @@ namespace resonance
                 return [new Soulseek.Directory(directory)];
             }
 
-            if (Blocked.IsBlocked(username, BlockedUserScope.Browse))
+            if (Blocked.IsBlocked(username, endpoint.Address, BlockedUserScope.Browse))
             {
                 Log.Information("Returned empty directory listing for blocked user {Username} ({IP})", username, endpoint.Address);
                 return [new Soulseek.Directory(directory)];
@@ -2182,6 +2182,11 @@ namespace resonance
                             {
                                 return null;
                             }
+
+                            if (Blocked.IsBlocked(username, endpoint.Address, BlockedUserScope.SearchResponses))
+                            {
+                                return null;
+                            }
                         }
                         catch (Soulseek.UserOfflineException)
                         {
@@ -2397,7 +2402,7 @@ namespace resonance
                 }
             }
 
-            if (Users.IsBlacklisted(username, endpoint.Address) || Blocked.IsBlocked(username, BlockedUserScope.Transfers))
+            if (Users.IsBlacklisted(username, endpoint.Address) || Blocked.IsBlocked(username, endpoint.Address, BlockedUserScope.Transfers))
             {
                 return new UserInfo(
                     description: Options.Soulseek.Description,

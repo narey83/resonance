@@ -65,4 +65,10 @@ public class BlockedUserOptions
     ///     Gets or sets a value indicating whether results from blocked users are dropped from searches.
     /// </summary>
     public bool HideSearchResults { get; set; } = true;
+
+    /// <summary>
+    ///     Gets or sets a value indicating whether the IPs blocked users connect from are learned,
+    ///     and new usernames appearing from those IPs are auto-blocked (ban evasion).
+    /// </summary>
+    public bool BlockSameIp { get; set; } = true;
 }

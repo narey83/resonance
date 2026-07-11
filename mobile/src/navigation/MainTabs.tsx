@@ -54,6 +54,7 @@ import ChatConversationScreen    from '../screens/more/ChatConversationScreen';
 import TagsScreen                from '../screens/more/TagsScreen';
 import AnalysisScreen            from '../screens/more/AnalysisScreen';
 import SystemScreen              from '../screens/more/SystemScreen';
+import BlockedScreen             from '../screens/more/BlockedScreen';
 import SettingsScreen            from '../screens/more/SettingsScreen';
 import NetworkLogScreen          from '../screens/more/NetworkLogScreen';
 
@@ -77,6 +78,7 @@ export type MoreStackParamList = {
   Tags:             undefined;
   Analysis:         undefined;
   System:           undefined;
+  Blocked:          undefined;
   Settings:         undefined;
   NetworkLog:       undefined;
 };
@@ -100,6 +102,7 @@ function MoreStack() {
       <More.Screen name="Tags"             component={TagsScreen}             options={{ title: 'Tags' }} />
       <More.Screen name="Analysis"         component={AnalysisScreen}         options={{ title: 'Analysis' }} />
       <More.Screen name="System"           component={SystemScreen}           options={{ title: 'System' }} />
+      <More.Screen name="Blocked"          component={BlockedScreen}          options={{ title: 'Blocked' }} />
       <More.Screen name="Settings"         component={SettingsScreen}         options={{ title: 'Settings' }} />
       <More.Screen name="NetworkLog"       component={NetworkLogScreen}       options={{ title: 'Network Log' }} />
     </More.Navigator>
@@ -124,6 +127,10 @@ export default function MainTabs() {
         headerStyle:      { backgroundColor: colors.header },
         headerTintColor:  colors.textPrimary,
         headerShadowVisible: false,
+        // Blurred tabs keep their state but stop re-rendering (react-freeze via
+        // react-native-screens) — state pushed by hubs/stores while away is applied
+        // on refocus instead of re-rendering a hidden analytics dashboard.
+        freezeOnBlur: true,
       }}
     >
       <Tab.Screen

@@ -54,8 +54,9 @@ import { connect, disconnect } from '../lib/server';
 import * as session from '../lib/session';
 import { playMessageReceived } from '../lib/sound';
 import { getSessionId, isAdmin, isPassthroughEnabled } from '../lib/token';
+import { emitTransferComplete } from '../lib/transferEvents';
 import * as transfersAPI from '../lib/transfers';
-import { parseUtcDate } from '../lib/util';
+import { getFileName, parseUtcDate } from '../lib/util';
 import * as ytdlpAPI from '../lib/ytdlp';
 import AppContext from './AppContext';
 import Browse from './Browse/Browse';
@@ -148,6 +149,10 @@ const DEFAULT_NOTIFICATION_SETTINGS = {
   privateMessage: true,
   browsed: true,
   roomMention: true,
+  // Transfer-completion toasts can be frequent on a busy server, so both are
+  // opt-in to avoid a flood of notifications.
+  downloadComplete: false,
+  uploadComplete: false,
 };
 
 const loadNotificationSettings = () => {
@@ -181,6 +186,14 @@ const formatEventNotification = (record, lastReadAt) => {
     case 'Browsed':
       type = 'browsed';
       message = `${d.username || '?'} browsed your files`;
+      break;
+    case 'UploadFileComplete':
+      type = 'uploadComplete';
+      message = `${d.transfer?.username || '?'} finished downloading ${getFileName(d.remoteFilename || '') || 'a file'}`;
+      break;
+    case 'DownloadDirectoryComplete':
+      type = 'downloadComplete';
+      message = `Finished downloading ${d.remoteDirectoryName || 'a folder'}${d.username ? ` from ${d.username}` : ''}`;
       break;
     case 'RoomMention': {
       const text = d.message || '';
@@ -538,6 +551,12 @@ const App = () => {
       if (!flushTimeout) flushTimeout = setTimeout(flushPending, 0);
     });
     hub.on('BLOCKED_USERS', applyBlockedUsers);
+    hub.on('BLOCKED_USER_ALERT', ({ ip, username }) => {
+      toast.warn(
+        `Blocked "${username}" automatically — same IP (${ip}) as a blocked user.`,
+        { autoClose: false },
+      );
+    });
 
     hub.onreconnecting(() => {
       markReconnecting(1);
@@ -568,6 +587,23 @@ const App = () => {
 
     hub.on('BROWSED', (username) => {
       addNotificationRef.current('browsed', `${username} browsed your files`);
+    });
+
+    // A completed transfer is the moment a peer appears in / updates the
+    // telemetry user list; re-broadcast so live views can refresh instantly.
+    hub.on('UPLOAD_FILE_COMPLETE', ({ filename, username }) => {
+      emitTransferComplete({ direction: 'upload', username });
+      addNotificationRef.current(
+        'uploadComplete',
+        `${username} finished downloading ${filename || 'a file'}`,
+      );
+    });
+    hub.on('DOWNLOAD_DIRECTORY_COMPLETE', ({ directoryName, username }) => {
+      emitTransferComplete({ direction: 'download', username });
+      addNotificationRef.current(
+        'downloadComplete',
+        `Finished downloading ${directoryName || 'a folder'}${username ? ` from ${username}` : ''}`,
+      );
     });
 
     hub.on('ROOM_MENTION', ({ message, roomName, username }) => {

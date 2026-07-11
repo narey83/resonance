@@ -56,6 +56,7 @@ namespace resonance.Core.API
         public static readonly string ServerReady = "SERVER_READY";
         public static readonly string SessionRevoked = "SESSION_REVOKED";
         public static readonly string BlockedUsers = "BLOCKED_USERS";
+        public static readonly string BlockedUserAlert = "BLOCKED_USER_ALERT";
     }
 
     /// <summary>
@@ -125,10 +126,28 @@ namespace resonance.Core.API
             return hub.Clients.All.SendAsync(ApplicationHubMethods.SessionRevoked, (object)sessionIds);
         }
 
-        public static Task BroadcastBlockedUsersAsync(this IHubContext<ApplicationHub> hub, IReadOnlyList<resonance.Users.Blocking.BlockedUser> users, resonance.Users.Blocking.BlockedUserOptions options)
+        public static Task BroadcastBlockedUsersAsync(this IHubContext<ApplicationHub> hub, resonance.Users.Blocking.BlockedUsersService blockedUsers)
         {
-            return hub.Clients.All.SendAsync(ApplicationHubMethods.BlockedUsers, new { users, options });
+            return hub.Clients.All.SendAsync(ApplicationHubMethods.BlockedUsers, BuildBlockedUsersPayload(blockedUsers));
         }
+
+        /// <summary>
+        ///     Alerts all clients that a new username was auto-blocked for evading a block
+        ///     (it appeared from an IP a blocked user had used).
+        /// </summary>
+        public static Task BroadcastBlockedUserAlertAsync(this IHubContext<ApplicationHub> hub, string username, string ip)
+        {
+            return hub.Clients.All.SendAsync(ApplicationHubMethods.BlockedUserAlert, new { username, ip });
+        }
+
+        public static object BuildBlockedUsersPayload(resonance.Users.Blocking.BlockedUsersService blockedUsers) => new
+        {
+            users = blockedUsers.GetAll(),
+            ips = blockedUsers.GetIps(),
+            places = blockedUsers.GetPlaces(),
+            options = blockedUsers.GetOptions(),
+            geoAvailable = blockedUsers.GeoAvailable,
+        };
     }
 
     /// <summary>
@@ -155,7 +174,7 @@ namespace resonance.Core.API
         {
             await Clients.Caller.SendAsync(ApplicationHubMethods.State, StateMonitor.CurrentValue);
             await Clients.Caller.SendAsync(ApplicationHubMethods.Options, OptionsMonitor.CurrentValue.Redact());
-            await Clients.Caller.SendAsync(ApplicationHubMethods.BlockedUsers, new { users = BlockedUsers.GetAll(), options = BlockedUsers.GetOptions() });
+            await Clients.Caller.SendAsync(ApplicationHubMethods.BlockedUsers, ApplicationHubExtensions.BuildBlockedUsersPayload(BlockedUsers));
         }
     }
 }

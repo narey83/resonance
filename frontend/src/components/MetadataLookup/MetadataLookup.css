@@ -45,6 +45,12 @@
   justify-content: space-between;
 }
 
+.ml-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
 .ml-title {
   align-items: center;
   color: var(--text-primary);

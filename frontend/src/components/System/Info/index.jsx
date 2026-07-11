@@ -191,6 +191,18 @@ const SessionsPanel = () => {
           {error}
         </div>
       )}
+      {sessions && sessions.length > 0 && (
+        <div className="session-toolbar">
+          <button
+            className="shares-add-btn shares-add-btn--danger hover-fx"
+            disabled={revoking === 'all'}
+            onClick={handleRevokeAll}
+            type="button"
+          >
+            {revoking === 'all' ? 'Revoking…' : 'Revoke All Sessions'}
+          </button>
+        </div>
+      )}
       {sessions === null ? (
         <div className="session-empty">Loading…</div>
       ) : sessions.length === 0 ? (
@@ -245,18 +257,6 @@ const SessionsPanel = () => {
             </div>
           );
         })
-      )}
-      {sessions && sessions.length > 0 && (
-        <div className="session-footer">
-          <button
-            className="shares-add-btn shares-add-btn--danger hover-fx"
-            disabled={revoking === 'all'}
-            onClick={handleRevokeAll}
-            type="button"
-          >
-            {revoking === 'all' ? 'Revoking…' : 'Revoke All Sessions'}
-          </button>
-        </div>
       )}
     </Section>
   );

@@ -54,6 +54,14 @@ public record CountrySummary
 }
 
 /// <summary>
+///     The distinct countries and, per country, the cities observed from peer geo-lookups.
+///     Used to populate the block-by-location dropdowns.
+/// </summary>
+public record KnownLocations(
+    System.Collections.Generic.IReadOnlyList<string> Countries,
+    System.Collections.Generic.IReadOnlyDictionary<string, System.Collections.Generic.IReadOnlyList<string>> CitiesByCountry);
+
+/// <summary>
 ///     Geographic breakdown of upload activity plus VPN usage among active peers.
 /// </summary>
 public record GeographyReport

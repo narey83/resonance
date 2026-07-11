@@ -34,9 +34,8 @@
 // backend's own permission boundary) lives in the separate ConnectionScreen
 // instead — see that file.
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -79,6 +78,7 @@ import FileTypeChart from '../../components/overview/FileTypeChart';
 import NotificationFeed from '../../components/overview/NotificationFeed';
 import UserReportModal from '../../components/overview/UserReportModal';
 import PersonalSummary from '../../components/overview/PersonalSummary';
+import { SkeletonCard, SkeletonRows } from '../../components/Skeleton';
 
 const RANGES = [
   { hours: 1, label: '1h' },
@@ -143,12 +143,37 @@ const emptyAnalytics: AnalyticsData = {
 
 type Props = BottomTabScreenProps<MainTabParamList, 'OverviewTab'>;
 
+// ── Lazy per-tab fetching ─────────────────────────────────────────────────────
+// The dashboard used to fire all ~21 report queries in one Promise.all on mount
+// and again on every range change, blocking the whole page behind one spinner
+// and re-rendering everything at once. Endpoints are grouped by the tab that
+// needs them; a group is fetched the first time its tab is opened (per range)
+// and cached until pull-to-refresh.
+
+type FetchGroup = 'glance' | 'activity' | 'reliability' | 'top' | 'geography' | 'coverage' | 'library' | 'feed';
+
+const TAB_GROUPS: Record<TabId, FetchGroup[]> = {
+  glance:      ['glance', 'coverage'],
+  activity:    ['activity'],
+  reliability: ['reliability'],
+  top:         ['top'],
+  geography:   ['geography'],
+  library:     ['library', 'coverage'],
+  feed:        ['feed'],
+};
+
+// Groups whose data depends on the selected time range (the rest are global).
+const RANGE_SCOPED: ReadonlySet<FetchGroup> = new Set(['glance', 'activity', 'reliability', 'top', 'geography']);
+
+const groupKey = (group: FetchGroup, hours: number) =>
+  RANGE_SCOPED.has(group) ? `${group}:${hours}` : group;
+
 export default function OverviewScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
   const isAdmin = useAuthStore((state) => state.isAdmin);
 
-  const [loading, setLoading]     = useState(true);
+  const [tabLoading, setTabLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError]         = useState<string | null>(null);
 
@@ -164,117 +189,121 @@ export default function OverviewScreen({ navigation }: Props) {
   const [playStats, setPlayStats] = useState<libraryActivityApi.PlayStat[]>([]);
   const [events, setEvents] = useState<eventsApi.EventRecord[]>([]);
 
-  const fetchAnalytics = useCallback(async () => {
-    if (!isAdmin) { setLoading(false); return; }
-    setError(null);
+  const fetchedRef = useRef<Set<string>>(new Set());
+
+  const fetchGroup = useCallback(async (group: FetchGroup, hours: number) => {
     const now = new Date();
     const end = now.toISOString();
-    const start = new Date(now.getTime() - rangeHours * 3_600_000).toISOString();
-    const prevEnd = start;
-    const prevStart = new Date(now.getTime() - 2 * rangeHours * 3_600_000).toISOString();
-    const interval = histogramInterval(rangeHours);
+    const start = new Date(now.getTime() - hours * 3_600_000).toISOString();
     const range = { start, end };
 
-    try {
-      const [
-        summary, prevSummary, histogram,
-        dlBoard, ulBoard, topFiles, directories,
-        dlExceptions, ulExceptions, heatmap, geography,
-        retryFunnel, queueWait, peerRetention, social, mapUsersPage,
-      ] = await Promise.all([
-        analytics.getSummary(range),
-        analytics.getSummary({ start: prevStart, end: prevEnd }),
-        analytics.getHistogram({ ...range, interval }),
-        analytics.getLeaderboard({ ...range, direction: 'Download' }),
-        analytics.getLeaderboard({ ...range, direction: 'Upload' }),
-        analytics.getTopFiles(range),
-        analytics.getDirectories(range),
-        analytics.getExceptionsPareto({ ...range, direction: 'Download' }),
-        analytics.getExceptionsPareto({ ...range, direction: 'Upload' }),
-        analytics.getHeatmap(range),
-        analytics.getGeography(range),
-        analytics.getRetryFunnel(range),
-        analytics.getQueueWait(range),
-        analytics.getPeerRetention(range),
-        analytics.getSocialActivity(range),
-        analytics.getUserList({ ...range, sortBy: 'DownloadBytes', limit: 100 }),
-      ]);
+    switch (group) {
+      case 'glance': {
+        const prevStart = new Date(now.getTime() - 2 * hours * 3_600_000).toISOString();
+        const [summary, prevSummary, social] = await Promise.all([
+          analytics.getSummary(range),
+          analytics.getSummary({ start: prevStart, end: start }),
+          analytics.getSocialActivity(range),
+        ]);
+        setData((d) => ({ ...d, summary, prevSummary, social }));
+        break;
+      }
+      case 'activity': {
+        const [histogram, heatmap] = await Promise.all([
+          analytics.getHistogram({ ...range, interval: histogramInterval(hours) }),
+          analytics.getHeatmap(range),
+        ]);
+        setData((d) => ({ ...d, histogram, heatmap }));
+        break;
+      }
+      case 'reliability': {
+        const [summary, histogram, dlExceptions, ulExceptions, retryFunnel, queueWait] = await Promise.all([
+          analytics.getSummary(range),
+          analytics.getHistogram({ ...range, interval: histogramInterval(hours) }),
+          analytics.getExceptionsPareto({ ...range, direction: 'Download' }),
+          analytics.getExceptionsPareto({ ...range, direction: 'Upload' }),
+          analytics.getRetryFunnel(range),
+          analytics.getQueueWait(range),
+        ]);
+        setData((d) => ({ ...d, summary, histogram, exceptions: [...dlExceptions, ...ulExceptions], retryFunnel, queueWait }));
+        break;
+      }
+      case 'top': {
+        const [dlBoard, ulBoard, topFiles, directories] = await Promise.all([
+          analytics.getLeaderboard({ ...range, direction: 'Download' }),
+          analytics.getLeaderboard({ ...range, direction: 'Upload' }),
+          analytics.getTopFiles(range),
+          analytics.getDirectories(range),
+        ]);
+        setData((d) => ({ ...d, leaderboard: { download: dlBoard, upload: ulBoard }, topFiles, directories }));
+        break;
+      }
+      case 'geography': {
+        const [geography, peerRetention, mapUsersPage] = await Promise.all([
+          analytics.getGeography(range),
+          analytics.getPeerRetention(range),
+          analytics.getUserList({ ...range, sortBy: 'DownloadBytes', limit: 100 }),
+        ]);
+        setData((d) => ({ ...d, geography, peerRetention, mapUsers: mapUsersPage.items }));
+        break;
+      }
+      case 'coverage': {
+        const [counts, cov] = await Promise.all([
+          sharesApi.getFileTypeCounts(),
+          analytics.getCoverage(),
+        ]);
+        setFileTypeCounts(counts);
+        setCoverage(cov);
+        break;
+      }
+      case 'library': {
+        const [g, y, p] = await Promise.all([
+          musicLibraryApi.getGenres(),
+          musicLibraryApi.getYears(),
+          libraryActivityApi.getPlayStats(),
+        ]);
+        setGenres(g);
+        setYears(y);
+        setPlayStats(p);
+        break;
+      }
+      case 'feed': {
+        setEvents(await eventsApi.list({ limit: 50 }));
+        break;
+      }
+    }
+  }, []);
 
-      setData({
-        summary, prevSummary, histogram,
-        leaderboard: { download: dlBoard, upload: ulBoard },
-        topFiles, directories,
-        exceptions: [...dlExceptions, ...ulExceptions],
-        heatmap, geography, retryFunnel, queueWait, peerRetention, social,
-        mapUsers: mapUsersPage.items,
-      });
+  const loadTab = useCallback(async (targetTab: TabId, hours: number, force = false) => {
+    if (!isAdmin) { setTabLoading(false); return; }
+    const groups = TAB_GROUPS[targetTab].filter((g) => force || !fetchedRef.current.has(groupKey(g, hours)));
+    if (groups.length === 0) return;
+    setTabLoading(true);
+    setError(null);
+    try {
+      await Promise.all(groups.map(async (g) => {
+        await fetchGroup(g, hours);
+        fetchedRef.current.add(groupKey(g, hours));
+      }));
     } catch {
       setError('Could not load analytics. Check your connection.');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      setTabLoading(false);
     }
-  }, [isAdmin, rangeHours]);
+  }, [isAdmin, fetchGroup]);
 
-  const fetchLibraryOnce = useCallback(async () => {
-    if (!isAdmin) return;
-    try {
-      const [counts, cov, g, y, p] = await Promise.all([
-        sharesApi.getFileTypeCounts(),
-        analytics.getCoverage(),
-        musicLibraryApi.getGenres(),
-        musicLibraryApi.getYears(),
-        libraryActivityApi.getPlayStats(),
-      ]);
-      setFileTypeCounts(counts);
-      setCoverage(cov);
-      setGenres(g);
-      setYears(y);
-      setPlayStats(p);
-    } catch {
-      // Non-critical — library composition tab just stays empty.
-    }
-  }, [isAdmin]);
-
-  const fetchFeed = useCallback(async () => {
-    if (!isAdmin) return;
-    try {
-      setEvents(await eventsApi.list({ limit: 50 }));
-    } catch {
-      // Non-critical.
-    }
-  }, [isAdmin]);
-
-  useEffect(() => { fetchAnalytics(); }, [fetchAnalytics]);
-  useEffect(() => { fetchLibraryOnce(); }, [fetchLibraryOnce]);
-  useEffect(() => { fetchFeed(); }, [fetchFeed]);
+  useEffect(() => { loadTab(tab, rangeHours); }, [tab, rangeHours, loadTab]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    Promise.all([fetchAnalytics(), fetchFeed()]).finally(() => setRefreshing(false));
+    fetchedRef.current.clear();
+    loadTab(tab, rangeHours, true).finally(() => setRefreshing(false));
   };
 
   // Only admins get the full analytics dashboard; everyone else gets a
   // small personal summary instead (mirrors the web frontend's Overview).
   if (!isAdmin) {
     return <PersonalSummary colors={colors} />;
-  }
-
-  if (loading && !data.summary) {
-    return (
-      <View style={s.center}>
-        <ActivityIndicator color={colors.accent} size="large" />
-      </View>
-    );
-  }
-
-  if (error && !data.summary) {
-    return (
-      <View style={s.center}>
-        <Ionicons name="alert-circle-outline" size={40} color={colors.danger} />
-        <Text style={s.errorText}>{error}</Text>
-      </View>
-    );
   }
 
   return (
@@ -313,7 +342,21 @@ export default function OverviewScreen({ navigation }: Props) {
         </ScrollView>
 
         <View style={s.tabContent}>
-          {tab === 'glance' && (
+          {tabLoading && (
+            <>
+              <SkeletonCard height={90} />
+              <SkeletonCard height={140} />
+              <SkeletonRows rows={3} />
+            </>
+          )}
+          {!tabLoading && error && (
+            <View style={s.inlineError}>
+              <Ionicons name="alert-circle-outline" size={32} color={colors.danger} />
+              <Text style={s.errorText}>{error}</Text>
+              <Text style={s.errorHint}>Pull down to retry.</Text>
+            </View>
+          )}
+          {!tabLoading && !error && tab === 'glance' && (
             <>
               <KpiCards summary={data.summary} prevSummary={data.prevSummary} colors={colors} />
               <SectionHeader title="Ratio" colors={colors} />
@@ -328,7 +371,7 @@ export default function OverviewScreen({ navigation }: Props) {
               <SocialPulse data={data.social} colors={colors} />
             </>
           )}
-          {tab === 'activity' && (
+          {!tabLoading && !error && tab === 'activity' && (
             <>
               <SectionHeader title="Transfer Volume" colors={colors} />
               <ActivityChart data={data.histogram} colors={colors} />
@@ -336,7 +379,7 @@ export default function OverviewScreen({ navigation }: Props) {
               <ActivityHeatmap data={data.heatmap} colors={colors} />
             </>
           )}
-          {tab === 'reliability' && (
+          {!tabLoading && !error && tab === 'reliability' && (
             <>
               <SectionHeader title="Errors Over Time" colors={colors} />
               <ErrorChart data={data.histogram} colors={colors} />
@@ -348,7 +391,7 @@ export default function OverviewScreen({ navigation }: Props) {
               <TransferHealth summary={data.summary} exceptions={data.exceptions} colors={colors} />
             </>
           )}
-          {tab === 'top' && (
+          {!tabLoading && !error && tab === 'top' && (
             <>
               <SectionHeader title="Leaderboard" colors={colors} />
               <UserLeaderboard leaderboard={data.leaderboard} colors={colors} onSelectUser={setSelectedUser} />
@@ -360,7 +403,7 @@ export default function OverviewScreen({ navigation }: Props) {
               <UserReports colors={colors} onSelectUser={setSelectedUser} />
             </>
           )}
-          {tab === 'geography' && (
+          {!tabLoading && !error && tab === 'geography' && (
             <>
               <SectionHeader title="Peer Map" colors={colors} />
               <WorldMap users={data.mapUsers} colors={colors} onSelectUser={setSelectedUser} />
@@ -370,7 +413,7 @@ export default function OverviewScreen({ navigation }: Props) {
               <PeerRetentionCard data={data.peerRetention} colors={colors} />
             </>
           )}
-          {tab === 'library' && (
+          {!tabLoading && !error && tab === 'library' && (
             <>
               <SectionHeader title="Composition" colors={colors} />
               <LibraryComposition genres={genres} years={years} playStats={playStats} colors={colors} />
@@ -378,7 +421,7 @@ export default function OverviewScreen({ navigation }: Props) {
               <FileTypeChart counts={fileTypeCounts} colors={colors} />
             </>
           )}
-          {tab === 'feed' && (
+          {!tabLoading && !error && tab === 'feed' && (
             <>
               <SectionHeader title="Recent Activity" colors={colors} />
               <NotificationFeed events={events} colors={colors} />
@@ -404,8 +447,9 @@ function makeStyles(c: ThemeColors) {
   return StyleSheet.create({
     scroll:    { flex: 1, backgroundColor: c.bgPrimary },
     container: { padding: Spacing.lg, gap: Spacing.sm, paddingBottom: Spacing.xxl },
-    center:    { flex: 1, backgroundColor: c.bgPrimary, justifyContent: 'center', alignItems: 'center', gap: Spacing.md },
-    errorText: { fontSize: Typography.base, color: c.textMuted, textAlign: 'center', paddingHorizontal: Spacing.xl },
+    inlineError: { alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.xxl },
+    errorText:   { fontSize: Typography.base, color: c.textMuted, textAlign: 'center', paddingHorizontal: Spacing.xl },
+    errorHint:   { fontSize: Typography.xs, color: c.textDim },
     segWrapper: {
       flexDirection: 'row',
       borderRadius: Radius.full,

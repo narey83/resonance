@@ -32,10 +32,11 @@
 // needed here for large user lists.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 import { getUserList, UserReportSummary } from '../../api/analytics';
+import { SkeletonRows } from '../Skeleton';
 import { EmptyState, fmtBytes, fmtDate } from './shared';
 
 const PAGE_SIZE = 25;
@@ -104,18 +105,18 @@ export default function UserReports({ colors, onSelectUser }: { colors: ThemeCol
         />
       </View>
       {loading ? (
-        <ActivityIndicator color={colors.accent} />
+        <SkeletonRows rows={5} />
       ) : items.length === 0 ? (
         <EmptyState text="No users found." colors={colors} />
       ) : (
-        <FlatList
-          data={items}
-          keyExtractor={(item, i) => item.username ?? String(i)}
-          scrollEnabled={false}
-          onEndReached={loadMore}
-          onEndReachedThreshold={0.5}
-          renderItem={({ item }) => (
-            <Pressable style={s.row} onPress={() => onSelectUser(item.username)}>
+        // Plain mapped rows, not a FlatList: this sits inside the page ScrollView, so a
+        // nested list can't virtualize anyway, and onEndReached on a non-scrolling list
+        // fires continuously — it auto-paginated the ENTIRE user table 25 rows at a time,
+        // hammering the API every few seconds and rendering an unbounded list. Paging is
+        // explicit via the button below instead.
+        <View>
+          {items.map((item) => (
+            <Pressable key={item.username} style={s.row} onPress={() => onSelectUser(item.username)}>
               <View style={s.info}>
                 <Text style={s.username} numberOfLines={1}>{item.username}</Text>
                 <Text style={s.sub}>
@@ -124,9 +125,17 @@ export default function UserReports({ colors, onSelectUser }: { colors: ThemeCol
               </View>
               <Ionicons name="chevron-forward" size={16} color={colors.textDim} />
             </Pressable>
+          ))}
+          {items.length < total && (
+            <Pressable style={s.moreBtn} onPress={loadMore} disabled={loadingMore}>
+              {loadingMore ? (
+                <ActivityIndicator color={colors.accent} size="small" />
+              ) : (
+                <Text style={s.moreText}>Show more · {items.length} of {total}</Text>
+              )}
+            </Pressable>
           )}
-          ListFooterComponent={loadingMore ? <ActivityIndicator color={colors.accent} style={{ marginVertical: Spacing.sm }} /> : null}
-        />
+        </View>
       )}
     </View>
   );
@@ -159,5 +168,15 @@ function makeStyles(c: ThemeColors) {
     info:     { flex: 1, gap: 2 },
     username: { fontSize: Typography.base, color: c.textPrimary, fontWeight: '500' },
     sub:      { fontSize: Typography.xs, color: c.textMuted },
+    moreBtn:  {
+      alignItems: 'center',
+      paddingVertical: Spacing.sm,
+      borderRadius: Radius.md,
+      borderWidth: 1,
+      borderColor: c.border,
+      backgroundColor: c.bgElevated,
+      marginTop: Spacing.xs,
+    },
+    moreText: { fontSize: Typography.sm, fontWeight: '600', color: c.accent },
   });
 }

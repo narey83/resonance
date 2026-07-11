@@ -38,6 +38,7 @@ import { useEffect, useState } from 'react';
 const defaultOptions = {
   blockBrowse: true,
   blockPrivateMessages: true,
+  blockSameIp: true,
   blockSearchResponses: true,
   blockTransfers: true,
   hideRoomMessages: true,
@@ -45,7 +46,10 @@ const defaultOptions = {
 };
 
 let state = {
+  geoAvailable: false,
+  ips: [],
   options: defaultOptions,
+  places: [],
   users: [],
 };
 
@@ -56,19 +60,27 @@ const notify = () => {
   for (const subscriber of subscribers) subscriber(state);
 };
 
-const setState = (users, options) => {
-  state = {
-    options: options ?? state.options,
-    users: users ?? state.users,
-  };
-
+const setState = (partial) => {
+  state = { ...state, ...partial };
   blockedSet = new Set(state.users.map((u) => u.username.toLowerCase()));
   notify();
 };
 
 // Wired to the application hub's BLOCKED_USERS message in App.jsx.
-export const applyBlockedUsers = ({ options, users }) =>
-  setState(users, options);
+export const applyBlockedUsers = ({
+  geoAvailable,
+  ips,
+  options,
+  places,
+  users,
+}) =>
+  setState({
+    geoAvailable: geoAvailable ?? state.geoAvailable,
+    ips: ips ?? state.ips,
+    options: options ?? state.options,
+    places: places ?? state.places,
+    users: users ?? state.users,
+  });
 
 export const getBlockedUsers = () => state;
 
@@ -77,8 +89,18 @@ export const isBlocked = (username) =>
 
 export const fetchBlockedUsers = async () => {
   const { data } = await api.get('/blockedusers');
-  setState(data?.users ?? [], data?.options);
+  applyBlockedUsers(data ?? {});
   return state;
+};
+
+// Distinct countries and (per country) cities observed from real peer connections
+// via MaxMind — the source for the block-by-location dropdowns.
+export const fetchKnownLocations = async () => {
+  const { data } = await api.get('/blockedusers/geo');
+  return {
+    citiesByCountry: data?.citiesByCountry ?? {},
+    countries: data?.countries ?? [],
+  };
 };
 
 export const blockUser = async (username, reason) => {
@@ -86,7 +108,7 @@ export const blockUser = async (username, reason) => {
     `/blockedusers/${encodeURIComponent(username)}`,
     reason ? { reason } : {},
   );
-  setState(data);
+  setState({ users: data });
   return data;
 };
 
@@ -94,13 +116,43 @@ export const unblockUser = async (username) => {
   const { data } = await api.delete(
     `/blockedusers/${encodeURIComponent(username)}`,
   );
-  setState(data);
+  setState({ users: data });
+  return data;
+};
+
+export const blockIp = async (cidr, reason) => {
+  const { data } = await api.post('/blockedusers/ips', { cidr, reason });
+  setState({ ips: data });
+  return data;
+};
+
+export const unblockIp = async (cidr) => {
+  const { data } = await api.delete(
+    `/blockedusers/ips?cidr=${encodeURIComponent(cidr)}`,
+  );
+  setState({ ips: data });
+  return data;
+};
+
+export const blockPlace = async (country, city, reason) => {
+  const { data } = await api.post('/blockedusers/places', {
+    city,
+    country,
+    reason,
+  });
+  setState({ places: data });
+  return data;
+};
+
+export const unblockPlace = async (id) => {
+  const { data } = await api.delete(`/blockedusers/places/${id}`);
+  setState({ places: data });
   return data;
 };
 
 export const setBlockedUserOptions = async (options) => {
   const { data } = await api.put('/blockedusers/options', options);
-  setState(undefined, data);
+  setState({ options: data });
   return data;
 };
 

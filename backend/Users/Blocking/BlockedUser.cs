@@ -30,6 +30,7 @@
 namespace resonance.Users.Blocking;
 
 using System;
+using System.Collections.Generic;
 
 /// <summary>
 ///     A blocked Soulseek user.
@@ -50,4 +51,22 @@ public class BlockedUser
     ///     Gets or sets the optional note recorded when the user was blocked.
     /// </summary>
     public string Reason { get; set; }
+
+    /// <summary>
+    ///     Gets or sets the IP addresses this user has connected from, learned while they were
+    ///     blocked (only populated when same-IP blocking is on and they have connected since).
+    /// </summary>
+    public IReadOnlyList<string> Ips { get; set; } = [];
+
+    /// <summary>
+    ///     Gets or sets the country resolved from the user's known IPs, when the geo database is
+    ///     available; null when unknown.
+    /// </summary>
+    public string Country { get; set; }
+
+    /// <summary>
+    ///     Gets or sets the city resolved from the user's known IPs, when the geo database is
+    ///     available; null when unknown.
+    /// </summary>
+    public string City { get; set; }
 }

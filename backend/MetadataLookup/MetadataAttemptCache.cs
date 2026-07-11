@@ -45,6 +45,16 @@ namespace resonance.MetadataLookup
     /// </summary>
     internal sealed class MetadataAttemptCache
     {
+        /// <summary>The recorded outcome of an attempt that found no confident match.</summary>
+        public const string OutcomeNoMatch = "nomatch";
+
+        /// <summary>The recorded outcome of an attempt whose match was written to the file.</summary>
+        public const string OutcomeWritten = "written";
+
+        // Absolute music roots from before the shares migration to root-relative paths; entries
+        // keyed under these are re-keyed to their relative form at load.
+        private static readonly string[] LegacyAbsoluteRoots = ["/mnt/data/music/"];
+
         private readonly string filePath;
         private readonly ConcurrentDictionary<string, Attempt> entries = new(StringComparer.Ordinal);
         private readonly object saveLock = new();
@@ -58,39 +68,19 @@ namespace resonance.MetadataLookup
         }
 
         /// <summary>
-        ///     Returns true when the file has already been attempted with the same query identity and
-        ///     provider, and the retry window has not yet elapsed.
+        ///     Returns true when the file has already been attempted, in which case automatic passes
+        ///     must not attempt it again. Any prior attempt disqualifies the file — regardless of
+        ///     identity, provider set or age: mass re-attempts rewrite tags users already fixed, and
+        ///     a file the providers couldn't fill once is very unlikely to be filled later. Only a
+        ///     user-requested full re-scan (which bypasses this cache entirely) or the tag editor's
+        ///     per-track lookup queries it again.
         /// </summary>
-        public bool ShouldSkip(string path, string identity, string provider, TimeSpan retryAfter)
+        public bool ShouldSkip(string path) => entries.ContainsKey(path);
+
+        /// <summary>Records an attempt for the specified file, query identity, provider and outcome.</summary>
+        public void Record(string path, string identity, string provider, string outcome = null)
         {
-            if (!entries.TryGetValue(path, out var attempt))
-            {
-                return false;
-            }
-
-            // identity is already normalized by the caller, so an ordinal compare is correct. A null
-            // Identity is a legacy fingerprint-era entry — treat as a mismatch so it is re-attempted once.
-            if (!string.Equals(attempt.Identity, identity, StringComparison.Ordinal))
-            {
-                return false; // queryable metadata changed since the last attempt — look it up again
-            }
-
-            // a different provider hasn't tried this file yet — give it a chance. Entries written
-            // before providers were configurable are treated as "musicbrainz".
-            var attemptedProvider = string.IsNullOrEmpty(attempt.Provider) ? "musicbrainz" : attempt.Provider;
-            if (!string.Equals(attemptedProvider, provider, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
-            var ageSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - attempt.AttemptedAt;
-            return ageSeconds < retryAfter.TotalSeconds;
-        }
-
-        /// <summary>Records an attempt for the specified file, query identity and provider.</summary>
-        public void Record(string path, string identity, string provider)
-        {
-            entries[path] = new Attempt(identity, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), provider);
+            entries[path] = new Attempt(identity, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), provider, outcome);
         }
 
         /// <summary>Persists the cache to disk (atomic write via a temp file).</summary>
@@ -128,6 +118,7 @@ namespace resonance.MetadataLookup
                 }
 
                 var pruned = 0;
+                var migrated = 0;
                 foreach (var (path, attempt) in loaded)
                 {
                     // drop entries for deleted files, but only when the containing directory is
@@ -138,12 +129,30 @@ namespace resonance.MetadataLookup
                         continue;
                     }
 
-                    entries[path] = attempt;
+                    // One-time migration: shares moved to root-relative paths (2026-07-02), which
+                    // orphaned entries keyed by the old absolute root and made the entire backlog
+                    // look never-attempted. Re-key them so they match today's enumeration; when
+                    // both key forms exist, the newest attempt wins.
+                    var key = path;
+                    foreach (var root in LegacyAbsoluteRoots)
+                    {
+                        if (key.StartsWith(root, StringComparison.Ordinal))
+                        {
+                            key = key[root.Length..];
+                            migrated++;
+                            break;
+                        }
+                    }
+
+                    if (!entries.TryGetValue(key, out var existing) || existing.AttemptedAt < attempt.AttemptedAt)
+                    {
+                        entries[key] = attempt;
+                    }
                 }
 
-                log.Debug("Loaded {Count} metadata lookup attempt(s) from cache ({Pruned} stale entries pruned)", entries.Count, pruned);
+                log.Debug("Loaded {Count} metadata lookup attempt(s) from cache ({Pruned} stale entries pruned, {Migrated} legacy paths re-keyed)", entries.Count, pruned, migrated);
 
-                if (pruned > 0)
+                if (pruned > 0 || migrated > 0)
                 {
                     Save();
                 }
@@ -167,6 +176,6 @@ namespace resonance.MetadataLookup
             }
         }
 
-        private sealed record Attempt(string Identity, long AttemptedAt, string Provider = null);
+        private sealed record Attempt(string Identity, long AttemptedAt, string Provider = null, string Outcome = null);
     }
 }

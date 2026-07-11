@@ -56,9 +56,6 @@ namespace resonance.MetadataLookup
         private static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(45);
         private static readonly TimeSpan SweepInterval = TimeSpan.FromMinutes(15);
 
-        // already-attempted tracks are skipped until the file changes or this window elapses
-        private static readonly TimeSpan RetryAfter = TimeSpan.FromDays(90);
-
         private static readonly HashSet<string> AudioExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
             "mp3", "flac", "ogg", "wav", "m4a", "aac", "opus", "wma", "aiff", "aif",
@@ -66,6 +63,7 @@ namespace resonance.MetadataLookup
 
         // set via Interlocked, so must be fields rather than properties
         private int forceRequested;
+        private int fullRescanRequested;
         private int sinceLastSave;
 
         public MetadataLookupService(IShareService shareService, IOptionsMonitor<resonance.Options> optionsMonitor, MusicBrainzClient musicBrainz, DiscogsClient discogs, LastfmClient lastfm, DeezerClient deezer, EventBus eventBus, IMusicLibraryService musicLibrary = null)
@@ -206,9 +204,14 @@ namespace resonance.MetadataLookup
         }
 
         // ── Public API ────────────────────────────────────────────────────────
-        public void RequestRun()
+        public void RequestRun(bool fullRescan = false)
         {
             Interlocked.Exchange(ref forceRequested, 1);
+            if (fullRescan)
+            {
+                Interlocked.Exchange(ref fullRescanRequested, 1);
+            }
+
             Signal();
         }
 
@@ -403,6 +406,7 @@ namespace resonance.MetadataLookup
                     }
 
                     var force = Interlocked.Exchange(ref forceRequested, 0) == 1;
+                    var fullRescan = Interlocked.Exchange(ref fullRescanRequested, 0) == 1;
                     if (!force && !Options.CurrentValue.MetadataLookup.Enabled)
                     {
                         continue;
@@ -410,7 +414,7 @@ namespace resonance.MetadataLookup
 
                     try
                     {
-                        await RunPassAsync(ct);
+                        await RunPassAsync(ct, fullRescan);
                     }
                     catch (OperationCanceledException)
                     {
@@ -470,7 +474,7 @@ namespace resonance.MetadataLookup
             });
         }
 
-        private async Task RunPassAsync(CancellationToken ct)
+        private async Task RunPassAsync(CancellationToken ct, bool fullRescan = false)
         {
             // Don't start a fresh pass while a sanitization scan runs; retry shortly so enrichment
             // resumes once it finishes. A pass already in flight is safe to continue (FileWriteLock).
@@ -481,7 +485,7 @@ namespace resonance.MetadataLookup
                 return;
             }
 
-            var candidates = BuildCandidates();
+            var candidates = BuildCandidates(fullRescan);
 
             lock (StateLock)
             {
@@ -576,7 +580,11 @@ namespace resonance.MetadataLookup
                     if (match == null)
                     {
                         RecordOutcome(candidate, MetadataItemStatus.NoMatch, "no confident match");
-                        RecordAttempt(candidate.OriginalPath, BuildIdentity(candidate.Artist, candidate.Title, candidate.Album));
+
+                        // a no-match is permanent for this query: automatic passes never retry it
+                        // (the providers are very unlikely to find it later); only a retag of the
+                        // file or a user-requested full re-scan queries it again
+                        RecordAttempt(candidate.OriginalPath, BuildIdentity(candidate.Artist, candidate.Title, candidate.Album), MetadataAttemptCache.OutcomeNoMatch);
                         continue;
                     }
 
@@ -584,7 +592,7 @@ namespace resonance.MetadataLookup
 
                     // record against the post-write identity so the enriched file isn't re-queried
                     // next pass (the write may have changed artist/title/album)
-                    RecordAttempt(candidate.OriginalPath, BuildIdentity(written.Artist, written.Title, written.Album));
+                    RecordAttempt(candidate.OriginalPath, BuildIdentity(written.Artist, written.Title, written.Album), MetadataAttemptCache.OutcomeWritten);
                     RecordOutcome(candidate, MetadataItemStatus.Written, FormatSummary(match));
                 }
                 catch (OperationCanceledException)
@@ -608,8 +616,10 @@ namespace resonance.MetadataLookup
         }
 
         /// <summary>
-        ///     Merges a match onto existing tags: matched fields overwrite, but a missing match field
-        ///     (empty/zero) never clobbers an existing value. Exposed for testing.
+        ///     Merges a match onto existing tags fill-only: a provider value is used only when the
+        ///     existing field is empty (or zero). A value already in the file — whether from the
+        ///     original tags or a user edit — is never overwritten by an online lookup. Exposed for
+        ///     testing.
         /// </summary>
         /// <returns>The merged tags to write.</returns>
         public static FileTags MergeTags(FileTags existing, MetadataMatch match)
@@ -618,21 +628,22 @@ namespace resonance.MetadataLookup
 
             return baseTags with
             {
-                Title = string.IsNullOrWhiteSpace(match.Title) ? baseTags.Title : match.Title,
-                Artist = string.IsNullOrWhiteSpace(match.Artist) ? baseTags.Artist : match.Artist,
-                Album = string.IsNullOrWhiteSpace(match.Album) ? baseTags.Album : match.Album,
-                AlbumArtist = !string.IsNullOrWhiteSpace(match.AlbumArtist) ? match.AlbumArtist
-                    : !string.IsNullOrWhiteSpace(match.Artist) ? match.Artist
-                    : baseTags.AlbumArtist,
-                Year = match.Year != 0 ? match.Year : baseTags.Year,
-                TrackNumber = match.TrackNumber != 0 ? match.TrackNumber : baseTags.TrackNumber,
-                DiscNumber = match.DiscNumber != 0 ? match.DiscNumber : baseTags.DiscNumber,
-                Genre = string.IsNullOrWhiteSpace(match.Genre) ? baseTags.Genre : match.Genre,
+                Title = Fill(baseTags.Title, match.Title),
+                Artist = Fill(baseTags.Artist, match.Artist),
+                Album = Fill(baseTags.Album, match.Album),
+                AlbumArtist = Fill(baseTags.AlbumArtist, !string.IsNullOrWhiteSpace(match.AlbumArtist) ? match.AlbumArtist : match.Artist),
+                Year = baseTags.Year != 0 ? baseTags.Year : match.Year,
+                TrackNumber = baseTags.TrackNumber != 0 ? baseTags.TrackNumber : match.TrackNumber,
+                DiscNumber = baseTags.DiscNumber != 0 ? baseTags.DiscNumber : match.DiscNumber,
+                Genre = Fill(baseTags.Genre, match.Genre),
             };
+
+            static string Fill(string existingValue, string matchValue)
+                => string.IsNullOrWhiteSpace(existingValue) && !string.IsNullOrWhiteSpace(matchValue) ? matchValue : existingValue;
         }
 
         // ── Candidate selection ─────────────────────────────────────────────────
-        private List<Candidate> BuildCandidates()
+        private List<Candidate> BuildCandidates(bool fullRescan = false)
         {
             var result = new List<Candidate>();
             var skipped = 0;
@@ -647,7 +658,7 @@ namespace resonance.MetadataLookup
                 var (artist, title) = ResolveArtistTitle(file.Tags?.Artist, file.Tags?.Title, file.Filename);
                 var album = file.Tags?.Album;
 
-                if (AlreadyAttempted(file.OriginalFilename, BuildIdentity(artist, title, album)))
+                if (!fullRescan && AlreadyAttempted(file.OriginalFilename))
                 {
                     skipped++;
                     continue;
@@ -669,7 +680,7 @@ namespace resonance.MetadataLookup
                     continue;
                 }
 
-                if (AlreadyAttempted(file.OriginalFilename, BuildIdentity(artist, title, null)))
+                if (!fullRescan && AlreadyAttempted(file.OriginalFilename))
                 {
                     skipped++;
                     continue;
@@ -686,11 +697,11 @@ namespace resonance.MetadataLookup
             return result;
         }
 
-        // true when this query identity has already been looked up by the active provider within the
-        // retry window. Switching providers gives every file a fresh attempt. Keying on identity rather
-        // than file fingerprint means a cosmetic rewrite (e.g. tag sanitization) is not a re-query.
-        private bool AlreadyAttempted(string path, string identity)
-            => AttemptCache.ShouldSkip(path, identity, ActiveProviderSet, RetryAfter);
+        // true when this file has already been looked up once. Automatic passes never retry an
+        // attempted file — not for retag, provider or age reasons — because mass re-attempts
+        // rewrite tags users already fixed. A forced full re-scan bypasses this entirely.
+        private bool AlreadyAttempted(string path)
+            => AttemptCache.ShouldSkip(path);
 
         // A stable, normalized identity for the lookup query (artist|title|album). Normalization
         // (trim, collapse whitespace, lowercase) keeps trivial tag tidy-ups from looking like a change.
@@ -703,9 +714,9 @@ namespace resonance.MetadataLookup
                 : string.Join(' ', value.Split((char[])null, StringSplitOptions.RemoveEmptyEntries)).ToLowerInvariant();
 
         // records the attempt (keyed by the given query identity) and persists periodically
-        private void RecordAttempt(string path, string identity)
+        private void RecordAttempt(string path, string identity, string outcome = null)
         {
-            AttemptCache.Record(path, identity, ActiveProviderSet);
+            AttemptCache.Record(path, identity, ActiveProviderSet, outcome);
 
             if (Interlocked.Increment(ref sinceLastSave) >= SaveEvery)
             {

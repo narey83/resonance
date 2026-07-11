@@ -28,7 +28,7 @@
 // </copyright>
 
 import './MetadataLookup.css';
-import { getStatus, runNow } from '../../lib/metadataLookup';
+import { getStatus, runNow, stopNow } from '../../lib/metadataLookup';
 import {
   AlertCircle,
   CheckCircle,
@@ -36,6 +36,8 @@ import {
   Loader,
   MinusCircle,
   Play,
+  RefreshCw,
+  Square,
 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
@@ -93,16 +95,38 @@ const MetadataLookup = () => {
     return () => clearInterval(pollRef.current);
   }, []);
 
-  const handleRunNow = async () => {
+  const handleRunNow = async (full = false) => {
+    if (
+      full &&
+      !window.confirm(
+        'Full re-scan queries the online services again for every track with missing details, ' +
+          'including tracks they previously found no match for. This can take a long time. Continue?',
+      )
+    ) {
+      return;
+    }
+
     setStarting(true);
     try {
-      await runNow();
-      toast.info('Metadata lookup started.');
+      await runNow(full);
+      toast.info(
+        full ? 'Full metadata re-scan started.' : 'Metadata lookup started.',
+      );
       setTimeout(refresh, 750);
     } catch {
       toast.error('Could not start a lookup.');
     } finally {
       setStarting(false);
+    }
+  };
+
+  const handleStop = async () => {
+    try {
+      await stopNow();
+      toast.info('Stopping the metadata lookup pass…');
+      setTimeout(refresh, 750);
+    } catch {
+      toast.error('Could not stop the lookup.');
     }
   };
 
@@ -125,22 +149,45 @@ const MetadataLookup = () => {
               : 'Disabled — turn it on in Settings → Options to fill in missing track details automatically.'}
           </div>
         </div>
-        <button
-          className="ml-btn hover-fx"
-          disabled={starting || status?.scanning}
-          onClick={handleRunNow}
-          type="button"
-        >
-          {starting || status?.scanning ? (
-            <Loader
-              className="ml-spin"
-              size={14}
-            />
-          ) : (
-            <Play size={14} />
+        <div className="ml-actions">
+          {status?.scanning && (
+            <button
+              className="ml-btn hover-fx"
+              onClick={handleStop}
+              title="Stop the current pass; it resumes where it left off next run"
+              type="button"
+            >
+              <Square size={14} />
+              Stop
+            </button>
           )}
-          {status?.scanning ? 'Running…' : 'Run now'}
-        </button>
+          <button
+            className="ml-btn hover-fx"
+            disabled={starting || status?.scanning}
+            onClick={() => handleRunNow(true)}
+            title="Re-query the online services for every track with missing details, including previous no-matches"
+            type="button"
+          >
+            <RefreshCw size={14} />
+            Full re-scan
+          </button>
+          <button
+            className="ml-btn hover-fx"
+            disabled={starting || status?.scanning}
+            onClick={() => handleRunNow(false)}
+            type="button"
+          >
+            {starting || status?.scanning ? (
+              <Loader
+                className="ml-spin"
+                size={14}
+              />
+            ) : (
+              <Play size={14} />
+            )}
+            {status?.scanning ? 'Running…' : 'Run now'}
+          </button>
+        </div>
       </div>
 
       {status?.scanning && (

@@ -1671,6 +1671,26 @@ html.dark, html.amoled {
   border-top: 1px solid var(--border);
 }
 
+/* Brief highlight when a row first appears on a background auto-refresh. */
+.user-reports-row--new > td {
+  animation: user-reports-row-flash 2.4s ease-out 1;
+}
+
+@keyframes user-reports-row-flash {
+  0% {
+    background-color: color-mix(in srgb, var(--accent) 32%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .user-reports-row--new > td {
+    animation: none;
+  }
+}
+
 /* ─── User Report Modal ─────────────────────────────────────────────────────── */
 
 /* Wider modal and scrollable content */
@@ -2369,5 +2389,82 @@ html.dark, html.amoled {
 .sysstats-volume-pct {
   color: var(--text-secondary);
   text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Blocked users card ─────────────────────────────────────────────────── */
+.blocked-card-manage {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.blocked-card-manage:hover {
+  color: var(--accent, var(--text-primary));
+}
+
+.blocked-stat-row {
+  display: flex;
+  gap: 18px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.blocked-stat {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.blocked-stat strong {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.blocked-stat span {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.blocked-recent {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.blocked-recent li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  border-top: 1px solid var(--border, rgba(128, 128, 128, 0.15));
+  font-size: 12.5px;
+}
+
+.blocked-recent-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.blocked-recent-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--danger, #e04f5f);
+  border: 1px solid var(--danger, #e04f5f);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.blocked-recent-when {
+  flex-shrink: 0;
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
