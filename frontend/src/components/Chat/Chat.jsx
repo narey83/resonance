@@ -158,6 +158,10 @@ const Chat = ({ history, location }) => {
   const dividerMoveRef = useRef(null);
   const intervalRef = useRef(null);
   const activeRef = useRef('');
+  // Polling, push-triggered refreshes and the async action handlers all set
+  // state after awaits, so a per-effect cancelled flag can't cover every
+  // caller — guard setState with a ref that flips on unmount.
+  const mountedRef = useRef(true);
 
   useEffect(() => {
     activeRef.current = active;
@@ -195,6 +199,8 @@ const Chat = ({ history, location }) => {
       const activeDetail = await chat.get({ username: currentActive });
       convMap = { ...convMap, [currentActive]: activeDetail };
     }
+
+    if (!mountedRef.current) return;
 
     setConversations((previous) => {
       // Preserve locally-initiated conversations not yet on the server
@@ -252,11 +258,15 @@ const Chat = ({ history, location }) => {
       setLoading(true);
       try {
         const full = await chat.get({ username });
-        setConversations((previous) => ({ ...previous, [username]: full }));
+        if (mountedRef.current) {
+          setConversations((previous) => ({ ...previous, [username]: full }));
+        }
       } finally {
-        setLoading(false);
-        setTimeout(scrollToBottom, 50);
-        inputRef.current?.focus();
+        if (mountedRef.current) {
+          setLoading(false);
+          setTimeout(scrollToBottom, 50);
+          inputRef.current?.focus();
+        }
       }
     },
     [scrollToBottom],
@@ -265,6 +275,7 @@ const Chat = ({ history, location }) => {
   // ── Mount ────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    mountedRef.current = true;
     const onDocumentClick = () => setContextMenu(null);
     document.addEventListener('click', onDocumentClick);
 
@@ -288,6 +299,7 @@ const Chat = ({ history, location }) => {
     const unsubscribe = onPrivateMessage(() => fetchConversations());
 
     return () => {
+      mountedRef.current = false;
       clearInterval(intervalRef.current);
       document.removeEventListener('click', onDocumentClick);
       unsubscribe();
@@ -300,6 +312,7 @@ const Chat = ({ history, location }) => {
   const sendReply = useCallback(async () => {
     if (!active || !message.trim()) return;
     await chat.send({ username: active, message });
+    if (!mountedRef.current) return;
     setMessage('');
     fetchConversations();
   }, [active, fetchConversations, message]);
@@ -330,6 +343,8 @@ const Chat = ({ history, location }) => {
       } catch {
         /* local-only conversation, no server record */
       }
+
+      if (!mountedRef.current) return;
 
       setConversations((previous) => {
         const next = { ...previous };
