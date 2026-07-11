@@ -207,10 +207,11 @@ const ArtworkBox = ({ path, size, overrideUrl, overrideCacheKey, source }: {
 
 // ── SearchBar ─────────────────────────────────────────────────────────────────
 
-const SearchBar = ({ value, onChange, placeholder }: {
+const SearchBar = ({ value, onChange, placeholder, trailing }: {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
+  trailing?: React.ReactNode;
 }) => {
   const { s, c } = useLibStyles();
   return (
@@ -231,47 +232,89 @@ const SearchBar = ({ value, onChange, placeholder }: {
           <Ionicons name="close-circle" size={16} color={c.textMuted} />
         </Pressable>
       )}
+      {trailing != null && (
+        <>
+          <View style={s.searchTrailingDivider} />
+          {trailing}
+        </>
+      )}
     </View>
   );
 };
 
-// ── SortBar ───────────────────────────────────────────────────────────────────
+// ── SortControl ───────────────────────────────────────────────────────────────
 
 type SortDir = 'asc' | 'desc';
 
 interface SortOption { field: string; label: string }
 
-const SortBar = ({ options, sortBy, sortDir, onSort }: {
+// A compact sort trigger (icon) that opens a bottom sheet of the fields valid for the current view.
+// Each view passes its own `options`, so the sheet only ever offers sorts that make sense there.
+// Tapping a new field selects it (ascending) and closes; tapping the active field flips direction
+// and keeps the sheet open so the change is visible.
+const SortControl = ({ options, sortBy, sortDir, onSort }: {
   options: SortOption[];
   sortBy: string | null;
   sortDir: SortDir;
   onSort: (field: string) => void;
 }) => {
   const { s, c } = useLibStyles();
+  const [open, setOpen] = useState(false);
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={s.sortBarScroll}
-      contentContainerStyle={s.sortBarContent}
-    >
-      <Ionicons name="swap-vertical" size={13} color={c.textDim} style={{ alignSelf: 'center' }} />
-      {options.map((o) => {
-        const active = sortBy === o.field;
-        return (
-          <Pressable
-            key={o.field}
-            onPress={() => onSort(o.field)}
-            style={[s.sortChip, active && s.sortChipActive]}
-          >
-            <Text style={[s.sortChipText, active && s.sortChipTextActive]}>{o.label}</Text>
-            {active && (
-              <Ionicons name={sortDir === 'asc' ? 'arrow-up' : 'arrow-down'} size={11} color={c.accent} />
-            )}
-          </Pressable>
-        );
-      })}
-    </ScrollView>
+    <>
+      <Pressable onPress={() => setOpen(true)} hitSlop={10} style={s.sortTrigger}>
+        <Ionicons name="swap-vertical" size={18} color={c.textMuted} />
+      </Pressable>
+      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+        <Pressable style={s.overlay} onPress={() => setOpen(false)} />
+        <View style={s.sheetContainer}>
+          <View style={s.sheet}>
+            <View style={s.sheetHandle} />
+            <Text style={s.sheetTitle}>Sort by</Text>
+            <View style={s.sheetDivider} />
+            {options.map((o) => {
+              const active = sortBy === o.field;
+              return (
+                <Pressable
+                  key={o.field}
+                  onPress={() => {
+                    const wasActive = sortBy === o.field;
+                    onSort(o.field);
+                    if (!wasActive) setOpen(false);
+                  }}
+                  style={({ pressed }) => [s.sortSheetRow, pressed && s.rowPressed]}
+                >
+                  <Text style={[s.sortSheetLabel, active && s.sortSheetLabelActive]}>{o.label}</Text>
+                  {active && (
+                    <View style={s.sortSheetRight}>
+                      <Ionicons name={sortDir === 'asc' ? 'arrow-up' : 'arrow-down'} size={17} color={c.accent} />
+                      <Ionicons name="checkmark" size={19} color={c.accent} />
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+};
+
+// Right-hand metadata for a track row: musical key + BPM (each shown only when present), with the
+// duration underneath. Shared across every track list so key/BPM render identically everywhere.
+const TrackMetaRight = ({ item }: { item: MusicTrack }) => {
+  const { s } = useLibStyles();
+  return (
+    <View style={s.trackRight}>
+      {(item.key || item.bpm != null) && (
+        <View style={s.trackKeyBpm}>
+          {item.key ? <Text style={s.trackKey} numberOfLines={1}>{item.key}</Text> : null}
+          {item.bpm != null ? <Text style={s.trackBpm}>{Math.round(item.bpm)}</Text> : null}
+        </View>
+      )}
+      <Text style={s.trackDur}>{formatDuration(item.duration)}</Text>
+    </View>
   );
 };
 
@@ -1241,6 +1284,13 @@ function useLocalList<T>(fetcher: () => Promise<T[]>, enabled: boolean): T[] {
   return data;
 }
 
+// True while the backend is running a full (re)scan that rebuilds the track DB. Track fetches hang
+// or come back empty during that window, so the paginated track views gate their loads on this and
+// show a "rebuilding" placeholder instead of an endless spinner. They reload once it flips false.
+const useServerScanning = () => useLibraryActivityStore((s) => s.syncState?.running ?? false);
+
+const REBUILDING_MSG = 'Library is rebuilding — tracks will appear when it’s done.';
+
 function ArtistsTab() {
   const { s, c } = useLibStyles();
   const navigation = useNavigation<LibraryNav>();
@@ -1314,16 +1364,22 @@ function ArtistsTab() {
 
   return (
     <View style={s.flex}>
-      <SearchBar value={search} onChange={setSearch} placeholder="Search artists…" />
-      <SortBar
-        options={[
-          { field: 'artist', label: 'Name' },
-          { field: 'albumCount', label: 'Albums' },
-          { field: 'trackCount', label: 'Tracks' },
-        ]}
-        sortBy={sortBy}
-        sortDir={sortDir}
-        onSort={onSort}
+      <SearchBar
+        value={search}
+        onChange={setSearch}
+        placeholder="Search artists…"
+        trailing={
+          <SortControl
+            options={[
+              { field: 'artist', label: 'Name' },
+              { field: 'albumCount', label: 'Albums' },
+              { field: 'trackCount', label: 'Tracks' },
+            ]}
+            sortBy={sortBy}
+            sortDir={sortDir}
+            onSort={onSort}
+          />
+        }
       />
       <UpdatingBanner visible={refreshing && !loading} />
       {loading
@@ -1417,17 +1473,23 @@ function AlbumsTab() {
 
   return (
     <View style={s.flex}>
-      <SearchBar value={search} onChange={setSearch} placeholder="Search albums…" />
-      <SortBar
-        options={[
-          { field: 'album', label: 'Title' },
-          { field: 'artist', label: 'Artist' },
-          { field: 'year', label: 'Year' },
-          { field: 'trackCount', label: 'Tracks' },
-        ]}
-        sortBy={sortBy}
-        sortDir={sortDir}
-        onSort={onSort}
+      <SearchBar
+        value={search}
+        onChange={setSearch}
+        placeholder="Search albums…"
+        trailing={
+          <SortControl
+            options={[
+              { field: 'album', label: 'Title' },
+              { field: 'artist', label: 'Artist' },
+              { field: 'year', label: 'Year' },
+              { field: 'trackCount', label: 'Tracks' },
+            ]}
+            sortBy={sortBy}
+            sortDir={sortDir}
+            onSort={onSort}
+          />
+        }
       />
       <UpdatingBanner visible={refreshing && !loading} />
       {loading
@@ -1464,7 +1526,16 @@ function TracksTab() {
   const [actionTrack, setActionTrack] = useState<MusicTrack | null>(null);
   const [renameTarget, setRenameTarget] = useState<MusicTrack | null>(null);
   const { sortBy, sortDir, onSort } = useSort('artist');
-  const libraryRevision = useLibraryActivityStore((s) => s.libraryRevision);
+  // Freeze the revision the reload effects react to while the backend is mid-rescan: a full rescan
+  // fires LIBRARY_UPDATED (→ libraryRevision++) on every batch, and reloading the track list on each
+  // one just thrashes the network against a half-built DB. `libraryRevision` thaws to the latest
+  // value once the scan ends, triggering a single refresh. (Search/sort changes still reload live.)
+  const rawRevision = useLibraryActivityStore((s) => s.libraryRevision);
+  const serverScanning = useLibraryActivityStore((s) => s.syncState?.running ?? false);
+  const [libraryRevision, setLibraryRevision] = useState(rawRevision);
+  useEffect(() => {
+    if (!serverScanning) setLibraryRevision(rawRevision);
+  }, [rawRevision, serverScanning]);
   const { includeLocalLibrary, mergeLocalAndServer } = useLibrarySettings();
 
   // Client-side mode: used when local library is enabled (local-only or merged)
@@ -1478,13 +1549,16 @@ function TracksTab() {
   const totalRef    = useRef(0);
   const searchRef   = useRef('');
   const sortRef     = useRef<{ sortBy: string | null; sortDir: SortDir }>({ sortBy: 'artist', sortDir: 'asc' });
+  const scanningRef = useRef(serverScanning);
   useEffect(() => { tracksRef.current = tracks; }, [tracks]);
   useEffect(() => { totalRef.current = total; }, [total]);
   useEffect(() => { searchRef.current = search; }, [search]);
   useEffect(() => { sortRef.current = { sortBy, sortDir }; }, [sortBy, sortDir]);
+  useEffect(() => { scanningRef.current = serverScanning; }, [serverScanning]);
 
   const loadPage = useCallback(async (reset: boolean, query: string) => {
     if (clientMode) return;
+    if (scanningRef.current) return; // backend is rebuilding the DB — don't fetch into a hang
     if (fetchingRef.current) return;
     const offset = reset ? 0 : tracksRef.current.length;
     if (!reset && totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return;
@@ -1593,11 +1667,37 @@ function TracksTab() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigation]);
 
+  // Play the tapped track and queue the *whole* list, not just the pages scrolled into view.
+  // In clientMode `displayRef` already holds everything; in server-paginated mode only ~50 rows
+  // are loaded, so we fetch the full ordered set (current search/sort) and queue that — otherwise
+  // playback would stop after the first loaded page.
+  const playFromList = useCallback(async (tapped: MusicTrack, fallbackIndex: number) => {
+    navigateToPlayer();
+    if (clientMode) {
+      playQueue(displayRef.current, fallbackIndex);
+      return;
+    }
+    try {
+      const result = await getTracks({
+        search: searchRef.current,
+        limit: Math.max(totalRef.current, displayRef.current.length, TRACKS_PER_PAGE),
+        offset: 0,
+        sort: sortRef.current.sortBy ?? 'artist',
+        descending: String(sortRef.current.sortDir === 'desc'),
+      });
+      const full = result.tracks?.length ? result.tracks : displayRef.current;
+      const idx = full.findIndex((x) => x.path === tapped.path);
+      playQueue(full, idx >= 0 ? idx : fallbackIndex);
+    } catch {
+      playQueue(displayRef.current, fallbackIndex);
+    }
+  }, [clientMode, playQueue, navigateToPlayer]);
+
   const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => {
     const local = isLocalPath(item.path);
     return (
       <Pressable
-        onPress={() => { playQueue(displayRef.current, index); navigateToPlayer(); }}
+        onPress={() => { playFromList(item, index); }}
         style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
       >
         <ArtworkBox
@@ -1615,13 +1715,13 @@ function TracksTab() {
             )}
           </Text>
         </View>
-        <Text style={s.trackDur}>{formatDuration(item.duration)}</Text>
+        <TrackMetaRight item={item} />
         <Pressable onPress={() => setActionTrack(item)} hitSlop={8} style={s.moreBtn}>
           <Ionicons name="ellipsis-horizontal" size={18} color={c.textMuted} />
         </Pressable>
       </Pressable>
     );
-  }, [playQueue, navigateToPlayer, s, c, showBadge, clientMode, mergeLocalAndServer]);
+  }, [playFromList, s, c, showBadge, clientMode, mergeLocalAndServer]);
 
   const handleRenameConfirm = useCallback(async (newFilename: string) => {
     if (!renameTarget) return;
@@ -1643,21 +1743,28 @@ function TracksTab() {
         title="Rename track"
         visible={renameTarget !== null}
       />
-      <SearchBar value={search} onChange={setSearch} placeholder="Search tracks…" />
-      <SortBar
-        options={[
-          { field: 'artist', label: 'Artist' },
-          { field: 'title', label: 'Title' },
-          { field: 'album', label: 'Album' },
-          { field: 'year', label: 'Year' },
-          ...(clientMode ? [] : [
-            { field: 'bpm', label: 'BPM' },
-            { field: 'added', label: 'Added' },
-          ]),
-        ]}
-        sortBy={sortBy}
-        sortDir={sortDir}
-        onSort={onSort}
+      <SearchBar
+        value={search}
+        onChange={setSearch}
+        placeholder="Search tracks…"
+        trailing={
+          <SortControl
+            options={[
+              { field: 'artist', label: 'Artist' },
+              { field: 'title', label: 'Title' },
+              { field: 'album', label: 'Album' },
+              { field: 'year', label: 'Year' },
+              { field: 'key', label: 'Key' },
+              ...(clientMode ? [] : [
+                { field: 'bpm', label: 'BPM' },
+                { field: 'added', label: 'Added' },
+              ]),
+            ]}
+            sortBy={sortBy}
+            sortDir={sortDir}
+            onSort={onSort}
+          />
+        }
       />
       {reloading && displayTracks.length === 0 && !search
         ? <DownloadingLibrary label="Downloading metadata…" />
@@ -1674,8 +1781,9 @@ function TracksTab() {
               ListFooterComponent={fetching && !reloading
                 ? <ActivityIndicator color={c.accent} style={{ padding: Spacing.md }} />
                 : null}
-              ListEmptyComponent={!fetching
-                ? <Text style={s.empty}>{search ? 'No tracks match' : 'No tracks in library'}</Text>
+              ListEmptyComponent={
+                serverScanning ? <Text style={s.empty}>{REBUILDING_MSG}</Text>
+                : !fetching ? <Text style={s.empty}>{search ? 'No tracks match' : 'No tracks in library'}</Text>
                 : null}
             />
           </>
@@ -1685,8 +1793,7 @@ function TracksTab() {
         onClose={() => setActionTrack(null)}
         onPlayNow={(t) => {
           const idx = displayRef.current.findIndex((x) => x.path === t.path);
-          playQueue(displayRef.current, idx >= 0 ? idx : 0);
-          navigateToPlayer();
+          playFromList(t, idx >= 0 ? idx : 0);
           setActionTrack(null);
         }}
         onPlayNext={(t) => { playNext([t]); setActionTrack(null); }}
@@ -1772,16 +1879,18 @@ function LovedTab() {
 
   return (
     <View style={s.flex}>
-      <SortBar
-        options={[
-          { field: 'title', label: 'Title' },
-          { field: 'artist', label: 'Artist' },
-          { field: 'album', label: 'Album' },
-        ]}
-        sortBy={sortBy}
-        sortDir={sortDir}
-        onSort={onSort}
-      />
+      <View style={s.sortRow}>
+        <SortControl
+          options={[
+            { field: 'title', label: 'Title' },
+            { field: 'artist', label: 'Artist' },
+            { field: 'album', label: 'Album' },
+          ]}
+          sortBy={sortBy}
+          sortDir={sortDir}
+          onSort={onSort}
+        />
+      </View>
       <UpdatingBanner visible={refreshing && !loading} />
       <FlatList
         data={lovedTracks}
@@ -1943,16 +2052,18 @@ function HistoryTab() {
 
   return (
     <View style={s.flex}>
-      <SortBar
-        options={[
-          { field: 'playedAt', label: 'Played' },
-          { field: 'title', label: 'Title' },
-          { field: 'artist', label: 'Artist' },
-        ]}
-        sortBy={sortBy}
-        sortDir={sortDir}
-        onSort={onSort}
-      />
+      <View style={s.sortRow}>
+        <SortControl
+          options={[
+            { field: 'playedAt', label: 'Played' },
+            { field: 'title', label: 'Title' },
+            { field: 'artist', label: 'Artist' },
+          ]}
+          sortBy={sortBy}
+          sortDir={sortDir}
+          onSort={onSort}
+        />
+      </View>
       <FlatList
         data={entries}
         keyExtractor={(item) => item.id}
@@ -2100,15 +2211,20 @@ function FoldersTab() {
         title="Rename folder"
         visible={renameTarget !== null}
       />
-      <SearchBar value={search} onChange={setSearch} placeholder="Search folders…" />
-      <SortBar
-        options={[
-          { field: 'name', label: 'Name' },
-          { field: 'trackCount', label: 'Tracks' },
-        ]}
-        sortBy={sortBy}
-        sortDir={sortDir}
-        onSort={onSort}
+      <SearchBar
+        value={search}
+        onChange={setSearch}
+        placeholder="Search folders…"
+        trailing={
+          <SortControl
+            options={[
+              { field: 'name', label: 'Name' },
+            ]}
+            sortBy={sortBy}
+            sortDir={sortDir}
+            onSort={onSort}
+          />
+        }
       />
       <UpdatingBanner visible={refreshing && !loading} />
       {loading
@@ -2171,15 +2287,21 @@ function GenresTab() {
 
   return (
     <View style={s.flex}>
-      <SearchBar value={search} onChange={setSearch} placeholder="Search genres…" />
-      <SortBar
-        options={[
-          { field: 'genre', label: 'Name' },
-          { field: 'trackCount', label: 'Tracks' },
-        ]}
-        sortBy={sortBy}
-        sortDir={sortDir}
-        onSort={onSort}
+      <SearchBar
+        value={search}
+        onChange={setSearch}
+        placeholder="Search genres…"
+        trailing={
+          <SortControl
+            options={[
+              { field: 'genre', label: 'Name' },
+              { field: 'trackCount', label: 'Tracks' },
+            ]}
+            sortBy={sortBy}
+            sortDir={sortDir}
+            onSort={onSort}
+          />
+        }
       />
       <UpdatingBanner visible={refreshing && !loading} />
       {loading
@@ -2334,15 +2456,17 @@ function PlaylistsTab() {
         </Pressable>
       )}
 
-      <SortBar
-        options={[
-          { field: 'name', label: 'Name' },
-          { field: 'trackCount', label: 'Tracks' },
-        ]}
-        sortBy={sortBy}
-        sortDir={sortDir}
-        onSort={onSort}
-      />
+      <View style={s.sortRow}>
+        <SortControl
+          options={[
+            { field: 'name', label: 'Name' },
+            { field: 'trackCount', label: 'Tracks' },
+          ]}
+          sortBy={sortBy}
+          sortDir={sortDir}
+          onSort={onSort}
+        />
+      </View>
       <FlatList
         data={sorted}
         keyExtractor={(item) => item.id}
@@ -2383,7 +2507,6 @@ function LibraryHome({ navigation }: HomeProps) {
   const syncPercent = useLibrarySync((s) => s.percent);
   const syncLabel = useLibrarySync((s) => s.currentLabel);
   const hasSyncedOnce = useLibrarySync((s) => s.hasSyncedOnce);
-  useEffect(() => { sync(libraryRevision); }, [sync, libraryRevision]);
 
   // Backend library scan state (server-side BPM/key/metadata indexing). The LibraryActivity hub pushes
   // SYNC_STATE — on connect and on every lifecycle transition — so we read it straight from the store
@@ -2395,6 +2518,26 @@ function LibraryHome({ navigation }: HomeProps) {
     serverScan?.running && serverScan.progress > 0
       ? Math.round(serverScan.progress * 100)
       : null;
+
+  // Sync the on-device cache from the backend when the library changes — BUT hold off while the
+  // backend is mid-rescan. During a full rescan the server fires LIBRARY_UPDATED repeatedly, bumping
+  // libraryRevision on every batch; re-running the whole 7-list sync each time just thrashes the
+  // network and leaves the lists flickering empty ("stuck retrying"). So while serverScan.running we
+  // skip syncing entirely (tabs keep showing the last cached data), and once the scan finishes we do
+  // one authoritative forced sync to pull the freshly-built DB.
+  const serverScanning = serverScan?.running ?? false;
+  const wasScanningRef = useRef(false);
+  useEffect(() => {
+    if (serverScanning) {
+      wasScanningRef.current = true;
+      dbg('[home] skip cache sync — backend rescan in progress');
+      return;
+    }
+    const justFinished = wasScanningRef.current;
+    wasScanningRef.current = false;
+    if (justFinished) dbg('[home] backend rescan finished — forcing one cache sync');
+    sync(libraryRevision, justFinished);
+  }, [sync, libraryRevision, serverScanning]);
 
   // DEBUG (opt-in via "Library sync debug" setting): heartbeat that detects a frozen JS thread. A 1s
   // timer firing late means the JS engine stalled — either the OS suspended a backgrounded app, or
@@ -2535,11 +2678,15 @@ function ArtistDetail({ route }: ArtistProps) {
   const totalRef     = useRef(0);
   const searchRef    = useRef('');
   const artistRef    = useRef(artistName);
+  const scanning     = useServerScanning();
+  const scanningRef  = useRef(scanning);
   useEffect(() => { tracksRef.current = tracks; }, [tracks]);
   useEffect(() => { totalRef.current = total; }, [total]);
   useEffect(() => { searchRef.current = search; }, [search]);
+  useEffect(() => { scanningRef.current = scanning; }, [scanning]);
 
   const loadPage = useCallback(async (reset: boolean, query: string) => {
+    if (scanningRef.current) return; // backend is rebuilding the DB — don't fetch into a hang
     if (fetchingRef.current) return;
     const offset = reset ? 0 : tracksRef.current.length;
     if (!reset && totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return;
@@ -2555,10 +2702,11 @@ function ArtistDetail({ route }: ArtistProps) {
   }, []);
 
   useEffect(() => {
+    if (scanning) return;
     const t = setTimeout(() => loadPage(true, search), search ? 300 : 0);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [search, scanning]);
 
   const navigateToPlayer = useCallback(() => {
     usePlayerUI.getState().expandForFreshPlayback();
@@ -2589,7 +2737,14 @@ function ArtistDetail({ route }: ArtistProps) {
 
   const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => (
     <Pressable
-      onPress={() => { playQueue(tracksRef.current, index); navigateToPlayer(); }}
+      onPress={() => {
+        navigateToPlayer();
+        fetchAllTracks().then((all) => {
+          const list = all.length ? all : tracksRef.current;
+          const i = list.findIndex((x) => x.path === item.path);
+          playQueue(list, i >= 0 ? i : index);
+        });
+      }}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
     >
       <ArtworkBox path={getTrackArtworkPath(item)} size={42} />
@@ -2599,12 +2754,12 @@ function ArtistDetail({ route }: ArtistProps) {
           {[item.album].filter(Boolean).join('')}
         </Text>
       </View>
-      <Text style={s.trackDur}>{formatDuration(item.duration)}</Text>
+      <TrackMetaRight item={item} />
       <Pressable onPress={() => setActionTrack(item)} hitSlop={8} style={s.moreBtn}>
         <Ionicons name="ellipsis-horizontal" size={18} color={c.textMuted} />
       </Pressable>
     </Pressable>
-  ), [playQueue, navigateToPlayer, s, c]);
+  ), [fetchAllTracks, playQueue, navigateToPlayer, s, c]);
 
   return (
     <View style={s.flex}>
@@ -2648,18 +2803,24 @@ function ArtistDetail({ route }: ArtistProps) {
             <View style={[s.sheetDivider, { marginVertical: Spacing.sm }]} />
           </>
         ) : null}
-        ListFooterComponent={fetching
+        ListFooterComponent={fetching && !scanning
           ? <ActivityIndicator color={c.accent} style={{ padding: Spacing.md }} />
           : null}
-        ListEmptyComponent={!fetching ? <Text style={s.empty}>No tracks found</Text> : null}
+        ListEmptyComponent={
+          scanning ? <Text style={s.empty}>{REBUILDING_MSG}</Text>
+          : !fetching ? <Text style={s.empty}>No tracks found</Text>
+          : null}
       />
       <TrackActionSheet
         track={actionTrack}
         onClose={() => setActionTrack(null)}
         onPlayNow={(t) => {
-          const idx = tracksRef.current.findIndex((x) => x.path === t.path);
-          playQueue(tracksRef.current, idx >= 0 ? idx : 0);
           navigateToPlayer();
+          fetchAllTracks().then((all) => {
+            const list = all.length ? all : tracksRef.current;
+            const idx = list.findIndex((x) => x.path === t.path);
+            playQueue(list, idx >= 0 ? idx : 0);
+          });
           setActionTrack(null);
         }}
         onPlayNext={(t) => { playNext([t]); setActionTrack(null); }}
@@ -2732,6 +2893,10 @@ function AlbumDetail({ route }: AlbumProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigation]);
 
+  // Album tracks are all loaded up front (limit 500), so the full list already lives in tracksRef.
+  // Kept for parity with the paginated detail views so the shared play handlers can await it.
+  const fetchAllTracks = useCallback(async (): Promise<MusicTrack[]> => tracksRef.current, []);
+
   const handlePlayAll = useCallback(() => {
     if (!tracksRef.current.length) return;
     playQueue(tracksRef.current, 0);
@@ -2759,7 +2924,7 @@ function AlbumDetail({ route }: AlbumProps) {
           <Text style={s.rowMeta} numberOfLines={1}>{item.artist}</Text>
         )}
       </View>
-      <Text style={s.trackDur}>{formatDuration(item.duration)}</Text>
+      <TrackMetaRight item={item} />
       <Pressable onPress={() => setActionTrack(item)} hitSlop={8} style={s.moreBtn}>
         <Ionicons name="ellipsis-horizontal" size={18} color={c.textMuted} />
       </Pressable>
@@ -2812,9 +2977,12 @@ function AlbumDetail({ route }: AlbumProps) {
         track={actionTrack}
         onClose={() => setActionTrack(null)}
         onPlayNow={(t) => {
-          const idx = tracksRef.current.findIndex((x) => x.path === t.path);
-          playQueue(tracksRef.current, idx >= 0 ? idx : 0);
           navigateToPlayer();
+          fetchAllTracks().then((all) => {
+            const list = all.length ? all : tracksRef.current;
+            const idx = list.findIndex((x) => x.path === t.path);
+            playQueue(list, idx >= 0 ? idx : 0);
+          });
           setActionTrack(null);
         }}
         onPlayNext={(t) => { playNext([t]); setActionTrack(null); }}
@@ -2858,11 +3026,15 @@ function GenreDetail({ route }: GenreDetailProps) {
   const totalRef    = useRef(0);
   const searchRef   = useRef('');
   const genreRef    = useRef(genre);
+  const scanning    = useServerScanning();
+  const scanningRef = useRef(scanning);
   useEffect(() => { tracksRef.current = tracks; }, [tracks]);
   useEffect(() => { totalRef.current = total; }, [total]);
   useEffect(() => { searchRef.current = search; }, [search]);
+  useEffect(() => { scanningRef.current = scanning; }, [scanning]);
 
   const loadPage = useCallback(async (reset: boolean, query: string) => {
+    if (scanningRef.current) return; // backend is rebuilding the DB — don't fetch into a hang
     if (fetchingRef.current) return;
     const offset = reset ? 0 : tracksRef.current.length;
     if (!reset && totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return;
@@ -2878,10 +3050,11 @@ function GenreDetail({ route }: GenreDetailProps) {
   }, []);
 
   useEffect(() => {
+    if (scanning) return;
     const t = setTimeout(() => loadPage(true, search), search ? 300 : 0);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [search, scanning]);
 
   const navigateToPlayer = useCallback(() => {
     usePlayerUI.getState().expandForFreshPlayback();
@@ -2912,7 +3085,14 @@ function GenreDetail({ route }: GenreDetailProps) {
 
   const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => (
     <Pressable
-      onPress={() => { playQueue(tracksRef.current, index); navigateToPlayer(); }}
+      onPress={() => {
+        navigateToPlayer();
+        fetchAllTracks().then((all) => {
+          const list = all.length ? all : tracksRef.current;
+          const i = list.findIndex((x) => x.path === item.path);
+          playQueue(list, i >= 0 ? i : index);
+        });
+      }}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
     >
       <ArtworkBox path={getTrackArtworkPath(item)} size={42} />
@@ -2922,12 +3102,12 @@ function GenreDetail({ route }: GenreDetailProps) {
           {[item.artist, item.album].filter(Boolean).join(' · ')}
         </Text>
       </View>
-      <Text style={s.trackDur}>{formatDuration(item.duration)}</Text>
+      <TrackMetaRight item={item} />
       <Pressable onPress={() => setActionTrack(item)} hitSlop={8} style={s.moreBtn}>
         <Ionicons name="ellipsis-horizontal" size={18} color={c.textMuted} />
       </Pressable>
     </Pressable>
-  ), [playQueue, navigateToPlayer, s, c]);
+  ), [fetchAllTracks, playQueue, navigateToPlayer, s, c]);
 
   return (
     <View style={s.flex}>
@@ -2956,18 +3136,24 @@ function GenreDetail({ route }: GenreDetailProps) {
         contentContainerStyle={s.listContent}
         onEndReached={() => loadPage(false, searchRef.current)}
         onEndReachedThreshold={0.4}
-        ListFooterComponent={fetching
+        ListFooterComponent={fetching && !scanning
           ? <ActivityIndicator color={c.accent} style={{ padding: Spacing.md }} />
           : null}
-        ListEmptyComponent={!fetching ? <Text style={s.empty}>No tracks found</Text> : null}
+        ListEmptyComponent={
+          scanning ? <Text style={s.empty}>{REBUILDING_MSG}</Text>
+          : !fetching ? <Text style={s.empty}>No tracks found</Text>
+          : null}
       />
       <TrackActionSheet
         track={actionTrack}
         onClose={() => setActionTrack(null)}
         onPlayNow={(t) => {
-          const idx = tracksRef.current.findIndex((x) => x.path === t.path);
-          playQueue(tracksRef.current, idx >= 0 ? idx : 0);
           navigateToPlayer();
+          fetchAllTracks().then((all) => {
+            const list = all.length ? all : tracksRef.current;
+            const idx = list.findIndex((x) => x.path === t.path);
+            playQueue(list, idx >= 0 ? idx : 0);
+          });
           setActionTrack(null);
         }}
         onPlayNext={(t) => { playNext([t]); setActionTrack(null); }}
@@ -3018,16 +3204,18 @@ function YearsTab() {
 
   return (
     <View style={s.flex}>
-      <SortBar
-        options={[
-          { field: 'year', label: 'Year' },
-          { field: 'trackCount', label: 'Tracks' },
-          { field: 'albumCount', label: 'Albums' },
-        ]}
-        sortBy={sortBy}
-        sortDir={sortDir}
-        onSort={onSort}
-      />
+      <View style={s.sortRow}>
+        <SortControl
+          options={[
+            { field: 'year', label: 'Year' },
+            { field: 'trackCount', label: 'Tracks' },
+            { field: 'albumCount', label: 'Albums' },
+          ]}
+          sortBy={sortBy}
+          sortDir={sortDir}
+          onSort={onSort}
+        />
+      </View>
       <UpdatingBanner visible={refreshing && !loading} />
       {loading
         ? <DownloadingLibrary />
@@ -3067,10 +3255,14 @@ function YearDetail({ route }: YearDetailProps) {
   const fetchingRef = useRef(false);
   const tracksRef   = useRef<MusicTrack[]>([]);
   const totalRef    = useRef(0);
+  const scanning    = useServerScanning();
+  const scanningRef = useRef(scanning);
   useEffect(() => { tracksRef.current = tracks; }, [tracks]);
   useEffect(() => { totalRef.current = total; }, [total]);
+  useEffect(() => { scanningRef.current = scanning; }, [scanning]);
 
   const loadPage = useCallback(async (reset: boolean) => {
+    if (scanningRef.current) return; // backend is rebuilding the DB — don't fetch into a hang
     if (fetchingRef.current) return;
     const offset = reset ? 0 : tracksRef.current.length;
     if (!reset && totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return;
@@ -3085,7 +3277,7 @@ function YearDetail({ route }: YearDetailProps) {
     finally { fetchingRef.current = false; setFetching(false); }
   }, [year]);
 
-  useEffect(() => { loadPage(true); }, [loadPage]);
+  useEffect(() => { if (!scanning) loadPage(true); }, [loadPage, scanning]);
 
   const navigateToPlayer = useCallback(() => {
     usePlayerUI.getState().expandForFreshPlayback();
@@ -3116,7 +3308,14 @@ function YearDetail({ route }: YearDetailProps) {
 
   const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => (
     <Pressable
-      onPress={() => { playQueue(tracksRef.current, index); navigateToPlayer(); }}
+      onPress={() => {
+        navigateToPlayer();
+        fetchAllTracks().then((all) => {
+          const list = all.length ? all : tracksRef.current;
+          const i = list.findIndex((x) => x.path === item.path);
+          playQueue(list, i >= 0 ? i : index);
+        });
+      }}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
     >
       <ArtworkBox path={getTrackArtworkPath(item)} size={42} />
@@ -3126,12 +3325,12 @@ function YearDetail({ route }: YearDetailProps) {
           {[item.artist, item.album].filter(Boolean).join(' · ')}
         </Text>
       </View>
-      <Text style={s.trackDur}>{formatDuration(item.duration)}</Text>
+      <TrackMetaRight item={item} />
       <Pressable onPress={() => setActionTrack(item)} hitSlop={8} style={s.moreBtn}>
         <Ionicons name="ellipsis-horizontal" size={18} color={c.textMuted} />
       </Pressable>
     </Pressable>
-  ), [playQueue, navigateToPlayer, s, c]);
+  ), [fetchAllTracks, playQueue, navigateToPlayer, s, c]);
 
   return (
     <View style={s.flex}>
@@ -3160,9 +3359,12 @@ function YearDetail({ route }: YearDetailProps) {
         track={actionTrack}
         onClose={() => setActionTrack(null)}
         onPlayNow={(t) => {
-          const idx = tracksRef.current.findIndex((x) => x.path === t.path);
-          playQueue(tracksRef.current, idx >= 0 ? idx : 0);
           navigateToPlayer();
+          fetchAllTracks().then((all) => {
+            const list = all.length ? all : tracksRef.current;
+            const idx = list.findIndex((x) => x.path === t.path);
+            playQueue(list, idx >= 0 ? idx : 0);
+          });
           setActionTrack(null);
         }}
         onPlayNext={(t) => { playNext([t]); setActionTrack(null); }}
@@ -3189,15 +3391,25 @@ function FolderDetail({ route }: FolderDetailProps) {
   const [renameTrackTarget, setRenameTrackTarget] = useState<MusicTrack | null>(null);
   const [folderActionOpen, setFolderActionOpen] = useState(false);
   const [renamingFolder, setRenamingFolder] = useState(false);
+  // '' = "Track order": the server's natural order (album → disc → track number), i.e. the folder's
+  // real running order, and the default. It's falsy, so every `sortBy ? …` check below treats it as
+  // "no sort" (server default / no client re-sort). Picking a field re-sorts (server-side for the
+  // shared library, client-side for on-device folders); the user can tap "Track order" to go back.
+  const { sortBy, sortDir, onSort } = useSort('');
 
   const fetchingRef  = useRef(false);
   const tracksRef    = useRef<MusicTrack[]>([]);
   const totalRef     = useRef(0);
   const searchRef    = useRef('');
   const folderRef    = useRef(folderPath);
+  const scanning     = useServerScanning();
+  const scanningRef  = useRef(scanning);
+  const sortRef      = useRef<{ sortBy: string | null; sortDir: SortDir }>({ sortBy: null, sortDir: 'asc' });
   useEffect(() => { tracksRef.current = tracks; }, [tracks]);
   useEffect(() => { totalRef.current = total; }, [total]);
   useEffect(() => { searchRef.current = search; }, [search]);
+  useEffect(() => { scanningRef.current = scanning; }, [scanning]);
+  useEffect(() => { sortRef.current = { sortBy, sortDir }; }, [sortBy, sortDir]);
 
   // Local folder: load all tracks from device storage, then filter client-side
   const [allLocalTracks, setAllLocalTracks] = useState<MusicTrack[]>([]);
@@ -3212,25 +3424,34 @@ function FolderDetail({ route }: FolderDetailProps) {
 
   const localFiltered = useMemo(() => {
     if (!isLocal) return [];
-    if (!search) return allLocalTracks;
-    const q = search.toLowerCase();
-    return allLocalTracks.filter(t =>
-      getTrackTitle(t).toLowerCase().includes(q) ||
-      t.artist?.toLowerCase().includes(q) ||
-      t.album?.toLowerCase().includes(q),
-    );
-  }, [isLocal, allLocalTracks, search]);
+    let list = allLocalTracks;
+    if (search) {
+      const q = search.toLowerCase();
+      list = list.filter(t =>
+        getTrackTitle(t).toLowerCase().includes(q) ||
+        t.artist?.toLowerCase().includes(q) ||
+        t.album?.toLowerCase().includes(q),
+      );
+    }
+    return sortList(list, sortBy, sortDir, (t, f) =>
+      f === 'title' ? getTrackTitle(t) : t[f as keyof MusicTrack]);
+  }, [isLocal, allLocalTracks, search, sortBy, sortDir]);
 
   // Server folder: paginated
   const loadPage = useCallback(async (reset: boolean, query: string) => {
     if (isLocal) return;
+    if (scanningRef.current) return; // backend is rebuilding the DB — don't fetch into a hang
     if (fetchingRef.current) return;
     const offset = reset ? 0 : tracksRef.current.length;
     if (!reset && totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return;
     fetchingRef.current = true;
     setFetching(true);
     try {
-      const result = await getTracks({ folder: folderRef.current, search: query, limit: TRACKS_PER_PAGE, offset });
+      const sort = sortRef.current;
+      const result = await getTracks({
+        folder: folderRef.current, search: query, limit: TRACKS_PER_PAGE, offset,
+        ...(sort.sortBy ? { sort: sort.sortBy, descending: String(sort.sortDir === 'desc') } : {}),
+      });
       setTracks((prev) => reset ? result.tracks : [...prev, ...result.tracks]);
       setTotal(result.total);
       totalRef.current = result.total;
@@ -3238,12 +3459,13 @@ function FolderDetail({ route }: FolderDetailProps) {
     finally { fetchingRef.current = false; setFetching(false); }
   }, [isLocal]);
 
+  // Load on mount, on search/sort change, and once a backend rescan finishes (scanning → false).
   useEffect(() => {
-    if (isLocal) return;
+    if (isLocal || scanning) return;
     const t = setTimeout(() => loadPage(true, search), search ? 300 : 0);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, isLocal]);
+  }, [search, isLocal, scanning, sortBy, sortDir]);
 
   const navigateToPlayer = useCallback(() => {
     usePlayerUI.getState().expandForFreshPlayback();
@@ -3251,10 +3473,17 @@ function FolderDetail({ route }: FolderDetailProps) {
   }, [navigation]);
 
   const fetchAllTracks = useCallback(async (): Promise<MusicTrack[]> => {
-    if (isLocal) return allLocalTracks;
+    const sort = sortRef.current;
+    if (isLocal) {
+      return sortList(allLocalTracks, sort.sortBy, sort.sortDir, (t, f) =>
+        f === 'title' ? getTrackTitle(t) : t[f as keyof MusicTrack]);
+    }
     if (totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return tracksRef.current;
     try {
-      const result = await getTracks({ folder: folderRef.current, search: searchRef.current, limit: totalRef.current || 9999, offset: 0 });
+      const result = await getTracks({
+        folder: folderRef.current, search: searchRef.current, limit: totalRef.current || 9999, offset: 0,
+        ...(sort.sortBy ? { sort: sort.sortBy, descending: String(sort.sortDir === 'desc') } : {}),
+      });
       return result.tracks;
     } catch { return tracksRef.current; }
   }, [isLocal, allLocalTracks]);
@@ -3273,13 +3502,22 @@ function FolderDetail({ route }: FolderDetailProps) {
     navigateToPlayer();
   }, [fetchAllTracks, playQueue, navigateToPlayer]);
 
+  // Queue the whole folder (not just the loaded pages) when a single track is tapped.
+  const playFromList = useCallback(async (tapped: MusicTrack, fallbackIndex: number) => {
+    navigateToPlayer();
+    const all = await fetchAllTracks();
+    const list = all.length ? all : displayRef.current;
+    const idx = list.findIndex((x) => x.path === tapped.path);
+    playQueue(list, idx >= 0 ? idx : fallbackIndex);
+  }, [fetchAllTracks, playQueue, navigateToPlayer]);
+
   const displayTracks = isLocal ? localFiltered : tracks;
   const displayRef = useRef<MusicTrack[]>([]);
   useEffect(() => { displayRef.current = displayTracks; }, [displayTracks]);
 
   const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => (
     <Pressable
-      onPress={() => { playQueue(displayRef.current, index); navigateToPlayer(); }}
+      onPress={() => { playFromList(item, index); }}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
     >
       <ArtworkBox
@@ -3293,13 +3531,13 @@ function FolderDetail({ route }: FolderDetailProps) {
           {[item.artist, item.album].filter(Boolean).join(' · ')}
         </Text>
       </View>
-      <Text style={s.trackDur}>{formatDuration(item.duration)}</Text>
+      <TrackMetaRight item={item} />
       <Pressable onPress={() => setActionTrack(item)} hitSlop={8} style={s.moreBtn}>
         <Ionicons name="ellipsis-horizontal" size={18} color={c.textMuted} />
       </Pressable>
     </Pressable>
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ), [playQueue, navigateToPlayer, s, c]);
+  ), [playFromList, s, c]);
 
   return (
     <View style={s.flex}>
@@ -3325,7 +3563,29 @@ function FolderDetail({ route }: FolderDetailProps) {
           </Pressable>
         )}
       </View>
-      <SearchBar value={search} onChange={setSearch} placeholder="Search in folder…" />
+      <SearchBar
+        value={search}
+        onChange={setSearch}
+        placeholder="Search in folder…"
+        trailing={
+          <SortControl
+            options={[
+              { field: '', label: 'Track order' },
+              { field: 'title', label: 'Title' },
+              { field: 'artist', label: 'Artist' },
+              { field: 'key', label: 'Key' },
+              { field: 'duration', label: 'Length' },
+              ...(isLocal ? [] : [
+                { field: 'bpm', label: 'BPM' },
+                { field: 'added', label: 'Added' },
+              ]),
+            ]}
+            sortBy={sortBy}
+            sortDir={sortDir}
+            onSort={onSort}
+          />
+        }
+      />
       <FlatList
         data={displayTracks}
         keyExtractor={(item, index) => `${item.path}-${index}`}
@@ -3333,18 +3593,20 @@ function FolderDetail({ route }: FolderDetailProps) {
         contentContainerStyle={s.listContent}
         onEndReached={isLocal ? undefined : () => loadPage(false, searchRef.current)}
         onEndReachedThreshold={0.4}
-        ListFooterComponent={fetching
+        ListFooterComponent={fetching && !scanning
           ? <ActivityIndicator color={c.accent} style={{ padding: Spacing.md }} />
           : null}
-        ListEmptyComponent={!fetching ? <Text style={s.empty}>No tracks found</Text> : null}
+        ListEmptyComponent={
+          scanning ? <Text style={s.empty}>{REBUILDING_MSG}</Text>
+          : !fetching ? <Text style={s.empty}>No tracks found</Text>
+          : null}
       />
       <TrackActionSheet
         track={actionTrack}
         onClose={() => setActionTrack(null)}
         onPlayNow={(t) => {
           const idx = displayRef.current.findIndex((x) => x.path === t.path);
-          playQueue(displayRef.current, idx >= 0 ? idx : 0);
-          navigateToPlayer();
+          playFromList(t, idx >= 0 ? idx : 0);
           setActionTrack(null);
         }}
         onPlayNext={(t) => { playNext([t]); setActionTrack(null); }}
@@ -3796,32 +4058,37 @@ function makeLibStyles(c: ThemeColors) {
     },
 
     // Sort bar
-    sortBarScroll: { flexGrow: 0 },
-    sortBarContent: {
+    // Sort trigger (icon on the search row) + bottom-sheet rows
+    sortTrigger: {
+      marginLeft: Spacing.xs,
+      paddingHorizontal: 2,
+      alignSelf: 'center',
+    },
+    searchTrailingDivider: {
+      width: StyleSheet.hairlineWidth,
+      alignSelf: 'stretch',
+      marginVertical: Spacing.sm,
+      marginLeft: Spacing.xs,
+      backgroundColor: c.border,
+    },
+    sortRow: {
       flexDirection: 'row',
+      justifyContent: 'flex-end',
       alignItems: 'center',
       paddingHorizontal: Spacing.md,
-      paddingTop: Spacing.xs,
-      paddingBottom: Spacing.sm,
-      gap: Spacing.xs,
+      paddingTop: Spacing.sm,
+      paddingBottom: Spacing.xs,
     },
-    sortChip: {
+    sortSheetRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 3,
-      paddingHorizontal: Spacing.sm + 2,
-      paddingVertical: 4,
-      borderRadius: Radius.full,
-      borderWidth: 1,
-      borderColor: c.border,
-      backgroundColor: c.bgSurface,
+      justifyContent: 'space-between',
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.md,
     },
-    sortChipActive: {
-      borderColor: c.accent,
-      backgroundColor: `${c.accent}22`,
-    },
-    sortChipText:       { fontSize: Typography.xs, color: c.textMuted, fontWeight: '500' },
-    sortChipTextActive: { color: c.accent },
+    sortSheetLabel:       { fontSize: Typography.md, color: c.textPrimary },
+    sortSheetLabelActive: { color: c.accent, fontWeight: '600' },
+    sortSheetRight:       { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
 
     // Tab bar
     tabBarScroll: {
@@ -3898,6 +4165,10 @@ function makeLibStyles(c: ThemeColors) {
       minWidth: 38,
       textAlign: 'right',
     },
+    trackRight:  { alignItems: 'flex-end', gap: 2 },
+    trackKeyBpm: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    trackKey:    { fontSize: Typography.xs, fontWeight: '700', color: c.accent, maxWidth: 64 },
+    trackBpm:    { fontSize: Typography.xs, color: c.textDim },
     moreBtn: { paddingLeft: Spacing.xs },
     clearAllBtn: { flexDirection: 'row', alignItems: 'center', padding: Spacing.md, opacity: 0.6 },
 
