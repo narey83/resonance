@@ -332,16 +332,32 @@ namespace resonance.Shares
                     State.SetValue(state => state with { Directories = unmaskedDirectories.Count, ExcludedDirectories = excludedDirectories.Count() });
                     Log.Information("Found {Directories} shared directories (and {Excluded} were excluded) in {Elapsed}ms.  Starting file scan.", unmaskedDirectories.Count, excludedDirectories.Count(), sw.ElapsedMilliseconds - swSnapshot);
 
-                    // a full scan prunes everything not touched by this pass (see below), so if none of the
-                    // configured shares resolved to an existing directory, something is transiently wrong
-                    // (an unmounted volume, a config reload race, etc). abort instead of pruning the entire
-                    // cache to near-nothing on the strength of a single bad reading.
-                    if (Shares.Any() && !unmaskedDirectories.Any())
+                    // A full scan prunes everything not touched by this pass (see below), so a scan that resolves
+                    // to (almost) nothing wipes the whole cache. The destructive case is when the user's real,
+                    // non-managed shares vanish from the scan set while the cache is populated. That happens
+                    // transiently, not because the user removed their shares: a polling config reload can fire
+                    // mid-rewrite and momentarily bind an empty/half Shares.Directories (see ApplySharesList /
+                    // commit 30cacec for the in-memory analogue), or a mounted volume can drop out.
+                    //
+                    // Crucially, checking for zero resolved directories is not enough: managed/virtual shares (e.g.
+                    // Mixtapes) still resolve, so the scan comes back with just those few files and prunes the entire
+                    // real library down to the managed remnant ("1 dir / 6 files"). So the signal is specifically
+                    // that none of the configured NON-managed shares resolve to an existing directory. When that
+                    // holds and we already have a populated cache, treat the reading as spurious, abort, and preserve
+                    // the cache instead of pruning a live index. A genuinely empty/removed config against an empty
+                    // cache still falls through and no-ops.
+                    var userSharesResolve = Shares
+                        .Where(s => !s.IsManaged && !s.IsExcluded)
+                        .Any(s => System.IO.Directory.Exists(s.LocalPath));
+                    var cachedFileCount = repository.CountFiles();
+
+                    if (!userSharesResolve && cachedFileCount > 0)
                     {
                         Log.Error(
-                            "Aborting shared file scan; none of the {Count} configured share(s) resolved to an existing directory. " +
-                            "This usually indicates a transient mount or filesystem issue; the existing cache has been preserved.",
-                            Shares.Count);
+                            "Aborting shared file scan; none of the configured user share(s) resolved to an existing " +
+                            "directory while the cache holds {Files} file(s). This usually indicates a transient config " +
+                            "reload race or a mount issue; the existing cache has been preserved.",
+                            cachedFileCount);
                         repository.UpdateScan(timestamp, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                         State.SetValue(state => state with { Filling = false, Faulted = true, Filled = true, FillProgress = 1 });
                         return;
