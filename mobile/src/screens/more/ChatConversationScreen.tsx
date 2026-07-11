@@ -40,6 +40,7 @@ import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useConversationStore } from '../../store/conversationStore';
 import type { PrivateMessage } from '../../api/chat';
@@ -86,14 +87,28 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
   const [sending, setSending] = useState(false);
   const [actionUser, setActionUser] = useState<string | null>(null);
 
-  // Reserves scroll space above the (inverted) list's newest message equal to
+  // Reserves scroll space below the (inverted) list's newest message equal to
   // the live keyboard height, so it isn't left hidden behind the keyboard —
   // paired with `KeyboardStickyView` below, which pins the input bar itself
   // to the top of the keyboard. `height` runs 0 (closed) to -keyboardHeight.
+  //
+  // The reservation lives on this Animated.View spacer, rendered as the
+  // inverted list's header (i.e. visually at the bottom), rather than on the
+  // list's `contentContainerStyle`: an animated style on `contentContainerStyle`
+  // crashes ("attempted to set the key `current` … on an object … frozen"),
+  // because the list machinery freezes that style object before Reanimated can
+  // manage it. A genuine Animated component's `style` is the supported path.
   const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
-  const listAnimatedStyle = useAnimatedStyle(() => ({
-    paddingTop: -keyboardHeight.value,
+  const spacerAnimatedStyle = useAnimatedStyle(() => ({
+    height: -keyboardHeight.value,
   }));
+
+  // The input bar rests above the (non-absolute) bottom tab bar, so it starts
+  // `tabBarHeight` up from the true screen bottom. KeyboardStickyView lifts it
+  // by the full keyboard height measured from that bottom, which would overshoot
+  // and leave a gap the size of the tab bar between the input and the keyboard;
+  // `offset.opened` pulls it back down flush against the keyboard.
+  const tabBarHeight = useBottomTabBarHeight();
 
   React.useLayoutEffect(() => {
     navigation.setOptions({
@@ -172,11 +187,12 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
         inverted
         keyExtractor={(item, index) => `${item.direction}-${item.id}-${item.timestamp}-${index}`}
         renderItem={renderMessage}
-        contentContainerStyle={[s.list, listAnimatedStyle]}
+        contentContainerStyle={s.list}
+        ListHeaderComponent={<Animated.View style={spacerAnimatedStyle} />}
         onRefresh={() => loadMessages(username)}
         refreshing={false}
       />
-      <KeyboardStickyView>
+      <KeyboardStickyView offset={{ opened: tabBarHeight }}>
         <View style={s.inputBar}>
           <TextInput
             multiline
