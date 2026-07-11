@@ -55,6 +55,7 @@ import TagsScreen                from '../screens/more/TagsScreen';
 import AnalysisScreen            from '../screens/more/AnalysisScreen';
 import SystemScreen              from '../screens/more/SystemScreen';
 import BlockedScreen             from '../screens/more/BlockedScreen';
+import BlockedUsersScreen        from '../screens/more/BlockedUsersScreen';
 import SettingsScreen            from '../screens/more/SettingsScreen';
 import NetworkLogScreen          from '../screens/more/NetworkLogScreen';
 
@@ -79,6 +80,7 @@ export type MoreStackParamList = {
   Analysis:         undefined;
   System:           undefined;
   Blocked:          undefined;
+  BlockedUsers:     undefined;
   Settings:         undefined;
   NetworkLog:       undefined;
 };
@@ -103,6 +105,7 @@ function MoreStack() {
       <More.Screen name="Analysis"         component={AnalysisScreen}         options={{ title: 'Analysis' }} />
       <More.Screen name="System"           component={SystemScreen}           options={{ title: 'System' }} />
       <More.Screen name="Blocked"          component={BlockedScreen}          options={{ title: 'Blocked' }} />
+      <More.Screen name="BlockedUsers"     component={BlockedUsersScreen}     options={{ title: 'Blocked Users' }} />
       <More.Screen name="Settings"         component={SettingsScreen}         options={{ title: 'Settings' }} />
       <More.Screen name="NetworkLog"       component={NetworkLogScreen}       options={{ title: 'Network Log' }} />
     </More.Navigator>

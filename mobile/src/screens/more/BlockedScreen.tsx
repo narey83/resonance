@@ -47,6 +47,15 @@ import { getKnownLocations, setBlockedUserOptions } from '../../api/blockedUsers
 import type { BlockedUserOptions, KnownLocations } from '../../api/blockedUsers';
 import { useAuthStore } from '../../store/auth';
 import SearchableSelectSheet from '../../components/SearchableSelectSheet';
+import BlockedUserRow from '../../components/BlockedUserRow';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { MoreStackParamList } from '../../navigation/MainTabs';
+
+type Props = NativeStackScreenProps<MoreStackParamList, 'Blocked'>;
+
+// The blocked list can grow into the hundreds, so this screen only previews a
+// handful; the full searchable list lives on its own screen behind a link.
+const USERS_PREVIEW = 5;
 
 const OPTION_FIELDS: { key: keyof BlockedUserOptions; label: string }[] = [
   { key: 'blockTransfers', label: 'Block transfers' },
@@ -58,7 +67,7 @@ const OPTION_FIELDS: { key: keyof BlockedUserOptions; label: string }[] = [
   { key: 'blockSameIp', label: 'Catch ban evasion (same IP)' },
 ];
 
-export default function BlockedScreen() {
+export default function BlockedScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
   const isAdmin = useAuthStore(state => state.isAdmin);
@@ -84,6 +93,8 @@ export default function BlockedScreen() {
     () => locations.citiesByCountry[country] ?? [],
     [locations.citiesByCountry, country],
   );
+
+  const previewUsers = useMemo(() => users.slice(0, USERS_PREVIEW), [users]);
 
   const confirmUnblock = (label: string, action: () => Promise<void>) =>
     Alert.alert('Unblock', `Unblock ${label}?`, [
@@ -134,35 +145,22 @@ export default function BlockedScreen() {
       <Text style={s.sectionTitle}>BLOCKED USERS ({users.length})</Text>
       <View style={s.group}>
         {users.length === 0 && <Text style={s.empty}>No blocked users</Text>}
-        {users.map(u => (
-          <View key={u.username} style={s.row}>
-            <View style={s.rowMain}>
-              <Text style={s.rowTitle} numberOfLines={1}>{u.username}</Text>
-              {u.ips && u.ips.length > 0 && (
-                <View style={s.ipWrap}>
-                  {u.ips.map(ip => (
-                    <Pressable
-                      key={ip}
-                      onPress={() => blockIp(ip).catch(() => {})}
-                      style={s.ipChip}
-                    >
-                      <Text style={s.ipChipText}>{ip}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-              {(u.city || u.country) && (
-                <Text style={s.rowLoc} numberOfLines={1}>
-                  {[u.city, u.country].filter(Boolean).join(', ')}
-                </Text>
-              )}
-              {!!u.reason && <Text style={s.rowSub} numberOfLines={2}>{u.reason}</Text>}
-            </View>
-            <Pressable onPress={() => confirmUnblock(u.username, () => unblock(u.username))} style={s.unblockBtn}>
-              <Ionicons name="close-circle-outline" size={22} color={colors.danger} />
-            </Pressable>
-          </View>
+        {previewUsers.map(u => (
+          <BlockedUserRow
+            key={u.username}
+            user={u}
+            onUnblock={() => confirmUnblock(u.username, () => unblock(u.username))}
+            onBlockIp={ip => blockIp(ip).catch(() => {})}
+          />
         ))}
+        {users.length > USERS_PREVIEW && (
+          <Pressable style={s.viewAllRow} onPress={() => navigation.navigate('BlockedUsers')}>
+            <Text style={s.viewAllText}>
+              View all {users.length} blocked users
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.accent} />
+          </Pressable>
+        )}
       </View>
 
       {/* Blocked IPs */}
@@ -310,18 +308,18 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   rowMain:  { flex: 1, minWidth: 0 },
   rowTitle: { fontSize: Typography.md, color: c.textPrimary, fontWeight: '500' },
   rowSub:   { fontSize: Typography.xs, color: c.textMuted, marginTop: 2 },
-  rowLoc:   { fontSize: Typography.xs, color: c.textMuted, marginTop: 2, fontStyle: 'italic' },
   unblockBtn: { paddingLeft: Spacing.sm },
 
-  ipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 },
-  ipChip: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: c.borderStrong,
-    borderRadius: Radius.sm,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
+  viewAllRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: Spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: c.border,
   },
-  ipChipText: { fontSize: Typography.xs, color: c.textMuted },
+  viewAllText: { color: c.accent, fontSize: Typography.sm, fontWeight: '600' },
 
   addRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, padding: Spacing.md },
   input: {
