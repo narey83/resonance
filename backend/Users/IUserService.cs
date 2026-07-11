@@ -38,6 +38,7 @@ namespace resonance.Users
     using System.Collections.Generic;
     using System.Net;
     using System.Threading.Tasks;
+    using Soulseek;
 
     /// <summary>
     ///     Provides information and operations for network peers.
@@ -133,6 +134,15 @@ namespace resonance.Users
         /// <param name="username">The username of the peer.</param>
         /// <returns>The retrieved status.</returns>
         Task<Status> GetStatusAsync(string username);
+
+        /// <summary>
+        ///     Attempts to retrieve the last known <see cref="UserPresence"/> for the specified <paramref name="username"/>
+        ///     from the local cache, without a network round-trip.
+        /// </summary>
+        /// <param name="username">The username of the peer.</param>
+        /// <param name="presence">The cached presence, if known.</param>
+        /// <returns>A value indicating whether a cached presence was found for the user.</returns>
+        bool TryGetCachedPresence(string username, out UserPresence presence);
 
         /// <summary>
         ///     Grants the specified peer the specified number of privilege days.

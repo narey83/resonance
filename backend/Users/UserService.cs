@@ -304,6 +304,28 @@ namespace resonance.Users
         }
 
         /// <summary>
+        ///     Attempts to retrieve the last known <see cref="UserPresence"/> for the specified <paramref name="username"/>
+        ///     from the local cache, without a network round-trip.
+        /// </summary>
+        /// <param name="username">The username of the peer.</param>
+        /// <param name="presence">The cached presence, if known.</param>
+        /// <returns>A value indicating whether a cached presence was found for the user.</returns>
+        public bool TryGetCachedPresence(string username, out UserPresence presence)
+        {
+            presence = UserPresence.Offline;
+
+            if (!string.IsNullOrEmpty(username)
+                && UserDictionary.TryGetValue(username, out var user)
+                && user.Status is not null)
+            {
+                presence = user.Status.Presence;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         ///     Grants the specified peer the specified number of privilege days.
         /// </summary>
         /// <param name="username">The username of the peer.</param>

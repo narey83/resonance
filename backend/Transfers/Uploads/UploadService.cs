@@ -363,6 +363,15 @@ namespace resonance.Transfers.Uploads
                     Log.Warning(ex, "Failed to watch user {Username}", transfer.Username);
                 }
 
+                // now that the user is watched, if their last known presence is offline, don't hand a doomed transfer
+                // to Soulseek.NET (which would hold a slot and wait on a long connection timeout before failing).
+                // fail fast; the throw is handled by the catch below, which records the offline cooldown. the user
+                // requested this file but has since gone offline; their client re-requests when it reconnects.
+                if (Users.TryGetCachedPresence(transfer.Username, out var presence) && presence == UserPresence.Offline)
+                {
+                    throw new UserOfflineException($"User {transfer.Username} appears to be offline");
+                }
+
                 Log.Information("Initializing upload of {Filename} to {Username}", transfer.Filename, transfer.Username);
 
                 // locate the file on disk. we checked this once already when enqueueing, but it may have moved since
@@ -600,6 +609,16 @@ namespace resonance.Transfers.Uploads
             if (IsInOfflineCooldown(username))
             {
                 Log.Debug("Skipping upload enqueue of {Filename} to {Username}; user is in offline cooldown", filename, username);
+                return null;
+            }
+
+            // if the user's last known presence (from watching them) is offline, don't bother enqueueing. this gates
+            // the bulk of a re-request storm from a user who queued a large batch and then went offline: their client
+            // keeps asking, but we already know they're unreachable. the presence cache flips back to online (via an
+            // unsolicited server status event) the moment they return, so online users are never blocked.
+            if (Users.TryGetCachedPresence(username, out var presence) && presence == UserPresence.Offline)
+            {
+                Log.Debug("Skipping upload enqueue of {Filename} to {Username}; user is offline", filename, username);
                 return null;
             }
 
