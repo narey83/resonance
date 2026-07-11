@@ -55,6 +55,23 @@ public class SessionService
     // checked, but they age out within the JWT TTL plus validation clock skew.
     private ConcurrentDictionary<Guid, DateTime> RevokedSessionCache { get; } = new();
 
+    // Tokens rotated within the last RotationGracePeriod, keyed by the hash of the token that
+    // was superseded. Concurrent or retried refresh requests routinely replay the same token
+    // that was just rotated away (several API calls hit a 401 at once, or a refresh response is
+    // lost and the client retries). Handing each replay back the identical replacement token —
+    // rather than treating it as theft — keeps those benign duplicates from tearing down the
+    // session. In-memory only; a replay after a restart simply falls through to a normal 401.
+    private ConcurrentDictionary<string, GraceEntry> RecentlyRotated { get; } = new();
+
+    // Serialises the read-rotate-write critical section so that concurrent replays of the same
+    // token queue behind the first rotation and observe its grace-cache entry, instead of each
+    // racing to rotate independently. Refreshes are infrequent, so a single lock is ample.
+    private object RotationLock { get; } = new();
+
+    private static readonly TimeSpan RotationGracePeriod = TimeSpan.FromSeconds(60);
+
+    private readonly record struct GraceEntry(string NewToken, Guid SessionId, string Username, DateTime RotatedAt);
+
     /// <summary>
     ///     Creates a new session for the given user and returns the opaque refresh token and session ID.
     ///     Only the SHA-256 hash of the token is stored; the plaintext is never persisted.
@@ -111,71 +128,92 @@ public class SessionService
     ///     with a new token hash, keeping the same session ID. Returns the username, the new refresh
     ///     token, and the stable session ID.
     ///     Throws UnauthorizedException if the token is unknown, revoked, or expired.
-    ///     If a previously rotated token is presented, all of the user's sessions are revoked
-    ///     (theft detection): a replayed old token means either an attacker or the legitimate
-    ///     client holds a stale copy, and it's impossible to tell which party got the new one.
+    ///     A token that was rotated away within the last <see cref="RotationGracePeriod"/> is treated
+    ///     as a benign concurrent/retried request and handed back the same replacement token. Only a
+    ///     replay outside that window counts as reuse, and then just the affected session is revoked.
     /// </summary>
     /// <returns></returns>
     public (string Username, string NewRefreshToken, Guid SessionId) RotateRefreshToken(string refreshToken)
     {
         var hash = HashToken(refreshToken);
 
-        using var db = ContextFactory.CreateDbContext();
-        var session = db.Sessions.FirstOrDefault(s => s.RefreshTokenHash == hash);
-
-        if (session is null)
+        // Serialise so concurrent replays of the same token queue behind the first rotation and
+        // then observe its grace-cache entry rather than each racing to rotate independently.
+        lock (RotationLock)
         {
-            // not a current token for any session — check whether it's a rotated-away token being replayed
-            var replayed = db.Sessions.FirstOrDefault(s => s.PreviousTokenHash == hash);
-            if (replayed is not null)
-            {
-                Log.Warning("Previously rotated refresh token replayed for user {Username}; revoking all sessions (possible token theft)", replayed.Username);
-                foreach (var id in RevokeAllSessions(replayed.Username, db))
-                {
-                    CacheRevocation(id);
-                }
+            PruneGraceCache();
 
-                throw new UnauthorizedException("Refresh token reuse detected");
+            // Concurrent/retried refresh: this exact token was rotated moments ago. Hand back the
+            // identical replacement instead of tripping reuse detection, so the duplicate request
+            // succeeds transparently and the session is left intact.
+            if (RecentlyRotated.TryGetValue(hash, out var grace))
+            {
+                Log.Debug("Refresh token replayed within grace window for user {Username}; reissuing same token", grace.Username);
+                return (grace.Username, grace.NewToken, grace.SessionId);
             }
 
-            throw new UnauthorizedException("Invalid refresh token");
-        }
+            using var db = ContextFactory.CreateDbContext();
+            var session = db.Sessions.FirstOrDefault(s => s.RefreshTokenHash == hash);
 
-        if (session.IsRevoked)
-        {
-            // A revoked token was presented — could be an old token after logout or a superseded session.
-            Log.Warning("Revoked refresh token presented for user {Username}", session.Username);
-            throw new UnauthorizedException("Refresh token has been revoked");
-        }
+            if (session is null)
+            {
+                // Not a current token for any session — check whether it's a rotated-away token being
+                // replayed outside the grace window. Revoke only that session (a genuinely stale or
+                // stolen token stops working) rather than logging the user out everywhere.
+                var replayed = db.Sessions.FirstOrDefault(s => s.PreviousTokenHash == hash && !s.IsRevoked);
+                if (replayed is not null)
+                {
+                    Log.Warning("Rotated refresh token replayed outside grace window for user {Username}; revoking affected session", replayed.Username);
+                    replayed.IsRevoked = true;
+                    db.SaveChanges();
+                    CacheRevocation(replayed.Id);
 
-        if (session.ExpiresAt < DateTime.UtcNow)
-        {
-            throw new UnauthorizedException("Refresh token has expired");
-        }
+                    throw new UnauthorizedException("Refresh token reuse detected");
+                }
 
-        // Idle timeout: a live client refreshes within each JWT TTL window. A session whose token
-        // hasn't been used within the idle window is dead (e.g. a one-off credential/API login) —
-        // revoke it rather than silently reviving it, so it can't linger for the full refresh TTL.
-        if (session.LastUsedAt < DateTime.UtcNow.AddMilliseconds(-Options.Web.Authentication.Jwt.IdleTimeout))
-        {
-            session.IsRevoked = true;
+                throw new UnauthorizedException("Invalid refresh token");
+            }
+
+            if (session.IsRevoked)
+            {
+                // A revoked token was presented — could be an old token after logout or a superseded session.
+                Log.Warning("Revoked refresh token presented for user {Username}", session.Username);
+                throw new UnauthorizedException("Refresh token has been revoked");
+            }
+
+            if (session.ExpiresAt < DateTime.UtcNow)
+            {
+                throw new UnauthorizedException("Refresh token has expired");
+            }
+
+            // Idle timeout: a live client refreshes within each JWT TTL window. A session whose token
+            // hasn't been used within the idle window is dead (e.g. a one-off credential/API login) —
+            // revoke it rather than silently reviving it, so it can't linger for the full refresh TTL.
+            if (session.LastUsedAt < DateTime.UtcNow.AddMilliseconds(-Options.Web.Authentication.Jwt.IdleTimeout))
+            {
+                session.IsRevoked = true;
+                db.SaveChanges();
+                CacheRevocation(session.Id);
+                Log.Warning("Idle refresh token presented for user {Username}; session revoked", session.Username);
+                throw new UnauthorizedException("Session has expired due to inactivity");
+            }
+
+            // Update the session in place — same ID, new token hash, sliding expiry.
+            // The old hash is retained so a replay of the rotated-away token can be detected above.
+            var newToken = GenerateToken();
+            var ttlMs = Options.Web.Authentication.Jwt.RefreshTokenTtl;
+            session.PreviousTokenHash = session.RefreshTokenHash;
+            session.RefreshTokenHash = HashToken(newToken);
+            session.LastUsedAt = DateTime.UtcNow;
+            session.ExpiresAt = DateTime.UtcNow.AddMilliseconds(ttlMs);
             db.SaveChanges();
-            CacheRevocation(session.Id);
-            Log.Warning("Idle refresh token presented for user {Username}; session revoked", session.Username);
-            throw new UnauthorizedException("Session has expired due to inactivity");
+
+            // Remember the just-superseded token so a concurrent or retried replay of it within the
+            // grace window is answered with this same replacement instead of a reuse error.
+            RecentlyRotated[hash] = new GraceEntry(newToken, session.Id, session.Username, DateTime.UtcNow);
+
+            return (session.Username, newToken, session.Id);
         }
-
-        // Update the session in place — same ID, new token hash, sliding expiry.
-        // The old hash is retained so a replay of the rotated-away token can be detected above.
-        var newToken = GenerateToken();
-        var ttlMs = Options.Web.Authentication.Jwt.RefreshTokenTtl;
-        session.PreviousTokenHash = session.RefreshTokenHash;
-        session.RefreshTokenHash = HashToken(newToken);
-        session.LastUsedAt = DateTime.UtcNow;
-        session.ExpiresAt = DateTime.UtcNow.AddMilliseconds(ttlMs);
-        db.SaveChanges();
-
-        return (session.Username, newToken, session.Id);
     }
 
     /// <summary>
@@ -297,6 +335,17 @@ public class SessionService
         => Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
 
     private void CacheRevocation(Guid sessionId) => RevokedSessionCache[sessionId] = DateTime.UtcNow;
+
+    // Drops grace-cache entries older than the grace period. Called under RotationLock.
+    private void PruneGraceCache()
+    {
+        var cutoff = DateTime.UtcNow - RotationGracePeriod;
+
+        foreach (var entry in RecentlyRotated.Where(e => e.Value.RotatedAt < cutoff).ToList())
+        {
+            RecentlyRotated.TryRemove(entry.Key, out _);
+        }
+    }
 
     private void PruneRevocationCache()
     {
