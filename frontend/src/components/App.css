@@ -2222,6 +2222,15 @@ body {
   white-space: nowrap;
 }
 
+/* Divider between the name and the action icons */
+.ulink-sep {
+  width: 1px;
+  height: 12px;
+  flex-shrink: 0;
+  margin: 0 2px;
+  background: var(--border-strong, var(--border));
+}
+
 .ulink-icon-btn {
   align-items: center;
   background: none;

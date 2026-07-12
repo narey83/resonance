@@ -1223,6 +1223,13 @@ html.dark, html.amoled {
   cursor: pointer;
 }
 
+/* User Activity rows aren't clickable (actions live on the username's icons),
+   so they stay static — no pointer cursor or hover affordance. */
+.user-reports-table tr:hover td {
+  background: transparent;
+  cursor: default;
+}
+
 .leaderboard-rank {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;

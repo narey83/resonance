@@ -86,6 +86,10 @@ const UsernameLink = ({ active, className, style, username }) => {
       >
         {username}
       </span>
+      <span
+        aria-hidden="true"
+        className="ulink-sep"
+      />
       {canReport && (
         <button
           className="ulink-icon-btn hover-fx"
