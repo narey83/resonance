@@ -231,6 +231,9 @@ const BlockedUsers = () => {
       <Header size="small">
         <Icon name="ban" />
         Blocked Users
+        {users.length > 0 && (
+          <Label circular>{users.length}</Label>
+        )}
       </Header>
       <p>
         Blocked users can&apos;t interact with this server. Use the toggles to
@@ -347,6 +350,7 @@ const BlockedUsers = () => {
       <Header size="small">
         <Icon name="shield" />
         Blocked IPs
+        {ips.length > 0 && <Label circular>{ips.length}</Label>}
       </Header>
       <Segment>
         <Form onSubmit={handleBlockIp}>
@@ -422,6 +426,9 @@ const BlockedUsers = () => {
       <Header size="small">
         <Icon name="globe" />
         Blocked Locations
+        {places.length > 0 && (
+          <Label circular>{places.length}</Label>
+        )}
       </Header>
       <Segment>
         {!geoAvailable && (
