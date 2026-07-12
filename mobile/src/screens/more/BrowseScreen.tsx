@@ -38,7 +38,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useDeferredFocusEffect } from '../../hooks/useDeferredEffect';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { HubConnection } from '@microsoft/signalr';
 import * as browseApi from '../../api/browse';
@@ -89,7 +89,7 @@ export default function BrowseScreen({ navigation }: Props) {
 
   // Refetch on focus so the most-recently-viewed ordering is always current,
   // even if the hub connection dropped while another screen was open.
-  useFocusEffect(
+  useDeferredFocusEffect(
     useCallback(() => {
       browseApi.getBrowseHistory().then(setHistory).catch(() => {});
     }, []),

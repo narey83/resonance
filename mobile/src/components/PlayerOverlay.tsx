@@ -50,7 +50,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { usePlaybackStatus, usePlayer } from '../context/PlayerContext';
+import { usePlaybackPosition, usePlaybackStatus, usePlayer } from '../context/PlayerContext';
 import { useCast } from '../context/CastContext';
 import { useTheme } from '../context/ThemeContext';
 import { MusicTrack, getArtworkUrl, getTrackTitle } from '../api/musicLibrary';
@@ -394,7 +394,8 @@ export default function PlayerOverlay() {
   const insets = useSafeAreaInsets();
 
   const { track, shuffle, queue, queueIndex, repeatMode, cycleRepeat, togglePlayPause, next, prev, seekTo, toggleShuffle, skipToIndex } = usePlayer();
-  const { isPlaying, isBuffering, positionSec, durationSec } = usePlaybackStatus();
+  const { isPlaying, isBuffering } = usePlaybackStatus();
+  const { positionSec, durationSec } = usePlaybackPosition();
   const {
     isCasting, isGoogleCasting, googleCastDeviceName, googleCastTitle,
     castIsPlaying, castPositionSec, castDurationSec,

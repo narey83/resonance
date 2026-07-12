@@ -41,10 +41,9 @@ import { Radius, Spacing, ThemeColors } from '../theme';
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
 const TAB_ICONS: Record<string, { active: IoniconName; inactive: IoniconName }> = {
-  OverviewTab:  { active: 'bar-chart',     inactive: 'bar-chart-outline' },
+  LibraryTab:   { active: 'musical-notes', inactive: 'musical-notes-outline' },
   SearchTab:    { active: 'search',        inactive: 'search-outline' },
   TransfersTab: { active: 'arrow-down',    inactive: 'arrow-down-outline' },
-  LibraryTab:   { active: 'musical-notes', inactive: 'musical-notes-outline' },
   MoreTab:      { active: 'grid',          inactive: 'grid-outline' },
 };
 

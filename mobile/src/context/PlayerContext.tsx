@@ -95,13 +95,24 @@ interface PlayerContextValue {
 interface PlaybackStatusContextValue {
   isPlaying: boolean;
   isBuffering: boolean;
+  durationSec: number;
+}
+
+// Split out from status: position ticks ~4×/sec (useProgress(250)), so keeping it
+// in its own context means only components that render the moving position (mini-bar
+// progress strip, expanded player seek bar) re-render on each tick — not every
+// isPlaying/duration consumer, which would otherwise churn the always-mounted tab bar.
+interface PlaybackPositionContextValue {
   positionSec: number;
   durationSec: number;
 }
 
 const PlayerContext         = createContext<PlayerContextValue | null>(null);
 const PlaybackStatusContext = createContext<PlaybackStatusContextValue>({
-  isPlaying: false, isBuffering: false, positionSec: 0, durationSec: 0,
+  isPlaying: false, isBuffering: false, durationSec: 0,
+});
+const PlaybackPositionContext = createContext<PlaybackPositionContextValue>({
+  positionSec: 0, durationSec: 0,
 });
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -674,14 +685,20 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const statusValue = useMemo<PlaybackStatusContextValue>(() => ({
     isPlaying:   playing,
     isBuffering: bufferingDuringPlay,
+    durationSec: duration,
+  }), [playing, bufferingDuringPlay, duration]);
+
+  const positionValue = useMemo<PlaybackPositionContextValue>(() => ({
     positionSec: position,
     durationSec: duration,
-  }), [playing, bufferingDuringPlay, position, duration]);
+  }), [position, duration]);
 
   return (
     <PlayerContext.Provider value={playerValue}>
       <PlaybackStatusContext.Provider value={statusValue}>
-        {children}
+        <PlaybackPositionContext.Provider value={positionValue}>
+          {children}
+        </PlaybackPositionContext.Provider>
       </PlaybackStatusContext.Provider>
     </PlayerContext.Provider>
   );
@@ -695,3 +712,6 @@ export const usePlayer = (): PlayerContextValue => {
 
 export const usePlaybackStatus = (): PlaybackStatusContextValue =>
   useContext(PlaybackStatusContext);
+
+export const usePlaybackPosition = (): PlaybackPositionContextValue =>
+  useContext(PlaybackPositionContext);

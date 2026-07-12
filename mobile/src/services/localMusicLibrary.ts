@@ -36,9 +36,13 @@ import {
   MediaType,
 } from 'expo-media-library';
 import { readId3Tags } from './id3Reader';
+import { dbg } from '../api/debugLog';
 import { MusicTrack, MusicAlbum, MusicArtist, MusicFolder, TracksResult } from '../api/musicLibrary';
 import {
   getMetadataForPaths,
+  getAllMetadata,
+  getSchemaValue,
+  setSchemaValue,
   upsertMetadata,
   pruneRemovedTracks,
   clearLocalMetadata,
@@ -62,6 +66,18 @@ const extractDirectory = (uri: string): string => {
   const lastSlash = path.lastIndexOf('/');
   return lastSlash > 0 ? path.slice(0, lastSlash) : '';
 };
+
+// Derive the display filename from a stored path so the change-detection fast path can
+// rebuild tracks from SQLite without calling asset.getFilename() per file.
+const filenameFromUri = (uri: string): string => {
+  const clean = uri.startsWith('file://') ? decodeURIComponent(uri.slice(7)) : uri;
+  return clean.split('/').pop() || clean;
+};
+
+// schema_info key for the persisted local-library signature (file count + newest mtime).
+const LIBRARY_SIGNATURE_KEY = 'local_lib_signature';
+const librarySignature = (count: number, latestMtime: number | null): string =>
+  JSON.stringify({ c: count, m: latestMtime });
 
 const metadataToMusicTrack = (uri: string, filename: string, meta: TrackMetadata): MusicTrack => ({
   path: uri,
@@ -180,7 +196,25 @@ export const invalidateLocalTracksCache = () => {
 export const forceRescanLocalTracks = async (): Promise<void> => {
   _trackCache = null;
   _backgroundScan = null;
+  // Clear the change-detection signature too, or the fast path would short-circuit the
+  // rescan against the now-empty table on the next getAllLocalTracks() call.
+  await setSchemaValue(LIBRARY_SIGNATURE_KEY, '').catch(() => {});
   await clearLocalMetadata();
+};
+
+// Cheap probe for the newest modification time in the audio library: a single sorted
+// query capped to one row, so it's one native getter regardless of library size.
+const probeLatestMtime = async (): Promise<number | null> => {
+  try {
+    const newest = await new Query()
+      .eq(AssetField.MEDIA_TYPE, MediaType.AUDIO)
+      .orderBy({ key: AssetField.MODIFICATION_TIME, ascending: false })
+      .limit(1)
+      .exe();
+    return newest.length > 0 ? await newest[0].getModificationTime() : null;
+  } catch {
+    return null;
+  }
 };
 
 export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
@@ -189,10 +223,32 @@ export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
 
   if (!await requestPermissions()) return [];
 
+  // Enumerate asset HANDLES only — cheap, no per-asset field reads yet.
   const assets = await new Query()
     .eq(AssetField.MEDIA_TYPE, MediaType.AUDIO)
     .exe();
 
+  // Change-detection fast path: if the file count + newest mtime match what we persisted
+  // after the last fully-reconciled scan, the on-device library is unchanged. Rebuild the
+  // track list straight from SQLite — no per-asset enumeration (thousands of native calls)
+  // and no re-parse. This is what makes the library survive app/phone restarts and only
+  // rebuild when the local files actually change.
+  const latestMtime = await probeLatestMtime();
+  const signature = librarySignature(assets.length, latestMtime);
+  const storedSignature = await getSchemaValue(LIBRARY_SIGNATURE_KEY).catch(() => null);
+
+  if (storedSignature && storedSignature === signature) {
+    const rows = await getAllMetadata('local');
+    if (rows.length > 0) {
+      _trackCache = rows.map(m => metadataToMusicTrack(m.path, filenameFromUri(m.path), m));
+      _trackCacheTime = now;
+      dbg(`[local-scan] unchanged (signature hit) — ${rows.length} tracks from cache, no enumeration`);
+      return _trackCache;
+    }
+  }
+
+  // Slow path: the file set changed (or first ever run). Read per-asset basics and diff
+  // against the cached metadata; only genuinely new/modified files get re-parsed.
   const basics = (await Promise.all(assets.map(fetchAssetBasics)))
     .filter((b): b is AssetBasics => b !== null);
 
@@ -222,19 +278,54 @@ export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
   _trackCache = buildTrackList();
   _trackCacheTime = now;
 
-  if (stale.length > 0 && !_backgroundScan) {
+  // Persist the signature only once the DB fully reflects the current file set, so the fast
+  // path can never serve a half-scanned library. `probeLatestMtime` may have missed a file
+  // added between the two queries, so pin the signature to the max mtime actually seen here.
+  const maxMtime = basics.reduce<number | null>(
+    (mx, b) => (b.mtime != null && (mx == null || b.mtime > mx) ? b.mtime : mx), null);
+  const finalSignature = librarySignature(assets.length, maxMtime ?? latestMtime);
+  const persistSignature = () => setSchemaValue(LIBRARY_SIGNATURE_KEY, finalSignature).catch(() => {});
+
+  if (stale.length === 0) {
+    // Only membership changed (e.g. deletions) — reconcile removals, then pin the signature
+    // (await the prune first so a deletion can't be recorded as "current" before it lands).
+    (async () => {
+      await pruneRemovedTracks(uris, 'local').catch(() => {});
+      persistSignature();
+    })();
+  } else if (!_backgroundScan) {
     _backgroundScan = (async () => {
       const BATCH = 32;
-      for (let i = 0; i < stale.length; i += BATCH) {
-        const parsed = await Promise.all(stale.slice(i, i + BATCH).map(parseId3));
-        await upsertMetadata(parsed);
-        for (const e of parsed) cached.set(e.path, e);
-        _trackCache = buildTrackList();
-        _trackCacheTime = Date.now();
-        _onScanProgress?.();
+      let skipped = 0;
+      try {
+        for (let i = 0; i < stale.length; i += BATCH) {
+          try {
+            const parsed = await Promise.all(stale.slice(i, i + BATCH).map(parseId3));
+            await upsertMetadata(parsed);
+            for (const e of parsed) cached.set(e.path, e);
+            _trackCache = buildTrackList();
+            _trackCacheTime = Date.now();
+          } catch (e) {
+            // One batch failed — most likely a contended SQLite write (upsertMetadata)
+            // while another screen touched the DB. Skip it and keep scanning the rest
+            // instead of stranding the whole retrieval; the skipped files stay `stale`
+            // and get retried on the next scan.
+            skipped += 1;
+            dbg(`[local-scan] batch @${i} failed, skipping: ${String((e as Error)?.message ?? e)}`);
+          }
+          // Fire progress even after a skipped batch so the UI keeps reconciling.
+          _onScanProgress?.();
+        }
+        await pruneRemovedTracks(uris, 'local').catch(() => {});
+        // Only pin the signature when every file parsed cleanly — otherwise leave it stale
+        // so the next entry re-runs this path and retries the skipped files (self-healing).
+        if (skipped === 0) persistSignature();
+      } finally {
+        // Always clear, even on an unexpected throw, so a failed scan can restart on the
+        // next getAllLocalTracks() call — a stuck non-null promise would otherwise make
+        // the `!_backgroundScan` guard block every future scan permanently.
+        _backgroundScan = null;
       }
-      pruneRemovedTracks(uris, 'local').catch(() => {});
-      _backgroundScan = null;
     })();
   }
 

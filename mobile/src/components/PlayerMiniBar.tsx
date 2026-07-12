@@ -33,14 +33,26 @@ import { Image } from 'expo-image';
 import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import { getArtworkUrl, getTrackTitle } from '../api/musicLibrary';
 import { useCast } from '../context/CastContext';
-import { usePlaybackStatus, usePlayer } from '../context/PlayerContext';
+import { usePlaybackPosition, usePlaybackStatus, usePlayer } from '../context/PlayerContext';
 import { usePlayerUI } from '../store/playerUIStore';
 import { getArtworkCacheKey, ARTWORK_THUMB_SIZE } from '../services/artworkCache';
 import { Radius, Spacing, Typography } from '../theme';
 
+// Isolated per-tick consumer: only this 2px strip re-renders on each useProgress(250)
+// tick, keeping the always-mounted mini-bar body stable while music plays.
+const MiniProgressStrip = React.memo(function MiniProgressStrip() {
+  const { positionSec, durationSec } = usePlaybackPosition();
+  const progress = durationSec > 0 ? Math.min(positionSec / durationSec, 1) : 0;
+  return (
+    <View style={styles.progressTrack}>
+      <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+    </View>
+  );
+});
+
 export function PlayerMiniBar() {
   const { track, queue, togglePlayPause, next, prev } = usePlayer();
-  const { isPlaying, positionSec, durationSec } = usePlaybackStatus();
+  const { isPlaying } = usePlaybackStatus();
   const { isCasting, isGoogleCasting, castIsPlaying, castTogglePlayPause } = useCast();
   const { expand } = usePlayerUI();
 
@@ -56,7 +68,6 @@ export function PlayerMiniBar() {
   const activeIsPlaying  = isGoogleCasting ? castIsPlaying  : isPlaying;
   const activeTogglePlay = isGoogleCasting ? castTogglePlayPause : togglePlayPause;
   const multiTrack = queue.length > 1;
-  const progress   = durationSec > 0 ? Math.min(positionSec / durationSec, 1) : 0;
   const isLocal    = track.path.startsWith('file://') || track.path.startsWith('content://');
   const artUrl     = track.hasArtwork ? (isLocal ? track.coverPath : getArtworkUrl(track.path, ARTWORK_THUMB_SIZE)) : null;
   const artCacheKey = track.hasArtwork && !isLocal ? getArtworkCacheKey(track.path, ARTWORK_THUMB_SIZE) : undefined;
@@ -121,9 +132,7 @@ export function PlayerMiniBar() {
       </Pressable>
 
       {/* Progress strip */}
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
-      </View>
+      <MiniProgressStrip />
     </View>
   );
 }

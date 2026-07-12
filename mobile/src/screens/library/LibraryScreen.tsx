@@ -88,7 +88,6 @@ import { create as createSearch, stripRemixInfo } from '../../api/searches';
 import { MixtapeTrack, getMixtapeArtworkUrl } from '../../api/mixtapes';
 import { useLibrarySettings, ALL_TABS, LibraryTab } from '../../store/librarySettingsStore';
 import { useAuthStore } from '../../store/auth';
-import { usePlayerUI } from '../../store/playerUIStore';
 
 // ── Navigation types ──────────────────────────────────────────────────────────
 
@@ -795,14 +794,13 @@ function AlbumActionSheet({ album, onClose }: {
             <SheetRow
               icon="play-circle"
               label="Play Album"
-              onPress={withTracks((t) => { playQueue(t, 0); usePlayerUI.getState().expandForFreshPlayback(); })}
+              onPress={withTracks((t) => { playQueue(t, 0); })}
             />
             <SheetRow
               icon="shuffle"
               label="Shuffle Album"
               onPress={withTracks((t) => {
                 playQueue([...t].sort(() => Math.random() - 0.5), 0);
-                usePlayerUI.getState().expandForFreshPlayback();
               })}
             />
             <SheetRow icon="play-skip-forward" label="Play Next" onPress={withTracks((t) => playNext(t))} />
@@ -1514,7 +1512,6 @@ function AlbumsTab() {
 
 function TracksTab() {
   const { s, c } = useLibStyles();
-  const navigation = useNavigation<LibraryNav>();
   const { playQueue, addToQueue, playNext } = usePlayer();
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
   const [total, setTotal] = useState(0);
@@ -1662,17 +1659,11 @@ function TracksTab() {
 
   const showBadge = clientMode && mergeLocalAndServer;
 
-  const navigateToPlayer = useCallback(() => {
-    usePlayerUI.getState().expandForFreshPlayback();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigation]);
-
   // Play the tapped track and queue the *whole* list, not just the pages scrolled into view.
   // In clientMode `displayRef` already holds everything; in server-paginated mode only ~50 rows
   // are loaded, so we fetch the full ordered set (current search/sort) and queue that — otherwise
   // playback would stop after the first loaded page.
   const playFromList = useCallback(async (tapped: MusicTrack, fallbackIndex: number) => {
-    navigateToPlayer();
     if (clientMode) {
       playQueue(displayRef.current, fallbackIndex);
       return;
@@ -1691,7 +1682,7 @@ function TracksTab() {
     } catch {
       playQueue(displayRef.current, fallbackIndex);
     }
-  }, [clientMode, playQueue, navigateToPlayer]);
+  }, [clientMode, playQueue]);
 
   const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => {
     const local = isLocalPath(item.path);
@@ -1808,7 +1799,6 @@ function TracksTab() {
 
 function LovedTab() {
   const { s, c } = useLibStyles();
-  const navigation = useNavigation<any>();
   const { playQueue, addToQueue, playNext } = usePlayer();
   const { lovedPaths, toggleLove, clearAllLoved } = useLibraryActivityStore();
   const [actionTrack, setActionTrack] = useState<MusicTrack | null>(null);
@@ -1818,11 +1808,6 @@ function LovedTab() {
   // We still filter by the reactive lovedPaths below so unloving updates the list live.
   const { data: allTracks, loading, refreshing } =
     useServerCachedList<MusicTrack>('loved', getLovedTracks, true, seedTrackSignatures);
-
-  const navigateToPlayer = useCallback(() => {
-    usePlayerUI.getState().expandForFreshPlayback();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigation]);
 
   const lovedTracks = useMemo(() => {
     const list = allTracks.filter((t) => lovedPaths.has(t.path));
@@ -1841,7 +1826,7 @@ function LovedTab() {
     const local = isLocalPath(item.path);
     return (
     <Pressable
-      onPress={() => { playQueue(lovedTracks, index); navigateToPlayer(); }}
+      onPress={() => { playQueue(lovedTracks, index); }}
       onLongPress={() => setActionTrack(item)}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
     >
@@ -1862,7 +1847,7 @@ function LovedTab() {
     </Pressable>
   );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playQueue, navigateToPlayer, lovedTracks, toggleLove, s, isLocalPath]);
+  }, [playQueue, lovedTracks, toggleLove, s, isLocalPath]);
 
   if (loading) return <DownloadingLibrary label="Downloading metadata…" />;
 
@@ -1907,7 +1892,7 @@ function LovedTab() {
       <TrackActionSheet
         track={actionTrack}
         onClose={() => setActionTrack(null)}
-        onPlayNow={(t) => { playQueue([t], 0); navigateToPlayer(); setActionTrack(null); }}
+        onPlayNow={(t) => { playQueue([t], 0); setActionTrack(null); }}
         onPlayNext={(t) => { playNext([t]); setActionTrack(null); }}
         onAddToQueue={(t) => { addToQueue([t]); setActionTrack(null); }}
       />
@@ -1953,7 +1938,6 @@ const formatWhen = (ms: number): string => {
 
 function HistoryTab() {
   const { s, c } = useLibStyles();
-  const navigation = useNavigation<any>();
   const { playQueue, addToQueue, playNext } = usePlayer();
   const { recentPlays, historyVersion, deletePlay, clearHistory } = useLibraryActivityStore();
   const [actionTrack, setActionTrack] = useState<MusicTrack | null>(null);
@@ -1988,11 +1972,6 @@ function HistoryTab() {
     return sortList([...fresh, ...restEntries], sortBy, sortDir, (e, f) => e[f as keyof PlayRecord]);
   }, [recentPlays, restEntries, sortBy, sortDir]);
 
-  const navigateToPlayer = useCallback(() => {
-    usePlayerUI.getState().expandForFreshPlayback();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigation]);
-
   const tracksFromEntries = useMemo(
     () => entries.map(recordToTrack),
     [entries],
@@ -2018,7 +1997,7 @@ function HistoryTab() {
     const track = tracksFromEntries[index];
     return (
       <Pressable
-        onPress={() => { playQueue(tracksFromEntries, index); navigateToPlayer(); }}
+        onPress={() => { playQueue(tracksFromEntries, index); }}
         onLongPress={() => setActionTrack(track)}
         style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
       >
@@ -2035,7 +2014,7 @@ function HistoryTab() {
       </Pressable>
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tracksFromEntries, playQueue, navigateToPlayer, handleDeletePlay, s]);
+  }, [tracksFromEntries, playQueue, handleDeletePlay, s]);
 
   if (loading) return <ActivityIndicator style={{ marginTop: 40 }} color={c.accent} />;
 
@@ -2082,7 +2061,7 @@ function HistoryTab() {
       <TrackActionSheet
         track={actionTrack}
         onClose={() => setActionTrack(null)}
-        onPlayNow={(t) => { playQueue([t], 0); navigateToPlayer(); setActionTrack(null); }}
+        onPlayNow={(t) => { playQueue([t], 0); setActionTrack(null); }}
         onPlayNext={(t) => { playNext([t]); setActionTrack(null); }}
         onAddToQueue={(t) => { addToQueue([t]); setActionTrack(null); }}
       />
@@ -2708,11 +2687,6 @@ function ArtistDetail({ route }: ArtistProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, scanning]);
 
-  const navigateToPlayer = useCallback(() => {
-    usePlayerUI.getState().expandForFreshPlayback();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigation]);
-
   const fetchAllTracks = useCallback(async (): Promise<MusicTrack[]> => {
     if (totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return tracksRef.current;
     try {
@@ -2725,20 +2699,17 @@ function ArtistDetail({ route }: ArtistProps) {
     const all = await fetchAllTracks();
     if (!all.length) return;
     playQueue(all, 0);
-    navigateToPlayer();
-  }, [fetchAllTracks, playQueue, navigateToPlayer]);
+  }, [fetchAllTracks, playQueue]);
 
   const handleShuffle = useCallback(async () => {
     const all = await fetchAllTracks();
     if (!all.length) return;
     playQueue([...all].sort(() => Math.random() - 0.5), 0);
-    navigateToPlayer();
-  }, [fetchAllTracks, playQueue, navigateToPlayer]);
+  }, [fetchAllTracks, playQueue]);
 
   const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => (
     <Pressable
       onPress={() => {
-        navigateToPlayer();
         fetchAllTracks().then((all) => {
           const list = all.length ? all : tracksRef.current;
           const i = list.findIndex((x) => x.path === item.path);
@@ -2759,7 +2730,7 @@ function ArtistDetail({ route }: ArtistProps) {
         <Ionicons name="ellipsis-horizontal" size={18} color={c.textMuted} />
       </Pressable>
     </Pressable>
-  ), [fetchAllTracks, playQueue, navigateToPlayer, s, c]);
+  ), [fetchAllTracks, playQueue, s, c]);
 
   return (
     <View style={s.flex}>
@@ -2815,7 +2786,6 @@ function ArtistDetail({ route }: ArtistProps) {
         track={actionTrack}
         onClose={() => setActionTrack(null)}
         onPlayNow={(t) => {
-          navigateToPlayer();
           fetchAllTracks().then((all) => {
             const list = all.length ? all : tracksRef.current;
             const idx = list.findIndex((x) => x.path === t.path);
@@ -2852,7 +2822,6 @@ function AlbumDetail({ route }: AlbumProps) {
   const { s, c } = useLibStyles();
   const { album, localAlbumTitle } = route.params;
   const { playQueue, addToQueue, playNext } = usePlayer();
-  const navigation = useNavigation<LibraryNav>();
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionTrack, setActionTrack] = useState<MusicTrack | null>(null);
@@ -2888,11 +2857,6 @@ function AlbumDetail({ route }: AlbumProps) {
       .finally(() => setLoading(false));
   }, [album.album, album.artist, album.directory, localAlbumTitle]);
 
-  const navigateToPlayer = useCallback(() => {
-    usePlayerUI.getState().expandForFreshPlayback();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigation]);
-
   // Album tracks are all loaded up front (limit 500), so the full list already lives in tracksRef.
   // Kept for parity with the paginated detail views so the shared play handlers can await it.
   const fetchAllTracks = useCallback(async (): Promise<MusicTrack[]> => tracksRef.current, []);
@@ -2900,21 +2864,19 @@ function AlbumDetail({ route }: AlbumProps) {
   const handlePlayAll = useCallback(() => {
     if (!tracksRef.current.length) return;
     playQueue(tracksRef.current, 0);
-    navigateToPlayer();
-  }, [playQueue, navigateToPlayer]);
+  }, [playQueue]);
 
   const handleShuffle = useCallback(() => {
     if (!tracksRef.current.length) return;
     playQueue([...tracksRef.current].sort(() => Math.random() - 0.5), 0);
-    navigateToPlayer();
-  }, [playQueue, navigateToPlayer]);
+  }, [playQueue]);
 
   const artworkUrl      = album.coverPath ? getArtworkUrl(album.coverPath, PLAYER_ART_SIZE) : null;
   const artworkCacheKey = album.coverPath ? getArtworkCacheKey(album.coverPath, PLAYER_ART_SIZE) : undefined;
 
   const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => (
     <Pressable
-      onPress={() => { playQueue(tracksRef.current, index); navigateToPlayer(); }}
+      onPress={() => { playQueue(tracksRef.current, index); }}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
     >
       <Text style={s.trackNum}>{item.trackNumber ?? index + 1}</Text>
@@ -2929,7 +2891,7 @@ function AlbumDetail({ route }: AlbumProps) {
         <Ionicons name="ellipsis-horizontal" size={18} color={c.textMuted} />
       </Pressable>
     </Pressable>
-  ), [album.artist, playQueue, navigateToPlayer, s, c]);
+  ), [album.artist, playQueue, s, c]);
 
   return (
     <View style={s.flex}>
@@ -2977,7 +2939,6 @@ function AlbumDetail({ route }: AlbumProps) {
         track={actionTrack}
         onClose={() => setActionTrack(null)}
         onPlayNow={(t) => {
-          navigateToPlayer();
           fetchAllTracks().then((all) => {
             const list = all.length ? all : tracksRef.current;
             const idx = list.findIndex((x) => x.path === t.path);
@@ -3014,7 +2975,6 @@ function GenreDetail({ route }: GenreDetailProps) {
   const { s, c } = useLibStyles();
   const { genre } = route.params;
   const { playQueue, addToQueue, playNext } = usePlayer();
-  const navigation = useNavigation<LibraryNav>();
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
   const [total, setTotal] = useState(0);
   const [fetching, setFetching] = useState(false);
@@ -3056,11 +3016,6 @@ function GenreDetail({ route }: GenreDetailProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, scanning]);
 
-  const navigateToPlayer = useCallback(() => {
-    usePlayerUI.getState().expandForFreshPlayback();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigation]);
-
   const fetchAllTracks = useCallback(async (): Promise<MusicTrack[]> => {
     if (totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return tracksRef.current;
     try {
@@ -3073,20 +3028,17 @@ function GenreDetail({ route }: GenreDetailProps) {
     const all = await fetchAllTracks();
     if (!all.length) return;
     playQueue(all, 0);
-    navigateToPlayer();
-  }, [fetchAllTracks, playQueue, navigateToPlayer]);
+  }, [fetchAllTracks, playQueue]);
 
   const handleShuffle = useCallback(async () => {
     const all = await fetchAllTracks();
     if (!all.length) return;
     playQueue([...all].sort(() => Math.random() - 0.5), 0);
-    navigateToPlayer();
-  }, [fetchAllTracks, playQueue, navigateToPlayer]);
+  }, [fetchAllTracks, playQueue]);
 
   const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => (
     <Pressable
       onPress={() => {
-        navigateToPlayer();
         fetchAllTracks().then((all) => {
           const list = all.length ? all : tracksRef.current;
           const i = list.findIndex((x) => x.path === item.path);
@@ -3107,7 +3059,7 @@ function GenreDetail({ route }: GenreDetailProps) {
         <Ionicons name="ellipsis-horizontal" size={18} color={c.textMuted} />
       </Pressable>
     </Pressable>
-  ), [fetchAllTracks, playQueue, navigateToPlayer, s, c]);
+  ), [fetchAllTracks, playQueue, s, c]);
 
   return (
     <View style={s.flex}>
@@ -3148,7 +3100,6 @@ function GenreDetail({ route }: GenreDetailProps) {
         track={actionTrack}
         onClose={() => setActionTrack(null)}
         onPlayNow={(t) => {
-          navigateToPlayer();
           fetchAllTracks().then((all) => {
             const list = all.length ? all : tracksRef.current;
             const idx = list.findIndex((x) => x.path === t.path);
@@ -3246,7 +3197,6 @@ function YearDetail({ route }: YearDetailProps) {
   const { s, c } = useLibStyles();
   const { year } = route.params;
   const { playQueue, addToQueue, playNext } = usePlayer();
-  const navigation = useNavigation<LibraryNav>();
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
   const [total, setTotal] = useState(0);
   const [fetching, setFetching] = useState(false);
@@ -3279,11 +3229,6 @@ function YearDetail({ route }: YearDetailProps) {
 
   useEffect(() => { if (!scanning) loadPage(true); }, [loadPage, scanning]);
 
-  const navigateToPlayer = useCallback(() => {
-    usePlayerUI.getState().expandForFreshPlayback();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigation]);
-
   const fetchAllTracks = useCallback(async (): Promise<MusicTrack[]> => {
     if (totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return tracksRef.current;
     try {
@@ -3296,20 +3241,17 @@ function YearDetail({ route }: YearDetailProps) {
     const all = await fetchAllTracks();
     if (!all.length) return;
     playQueue(all, 0);
-    navigateToPlayer();
-  }, [fetchAllTracks, playQueue, navigateToPlayer]);
+  }, [fetchAllTracks, playQueue]);
 
   const handleShuffle = useCallback(async () => {
     const all = await fetchAllTracks();
     if (!all.length) return;
     playQueue([...all].sort(() => Math.random() - 0.5), 0);
-    navigateToPlayer();
-  }, [fetchAllTracks, playQueue, navigateToPlayer]);
+  }, [fetchAllTracks, playQueue]);
 
   const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => (
     <Pressable
       onPress={() => {
-        navigateToPlayer();
         fetchAllTracks().then((all) => {
           const list = all.length ? all : tracksRef.current;
           const i = list.findIndex((x) => x.path === item.path);
@@ -3330,7 +3272,7 @@ function YearDetail({ route }: YearDetailProps) {
         <Ionicons name="ellipsis-horizontal" size={18} color={c.textMuted} />
       </Pressable>
     </Pressable>
-  ), [fetchAllTracks, playQueue, navigateToPlayer, s, c]);
+  ), [fetchAllTracks, playQueue, s, c]);
 
   return (
     <View style={s.flex}>
@@ -3359,7 +3301,6 @@ function YearDetail({ route }: YearDetailProps) {
         track={actionTrack}
         onClose={() => setActionTrack(null)}
         onPlayNow={(t) => {
-          navigateToPlayer();
           fetchAllTracks().then((all) => {
             const list = all.length ? all : tracksRef.current;
             const idx = list.findIndex((x) => x.path === t.path);
@@ -3382,7 +3323,6 @@ function FolderDetail({ route }: FolderDetailProps) {
   const { s, c } = useLibStyles();
   const { folderPath, folderName, isLocal } = route.params;
   const { playQueue, addToQueue, playNext } = usePlayer();
-  const navigation = useNavigation<LibraryNav>();
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
   const [total, setTotal] = useState(0);
   const [fetching, setFetching] = useState(false);
@@ -3467,11 +3407,6 @@ function FolderDetail({ route }: FolderDetailProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, isLocal, scanning, sortBy, sortDir]);
 
-  const navigateToPlayer = useCallback(() => {
-    usePlayerUI.getState().expandForFreshPlayback();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigation]);
-
   const fetchAllTracks = useCallback(async (): Promise<MusicTrack[]> => {
     const sort = sortRef.current;
     if (isLocal) {
@@ -3492,24 +3427,21 @@ function FolderDetail({ route }: FolderDetailProps) {
     const all = await fetchAllTracks();
     if (!all.length) return;
     playQueue(all, 0);
-    navigateToPlayer();
-  }, [fetchAllTracks, playQueue, navigateToPlayer]);
+  }, [fetchAllTracks, playQueue]);
 
   const handleShuffle = useCallback(async () => {
     const all = await fetchAllTracks();
     if (!all.length) return;
     playQueue([...all].sort(() => Math.random() - 0.5), 0);
-    navigateToPlayer();
-  }, [fetchAllTracks, playQueue, navigateToPlayer]);
+  }, [fetchAllTracks, playQueue]);
 
   // Queue the whole folder (not just the loaded pages) when a single track is tapped.
   const playFromList = useCallback(async (tapped: MusicTrack, fallbackIndex: number) => {
-    navigateToPlayer();
     const all = await fetchAllTracks();
     const list = all.length ? all : displayRef.current;
     const idx = list.findIndex((x) => x.path === tapped.path);
     playQueue(list, idx >= 0 ? idx : fallbackIndex);
-  }, [fetchAllTracks, playQueue, navigateToPlayer]);
+  }, [fetchAllTracks, playQueue]);
 
   const displayTracks = isLocal ? localFiltered : tracks;
   const displayRef = useRef<MusicTrack[]>([]);
@@ -3658,7 +3590,6 @@ function PlaylistDetail({ route, navigation: nav }: PlaylistDetailProps) {
   const { s, c } = useLibStyles();
   const { playlistId } = route.params;
   const { playQueue } = usePlayer();
-  const navigation = useNavigation<LibraryNav>();
   const { mixtapes, load, removeTrack, rename, publish, unpublish, clearTracks, reorderTracks } = useMixtapeStore();
   const { serverUrl } = useAuthStore();
 
@@ -3702,22 +3633,15 @@ function PlaylistDetail({ route, navigation: nav }: PlaylistDetailProps) {
     });
   }, [nav, c]);
 
-  const navigateToPlayer = useCallback(() => {
-    usePlayerUI.getState().expandForFreshPlayback();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigation]);
-
   const handlePlayAll = useCallback(() => {
     if (!musicTracksRef.current.length) return;
     playQueue(musicTracksRef.current, 0);
-    navigateToPlayer();
-  }, [playQueue, navigateToPlayer]);
+  }, [playQueue]);
 
   const handleShuffle = useCallback(() => {
     if (!musicTracksRef.current.length) return;
     playQueue([...musicTracksRef.current].sort(() => Math.random() - 0.5), 0);
-    navigateToPlayer();
-  }, [playQueue, navigateToPlayer]);
+  }, [playQueue]);
 
   const handleRenameCommit = useCallback(async () => {
     if (!newName.trim() || !playlist) { setRenaming(false); return; }
@@ -3945,7 +3869,7 @@ function PlaylistDetail({ route, navigation: nav }: PlaylistDetailProps) {
           const isLast  = index === tracks.length - 1;
           return (
             <Pressable
-              onPress={() => { playQueue(musicTracksRef.current, index); navigateToPlayer(); }}
+              onPress={() => { playQueue(musicTracksRef.current, index); }}
               style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
             >
               <View style={s.reorderBtns}>

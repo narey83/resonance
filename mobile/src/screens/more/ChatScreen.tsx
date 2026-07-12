@@ -37,7 +37,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useDeferredFocusEffect } from '../../hooks/useDeferredEffect';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useConversationStore } from '../../store/conversationStore';
 import type { Conversation } from '../../api/chat';
@@ -58,7 +58,7 @@ export default function ChatScreen({ navigation }: Props) {
   const [newUsername, setNewUsername] = useState('');
   const [actionUser, setActionUser] = useState<string | null>(null);
 
-  useFocusEffect(
+  useDeferredFocusEffect(
     useCallback(() => {
       loadConversations();
     }, [loadConversations])

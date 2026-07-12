@@ -60,15 +60,15 @@ import SettingsScreen            from '../screens/more/SettingsScreen';
 import NetworkLogScreen          from '../screens/more/NetworkLogScreen';
 
 export type MainTabParamList = {
-  OverviewTab:  undefined;
+  LibraryTab:   undefined;
   SearchTab:    undefined;
   TransfersTab: undefined;
-  LibraryTab:   undefined;
   MoreTab:      NavigatorScreenParams<MoreStackParamList> | undefined;
 };
 
 export type MoreStackParamList = {
   More:             undefined;
+  Overview:         undefined;
   Connection:       undefined;
   Browse:           undefined;
   BrowseUser:       { username: string };
@@ -94,6 +94,7 @@ function MoreStack() {
   return (
     <More.Navigator screenOptions={navOpts}>
       <More.Screen name="More"             component={MoreScreen}             options={{ title: 'More' }} />
+      <More.Screen name="Overview"         component={OverviewScreen}         options={{ title: 'Overview' }} />
       <More.Screen name="Connection"       component={ConnectionScreen}       options={{ title: 'Connection' }} />
       <More.Screen name="Browse"           component={BrowseScreen}           options={{ title: 'Browse' }} />
       <More.Screen name="BrowseUser"       component={BrowseUserScreen}       options={{ title: '' }} />
@@ -118,7 +119,7 @@ export default function MainTabs() {
 
   return (
     <Tab.Navigator
-      initialRouteName="OverviewTab"
+      initialRouteName="LibraryTab"
       tabBar={(props) => (
         <View>
           <PlayerMiniBar />
@@ -137,9 +138,9 @@ export default function MainTabs() {
       }}
     >
       <Tab.Screen
-        component={OverviewScreen}
-        name="OverviewTab"
-        options={{ title: 'Overview' }}
+        component={LibraryScreen}
+        name="LibraryTab"
+        options={{ title: 'Library', headerShown: false }}
       />
       <Tab.Screen
         component={SearchScreen}
@@ -150,11 +151,6 @@ export default function MainTabs() {
         component={TransfersScreen}
         name="TransfersTab"
         options={{ title: 'Transfers' }}
-      />
-      <Tab.Screen
-        component={LibraryScreen}
-        name="LibraryTab"
-        options={{ title: 'Library', headerShown: false }}
       />
       <Tab.Screen
         component={MoreStack}

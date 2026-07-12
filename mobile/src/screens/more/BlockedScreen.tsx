@@ -27,7 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -46,6 +46,7 @@ import { useBlockedUsersStore } from '../../store/blockedUsersStore';
 import { getKnownLocations, setBlockedUserOptions } from '../../api/blockedUsers';
 import type { BlockedUserOptions, KnownLocations } from '../../api/blockedUsers';
 import { useAuthStore } from '../../store/auth';
+import { useAfterInteractions } from '../../hooks/useDeferredEffect';
 import SearchableSelectSheet from '../../components/SearchableSelectSheet';
 import BlockedUserRow from '../../components/BlockedUserRow';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -84,7 +85,7 @@ export default function BlockedScreen({ navigation }: Props) {
   const [locations, setLocations] = useState<KnownLocations>({ countries: [], citiesByCountry: {} });
   const [picker, setPicker] = useState<'country' | 'city' | null>(null);
 
-  useEffect(() => {
+  useAfterInteractions(() => {
     fetch().catch(() => {});
     getKnownLocations().then(setLocations).catch(() => {});
   }, [fetch]);

@@ -36,7 +36,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useDeferredFocusEffect } from '../../hooks/useDeferredEffect';
 import { useTheme } from '../../context/ThemeContext';
 import { Spacing, Typography, ThemeColors } from '../../theme';
 import { getApplicationState, getKpis, AppState, KpiMetric } from '../../api/application';
@@ -107,7 +107,7 @@ export default function ConnectionScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { fetch(); }, [fetch]));
+  useDeferredFocusEffect(useCallback(() => { fetch(); }, [fetch]));
 
   useEffect(() => {
     const interval = setInterval(() => fetch(true), 15_000);

@@ -104,6 +104,34 @@ export const openDb = async (): Promise<SQLiteDatabase> => {
   return _db;
 };
 
+// Read the whole persisted metadata table for a source. Used by the local library's
+// change-detection fast path: when the on-device file set is unchanged, the track list
+// is rebuilt straight from here with no MediaStore enumeration or re-parse.
+export const getAllMetadata = async (source: 'local' | 'server'): Promise<TrackMetadata[]> => {
+  const db = await openDb();
+  const rows = await db.getAllAsync<Record<string, unknown>>(
+    'SELECT * FROM track_metadata WHERE source = ?', [source],
+  );
+  return rows.map(rowToMetadata);
+};
+
+// Generic key/value access over schema_info — used to persist the local library
+// signature (file count + newest modification time) across app/phone restarts.
+export const getSchemaValue = async (key: string): Promise<string | null> => {
+  const db = await openDb();
+  const row = await db.getFirstAsync<{ value: string }>(
+    'SELECT value FROM schema_info WHERE key = ?', [key],
+  );
+  return row?.value ?? null;
+};
+
+export const setSchemaValue = async (key: string, value: string): Promise<void> => {
+  const db = await openDb();
+  await db.runAsync(
+    'INSERT OR REPLACE INTO schema_info (key, value) VALUES (?, ?)', [key, value],
+  );
+};
+
 export const getMetadataForPaths = async (paths: string[]): Promise<Map<string, TrackMetadata>> => {
   if (paths.length === 0) return new Map();
   const db = await openDb();

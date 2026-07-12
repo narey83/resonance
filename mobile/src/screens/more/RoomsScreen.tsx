@@ -38,7 +38,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useDeferredFocusEffect } from '../../hooks/useDeferredEffect';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useRoomStore } from '../../store/roomStore';
 import type { Room, RoomInfo } from '../../api/rooms';
@@ -147,7 +147,7 @@ export default function RoomsScreen({ navigation }: Props) {
   // O(1) lookup for "already joined" in AvailRow
   const joinedNames = useMemo(() => new Set(joined.map((r) => r.name)), [joined]);
 
-  useFocusEffect(
+  useDeferredFocusEffect(
     useCallback(() => {
       loadJoined();
       loadAvailable();

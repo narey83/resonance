@@ -34,7 +34,7 @@
 // backend's own permission boundary) lives in the separate ConnectionScreen
 // instead — see that file.
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   RefreshControl,
@@ -44,8 +44,9 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
-import type { MainTabParamList } from '../../navigation/MainTabs';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { MoreStackParamList } from '../../navigation/MainTabs';
+import { useAfterInteractions } from '../../hooks/useDeferredEffect';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 import { useAuthStore } from '../../store/auth';
@@ -141,7 +142,7 @@ const emptyAnalytics: AnalyticsData = {
   mapUsers: [],
 };
 
-type Props = BottomTabScreenProps<MainTabParamList, 'OverviewTab'>;
+type Props = NativeStackScreenProps<MoreStackParamList, 'Overview'>;
 
 // ── Lazy per-tab fetching ─────────────────────────────────────────────────────
 // The dashboard used to fire all ~21 report queries in one Promise.all on mount
@@ -292,7 +293,7 @@ export default function OverviewScreen({ navigation }: Props) {
     }
   }, [isAdmin, fetchGroup]);
 
-  useEffect(() => { loadTab(tab, rangeHours); }, [tab, rangeHours, loadTab]);
+  useAfterInteractions(() => { loadTab(tab, rangeHours); }, [tab, rangeHours, loadTab]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -436,7 +437,7 @@ export default function OverviewScreen({ navigation }: Props) {
         onClose={() => setSelectedUser(null)}
         onOpenChat={(username) => {
           setSelectedUser(null);
-          navigation.navigate('MoreTab', { screen: 'ChatConversation', params: { username } });
+          navigation.navigate('ChatConversation', { username });
         }}
       />
     </>
