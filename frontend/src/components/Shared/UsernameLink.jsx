@@ -33,12 +33,23 @@ import {
   unblockUser,
   useBlockedUsers,
 } from '../../lib/blockedUsers';
-import { Ban, FolderSearch, MessageSquare } from 'lucide-react';
-import React from 'react';
+import { isAdmin } from '../../lib/token';
+import UserReportModal from '../Overview/UserReportModal';
+import { Ban, BarChart3, FolderSearch, MessageSquare } from 'lucide-react';
+import React, { useState } from 'react';
 import { useHistory } from 'react-router-dom';
 
-const UsernameLink = ({ className, style, username }) => {
+// `active` names the view the user is already in — 'report', 'chat' or
+// 'browse'. That action's button is greyed out and disabled (rather than
+// removed) so the icon row stays visually stable; e.g. the report modal and
+// the chat pane each render a UsernameLink in their own header.
+const UsernameLink = ({ active, className, style, username }) => {
   const history = useHistory();
+  const [showReport, setShowReport] = useState(false);
+
+  // The report pulls admin-only analytics endpoints, so the button only makes
+  // sense — and only works — for administrators.
+  const canReport = isAdmin();
 
   // Subscribe so the icon flips live when this user is (un)blocked anywhere,
   // including from another client.
@@ -48,6 +59,11 @@ const UsernameLink = ({ className, style, username }) => {
   const go = (e, path) => {
     e.stopPropagation();
     history.push(path, { user: username });
+  };
+
+  const openReport = (e) => {
+    e.stopPropagation();
+    setShowReport(true);
   };
 
   const toggleBlocked = (e) => {
@@ -70,10 +86,25 @@ const UsernameLink = ({ className, style, username }) => {
       >
         {username}
       </span>
+      {canReport && (
+        <button
+          className="ulink-icon-btn hover-fx"
+          disabled={active === 'report'}
+          onClick={openReport}
+          title={active === 'report' ? 'Viewing report' : 'User report'}
+          type="button"
+        >
+          <BarChart3
+            size={12}
+            strokeWidth={1.75}
+          />
+        </button>
+      )}
       <button
         className="ulink-icon-btn hover-fx"
+        disabled={active === 'chat'}
         onClick={(e) => go(e, '/chat')}
-        title="Chat"
+        title={active === 'chat' ? 'In this chat' : 'Chat'}
         type="button"
       >
         <MessageSquare
@@ -83,8 +114,9 @@ const UsernameLink = ({ className, style, username }) => {
       </button>
       <button
         className="ulink-icon-btn hover-fx"
+        disabled={active === 'browse'}
         onClick={(e) => go(e, '/browse')}
-        title="Browse files"
+        title={active === 'browse' ? 'Browsing this user' : 'Browse files'}
         type="button"
       >
         <FolderSearch
@@ -103,6 +135,12 @@ const UsernameLink = ({ className, style, username }) => {
           strokeWidth={1.75}
         />
       </button>
+      {showReport && (
+        <UserReportModal
+          onClose={() => setShowReport(false)}
+          username={username}
+        />
+      )}
     </span>
   );
 };

@@ -30,7 +30,6 @@
 import * as reportsAPI from '../../lib/reports';
 import { formatBytes, formatDate, getFileName } from '../../lib/util';
 import UsernameLink from '../Shared/UsernameLink';
-import UserChatTab from './UserChatTab';
 import { ExternalLink } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { useHistory } from 'react-router-dom';
@@ -455,7 +454,6 @@ const UserReportModal = ({ initialTab, onClose, seed, username }) => {
     { id: 'overview', label: 'Overview' },
     { id: 'transfers', label: 'Transfers' },
     { id: 'browse', label: 'Browse History' },
-    { id: 'chat', label: 'Chat' },
   ];
 
   const openBrowse = () => {
@@ -472,7 +470,10 @@ const UserReportModal = ({ initialTab, onClose, seed, username }) => {
       size="large"
     >
       <Header>
-        <UsernameLink username={username} />
+        <UsernameLink
+          active="report"
+          username={username}
+        />
       </Header>
       <Modal.Content>
         <div className="user-report-network-bar">
@@ -531,7 +532,6 @@ const UserReportModal = ({ initialTab, onClose, seed, username }) => {
           )}
           {activeTab === 'transfers' && <TransfersTab username={username} />}
           {activeTab === 'browse' && <BrowseTab username={username} />}
-          {activeTab === 'chat' && <UserChatTab username={username} />}
         </div>
       </Modal.Content>
     </Modal>

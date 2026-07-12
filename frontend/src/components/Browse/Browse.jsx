@@ -136,7 +136,7 @@ const BrowseModal = ({ onBrowse, onClose, open }) => {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-const Browse = ({ history, location }) => {
+const Browse = ({ location }) => {
   const [browseState, setBrowseState] = useState('idle');
   const [browseStatus, setBrowseStatus] = useState(0);
   const [username, setUsername] = useState('');
@@ -467,7 +467,6 @@ const Browse = ({ history, location }) => {
             <BrowseResults
               files={files}
               key={username}
-              onChat={() => history.push('/chat', { user: username })}
               username={username}
             />
           ) : (

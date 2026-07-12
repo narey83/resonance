@@ -569,6 +569,7 @@ const Chat = ({ history, location }) => {
                 </div>
                 <div className="chat-header-info">
                   <UsernameLink
+                    active="chat"
                     className="chat-header-name"
                     username={active}
                   />

@@ -31,7 +31,6 @@ import * as reportsAPI from '../../lib/reports';
 import { onTransferComplete } from '../../lib/transferEvents';
 import { formatBytes, formatDate } from '../../lib/util';
 import UsernameLink from '../Shared/UsernameLink';
-import UserReportModal from './UserReportModal';
 import React, { useEffect, useRef, useState } from 'react';
 
 const PAGE_SIZE = 50;
@@ -78,7 +77,6 @@ const UserReports = () => {
     () => new URLSearchParams(window.location.search).get('user') ?? '',
   );
   const [loading, setLoading] = useState(true);
-  const [selectedUser, setSelectedUser] = useState(null);
   const [page, setPage] = useState(0);
   const [tick, setTick] = useState(0);
   const [newUsernames, setNewUsernames] = useState(() => new Set());
@@ -205,160 +203,150 @@ const UserReports = () => {
   };
 
   return (
-    <>
-      <div className="section-card user-reports-card">
-        <div className="section-card-header">
-          <span className="section-card-title">User Activity</span>
-          <span className="user-reports-total">
-            {total.toLocaleString()} users
-          </span>
-        </div>
-
-        <div className="user-reports-search-row">
-          <input
-            className="user-reports-search"
-            onChange={handleSearchChange}
-            placeholder="Filter by username, IP, country, city…"
-            type="text"
-            value={searchInput}
-          />
-        </div>
-
-        {loading ? (
-          <div className="leaderboard-empty">Loading…</div>
-        ) : items.length === 0 ? (
-          <div className="leaderboard-empty">No users found</div>
-        ) : (
-          <div
-            className="user-reports-scroll"
-            ref={scrollRef}
-          >
-            <table className="leaderboard-table user-reports-table">
-              <thead className="user-reports-thead">
-                <tr>
-                  <th className="user-reports-th">User</th>
-                  <th className="user-reports-th">IP</th>
-                  <th className="user-reports-th">Country</th>
-                  <th className="user-reports-th">City</th>
-                  {SORT_COLS.map((col) => (
-                    <SortHeader
-                      col={col}
-                      key={col.key}
-                      onSort={handleSort}
-                      sortBy={sortBy}
-                      sortOrder={sortOrder}
-                    />
-                  ))}
-                  <th className="user-reports-th user-reports-num">UL Speed</th>
-                  <th className="user-reports-th user-reports-num">DL Speed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((u, index) => {
-                  const errors =
-                    (u.uploadErrorCount ?? u.UploadErrorCount ?? 0) +
-                    (u.downloadErrorCount ?? u.DownloadErrorCount ?? 0);
-                  const lastSeen = u.lastSeen ?? u.LastSeen;
-                  const username = u.username ?? u.Username;
-                  return (
-                    <tr
-                      className={
-                        newUsernames.has(username)
-                          ? 'user-reports-row--new'
-                          : undefined
-                      }
-                      key={username ?? index}
-                      onClick={() => setSelectedUser(username)}
-                    >
-                      <td className="leaderboard-username">
-                        <UsernameLink username={u.username ?? u.Username} />
-                      </td>
-                      <td className="user-reports-network">
-                        {u.ipAddress ?? u.IpAddress ?? '—'}
-                      </td>
-                      <td className="user-reports-network">
-                        {u.country ?? u.Country ?? '—'}
-                      </td>
-                      <td className="user-reports-network">
-                        {u.city ?? u.City ?? '—'}
-                      </td>
-                      <td className="user-reports-num">
-                        {lastSeen ? formatDate(lastSeen) : '—'}
-                      </td>
-                      <td className="user-reports-num">
-                        {(u.uploadCount ?? u.UploadCount ?? 0).toLocaleString()}
-                      </td>
-                      <td className="user-reports-num">
-                        {formatBytes(u.uploadBytes ?? u.UploadBytes ?? 0)}
-                      </td>
-                      <td className="user-reports-num">
-                        {(
-                          u.downloadCount ??
-                          u.DownloadCount ??
-                          0
-                        ).toLocaleString()}
-                      </td>
-                      <td className="user-reports-num">
-                        {formatBytes(u.downloadBytes ?? u.DownloadBytes ?? 0)}
-                      </td>
-                      <td
-                        className="user-reports-num"
-                        style={{
-                          color: errors > 0 ? 'var(--danger)' : undefined,
-                        }}
-                      >
-                        {errors > 0 ? errors.toLocaleString() : '—'}
-                      </td>
-                      <td className="user-reports-num">
-                        {formatSpeed(
-                          u.uploadAverageSpeed ?? u.UploadAverageSpeed ?? 0,
-                        )}
-                      </td>
-                      <td className="user-reports-num">
-                        {formatSpeed(
-                          u.downloadAverageSpeed ?? u.DownloadAverageSpeed ?? 0,
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {pageCount > 1 && (
-          <div className="user-reports-pagination">
-            <button
-              className="user-report-page-btn"
-              disabled={page === 0}
-              onClick={() => setPage((p) => p - 1)}
-              type="button"
-            >
-              ‹
-            </button>
-            <span className="user-report-page-info">
-              {page + 1} / {pageCount}
-            </span>
-            <button
-              className="user-report-page-btn"
-              disabled={page >= pageCount - 1}
-              onClick={() => setPage((p) => p + 1)}
-              type="button"
-            >
-              ›
-            </button>
-          </div>
-        )}
+    <div className="section-card user-reports-card">
+      <div className="section-card-header">
+        <span className="section-card-title">User Activity</span>
+        <span className="user-reports-total">
+          {total.toLocaleString()} users
+        </span>
       </div>
 
-      {selectedUser && (
-        <UserReportModal
-          onClose={() => setSelectedUser(null)}
-          username={selectedUser}
+      <div className="user-reports-search-row">
+        <input
+          className="user-reports-search"
+          onChange={handleSearchChange}
+          placeholder="Filter by username, IP, country, city…"
+          type="text"
+          value={searchInput}
         />
+      </div>
+
+      {loading ? (
+        <div className="leaderboard-empty">Loading…</div>
+      ) : items.length === 0 ? (
+        <div className="leaderboard-empty">No users found</div>
+      ) : (
+        <div
+          className="user-reports-scroll"
+          ref={scrollRef}
+        >
+          <table className="leaderboard-table user-reports-table">
+            <thead className="user-reports-thead">
+              <tr>
+                <th className="user-reports-th">User</th>
+                <th className="user-reports-th">IP</th>
+                <th className="user-reports-th">Country</th>
+                <th className="user-reports-th">City</th>
+                {SORT_COLS.map((col) => (
+                  <SortHeader
+                    col={col}
+                    key={col.key}
+                    onSort={handleSort}
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                  />
+                ))}
+                <th className="user-reports-th user-reports-num">UL Speed</th>
+                <th className="user-reports-th user-reports-num">DL Speed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((u, index) => {
+                const errors =
+                  (u.uploadErrorCount ?? u.UploadErrorCount ?? 0) +
+                  (u.downloadErrorCount ?? u.DownloadErrorCount ?? 0);
+                const lastSeen = u.lastSeen ?? u.LastSeen;
+                const username = u.username ?? u.Username;
+                return (
+                  <tr
+                    className={
+                      newUsernames.has(username)
+                        ? 'user-reports-row--new'
+                        : undefined
+                    }
+                    key={username ?? index}
+                  >
+                    <td className="leaderboard-username">
+                      <UsernameLink username={u.username ?? u.Username} />
+                    </td>
+                    <td className="user-reports-network">
+                      {u.ipAddress ?? u.IpAddress ?? '—'}
+                    </td>
+                    <td className="user-reports-network">
+                      {u.country ?? u.Country ?? '—'}
+                    </td>
+                    <td className="user-reports-network">
+                      {u.city ?? u.City ?? '—'}
+                    </td>
+                    <td className="user-reports-num">
+                      {lastSeen ? formatDate(lastSeen) : '—'}
+                    </td>
+                    <td className="user-reports-num">
+                      {(u.uploadCount ?? u.UploadCount ?? 0).toLocaleString()}
+                    </td>
+                    <td className="user-reports-num">
+                      {formatBytes(u.uploadBytes ?? u.UploadBytes ?? 0)}
+                    </td>
+                    <td className="user-reports-num">
+                      {(
+                        u.downloadCount ??
+                        u.DownloadCount ??
+                        0
+                      ).toLocaleString()}
+                    </td>
+                    <td className="user-reports-num">
+                      {formatBytes(u.downloadBytes ?? u.DownloadBytes ?? 0)}
+                    </td>
+                    <td
+                      className="user-reports-num"
+                      style={{
+                        color: errors > 0 ? 'var(--danger)' : undefined,
+                      }}
+                    >
+                      {errors > 0 ? errors.toLocaleString() : '—'}
+                    </td>
+                    <td className="user-reports-num">
+                      {formatSpeed(
+                        u.uploadAverageSpeed ?? u.UploadAverageSpeed ?? 0,
+                      )}
+                    </td>
+                    <td className="user-reports-num">
+                      {formatSpeed(
+                        u.downloadAverageSpeed ?? u.DownloadAverageSpeed ?? 0,
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
-    </>
+
+      {pageCount > 1 && (
+        <div className="user-reports-pagination">
+          <button
+            className="user-report-page-btn"
+            disabled={page === 0}
+            onClick={() => setPage((p) => p - 1)}
+            type="button"
+          >
+            ‹
+          </button>
+          <span className="user-report-page-info">
+            {page + 1} / {pageCount}
+          </span>
+          <button
+            className="user-report-page-btn"
+            disabled={page >= pageCount - 1}
+            onClick={() => setPage((p) => p + 1)}
+            type="button"
+          >
+            ›
+          </button>
+        </div>
+      )}
+    </div>
   );
 };
 

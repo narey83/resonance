@@ -42,6 +42,7 @@ import {
   getFileName,
 } from '../../lib/util';
 import FolderPickerModal from '../Search/Detail/FolderPickerModal';
+import UsernameLink from '../Shared/UsernameLink';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ChevronDown,
@@ -51,7 +52,6 @@ import {
   FolderOpen,
   FoldVertical,
   Lock,
-  MessageSquare,
   Play,
   UnfoldVertical,
   X,
@@ -242,7 +242,7 @@ const FolderHeaderRow = React.memo(
 
 // ── BrowseResults ──────────────────────────────────────────────────────────────
 
-const BrowseResults = ({ disabled, files, onChat, username }) => {
+const BrowseResults = ({ disabled, files, username }) => {
   const { play } = usePlayer() || {};
   const [downloadedFolders, setDownloadedFolders] = useState(new Map());
   const [activeFilters, setActiveFilters] = useState(new Set());
@@ -479,18 +479,15 @@ const BrowseResults = ({ disabled, files, onChat, username }) => {
             strokeWidth={1.75}
           />
         </span>
-        <span className="sr-detail-header-title">All Files</span>
-        <div className="sr-detail-header-actions">
-          {onChat && (
-            <button
-              className="sr-btn"
-              onClick={onChat}
-              type="button"
-            >
-              <MessageSquare size={13} /> Chat
-            </button>
-          )}
-        </div>
+        {username ? (
+          <UsernameLink
+            active="browse"
+            className="sr-detail-header-title"
+            username={username}
+          />
+        ) : (
+          <span className="sr-detail-header-title">All Files</span>
+        )}
       </div>
 
       <div className="sr-filters">

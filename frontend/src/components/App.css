@@ -2240,6 +2240,18 @@ body {
   color: var(--text-primary);
 }
 
+/* Current view: the action for the pane you're already in is greyed + inert */
+.ulink-icon-btn:disabled {
+  color: var(--text-dim, var(--text-muted));
+  cursor: default;
+  opacity: 0.4;
+}
+
+.ulink-icon-btn:disabled:hover {
+  background: none;
+  color: var(--text-dim, var(--text-muted));
+}
+
 /* Blocked users: struck-through name, persistent red ban icon */
 .ulink-root-blocked .ulink-name {
   opacity: 0.55;
