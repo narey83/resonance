@@ -363,14 +363,20 @@ namespace resonance.Shares
             return results;
         }
 
-        public void UpdateFileTags(string maskedFilename, FileTags tags)
+        public void UpdateFileTags(string maskedFilename, FileTags tags, long size, DateTime touchedAt)
         {
             using var conn = GetConnection();
             using var cmd = new NpgsqlCommand(
-                "UPDATE shares.files SET tags_json = @tags WHERE host = @host AND masked_filename = @masked;", conn);
+                "UPDATE shares.files SET tags_json = @tags, size = @size, touched_at = @touched "
+                + "WHERE host = @host AND masked_filename = @masked;", conn);
             cmd.Parameters.AddWithValue("host", Host);
             cmd.Parameters.AddWithValue("masked", maskedFilename);
             cmd.Parameters.AddWithValue("tags", tags != null ? tags.ToJson() : (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("size", size);
+
+            // must round-trip through the same "O" format ListDirectoryFiles parses, otherwise the
+            // scanner's unchanged-file fast path can't match this row and re-reads its tags forever.
+            cmd.Parameters.AddWithValue("touched", touchedAt.ToString("O", CultureInfo.InvariantCulture));
             cmd.ExecuteNonQuery();
         }
 

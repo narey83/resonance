@@ -401,7 +401,14 @@ namespace resonance.Shares
                 Log.Warning("Tag consolidation after write failed for {File}: {Message}", originalFilename, ex.Message);
             }
 
-            Local.Repository.UpdateFileTags(maskedFilename, tags);
+            // The save and consolidation above both change the file's length and mtime, leaving the size from
+            // the last scan wrong. Search responses serve that column straight to peers, so a stale value
+            // disagrees with the real length UploadService sends at transfer time. Refresh it here instead of
+            // waiting for a re-scan, which may never run: the stat hits page cache (we just wrote the file)
+            // and the values ride along on the tag UPDATE rather than costing another round-trip.
+            var info = new System.IO.FileInfo(originalFilename);
+
+            Local.Repository.UpdateFileTags(maskedFilename, tags, info.Length, info.LastWriteTimeUtc);
             MusicLibrary?.TriggerSync();
         }
 
