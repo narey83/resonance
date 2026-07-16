@@ -108,6 +108,8 @@ namespace resonance
 
         private static readonly string ApplicationShutdownTransferExceptionMessage = "Application shut down";
 
+        private static readonly TimeSpan ShareScanDebounceDelay = TimeSpan.FromMinutes(3);
+
 #pragma warning disable SA1306 // Field names should begin with lower-case letter
         private static int EnqueueQueueDepth = 0;
         private static double CurrentEnqueueLatency = 0;
@@ -257,6 +259,7 @@ namespace resonance
             Client.LoggedIn += Client_LoggedIn;
             Client.StateChanged += Client_StateChanged;
             Client.DistributedNetworkStateChanged += Client_DistributedNetworkStateChanged;
+
             // denials/failures reported by the remote peer are routine P2P outcomes (they pulled the file, went
             // offline, etc.), not faults on our side, so log them at Warning rather than Error.
             Client.DownloadDenied += (e, args) => Log.Warning("Download of {Filename} from {Username} was denied by the remote user: {Message}", args.Filename, args.Username, args.Message);
@@ -320,7 +323,6 @@ namespace resonance
         private SemaphoreSlim IncomingSearchRequestSemaphore { get; set; }
         private CancellationTokenSource ShareScanDebounceCts { get; set; }
         private object ShareScanDebounceLock { get; } = new object();
-        private static readonly TimeSpan ShareScanDebounceDelay = TimeSpan.FromMinutes(3);
         private HashSet<string> PendingDownloadDirectories { get; } = new();
         private Timer StateBroadcastDebounce { get; set; }
         private object StateBroadcastLock { get; } = new object();
@@ -590,6 +592,26 @@ namespace resonance
             _ = ApplicationHub.BroadcastServerReadyAsync();
         }
 
+        async Task IHostedService.StopAsync(CancellationToken cancellationToken)
+        {
+            ShuttingDown = true;
+            Log.Warning("Application is shutting down");
+
+            try
+            {
+                await ApplicationHub.BroadcastServerRestartingAsync();
+            }
+            catch
+            {
+            }
+
+            Clock.Stop();
+
+            Client.Disconnect("Shutting down", new ApplicationShutdownException("Shutting down"));
+            Client.Dispose();
+            Log.Information("Client stopped");
+        }
+
         /// <summary>
         ///     Connects to the Soulseek server if eligible; that is, unless connecting is disabled via the
         ///     'no-connect' flag or valid credentials are not configured.
@@ -612,26 +634,6 @@ namespace resonance
             {
                 ConnectionWatchdog.Start();
             }
-        }
-
-        async Task IHostedService.StopAsync(CancellationToken cancellationToken)
-        {
-            ShuttingDown = true;
-            Log.Warning("Application is shutting down");
-
-            try
-            {
-                await ApplicationHub.BroadcastServerRestartingAsync();
-            }
-            catch
-            {
-            }
-
-            Clock.Stop();
-
-            Client.Disconnect("Shutting down", new ApplicationShutdownException("Shutting down"));
-            Client.Dispose();
-            Log.Information("Client stopped");
         }
 
         private Options.QosOptions.ScheduleEntry GetActiveScheduleEntry()

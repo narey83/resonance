@@ -67,6 +67,7 @@ namespace resonance.MusicLibrary
         ///     Signs <paramref name="path"/>, returning the expiry (unix seconds) and signature
         ///     to append to a stream/artwork URL as <c>&amp;exp=...&amp;sig=...</c>.
         /// </summary>
+        /// <returns>The expiry, in unix seconds, and the signature.</returns>
         public (long Exp, string Sig) Sign(string path)
         {
             var exp = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + ttlSeconds;
@@ -77,6 +78,7 @@ namespace resonance.MusicLibrary
         ///     Validates a signature for <paramref name="path"/>. Returns false if the signature
         ///     is malformed, expired, or does not match (constant-time comparison).
         /// </summary>
+        /// <returns>A value indicating whether the signature is valid and unexpired.</returns>
         public bool Validate(string path, long exp, string sig)
         {
             if (string.IsNullOrEmpty(sig) || path is null)
@@ -94,14 +96,14 @@ namespace resonance.MusicLibrary
             return CryptographicOperations.FixedTimeEquals(expected, provided);
         }
 
+        private static string Base64Url(byte[] bytes)
+            => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
         private string Compute(string path, long exp)
         {
             var payload = Encoding.UTF8.GetBytes($"{path}\n{exp}");
             var hash = HMACSHA256.HashData(key, payload);
             return Base64Url(hash);
         }
-
-        private static string Base64Url(byte[] bytes)
-            => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
 }

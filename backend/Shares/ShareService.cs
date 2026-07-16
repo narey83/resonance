@@ -191,20 +191,6 @@ namespace resonance.Shares
             });
         }
 
-        private IEnumerable<VirtualShareDirectory> CollectVirtualDirectories()
-            => VirtualShareProviders.SelectMany(provider =>
-            {
-                try
-                {
-                    return provider() ?? Enumerable.Empty<VirtualShareDirectory>();
-                }
-                catch (Exception ex)
-                {
-                    Log.Warning(ex, "A virtual share provider threw during collection: {Message}", ex.Message);
-                    return Enumerable.Empty<VirtualShareDirectory>();
-                }
-            }).ToList();
-
         /// <summary>
         ///     Adds a new, or updates an existing, share host.
         /// </summary>
@@ -292,20 +278,6 @@ namespace resonance.Shares
         public IEnumerable<TaggedFile> GetIncompleteFiles()
         {
             return GetTaggedFiles().Where(f => IsIncomplete(f.Tags));
-        }
-
-        // The tag editor's "incomplete" bar: title and artist are the only mandatory fields;
-        // album/year/genre are optional here. (The online lookup still tries to fill those
-        // separately — see MetadataLookup.NeedsEnrichment — this is just the manual-fix list.)
-        private static bool IsIncomplete(FileTags tags)
-        {
-            if (tags == null)
-            {
-                return true;
-            }
-
-            return string.IsNullOrWhiteSpace(tags.Title)
-                || string.IsNullOrWhiteSpace(tags.Artist);
         }
 
         /// <summary>
@@ -862,19 +834,6 @@ namespace resonance.Shares
             }
         }
 
-        private void ComputeShareStatistics()
-        {
-            foreach (var share in Local.Host.Shares)
-            {
-                var prefix = share.RemotePath + (share.RemotePath.EndsWith('\\') ? string.Empty : '\\');
-
-                var dirs = Local.Repository.CountDirectories(prefix);
-                var files = Local.Repository.CountFiles(prefix);
-
-                share.UpdateStatistics(dirs, files);
-            }
-        }
-
         public void SetManagedShare(string localPath, string alias, bool isExcluded = false)
         {
             ManagedShares[localPath] = Share.CreateManaged(localPath, alias, isExcluded);
@@ -886,6 +845,47 @@ namespace resonance.Shares
             if (ManagedShares.Remove(localPath, out _))
             {
                 RebuildSharesList(OptionsMonitor.CurrentValue);
+            }
+        }
+
+        // The tag editor's "incomplete" bar: title and artist are the only mandatory fields;
+        // album/year/genre are optional here. (The online lookup still tries to fill those
+        // separately — see MetadataLookup.NeedsEnrichment — this is just the manual-fix list.)
+        private static bool IsIncomplete(FileTags tags)
+        {
+            if (tags == null)
+            {
+                return true;
+            }
+
+            return string.IsNullOrWhiteSpace(tags.Title)
+                || string.IsNullOrWhiteSpace(tags.Artist);
+        }
+
+        private IEnumerable<VirtualShareDirectory> CollectVirtualDirectories()
+            => VirtualShareProviders.SelectMany(provider =>
+            {
+                try
+                {
+                    return provider() ?? Enumerable.Empty<VirtualShareDirectory>();
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "A virtual share provider threw during collection: {Message}", ex.Message);
+                    return Enumerable.Empty<VirtualShareDirectory>();
+                }
+            }).ToList();
+
+        private void ComputeShareStatistics()
+        {
+            foreach (var share in Local.Host.Shares)
+            {
+                var prefix = share.RemotePath + (share.RemotePath.EndsWith('\\') ? string.Empty : '\\');
+
+                var dirs = Local.Repository.CountDirectories(prefix);
+                var files = Local.Repository.CountFiles(prefix);
+
+                share.UpdateStatistics(dirs, files);
             }
         }
 

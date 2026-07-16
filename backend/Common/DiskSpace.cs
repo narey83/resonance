@@ -42,6 +42,7 @@ namespace resonance.Common
         /// <summary>
         ///     Gets the available and total bytes on the volume containing <paramref name="path"/>. Returns false if the check fails.
         /// </summary>
+        /// <returns>A value indicating whether the volume could be read.</returns>
         public static bool TryGet(string path, out long availableBytes, out long totalBytes)
         {
             try
@@ -64,6 +65,7 @@ namespace resonance.Common
         ///     Returns true if the volume containing <paramref name="path"/> has less than <paramref name="minimumMegabytes"/> free.
         ///     Fails open: returns false when no limit is set or the volume can't be read.
         /// </summary>
+        /// <returns>A value indicating whether free space is below the configured minimum.</returns>
         public static bool IsBelowLimit(string path, int? minimumMegabytes)
             => minimumMegabytes.HasValue
                 && TryGet(path, out var availableBytes, out _)

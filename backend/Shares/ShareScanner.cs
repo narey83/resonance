@@ -132,6 +132,7 @@ namespace resonance.Shares
         /// <param name="options">The current options snapshot.</param>
         /// <param name="repository">The repository to update.</param>
         /// <param name="targetDirectories">An optional list of directories to limit the scan to.</param>
+        /// <param name="virtualDirectories">An optional list of virtual directories to include in the scan.</param>
         /// <returns>The operation context.</returns>
         public async Task ScanAsync(IEnumerable<Share> shares, Options.SharesOptions options, IShareRepository repository, IEnumerable<string> targetDirectories = null, IEnumerable<VirtualShareDirectory> virtualDirectories = null)
         {

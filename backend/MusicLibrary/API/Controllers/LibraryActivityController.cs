@@ -61,14 +61,6 @@ namespace resonance.MusicLibrary.API
 
         private string Username => User.FindFirstValue(ClaimTypes.Name) ?? string.Empty;
 
-        // Stamp a fresh path-scoped signature so the client can build signed artwork/stream URLs
-        // without a separate POST /sign round-trip (see StreamUrlSigner / MusicLibraryController).
-        private MusicTrack SignTrack(MusicTrack t)
-        {
-            var (exp, sig) = UrlSigner.Sign(t.Path);
-            return t with { Exp = exp, Sig = sig };
-        }
-
         // ── Loved ──────────────────────────────────────────────────────────────
         [HttpGet("loved")]
         [ProducesResponseType(typeof(string[]), 200)]
@@ -148,5 +140,13 @@ namespace resonance.MusicLibrary.API
         [ProducesResponseType(typeof(PlayStat[]), 200)]
         public IActionResult GetPlayStats([FromQuery] string[] paths = null)
             => Ok(Service.GetPlayStats(Username, paths));
+
+        // Stamp a fresh path-scoped signature so the client can build signed artwork/stream URLs
+        // without a separate POST /sign round-trip (see StreamUrlSigner / MusicLibraryController).
+        private MusicTrack SignTrack(MusicTrack t)
+        {
+            var (exp, sig) = UrlSigner.Sign(t.Path);
+            return t with { Exp = exp, Sig = sig };
+        }
     }
 }

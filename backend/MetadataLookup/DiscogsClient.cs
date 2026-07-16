@@ -65,6 +65,17 @@ namespace resonance.MetadataLookup
         private DateTime LastRequestUtc { get; set; } = DateTime.MinValue;
 
         /// <summary>
+        ///     Parses a Discogs search JSON response into ordered candidates. Exposed for testing the
+        ///     projection logic without a network request.
+        /// </summary>
+        /// <returns>The candidate matches, best first.</returns>
+        public static IReadOnlyList<MetadataMatch> ParseSearchResponse(string json, string queryArtist, string queryTitle, string queryAlbum)
+        {
+            using var doc = JsonDocument.Parse(json);
+            return ParseSearchResponse(doc.RootElement, queryArtist, queryTitle, queryAlbum);
+        }
+
+        /// <summary>
         ///     Searches Discogs for releases matching the supplied artist and title (and optionally
         ///     album), returning candidates ordered by confidence (highest first). The track title and
         ///     artist from the query are preserved; Discogs supplies album, year and genre/style.
@@ -96,17 +107,6 @@ namespace resonance.MetadataLookup
 
             using var doc = await GetJsonAsync($"database/search?{string.Join("&", query)}", ct);
             return doc == null ? Array.Empty<MetadataMatch>() : ParseSearchResponse(doc.RootElement, artist, title, album);
-        }
-
-        /// <summary>
-        ///     Parses a Discogs search JSON response into ordered candidates. Exposed for testing the
-        ///     projection logic without a network request.
-        /// </summary>
-        /// <returns>The candidate matches, best first.</returns>
-        public static IReadOnlyList<MetadataMatch> ParseSearchResponse(string json, string queryArtist, string queryTitle, string queryAlbum)
-        {
-            using var doc = JsonDocument.Parse(json);
-            return ParseSearchResponse(doc.RootElement, queryArtist, queryTitle, queryAlbum);
         }
 
         private static IReadOnlyList<MetadataMatch> ParseSearchResponse(JsonElement root, string queryArtist, string queryTitle, string queryAlbum)
@@ -233,6 +233,13 @@ namespace resonance.MetadataLookup
                 ? value.GetString()
                 : null;
 
+        private static string BuildUserAgent(string contact)
+        {
+            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0";
+            var contactPart = string.IsNullOrWhiteSpace(contact) ? "https://github.com/narey83/resonance" : contact.Trim();
+            return $"resonance/{version} +{contactPart}";
+        }
+
         private async Task<JsonDocument> GetJsonAsync(string relativeUrl, CancellationToken ct)
         {
             var opts = Options.CurrentValue.MetadataLookup;
@@ -296,13 +303,6 @@ namespace resonance.MetadataLookup
             {
                 PacingGate.Release();
             }
-        }
-
-        private static string BuildUserAgent(string contact)
-        {
-            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0";
-            var contactPart = string.IsNullOrWhiteSpace(contact) ? "https://github.com/narey83/resonance" : contact.Trim();
-            return $"resonance/{version} +{contactPart}";
         }
     }
 }

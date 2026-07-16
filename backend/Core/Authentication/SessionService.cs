@@ -40,6 +40,8 @@ using Serilog;
 
 public class SessionService
 {
+    private static readonly TimeSpan RotationGracePeriod = TimeSpan.FromSeconds(60);
+
     public SessionService(IDbContextFactory<UsersDbContext> contextFactory, OptionsAtStartup optionsAtStartup)
     {
         ContextFactory = contextFactory;
@@ -67,10 +69,6 @@ public class SessionService
     // token queue behind the first rotation and observe its grace-cache entry, instead of each
     // racing to rotate independently. Refreshes are infrequent, so a single lock is ample.
     private object RotationLock { get; } = new();
-
-    private static readonly TimeSpan RotationGracePeriod = TimeSpan.FromSeconds(60);
-
-    private readonly record struct GraceEntry(string NewToken, Guid SessionId, string Username, DateTime RotatedAt);
 
     /// <summary>
     ///     Creates a new session for the given user and returns the opaque refresh token and session ID.
@@ -358,4 +356,6 @@ public class SessionService
             RevokedSessionCache.TryRemove(entry.Key, out _);
         }
     }
+
+    private readonly record struct GraceEntry(string NewToken, Guid SessionId, string Username, DateTime RotatedAt);
 }

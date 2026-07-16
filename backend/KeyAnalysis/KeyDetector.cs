@@ -54,6 +54,16 @@ namespace resonance.KeyAnalysis
         private const double MedianAverageSeconds = 10.0;
         private const int MaxAnalysisSeconds = 90;
 
+        // Essentia key detection (run as a Python subprocess). Returns the key in the same
+        // sharp notation as the built-in detector (e.g. "Am", "C#"), or null on failure.
+        private const string EssentiaScript =
+            "import sys\n" +
+            "import essentia.standard as es\n" +
+            "_S={'Db':'C#','Eb':'D#','Gb':'F#','Ab':'G#','Bb':'A#'}\n" +
+            "a=es.MonoLoader(filename=sys.argv[1], sampleRate=44100)()\n" +
+            "k,scale,_=es.KeyExtractor(profileType=sys.argv[2])(a)\n" +
+            "print(_S.get(k,k)+('m' if scale=='minor' else ''))\n";
+
         // CQ frequency range: C3 (MIDI 48) to C8 (MIDI 96) at A4 = 440 Hz
         private static readonly double FMin = 440.0 * Math.Pow(2.0, (48 - 69) / 12.0); // ≈ 130.81 Hz
         private static readonly double FMax = 440.0 * Math.Pow(2.0, (96 - 69) / 12.0); // ≈ 4186.0 Hz
@@ -184,16 +194,6 @@ namespace resonance.KeyAnalysis
 
             return DetectKey(samples);
         }
-
-        // Essentia key detection (run as a Python subprocess). Returns the key in the same
-        // sharp notation as the built-in detector (e.g. "Am", "C#"), or null on failure.
-        private const string EssentiaScript =
-            "import sys\n" +
-            "import essentia.standard as es\n" +
-            "_S={'Db':'C#','Eb':'D#','Gb':'F#','Ab':'G#','Bb':'A#'}\n" +
-            "a=es.MonoLoader(filename=sys.argv[1], sampleRate=44100)()\n" +
-            "k,scale,_=es.KeyExtractor(profileType=sys.argv[2])(a)\n" +
-            "print(_S.get(k,k)+('m' if scale=='minor' else ''))\n";
 
         /// <summary>
         ///     Detects the musical key by invoking Essentia's <c>KeyExtractor</c> via a Python
@@ -380,18 +380,6 @@ namespace resonance.KeyAnalysis
             }
 
             return dst;
-        }
-
-        // ── Step 2: Sparse CQ kernel (ConstantQ::sparsekernel) ───────────────
-        private sealed class SparseKernel(int[] fftBins, int[] cqBins, double[] real, double[] imag)
-        {
-            public int[] FftBins { get; } = fftBins;
-
-            public int[] CqBins { get; } = cqBins;
-
-            public double[] Real { get; } = real;
-
-            public double[] Imag { get; } = imag;
         }
 
         private static SparseKernel BuildSparseKernel()
@@ -718,6 +706,18 @@ namespace resonance.KeyAnalysis
             }
 
             return p;
+        }
+
+        // ── Step 2: Sparse CQ kernel (ConstantQ::sparsekernel) ───────────────
+        private sealed class SparseKernel(int[] fftBins, int[] cqBins, double[] real, double[] imag)
+        {
+            public int[] FftBins { get; } = fftBins;
+
+            public int[] CqBins { get; } = cqBins;
+
+            public double[] Real { get; } = real;
+
+            public double[] Imag { get; } = imag;
         }
     }
 }

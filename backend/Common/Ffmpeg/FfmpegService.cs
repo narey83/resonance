@@ -167,6 +167,87 @@ public sealed class FfmpegService : IFfmpegService, IDisposable
         gate.Dispose();
     }
 
+    private static string? ResolveConfigured(string configuredPath)
+    {
+        if (Path.IsPathRooted(configuredPath) && File.Exists(configuredPath))
+        {
+            return configuredPath;
+        }
+
+        var adjacent = Path.Combine(AppContext.BaseDirectory, configuredPath);
+        return File.Exists(adjacent) ? adjacent : null;
+    }
+
+    private static async Task<string?> ResolveFromPathAsync(CancellationToken cancellationToken)
+    {
+        var whichCmd = IsWindows ? "where" : "which";
+        try
+        {
+            using var p = new Process
+            {
+                StartInfo = new ProcessStartInfo(whichCmd, "ffmpeg ffprobe")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                },
+            };
+            p.Start();
+            var firstLine = (await p.StandardOutput.ReadLineAsync(cancellationToken))?.Trim();
+            await p.WaitForExitAsync(cancellationToken);
+            if (p.ExitCode == 0 && !string.IsNullOrWhiteSpace(firstLine))
+            {
+                return Path.GetDirectoryName(firstLine);
+            }
+        }
+        catch
+        {
+            // fall through to download
+        }
+
+        return null;
+    }
+
+    private static void MakeExecutable(string ffmpegBin, string ffprobeBin)
+    {
+        if (IsWindows)
+        {
+            return;
+        }
+
+        var mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+            | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
+            | UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
+        File.SetUnixFileMode(ffmpegBin, mode);
+        File.SetUnixFileMode(ffprobeBin, mode);
+    }
+
+    private static async Task<string?> RunVersionAsync(string executable, string args, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo(executable)
+                {
+                    Arguments = args,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                },
+            };
+            process.Start();
+            var output = await process.StandardOutput.ReadToEndAsync(cancellationToken);
+            await process.WaitForExitAsync(cancellationToken);
+            return output.Split('\n').FirstOrDefault()?.Trim();
+        }
+        catch (Exception ex)
+        {
+            return $"Error: {ex.Message}";
+        }
+    }
+
     // ── Resolution / provisioning ─────────────────────────────────────────────
     private async Task EnsureThenAutoUpdateLoopAsync(CancellationToken cancellationToken)
     {
@@ -298,47 +379,6 @@ public sealed class FfmpegService : IFfmpegService, IDisposable
         return false;
     }
 
-    private static string? ResolveConfigured(string configuredPath)
-    {
-        if (Path.IsPathRooted(configuredPath) && File.Exists(configuredPath))
-        {
-            return configuredPath;
-        }
-
-        var adjacent = Path.Combine(AppContext.BaseDirectory, configuredPath);
-        return File.Exists(adjacent) ? adjacent : null;
-    }
-
-    private static async Task<string?> ResolveFromPathAsync(CancellationToken cancellationToken)
-    {
-        var whichCmd = IsWindows ? "where" : "which";
-        try
-        {
-            using var p = new Process
-            {
-                StartInfo = new ProcessStartInfo(whichCmd, "ffmpeg ffprobe")
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                },
-            };
-            p.Start();
-            var firstLine = (await p.StandardOutput.ReadLineAsync(cancellationToken))?.Trim();
-            await p.WaitForExitAsync(cancellationToken);
-            if (p.ExitCode == 0 && !string.IsNullOrWhiteSpace(firstLine))
-            {
-                return Path.GetDirectoryName(firstLine);
-            }
-        }
-        catch
-        {
-            // fall through to download
-        }
-
-        return null;
-    }
-
     // ── Download / extract ────────────────────────────────────────────────────
     private async Task<(string? PublishedAt, string ArchiveUrl)> FetchLatestReleaseAsync(CancellationToken cancellationToken)
     {
@@ -412,46 +452,6 @@ public sealed class FfmpegService : IFfmpegService, IDisposable
             {
                 // best-effort cleanup
             }
-        }
-    }
-
-    private static void MakeExecutable(string ffmpegBin, string ffprobeBin)
-    {
-        if (IsWindows)
-        {
-            return;
-        }
-
-        var mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
-            | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
-            | UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
-        File.SetUnixFileMode(ffmpegBin, mode);
-        File.SetUnixFileMode(ffprobeBin, mode);
-    }
-
-    private static async Task<string?> RunVersionAsync(string executable, string args, CancellationToken cancellationToken)
-    {
-        try
-        {
-            using var process = new Process
-            {
-                StartInfo = new ProcessStartInfo(executable)
-                {
-                    Arguments = args,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                },
-            };
-            process.Start();
-            var output = await process.StandardOutput.ReadToEndAsync(cancellationToken);
-            await process.WaitForExitAsync(cancellationToken);
-            return output.Split('\n').FirstOrDefault()?.Trim();
-        }
-        catch (Exception ex)
-        {
-            return $"Error: {ex.Message}";
         }
     }
 }

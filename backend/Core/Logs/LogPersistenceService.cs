@@ -110,7 +110,17 @@ public class LogPersistenceService : BackgroundService
         }
     }
 
-    private void OnLogEmitted(object _, LogRecord record)
+    private static LogEntry ToEntry(LogRecord r) => new()
+    {
+        Timestamp = r.Timestamp,
+        Level = r.Level,
+        Context = r.Context,
+        SubContext = r.SubContext,
+        Message = r.Message,
+        Exception = r.Exception,
+    };
+
+    private void OnLogEmitted(object sender, LogRecord record)
     {
         channel.Writer.TryWrite(record);
     }
@@ -143,14 +153,4 @@ public class LogPersistenceService : BackgroundService
             Log.Warning("Log retention cleanup failed: {Message}", ex.Message);
         }
     }
-
-    private static LogEntry ToEntry(LogRecord r) => new()
-    {
-        Timestamp = r.Timestamp,
-        Level = r.Level,
-        Context = r.Context,
-        SubContext = r.SubContext,
-        Message = r.Message,
-        Exception = r.Exception,
-    };
 }

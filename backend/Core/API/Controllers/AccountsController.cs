@@ -270,18 +270,18 @@ namespace resonance.Core.API
             }
         }
 
+        private static UserResponse ToResponse(AppUser u) => new(
+            u.Username,
+            u.FullName,
+            u.Role.ToString(),
+            u.CreatedAt);
+
         private bool IsAdminOrSelf(string username)
         {
             var callerRole = User.FindFirstValue(ClaimTypes.Role);
             var callerName = User.FindFirstValue(ClaimTypes.Name);
             return callerRole == Role.Administrator.ToString() || callerName == username;
         }
-
-        private static UserResponse ToResponse(AppUser u) => new(
-            u.Username,
-            u.FullName,
-            u.Role.ToString(),
-            u.CreatedAt);
     }
 
     public record UserResponse(string Username, string FullName, string Role, DateTime CreatedAt);

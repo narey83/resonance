@@ -64,6 +64,7 @@ namespace resonance.Users.API
         /// <summary>
         ///     Gets the block lists (users, IPs, places) along with the blocking options.
         /// </summary>
+        /// <returns></returns>
         [HttpGet]
         [ProducesResponseType(200)]
         public IActionResult Get() => Ok(ApplicationHubExtensions.BuildBlockedUsersPayload(BlockedUsers));
@@ -72,6 +73,7 @@ namespace resonance.Users.API
         ///     Gets the distinct countries and cities observed from peer connections, for the
         ///     block-by-location dropdowns.
         /// </summary>
+        /// <returns></returns>
         [HttpGet("geo")]
         [ProducesResponseType(200)]
         public IActionResult GetKnownLocations() => Ok(Reports.GetKnownLocations());
@@ -79,6 +81,8 @@ namespace resonance.Users.API
         /// <summary>
         ///     Updates the blocking options.
         /// </summary>
+        /// <param name="options">The blocking options to apply.</param>
+        /// <returns></returns>
         [HttpPut("options")]
         [Authorize(Policy = AuthPolicy.JwtOnly, Roles = AuthRole.AdministratorOnly)]
         [ProducesResponseType(typeof(BlockedUserOptions), 200)]
@@ -92,6 +96,8 @@ namespace resonance.Users.API
         /// <summary>
         ///     Blocks the specified IP address or CIDR range.
         /// </summary>
+        /// <param name="request">The address or CIDR range to block, and an optional reason.</param>
+        /// <returns></returns>
         [HttpPost("ips")]
         [ProducesResponseType(typeof(IReadOnlyList<BlockedIp>), 200)]
         [ProducesResponseType(400)]
@@ -121,6 +127,8 @@ namespace resonance.Users.API
         ///     Unblocks the specified IP address or CIDR range (passed as a query parameter
         ///     because CIDRs contain slashes).
         /// </summary>
+        /// <param name="cidr">The address or CIDR range to unblock.</param>
+        /// <returns></returns>
         [HttpDelete("ips")]
         [ProducesResponseType(typeof(IReadOnlyList<BlockedIp>), 200)]
         [ProducesResponseType(400)]
@@ -139,6 +147,8 @@ namespace resonance.Users.API
         /// <summary>
         ///     Blocks a location (country, optionally narrowed to a city).
         /// </summary>
+        /// <param name="request">The country, and optionally the city, to block.</param>
+        /// <returns></returns>
         [HttpPost("places")]
         [ProducesResponseType(typeof(IReadOnlyList<BlockedPlace>), 200)]
         [ProducesResponseType(400)]
@@ -157,6 +167,8 @@ namespace resonance.Users.API
         /// <summary>
         ///     Unblocks the location with the specified id.
         /// </summary>
+        /// <param name="id">The id of the blocked location.</param>
+        /// <returns></returns>
         [HttpDelete("places/{id:int}")]
         [ProducesResponseType(typeof(IReadOnlyList<BlockedPlace>), 200)]
         public async Task<IActionResult> UnblockPlace([FromRoute] int id)
@@ -169,6 +181,9 @@ namespace resonance.Users.API
         /// <summary>
         ///     Blocks the specified user.
         /// </summary>
+        /// <param name="username">The username of the user to block.</param>
+        /// <param name="request">An optional reason describing why the user was blocked.</param>
+        /// <returns></returns>
         [HttpPut("{username}")]
         [ProducesResponseType(typeof(IReadOnlyList<BlockedUser>), 200)]
         [ProducesResponseType(400)]
@@ -187,6 +202,8 @@ namespace resonance.Users.API
         /// <summary>
         ///     Unblocks the specified user.
         /// </summary>
+        /// <param name="username">The username of the user to unblock.</param>
+        /// <returns></returns>
         [HttpDelete("{username}")]
         [ProducesResponseType(typeof(IReadOnlyList<BlockedUser>), 200)]
         [ProducesResponseType(400)]
@@ -250,5 +267,4 @@ namespace resonance.Users.API
         /// </summary>
         public string Reason { get; set; }
     }
-
 }

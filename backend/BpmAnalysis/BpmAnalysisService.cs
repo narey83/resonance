@@ -137,6 +137,37 @@ namespace resonance.BpmAnalysis
             ScanTask = Task.Run(() => RunScanAsync(request, ct), ct);
         }
 
+        public bool CancelScan()
+        {
+            if (Cts == null || Cts.IsCancellationRequested)
+            {
+                return false;
+            }
+
+            Cts.Cancel();
+            return true;
+        }
+
+        public void SetBpm(string maskedFilename, uint bpm)
+        {
+            var existing = ShareService.GetAllTags().TryGetValue(maskedFilename, out var t) ? t : null;
+            var updated = existing != null
+                ? existing with { Bpm = bpm }
+                : new FileTags(null, null, null, null, 0, 0, null, null, bpm);
+            ShareService.WriteFileTags(maskedFilename, updated);
+        }
+
+        public void ClearBpm(string maskedFilename)
+        {
+            var existing = ShareService.GetAllTags().TryGetValue(maskedFilename, out var t) ? t : null;
+            if (existing == null)
+            {
+                return;
+            }
+
+            ShareService.WriteFileTags(maskedFilename, existing with { Bpm = 0 });
+        }
+
         private async Task RunScanAsync(BpmScanRequest request, CancellationToken ct)
         {
             MusicLibrary?.RegisterQueue("bpm");
@@ -287,37 +318,6 @@ namespace resonance.BpmAnalysis
                 MusicLibrary?.DeregisterQueue("bpm");
                 SyncRoot.Release();
             }
-        }
-
-        public bool CancelScan()
-        {
-            if (Cts == null || Cts.IsCancellationRequested)
-            {
-                return false;
-            }
-
-            Cts.Cancel();
-            return true;
-        }
-
-        public void SetBpm(string maskedFilename, uint bpm)
-        {
-            var existing = ShareService.GetAllTags().TryGetValue(maskedFilename, out var t) ? t : null;
-            var updated = existing != null
-                ? existing with { Bpm = bpm }
-                : new FileTags(null, null, null, null, 0, 0, null, null, bpm);
-            ShareService.WriteFileTags(maskedFilename, updated);
-        }
-
-        public void ClearBpm(string maskedFilename)
-        {
-            var existing = ShareService.GetAllTags().TryGetValue(maskedFilename, out var t) ? t : null;
-            if (existing == null)
-            {
-                return;
-            }
-
-            ShareService.WriteFileTags(maskedFilename, existing with { Bpm = 0 });
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────

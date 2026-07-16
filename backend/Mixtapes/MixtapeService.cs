@@ -115,12 +115,6 @@ namespace resonance.Mixtapes
         }
 
         // All initialization (directory creation, managed share registration, migrations)
-        // happens in the constructor; hosting this service just forces eager construction
-        // at startup so the mixtapes managed share exists before anyone opens the UI
-        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
         private MixtapeRepository Repository { get; }
         private MusicRepository MusicRepository { get; }
         private string MixtapesBaseDir { get; }
@@ -128,15 +122,11 @@ namespace resonance.Mixtapes
         private IShareService ShareService { get; }
         private IHubContext<MixtapesHub> Hub { get; }
 
-        private static string MixtapeFolderName(Mixtape m) => SafeFileName(m.Name);
+        // happens in the constructor; hosting this service just forces eager construction
+        // at startup so the mixtapes managed share exists before anyone opens the UI
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-        private string MixtapeDir(Mixtape m) => Path.Combine(MixtapesBaseDir, MixtapeFolderName(m));
-        private string LegacyMixtapeDir(string id) => Path.Combine(MixtapesBaseDir, id);
-        private string ArtworkFilePath(string id) => Path.Combine(ArtworkDir, id);
-        private string ArtworkCtPath(string id) => Path.Combine(ArtworkDir, id + ".ct");
-
-        private Mixtape WithArtwork(Mixtape m) =>
-            File.Exists(ArtworkFilePath(m.Id)) ? m with { HasArtwork = true } : m;
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
         public bool HasArtwork(string id) => File.Exists(ArtworkFilePath(id));
 
@@ -432,29 +422,7 @@ namespace resonance.Mixtapes
             return sb.ToString();
         }
 
-        // ── Folder + M3U management ───────────────────────────────────────────
-
-        /// <summary>
-        /// Writes the M3U and, if the mixtape is Soulseek-shared, also syncs symlinks.
-        /// Called on every create/update/track change.
-        /// </summary>
-        private void WriteMixtapeFolder(Mixtape m, IReadOnlyList<MixtapeTrack> tracks)
-        {
-            try
-            {
-                var dir = MixtapeDir(m);
-                Directory.CreateDirectory(dir);
-                WriteM3U(dir, m.Name, tracks);
-                if (m.IsSoulseekShared)
-                {
-                    ShareService.ApplyVirtualDirectory(BuildVirtualDirectory(m, tracks));
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "Could not write mixtape folder for {Id}", m.Id);
-            }
-        }
+        private static string MixtapeFolderName(Mixtape m) => SafeFileName(m.Name);
 
         private static void WriteM3U(string dir, string name, IReadOnlyList<MixtapeTrack> tracks)
         {
@@ -492,37 +460,6 @@ namespace resonance.Mixtapes
             File.WriteAllText(m3uPath, sb.ToString(), Encoding.UTF8);
         }
 
-        // ── Virtual share mapping ─────────────────────────────────────────────
-
-        /// <summary>
-        /// Enumerates every Soulseek-shared mixtape as a virtual share directory. Registered with the share
-        /// service so its tracks are re-materialised into the cache on every scan (surviving prunes) without
-        /// any files existing on disk at the masked paths.
-        /// </summary>
-        private IEnumerable<VirtualShareDirectory> BuildVirtualShares()
-        {
-            foreach (var m in Repository.GetAll().Where(m => m.IsSoulseekShared))
-            {
-                yield return BuildVirtualDirectory(m, Repository.GetTracks(m.Id));
-            }
-        }
-
-        private VirtualShareDirectory BuildVirtualDirectory(Mixtape m, IReadOnlyList<MixtapeTrack> tracks)
-        {
-            var files = tracks
-                .Select(t => new VirtualShareFile(MaskedFileName(m, t), t.FilePath))
-                .ToList();
-            return new VirtualShareDirectory(MaskedDir(m), files);
-        }
-
-        // Masked (peer-visible) paths, derived exactly as the scanner would for a physical file under the
-        // managed mixtapes share, so virtual tracks land in the same browse folder as the mixtape's .m3u.
-        private string MaskedDir(Mixtape m)
-            => MixtapeDir(m).ReplaceFirst(MixtapesBaseDir, MixtapesShareAlias).NormalizePathForSoulseek();
-
-        private string MaskedFileName(Mixtape m, MixtapeTrack track)
-            => Path.Combine(MixtapeDir(m), MaskedLeafName(track)).ReplaceFirst(MixtapesBaseDir, MixtapesShareAlias).NormalizePathForSoulseek();
-
         private static void RemoveMixtapeFolder(string dir)
         {
             if (!Directory.Exists(dir))
@@ -556,6 +493,72 @@ namespace resonance.Mixtapes
             var safe = string.Concat(name.Select(c => invalid.Contains(c) ? '_' : c)).Trim();
             return string.IsNullOrEmpty(safe) ? "mixtape" : safe;
         }
+
+        private string MixtapeDir(Mixtape m) => Path.Combine(MixtapesBaseDir, MixtapeFolderName(m));
+
+        private string LegacyMixtapeDir(string id) => Path.Combine(MixtapesBaseDir, id);
+
+        private string ArtworkFilePath(string id) => Path.Combine(ArtworkDir, id);
+
+        private string ArtworkCtPath(string id) => Path.Combine(ArtworkDir, id + ".ct");
+
+        private Mixtape WithArtwork(Mixtape m) =>
+            File.Exists(ArtworkFilePath(m.Id)) ? m with { HasArtwork = true } : m;
+
+        // ── Folder + M3U management ───────────────────────────────────────────
+
+        /// <summary>
+        /// Writes the M3U and, if the mixtape is Soulseek-shared, also syncs symlinks.
+        /// Called on every create/update/track change.
+        /// </summary>
+        private void WriteMixtapeFolder(Mixtape m, IReadOnlyList<MixtapeTrack> tracks)
+        {
+            try
+            {
+                var dir = MixtapeDir(m);
+                Directory.CreateDirectory(dir);
+                WriteM3U(dir, m.Name, tracks);
+                if (m.IsSoulseekShared)
+                {
+                    ShareService.ApplyVirtualDirectory(BuildVirtualDirectory(m, tracks));
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Could not write mixtape folder for {Id}", m.Id);
+            }
+        }
+
+        // ── Virtual share mapping ─────────────────────────────────────────────
+
+        /// <summary>
+        /// Enumerates every Soulseek-shared mixtape as a virtual share directory. Registered with the share
+        /// service so its tracks are re-materialised into the cache on every scan (surviving prunes) without
+        /// any files existing on disk at the masked paths.
+        /// </summary>
+        private IEnumerable<VirtualShareDirectory> BuildVirtualShares()
+        {
+            foreach (var m in Repository.GetAll().Where(m => m.IsSoulseekShared))
+            {
+                yield return BuildVirtualDirectory(m, Repository.GetTracks(m.Id));
+            }
+        }
+
+        private VirtualShareDirectory BuildVirtualDirectory(Mixtape m, IReadOnlyList<MixtapeTrack> tracks)
+        {
+            var files = tracks
+                .Select(t => new VirtualShareFile(MaskedFileName(m, t), t.FilePath))
+                .ToList();
+            return new VirtualShareDirectory(MaskedDir(m), files);
+        }
+
+        // Masked (peer-visible) paths, derived exactly as the scanner would for a physical file under the
+        // managed mixtapes share, so virtual tracks land in the same browse folder as the mixtape's .m3u.
+        private string MaskedDir(Mixtape m)
+            => MixtapeDir(m).ReplaceFirst(MixtapesBaseDir, MixtapesShareAlias).NormalizePathForSoulseek();
+
+        private string MaskedFileName(Mixtape m, MixtapeTrack track)
+            => Path.Combine(MixtapeDir(m), MaskedLeafName(track)).ReplaceFirst(MixtapesBaseDir, MixtapesShareAlias).NormalizePathForSoulseek();
 
         private void TouchMixtape(string id)
         {

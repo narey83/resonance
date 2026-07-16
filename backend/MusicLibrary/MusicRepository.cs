@@ -54,14 +54,25 @@ namespace resonance.MusicLibrary
         // Case-insensitive LIKE operator
         private string Like => UsePostgres ? "ILIKE" : "LIKE";
 
-        // Case-insensitive equality (used in WHERE)
-        private string IEq(string col) => UsePostgres ? $"{col} ILIKE" : $"{col} =";
-
-        // Case-insensitive GROUP BY expression for a column
-        private string GrpBy(string col) => UsePostgres ? $"lower({col})" : $"{col} COLLATE NOCASE";
-
-        // Case-insensitive ORDER BY expression for a column
-        private string OrdBy(string col, string dir = "ASC") => UsePostgres ? $"lower({col}) {dir}" : $"{col} COLLATE NOCASE {dir}";
+        // Shared by Upsert and UpsertMany so the column/conflict handling can't drift between them.
+        private string UpsertSql => $@"
+                INSERT INTO {T}
+                    (path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
+                     title, artist, album_artist, album, year, track_number, disc_number,
+                     genre, bpm, key_sig, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth)
+                VALUES
+                    (@path, @filename, @dir, @ext, @size, @mod, @idx, @dur,
+                     @title, @artist, @aartist, @album, @year, @track, @disc,
+                     @genre, @bpm, @key, @comment, @art, @tagtypes, @bitrate, @samplerate, @bitdepth)
+                ON CONFLICT(path) DO UPDATE SET
+                    filename=excluded.filename, directory=excluded.directory, extension=excluded.extension,
+                    file_size=excluded.file_size, file_modified=excluded.file_modified, indexed_at=excluded.indexed_at,
+                    duration=excluded.duration, title=excluded.title, artist=excluded.artist,
+                    album_artist=excluded.album_artist, album=excluded.album, year=excluded.year,
+                    track_number=excluded.track_number, disc_number=excluded.disc_number,
+                    genre=excluded.genre, bpm=excluded.bpm, key_sig=excluded.key_sig,
+                    comment=excluded.comment, has_artwork=excluded.has_artwork, tag_types=excluded.tag_types,
+                    bit_rate=excluded.bit_rate, sample_rate=excluded.sample_rate, bit_depth=excluded.bit_depth";
 
         public void Initialize()
         {
@@ -167,26 +178,6 @@ namespace resonance.MusicLibrary
                 }
             }
         }
-
-        // Shared by Upsert and UpsertMany so the column/conflict handling can't drift between them.
-        private string UpsertSql => $@"
-                INSERT INTO {T}
-                    (path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
-                     title, artist, album_artist, album, year, track_number, disc_number,
-                     genre, bpm, key_sig, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth)
-                VALUES
-                    (@path, @filename, @dir, @ext, @size, @mod, @idx, @dur,
-                     @title, @artist, @aartist, @album, @year, @track, @disc,
-                     @genre, @bpm, @key, @comment, @art, @tagtypes, @bitrate, @samplerate, @bitdepth)
-                ON CONFLICT(path) DO UPDATE SET
-                    filename=excluded.filename, directory=excluded.directory, extension=excluded.extension,
-                    file_size=excluded.file_size, file_modified=excluded.file_modified, indexed_at=excluded.indexed_at,
-                    duration=excluded.duration, title=excluded.title, artist=excluded.artist,
-                    album_artist=excluded.album_artist, album=excluded.album, year=excluded.year,
-                    track_number=excluded.track_number, disc_number=excluded.disc_number,
-                    genre=excluded.genre, bpm=excluded.bpm, key_sig=excluded.key_sig,
-                    comment=excluded.comment, has_artwork=excluded.has_artwork, tag_types=excluded.tag_types,
-                    bit_rate=excluded.bit_rate, sample_rate=excluded.sample_rate, bit_depth=excluded.bit_depth";
 
         public void Upsert(MusicTrack t)
         {
@@ -468,6 +459,7 @@ namespace resonance.MusicLibrary
                 "year" => $"year {dir}, {OrdBy("artist")}, {OrdBy("album")}, track_number",
                 "duration" => $"duration {dir}, {OrdBy("title")}",
                 "bpm" => $"bpm {dir}, {OrdBy("title")}",
+
                 // Group tracks of the same musical key together (tracks with no detected key sort last).
                 "key" => $"CASE WHEN key_sig IS NULL OR key_sig = '' THEN 1 ELSE 0 END, {OrdBy("key_sig", dir)}, {OrdBy("title")}",
                 "added" => $"indexed_at {dir}, {OrdBy("title")}",
@@ -928,14 +920,6 @@ namespace resonance.MusicLibrary
             return null;
         }
 
-        // ── Helpers ───────────────────────────────────────────────────────────
-        private DbConnection OpenConnection()
-        {
-            DbConnection conn = new NpgsqlConnection(ConnectionString);
-            conn.Open();
-            return conn;
-        }
-
         private static void AddParam(DbCommand cmd, string name, object value)
         {
             var p = cmd.CreateParameter();
@@ -969,5 +953,22 @@ namespace resonance.MusicLibrary
             BitRate: r.IsDBNull(21) ? null : r.GetInt32(21),
             SampleRate: r.IsDBNull(22) ? null : r.GetInt32(22),
             BitDepth: r.IsDBNull(23) ? null : r.GetInt32(23));
+
+        // Case-insensitive equality (used in WHERE)
+        private string IEq(string col) => UsePostgres ? $"{col} ILIKE" : $"{col} =";
+
+        // Case-insensitive GROUP BY expression for a column
+        private string GrpBy(string col) => UsePostgres ? $"lower({col})" : $"{col} COLLATE NOCASE";
+
+        // Case-insensitive ORDER BY expression for a column
+        private string OrdBy(string col, string dir = "ASC") => UsePostgres ? $"lower({col}) {dir}" : $"{col} COLLATE NOCASE {dir}";
+
+        // ── Helpers ───────────────────────────────────────────────────────────
+        private DbConnection OpenConnection()
+        {
+            DbConnection conn = new NpgsqlConnection(ConnectionString);
+            conn.Open();
+            return conn;
+        }
     }
 }

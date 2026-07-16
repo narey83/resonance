@@ -56,23 +56,6 @@ public class LibraryActivityService : ILibraryActivityService
     private MusicRepository MusicRepo { get; }
     private ILogger Log { get; } = Serilog.Log.ForContext<LibraryActivityService>();
 
-    private (string Title, string Artist, string Folder) ResolveMetadata(string path)
-    {
-        var track = MusicRepo.GetByPath(path);
-        if (track != null)
-        {
-            var title = !string.IsNullOrEmpty(track.Title) ? track.Title : Path.GetFileNameWithoutExtension(track.Filename);
-            var artist = track.Artist ?? track.AlbumArtist ?? string.Empty;
-            var folder = track.Directory ?? string.Empty;
-            return (title, artist, folder);
-        }
-
-        // Fallback for tracks not in the library
-        var filename = Path.GetFileNameWithoutExtension(Path.GetFileName(path));
-        var directory = Path.GetDirectoryName(path) ?? string.Empty;
-        return (filename, string.Empty, directory);
-    }
-
     public string[] GetLovedPaths(string username)
     {
         using var ctx = ContextFactory.CreateDbContext();
@@ -302,5 +285,22 @@ public class LibraryActivityService : ILibraryActivityService
             .GroupBy(p => p.Path)
             .Select(g => new PlayStat(g.Key, g.Count(), g.Max(p => (long?)p.PlayedAt)))
             .ToArray();
+    }
+
+    private (string Title, string Artist, string Folder) ResolveMetadata(string path)
+    {
+        var track = MusicRepo.GetByPath(path);
+        if (track != null)
+        {
+            var title = !string.IsNullOrEmpty(track.Title) ? track.Title : Path.GetFileNameWithoutExtension(track.Filename);
+            var artist = track.Artist ?? track.AlbumArtist ?? string.Empty;
+            var folder = track.Directory ?? string.Empty;
+            return (title, artist, folder);
+        }
+
+        // Fallback for tracks not in the library
+        var filename = Path.GetFileNameWithoutExtension(Path.GetFileName(path));
+        var directory = Path.GetDirectoryName(path) ?? string.Empty;
+        return (filename, string.Empty, directory);
     }
 }

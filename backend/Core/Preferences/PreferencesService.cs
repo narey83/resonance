@@ -50,8 +50,6 @@ public class PreferencesService
     private bool UsePostgres { get; }
     private ILogger Log { get; } = Serilog.Log.ForContext<PreferencesService>();
 
-    private DbConnection CreateConnection() => new NpgsqlConnection(ConnectionStrings[Database.Preferences]);
-
     private string T => UsePostgres ? "preferences.\"Preferences\"" : "Preferences";
 
     public Dictionary<string, JsonElement> GetAll()
@@ -105,6 +103,8 @@ public class PreferencesService
                 new { Key = key, Value = raw });
         }
     }
+
+    private DbConnection CreateConnection() => new NpgsqlConnection(ConnectionStrings[Database.Preferences]);
 
     private void EnsureSchema()
     {

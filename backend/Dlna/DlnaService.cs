@@ -48,6 +48,24 @@ namespace resonance.Dlna
 
     public sealed class DlnaService : IHostedService, IDisposable
     {
+        private const int SsdpPort = 1900;
+
+        private const int ThumbnailSize = 256;
+
+        private const string SourceProtocolInfo =
+            "http-get:*:audio/mpeg:DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000," +
+            "http-get:*:audio/flac:DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000," +
+            "http-get:*:audio/ogg:DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000," +
+            "http-get:*:audio/wav:DLNA.ORG_PN=LPCM;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000," +
+            "http-get:*:audio/aac:DLNA.ORG_PN=AAC_ISO_320;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000," +
+            "http-get:*:audio/mp4:DLNA.ORG_PN=AAC_ISO_320;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000," +
+            "http-get:*:audio/x-ms-wma:DLNA.ORG_PN=WMAFULL;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000";
+
+        private static readonly IPAddress SsdpMulticast = IPAddress.Parse("239.255.255.250");
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte[]> ArtCache = new();
+        private static readonly SemaphoreSlim ArtWarmSemaphore = new(4, 4);
+
         private readonly MusicLibrary.IMusicLibraryService musicLibrary;
         private readonly IOptionsMonitor<resonance.Options> optionsMonitor;
         private readonly ILogger log = Log.ForContext("SourceContext", Logs.Dlna);
@@ -56,9 +74,6 @@ namespace resonance.Dlna
         private CancellationTokenSource? cts;
         private string uuid = string.Empty;
         private string localIp = "127.0.0.1";
-        private static string SystemUpdateId => DlnaContentDirectory.SystemUpdateId;
-        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte[]> ArtCache = new();
-        private static readonly SemaphoreSlim ArtWarmSemaphore = new(4, 4);
 
         public DlnaService(
             MusicLibrary.IMusicLibraryService musicLibrary,
@@ -67,6 +82,8 @@ namespace resonance.Dlna
             this.musicLibrary = musicLibrary;
             this.optionsMonitor = optionsMonitor;
         }
+
+        private static string SystemUpdateId => DlnaContentDirectory.SystemUpdateId;
 
         public Task StartAsync(CancellationToken cancellationToken)
         {
@@ -103,6 +120,220 @@ namespace resonance.Dlna
             SendSsdpByebye();
             log.Information("DLNA server stopped");
             return Task.CompletedTask;
+        }
+
+        public void Dispose()
+        {
+            cts?.Cancel();
+            cts?.Dispose();
+            httpListener?.Close();
+        }
+
+        private static string? ExtractHeader(string message, string header)
+        {
+            var prefix = header + ":";
+            foreach (var line in message.Split('\n'))
+            {
+                if (line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return line[prefix.Length..].Trim();
+                }
+            }
+
+            return null;
+        }
+
+        private static string? ExtractXmlValue(string xml, string element)
+        {
+            var open = $"<{element}>";
+            var close = $"</{element}>";
+            var start = xml.IndexOf(open, StringComparison.Ordinal);
+            if (start < 0)
+            {
+                return null;
+            }
+
+            start += open.Length;
+            var end = xml.IndexOf(close, start, StringComparison.Ordinal);
+            return end < 0 ? null : xml[start..end];
+        }
+
+        private static byte[] MakeThumbnail(byte[] source)
+        {
+            try
+            {
+                using var img = Image.Load(source);
+                int size = Math.Min(img.Width, img.Height);
+                img.Mutate(ctx => ctx
+                    .Crop(new Rectangle((img.Width - size) / 2, (img.Height - size) / 2, size, size))
+                    .Resize(ThumbnailSize, ThumbnailSize));
+                using var ms = new MemoryStream();
+                img.SaveAsJpeg(ms, new JpegEncoder { Quality = 85 });
+                return ms.ToArray();
+            }
+            catch
+            {
+                return source;
+            }
+        }
+
+        private static async Task ServeEmbeddedArtAsync(HttpListenerResponse resp, string localPath)
+        {
+            if (!File.Exists(localPath))
+            {
+                resp.StatusCode = 404;
+                resp.Close();
+                return;
+            }
+
+            try
+            {
+                if (!ArtCache.TryGetValue(localPath, out var bytes))
+                {
+                    using var tf = TagLib.File.Create(localPath, TagLib.ReadStyle.None);
+                    var pic = tf.Tag.Pictures?.FirstOrDefault();
+                    if (pic == null || pic.Data.Count == 0)
+                    {
+                        resp.StatusCode = 404;
+                        resp.Close();
+                        return;
+                    }
+
+                    bytes = MakeThumbnail(pic.Data.Data);
+                    ArtCache[localPath] = bytes;
+                }
+
+                resp.ContentType = "image/jpeg";
+                resp.ContentLength64 = bytes.Length;
+                await resp.OutputStream.WriteAsync(bytes);
+            }
+            catch
+            {
+                resp.StatusCode = 404;
+            }
+
+            resp.Close();
+        }
+
+        private static Task WarmEmbeddedArtAsync(string localPath) => Task.Run(() =>
+        {
+            if (!File.Exists(localPath))
+            {
+                return;
+            }
+
+            using var tf = TagLib.File.Create(localPath, TagLib.ReadStyle.None);
+            var pic = tf.Tag.Pictures?.FirstOrDefault();
+            if (pic == null || pic.Data.Count == 0)
+            {
+                return;
+            }
+
+            ArtCache[localPath] = MakeThumbnail(pic.Data.Data);
+        });
+
+        private static string? ParseCallbackUrl(string? header)
+        {
+            if (string.IsNullOrEmpty(header))
+            {
+                return null;
+            }
+
+            var start = header.IndexOf('<');
+            var end = header.IndexOf('>');
+            return start >= 0 && end > start ? header[(start + 1)..end] : null;
+        }
+
+        private static async Task ServeXmlAsync(HttpListenerResponse resp, string xml)
+        {
+            var bytes = Encoding.UTF8.GetBytes(xml);
+            resp.ContentType = "text/xml; charset=\"utf-8\"";
+            resp.ContentLength64 = bytes.Length;
+            resp.Headers["EXT"] = string.Empty;
+            resp.Headers["Server"] = "Linux/1.0 UPnP/1.0 Resonance/1.0";
+            await resp.OutputStream.WriteAsync(bytes);
+            resp.Close();
+        }
+
+        private static string ConnectionIdsResponse() => """
+            <?xml version="1.0"?>
+            <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+              <s:Body>
+                <u:GetCurrentConnectionIDsResponse xmlns:u="urn:schemas-upnp-org:service:ConnectionManager:1">
+                  <ConnectionIDs>0</ConnectionIDs>
+                </u:GetCurrentConnectionIDsResponse>
+              </s:Body>
+            </s:Envelope>
+            """;
+
+        private static string ConnectionInfoResponse() => """
+            <?xml version="1.0"?>
+            <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+              <s:Body>
+                <u:GetCurrentConnectionInfoResponse xmlns:u="urn:schemas-upnp-org:service:ConnectionManager:1">
+                  <RcsID>-1</RcsID>
+                  <AVTransportID>-1</AVTransportID>
+                  <ProtocolInfo></ProtocolInfo>
+                  <PeerConnectionManager></PeerConnectionManager>
+                  <PeerConnectionID>-1</PeerConnectionID>
+                  <Direction>Output</Direction>
+                  <Status>OK</Status>
+                </u:GetCurrentConnectionInfoResponse>
+              </s:Body>
+            </s:Envelope>
+            """;
+
+        private static string ConnectionManagerResponse() => $"""
+            <?xml version="1.0"?>
+            <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+              <s:Body>
+                <u:GetProtocolInfoResponse xmlns:u="urn:schemas-upnp-org:service:ConnectionManager:1">
+                  <Source>{SourceProtocolInfo}</Source>
+                  <Sink></Sink>
+                </u:GetProtocolInfoResponse>
+              </s:Body>
+            </s:Envelope>
+            """;
+
+        private static string DetectImageMime(byte[] bytes)
+        {
+            if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8)
+            {
+                return "image/jpeg";
+            }
+
+            if (bytes.Length >= 4 && bytes[0] == 0x89 && bytes[1] == 0x50)
+            {
+                return "image/png";
+            }
+
+            if (bytes.Length >= 3 && bytes[0] == 0x47 && bytes[1] == 0x49)
+            {
+                return "image/gif";
+            }
+
+            return "image/jpeg";
+        }
+
+        private static string DeriveDeviceUuid()
+        {
+            var seed = $"resonance-dlna:{Environment.MachineName}:{AppContext.BaseDirectory}";
+            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(seed));
+            return new Guid(hash[..16]).ToString();
+        }
+
+        private static string GetLocalIpAddress()
+        {
+            try
+            {
+                using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+                socket.Connect("8.8.8.8", 80);
+                return ((IPEndPoint)socket.LocalEndPoint!).Address.ToString();
+            }
+            catch
+            {
+                return "127.0.0.1";
+            }
         }
 
         // ── HTTP server ───────────────────────────────────────────────────────────
@@ -206,9 +437,6 @@ namespace resonance.Dlna
         }
 
         // ── SSDP ─────────────────────────────────────────────────────────────────
-        private static readonly IPAddress SsdpMulticast = IPAddress.Parse("239.255.255.250");
-        private const int SsdpPort = 1900;
-
         private async Task SsdpAnnounceLoopAsync(resonance.Options.DlnaOptions options, CancellationToken ct)
         {
             // Send alive on startup, then every 15 minutes
@@ -363,20 +591,6 @@ namespace resonance.Dlna
             udp.Send(bytes, bytes.Length, new IPEndPoint(SsdpMulticast, SsdpPort));
         }
 
-        private static string? ExtractHeader(string message, string header)
-        {
-            var prefix = header + ":";
-            foreach (var line in message.Split('\n'))
-            {
-                if (line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    return line[prefix.Length..].Trim();
-                }
-            }
-
-            return null;
-        }
-
         // ── HTTP handlers ─────────────────────────────────────────────────────────
         private async Task ServeDeviceDescriptionAsync(HttpListenerContext context)
         {
@@ -416,21 +630,6 @@ namespace resonance.Dlna
             }
 
             await ServeXmlAsync(context.Response, response);
-        }
-
-        private static string? ExtractXmlValue(string xml, string element)
-        {
-            var open = $"<{element}>";
-            var close = $"</{element}>";
-            var start = xml.IndexOf(open, StringComparison.Ordinal);
-            if (start < 0)
-            {
-                return null;
-            }
-
-            start += open.Length;
-            var end = xml.IndexOf(close, start, StringComparison.Ordinal);
-            return end < 0 ? null : xml[start..end];
         }
 
         private async Task StreamAudioAsync(HttpListenerContext context)
@@ -584,65 +783,6 @@ namespace resonance.Dlna
             resp.Close();
         }
 
-        private const int ThumbnailSize = 256;
-
-        private static byte[] MakeThumbnail(byte[] source)
-        {
-            try
-            {
-                using var img = Image.Load(source);
-                int size = Math.Min(img.Width, img.Height);
-                img.Mutate(ctx => ctx
-                    .Crop(new Rectangle((img.Width - size) / 2, (img.Height - size) / 2, size, size))
-                    .Resize(ThumbnailSize, ThumbnailSize));
-                using var ms = new MemoryStream();
-                img.SaveAsJpeg(ms, new JpegEncoder { Quality = 85 });
-                return ms.ToArray();
-            }
-            catch
-            {
-                return source;
-            }
-        }
-
-        private static async Task ServeEmbeddedArtAsync(HttpListenerResponse resp, string localPath)
-        {
-            if (!File.Exists(localPath))
-            {
-                resp.StatusCode = 404;
-                resp.Close();
-                return;
-            }
-
-            try
-            {
-                if (!ArtCache.TryGetValue(localPath, out var bytes))
-                {
-                    using var tf = TagLib.File.Create(localPath, TagLib.ReadStyle.None);
-                    var pic = tf.Tag.Pictures?.FirstOrDefault();
-                    if (pic == null || pic.Data.Count == 0)
-                    {
-                        resp.StatusCode = 404;
-                        resp.Close();
-                        return;
-                    }
-
-                    bytes = MakeThumbnail(pic.Data.Data);
-                    ArtCache[localPath] = bytes;
-                }
-
-                resp.ContentType = "image/jpeg";
-                resp.ContentLength64 = bytes.Length;
-                await resp.OutputStream.WriteAsync(bytes);
-            }
-            catch
-            {
-                resp.StatusCode = 404;
-            }
-
-            resp.Close();
-        }
-
         private async Task WarmArtworkCacheAsync(string soapResponse, string serverBase)
         {
             try
@@ -731,23 +871,6 @@ namespace resonance.Dlna
             }
         }
 
-        private static Task WarmEmbeddedArtAsync(string localPath) => Task.Run(() =>
-        {
-            if (!File.Exists(localPath))
-            {
-                return;
-            }
-
-            using var tf = TagLib.File.Create(localPath, TagLib.ReadStyle.None);
-            var pic = tf.Tag.Pictures?.FirstOrDefault();
-            if (pic == null || pic.Data.Count == 0)
-            {
-                return;
-            }
-
-            ArtCache[localPath] = MakeThumbnail(pic.Data.Data);
-        });
-
         private void HandleSubscribe(HttpListenerContext context)
         {
             var callbackHeader = context.Request.Headers["CALLBACK"];
@@ -766,18 +889,6 @@ namespace resonance.Dlna
             {
                 _ = SendEventNotifyAsync(callbackUrl, sid);
             }
-        }
-
-        private static string? ParseCallbackUrl(string? header)
-        {
-            if (string.IsNullOrEmpty(header))
-            {
-                return null;
-            }
-
-            var start = header.IndexOf('<');
-            var end = header.IndexOf('>');
-            return start >= 0 && end > start ? header[(start + 1)..end] : null;
         }
 
         private async Task SendEventNotifyAsync(string callbackUrl, string sid)
@@ -808,17 +919,6 @@ namespace resonance.Dlna
             {
                 log.Warning(ex, "DLNA event NOTIFY failed for {Url}", callbackUrl);
             }
-        }
-
-        private static async Task ServeXmlAsync(HttpListenerResponse resp, string xml)
-        {
-            var bytes = Encoding.UTF8.GetBytes(xml);
-            resp.ContentType = "text/xml; charset=\"utf-8\"";
-            resp.ContentLength64 = bytes.Length;
-            resp.Headers["EXT"] = string.Empty;
-            resp.Headers["Server"] = "Linux/1.0 UPnP/1.0 Resonance/1.0";
-            await resp.OutputStream.WriteAsync(bytes);
-            resp.Close();
         }
 
         private string BuildServerBase(HttpListenerRequest req)
@@ -863,103 +963,6 @@ namespace resonance.Dlna
                 _ => ConnectionManagerResponse(),
             };
             await ServeXmlAsync(context.Response, response);
-        }
-
-        private static string ConnectionIdsResponse() => """
-            <?xml version="1.0"?>
-            <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-              <s:Body>
-                <u:GetCurrentConnectionIDsResponse xmlns:u="urn:schemas-upnp-org:service:ConnectionManager:1">
-                  <ConnectionIDs>0</ConnectionIDs>
-                </u:GetCurrentConnectionIDsResponse>
-              </s:Body>
-            </s:Envelope>
-            """;
-
-        private static string ConnectionInfoResponse() => """
-            <?xml version="1.0"?>
-            <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-              <s:Body>
-                <u:GetCurrentConnectionInfoResponse xmlns:u="urn:schemas-upnp-org:service:ConnectionManager:1">
-                  <RcsID>-1</RcsID>
-                  <AVTransportID>-1</AVTransportID>
-                  <ProtocolInfo></ProtocolInfo>
-                  <PeerConnectionManager></PeerConnectionManager>
-                  <PeerConnectionID>-1</PeerConnectionID>
-                  <Direction>Output</Direction>
-                  <Status>OK</Status>
-                </u:GetCurrentConnectionInfoResponse>
-              </s:Body>
-            </s:Envelope>
-            """;
-
-        private const string SourceProtocolInfo =
-            "http-get:*:audio/mpeg:DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000," +
-            "http-get:*:audio/flac:DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000," +
-            "http-get:*:audio/ogg:DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000," +
-            "http-get:*:audio/wav:DLNA.ORG_PN=LPCM;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000," +
-            "http-get:*:audio/aac:DLNA.ORG_PN=AAC_ISO_320;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000," +
-            "http-get:*:audio/mp4:DLNA.ORG_PN=AAC_ISO_320;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000," +
-            "http-get:*:audio/x-ms-wma:DLNA.ORG_PN=WMAFULL;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000";
-
-        private static string ConnectionManagerResponse() => $"""
-            <?xml version="1.0"?>
-            <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-              <s:Body>
-                <u:GetProtocolInfoResponse xmlns:u="urn:schemas-upnp-org:service:ConnectionManager:1">
-                  <Source>{SourceProtocolInfo}</Source>
-                  <Sink></Sink>
-                </u:GetProtocolInfoResponse>
-              </s:Body>
-            </s:Envelope>
-            """;
-
-        private static string DetectImageMime(byte[] bytes)
-        {
-            if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8)
-            {
-                return "image/jpeg";
-            }
-
-            if (bytes.Length >= 4 && bytes[0] == 0x89 && bytes[1] == 0x50)
-            {
-                return "image/png";
-            }
-
-            if (bytes.Length >= 3 && bytes[0] == 0x47 && bytes[1] == 0x49)
-            {
-                return "image/gif";
-            }
-
-            return "image/jpeg";
-        }
-
-        private static string DeriveDeviceUuid()
-        {
-            var seed = $"resonance-dlna:{Environment.MachineName}:{AppContext.BaseDirectory}";
-            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(seed));
-            return new Guid(hash[..16]).ToString();
-        }
-
-        private static string GetLocalIpAddress()
-        {
-            try
-            {
-                using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-                socket.Connect("8.8.8.8", 80);
-                return ((IPEndPoint)socket.LocalEndPoint!).Address.ToString();
-            }
-            catch
-            {
-                return "127.0.0.1";
-            }
-        }
-
-        public void Dispose()
-        {
-            cts?.Cancel();
-            cts?.Dispose();
-            httpListener?.Close();
         }
     }
 }

@@ -72,6 +72,7 @@ public class BrowseHistoryService
     ///     Adds <paramref name="username"/> to the history (or bumps it to the top),
     ///     trimming the list to <see cref="MaxEntries"/>. Returns the updated list.
     /// </summary>
+    /// <returns>The updated browse history.</returns>
     public IReadOnlyList<string> Add(string username)
     {
         using var conn = CreateConnection();
@@ -92,6 +93,7 @@ public class BrowseHistoryService
     ///     Removes <paramref name="username"/> from the history, case-insensitively.
     ///     Returns the updated list.
     /// </summary>
+    /// <returns>The updated browse history.</returns>
     public IReadOnlyList<string> Remove(string username)
     {
         using var conn = CreateConnection();

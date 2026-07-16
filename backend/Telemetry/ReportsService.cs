@@ -53,6 +53,8 @@ using Soulseek;
 /// </summary>
 public class ReportsService
 {
+    private static readonly ConcurrentDictionary<string, byte> RefreshesInFlight = new();
+
     /// <summary>
     ///     Initializes a new instance of the <see cref="ReportsService"/> class.
     /// </summary>
@@ -66,84 +68,6 @@ public class ReportsService
     private IMemoryCache Cache { get; }
     private bool UsePostgres => ConnectionStrings.UsePostgres;
     private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Telemetry);
-
-    private static readonly ConcurrentDictionary<string, byte> RefreshesInFlight = new();
-
-    // Longer TTL for wider time windows — no point refreshing a 30-day summary every 30s.
-    private static TimeSpan GetCacheTtl(DateTime start, DateTime end)
-    {
-        var range = end - start;
-
-        if (range >= TimeSpan.FromDays(7))
-        {
-            return TimeSpan.FromMinutes(10);
-        }
-
-        if (range >= TimeSpan.FromDays(1))
-        {
-            return TimeSpan.FromMinutes(5);
-        }
-
-        return TimeSpan.FromMinutes(2);
-    }
-
-    // Identifies the requested window *relative to now*, quantized by the TTL, rather than by
-    // absolute wall-clock minutes. The dashboard always requests windows anchored at "now", so
-    // absolute keys changed on every visit and defeated the TTL entirely.
-    private static string WindowKey(DateTime s, DateTime e)
-    {
-        var ttl = GetCacheTtl(s, e);
-        var range = (long)Math.Round((e - s).TotalSeconds / ttl.TotalSeconds);
-        var offset = (long)Math.Round((DateTime.UtcNow - e).TotalSeconds / ttl.TotalSeconds);
-        return $"{range}r{offset}";
-    }
-
-    // Serve-stale-while-revalidate: an entry past its TTL is returned immediately and refreshed on
-    // a background thread, so requests only block on the database the very first time a window is
-    // asked for (or after the entry has gone unused for several TTLs and been evicted).
-    private T GetOrCreateReport<T>(string cacheKey, DateTime start, DateTime end, Func<T> factory)
-    {
-        var ttl = GetCacheTtl(start, end);
-
-        if (Cache.TryGetValue<StaleWhileRevalidateEntry>(cacheKey, out var cached))
-        {
-            if (DateTime.UtcNow > cached.FreshUntil && RefreshesInFlight.TryAdd(cacheKey, 0))
-            {
-                _ = Task.Run(() =>
-                {
-                    try
-                    {
-                        Cache.Set(cacheKey, new StaleWhileRevalidateEntry(factory(), DateTime.UtcNow + ttl), ttl * 6);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Warning("Background refresh of {CacheKey} failed: {Message}", cacheKey, ex.Message);
-                    }
-                    finally
-                    {
-                        RefreshesInFlight.TryRemove(cacheKey, out _);
-                    }
-                });
-            }
-
-            return (T)cached.Value;
-        }
-
-        var value = factory();
-        Cache.Set(cacheKey, new StaleWhileRevalidateEntry(value, DateTime.UtcNow + ttl), ttl * 6);
-        return value;
-    }
-
-    private DbConnection OpenConnection(Database database)
-    {
-        DbConnection conn = new NpgsqlConnection(ConnectionStrings[database]);
-        conn.Open();
-        return conn;
-    }
-
-    // Normalise DateTime values to UTC kind so Npgsql accepts them for timestamptz columns.
-    // For SQLite the kind is ignored by Dapper so this is safe for both providers.
-    private static DateTime Utc(DateTime dt) => DateTime.SpecifyKind(dt, DateTimeKind.Utc);
 
     /// <summary>
     ///     Returns a summary of all transfer data grouped by direction and final transfer state. Includes only
@@ -1760,6 +1684,82 @@ public class ReportsService
             using var connection = OpenConnection(Database.Events);
             return connection.QueryFirstOrDefault<SocialActivity>(sql, new { Start = s, End = e }) ?? new SocialActivity();
         });
+    }
+
+    // Longer TTL for wider time windows — no point refreshing a 30-day summary every 30s.
+    private static TimeSpan GetCacheTtl(DateTime start, DateTime end)
+    {
+        var range = end - start;
+
+        if (range >= TimeSpan.FromDays(7))
+        {
+            return TimeSpan.FromMinutes(10);
+        }
+
+        if (range >= TimeSpan.FromDays(1))
+        {
+            return TimeSpan.FromMinutes(5);
+        }
+
+        return TimeSpan.FromMinutes(2);
+    }
+
+    // Identifies the requested window *relative to now*, quantized by the TTL, rather than by
+    // absolute wall-clock minutes. The dashboard always requests windows anchored at "now", so
+    // absolute keys changed on every visit and defeated the TTL entirely.
+    private static string WindowKey(DateTime s, DateTime e)
+    {
+        var ttl = GetCacheTtl(s, e);
+        var range = (long)Math.Round((e - s).TotalSeconds / ttl.TotalSeconds);
+        var offset = (long)Math.Round((DateTime.UtcNow - e).TotalSeconds / ttl.TotalSeconds);
+        return $"{range}r{offset}";
+    }
+
+    // Normalise DateTime values to UTC kind so Npgsql accepts them for timestamptz columns.
+    // For SQLite the kind is ignored by Dapper so this is safe for both providers.
+    private static DateTime Utc(DateTime dt) => DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+
+    // Serve-stale-while-revalidate: an entry past its TTL is returned immediately and refreshed on
+    // a background thread, so requests only block on the database the very first time a window is
+    // asked for (or after the entry has gone unused for several TTLs and been evicted).
+    private T GetOrCreateReport<T>(string cacheKey, DateTime start, DateTime end, Func<T> factory)
+    {
+        var ttl = GetCacheTtl(start, end);
+
+        if (Cache.TryGetValue<StaleWhileRevalidateEntry>(cacheKey, out var cached))
+        {
+            if (DateTime.UtcNow > cached.FreshUntil && RefreshesInFlight.TryAdd(cacheKey, 0))
+            {
+                _ = Task.Run(() =>
+                {
+                    try
+                    {
+                        Cache.Set(cacheKey, new StaleWhileRevalidateEntry(factory(), DateTime.UtcNow + ttl), ttl * 6);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning("Background refresh of {CacheKey} failed: {Message}", cacheKey, ex.Message);
+                    }
+                    finally
+                    {
+                        RefreshesInFlight.TryRemove(cacheKey, out _);
+                    }
+                });
+            }
+
+            return (T)cached.Value;
+        }
+
+        var value = factory();
+        Cache.Set(cacheKey, new StaleWhileRevalidateEntry(value, DateTime.UtcNow + ttl), ttl * 6);
+        return value;
+    }
+
+    private DbConnection OpenConnection(Database database)
+    {
+        DbConnection conn = new NpgsqlConnection(ConnectionStrings[database]);
+        conn.Open();
+        return conn;
     }
 
     private sealed record StaleWhileRevalidateEntry(object Value, DateTime FreshUntil);

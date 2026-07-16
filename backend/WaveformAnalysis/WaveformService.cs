@@ -77,13 +77,6 @@ namespace resonance.WaveformAnalysis
         private string T => UsePostgres ? "waveform.waveform_cache" : "waveform_cache";
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Waveform);
 
-        private DbConnection OpenConnection()
-        {
-            DbConnection conn = new NpgsqlConnection(ConnectionString);
-            conn.Open();
-            return conn;
-        }
-
         private WaveformScanState CurrentState { get; set; } = new(false, false, false, 0, 0, 0, 0, 0);
         private SemaphoreSlim SyncRoot { get; } = new(1, 1);
         private CancellationTokenSource Cts { get; set; }
@@ -155,113 +148,6 @@ namespace resonance.WaveformAnalysis
 
             Cts.Cancel();
             return true;
-        }
-
-        // ── Scan loop ─────────────────────────────────────────────────────────
-        private async Task RunScanAsync(WaveformScanRequest request, CancellationToken ct)
-        {
-            try
-            {
-                var tracks = GetAllAudioTracks();
-
-                if (request.ResetAll)
-                {
-                    ClearCache();
-                }
-
-                var toAnalyse = request.SkipAnalysed && !request.ResetAll
-                    ? tracks.Where(t => !IsCached(t.MaskedFilename)).ToList()
-                    : tracks;
-
-                var total = toAnalyse.Count;
-                SetState(true, false, false, total, 0, 0, 0);
-                Log.Information("Waveform scan started. Workers: {Workers}, Tracks: {Total}", request.Workers, total);
-
-                string ffmpegPath;
-                try
-                {
-                    ffmpegPath = await Ffmpeg.GetFfmpegPathAsync(ct);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warning("Could not locate ffmpeg — waveform scan aborted: {Error}", ex.Message);
-                    SetState(false, false, false, 0, 0, 0, 0);
-                    SyncRoot.Release();
-                    return;
-                }
-
-                var channel = Channel.CreateBounded<(string Masked, string Original)>(
-                    new BoundedChannelOptions(request.Workers * 2) { FullMode = BoundedChannelFullMode.Wait });
-
-                var analysed = 0;
-                var skipped = 0;
-                var failed = 0;
-                var inFlight = 0;
-
-                var workers = Enumerable.Range(0, request.Workers).Select(_ => Task.Run(async () =>
-                {
-                    await foreach (var (masked, original) in channel.Reader.ReadAllAsync(ct))
-                    {
-                        Interlocked.Increment(ref inFlight);
-                        try
-                        {
-                            var pcm = await DecodePcmAsync(original, ffmpegPath, ct);
-                            if (pcm == null)
-                            {
-                                Interlocked.Increment(ref failed);
-                                continue;
-                            }
-
-                            var data = ComputeBands(pcm, SampleRate, NumBars);
-                            SaveToCache(masked, original, data);
-                            Interlocked.Increment(ref analysed);
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException)
-                        {
-                            Log.Warning("Waveform analysis failed for {File}: {Error}", original, ex.Message);
-                            Interlocked.Increment(ref failed);
-                        }
-                        finally
-                        {
-                            Interlocked.Decrement(ref inFlight);
-                            var done = analysed + skipped + failed;
-                            SetState(true, false, false, total, analysed, skipped, failed, inFlight);
-                        }
-                    }
-                }, ct)).ToArray();
-
-                foreach (var track in toAnalyse)
-                {
-                    if (ct.IsCancellationRequested)
-                    {
-                        break;
-                    }
-
-                    await channel.Writer.WriteAsync(track, ct);
-                }
-
-                channel.Writer.Complete();
-                await Task.WhenAll(workers);
-
-                var cancelled = ct.IsCancellationRequested;
-                Log.Information("Waveform scan complete. Analysed: {A}, Skipped: {S}, Failed: {F}",
-                    analysed, skipped, failed);
-                SetState(false, !cancelled, cancelled, total, analysed, skipped, failed);
-            }
-            catch (OperationCanceledException)
-            {
-                SetState(false, false, true, CurrentState.Total, CurrentState.Analysed,
-                    CurrentState.Skipped, CurrentState.Failed);
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Waveform scan failed unexpectedly.");
-                SetState(false, false, false, 0, 0, 0, 0);
-            }
-            finally
-            {
-                SyncRoot.Release();
-            }
         }
 
         // ── Audio decoding ────────────────────────────────────────────────────
@@ -425,6 +311,142 @@ namespace resonance.WaveformAnalysis
             return peaks;
         }
 
+        private static byte[] FloatsToBlob(float[] arr)
+        {
+            var bytes = new byte[arr.Length * 4];
+            Buffer.BlockCopy(arr, 0, bytes, 0, bytes.Length);
+            return bytes;
+        }
+
+        private static float[] BlobToFloats(byte[] blob)
+        {
+            var arr = new float[blob.Length / 4];
+            Buffer.BlockCopy(blob, 0, arr, 0, blob.Length);
+            return arr;
+        }
+
+        private static void AddParam(System.Data.Common.DbCommand cmd, string name, object value)
+        {
+            var p = cmd.CreateParameter();
+            p.ParameterName = name;
+            p.Value = value;
+            cmd.Parameters.Add(p);
+        }
+
+        // ── Scan loop ─────────────────────────────────────────────────────────
+        private DbConnection OpenConnection()
+        {
+            DbConnection conn = new NpgsqlConnection(ConnectionString);
+            conn.Open();
+            return conn;
+        }
+
+        private async Task RunScanAsync(WaveformScanRequest request, CancellationToken ct)
+        {
+            try
+            {
+                var tracks = GetAllAudioTracks();
+
+                if (request.ResetAll)
+                {
+                    ClearCache();
+                }
+
+                var toAnalyse = request.SkipAnalysed && !request.ResetAll
+                    ? tracks.Where(t => !IsCached(t.MaskedFilename)).ToList()
+                    : tracks;
+
+                var total = toAnalyse.Count;
+                SetState(true, false, false, total, 0, 0, 0);
+                Log.Information("Waveform scan started. Workers: {Workers}, Tracks: {Total}", request.Workers, total);
+
+                string ffmpegPath;
+                try
+                {
+                    ffmpegPath = await Ffmpeg.GetFfmpegPathAsync(ct);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning("Could not locate ffmpeg — waveform scan aborted: {Error}", ex.Message);
+                    SetState(false, false, false, 0, 0, 0, 0);
+                    SyncRoot.Release();
+                    return;
+                }
+
+                var channel = Channel.CreateBounded<(string Masked, string Original)>(
+                    new BoundedChannelOptions(request.Workers * 2) { FullMode = BoundedChannelFullMode.Wait });
+
+                var analysed = 0;
+                var skipped = 0;
+                var failed = 0;
+                var inFlight = 0;
+
+                var workers = Enumerable.Range(0, request.Workers).Select(_ => Task.Run(async () =>
+                {
+                    await foreach (var (masked, original) in channel.Reader.ReadAllAsync(ct))
+                    {
+                        Interlocked.Increment(ref inFlight);
+                        try
+                        {
+                            var pcm = await DecodePcmAsync(original, ffmpegPath, ct);
+                            if (pcm == null)
+                            {
+                                Interlocked.Increment(ref failed);
+                                continue;
+                            }
+
+                            var data = ComputeBands(pcm, SampleRate, NumBars);
+                            SaveToCache(masked, original, data);
+                            Interlocked.Increment(ref analysed);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            Log.Warning("Waveform analysis failed for {File}: {Error}", original, ex.Message);
+                            Interlocked.Increment(ref failed);
+                        }
+                        finally
+                        {
+                            Interlocked.Decrement(ref inFlight);
+                            var done = analysed + skipped + failed;
+                            SetState(true, false, false, total, analysed, skipped, failed, inFlight);
+                        }
+                    }
+                }, ct)).ToArray();
+
+                foreach (var track in toAnalyse)
+                {
+                    if (ct.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
+                    await channel.Writer.WriteAsync(track, ct);
+                }
+
+                channel.Writer.Complete();
+                await Task.WhenAll(workers);
+
+                var cancelled = ct.IsCancellationRequested;
+                Log.Information("Waveform scan complete. Analysed: {A}, Skipped: {S}, Failed: {F}",
+                    analysed, skipped, failed);
+                SetState(false, !cancelled, cancelled, total, analysed, skipped, failed);
+            }
+            catch (OperationCanceledException)
+            {
+                SetState(false, false, true, CurrentState.Total, CurrentState.Analysed,
+                    CurrentState.Skipped, CurrentState.Failed);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Waveform scan failed unexpectedly.");
+                SetState(false, false, false, 0, 0, 0, 0);
+            }
+            finally
+            {
+                SyncRoot.Release();
+            }
+        }
+
         // ── DB cache ──────────────────────────────────────────────────────────
         private void EnsureSchema()
         {
@@ -551,28 +573,6 @@ namespace resonance.WaveformAnalysis
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $"DELETE FROM {T}";
             cmd.ExecuteNonQuery();
-        }
-
-        private static byte[] FloatsToBlob(float[] arr)
-        {
-            var bytes = new byte[arr.Length * 4];
-            Buffer.BlockCopy(arr, 0, bytes, 0, bytes.Length);
-            return bytes;
-        }
-
-        private static float[] BlobToFloats(byte[] blob)
-        {
-            var arr = new float[blob.Length / 4];
-            Buffer.BlockCopy(blob, 0, arr, 0, blob.Length);
-            return arr;
-        }
-
-        private static void AddParam(System.Data.Common.DbCommand cmd, string name, object value)
-        {
-            var p = cmd.CreateParameter();
-            p.ParameterName = name;
-            p.Value = value;
-            cmd.Parameters.Add(p);
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────

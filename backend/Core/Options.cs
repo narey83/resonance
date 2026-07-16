@@ -1577,18 +1577,6 @@ namespace resonance
             public MusicBrainzOptions MusicBrainz { get; init; } = new MusicBrainzOptions();
 
             /// <summary>
-            ///     MusicBrainz provider options. (Contact and Base URL live at the parent level for
-            ///     backward compatibility.)
-            /// </summary>
-            public class MusicBrainzOptions
-            {
-                /// <summary>
-                ///     Gets a value indicating whether MusicBrainz should be used as a lookup source.
-                /// </summary>
-                public bool Enabled { get; init; } = true;
-            }
-
-            /// <summary>
             ///     Gets Last.fm provider options (a genre source).
             /// </summary>
             [Validate]
@@ -1599,6 +1587,18 @@ namespace resonance
             /// </summary>
             [Validate]
             public DeezerOptions Deezer { get; init; } = new DeezerOptions();
+
+            /// <summary>
+            ///     MusicBrainz provider options. (Contact and Base URL live at the parent level for
+            ///     backward compatibility.)
+            /// </summary>
+            public class MusicBrainzOptions
+            {
+                /// <summary>
+                ///     Gets a value indicating whether MusicBrainz should be used as a lookup source.
+                /// </summary>
+                public bool Enabled { get; init; } = true;
+            }
 
             /// <summary>
             ///     Last.fm provider options.

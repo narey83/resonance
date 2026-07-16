@@ -165,8 +165,6 @@ namespace resonance
         /// </summary>
         public static event EventHandler<LogRecord> LogEmitted;
 
-        public static void RaiseLogEmitted(LogRecord record) => LogEmitted?.Invoke(null, record);
-
         /// <summary>
         ///     Gets the semantic application version.
         /// </summary>
@@ -308,6 +306,8 @@ namespace resonance
 
         [Argument('v', "version", "display version information")]
         private static bool ShowVersion { get; set; }
+
+        public static void RaiseLogEmitted(LogRecord record) => LogEmitted?.Invoke(null, record);
 
         /// <summary>
         ///     Panic.
@@ -794,8 +794,8 @@ namespace resonance
             services.AddDbContext<SearchDbContext>(connectionStringDictionary[Database.Search]);
             services.AddDbContext<TransfersDbContext>(connectionStringDictionary[Database.Transfers]);
 
+            // TransferNetworkInfo is a custom (non-EF) table; create it after the transfers schema is ready.
             {
-                // TransferNetworkInfo is a custom (non-EF) table; create it after the transfers schema is ready.
                 using var pgConn = new Npgsql.NpgsqlConnection(connectionStringDictionary[Database.Transfers]);
                 pgConn.Open();
                 using var pgCmd = pgConn.CreateCommand();
@@ -1534,6 +1534,10 @@ namespace resonance
 
             var multiValuedArguments = BuildMultiValuedArguments();
 
+            // The config lives on a Docker bind mount where inotify events from host-side edits don't
+            // reach the container reliably; the file provider below therefore polls actively, which is
+            // required for on-disk changes to trigger a reload (UsePollingFileWatcher alone only
+            // affects token creation, not callback delivery).
             return builder
                 .AddDefaultValues(
                     targetType: typeof(Options))
@@ -1545,10 +1549,6 @@ namespace resonance
                     targetType: typeof(Options),
                     optional: true,
                     reloadOnChange: reloadOnChange,
-                    // The config lives on a Docker bind mount where inotify events from host-side
-                    // edits don't reach the container reliably; active polling is required for
-                    // on-disk changes to trigger a reload (UsePollingFileWatcher alone only
-                    // affects token creation, not callback delivery).
                     provider: new PhysicalFileProvider(Path.GetDirectoryName(configurationFile), ExclusionFilters.None)
                     {
                         UsePollingFileWatcher = true,
@@ -1614,7 +1614,11 @@ namespace resonance
                     var schema = ctx.Model.GetDefaultSchema();
                     if (!string.IsNullOrEmpty(schema))
                     {
+                        // Schema names are SQL identifiers, which can't be passed as parameters; the value
+                        // comes from our own compiled EF model (HasDefaultSchema), never from user input.
+#pragma warning disable EF1002 // Risk of vulnerability to SQL injection.
                         ctx.Database.ExecuteSqlRaw($"CREATE SCHEMA IF NOT EXISTS \"{schema}\"");
+#pragma warning restore EF1002 // Risk of vulnerability to SQL injection.
                     }
 
                     var script = ctx.Database.GenerateCreateScript();

@@ -75,6 +75,7 @@ namespace resonance.MetadataLookup
         ///     user-requested full re-scan (which bypasses this cache entirely) or the tag editor's
         ///     per-track lookup queries it again.
         /// </summary>
+        /// <returns>A value indicating whether the file has already been attempted.</returns>
         public bool ShouldSkip(string path) => entries.ContainsKey(path);
 
         /// <summary>Records an attempt for the specified file, query identity, provider and outcome.</summary>
@@ -99,6 +100,19 @@ namespace resonance.MetadataLookup
                 {
                     log.Warning("Could not persist metadata attempt cache: {Error}", ex.Message);
                 }
+            }
+        }
+
+        private static bool DirectoryAccessible(string path)
+        {
+            try
+            {
+                var dir = Path.GetDirectoryName(path);
+                return !string.IsNullOrEmpty(dir) && Directory.Exists(dir);
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -160,19 +174,6 @@ namespace resonance.MetadataLookup
             catch (Exception ex)
             {
                 log.Warning("Could not load metadata attempt cache; starting fresh: {Error}", ex.Message);
-            }
-        }
-
-        private static bool DirectoryAccessible(string path)
-        {
-            try
-            {
-                var dir = Path.GetDirectoryName(path);
-                return !string.IsNullOrEmpty(dir) && Directory.Exists(dir);
-            }
-            catch
-            {
-                return false;
             }
         }
 

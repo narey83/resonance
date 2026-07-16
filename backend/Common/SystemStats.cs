@@ -67,6 +67,7 @@ namespace resonance.Common
         /// <summary>
         ///     Gets host memory from /proc/meminfo. Returns null if it can't be read.
         /// </summary>
+        /// <returns>The used and total host memory in bytes, or null if /proc/meminfo can't be read.</returns>
         public static (long UsedBytes, long TotalBytes)? GetHostMemory()
         {
             try
@@ -87,6 +88,7 @@ namespace resonance.Common
         ///     Gets host CPU utilization as a percentage, computed against the previous call's
         ///     /proc/stat sample. Returns null on the first call and on read failure.
         /// </summary>
+        /// <returns>The host CPU utilization percentage, or null if it can't yet be computed.</returns>
         public static double? GetHostCpuPercent()
         {
             try
@@ -124,6 +126,7 @@ namespace resonance.Common
         ///     Gets CPU and memory stats for the named container from the Docker Engine API.
         ///     Returns null on any failure (socket absent, container down, etc).
         /// </summary>
+        /// <returns>The container's CPU percentage and memory usage/limit, or null on failure.</returns>
         public static async Task<(double CpuPercent, long MemoryUsageBytes, long MemoryLimitBytes)?> GetContainerStatsAsync(string name)
         {
             try
@@ -143,6 +146,7 @@ namespace resonance.Common
         /// <summary>
         ///     Computes CPU % and memory usage from a Docker stats API document. Public for tests.
         /// </summary>
+        /// <returns>The container's CPU percentage and memory usage/limit, or null if the document can't be parsed.</returns>
         public static (double CpuPercent, long MemoryUsageBytes, long MemoryLimitBytes)? ComputeContainerStats(string json)
         {
             using var doc = JsonDocument.Parse(json);

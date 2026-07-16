@@ -47,64 +47,16 @@ namespace resonance.Core.API
     [Consumes("application/json")]
     public class DatabaseController : ControllerBase
     {
+        private static readonly Regex WritePattern = new(
+            @"\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|REPLACE|TRUNCATE|ATTACH|DETACH|PRAGMA|GRANT|REVOKE|COPY|VACUUM)\b",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
         public DatabaseController(ConnectionStringDictionary connectionStrings)
         {
             ConnectionStrings = connectionStrings;
         }
 
         private ConnectionStringDictionary ConnectionStrings { get; }
-
-        private static readonly Regex WritePattern = new(
-            @"\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|REPLACE|TRUNCATE|ATTACH|DETACH|PRAGMA|GRANT|REVOKE|COPY|VACUUM)\b",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-        /// <summary>
-        ///     Describes the physical location of a logical database exposed by the viewer.
-        /// </summary>
-        /// <remarks>
-        ///     For SQLite each logical database is a standalone file. For PostgreSQL every module shares a single
-        ///     connection string and is separated by a per-module schema (see <c>HasDefaultSchema</c> on each DbContext).
-        /// </remarks>
-        private sealed record DbSource(string ConnectionString, bool IsPostgres, string Schema);
-
-        // Maps a logical database to its PostgreSQL schema. Most schemas match the database name, but a few
-        // diverge (see each DbContext's HasDefaultSchema call). Keep this in sync with those.
-        private static string PostgresSchema(Database db) => db.Name switch
-        {
-            "resonance-users" => "users",
-            "library-activity" => "library_activity",
-            _ => db.Name, // search, transfers, messaging, events, preferences, ytdlp, logs, music, waveform, mixtapes
-        };
-
-        private Dictionary<string, DbSource> GetAllSources()
-        {
-            var dict = new Dictionary<string, DbSource>(StringComparer.OrdinalIgnoreCase);
-            foreach (var db in Database.List)
-            {
-                dict[db.Name] = new DbSource(
-                    ConnectionString: ConnectionStrings[db].Value,
-                    IsPostgres: true,
-                    Schema: PostgresSchema(db));
-            }
-
-            return dict;
-        }
-
-        private static DbConnection OpenConnection(DbSource source)
-        {
-            DbConnection conn = new NpgsqlConnection(source.ConnectionString);
-            conn.Open();
-
-            // Scope unqualified table names (used by the viewer's generated queries) to the module's schema.
-            if (source.IsPostgres && !string.IsNullOrEmpty(source.Schema))
-            {
-                using var setCmd = conn.CreateCommand();
-                setCmd.CommandText = $"SET search_path TO \"{source.Schema}\"";
-                setCmd.ExecuteNonQuery();
-            }
-
-            return conn;
-        }
 
         [HttpGet]
         [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
@@ -136,6 +88,91 @@ namespace resonance.Core.API
             {
                 return StatusCode(500, ex.Message);
             }
+        }
+
+        [HttpPost("{name}/query")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
+        public IActionResult Query(string name, [FromBody] QueryRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request?.Sql))
+            {
+                return BadRequest("SQL is required");
+            }
+
+            var trimmed = request.Sql.Trim();
+            if (!(trimmed.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)
+                || trimmed.StartsWith("WITH", StringComparison.OrdinalIgnoreCase)))
+            {
+                return BadRequest("Only SELECT queries are allowed");
+            }
+
+            if (WritePattern.IsMatch(trimmed))
+            {
+                return BadRequest("Only SELECT queries are allowed");
+            }
+
+            var sources = GetAllSources();
+            if (!sources.TryGetValue(name, out var source))
+            {
+                return NotFound($"Database '{name}' not found");
+            }
+
+            try
+            {
+                using var conn = OpenConnection(source);
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = trimmed;
+                cmd.CommandTimeout = 10;
+
+                using var reader = cmd.ExecuteReader();
+                var columns = Enumerable.Range(0, reader.FieldCount)
+                    .Select(reader.GetName)
+                    .ToList();
+
+                var rows = new List<List<object>>();
+                var limit = request.Limit > 0 ? Math.Min(request.Limit, 5000) : 500;
+                while (reader.Read() && rows.Count < limit)
+                {
+                    var row = new List<object>();
+                    for (int i = 0; i < reader.FieldCount; i++)
+                    {
+                        row.Add(reader.IsDBNull(i) ? null : reader.GetValue(i));
+                    }
+
+                    rows.Add(row);
+                }
+
+                return Ok(new { columns, rows });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
+        }
+
+        // Maps a logical database to its PostgreSQL schema. Most schemas match the database name, but a few
+        // diverge (see each DbContext's HasDefaultSchema call). Keep this in sync with those.
+        private static string PostgresSchema(Database db) => db.Name switch
+        {
+            "resonance-users" => "users",
+            "library-activity" => "library_activity",
+            _ => db.Name, // search, transfers, messaging, events, preferences, ytdlp, logs, music, waveform, mixtapes
+        };
+
+        private static DbConnection OpenConnection(DbSource source)
+        {
+            DbConnection conn = new NpgsqlConnection(source.ConnectionString);
+            conn.Open();
+
+            // Scope unqualified table names (used by the viewer's generated queries) to the module's schema.
+            if (source.IsPostgres && !string.IsNullOrEmpty(source.Schema))
+            {
+                using var setCmd = conn.CreateCommand();
+                setCmd.CommandText = $"SET search_path TO \"{source.Schema}\"";
+                setCmd.ExecuteNonQuery();
+            }
+
+            return conn;
         }
 
         private static Dictionary<string, List<object>> GetSqliteSchema(DbConnection conn)
@@ -228,66 +265,29 @@ namespace resonance.Core.API
             return schema;
         }
 
-        [HttpPost("{name}/query")]
-        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
-        public IActionResult Query(string name, [FromBody] QueryRequest request)
+        private Dictionary<string, DbSource> GetAllSources()
         {
-            if (string.IsNullOrWhiteSpace(request?.Sql))
+            var dict = new Dictionary<string, DbSource>(StringComparer.OrdinalIgnoreCase);
+            foreach (var db in Database.List)
             {
-                return BadRequest("SQL is required");
+                dict[db.Name] = new DbSource(
+                    ConnectionString: ConnectionStrings[db].Value,
+                    IsPostgres: true,
+                    Schema: PostgresSchema(db));
             }
 
-            var trimmed = request.Sql.Trim();
-            if (!(trimmed.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)
-                || trimmed.StartsWith("WITH", StringComparison.OrdinalIgnoreCase)))
-            {
-                return BadRequest("Only SELECT queries are allowed");
-            }
-
-            if (WritePattern.IsMatch(trimmed))
-            {
-                return BadRequest("Only SELECT queries are allowed");
-            }
-
-            var sources = GetAllSources();
-            if (!sources.TryGetValue(name, out var source))
-            {
-                return NotFound($"Database '{name}' not found");
-            }
-
-            try
-            {
-                using var conn = OpenConnection(source);
-                using var cmd = conn.CreateCommand();
-                cmd.CommandText = trimmed;
-                cmd.CommandTimeout = 10;
-
-                using var reader = cmd.ExecuteReader();
-                var columns = Enumerable.Range(0, reader.FieldCount)
-                    .Select(reader.GetName)
-                    .ToList();
-
-                var rows = new List<List<object>>();
-                var limit = request.Limit > 0 ? Math.Min(request.Limit, 5000) : 500;
-                while (reader.Read() && rows.Count < limit)
-                {
-                    var row = new List<object>();
-                    for (int i = 0; i < reader.FieldCount; i++)
-                    {
-                        row.Add(reader.IsDBNull(i) ? null : reader.GetValue(i));
-                    }
-
-                    rows.Add(row);
-                }
-
-                return Ok(new { columns, rows });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, ex.Message);
-            }
+            return dict;
         }
 
         public record QueryRequest(string Sql, int Limit = 500);
+
+        /// <summary>
+        ///     Describes the physical location of a logical database exposed by the viewer.
+        /// </summary>
+        /// <remarks>
+        ///     For SQLite each logical database is a standalone file. For PostgreSQL every module shares a single
+        ///     connection string and is separated by a per-module schema (see <c>HasDefaultSchema</c> on each DbContext).
+        /// </remarks>
+        private sealed record DbSource(string ConnectionString, bool IsPostgres, string Schema);
     }
 }

@@ -55,6 +55,8 @@ namespace resonance.Cast
             "MX: 3\r\n" +
             "ST: urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n";
 
+        private volatile CastState state;
+
         public CastService(IHttpClientFactory httpClientFactory, ILogger<CastService> logger)
         {
             Http = httpClientFactory;
@@ -68,7 +70,6 @@ namespace resonance.Cast
         private ILogger Log { get; }
 
         private ConcurrentDictionary<string, DlnaDevice> DeviceMap { get; } = new();
-        private volatile CastState state;
 
         public async Task<IReadOnlyList<DlnaDevice>> DiscoverAsync(CancellationToken cancellationToken = default)
         {
@@ -172,6 +173,63 @@ namespace resonance.Cast
             state = null;
         }
 
+        private static string BuildSoap(string action, string bodyContent) =>
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
+            "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" " +
+                        "s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">" +
+              "<s:Body>" +
+                $"<u:{action} xmlns:u=\"urn:schemas-upnp-org:service:AVTransport:1\">" +
+                  bodyContent +
+                $"</u:{action}>" +
+              "</s:Body>" +
+            "</s:Envelope>";
+
+        private static string BuildDidlLite(string trackUrl, string title, string artist, string album)
+        {
+            var sb = new StringBuilder();
+            sb.Append("<DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\"")
+              .Append(" xmlns:dc=\"http://purl.org/dc/elements/1.1/\"")
+              .Append(" xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\">")
+              .Append("<item id=\"1\" parentID=\"0\" restricted=\"1\">")
+              .Append($"<dc:title>{XmlEscape(title ?? string.Empty)}</dc:title>");
+
+            if (!string.IsNullOrEmpty(artist))
+            {
+                sb.Append($"<dc:creator>{XmlEscape(artist)}</dc:creator>");
+            }
+
+            if (!string.IsNullOrEmpty(album))
+            {
+                sb.Append($"<upnp:album>{XmlEscape(album)}</upnp:album>");
+            }
+
+            sb.Append("<upnp:class>object.item.audioItem.musicTrack</upnp:class>")
+              .Append($"<res protocolInfo=\"http-get:*:audio/mpeg:*\">{XmlEscape(trackUrl)}</res>")
+              .Append("</item></DIDL-Lite>");
+
+            return sb.ToString();
+        }
+
+        private static string ParseSsdpHeader(string response, string header)
+        {
+            foreach (var line in response.Split('\n'))
+            {
+                if (line.StartsWith(header + ":", StringComparison.OrdinalIgnoreCase))
+                {
+                    return line[(header.Length + 1)..].Trim();
+                }
+            }
+
+            return null;
+        }
+
+        private static string XmlEscape(string text) =>
+            text?.Replace("&", "&amp;")
+                 .Replace("<", "&lt;")
+                 .Replace(">", "&gt;")
+                 .Replace("\"", "&quot;")
+                 .Replace("'", "&apos;") ?? string.Empty;
+
         // ── Helpers ──────────────────────────────────────────────────────────
         private async Task FetchDeviceAsync(string location, CancellationToken cancellationToken)
         {
@@ -239,62 +297,5 @@ namespace resonance.Cast
             var response = await http.PostAsync(url, content, cancellationToken);
             response.EnsureSuccessStatusCode();
         }
-
-        private static string BuildSoap(string action, string bodyContent) =>
-            "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
-            "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" " +
-                        "s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">" +
-              "<s:Body>" +
-                $"<u:{action} xmlns:u=\"urn:schemas-upnp-org:service:AVTransport:1\">" +
-                  bodyContent +
-                $"</u:{action}>" +
-              "</s:Body>" +
-            "</s:Envelope>";
-
-        private static string BuildDidlLite(string trackUrl, string title, string artist, string album)
-        {
-            var sb = new StringBuilder();
-            sb.Append("<DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\"")
-              .Append(" xmlns:dc=\"http://purl.org/dc/elements/1.1/\"")
-              .Append(" xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\">")
-              .Append("<item id=\"1\" parentID=\"0\" restricted=\"1\">")
-              .Append($"<dc:title>{XmlEscape(title ?? string.Empty)}</dc:title>");
-
-            if (!string.IsNullOrEmpty(artist))
-            {
-                sb.Append($"<dc:creator>{XmlEscape(artist)}</dc:creator>");
-            }
-
-            if (!string.IsNullOrEmpty(album))
-            {
-                sb.Append($"<upnp:album>{XmlEscape(album)}</upnp:album>");
-            }
-
-            sb.Append("<upnp:class>object.item.audioItem.musicTrack</upnp:class>")
-              .Append($"<res protocolInfo=\"http-get:*:audio/mpeg:*\">{XmlEscape(trackUrl)}</res>")
-              .Append("</item></DIDL-Lite>");
-
-            return sb.ToString();
-        }
-
-        private static string ParseSsdpHeader(string response, string header)
-        {
-            foreach (var line in response.Split('\n'))
-            {
-                if (line.StartsWith(header + ":", StringComparison.OrdinalIgnoreCase))
-                {
-                    return line[(header.Length + 1)..].Trim();
-                }
-            }
-
-            return null;
-        }
-
-        private static string XmlEscape(string text) =>
-            text?.Replace("&", "&amp;")
-                 .Replace("<", "&lt;")
-                 .Replace(">", "&gt;")
-                 .Replace("\"", "&quot;")
-                 .Replace("'", "&apos;") ?? string.Empty;
     }
 }

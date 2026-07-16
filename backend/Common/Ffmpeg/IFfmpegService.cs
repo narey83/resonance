@@ -47,22 +47,22 @@ public interface IFfmpegService : IHostedService
     string? FfprobePath { get; }
 
     /// <summary>Ensures ffmpeg is available (downloading if needed) and returns its path.</summary>
-    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
+    /// <returns>The path to the ffmpeg executable.</returns>
     Task<string> GetFfmpegPathAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Ensures ffprobe is available (downloading if needed) and returns its path.</summary>
-    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
+    /// <returns>The path to the ffprobe executable.</returns>
     Task<string> GetFfprobePathAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Returns the first line of <c>ffmpeg -version</c>, or null on failure.</summary>
-    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
+    /// <returns>The ffmpeg version string, or null if it could not be determined.</returns>
     Task<string?> GetVersionAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Checks GitHub for a newer static build of the self-managed ffmpeg.</summary>
-    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
+    /// <returns>The current and latest version tags, and whether an update is available.</returns>
     Task<(string? Current, string? Latest, bool UpdateAvailable)> CheckForUpdateAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Downloads and installs the latest static ffmpeg/ffprobe build. Returns the new version tag.</summary>
-    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
+    /// <returns>The version tag of the newly installed build.</returns>
     Task<string> UpdateAsync(CancellationToken cancellationToken = default);
 }

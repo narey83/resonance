@@ -194,6 +194,9 @@ namespace resonance.Transfers.Uploads
     /// </summary>
     public class UploadService : IUploadService
     {
+        // how long a user stays in the offline cooldown after a failed upload; see OfflineCooldowns.
+        private static readonly TimeSpan OfflineCooldownDuration = TimeSpan.FromSeconds(60);
+
         public UploadService(
             FileService fileService,
             IUserService userService,
@@ -248,7 +251,6 @@ namespace resonance.Transfers.Uploads
         // the database, watching the user, and attempting a doomed upload. a misbehaving remote client that re-requests
         // a large queue thousands of times per minute while unreachable would otherwise trigger all of that work per
         // request. the user's own client will re-request once it is actually reachable again, after the cooldown.
-        private static readonly TimeSpan OfflineCooldownDuration = TimeSpan.FromSeconds(60);
         private ConcurrentDictionary<string, DateTime> OfflineCooldowns { get; } = new();
 
         /// <summary>
@@ -1013,6 +1015,66 @@ namespace resonance.Transfers.Uploads
         }
 
         /// <summary>
+        ///     Synchronously updates the specified <paramref name="transfer"/>.
+        /// </summary>
+        /// <param name="transfer">The transfer to update.</param>
+        public void Update(Transfer transfer)
+        {
+            using var context = ContextFactory.CreateDbContext();
+
+            context.Update(transfer);
+            context.SaveChanges();
+        }
+
+        /// <summary>
+        ///     Gets upload statistics for the specified <paramref name="username"/>.
+        /// </summary>
+        /// <param name="username">The username of the user.</param>
+        /// <param name="utcNow">An optional timestamp representing the current time in UTC.</param>
+        /// <returns>The gathered statistics.</returns>
+        public UserUploadStatistics GetUserStatistics(string username, DateTime? utcNow = null)
+        {
+            utcNow ??= DateTime.UtcNow;
+            var dailyCutoff = utcNow.Value.AddDays(-1);
+            var weeklyCutoff = utcNow.Value.AddDays(-7);
+
+            using var context = ContextFactory.CreateDbContext();
+
+            var failedStates = TransferStateCategories.Failed.ToList();
+            var successState = TransferStates.Completed | TransferStates.Succeeded;
+
+            var stats = context.Transfers
+                .AsNoTracking()
+                .Where(t => t.Username == username)
+                .Where(t => t.Direction == TransferDirection.Upload)
+                .Where(t => t.EndedAt == null || t.StartedAt >= weeklyCutoff)
+                .GroupBy(t => 1) // aggregate everything into one row
+                .Select(g => new UserUploadStatistics
+                {
+                    QueuedFiles = g.Count(t => t.EndedAt == null),
+                    QueuedBytes = g.Where(t => t.EndedAt == null).Sum(t => (long?)t.Size) ?? 0,
+
+                    // note: this generates some funky json_each() expression under the hood; it's an EF optimization
+                    // that helps with optimization of query plans. i've tried expanding this out to force an IN
+                    // and there's either no difference, or there's a slight improvement with the json_each method.
+                    WeeklyFailedFiles = g.Count(t => t.StartedAt >= weeklyCutoff && failedStates.Contains(t.State)),
+
+                    WeeklySucceededFiles = g.Count(t => t.StartedAt >= weeklyCutoff && t.State == successState),
+                    WeeklySucceededBytes = g.Where(t => t.StartedAt >= weeklyCutoff && t.State == successState)
+                        .Sum(t => (long?)t.Size) ?? 0,
+
+                    DailyFailedFiles = g.Count(t => t.StartedAt >= dailyCutoff && failedStates.Contains(t.State)),
+
+                    DailySucceededFiles = g.Count(t => t.StartedAt >= dailyCutoff && t.State == successState),
+                    DailySucceededBytes = g.Where(t => t.StartedAt >= dailyCutoff && t.State == successState)
+                        .Sum(t => (long?)t.Size) ?? 0,
+                })
+                .FirstOrDefault();
+
+            return stats ?? new UserUploadStatistics();
+        }
+
+        /// <summary>
         ///     Determines whether the given <paramref name="exception"/> represents an expected peer/connection
         ///     failure (e.g. the remote user disconnected or reset the connection mid-transfer) rather than an
         ///     application error. These are routine in a P2P network and should be logged quietly.
@@ -1088,66 +1150,6 @@ namespace resonance.Transfers.Uploads
             }
 
             return false;
-        }
-
-        /// <summary>
-        ///     Synchronously updates the specified <paramref name="transfer"/>.
-        /// </summary>
-        /// <param name="transfer">The transfer to update.</param>
-        public void Update(Transfer transfer)
-        {
-            using var context = ContextFactory.CreateDbContext();
-
-            context.Update(transfer);
-            context.SaveChanges();
-        }
-
-        /// <summary>
-        ///     Gets upload statistics for the specified <paramref name="username"/>.
-        /// </summary>
-        /// <param name="username">The username of the user.</param>
-        /// <param name="utcNow">An optional timestamp representing the current time in UTC.</param>
-        /// <returns>The gathered statistics.</returns>
-        public UserUploadStatistics GetUserStatistics(string username, DateTime? utcNow = null)
-        {
-            utcNow ??= DateTime.UtcNow;
-            var dailyCutoff = utcNow.Value.AddDays(-1);
-            var weeklyCutoff = utcNow.Value.AddDays(-7);
-
-            using var context = ContextFactory.CreateDbContext();
-
-            var failedStates = TransferStateCategories.Failed.ToList();
-            var successState = TransferStates.Completed | TransferStates.Succeeded;
-
-            var stats = context.Transfers
-                .AsNoTracking()
-                .Where(t => t.Username == username)
-                .Where(t => t.Direction == TransferDirection.Upload)
-                .Where(t => t.EndedAt == null || t.StartedAt >= weeklyCutoff)
-                .GroupBy(t => 1) // aggregate everything into one row
-                .Select(g => new UserUploadStatistics
-                {
-                    QueuedFiles = g.Count(t => t.EndedAt == null),
-                    QueuedBytes = g.Where(t => t.EndedAt == null).Sum(t => (long?)t.Size) ?? 0,
-
-                    // note: this generates some funky json_each() expression under the hood; it's an EF optimization
-                    // that helps with optimization of query plans. i've tried expanding this out to force an IN
-                    // and there's either no difference, or there's a slight improvement with the json_each method.
-                    WeeklyFailedFiles = g.Count(t => t.StartedAt >= weeklyCutoff && failedStates.Contains(t.State)),
-
-                    WeeklySucceededFiles = g.Count(t => t.StartedAt >= weeklyCutoff && t.State == successState),
-                    WeeklySucceededBytes = g.Where(t => t.StartedAt >= weeklyCutoff && t.State == successState)
-                        .Sum(t => (long?)t.Size) ?? 0,
-
-                    DailyFailedFiles = g.Count(t => t.StartedAt >= dailyCutoff && failedStates.Contains(t.State)),
-
-                    DailySucceededFiles = g.Count(t => t.StartedAt >= dailyCutoff && t.State == successState),
-                    DailySucceededBytes = g.Where(t => t.StartedAt >= dailyCutoff && t.State == successState)
-                        .Sum(t => (long?)t.Size) ?? 0,
-                })
-                .FirstOrDefault();
-
-            return stats ?? new UserUploadStatistics();
         }
 
         private bool TryFail(Guid id, string exception, TransferStates state)

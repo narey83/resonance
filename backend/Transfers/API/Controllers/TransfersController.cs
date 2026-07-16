@@ -66,6 +66,7 @@ namespace resonance.Transfers.API
         /// <param name="optionsSnapshot"></param>
         /// <param name="userService"></param>
         /// <param name="transferService"></param>
+        /// <param name="blockedUsersService"></param>
         public TransfersController(
             ITransferService transferService,
             IUserService userService,
