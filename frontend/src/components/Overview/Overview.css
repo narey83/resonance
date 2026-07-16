@@ -381,12 +381,8 @@
   --tip-text:       #333;
   --tip-muted:      #777;
   --tip-dim:        #aaa;
-  --tip-divider:    rgba(0,0,0,0.1);
   --tip-ip-bg:      rgba(0,0,0,0.06);
   --tip-ip-color:   #444;
-  --tip-btn-bg:     rgba(0,0,0,0.07);
-  --tip-btn-hover:  rgba(0,0,0,0.14);
-  --tip-btn-color:  #222;
   --tip-close:      #aaa;
   --tip-close-hover:#333;
   --tip-vpn-bg:     rgba(180,120,0,0.15);
@@ -414,12 +410,8 @@ html.dark, html.amoled {
   --tip-text:       rgba(255,255,255,0.85);
   --tip-muted:      rgba(255,255,255,0.5);
   --tip-dim:        rgba(255,255,255,0.3);
-  --tip-divider:    rgba(255,255,255,0.1);
   --tip-ip-bg:      rgba(255,255,255,0.06);
   --tip-ip-color:   rgba(255,255,255,0.6);
-  --tip-btn-bg:     rgba(255,255,255,0.1);
-  --tip-btn-hover:  rgba(255,255,255,0.2);
-  --tip-btn-color:  rgba(255,255,255,0.85);
   --tip-close:      rgba(255,255,255,0.35);
   --tip-close-hover:rgba(255,255,255,0.8);
   --tip-vpn-bg:     rgba(251,191,36,0.25);
@@ -687,6 +679,8 @@ html.dark, html.amoled {
   display: flex;
   align-items: center;
   gap: 6px;
+  /* Keep a long username's action icons clear of the close button */
+  padding-right: 14px;
 }
 
 .map-tooltip-user,
@@ -742,70 +736,10 @@ html.dark, html.amoled {
   border-radius: 3px;
 }
 
-.map-tooltip-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin-top: 7px;
-  padding-top: 7px;
-  border-top: 1px solid var(--tip-divider);
-}
-
-.map-tooltip-stat {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--tip-text);
-}
-
-.map-tooltip-stat-icon {
-  width: 14px;
-  text-align: center;
-  flex-shrink: 0;
-  color: var(--tip-muted);
-}
-
-.map-tooltip-stat-bytes {
-  margin-left: auto;
-  color: var(--tip-muted);
-  font-variant-numeric: tabular-nums;
-  font-size: 10px;
-}
-
 .map-tooltip-lastseen {
   font-size: 10px;
   color: var(--tip-dim);
   margin-top: 6px;
-}
-
-.map-tooltip-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--tip-divider);
-}
-
-.map-tooltip-action {
-  flex: 1;
-  text-align: center;
-  padding: 4px 8px;
-  border: none;
-  border-radius: 5px;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 500;
-  background: var(--tip-btn-bg);
-  color: var(--tip-btn-color) !important;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-
-.map-tooltip-action:hover {
-  background: var(--tip-btn-hover);
-  text-decoration: none;
 }
 
 .map-tooltip-close {
