@@ -66,8 +66,14 @@ services:
     volumes:
       - ${RESONANCE_SRC:-/home/narey/projects/resonance}:/src
       # Isolate build artifacts from the host's own bin/obj (host scratch, narey-owned).
+      # tests/ needs the same treatment as backend/: any solution-level restore in here
+      # (`dotnet restore resonance.sln`, `dotnet test`) writes tests/obj with this
+      # container's NUGET_PACKAGES (/home/dev/.nuget), which the host cannot resolve —
+      # the host IDE then fails with "package ... was not found" until it re-restores.
       - ${RESONANCE_SCRATCH:-/home/narey/.local/share/resonance-dev}/backend-obj:/src/backend/obj
       - ${RESONANCE_SCRATCH:-/home/narey/.local/share/resonance-dev}/backend-bin:/src/backend/bin
+      - ${RESONANCE_SCRATCH:-/home/narey/.local/share/resonance-dev}/tests-obj:/src/tests/obj
+      - ${RESONANCE_SCRATCH:-/home/narey/.local/share/resonance-dev}/tests-bin:/src/tests/bin
       - ${RESONANCE_SCRATCH:-/home/narey/.local/share/resonance-dev}/backend-home:/home/dev
       # Canonical config directory (config.yml); mounted rw so in-app option edits persist to the host.
       - /home/narey/.local/share/resonance:/config
