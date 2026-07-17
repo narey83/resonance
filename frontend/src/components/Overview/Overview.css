@@ -390,7 +390,7 @@
 }
 
 /* ─── Map CSS vars — dark theme ──────────────────────────────────────────────── */
-html.dark, html.amoled {
+html.amoled {
   --map-bg:         #07101e;
   --map-land:       #192540;
   --map-land-hover: #1f2f50;

@@ -78,13 +78,8 @@
                     ].join(',');
                 }
                 var themes = {
-                    dark:            { bg: '#0d1117',  fg: '#e6edf3', accent: '#388bfd', iconBg: '#21262d', border: 'rgba(240,246,252,0.1)' },
-                    dim:             { bg: '#1a1d2e',  fg: '#c8d0e8', accent: '#7c9ef0', iconBg: '#2b3050', border: 'rgba(255,255,255,0.07)' },
-                    'pastel-blue':   { bg: '#ecf3fc',  fg: '#1a3558', accent: '#2a70d4', iconBg: '#dceaf8', border: '#b4cde9' },
-                    'pastel-rose':   { bg: '#fbeef7',  fg: '#3c1038', accent: '#c93878', iconBg: '#f5dcef', border: '#e4b0d0' },
-                    material:        { bg: '#fffbfe',  fg: '#1c1b1f', accent: '#6750a4', iconBg: '#e6e0e9', border: 'rgba(73,69,79,0.16)' },
-                    'material-dark': { bg: '#1c1b1f',  fg: '#e6e1e5', accent: '#d0bcff', iconBg: '#36343b', border: 'rgba(230,225,229,0.12)' },
-                    amoled:          { bg: '#000000',  fg: '#e8eaed', accent: '#8ab4f8', iconBg: '#161616', border: 'rgba(255,255,255,0.08)' },
+                    light:  { bg: '#f4f5f7', fg: '#172b4d', accent: '#0052cc', iconBg: '#ebedf0', border: '#dde1e7' },
+                    amoled: { bg: '#000000', fg: '#e8eaed', accent: '#8ab4f8', iconBg: '#161616', border: 'rgba(255,255,255,0.08)' },
                 };
                 var t = themes[localStorage.getItem('resonance-theme')];
                 var s = document.documentElement.style;
@@ -96,12 +91,12 @@
                     s.setProperty('--s-icon-bg',    t.iconBg);
                     s.setProperty('--s-border',     t.border);
                 } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                    s.setProperty('--s-bg',         '#0d1117');
-                    s.setProperty('--s-fg',         '#e6edf3');
-                    s.setProperty('--s-accent',     '#388bfd');
-                    s.setProperty('--s-accent-rgb', '56,139,253');
-                    s.setProperty('--s-icon-bg',    '#21262d');
-                    s.setProperty('--s-border',     'rgba(240,246,252,0.1)');
+                    s.setProperty('--s-bg',         '#000000');
+                    s.setProperty('--s-fg',         '#e8eaed');
+                    s.setProperty('--s-accent',     '#8ab4f8');
+                    s.setProperty('--s-accent-rgb', '138,180,248');
+                    s.setProperty('--s-icon-bg',    '#161616');
+                    s.setProperty('--s-border',     'rgba(255,255,255,0.08)');
                 }
             })();
         </script>

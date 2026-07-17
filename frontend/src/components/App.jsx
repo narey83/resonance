@@ -141,7 +141,7 @@ const AppQueuePanel = () => {
 
 const THEMES = ['light', 'amoled'];
 const THEME_LABELS = { amoled: 'AMOLED', light: 'Light' };
-const ALL_THEME_CLASSES = ['amoled', 'dark', 'dim'];
+const ALL_THEME_CLASSES = ['amoled'];
 
 const INIT_MAX_ATTEMPTS = 30;
 
@@ -325,7 +325,7 @@ const App = () => {
     () =>
       prefs.get('resonance-theme', null) ??
       (window.matchMedia('(prefers-color-scheme: dark)').matches
-        ? 'dark'
+        ? 'amoled'
         : 'light'),
   );
   const [uploadCount, setUploadCount] = useState(0);
@@ -456,7 +456,7 @@ const App = () => {
     const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const lightQuery = window.matchMedia('(prefers-color-scheme: light)');
     const onDark = (e) => {
-      if (e.matches) setTheme('dark');
+      if (e.matches) setTheme('amoled');
     };
 
     const onLight = (e) => {
