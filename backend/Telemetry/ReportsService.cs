@@ -1630,10 +1630,15 @@ public class ReportsService
             string sql;
             if (UsePostgres)
             {
+                // Keep the DISTINCT in a subquery: COUNT(DISTINCT ...) forces a sort that spills to
+                // disk at this row count, while the subquery form can hash-aggregate.
                 sql = @"
-                    SELECT COUNT(DISTINCT LOWER(SUBSTR(""Filename"", LENGTH(RTRIM(""Filename"", REPLACE(REPLACE(""Filename"", '/', ''), '\', ''))) + 1)))
-                    FROM transfers.""Transfers""
-                    WHERE ""Direction"" = 'Upload' AND ""State"" = 48
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT DISTINCT LOWER(SUBSTRING(""Filename"" FROM '[^/\\]*$'))
+                        FROM transfers.""Transfers""
+                        WHERE ""Direction"" = 'Upload' AND ""State"" = 48
+                    ) basenames
                 ";
             }
             else
