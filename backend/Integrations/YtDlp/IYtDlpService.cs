@@ -40,6 +40,8 @@ public interface IYtDlpService : IHostedService
 {
     IReadOnlyList<YtDlpJob> ListJobs();
     IReadOnlyList<YtDlpEvent> GetRecentEvents();
+    Task ClearEventsAsync();
+    Task ClearJobEventsAsync(Guid jobId);
     Task<YtDlpJob> SubmitAsync(string url, string? outputDirectory = null, string? audioFormat = null, int? audioQuality = null, string? defaultGenre = null, int? minTrackDurationSeconds = null, int? maxTrackDurationSeconds = null, string? convertOnCompletionFormat = null, string? uploadedAfter = null, CancellationToken cancellationToken = default, Guid? subscriptionId = null);
     Task<IReadOnlyList<YtDlpTrack>> GetTracksAsync(Guid jobId);
     Task<IReadOnlyList<YtDlpTrack>> GetTagErrorTracksAsync();

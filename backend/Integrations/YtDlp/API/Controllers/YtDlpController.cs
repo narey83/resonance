@@ -110,6 +110,20 @@ public class YtDlpController : ControllerBase
         return NoContent();
     }
 
+    [HttpDelete("events")]
+    public async Task<IActionResult> ClearEvents()
+    {
+        await Service.ClearEventsAsync();
+        return NoContent();
+    }
+
+    [HttpDelete("events/{jobId:guid}")]
+    public async Task<IActionResult> ClearJobEvents(Guid jobId)
+    {
+        await Service.ClearJobEventsAsync(jobId);
+        return NoContent();
+    }
+
     [HttpPost("jobs/{jobId:guid}/cancel")]
     public async Task<IActionResult> CancelJob(Guid jobId)
     {

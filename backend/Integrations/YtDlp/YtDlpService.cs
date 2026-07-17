@@ -210,6 +210,19 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             await db.SaveChangesAsync(cancellationToken);
         }
 
+        // Rehydrate the Events pane from the durable log so it survives restarts and buffer
+        // eviction. Load the most recent window (the buffer cap) oldest-first so the queue keeps
+        // chronological order (newest last).
+        var recentEvents = await db.Events
+            .OrderByDescending(e => e.Id)
+            .Take(EventBufferMax)
+            .ToListAsync(cancellationToken);
+        recentEvents.Reverse();
+        foreach (var e in recentEvents)
+        {
+            eventBuffer.Enqueue(new YtDlpEvent(e.Timestamp, e.JobId, e.JobTitle, e.Level, e.Message));
+        }
+
         // Load channel subscriptions into the hot cache and start the poll loop
         var allSubs = await db.Subscriptions.OrderByDescending(s => s.CreatedAt).ToListAsync(cancellationToken);
         foreach (var sub in allSubs)
@@ -244,6 +257,31 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         => jobs.Values.OrderByDescending(j => j.RequestedAt).ToList();
 
     public IReadOnlyList<YtDlpEvent> GetRecentEvents() => eventBuffer.ToArray();
+
+    public async Task ClearEventsAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        await db.Events.ExecuteDeleteAsync();
+
+        eventBuffer.Clear();
+        await hub.BroadcastEventSnapshotAsync(GetRecentEvents());
+    }
+
+    public async Task ClearJobEventsAsync(Guid jobId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        await db.Events.Where(e => e.JobId == jobId).ExecuteDeleteAsync();
+
+        // ConcurrentQueue has no remove-by-predicate — drain and re-enqueue the survivors in order.
+        var kept = eventBuffer.Where(e => e.JobId != jobId).ToArray();
+        eventBuffer.Clear();
+        foreach (var e in kept)
+        {
+            eventBuffer.Enqueue(e);
+        }
+
+        await hub.BroadcastEventSnapshotAsync(GetRecentEvents());
+    }
 
     // ponytail: subscriptionId trails cancellationToken so the controller call site needs no change; only the poller sets it.
     public async Task<YtDlpJob> SubmitAsync(string url, string? outputDirectory = null, string? audioFormat = null, int? audioQuality = null, string? defaultGenre = null, int? minTrackDurationSeconds = null, int? maxTrackDurationSeconds = null, string? convertOnCompletionFormat = null, string? uploadedAfter = null, CancellationToken cancellationToken = default, Guid? subscriptionId = null)
@@ -1484,10 +1522,18 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 return;
             }
 
+            await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+            // `tracksFound` counts only queued (downloadable) tracks. A job whose every entry was
+            // filtered out at enumeration (duration/duplicate skips) still enumerated successfully
+            // and simply has nothing to download — distinguish that from a genuinely empty result
+            // by looking at whether any track rows were inserted at all.
+            var insertedTracks = await db.Tracks.CountAsync(t => t.JobId == job.Id, cancellationToken);
+
             // yt-dlp can exit 0 while still failing to produce anything (e.g. an expired/invalid
-            // cookie causing YouTube to hard-block the request) — treat "no tracks" as a failure
+            // cookie causing YouTube to hard-block the request) — treat "no entries" as a failure
             // instead of leaving the job stuck in Active forever with nothing to do.
-            if (tracksFound == 0)
+            if (insertedTracks == 0)
             {
                 var reason = process.ExitCode != 0
                     ? $"yt-dlp exited with code {process.ExitCode} and found no tracks"
@@ -1513,7 +1559,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 return;
             }
 
-            await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
             var dbJob = await db.Jobs.FindAsync([job.Id], cancellationToken);
             if (dbJob != null)
             {
@@ -1523,6 +1568,18 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
             job.State = YtDlpJobState.Active;
             await BroadcastJobsAsync();
+
+            // Every enumerated entry was filtered at enumeration (all out of the duration range or
+            // already downloaded), so there is nothing to download. Rather than leave a phantom
+            // job in the list — which would otherwise hang in Active or settle as an empty
+            // Completed/Failed row — just drop it. This is the common shape for a per-video
+            // subscription auto-download of a too-short/too-long (extended-mix) upload.
+            if (tracksFound == 0)
+            {
+                await EmitEventAsync(job.Id, "info", $"Dropped — every track was skipped, nothing to download: {job.Title ?? job.Url}", job);
+                await RemoveJobAsync(job.Id);
+                return;
+            }
         }
         catch (OperationCanceledException)
         {
@@ -1946,6 +2003,11 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         }
 
         var dbTrack = await db.Tracks.FindAsync(track.Id);
+
+        // Whether this track was already carrying a tag error from a prior attempt, captured
+        // before we overwrite it below so the job counter can be adjusted by transition.
+        var wasTagFailed = dbTrack?.TagWritingError != null;
+
         if (dbTrack != null)
         {
             dbTrack.State = track.State;
@@ -1969,9 +2031,18 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 job.FailedTracks = Math.Max(0, job.FailedTracks - 1);
             }
 
-            if (tagError != null)
+            // Tag-error tally follows the track's current state across retries: count a newly
+            // flagged track, and uncount one whose retry finally tagged cleanly. Only reacting to
+            // transitions keeps the counter accurate — a plain increment would double-count a
+            // track that fails tagging on more than one attempt and never recover on success.
+            var nowTagFailed = tagError != null;
+            if (nowTagFailed && !wasTagFailed)
             {
                 job.TagFailedTracks++;
+            }
+            else if (!nowTagFailed && wasTagFailed)
+            {
+                job.TagFailedTracks = Math.Max(0, job.TagFailedTracks - 1);
             }
 
             var dbJob = await db.Jobs.FindAsync(job.Id);
@@ -2478,11 +2549,37 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     // ── Helpers ─────────────────────────────────────────────────────────────
     private async Task EmitEventAsync(Guid? jobId, string level, string message, YtDlpJob? job = null)
     {
-        var ev = new YtDlpEvent(DateTime.UtcNow, jobId, job?.Title ?? job?.Url, level, message);
+        var timestamp = DateTime.UtcNow;
+        var title = job?.Title ?? job?.Url;
+        var ev = new YtDlpEvent(timestamp, jobId, title, level, message);
         eventBuffer.Enqueue(ev);
         while (eventBuffer.Count > EventBufferMax)
         {
             eventBuffer.TryDequeue(out _);
+        }
+
+        // Persist everything except the high-volume raw yt-dlp stderr/progress lines (which would
+        // bloat the table) — those live in the volatile buffer only. Persisted events survive
+        // restarts and buffer eviction, and are removed only when the user clears the log.
+        if (!string.Equals(level, "raw", StringComparison.Ordinal))
+        {
+            try
+            {
+                await using var db = await dbFactory.CreateDbContextAsync();
+                db.Events.Add(new YtDlpEventRecord
+                {
+                    Timestamp = timestamp,
+                    JobId = jobId,
+                    JobTitle = title,
+                    Level = level,
+                    Message = message,
+                });
+                await db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("YtDlp: failed to persist event: {Message}", ex.Message);
+            }
         }
 
         await hub.BroadcastEventAsync(ev);

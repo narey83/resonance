@@ -115,6 +115,22 @@ const handleReconcileJob = async (jobId) => {
   }
 };
 
+const handleClearEvents = async () => {
+  try {
+    await ytdlp.clearEvents();
+  } catch (error) {
+    toast.error(`Clear events failed: ${error.message}`);
+  }
+};
+
+const handleClearJobEvents = async (jobId) => {
+  try {
+    await ytdlp.clearJobEvents(jobId);
+  } catch (error) {
+    toast.error(`Clear events failed: ${error.message}`);
+  }
+};
+
 const YtDlp = ({ view }) => {
   const isSearchView = view !== 'downloads';
   const [activeTab, setActiveTab] = useState('downloads');
@@ -328,7 +344,8 @@ const YtDlp = ({ view }) => {
       return (
         <EventsPane
           events={events}
-          onClear={() => setEvents([])}
+          onClear={handleClearEvents}
+          onClearJob={handleClearJobEvents}
         />
       );
     if (activeTab === 'tag-errors')

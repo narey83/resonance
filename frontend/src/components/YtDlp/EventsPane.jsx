@@ -87,9 +87,12 @@ const EventRow = ({ ev }) => (
   </div>
 );
 
-const JobGroup = ({ defaultOpen, group }) => {
+const JobGroup = ({ defaultOpen, group, onClearJob }) => {
   const [open, setOpen] = useState(defaultOpen);
   const Chevron = open ? ChevronDown : ChevronRight;
+
+  // System events (null jobId) have no per-job route — they clear with "Clear all".
+  const canClear = onClearJob && group.id !== '__system__';
 
   return (
     <div className="ytdlp-event-group">
@@ -113,6 +116,19 @@ const JobGroup = ({ defaultOpen, group }) => {
             {group.warnCount} warning{group.warnCount > 1 ? 's' : ''}
           </span>
         )}
+        {canClear && (
+          <button
+            className="ytdlp-event-group-clear hover-fx"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClearJob(group.id);
+            }}
+            title="Clear this job's log"
+            type="button"
+          >
+            <Trash2 size={12} />
+          </button>
+        )}
       </div>
       {open && (
         <div className="ytdlp-event-group-body">
@@ -129,7 +145,7 @@ const JobGroup = ({ defaultOpen, group }) => {
   );
 };
 
-const EventsPane = ({ events, onClear }) => {
+const EventsPane = ({ events, onClear, onClearJob }) => {
   const [levelFilter, setLevelFilter] = useState('structured');
   const [activeJob, setActiveJob] = useState('all');
   const [autoScroll, setAutoScroll] = useState(true);
@@ -269,6 +285,7 @@ const EventsPane = ({ events, onClear }) => {
             defaultOpen
             group={group}
             key={group.id}
+            onClearJob={onClearJob}
           />
         ))}
         <div ref={endRef} />

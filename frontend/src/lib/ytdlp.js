@@ -66,6 +66,8 @@ export const submitJob = ({
     uploadedAfter,
   });
 export const getJobTracks = (jobId) => api.get(`/ytdlp/jobs/${jobId}/tracks`);
+export const clearEvents = () => api.delete('/ytdlp/events');
+export const clearJobEvents = (jobId) => api.delete(`/ytdlp/events/${jobId}`);
 export const removeJob = (jobId) => api.delete(`/ytdlp/jobs/${jobId}`);
 export const cancelJob = (jobId) => api.post(`/ytdlp/jobs/${jobId}/cancel`);
 export const pauseJob = (jobId) => api.post(`/ytdlp/jobs/${jobId}/pause`);

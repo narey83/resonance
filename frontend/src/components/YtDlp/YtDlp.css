@@ -841,6 +841,34 @@
   flex-shrink: 0;
 }
 
+.ytdlp-event-group-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 3px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #718096);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    color 0.12s ease,
+    background 0.12s ease;
+}
+
+.ytdlp-event-group-header:hover .ytdlp-event-group-clear {
+  opacity: 0.7;
+}
+
+.ytdlp-event-group-clear:hover {
+  opacity: 1;
+  color: #fc8181;
+  background: rgba(229, 62, 62, 0.15);
+}
+
 .ytdlp-event-group-body {
   padding-left: 16px;
   border-left: 2px solid var(--border);
