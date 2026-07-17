@@ -792,6 +792,20 @@ namespace resonance
             const bool usePostgres = true;
 
             services.AddDbContext<SearchDbContext>(connectionStringDictionary[Database.Search]);
+
+            // pg_trgm backs the user report search, which matches usernames and geo-IP columns with
+            // a leading-wildcard ILIKE that no btree can serve. It has to exist before AddDbContext
+            // below, which is what creates TransfersDbContext's trigram index on Username --
+            // otherwise that statement fails with "operator class gin_trgm_ops does not exist" and
+            // the schema init swallows it as a warning, silently leaving the search unindexed.
+            {
+                using var trgmConn = new Npgsql.NpgsqlConnection(connectionStringDictionary[Database.Transfers]);
+                trgmConn.Open();
+                using var trgmCmd = trgmConn.CreateCommand();
+                trgmCmd.CommandText = "CREATE EXTENSION IF NOT EXISTS pg_trgm";
+                trgmCmd.ExecuteNonQuery();
+            }
+
             services.AddDbContext<TransfersDbContext>(connectionStringDictionary[Database.Transfers]);
 
             // TransferNetworkInfo is a custom (non-EF) table; create it after the transfers schema is ready.
@@ -810,7 +824,11 @@ namespace resonance
                         "Lon"       DOUBLE PRECISION,
                         "LastSeen"  TIMESTAMPTZ NOT NULL,
                         PRIMARY KEY ("Username")
-                    )
+                    );
+
+                    CREATE INDEX IF NOT EXISTS "IDX_NetworkInfo_SearchTrgm"
+                        ON transfers."TransferNetworkInfo"
+                        USING gin ("Username" gin_trgm_ops, "IpAddress" gin_trgm_ops, "Country" gin_trgm_ops, "City" gin_trgm_ops);
                     """;
                 pgCmd.ExecuteNonQuery();
             }

@@ -799,6 +799,8 @@ public class ReportsService
             throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than zero");
         }
 
+        search = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+
         var sortColumn = sortBy switch
         {
             UserReportSortBy.UploadCount => "UploadCount",
@@ -813,15 +815,34 @@ public class ReportsService
         string sql;
         if (UsePostgres)
         {
+            // Resolve the matching usernames up front and aggregate only their rows. Filtering
+            // after the CTE reads correctly but forces every user in the window to be aggregated
+            // before the search can discard them, so a one-city search costs as much as the full
+            // list. Both sides of the union are trigram-indexed, and the IN list lets the
+            // aggregate seek on IDX_Transfers_UserUploadStatistics instead of scanning.
+            //
+            // ILIKE, not LIKE: Postgres LIKE is case-sensitive, and nobody types a city with the
+            // casing the geo-IP provider happened to store.
+            var searchCte = search is not null
+                ? @"matched AS (
+                        SELECT ""Username"" FROM transfers.""TransferNetworkInfo""
+                        WHERE ""Username"" ILIKE @Search ESCAPE '\'
+                           OR ""IpAddress"" ILIKE @Search ESCAPE '\'
+                           OR ""Country"" ILIKE @Search ESCAPE '\'
+                           OR ""City"" ILIKE @Search ESCAPE '\'
+                        UNION
+                        SELECT DISTINCT ""Username"" FROM transfers.""Transfers""
+                        WHERE ""Username"" ILIKE @Search ESCAPE '\'
+                    ),"
+                : string.Empty;
+
             var searchClause = search is not null
-                ? @"AND (a.""Username"" LIKE @Search
-                      OR n.""IpAddress"" LIKE @Search
-                      OR n.""Country"" LIKE @Search
-                      OR n.""City"" LIKE @Search)"
+                ? @"AND ""Username"" IN (SELECT ""Username"" FROM matched)"
                 : string.Empty;
 
             sql = $@"
-                WITH aggregated AS (
+                WITH {searchCte}
+                aggregated AS (
                     SELECT
                         ""Username"",
                         SUM(CASE WHEN ""Direction"" = 'Upload'   AND ""State"" = 48 THEN 1 ELSE 0 END) AS UploadCount,
@@ -836,12 +857,12 @@ public class ReportsService
                     FROM transfers.""Transfers""
                     WHERE ""EndedAt"" IS NOT NULL
                         AND ""EndedAt"" BETWEEN @Start AND @End
+                        {searchClause}
                     GROUP BY ""Username""
                 )
                 SELECT a.*, n.""IpAddress"", n.""Country"", n.""City"", n.""IsVpn"", n.""Lat"", n.""Lon"", COUNT(*) OVER() AS TotalCount
                 FROM aggregated a
                 LEFT JOIN transfers.""TransferNetworkInfo"" n ON n.""Username"" = a.""Username""
-                WHERE 1=1 {searchClause}
                 ORDER BY {sortColumn} {sortOrder}, a.""Username"" DESC
                 LIMIT @Limit
                 OFFSET @Offset
@@ -849,11 +870,13 @@ public class ReportsService
         }
         else
         {
+            // LIKE is already case-insensitive for ASCII on SQLite, so it needs no ILIKE
+            // equivalent; the term is escaped either way, hence the ESCAPE clause.
             var searchClause = search is not null
-                ? @"AND (a.Username LIKE @Search
-                      OR n.IpAddress LIKE @Search
-                      OR n.Country LIKE @Search
-                      OR n.City LIKE @Search)"
+                ? @"AND (a.Username LIKE @Search ESCAPE '\'
+                      OR n.IpAddress LIKE @Search ESCAPE '\'
+                      OR n.Country LIKE @Search ESCAPE '\'
+                      OR n.City LIKE @Search ESCAPE '\')"
                 : string.Empty;
 
             sql = $@"
@@ -893,7 +916,7 @@ public class ReportsService
             {
                 Start = s,
                 End = e,
-                Search = search is not null ? "%" + search + "%" : null,
+                Search = search is not null ? "%" + EscapeLike(search) + "%" : null,
                 Limit = limit,
                 Offset = offset,
             };

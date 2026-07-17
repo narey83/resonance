@@ -131,6 +131,20 @@ namespace resonance.Transfers
                 .HasDatabaseName("IDX_Transfers_Reports")
                 .HasFilter("\"EndedAt\" IS NOT NULL")
                 .IncludeProperties(e => new { e.Direction, e.State, e.StateDescription, e.Size, e.Username, e.AverageSpeed, e.StartedAt, e.EnqueuedAt });
+
+            // covers the user report search, which resolves usernames with a leading-wildcard
+            // ILIKE; the btree indexes above are all useless for that, leaving a scan of every
+            // row. Postgres only: SQLite has no trigram support, and its LIKE is already
+            // case-insensitive. Depends on the pg_trgm extension created during startup.
+            if (Database.IsNpgsql())
+            {
+                modelBuilder
+                    .Entity<Transfer>()
+                    .HasIndex(e => e.Username)
+                    .HasDatabaseName("IDX_Transfers_UsernameTrgm")
+                    .HasMethod("gin")
+                    .HasOperators("gin_trgm_ops");
+            }
         }
     }
 }
