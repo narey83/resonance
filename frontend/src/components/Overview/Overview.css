@@ -314,6 +314,116 @@
   cursor: default;
 }
 
+/* ── Profile avatar + status comment chip ───────────────── */
+
+.status-avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  overflow: visible;
+  color: var(--accent);
+}
+
+.status-avatar-img {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.status-avatar-presence {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--bg-elevated, #fff);
+  box-sizing: content-box;
+}
+
+.status-avatar-presence.online { background: #48bb78; }
+.status-avatar-presence.away { background: #ecc94b; }
+.status-avatar-presence.offline { background: #6b7280; }
+
+.status-comment-chip {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  background: var(--surface-hover);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.status-menu-photo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 8px;
+}
+
+.status-menu-photo-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--surface-input);
+  color: var(--accent);
+}
+
+.status-menu-photo-preview img {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+}
+
+.status-menu-photo-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.status-menu-photo-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.status-menu-photo-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.status-menu-photo-btn.danger {
+  color: var(--danger);
+}
+
+.status-menu-photo-btn.danger:hover:not(:disabled) {
+  background: rgba(var(--danger-rgb, 239, 68, 68), 0.08);
+  border-color: rgba(var(--danger-rgb, 239, 68, 68), 0.4);
+}
+
+.status-menu-photo-btn .status-spin {
+  animation: spin 0.8s linear infinite;
+}
+
 .status-strip-btn {
   display: inline-flex;
   align-items: center;
@@ -1152,17 +1262,8 @@ html.amoled {
   border-bottom: none;
 }
 
-.leaderboard-table tr:hover td {
-  background: var(--surface-hover);
-  cursor: pointer;
-}
-
-/* User Activity rows aren't clickable (actions live on the username's icons),
-   so they stay static — no pointer cursor or hover affordance. */
-.user-reports-table tr:hover td {
-  background: transparent;
-  cursor: default;
-}
+/* No rows here are clickable — every per-user action lives on the username's
+   own icon row — so they stay static: no pointer cursor, no hover affordance. */
 
 .leaderboard-rank {
   color: var(--text-muted);
@@ -1521,8 +1622,32 @@ html.amoled {
 }
 
 .user-reports-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 14px;
   border-bottom: 1px solid var(--border);
+}
+
+.user-reports-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 5px 10px;
+  background: var(--surface-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, opacity 0.15s;
+}
+
+.user-reports-reset:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .user-reports-search {
@@ -1541,9 +1666,40 @@ html.amoled {
 .user-reports-search:focus { border-color: var(--accent); }
 
 .user-reports-scroll {
+  position: relative;
   overflow-y: auto;
   max-height: min(600px, calc(100vh - 330px));
   min-height: 120px;
+}
+
+/* Page-flick feedback: dim the stale rows and lock scroll while the next
+   page loads, so the overlay spinner reads clearly over a muted table. */
+.user-reports-scroll--paging {
+  overflow-y: hidden;
+}
+
+.user-reports-scroll--paging .user-reports-table {
+  opacity: 0.4;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+/* Pinned to the top of the visible table (scroll resets to 0 on page change)
+   and given zero height so it never adds scroll length or shifts the rows. */
+.user-reports-paging-overlay {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 0;
+  overflow: visible;
+}
+
+.user-reports-paging-overlay > .overview-glass-spinner {
+  position: absolute;
+  top: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  animation: spin 0.7s linear infinite, overview-glass-in 0.15s ease;
 }
 
 .user-reports-table th { white-space: nowrap; }
@@ -1557,6 +1713,21 @@ html.amoled {
 
 .user-reports-th { white-space: nowrap; }
 .user-reports-th.active { color: var(--text-primary); }
+
+/* Header label + leading column icon. inline-flex so it obeys the cell's
+   text-align (left for text columns, right for numeric ones). */
+.user-reports-th-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.user-reports-th-icon {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.user-reports-th.active .user-reports-th-icon { opacity: 0.9; }
 
 .user-reports-num,
 .user-reports-table th.user-reports-num {
@@ -2637,10 +2808,34 @@ html.amoled {
 .user-report-page-btn:disabled { opacity: 0.35; cursor: default; }
 
 .user-report-page-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
+
+.user-report-page-input {
+  width: 3.5em;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-input);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.15s;
+  -moz-appearance: textfield;
+}
+
+.user-report-page-input:focus { border-color: var(--accent); }
+.user-report-page-input:disabled { opacity: 0.5; cursor: default; }
+
+.user-report-page-total { white-space: nowrap; }
 
 /* ── Responsive ────────────────────────────────────────────────────────────── */
 
