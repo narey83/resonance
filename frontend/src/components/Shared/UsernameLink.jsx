@@ -34,7 +34,7 @@ import {
   useBlockedUsers,
 } from '../../lib/blockedUsers';
 import { isAdmin } from '../../lib/token';
-import UserReportModal from '../Overview/UserReportModal';
+import UserReportWindow from '../Overview/UserReportWindow';
 import { Ban, BarChart3, FolderSearch, MessageSquare } from 'lucide-react';
 import React, { useState } from 'react';
 import { useHistory } from 'react-router-dom';
@@ -149,7 +149,7 @@ const UsernameLink = ({ active, className, onReport, style, username }) => {
         />
       </button>
       {showReport && (
-        <UserReportModal
+        <UserReportWindow
           onClose={() => setShowReport(false)}
           username={username}
         />

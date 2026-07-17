@@ -30,7 +30,7 @@
 import { lookupIp } from '../../lib/network';
 import { formatBytes, parseUtcDate } from '../../lib/util';
 import UsernameLink from '../Shared/UsernameLink';
-import UserReportModal from './UserReportModal';
+import UserReportWindow from './UserReportWindow';
 import React, {
   useCallback,
   useEffect,
@@ -723,7 +723,7 @@ const WorldMap = ({
           );
         })()}
       {reportUser && (
-        <UserReportModal
+        <UserReportWindow
           onClose={() => setReportUser(null)}
           seed={reportUser.seed}
           username={reportUser.username}

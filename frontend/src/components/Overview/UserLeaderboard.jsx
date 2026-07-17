@@ -29,7 +29,7 @@
 
 import { formatBytes } from '../../lib/util';
 import UsernameLink from '../Shared/UsernameLink';
-import UserReportModal from './UserReportModal';
+import UserReportWindow from './UserReportWindow';
 import React, { useState } from 'react';
 
 const formatSpeed = (speed) => (speed > 0 ? `${formatBytes(speed)}/s` : '—');
@@ -106,7 +106,7 @@ const UserLeaderboard = ({ leaderboard }) => {
       </div>
 
       {selectedUser && (
-        <UserReportModal
+        <UserReportWindow
           onClose={() => setSelectedUser(null)}
           username={selectedUser}
         />
