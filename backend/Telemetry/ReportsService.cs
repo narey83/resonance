@@ -915,6 +915,7 @@ public class ReportsService
         DateTime? start = null,
         DateTime? end = null,
         SortOrder sortOrder = SortOrder.DESC,
+        string search = null,
         int limit = 25,
         int offset = 0)
     {
@@ -926,10 +927,17 @@ public class ReportsService
             throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than zero");
         }
 
+        search = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+
         string sql, countSql;
         if (UsePostgres)
         {
             var dirClause = direction is not null ? "AND \"Direction\" = @Direction" : string.Empty;
+
+            // ILIKE, not LIKE: Postgres LIKE is case-sensitive, and nobody types
+            // a track name with the original casing. Matched against the whole
+            // stored path so a folder name finds its contents too.
+            var searchClause = search is not null ? "AND \"Filename\" ILIKE @Search ESCAPE '\\'" : string.Empty;
             sql = $@"
                 SELECT
                     ""Id""::text AS ""Id"",
@@ -956,6 +964,7 @@ public class ReportsService
                     AND ""EndedAt"" IS NOT NULL
                     AND ""EndedAt"" BETWEEN @Start AND @End
                     {dirClause}
+                    {searchClause}
                 ORDER BY ""EndedAt"" {sortOrder}
                 LIMIT @Limit
                 OFFSET @Offset
@@ -967,11 +976,15 @@ public class ReportsService
                     AND ""EndedAt"" IS NOT NULL
                     AND ""EndedAt"" BETWEEN @Start AND @End
                     {dirClause}
+                    {searchClause}
             ";
         }
         else
         {
             var dirClause = direction is not null ? "AND Direction = @Direction" : string.Empty;
+
+            // SQLite's LIKE is already case-insensitive for ASCII.
+            var searchClause = search is not null ? "AND Filename LIKE @Search ESCAPE '\\'" : string.Empty;
             sql = $@"
                 SELECT
                     Id,
@@ -998,6 +1011,7 @@ public class ReportsService
                     AND EndedAt IS NOT NULL
                     AND EndedAt BETWEEN @Start AND @End
                     {dirClause}
+                    {searchClause}
                 ORDER BY EndedAt {sortOrder}
                 LIMIT @Limit
                 OFFSET @Offset
@@ -1009,6 +1023,7 @@ public class ReportsService
                     AND EndedAt IS NOT NULL
                     AND EndedAt BETWEEN @Start AND @End
                     {dirClause}
+                    {searchClause}
             ";
         }
 
@@ -1020,6 +1035,7 @@ public class ReportsService
             Direction = direction?.ToString(),
             Start = s,
             End = e,
+            Search = search is not null ? "%" + EscapeLike(search) + "%" : null,
             Limit = limit,
             Offset = offset,
         };
@@ -1718,6 +1734,22 @@ public class ReportsService
     // Normalise DateTime values to UTC kind so Npgsql accepts them for timestamptz columns.
     // For SQLite the kind is ignored by Dapper so this is safe for both providers.
     private static DateTime Utc(DateTime dt) => DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+
+    /// <summary>
+    ///     Escapes LIKE/ILIKE wildcards so a search term matches literally.
+    /// </summary>
+    /// <remarks>
+    ///     Music filenames are full of underscores, and '_' is the single-character
+    ///     wildcard — left unescaped, "track_01" would also match "track-01".
+    ///     Pair with an ESCAPE '\' clause.
+    /// </remarks>
+    /// <param name="value">The raw search term.</param>
+    /// <returns>The term with backslash, percent and underscore escaped.</returns>
+    private static string EscapeLike(string value) =>
+        value
+            .Replace("\\", "\\\\")
+            .Replace("%", "\\%")
+            .Replace("_", "\\_");
 
     // Serve-stale-while-revalidate: an entry past its TTL is returned immediately and refreshed on
     // a background thread, so requests only block on the database the very first time a window is

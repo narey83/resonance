@@ -151,6 +151,7 @@ export const getUserTransfers = async ({
   start,
   end,
   sortOrder = 'DESC',
+  search,
   limit = 25,
   offset = 0,
 } = {}) => {
@@ -159,6 +160,7 @@ export const getUserTransfers = async ({
     start,
     end,
     sortOrder,
+    search,
     limit,
     offset,
   });
