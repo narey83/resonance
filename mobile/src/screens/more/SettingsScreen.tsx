@@ -29,6 +29,8 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  AppState,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -36,6 +38,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { floatingOverlay } from '../../native/floatingOverlay';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { getDeviceName } from '../../store/auth';
@@ -80,7 +83,9 @@ export default function SettingsScreen({ navigation }: Props) {
     theme, setTheme,
     remoteLogging, loaded, setRemoteLogging,
     librarySyncDebug, setLibrarySyncDebug,
+    backendLogs, setBackendLogs,
     streamQuality, setStreamQuality,
+    playerMode, setPlayerMode,
     notifications, setNotification,
   } = useAppSettings();
 
@@ -144,6 +149,23 @@ export default function SettingsScreen({ navigation }: Props) {
           </View>
           <Text style={s.segmentHint}>{STREAM_QUALITY_SUBTITLE[streamQuality]}</Text>
         </View>
+        <SettingRow
+          label="Floating player"
+          subtitle="Draggable bubble instead of the docked mini-bar"
+          colors={colors}
+          last
+        >
+          <Switch
+            disabled={!loaded}
+            onValueChange={(v) => setPlayerMode(v ? 'bubble' : 'bar')}
+            thumbColor={colors.textPrimary}
+            trackColor={{ false: colors.bgElevated, true: colors.accent }}
+            value={playerMode === 'bubble'}
+          />
+        </SettingRow>
+        {Platform.OS === 'android' && floatingOverlay.supported && playerMode === 'bubble' && (
+          <OverlayPermissionRow colors={colors} />
+        )}
       </View>
 
       {/* Notifications */}
@@ -276,6 +298,19 @@ export default function SettingsScreen({ navigation }: Props) {
             value={librarySyncDebug}
           />
         </SettingRow>
+        <SettingRow
+          label="Backend logs"
+          subtitle="Fetch and stream server logs in the System screen"
+          colors={colors}
+        >
+          <Switch
+            disabled={!loaded}
+            onValueChange={setBackendLogs}
+            thumbColor={colors.textPrimary}
+            trackColor={{ false: colors.bgElevated, true: colors.accent }}
+            value={backendLogs}
+          />
+        </SettingRow>
         <Pressable
           onPress={() => navigation.navigate('NetworkLog')}
           style={({ pressed }) => [rowStyle, pressed && { backgroundColor: colors.bgElevated }]}
@@ -310,6 +345,38 @@ function SectionHeader({ title, colors }: { title: string; colors: ThemeColors }
     }}>
       {title.toUpperCase()}
     </Text>
+  );
+}
+
+function OverlayPermissionRow({ colors }: { colors: ThemeColors }) {
+  const [granted, setGranted] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    const check = () => floatingOverlay.hasPermission().then((v) => { if (mounted) setGranted(v); });
+    check();
+    const sub = AppState.addEventListener('change', (s) => { if (s === 'active') check(); });
+    return () => { mounted = false; sub.remove(); };
+  }, []);
+
+  return (
+    <SettingRow
+      label="Display over other apps"
+      subtitle={granted ? 'Enabled — the player floats over other apps and the home screen' : 'Let the player float over other apps and the home screen'}
+      colors={colors}
+      last
+    >
+      {granted ? (
+        <Text style={{ fontSize: Typography.sm, fontWeight: '600', color: colors.accent }}>On</Text>
+      ) : (
+        <Pressable
+          onPress={() => floatingOverlay.requestPermission()}
+          style={{ paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, borderRadius: Radius.sm, backgroundColor: colors.accent }}
+        >
+          <Text style={{ fontSize: Typography.sm, fontWeight: '600', color: '#fff' }}>Enable</Text>
+        </Pressable>
+      )}
+    </SettingRow>
   );
 }
 

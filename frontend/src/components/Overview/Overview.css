@@ -162,28 +162,7 @@
   flex: 1;
 }
 
-.status-strip-conn-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 100%;
-  padding: 0 8px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  border-radius: 0;
-  transition: background 0.12s;
-}
-
-.status-strip-conn-btn:hover {
-  background: var(--surface-hover);
-}
-
-.status-strip-conn-btn:hover .status-icon.connected {
-  color: var(--danger);
-}
-
-/* ── Username + status menu ─────────────────────────────── */
+/* ── Username + connection + status menu ─────────────────── */
 
 .status-user-wrap {
   position: relative;
@@ -253,6 +232,39 @@
 .status-menu-item.active { font-weight: 500; }
 .status-menu-item--danger { color: var(--danger); }
 .status-menu-item--danger:hover { background: rgba(239,68,68,0.08); }
+
+/* Connection on/off toggle row: label on the left, switch pushed to the right */
+.status-menu-toggle .status-toggle-switch {
+  margin-left: auto;
+}
+
+.status-toggle-switch {
+  align-items: center;
+  background: var(--border);
+  border-radius: 999px;
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 16px;
+  padding: 2px;
+  transition: background 0.15s;
+  width: 28px;
+}
+
+.status-toggle-switch.on {
+  background: var(--success);
+}
+
+.status-toggle-knob {
+  background: #fff;
+  border-radius: 50%;
+  height: 12px;
+  transition: transform 0.15s;
+  width: 12px;
+}
+
+.status-toggle-switch.on .status-toggle-knob {
+  transform: translateX(12px);
+}
 
 .status-menu-dot {
   border-radius: 50%;
@@ -3244,19 +3256,8 @@ html.amoled {
   font-style: italic;
 }
 
-/* ── Connection phase label (pre-login status) ──────────────────────────── */
-.status-conn-phase {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-.status-conn-phase.busy {
-  color: var(--text-primary);
-}
-.status-conn-phase .status-spin {
+/* Spinner used in the status strip (e.g. while connecting to Soulseek). */
+.status-spin {
   animation: spin 0.8s linear infinite;
 }
 

@@ -29,11 +29,22 @@
 
 import { create } from 'zustand';
 
+// On-screen square the full player should morph out of / back into. Set by the
+// floating bubble at the moment of tap so PlayerOverlay can grow its hero artwork
+// from exactly where the bubble sits; null means "no bubble origin" → the overlay
+// uses its classic slide-up-from-bottom entrance (mini-bar mode).
+export interface MorphRect {
+  x:    number;
+  y:    number;
+  size: number;
+}
+
 interface PlayerUIState {
   expanded: boolean;
   // Whether a track is currently loaded (mini bar visible). Synced from PlayerContext.
   hasTrack: boolean;
-  expand: () => void;
+  morphFrom: MorphRect | null;
+  expand: (from?: MorphRect) => void;
   collapse: () => void;
   setHasTrack: (v: boolean) => void;
 }
@@ -41,7 +52,8 @@ interface PlayerUIState {
 export const usePlayerUI = create<PlayerUIState>((set) => ({
   expanded: false,
   hasTrack: false,
-  expand:   () => set({ expanded: true }),
+  morphFrom: null,
+  expand:   (from) => set({ expanded: true, morphFrom: from ?? null }),
   collapse: () => set({ expanded: false }),
   setHasTrack: (v) => set({ hasTrack: v }),
 }));

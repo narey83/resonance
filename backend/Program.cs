@@ -231,6 +231,14 @@ namespace resonance
         public static string DataDirectory { get; private set; } = null;
 
         /// <summary>
+        ///     Gets the on-disk path of the profile picture managed by the web UI. This doubles as the Soulseek
+        ///     picture served to peers.
+        /// </summary>
+        public static string ProfilePicturePath => DataDirectory == null
+            ? null
+            : Path.Combine(DataDirectory, "profile", "picture.jpg");
+
+        /// <summary>
         ///     Gets the path where backups of persistent data saved.
         /// </summary>
         public static string DataBackupDirectory { get; private set; } = null;
@@ -460,6 +468,26 @@ namespace resonance
                 Configuration = new ConfigurationBuilder()
                     .AddConfigurationProviders(EnvironmentVariablePrefix, ConfigurationFile, reloadOnChange: true)
                     .Build();
+
+                // self-heal: if the Soulseek picture points at the web-UI-managed file but that file is gone
+                // (e.g. the data directory was wiped), clear the key so the config doesn't reference a file the
+                // consumer will fail to read on every request. we only touch our own managed path; a
+                // user-configured path is left alone.
+                var configuredPicture = Configuration.GetValue<string>($"{AppName}:soulseek:picture");
+                if (!string.IsNullOrEmpty(configuredPicture)
+                    && configuredPicture == ProfilePicturePath
+                    && !IOFile.Exists(configuredPicture))
+                {
+                    Log.Warning("Managed profile picture {Path} is missing; clearing the configuration reference", configuredPicture);
+
+                    var yaml = IOFile.Exists(ConfigurationFile) ? IOFile.ReadAllText(ConfigurationFile) : string.Empty;
+                    var patched = resonance.Configuration.YamlConfigPatcher.Patch(yaml, "soulseek", new Dictionary<string, string> { ["picture"] = null });
+                    IOFile.WriteAllText(ConfigurationFile, patched);
+
+                    Configuration = new ConfigurationBuilder()
+                        .AddConfigurationProviders(EnvironmentVariablePrefix, ConfigurationFile, reloadOnChange: true)
+                        .Build();
+                }
 
                 Configuration.GetSection(AppName)
                     .Bind(OptionsAtStartup, (o) => { o.BindNonPublicProperties = true; });

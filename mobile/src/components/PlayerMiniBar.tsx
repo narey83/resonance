@@ -84,7 +84,7 @@ export function PlayerMiniBar() {
       <View style={[StyleSheet.absoluteFill, styles.scrim]} />
 
       {/* Content row */}
-      <Pressable onPress={expand} style={styles.row}>
+      <Pressable onPress={() => expand()} style={styles.row}>
         {/* Artwork thumbnail */}
         {artUrl ? (
           <Image source={{ uri: artUrl, cacheKey: artCacheKey }} style={styles.art} />

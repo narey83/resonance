@@ -48,12 +48,18 @@ export interface NotificationPrefs {
 // 'saver'    — always transcode to a low bitrate
 export type StreamQuality = 'auto' | 'original' | 'saver';
 
+// 'bubble' — floating draggable chat-head player (experimental)
+// 'bar'    — classic docked mini-bar above the tab bar
+export type PlayerMode = 'bubble' | 'bar';
+
 interface AppSettingsStore {
   theme:             ThemeName;
   remoteLogging:     boolean;
   librarySyncDebug:  boolean;
+  backendLogs:       boolean;
   artworkBackground: boolean;
   streamQuality:     StreamQuality;
+  playerMode:        PlayerMode;
   notifications:     NotificationPrefs;
   loaded:            boolean;
 
@@ -61,8 +67,10 @@ interface AppSettingsStore {
   setTheme:              (theme: ThemeName) => Promise<void>;
   setRemoteLogging:      (enabled: boolean) => Promise<void>;
   setLibrarySyncDebug:   (enabled: boolean) => Promise<void>;
+  setBackendLogs:        (enabled: boolean) => Promise<void>;
   setArtworkBackground:  (enabled: boolean) => Promise<void>;
   setStreamQuality:      (quality: StreamQuality) => Promise<void>;
+  setPlayerMode:         (mode: PlayerMode) => Promise<void>;
   setNotification:       (key: keyof NotificationPrefs, enabled: boolean) => Promise<void>;
 }
 
@@ -80,8 +88,10 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
   theme:             'system',
   remoteLogging:     false,
   librarySyncDebug:  false,
+  backendLogs:       false,
   artworkBackground: true,
   streamQuality:     'auto',
+  playerMode:        'bubble',
   notifications:     DEFAULT_NOTIFICATIONS,
   loaded:            false,
 
@@ -93,8 +103,10 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
         theme:             parsed.theme             ?? 'system',
         remoteLogging:     parsed.remoteLogging     ?? false,
         librarySyncDebug:  parsed.librarySyncDebug  ?? false,
+        backendLogs:       parsed.backendLogs       ?? false,
         artworkBackground: parsed.artworkBackground ?? true,
         streamQuality:     parsed.streamQuality     ?? 'auto',
+        playerMode:        parsed.playerMode         ?? 'bubble',
         notifications:     { ...DEFAULT_NOTIFICATIONS, ...(parsed.notifications ?? {}) },
         loaded:            true,
       });
@@ -118,6 +130,11 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
     await persist(get());
   },
 
+  setBackendLogs: async (enabled) => {
+    set({ backendLogs: enabled });
+    await persist(get());
+  },
+
   setArtworkBackground: async (enabled) => {
     set({ artworkBackground: enabled });
     await persist(get());
@@ -128,6 +145,11 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
     await persist(get());
   },
 
+  setPlayerMode: async (mode) => {
+    set({ playerMode: mode });
+    await persist(get());
+  },
+
   setNotification: async (key, enabled) => {
     const notifications = { ...get().notifications, [key]: enabled };
     set({ notifications });
@@ -135,7 +157,7 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
   },
 }));
 
-async function persist(state: Pick<AppSettingsStore, 'theme' | 'remoteLogging' | 'librarySyncDebug' | 'artworkBackground' | 'streamQuality' | 'notifications'>) {
+async function persist(state: Pick<AppSettingsStore, 'theme' | 'remoteLogging' | 'librarySyncDebug' | 'backendLogs' | 'artworkBackground' | 'streamQuality' | 'playerMode' | 'notifications'>) {
   try {
     await SecureStore.setItemAsync(
       STORE_KEY,
@@ -143,8 +165,10 @@ async function persist(state: Pick<AppSettingsStore, 'theme' | 'remoteLogging' |
         theme:             state.theme,
         remoteLogging:     state.remoteLogging,
         librarySyncDebug:  state.librarySyncDebug,
+        backendLogs:       state.backendLogs,
         artworkBackground: state.artworkBackground,
         streamQuality:     state.streamQuality,
+        playerMode:        state.playerMode,
         notifications:     state.notifications,
       }),
     );

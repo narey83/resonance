@@ -39,6 +39,12 @@ public enum UserReportSortBy
     DownloadBytes,
     Errors,
     LastSeen,
+    Username,
+    IpAddress,
+    Country,
+    City,
+    UploadSpeed,
+    DownloadSpeed,
 }
 
 public record UserReportSummary

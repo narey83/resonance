@@ -2235,10 +2235,15 @@ namespace resonance
             /// <summary>
             ///     Gets the file path for the user's profile picture.
             /// </summary>
+            /// <remarks>
+            ///     Deliberately not validated with <c>[FileExists]</c>: options are re-validated on every config
+            ///     reload, so a missing file here would invalidate the entire configuration at runtime (throwing on
+            ///     every options access) rather than just failing at startup. The consumer reads this file defensively
+            ///     and simply omits the picture if it is missing or unreadable.
+            /// </remarks>
             [Argument(default, "slsk-picture")]
             [EnvironmentVariable("SLSK_PICTURE")]
             [Description("user picture for the Soulseek network")]
-            [FileExists(FileAccess.Read)]
             public string Picture { get; init; } = null;
 
             /// <summary>

@@ -30,14 +30,13 @@
 namespace resonance.Core.API
 {
     using System;
-    using System.IO;
-    using System.Text;
+    using System.Collections.Generic;
     using Asp.Versioning;
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.Extensions.Options;
+    using resonance.Configuration;
     using Serilog;
-    using YamlDotNet.RepresentationModel;
     using AppOptions = resonance.Options;
 
     /// <summary>
@@ -99,7 +98,11 @@ namespace resonance.Core.API
                     ? System.IO.File.ReadAllText(Program.ConfigurationFile)
                     : string.Empty;
 
-                var updatedYaml = PatchCredentialsInYaml(currentYaml, request.Username, request.Password);
+                var updatedYaml = YamlConfigPatcher.Patch(currentYaml, "soulseek", new Dictionary<string, string>
+                {
+                    ["username"] = request.Username,
+                    ["password"] = request.Password,
+                });
                 System.IO.File.WriteAllText(Program.ConfigurationFile, updatedYaml);
 
                 Log.Information("Soulseek credentials updated for user {Username}", request.Username);
@@ -115,76 +118,6 @@ namespace resonance.Core.API
             }
         }
 
-        private static string PatchCredentialsInYaml(string yaml, string username, string password)
-        {
-            var yamlStream = new YamlStream();
-
-            if (!string.IsNullOrWhiteSpace(yaml))
-            {
-                yamlStream.Load(new StringReader(yaml));
-            }
-
-            YamlMappingNode root;
-            if (yamlStream.Documents.Count == 0)
-            {
-                root = new YamlMappingNode();
-                yamlStream.Documents.Add(new YamlDocument(root));
-            }
-            else
-            {
-                root = (YamlMappingNode)yamlStream.Documents[0].RootNode;
-            }
-
-            YamlNode soulseekKey = null;
-            foreach (var key in root.Children.Keys)
-            {
-                if (key is YamlScalarNode s && s.Value == "soulseek")
-                {
-                    soulseekKey = key;
-                    break;
-                }
-            }
-
-            YamlMappingNode soulseekSection;
-            if (soulseekKey == null)
-            {
-                soulseekSection = new YamlMappingNode();
-                root.Children.Add(new YamlScalarNode("soulseek"), soulseekSection);
-            }
-            else
-            {
-                soulseekSection = (YamlMappingNode)root.Children[soulseekKey];
-            }
-
-            SetOrUpdate(soulseekSection, "username", username);
-            SetOrUpdate(soulseekSection, "password", password);
-
-            var sb = new StringBuilder();
-            yamlStream.Save(new StringWriter(sb), assignAnchors: false);
-            return sb.ToString().Trim();
-        }
-
-        private static void SetOrUpdate(YamlMappingNode node, string key, string value)
-        {
-            YamlNode existingKey = null;
-            foreach (var k in node.Children.Keys)
-            {
-                if (k is YamlScalarNode s && s.Value == key)
-                {
-                    existingKey = k;
-                    break;
-                }
-            }
-
-            if (existingKey != null)
-            {
-                node.Children[existingKey] = new YamlScalarNode(value);
-            }
-            else
-            {
-                node.Children.Add(new YamlScalarNode(key), new YamlScalarNode(value));
-            }
-        }
     }
 
     public record SoulseekCredentialResponse(string Username, string Password);

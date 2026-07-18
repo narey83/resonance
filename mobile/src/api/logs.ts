@@ -1,4 +1,4 @@
-// <copyright file="SystemScreen.tsx" company="John Narey">
+// <copyright file="logs.ts" company="John Narey">
 //    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
 //   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
@@ -27,8 +27,56 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import React from 'react';
-import PlaceholderScreen from '../../components/PlaceholderScreen';
-export default function SystemScreen() {
-  return <PlaceholderScreen title="System" subtitle="Server config & logs" />;
+import { apiClient } from './client';
+
+// Mirrors the backend LogRecord (camelCased by the SignalR/JSON serializers).
+export interface LogRecord {
+  timestamp:   string;
+  level:       string;
+  context:     string | null;
+  subContext:  string | null;
+  message:     string | null;
+  exception:   string | null;
 }
+
+export interface LogQuery {
+  offset?: number;
+  limit?:  number;
+  level?:  string[];
+  context?: string;
+  search?: string;
+  from?:   string;
+  to?:     string;
+}
+
+export interface LogPage {
+  items: LogRecord[];
+  total: number;
+}
+
+const totalCount = (headers: Record<string, unknown>): number =>
+  Number.parseInt(String(headers['x-total-count'] ?? '0'), 10);
+
+// Paginated, filtered query of historical log entries from persistent storage.
+export const getLogs = ({
+  offset = 0,
+  limit = 100,
+  level,
+  context,
+  search,
+  from,
+  to,
+}: LogQuery = {}): Promise<LogPage> => {
+  const params = new URLSearchParams();
+  params.set('offset', String(offset));
+  params.set('limit', String(limit));
+  if (level?.length) for (const l of level) params.append('level', l);
+  if (context) params.set('context', context);
+  if (search) params.set('search', search);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+
+  return apiClient
+    .get<LogRecord[]>(`/logs?${params.toString()}`)
+    .then(r => ({ items: r.data, total: totalCount(r.headers as Record<string, unknown>) }));
+};

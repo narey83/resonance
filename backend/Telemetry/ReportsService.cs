@@ -747,7 +747,7 @@ public class ReportsService
                     SELECT Filename, COUNT(*) AS Count, COUNT(DISTINCT ""Username"") AS DistinctUsers, SUM(""Size"") AS TotalBytes
                     FROM files
                     GROUP BY Filename
-                    ORDER BY Count DESC, DistinctUsers DESC
+                    ORDER BY DistinctUsers DESC, Count DESC
                     LIMIT @Limit OFFSET @Offset
                 ";
             }
@@ -768,7 +768,7 @@ public class ReportsService
                     SELECT Filename, COUNT(*) AS Count, COUNT(DISTINCT Username) AS DistinctUsers, SUM(Size) AS TotalBytes
                     FROM files
                     GROUP BY LOWER(Filename)
-                    ORDER BY Count DESC, DistinctUsers DESC
+                    ORDER BY DistinctUsers DESC, Count DESC
                     LIMIT @Limit OFFSET @Offset
                 ";
             }
@@ -801,13 +801,25 @@ public class ReportsService
 
         search = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
 
+        // Aggregated columns are exposed unquoted by the CTE, so they sort by output
+        // name in both providers. The network columns come off the LEFT JOIN and must
+        // be table-qualified and Postgres-quoted; the speed averages are NULL for a
+        // user with no transfers in that direction, so COALESCE keeps them off the top
+        // on a DESC sort. `q` is the provider's identifier quote.
+        var q = UsePostgres ? "\"" : string.Empty;
         var sortColumn = sortBy switch
         {
             UserReportSortBy.UploadCount => "UploadCount",
             UserReportSortBy.DownloadCount => "DownloadCount",
             UserReportSortBy.UploadBytes => "UploadBytes",
             UserReportSortBy.DownloadBytes => "DownloadBytes",
+            UserReportSortBy.UploadSpeed => "COALESCE(UploadAverageSpeed, 0)",
+            UserReportSortBy.DownloadSpeed => "COALESCE(DownloadAverageSpeed, 0)",
             UserReportSortBy.Errors => "UploadErrorCount + DownloadErrorCount",
+            UserReportSortBy.Username => $"a.{q}Username{q}",
+            UserReportSortBy.IpAddress => $"n.{q}IpAddress{q}",
+            UserReportSortBy.Country => $"n.{q}Country{q}",
+            UserReportSortBy.City => $"n.{q}City{q}",
             UserReportSortBy.LastSeen => "LastSeen",
             _ => "LastSeen",
         };
