@@ -105,7 +105,20 @@ const getTime = (file) =>
 const maxTime = (files) =>
   files.reduce((max, f) => Math.max(max, getTime(f)), 0);
 
-const byRecent = (a, b) => getTime(b) - getTime(a);
+const STATE_SORT_ORDER = {
+  InProgress: 0,
+  Initializing: 1,
+  Requested: 2,
+  Queued: 3,
+  'Queued, Locally': 3,
+  'Queued, Remotely': 3,
+};
+const getStatePriority = (state) => STATE_SORT_ORDER[state] ?? 4;
+
+const byStateThenTime = (a, b) => {
+  const p = getStatePriority(a.state) - getStatePriority(b.state);
+  return p !== 0 ? p : getTime(a) - getTime(b);
+};
 
 const isActiveState = (state) => !state?.startsWith('Completed');
 const isCompletedState = (state) => Boolean(state?.startsWith('Completed'));
@@ -120,7 +133,7 @@ const buildGroups = (transfers, stateFilter) =>
           files: (directory.files ?? [])
             .filter((file) => file.direction?.toLowerCase() === 'upload')
             .filter((file) => stateFilter(file.state))
-            .sort(byRecent),
+            .sort(byStateThenTime),
         }))
         .filter((directory) => directory.files.length > 0)
         .sort((a, b) => maxTime(b.files) - maxTime(a.files)),
