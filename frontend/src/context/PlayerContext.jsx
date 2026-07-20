@@ -29,6 +29,7 @@
 
 import { getTracks } from '../lib/musicLibrary';
 import * as prefs from '../lib/prefs';
+import { ensureSigned } from '../lib/streamSignatures';
 import React, {
   createContext,
   useCallback,
@@ -137,6 +138,11 @@ export const PlayerProvider = ({ children }) => {
       setSessionValidated(true);
       return;
     }
+
+    // Warm signatures for every restored track (not just one sample per folder,
+    // below) — otherwise the restored current track may go unsigned and 401 on
+    // first play after a refresh.
+    ensureSigned(queueTracks.map((t) => t.path));
 
     const folderOf = (t) => {
       const p = t?.filename || t?.path || '';

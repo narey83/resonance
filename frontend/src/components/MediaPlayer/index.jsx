@@ -72,6 +72,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'react-toastify';
 
+const RESUME_POSITION_KEY = 'resonance-player-position';
+
 const CAST_CONTENT_TYPES = {
   mp3: 'audio/mpeg',
   flac: 'audio/flac',
@@ -315,6 +317,44 @@ const MediaPlayer = () => {
   const trackRef = useRef(track);
   trackRef.current = track;
 
+  // Position to resume at once the user presses play after a refresh — read once,
+  // consumed (and cleared) the first time it matches the track being loaded.
+  const pendingResumeRef = useRef(undefined);
+  if (pendingResumeRef.current === undefined) {
+    try {
+      const raw = sessionStorage.getItem(RESUME_POSITION_KEY);
+      pendingResumeRef.current = raw ? JSON.parse(raw) : null;
+    } catch {
+      pendingResumeRef.current = null;
+    }
+  }
+
+  // Record playback position right before the tab closes/reloads so it can be
+  // restored on the next load. Written once at unload rather than continuously.
+  useEffect(() => {
+    const handler = () => {
+      const audio = audioRef.current;
+      const currentTrack = trackRef.current;
+      const identity = currentTrack?.path || currentTrack?.filename;
+      if (!audio || !identity || googleCastRef.current?.connected) return;
+      try {
+        sessionStorage.setItem(
+          RESUME_POSITION_KEY,
+          JSON.stringify({ path: identity, time: audio.currentTime }),
+        );
+      } catch {
+        /* ignore — storage may be unavailable */
+      }
+    };
+
+    window.addEventListener('beforeunload', handler);
+    window.addEventListener('pagehide', handler);
+    return () => {
+      window.removeEventListener('beforeunload', handler);
+      window.removeEventListener('pagehide', handler);
+    };
+  }, []);
+
   // Ambient art-accent: when there's no track or it has no artwork, revert the
   // --art-* vars to the theme accent. When art IS present, AlbumArt's onColour
   // sets the live colour once the image loads, so the previous accent lingers
@@ -551,6 +591,15 @@ const MediaPlayer = () => {
 
       audio.src = localUrl;
       audio.load();
+
+      const resumeIdentity = track.path || track.filename;
+      if (
+        pendingResumeRef.current &&
+        pendingResumeRef.current.path === resumeIdentity
+      ) {
+        audio.currentTime = pendingResumeRef.current.time;
+        pendingResumeRef.current = null;
+      }
 
       try {
         await audio.play();
