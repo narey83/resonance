@@ -74,6 +74,7 @@ import { createPortal } from 'react-dom';
 import { toast } from 'react-toastify';
 
 const RESUME_POSITION_KEY = 'resonance-player-position';
+const SEEKER_STYLES = ['bar', 'waveform', 'colored'];
 
 const CAST_CONTENT_TYPES = {
   mp3: 'audio/mpeg',
@@ -701,7 +702,10 @@ const MediaPlayer = () => {
   };
 
   const toggleSeekerStyle = () => {
-    const style = seekerStyle === 'waveform' ? 'bar' : 'waveform';
+    const style =
+      SEEKER_STYLES[
+        (SEEKER_STYLES.indexOf(seekerStyle) + 1) % SEEKER_STYLES.length
+      ];
     setSeekerStyle(style);
     prefs.set('mediaPlayer.seekerStyle', style);
   };
@@ -937,13 +941,14 @@ const MediaPlayer = () => {
                 <span className="mp-expanded-time">
                   {formatSeconds(effectiveTime)}
                 </span>
-                {seekerStyle === 'waveform' && (
+                {seekerStyle !== 'bar' && (
                   <WaveformSeekBar
                     duration={displayDuration}
                     onReady={setWaveformReady}
                     onSeek={seekTo}
                     progressPct={progressPct}
                     track={track}
+                    variant={seekerStyle === 'colored' ? 'bands' : 'mono'}
                   />
                 )}
                 <div
@@ -957,9 +962,7 @@ const MediaPlayer = () => {
                   role="slider"
                   style={{
                     display:
-                      seekerStyle === 'waveform' && waveformReady
-                        ? 'none'
-                        : 'block',
+                      seekerStyle !== 'bar' && waveformReady ? 'none' : 'block',
                   }}
                   tabIndex={0}
                 >
@@ -978,11 +981,7 @@ const MediaPlayer = () => {
                 <button
                   className="mp-seeker-toggle hover-fx"
                   onClick={toggleSeekerStyle}
-                  title={
-                    seekerStyle === 'waveform'
-                      ? 'Switch to bar seeker'
-                      : 'Switch to waveform seeker'
-                  }
+                  title={`Seeker: ${seekerStyle} (click for ${SEEKER_STYLES[(SEEKER_STYLES.indexOf(seekerStyle) + 1) % SEEKER_STYLES.length]})`}
                   type="button"
                 >
                   <AudioWaveform size={14} />
