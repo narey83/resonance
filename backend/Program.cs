@@ -904,6 +904,7 @@ namespace resonance
 
             services.AddSingleton<IMessagingService, MessagingService>();
             services.AddSingleton<IConversationService, ConversationService>();
+            services.AddSingleton<resonance.Translation.ITranslationService, resonance.Translation.TranslationService>();
             services.AddSingleton<resonance.Transfers.ITransferErrorNotificationService, resonance.Transfers.TransferErrorNotificationService>();
 
             services.AddSingleton<IShareService, ShareService>();

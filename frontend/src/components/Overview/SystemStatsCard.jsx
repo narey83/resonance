@@ -17,6 +17,18 @@ const MAX_SAMPLES = 40;
 const buffers = {};
 let lastSample = null;
 
+// Compact process uptime, e.g. "12d 4h", "4h 12m", "12m", "<1m".
+const formatUptime = (seconds) => {
+  if (seconds == null || seconds < 0) return null;
+  const days = Math.floor(seconds / 86_400);
+  const hours = Math.floor((seconds % 86_400) / 3_600);
+  const minutes = Math.floor((seconds % 3_600) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m`;
+  return '<1m';
+};
+
 const Sparkline = ({ color, data, formatter }) => (
   <ResponsiveContainer
     height={36}
@@ -122,6 +134,8 @@ const SystemStatsCard = () => {
     })),
   ];
 
+  const uptime = formatUptime(system.uptimeSeconds);
+
   return (
     <div className="section-card">
       <div className="section-card-header">
@@ -132,6 +146,14 @@ const SystemStatsCard = () => {
           />{' '}
           System Resources
         </span>
+        {uptime && (
+          <span
+            className="section-card-meta"
+            title="Resonance uptime (since last backend start)"
+          >
+            up {uptime}
+          </span>
+        )}
       </div>
       <table className="leaderboard-table sysstats-table">
         <thead>

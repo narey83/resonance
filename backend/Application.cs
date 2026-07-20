@@ -1428,6 +1428,7 @@ namespace resonance
                 {
                     Volumes = volumes,
                     SampledAt = DateTime.UtcNow,
+                    UptimeSeconds = SystemStats.GetProcessUptimeSeconds(),
                     HostCpuPercent = SystemStats.GetHostCpuPercent(),
                     HostMemoryUsedBytes = memory?.UsedBytes ?? 0,
                     HostMemoryTotalBytes = memory?.TotalBytes ?? 0,

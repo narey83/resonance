@@ -2954,6 +2954,58 @@ namespace resonance
             public YtDlpOptions YtDlp { get; init; } = new YtDlpOptions();
 
             /// <summary>
+            ///     Gets chat/room message translation options.
+            /// </summary>
+            [Validate]
+            public TranslationOptions Translation { get; init; } = new TranslationOptions();
+
+            /// <summary>
+            ///     Message translation options.
+            /// </summary>
+            /// <remarks>
+            ///     When enabled, private and room messages can be translated on demand via the DeepL API.
+            ///     The API key selects the endpoint automatically: free keys (which end in <c>:fx</c>) use
+            ///     the free endpoint, all others use the pro endpoint. Set <see cref="ApiUrl"/> to override.
+            /// </remarks>
+            public class TranslationOptions
+            {
+                /// <summary>
+                ///     Gets a value indicating whether message translation is enabled.
+                /// </summary>
+                [Argument(default, "translation")]
+                [EnvironmentVariable("TRANSLATION")]
+                [Description("enable chat and chatroom message translation")]
+                public bool Enabled { get; init; } = false;
+
+                /// <summary>
+                ///     Gets the DeepL API authentication key.
+                /// </summary>
+                [Argument(default, "deepl-api-key")]
+                [EnvironmentVariable("DEEPL_API_KEY")]
+                [Description("DeepL API authentication key (free keys end in ':fx')")]
+                [Secret]
+                public string ApiKey { get; init; } = string.Empty;
+
+                /// <summary>
+                ///     Gets an explicit DeepL API base URL. When blank, the endpoint is selected
+                ///     automatically from the API key (free keys use the free endpoint).
+                /// </summary>
+                [Argument(default, "deepl-api-url")]
+                [EnvironmentVariable("DEEPL_API_URL")]
+                [Description("DeepL API base URL override; blank auto-selects free/pro from the key")]
+                public string ApiUrl { get; init; } = string.Empty;
+
+                /// <summary>
+                ///     Gets the default target language code (e.g. EN, DE, FR) used when a client
+                ///     does not specify one.
+                /// </summary>
+                [Argument(default, "translation-default-target-lang")]
+                [EnvironmentVariable("TRANSLATION_DEFAULT_TARGET_LANG")]
+                [Description("default target language code for translations (e.g. EN, DE, FR)")]
+                public string DefaultTargetLanguage { get; init; } = "EN";
+            }
+
+            /// <summary>
             ///     UPnP options.
             /// </summary>
             /// <remarks>

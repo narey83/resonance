@@ -77,6 +77,7 @@ namespace resonance
     public record SystemStatsState
     {
         public DateTime SampledAt { get; init; }
+        public double? UptimeSeconds { get; init; }
         public double? HostCpuPercent { get; init; }
         public long HostMemoryUsedBytes { get; init; }
         public long HostMemoryTotalBytes { get; init; }

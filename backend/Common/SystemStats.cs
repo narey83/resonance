@@ -85,6 +85,25 @@ namespace resonance.Common
         }
 
         /// <summary>
+        ///     Gets the Resonance process uptime in seconds, measured from the process start time.
+        ///     Returns null if the start time can't be read.
+        /// </summary>
+        /// <returns>The process uptime in seconds, or null if it can't be determined.</returns>
+        public static double? GetProcessUptimeSeconds()
+        {
+            try
+            {
+                using var process = System.Diagnostics.Process.GetCurrentProcess();
+                return (DateTime.Now - process.StartTime).TotalSeconds;
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("Failed to read process start time: {Message}", ex.Message);
+                return null;
+            }
+        }
+
+        /// <summary>
         ///     Gets host CPU utilization as a percentage, computed against the previous call's
         ///     /proc/stat sample. Returns null on the first call and on read failure.
         /// </summary>
