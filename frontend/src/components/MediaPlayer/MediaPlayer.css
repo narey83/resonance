@@ -818,7 +818,7 @@
   flex-direction: column;
   align-items: center;
   gap: 22px;
-  width: min(92vw, 460px);
+  width: min(92vw, 720px);
   text-align: center;
   color: #fff;
 }

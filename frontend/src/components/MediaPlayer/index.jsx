@@ -919,7 +919,7 @@ const MediaPlayer = () => {
                   onColour={applyAmbientColour}
                   path={track.path}
                   radius={16}
-                  size={320}
+                  size={480}
                 />
               </div>
 
