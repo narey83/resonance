@@ -110,21 +110,28 @@ const WaveformSeekBar = ({
     const peaks = peaksRef.current;
     if (!canvas || !peaks) return;
 
+    // Render at full device pixel density so more of the backend's 3000
+    // samples-per-track actually show up as bars, instead of the canvas's
+    // CSS-pixel width capping resolution well below what's available.
+    const dpr = window.devicePixelRatio || 1;
     const width = canvas.clientWidth;
     const height = canvas.clientHeight;
-    if (canvas.width !== width) canvas.width = width;
-    if (canvas.height !== height) canvas.height = height;
+    const pixelWidth = Math.round(width * dpr);
+    const pixelHeight = Math.round(height * dpr);
+    if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+    if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
 
-    const barWidth = 2;
+    const barWidth = 1;
     const gap = 1;
-    const numberSlots = Math.max(1, Math.floor(width / (barWidth + gap)));
+    const numberSlots = Math.max(1, Math.floor(pixelWidth / (barWidth + gap)));
     const overall = resamplePeaks(peaks.overall, numberSlots);
     let max = 1e-6;
     for (const peak of overall) if (peak > max) max = peak;
 
     const context = canvas.getContext('2d');
-    context.clearRect(0, 0, width, height);
-    const halfH = height / 2;
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, pixelWidth, pixelHeight);
+    const halfH = pixelHeight / 2;
     const playedSlots = Math.round((progressPct / 100) * numberSlots);
 
     if (variant === 'bands') {
