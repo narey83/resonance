@@ -79,6 +79,7 @@ import Searches from './Search/Searches';
 import Setup from './Setup';
 import ResonanceMark from './Shared/ResonanceMark';
 import DatabaseViewer from './System/DatabaseViewer';
+import Logs from './System/Logs';
 import System from './System/System';
 import Tags from './Tags/Tags';
 import TrackAnalysis from './TrackAnalysis/TrackAnalysis';
@@ -141,7 +142,7 @@ const AppQueuePanel = () => {
 
 const THEMES = ['light', 'amoled'];
 const THEME_LABELS = { amoled: 'AMOLED', light: 'Light' };
-const ALL_THEME_CLASSES = ['amoled'];
+const ALL_THEME_CLASSES = ['amoled', 'dark', 'dim'];
 
 const INIT_MAX_ATTEMPTS = 30;
 
@@ -325,7 +326,7 @@ const App = () => {
     () =>
       prefs.get('resonance-theme', null) ??
       (window.matchMedia('(prefers-color-scheme: dark)').matches
-        ? 'amoled'
+        ? 'dark'
         : 'light'),
   );
   const [uploadCount, setUploadCount] = useState(0);
@@ -456,7 +457,7 @@ const App = () => {
     const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const lightQuery = window.matchMedia('(prefers-color-scheme: light)');
     const onDark = (e) => {
-      if (e.matches) setTheme('amoled');
+      if (e.matches) setTheme('dark');
     };
 
     const onLight = (e) => {
@@ -983,6 +984,25 @@ const App = () => {
         }}
       >
         <DatabaseViewer />
+      </div>
+    );
+  }
+
+  if (
+    window.location.pathname === `${urlBase}/logs-popup` ||
+    window.location.pathname === `${urlBase}/logs-popup/`
+  ) {
+    return (
+      <div
+        style={{
+          height: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          background: 'var(--bg-primary)',
+          color: 'var(--text-primary)',
+        }}
+      >
+        <Logs />
       </div>
     );
   }
