@@ -915,10 +915,17 @@
   width: 24px;
   height: 24px;
   border-radius: 6px;
-  color: rgba(255, 255, 255, 0.55);
-  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.08);
   border: none;
   cursor: pointer;
+  transition: background var(--dur-fast, 120ms) var(--ease-standard, ease),
+              color var(--dur-fast, 120ms) var(--ease-standard, ease);
+}
+
+.mp-seeker-toggle:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .mp-expanded-controls {
