@@ -1412,8 +1412,8 @@ namespace resonance
 
             var memory = SystemStats.GetHostMemory();
 
-            // ponytail: two fixed volumes (music + system disk); make configurable if more appear
-            var volumes = new (string Name, string Path)[] { ("Music", Options.Directories.Downloads), ("System", "/") }
+            // ponytail: two fixed volumes (downloads + system disk); make configurable if more appear
+            var volumes = new (string Name, string Path)[] { ("Downloads", Options.Directories.Downloads), ("System", "/") }
                 .Select(v => DiskSpace.TryGet(v.Path, out var available, out var total)
                     ? new VolumeStatsState { Name = v.Name, UsedBytes = total - available, TotalBytes = total }
                     : null)
