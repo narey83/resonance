@@ -48,8 +48,6 @@ namespace resonance
     using System.Threading;
     using System.Threading.Tasks;
     using Microsoft.AspNetCore.Mvc.ModelBinding;
-    using YamlDotNet.Serialization;
-    using YamlDotNet.Serialization.NamingConventions;
 
     /// <summary>
     ///     Common extensions; things not specific to Soulseek or slskd.
@@ -362,27 +360,6 @@ namespace resonance
         /// <param name="obj">The object to serialize.</param>
         /// <returns>A string containing the serialized object.</returns>
         public static string ToJson(this object obj) => JsonSerializer.Serialize(obj, GetJsonSerializerOptions());
-
-        /// <summary>
-        ///     Serializes this object to yaml.
-        /// </summary>
-        /// <param name="obj">The object to serialize.</param>
-        /// <returns>A string containing the serialized object.</returns>
-        public static string ToYaml(this object obj) => new SerializerBuilder()
-            .WithNamingConvention(UnderscoredNamingConvention.Instance)
-            .Build()
-            .Serialize(obj);
-
-        /// <summary>
-        ///     Deserializes this string from yaml to an object of type <typeparamref name="T"/>.
-        /// </summary>
-        /// <typeparam name="T">The type to which to deserialize the string.</typeparam>
-        /// <param name="str">The string to deserialize.</param>
-        /// <returns>The new object deserialized from the string.</returns>
-        public static T FromYaml<T>(this string str) => new DeserializerBuilder()
-            .WithNamingConvention(UnderscoredNamingConvention.Instance)
-            .Build()
-            .Deserialize<T>(str);
 
         /// <summary>
         ///     Converts a fully qualified remote filename to a local filename based in the provided

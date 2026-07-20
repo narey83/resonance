@@ -35,20 +35,27 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 
-public class SessionService
+public class SessionService : IDisposable
 {
     private static readonly TimeSpan RotationGracePeriod = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan CleanupInterval = TimeSpan.FromMinutes(30);
 
     public SessionService(IDbContextFactory<UsersDbContext> contextFactory, OptionsAtStartup optionsAtStartup)
     {
         ContextFactory = contextFactory;
         Options = optionsAtStartup;
+
+        // Reap expired/revoked/idle sessions on a timer, not just at startup, so orphaned rows (e.g.
+        // one-off API logins that never refresh) don't accumulate in the table between restarts.
+        CleanupTimer = new Timer(_ => SafeCleanup(), state: null, dueTime: CleanupInterval, period: CleanupInterval);
     }
 
     private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Sessions.Auth);
+    private Timer CleanupTimer { get; }
     private IDbContextFactory<UsersDbContext> ContextFactory { get; }
     private OptionsAtStartup Options { get; }
 
@@ -311,6 +318,26 @@ public class SessionService
             db.Sessions.RemoveRange(stale);
             db.SaveChanges();
             Log.Information("Cleaned up {Count} expired or revoked session(s)", stale.Count);
+        }
+    }
+
+    public void Dispose()
+    {
+        CleanupTimer?.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    // Timer callback wrapper: cleanup runs on a background thread, so swallow and log any failure
+    // rather than letting it escape onto the thread pool and crash the process.
+    private void SafeCleanup()
+    {
+        try
+        {
+            CleanupExpiredSessions();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("Periodic session cleanup failed: {Message}", ex.Message);
         }
     }
 

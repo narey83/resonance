@@ -39,11 +39,13 @@ namespace resonance.Core.API
 {
     using System;
     using System.IO;
+    using System.Linq;
     using System.Reflection;
     using Asp.Versioning;
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.Extensions.Configuration;
+    using resonance.Configuration;
     using resonance.Validation;
     using Serilog;
 
@@ -158,7 +160,7 @@ namespace resonance.Core.API
         [Route("yaml/location")]
         public IActionResult GetYamlFileLocation()
         {
-            return Ok(Program.ConfigurationFile);
+            return Ok("Database (settings table)");
         }
 
         [HttpGet]
@@ -168,15 +170,13 @@ namespace resonance.Core.API
         {
             try
             {
-                var yaml = System.IO.File.Exists(Program.ConfigurationFile)
-                    ? System.IO.File.ReadAllText(Program.ConfigurationFile)
-                    : string.Empty;
+                var yaml = SettingsYaml.ToYaml(Program.SettingsStore.GetAll(), Program.AppName);
                 return Ok(yaml);
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "Failed to read configuration file: {Message}", ex.Message);
-                return StatusCode(500, $"Failed to read configuration file: {ex.Message}");
+                Log.Error(ex, "Failed to read configuration: {Message}", ex.Message);
+                return StatusCode(500, $"Failed to read configuration: {ex.Message}");
             }
         }
 
@@ -187,13 +187,21 @@ namespace resonance.Core.API
         {
             if (!TryValidateYaml(yaml, out var error))
             {
-                Log.Error(error, "Failed to validate YAML configuration");
+                Log.Error(error, "Failed to validate configuration");
                 return BadRequest(error);
             }
 
             try
             {
-                System.IO.File.WriteAllText(Program.ConfigurationFile, yaml);
+                // Replace the whole document (retaining snake_case), but never persist the bootstrap database
+                // keys — the connection string is environment-only and must not live in the database.
+                var databasePrefix = $"{Program.AppName}:database:";
+                var settings = SettingsYaml.Flatten(yaml, Program.AppName)
+                    .Where(kvp => !kvp.Key.StartsWith(databasePrefix, StringComparison.OrdinalIgnoreCase))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+                Program.SettingsStore.Replace(settings);
+                Program.ReloadSettings();
                 return Ok();
             }
             catch (Exception ex)
@@ -222,12 +230,20 @@ namespace resonance.Core.API
 
             try
             {
-                var options = yaml.FromYaml<Options>();
+                // Validate the document as it would actually be applied: the built-in defaults and environment
+                // variables (which supply the bootstrap-only database connection string) underneath the
+                // submitted document. Keys are normalized to the form the binder expects.
+                var overlay = SettingsYaml.Flatten(yaml, Program.AppName)
+                    .ToDictionary(kvp => SettingsYaml.Normalize(kvp.Key), kvp => kvp.Value);
 
-                if (options is null)
-                {
-                    return true;
-                }
+                var configuration = new ConfigurationBuilder()
+                    .AddDefaultValues(targetType: typeof(Options))
+                    .AddEnvironmentVariables(targetType: typeof(Options), prefix: Program.EnvironmentVariablePrefix)
+                    .AddInMemoryCollection(overlay)
+                    .Build();
+
+                var options = new Options();
+                configuration.GetSection(Program.AppName).Bind(options, o => o.BindNonPublicProperties = true);
 
                 if (!options.TryValidate(out var result))
                 {

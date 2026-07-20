@@ -48,6 +48,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import type { MoreStackParamList } from '../../navigation/MainTabs';
 import UserActionSheet from '../../components/UserActionSheet';
+import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'RoomDetail'>;
 
@@ -195,6 +196,10 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
       style={s.container}
     >
       <FlatList
+        {...LIST_PERF_PROPS}
+        // removeClippedSubviews is unreliable on Android inverted lists (blanks rows),
+        // so opt this one back out while keeping the batching/window tuning.
+        removeClippedSubviews={false}
         data={reversedThread}
         inverted
         keyExtractor={(item, index) => `${item.username}-${item.timestamp}-${index}`}
@@ -251,6 +256,7 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
               {room?.users.length ?? 0} user{(room?.users.length ?? 0) !== 1 ? 's' : ''} in {roomName}
             </Text>
             <FlatList
+              {...LIST_PERF_PROPS}
               data={room?.users ?? []}
               keyExtractor={(item) => item.username}
               renderItem={renderUser}

@@ -46,6 +46,7 @@ import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import type { MoreStackParamList } from '../../navigation/MainTabs';
 import BottomSheet from '../../components/BottomSheet';
 import UserActionSheet from '../../components/UserActionSheet';
+import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'Chat'>;
 
@@ -126,6 +127,7 @@ export default function ChatScreen({ navigation }: Props) {
         </View>
       ) : (
         <FlatList
+          {...LIST_PERF_PROPS}
           data={conversations}
           keyExtractor={(item) => item.username}
           onRefresh={loadConversations}

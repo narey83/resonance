@@ -76,7 +76,7 @@ export function PlayerMiniBar() {
     <View {...swipePan.panHandlers} style={styles.container}>
       {/* Blurred artwork background */}
       {artUrl ? (
-        <Image blurRadius={18} contentFit="cover" source={{ uri: artUrl, cacheKey: artCacheKey }} style={StyleSheet.absoluteFill} />
+        <Image blurRadius={18} cachePolicy="memory-disk" contentFit="cover" source={{ uri: artUrl, cacheKey: artCacheKey }} style={StyleSheet.absoluteFill} />
       ) : (
         <View style={[StyleSheet.absoluteFill, styles.fallbackBg]} />
       )}
@@ -87,7 +87,7 @@ export function PlayerMiniBar() {
       <Pressable onPress={() => expand()} style={styles.row}>
         {/* Artwork thumbnail */}
         {artUrl ? (
-          <Image source={{ uri: artUrl, cacheKey: artCacheKey }} style={styles.art} />
+          <Image cachePolicy="memory-disk" source={{ uri: artUrl, cacheKey: artCacheKey }} style={styles.art} />
         ) : (
           <View style={[styles.art, styles.artFallback]}>
             <Ionicons color="rgba(255,255,255,0.4)" name="musical-note" size={18} />

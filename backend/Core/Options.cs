@@ -222,17 +222,6 @@ namespace resonance
         public string AppDirectory { get; init; } = Program.DefaultAppDirectory;
 
         /// <summary>
-        ///     Gets the path where application data is saved.
-        /// </summary>
-        [Argument('c', "config")]
-        [EnvironmentVariable("CONFIG")]
-        [Description("path to configuration file")]
-        [Obsolete("Used only for documentation; see Program for actual implementation")]
-        [JsonIgnore]
-        [YamlIgnore]
-        public string ConfigurationFile { get; init; } = Program.DefaultConfigurationFile;
-
-        /// <summary>
         ///     Gets relay options.
         /// </summary>
         [Validate]
@@ -467,15 +456,6 @@ namespace resonance
             [Description("quit the application after initialization")]
             [RequiresRestart]
             public bool NoStart { get; init; } = false;
-
-            /// <summary>
-            ///     Gets a value indicating whether the application should watch the configuration file for changes.
-            /// </summary>
-            [Argument(default, "no-config-watch")]
-            [EnvironmentVariable("NO_CONFIG_WATCH")]
-            [Description("do not watch the config file for changes")]
-            [RequiresRestart]
-            public bool NoConfigWatch { get; init; } = false;
 
             /// <summary>
             ///     Gets a value indicating whether the application should connect to the Soulseek network on startup.
@@ -2157,12 +2137,18 @@ namespace resonance
             ///     Gets the database type. PostgreSQL is the only supported backend.
             /// </summary>
             [Description("database type; postgresql")]
+            [EnvironmentVariable("DATABASE_TYPE")]
             public string Type { get; init; } = "postgresql";
 
             /// <summary>
             ///     Gets the connection string for the database.
             /// </summary>
+            /// <remarks>
+            ///     This is the one setting that cannot be stored in the database; it is bootstrap-only and must
+            ///     be supplied via the environment (or, for legacy installs, the configuration file).
+            /// </remarks>
             [Description("connection string; required")]
+            [EnvironmentVariable("DATABASE_CONNECTION_STRING")]
             [Secret]
             public string ConnectionString { get; init; } = null;
 

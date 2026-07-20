@@ -47,6 +47,7 @@ import {
   saveNetworkLogToFolder,
   HarExportResult,
 } from '../../services/harExport';
+import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
 // Latency thresholds for colour-coding (ms). Mirrors the connection monitor's SLOW_MS.
 const WARN_MS = 500;
@@ -123,6 +124,7 @@ export default function NetworkLogScreen() {
 
   return (
     <FlatList
+      {...LIST_PERF_PROPS}
       style={s.scroll}
       contentContainerStyle={s.container}
       data={entries}

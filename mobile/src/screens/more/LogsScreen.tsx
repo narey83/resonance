@@ -51,6 +51,7 @@ import { createLogsHubConnection } from '../../api/logsHub';
 import { getLogs, LogRecord } from '../../api/logs';
 import { useAfterInteractions } from '../../hooks/useDeferredEffect';
 import { useAppSettings } from '../../store/appSettingsStore';
+import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
 const MAX_LIVE = 500;
 const PAGE_SIZE = 50;
@@ -241,6 +242,7 @@ function LiveTab({ colors, styles }: { colors: ThemeColors; styles: ReturnType<t
       </View>
 
       <FlatList
+        {...LIST_PERF_PROPS}
         data={filtered}
         keyExtractor={keyFor}
         extraData={expanded}
@@ -328,6 +330,7 @@ function HistoryTab({ colors, styles }: { colors: ThemeColors; styles: ReturnTyp
       </View>
 
       <FlatList
+        {...LIST_PERF_PROPS}
         data={logs}
         keyExtractor={keyFor}
         extraData={expanded}

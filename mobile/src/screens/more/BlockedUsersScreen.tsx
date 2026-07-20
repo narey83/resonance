@@ -43,6 +43,7 @@ import { Radius, Spacing, Typography } from '../../theme';
 import type { ThemeColors } from '../../theme';
 import { useBlockedUsersStore } from '../../store/blockedUsersStore';
 import BlockedUserRow from '../../components/BlockedUserRow';
+import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
 export default function BlockedUsersScreen() {
   const { colors } = useTheme();
@@ -91,6 +92,7 @@ export default function BlockedUsersScreen() {
       </View>
 
       <FlatList
+        {...LIST_PERF_PROPS}
         data={filtered}
         keyExtractor={u => u.username}
         keyboardShouldPersistTaps="handled"

@@ -343,16 +343,10 @@ namespace resonance.Core.API
 
         private static void PatchSoulseekConfig(string key, string value)
         {
-            var currentYaml = System.IO.File.Exists(Program.ConfigurationFile)
-                ? System.IO.File.ReadAllText(Program.ConfigurationFile)
-                : string.Empty;
-
-            var updatedYaml = YamlConfigPatcher.Patch(currentYaml, "soulseek", new Dictionary<string, string>
+            Program.PersistSettings(new Dictionary<string, string>
             {
-                [key] = value,
+                [$"{Program.AppName}:soulseek:{key}"] = value,
             });
-
-            System.IO.File.WriteAllText(Program.ConfigurationFile, updatedYaml);
         }
 
         /// <summary>

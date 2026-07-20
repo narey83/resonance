@@ -94,16 +94,11 @@ namespace resonance.Core.API
 
             try
             {
-                var currentYaml = System.IO.File.Exists(Program.ConfigurationFile)
-                    ? System.IO.File.ReadAllText(Program.ConfigurationFile)
-                    : string.Empty;
-
-                var updatedYaml = YamlConfigPatcher.Patch(currentYaml, "soulseek", new Dictionary<string, string>
+                Program.PersistSettings(new Dictionary<string, string>
                 {
-                    ["username"] = request.Username,
-                    ["password"] = request.Password,
+                    [$"{Program.AppName}:soulseek:username"] = request.Username,
+                    [$"{Program.AppName}:soulseek:password"] = request.Password,
                 });
-                System.IO.File.WriteAllText(Program.ConfigurationFile, updatedYaml);
 
                 Log.Information("Soulseek credentials updated for user {Username}", request.Username);
 
@@ -117,7 +112,6 @@ namespace resonance.Core.API
                 return StatusCode(500, $"Failed to update credentials: {ex.Message}");
             }
         }
-
     }
 
     public record SoulseekCredentialResponse(string Username, string Password);

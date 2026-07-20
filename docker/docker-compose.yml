@@ -54,9 +54,9 @@ services:
       DOTNET_USE_POLLING_FILE_WATCHER: "1"
       ASPNETCORE_ENVIRONMENT: Development
       RESONANCE_APP_DIR: /src/backend
-      # Canonical config lives outside the repo on the host (~/.local/share/resonance);
-      # without this override the app would fall back to /src/backend/resonance.yml.
-      RESONANCE_CONFIG: /config/config.yml
+      # Config lives in the database (settings schema). The connection string is the one setting that
+      # cannot live in the database it points at, so it is supplied here (override via host env in prod).
+      RESONANCE_DATABASE_CONNECTION_STRING: "${RESONANCE_DATABASE_CONNECTION_STRING:-Host=localhost;Database=resonance;Username=resonance;Password=resonance}"
       HOME: /home/dev
       DOTNET_CLI_HOME: /home/dev
       NUGET_PACKAGES: /home/dev/.nuget
@@ -75,9 +75,7 @@ services:
       - ${RESONANCE_SCRATCH:-/home/narey/.local/share/resonance-dev}/tests-obj:/src/tests/obj
       - ${RESONANCE_SCRATCH:-/home/narey/.local/share/resonance-dev}/tests-bin:/src/tests/bin
       - ${RESONANCE_SCRATCH:-/home/narey/.local/share/resonance-dev}/backend-home:/home/dev
-      # Canonical config directory (config.yml); mounted rw so in-app option edits persist to the host.
-      - /home/narey/.local/share/resonance:/config
-      # Downloads / incomplete live outside the project at absolute paths referenced by config.yml.
+      # Downloads / incomplete live outside the project at absolute paths configured in the settings store.
       - /mnt/music:/downloads
       - /mnt/music/incomplete:/downloads/incomplete
       # Read-only Docker API access for per-container CPU/memory stats.

@@ -54,6 +54,7 @@ namespace resonance
     using Asp.Versioning.ApiExplorer;
     using Microsoft.AspNetCore.Authentication.JwtBearer;
     using Microsoft.AspNetCore.Builder;
+    using Microsoft.AspNetCore.HttpOverrides;
     using Microsoft.AspNetCore.DataProtection;
     using Microsoft.AspNetCore.Diagnostics;
     using Microsoft.AspNetCore.Hosting;
@@ -62,8 +63,6 @@ namespace resonance
     using Microsoft.EntityFrameworkCore;
     using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.DependencyInjection;
-    using Microsoft.Extensions.FileProviders;
-    using Microsoft.Extensions.FileProviders.Physical;
     using Microsoft.IdentityModel.Tokens;
     using Microsoft.OpenApi.Models;
     using Prometheus.DotNetRuntime;
@@ -214,13 +213,6 @@ namespace resonance
         public static string AppDirectory { get; private set; } = null;
 
         /// <summary>
-        ///     Gets the fully qualified path to the application configuration file.
-        /// </summary>
-        [Argument('c', "config", "path to configuration file")]
-        [EnvironmentVariable("CONFIG")]
-        public static string ConfigurationFile { get; private set; } = null;
-
-        /// <summary>
         ///     Gets the current configuration overlay, if one has been applied.
         /// </summary>
         public static OptionsOverlay ConfigurationOverlay => VolatileOverlayConfigurationSource?.CurrentValue;
@@ -242,11 +234,6 @@ namespace resonance
         ///     Gets the path where backups of persistent data saved.
         /// </summary>
         public static string DataBackupDirectory { get; private set; } = null;
-
-        /// <summary>
-        ///     Gets the default fully qualified path to the configuration file.
-        /// </summary>
-        public static string DefaultConfigurationFile { get; private set; }
 
         /// <summary>
         ///     Gets the default downloads directory.
@@ -297,6 +284,20 @@ namespace resonance
         private static IDisposable DotNetRuntimeStats { get; set; }
         private static VolatileOverlayConfigurationSource<OptionsOverlay> VolatileOverlayConfigurationSource { get; set; } = new VolatileOverlayConfigurationSource<OptionsOverlay>();
 
+        /// <summary>
+        ///     Gets the shared database-backed configuration source that supersedes the legacy YAML file.
+        /// </summary>
+        /// <remarks>
+        ///     Initialized once the bootstrap connection string is known, then added to every configuration
+        ///     root so that <see cref="ReloadSettings"/> propagates a change notification to all of them.
+        /// </remarks>
+        private static DbConfigurationSource DbConfigurationSource { get; set; }
+
+        /// <summary>
+        ///     Gets the settings store used to persist configuration to the database.
+        /// </summary>
+        public static resonance.Core.Settings.SettingsService SettingsStore { get; private set; }
+
         [Argument('g', "generate-cert", "generate X509 certificate and password for HTTPs")]
         private static bool GenerateCertificate { get; set; }
 
@@ -328,6 +329,28 @@ namespace resonance
         /// </summary>
         /// <param name="overlay">The overlay containing the property values to be overlaid.</param>
         public static void ApplyConfigurationOverlay(OptionsOverlay overlay) => VolatileOverlayConfigurationSource.Apply(overlay);
+
+        /// <summary>
+        ///     Re-reads the database settings table and notifies configuration consumers of the change.
+        /// </summary>
+        /// <remarks>
+        ///     Callers should invoke this after persisting changes via <see cref="SettingsStore"/> so that
+        ///     <c>IOptionsMonitor&lt;Options&gt;</c> re-binds to the new values.
+        /// </remarks>
+        public static void ReloadSettings() => DbConfigurationSource?.Reload();
+
+        /// <summary>
+        ///     Persists the given flattened configuration values to the database settings store and reloads
+        ///     configuration so that consumers observe the change.
+        /// </summary>
+        /// <param name="values">
+        ///     The flattened configuration keys and values to persist (a null value deletes the key).
+        /// </param>
+        public static void PersistSettings(IReadOnlyDictionary<string, string> values)
+        {
+            SettingsStore.SetMany(values);
+            ReloadSettings();
+        }
 
         /// <summary>
         ///     Entrypoint.
@@ -433,13 +456,8 @@ namespace resonance
             LogDirectory = Path.Combine(AppDirectory, "logs");
             ScriptDirectory = Path.Combine(AppDirectory, "scripts");
 
-            DefaultConfigurationFile = Path.Combine(AppDirectory, "resonance.yml");
             DefaultDownloadsDirectory = Path.Combine(AppDirectory, "downloads");
             DefaultIncompleteDirectory = Path.Combine(AppDirectory, "incomplete");
-
-            // the location of the configuration file might have been overridden by command line or envar.
-            // if not, set it to the default.
-            ConfigurationFile ??= DefaultConfigurationFile;
 
             // verify(create if needed) default application directories. if the downloads or complete
             // directories are overridden in config, those will be validated after the config is loaded.
@@ -462,11 +480,12 @@ namespace resonance
             // load and validate the configuration
             try
             {
-                // reloadOnChange must be true here: this root (not the WebApplication builder's) is
-                // what DI binds IOptionsMonitor<Options> to, so with false, edits to the config file
-                // on disk are never observed — only API-driven overlay changes were.
+                // initialize the database-backed settings store and the shared DbConfigurationSource before
+                // any configuration root is built.
+                InitializeSettingsStore(EnvironmentVariablePrefix);
+
                 Configuration = new ConfigurationBuilder()
-                    .AddConfigurationProviders(EnvironmentVariablePrefix, ConfigurationFile, reloadOnChange: true)
+                    .AddConfigurationProviders(EnvironmentVariablePrefix)
                     .Build();
 
                 // self-heal: if the Soulseek picture points at the web-UI-managed file but that file is gone
@@ -480,13 +499,8 @@ namespace resonance
                 {
                     Log.Warning("Managed profile picture {Path} is missing; clearing the configuration reference", configuredPicture);
 
-                    var yaml = IOFile.Exists(ConfigurationFile) ? IOFile.ReadAllText(ConfigurationFile) : string.Empty;
-                    var patched = resonance.Configuration.YamlConfigPatcher.Patch(yaml, "soulseek", new Dictionary<string, string> { ["picture"] = null });
-                    IOFile.WriteAllText(ConfigurationFile, patched);
-
-                    Configuration = new ConfigurationBuilder()
-                        .AddConfigurationProviders(EnvironmentVariablePrefix, ConfigurationFile, reloadOnChange: true)
-                        .Build();
+                    SettingsStore.SetMany(new Dictionary<string, string> { [$"{AppName}:soulseek:picture"] = null });
+                    ReloadSettings();
                 }
 
                 Configuration.GetSection(AppName)
@@ -560,13 +574,6 @@ namespace resonance
             Log.Information("Configuring application...");
 
             Log.Information("Using application directory {AppDirectory}", AppDirectory);
-            Log.Information("Using configuration file {ConfigurationFile}", ConfigurationFile);
-
-            if (OptionsAtStartup.Flags.NoConfigWatch)
-            {
-                Log.Warning("Configuration watch DISABLED; all configuration changes will require a restart to take effect");
-            }
-
             Log.Information("Storing application data in {DataDirectory}", DataDirectory);
 
             if (OptionsAtStartup.Logger.Disk)
@@ -574,7 +581,6 @@ namespace resonance
                 Log.Information("Saving application logs to {LogDirectory}", LogDirectory);
             }
 
-            RecreateConfigurationFileIfMissing(ConfigurationFile);
             StableJwtKey = EnsureJwtKeyPersisted(DataDirectory, OptionsAtStartup.Web.Authentication.Jwt.Key);
             SelfSignedCertificate = EnsureSelfSignedCertificate(DataDirectory);
 
@@ -589,7 +595,7 @@ namespace resonance
                 var builder = WebApplication.CreateBuilder(args);
 
                 builder.Configuration
-                    .AddConfigurationProviders(EnvironmentVariablePrefix, ConfigurationFile, reloadOnChange: true);
+                    .AddConfigurationProviders(EnvironmentVariablePrefix);
 
                 builder.Host
                     .UseSerilog();
@@ -886,6 +892,7 @@ namespace resonance
             services.AddSingleton<PrometheusService>();
             services.AddSingleton<ReportsService>();
             services.AddSingleton<TelemetryService>();
+            services.AddHostedService<resonance.Telemetry.ReportsCacheWarmer>();
 
             services.AddSingleton<VPNService>();
             services.AddSingleton<UpnpService>();
@@ -1001,6 +1008,31 @@ namespace resonance
                 .AllowCredentials()
                 .WithExposedHeaders("X-URL-Base", "X-Total-Count")));
 
+            // The app always runs behind a reverse proxy (Caddy) in production, so the direct TCP peer is
+            // the proxy, not the client. Honour X-Forwarded-For/Proto so Connection.RemoteIpAddress reflects
+            // the real caller — otherwise per-IP login throttling buckets every user under the proxy's IP
+            // and every session records the proxy address. Only forwarded headers from private/loopback
+            // networks (the proxy chain) are trusted; ForwardLimit is left open so the two chained Caddys
+            // are both walked back to the genuine client, which is the first hop from an untrusted network.
+            services.Configure<ForwardedHeadersOptions>(options =>
+            {
+                options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+                options.ForwardLimit = null;
+                options.KnownIPNetworks.Clear();
+                options.KnownProxies.Clear();
+                foreach (var network in new[]
+                {
+                    new System.Net.IPNetwork(IPAddress.Parse("10.0.0.0"), 8),
+                    new System.Net.IPNetwork(IPAddress.Parse("172.16.0.0"), 12),
+                    new System.Net.IPNetwork(IPAddress.Parse("192.168.0.0"), 16),
+                    new System.Net.IPNetwork(IPAddress.Parse("127.0.0.0"), 8),
+                    new System.Net.IPNetwork(IPAddress.IPv6Loopback, 128),
+                })
+                {
+                    options.KnownIPNetworks.Add(network);
+                }
+            });
+
             // note: don't dispose this (or let it be disposed) or some of the stats, like those related
             // to the thread pool won't work
             DotNetRuntimeStats = DotNetRuntimeStatsBuilder.Default().StartCollecting();
@@ -1103,8 +1135,11 @@ namespace resonance
 
                                         try
                                         {
-                                            // check to see if the provided value is a valid API key
-                                            var service = services.BuildServiceProvider().GetRequiredService<SecurityService>();
+                                            // check to see if the provided value is a valid API key.
+                                            // Resolve from the request scope — never BuildServiceProvider() here, which
+                                            // spins up a whole second DI container (duplicate singletons + a leak) on
+                                            // every hub connection that presents a bearer.
+                                            var service = context.HttpContext.RequestServices.GetRequiredService<SecurityService>();
                                             var (name, role) = service.AuthenticateWithApiKey(token, callerIpAddress: context.HttpContext.Connection.RemoteIpAddress);
 
                                             // the API key is valid. create a new, short lived jwt for the key name and role
@@ -1293,7 +1328,7 @@ namespace resonance
                         Name = "X-API-Key",
                         Type = SecuritySchemeType.ApiKey,
                         In = ParameterLocation.Header,
-                        Description = "An API key configured under 'web.authentication.api_keys' in resonance.yml.",
+                        Description = "An API key configured under 'web.authentication.api_keys' in the application settings.",
                     });
 
                     options.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -1342,6 +1377,10 @@ namespace resonance
             {
                 await context.Response.WriteAsJsonAsync(context.Features.Get<IExceptionHandlerPathFeature>().Error.Message);
             }));
+
+            // Rewrite Connection.RemoteIpAddress from the proxy's X-Forwarded-For before anything reads it
+            // (auth, rate limiting, session recording, request logging). Must run ahead of UseAuthentication.
+            app.UseForwardedHeaders();
 
             app.UseCors("AllowAll");
 
@@ -1574,37 +1613,66 @@ namespace resonance
             };
         }
 
-        private static IConfigurationBuilder AddConfigurationProviders(this IConfigurationBuilder builder, string environmentVariablePrefix, string configurationFile, bool reloadOnChange)
+        private static IConfigurationBuilder AddConfigurationProviders(this IConfigurationBuilder builder, string environmentVariablePrefix)
         {
-            configurationFile = Path.GetFullPath(configurationFile);
-
             var multiValuedArguments = BuildMultiValuedArguments();
 
-            // The config lives on a Docker bind mount where inotify events from host-side edits don't
-            // reach the container reliably; the file provider below therefore polls actively, which is
-            // required for on-disk changes to trigger a reload (UsePollingFileWatcher alone only
-            // affects token creation, not callback delivery).
+            // Configuration is stored in the database (settings schema); the shared DbConfigurationSource
+            // supersedes the built-in defaults and environment variables, and is itself superseded by
+            // command-line arguments and the volatile runtime overlay. Environment variables remain as a
+            // fallback, notably for the database connection string, which cannot live in the database it
+            // configures.
             return builder
                 .AddDefaultValues(
                     targetType: typeof(Options))
                 .AddEnvironmentVariables(
                     targetType: typeof(Options),
                     prefix: environmentVariablePrefix)
-                .AddYamlFile(
-                    path: Path.GetFileName(configurationFile),
-                    targetType: typeof(Options),
-                    optional: true,
-                    reloadOnChange: reloadOnChange,
-                    provider: new PhysicalFileProvider(Path.GetDirectoryName(configurationFile), ExclusionFilters.None)
-                    {
-                        UsePollingFileWatcher = true,
-                        UseActivePolling = true,
-                    })
+                .Add(DbConfigurationSource)
                 .AddCommandLine(
                     targetType: typeof(Options),
                     multiValuedArguments,
                     commandLine: Environment.CommandLine)
                 .Add(VolatileOverlayConfigurationSource);
+        }
+
+        /// <summary>
+        ///     Resolves the database connection string from the bootstrap sources (defaults, environment
+        ///     variables, and the command line) before the database-backed configuration source can be constructed.
+        /// </summary>
+        /// <remarks>
+        ///     The connection string cannot be stored in the database it points at, so it is the one setting
+        ///     resolved from the environment (its canonical location).
+        /// </remarks>
+        private static string ResolveBootstrapConnectionString(string environmentVariablePrefix)
+        {
+            var bootstrap = new ConfigurationBuilder()
+                .AddDefaultValues(targetType: typeof(Options))
+                .AddEnvironmentVariables(targetType: typeof(Options), prefix: environmentVariablePrefix)
+                .AddCommandLine(
+                    targetType: typeof(Options),
+                    BuildMultiValuedArguments(),
+                    commandLine: Environment.CommandLine)
+                .Build();
+
+            return bootstrap.GetValue<string>($"{AppName}:database:connectionstring");
+        }
+
+        /// <summary>
+        ///     Initializes the database-backed settings store and the shared configuration source.
+        /// </summary>
+        private static void InitializeSettingsStore(string environmentVariablePrefix)
+        {
+            var connectionString = ResolveBootstrapConnectionString(environmentVariablePrefix);
+
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                throw new InvalidOperationException(
+                    $"A database connection string is required. Set the {environmentVariablePrefix}DATABASE_CONNECTION_STRING environment variable.");
+            }
+
+            SettingsStore = new resonance.Core.Settings.SettingsService(connectionString);
+            DbConfigurationSource = new DbConfigurationSource(SettingsStore);
         }
 
         private static string[] BuildMultiValuedArguments() =>
@@ -1709,24 +1777,6 @@ namespace resonance
             {
                 Log.Error(ex, $"Failed to initialize database context {typeof(T).Name}: ${ex.Message}");
                 throw;
-            }
-        }
-
-        private static void RecreateConfigurationFileIfMissing(string configurationFile)
-        {
-            if (!IOFile.Exists(configurationFile))
-            {
-                try
-                {
-                    Log.Warning("Configuration file {ConfigurationFile} does not exist; creating from example", configurationFile);
-                    var source = Path.Combine(AppContext.BaseDirectory, "config", "resonance.yml.example");
-                    var destination = configurationFile;
-                    IOFile.Copy(source, destination);
-                }
-                catch (Exception ex)
-                {
-                    Log.Error("Failed to create configuration file {ConfigurationFile}: {Message}", configurationFile, ex.Message);
-                }
             }
         }
 

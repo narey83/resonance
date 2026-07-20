@@ -38,12 +38,10 @@
   </Target>
 
   <Target Name="CopyAfterBuild" AfterTargets="AfterBuild">
-    <Copy SourceFiles="config\resonance.yml.example" DestinationFolder="$(OutDir)\config" />
     <Copy SourceFiles="$(OutDir)\resonance.xml" DestinationFolder="$(OutDir)\etc" />
     <Copy SourceFiles="$(MSBuildThisFileDirectory)tools/ffmpeg" DestinationFolder="$(OutDir)" Condition="Exists('$(MSBuildThisFileDirectory)tools/ffmpeg')" />
   </Target>
   <Target Name="CopyOnPublish" AfterTargets="Publish">
-    <Copy SourceFiles="config\resonance.yml.example" DestinationFolder="$(PublishDir)\config" />
     <Move SourceFiles="$(PublishDir)\resonance.xml" DestinationFolder="$(PublishDir)\etc" />
     <Copy SourceFiles="$(MSBuildThisFileDirectory)tools/ffmpeg" DestinationFolder="$(PublishDir)" Condition="Exists('$(MSBuildThisFileDirectory)tools/ffmpeg')" />
   </Target>

@@ -97,6 +97,12 @@ namespace resonance.MusicLibrary
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> syncExcluded =
             new(StringComparer.OrdinalIgnoreCase);
 
+        // Filesystem watchers over the share roots — one per scan directory. They translate any on-disk
+        // change (a completed download, a converter output, a tag rewrite, an external SMB edit, a
+        // deletion) into a debounced TriggerSync so the library reflects reality within ~30s instead of
+        // waiting up to a full SyncInterval for the periodic scan to notice.
+        private readonly List<FileSystemWatcher> watchers = new();
+
         private DateTime lastSyncBroadcast = DateTime.MinValue;
 
         // cancels only the in-flight scan (not the whole background loop); see CancelSync.
@@ -143,6 +149,7 @@ namespace resonance.MusicLibrary
             });
             LoopCts = new CancellationTokenSource();
             _ = RunLoopAsync(LoopCts.Token);
+            StartWatchers();
             return Task.CompletedTask;
         }
 
@@ -163,6 +170,7 @@ namespace resonance.MusicLibrary
                 }
             }
 
+            StopWatchers();
             LoopCts?.Cancel();
         }
 
@@ -799,6 +807,113 @@ namespace resonance.MusicLibrary
             }
 
             await Task.Yield(); // yield back to caller
+        }
+
+        // ── Filesystem watchers ───────────────────────────────────────────────
+        private void StartWatchers()
+        {
+            foreach (var dir in GetScanDirectories())
+            {
+                try
+                {
+                    var watcher = new FileSystemWatcher(dir)
+                    {
+                        IncludeSubdirectories = true,
+
+                        // FileName/DirectoryName cover create/delete/rename; LastWrite/Size cover
+                        // in-place edits (tag & metadata rewrites). We deliberately omit LastAccess.
+                        NotifyFilter = NotifyFilters.FileName
+                            | NotifyFilters.DirectoryName
+                            | NotifyFilters.LastWrite
+                            | NotifyFilters.Size,
+
+                        // A bulk download/delete can emit hundreds of events at once; a larger buffer
+                        // makes an overflow (→ Error, handled below) far less likely.
+                        InternalBufferSize = 64 * 1024,
+                    };
+
+                    watcher.Created += OnFsChange;
+                    watcher.Deleted += OnFsChange;
+                    watcher.Changed += OnFsChange;
+                    watcher.Renamed += OnFsRenamed;
+                    watcher.Error += OnFsError;
+                    watcher.EnableRaisingEvents = true;
+
+                    watchers.Add(watcher);
+                    Log.Information("Watching library directory for changes: {Dir}", dir);
+                }
+                catch (Exception ex)
+                {
+                    // A watcher failing to attach (e.g. a filesystem without inotify support) must not
+                    // break the service — the periodic scan still keeps the library in sync.
+                    Log.Warning("Could not watch library directory {Dir}: {Err}", dir, ex.Message);
+                }
+            }
+        }
+
+        private void StopWatchers()
+        {
+            foreach (var watcher in watchers)
+            {
+                try
+                {
+                    watcher.EnableRaisingEvents = false;
+                    watcher.Dispose();
+                }
+                catch
+                { /* best-effort teardown on shutdown */
+                }
+            }
+
+            watchers.Clear();
+        }
+
+        // Returns true if a filesystem path is worth reacting to: audio files, and structural changes
+        // (directories, which have no extension). Non-audio files (.jpg covers, .part/.tmp download
+        // scratch, .nfo) are ignored so an in-progress download doesn't churn the debounce needlessly.
+        private bool ShouldReactTo(string path)
+        {
+            if (string.IsNullOrEmpty(path) || IsExcludedFromSync(path))
+            {
+                return false;
+            }
+
+            var ext = Path.GetExtension(path);
+            if (string.IsNullOrEmpty(ext))
+            {
+                // No extension → almost certainly a directory create/delete/rename; react so newly
+                // added or removed folders are picked up.
+                return true;
+            }
+
+            return AudioExtensions.Contains(ext.TrimStart('.').ToLowerInvariant());
+        }
+
+        private void OnFsChange(object sender, FileSystemEventArgs e)
+        {
+            if (ShouldReactTo(e.FullPath))
+            {
+                TriggerSync();
+            }
+        }
+
+        private void OnFsRenamed(object sender, RenamedEventArgs e)
+        {
+            // A temp-to-final rename (song.mp3.part → song.mp3, common for yt-dlp and other downloaders)
+            // only becomes interesting via the new name, so check both ends.
+            if (ShouldReactTo(e.FullPath) || ShouldReactTo(e.OldFullPath))
+            {
+                TriggerSync();
+            }
+        }
+
+        private void OnFsError(object sender, ErrorEventArgs e)
+        {
+            // Buffer overflow (or a transient inotify error) means we've lost events, so we can't trust
+            // incremental change signals — fall back to a full immediate reconciliation. The watcher
+            // recovers on its own once the buffer drains; we don't tear it down.
+            Log.Warning("Library watcher error — forcing a full sync to catch missed changes: {Err}", e.GetException()?.Message);
+            TriggerImmediateSync();
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────

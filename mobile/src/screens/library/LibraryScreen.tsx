@@ -88,6 +88,7 @@ import { create as createSearch, stripRemixInfo } from '../../api/searches';
 import { MixtapeTrack, getMixtapeArtworkUrl } from '../../api/mixtapes';
 import { useLibrarySettings, ALL_TABS, LibraryTab } from '../../store/librarySettingsStore';
 import { useAuthStore } from '../../store/auth';
+import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
 // ── Navigation types ──────────────────────────────────────────────────────────
 
@@ -155,7 +156,7 @@ function useKeyboardHeight() {
 
 // ── ArtworkBox ────────────────────────────────────────────────────────────────
 
-const ArtworkBox = ({ path, size, overrideUrl, overrideCacheKey, source }: {
+const ArtworkBox = React.memo(({ path, size, overrideUrl, overrideCacheKey, source }: {
   path: string | null; size: number; overrideUrl?: string | null; overrideCacheKey?: string;
   source?: 'local' | 'server';
 }) => {
@@ -191,6 +192,8 @@ const ArtworkBox = ({ path, size, overrideUrl, overrideCacheKey, source }: {
           source={{ uri: url, cacheKey }}
           style={[s.artwork, { width: size, height: size, borderRadius: size / 8 }]}
           onError={() => setError(true)}
+          cachePolicy="memory-disk"
+          recyclingKey={cacheKey ?? url}
         />
         {badge}
       </View>
@@ -202,7 +205,8 @@ const ArtworkBox = ({ path, size, overrideUrl, overrideCacheKey, source }: {
       {badge}
     </View>
   );
-};
+});
+ArtworkBox.displayName = 'ArtworkBox';
 
 // ── SearchBar ─────────────────────────────────────────────────────────────────
 
@@ -302,7 +306,7 @@ const SortControl = ({ options, sortBy, sortDir, onSort }: {
 
 // Right-hand metadata for a track row: musical key + BPM (each shown only when present), with the
 // duration underneath. Shared across every track list so key/BPM render identically everywhere.
-const TrackMetaRight = ({ item }: { item: MusicTrack }) => {
+const TrackMetaRight = React.memo(({ item }: { item: MusicTrack }) => {
   const { s } = useLibStyles();
   return (
     <View style={s.trackRight}>
@@ -315,7 +319,8 @@ const TrackMetaRight = ({ item }: { item: MusicTrack }) => {
       <Text style={s.trackDur}>{formatDuration(item.duration)}</Text>
     </View>
   );
-};
+});
+TrackMetaRight.displayName = 'TrackMetaRight';
 
 // Tap a field to sort by it; tap again to flip direction.
 function useSort(defaultField: string | null = null, defaultDir: SortDir = 'asc') {
@@ -1384,6 +1389,7 @@ function ArtistsTab() {
         ? <DownloadingLibrary />
         : (
           <FlatList
+            {...LIST_PERF_PROPS}
             data={filtered}
             keyExtractor={(item) => item.artist}
             renderItem={renderItem}
@@ -1494,6 +1500,7 @@ function AlbumsTab() {
         ? <DownloadingLibrary />
         : (
           <FlatList
+            {...LIST_PERF_PROPS}
             data={filtered}
             keyExtractor={(item) => `${item.album}-${item.artist}`}
             renderItem={renderItem}
@@ -1763,6 +1770,7 @@ function TracksTab() {
           <>
             <UpdatingBanner visible={reloading && displayTracks.length > 0} />
             <FlatList
+              {...LIST_PERF_PROPS}
               data={displayTracks}
               keyExtractor={(item, index) => `${item.path}-${index}`}
               renderItem={renderTrack}
@@ -1878,6 +1886,7 @@ function LovedTab() {
       </View>
       <UpdatingBanner visible={refreshing && !loading} />
       <FlatList
+        {...LIST_PERF_PROPS}
         data={lovedTracks}
         keyExtractor={(item) => item.path}
         renderItem={renderTrack}
@@ -2044,6 +2053,7 @@ function HistoryTab() {
         />
       </View>
       <FlatList
+        {...LIST_PERF_PROPS}
         data={entries}
         keyExtractor={(item) => item.id}
         renderItem={renderEntry}
@@ -2210,6 +2220,7 @@ function FoldersTab() {
         ? <DownloadingLibrary />
         : (
           <FlatList
+            {...LIST_PERF_PROPS}
             data={filtered}
             keyExtractor={(item, index) => `${item.path}-${index}`}
             renderItem={renderItem}
@@ -2287,6 +2298,7 @@ function GenresTab() {
         ? <DownloadingLibrary />
         : (
           <FlatList
+            {...LIST_PERF_PROPS}
             data={filtered}
             keyExtractor={(item) => item.genre}
             renderItem={renderItem}
@@ -2308,7 +2320,7 @@ function GenresTab() {
 
 // ── Tab: Playlists ────────────────────────────────────────────────────────────
 
-const MixtapeThumbLib = ({ id }: { id: string }) => {
+const MixtapeThumbLib = React.memo(({ id }: { id: string }) => {
   const { s, c } = useLibStyles();
   const [error, setError] = React.useState(false);
   const url = getMixtapeArtworkUrl(id);
@@ -2318,6 +2330,8 @@ const MixtapeThumbLib = ({ id }: { id: string }) => {
         onError={() => setError(true)}
         source={{ uri: url, cacheKey: `mixtape_${id}` }}
         style={s.artistIcon}
+        cachePolicy="memory-disk"
+        recyclingKey={`mixtape_${id}`}
       />
     );
   }
@@ -2326,7 +2340,8 @@ const MixtapeThumbLib = ({ id }: { id: string }) => {
       <Ionicons name="musical-notes" size={18} color={c.textMuted} />
     </View>
   );
-};
+});
+MixtapeThumbLib.displayName = 'MixtapeThumbLib';
 
 function PlaylistsTab() {
   const { s, c } = useLibStyles();
@@ -2447,6 +2462,7 @@ function PlaylistsTab() {
         />
       </View>
       <FlatList
+        {...LIST_PERF_PROPS}
         data={sorted}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
@@ -2747,6 +2763,7 @@ function ArtistDetail({ route }: ArtistProps) {
       </View>
       <SearchBar value={search} onChange={setSearch} placeholder="Search tracks…" />
       <FlatList
+        {...LIST_PERF_PROPS}
         data={tracks}
         keyExtractor={(item, index) => `${item.path}-${index}`}
         renderItem={renderTrack}
@@ -2896,6 +2913,7 @@ function AlbumDetail({ route }: AlbumProps) {
   return (
     <View style={s.flex}>
       <FlatList
+        {...LIST_PERF_PROPS}
         data={tracks}
         keyExtractor={(item, index) => `${item.path}-${index}`}
         renderItem={renderTrack}
@@ -2903,7 +2921,7 @@ function AlbumDetail({ route }: AlbumProps) {
         ListHeaderComponent={
           <View style={s.albumHeader}>
             {artworkUrl
-              ? <Image source={{ uri: artworkUrl, cacheKey: artworkCacheKey }} style={s.albumArt} />
+              ? <Image cachePolicy="memory-disk" source={{ uri: artworkUrl, cacheKey: artworkCacheKey }} style={s.albumArt} />
               : <View style={[s.albumArt, s.artworkPlaceholder]}>
                   <Ionicons name="musical-notes" size={56} color={c.textDim} />
                 </View>
@@ -3082,6 +3100,7 @@ function GenreDetail({ route }: GenreDetailProps) {
       </View>
       <SearchBar value={search} onChange={setSearch} placeholder="Search in genre…" />
       <FlatList
+        {...LIST_PERF_PROPS}
         data={tracks}
         keyExtractor={(item, index) => `${item.path}-${index}`}
         renderItem={renderTrack}
@@ -3172,6 +3191,7 @@ function YearsTab() {
         ? <DownloadingLibrary />
         : (
           <FlatList
+            {...LIST_PERF_PROPS}
             data={sorted}
             keyExtractor={(item) => String(item.year)}
             renderItem={renderItem}
@@ -3288,6 +3308,7 @@ function YearDetail({ route }: YearDetailProps) {
         {total > 0 && <Text style={s.detailTotal}>{total} tracks</Text>}
       </View>
       <FlatList
+        {...LIST_PERF_PROPS}
         data={tracks}
         keyExtractor={(item, index) => `${item.path}-${index}`}
         renderItem={renderTrack}
@@ -3519,6 +3540,7 @@ function FolderDetail({ route }: FolderDetailProps) {
         }
       />
       <FlatList
+        {...LIST_PERF_PROPS}
         data={displayTracks}
         keyExtractor={(item, index) => `${item.path}-${index}`}
         renderItem={renderTrack}
@@ -3857,6 +3879,7 @@ function PlaylistDetail({ route, navigation: nav }: PlaylistDetailProps) {
 
       {/* Track list */}
       <FlatList
+        {...LIST_PERF_PROPS}
         data={tracks}
         keyExtractor={(item) => item.id}
         contentContainerStyle={s.listContent}
