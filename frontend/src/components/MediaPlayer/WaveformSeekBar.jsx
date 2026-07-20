@@ -32,13 +32,19 @@ import { formatSeconds } from '../../lib/util';
 import React, { useEffect, useRef, useState } from 'react';
 
 // Resamples peaks into one value per bar slot (max-hold, like a hardware meter).
+// Uses proportional (float) bucket bounds rather than a fixed integer stride —
+// an integer stride leaves a truncated, unsampled tail whenever peaks.length
+// isn't an exact multiple of numberSlots, which silently compresses/misaligns
+// the back portion of the track relative to actual playback position.
 const resamplePeaks = (peaks, numberSlots) => {
-  const perSlot = Math.max(1, Math.floor(peaks.length / numberSlots));
   const out = new Float32Array(numberSlots);
   for (let slot = 0; slot < numberSlots; slot++) {
+    const start = Math.floor((slot / numberSlots) * peaks.length);
+    const end = Math.max(
+      start + 1,
+      Math.floor(((slot + 1) / numberSlots) * peaks.length),
+    );
     let peak = 0;
-    const start = slot * perSlot;
-    const end = Math.min(start + perSlot, peaks.length);
     for (let index = start; index < end; index++) {
       if (peaks[index] > peak) peak = peaks[index];
     }
