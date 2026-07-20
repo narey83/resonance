@@ -53,6 +53,8 @@ using Soulseek;
 /// </summary>
 public class ReportsService
 {
+    private static readonly ConcurrentDictionary<string, byte> RefreshesInFlight = new();
+
     /// <summary>
     ///     Initializes a new instance of the <see cref="ReportsService"/> class.
     /// </summary>
@@ -66,84 +68,6 @@ public class ReportsService
     private IMemoryCache Cache { get; }
     private bool UsePostgres => ConnectionStrings.UsePostgres;
     private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Telemetry);
-
-    private static readonly ConcurrentDictionary<string, byte> RefreshesInFlight = new();
-
-    // Longer TTL for wider time windows — no point refreshing a 30-day summary every 30s.
-    private static TimeSpan GetCacheTtl(DateTime start, DateTime end)
-    {
-        var range = end - start;
-
-        if (range >= TimeSpan.FromDays(7))
-        {
-            return TimeSpan.FromMinutes(10);
-        }
-
-        if (range >= TimeSpan.FromDays(1))
-        {
-            return TimeSpan.FromMinutes(5);
-        }
-
-        return TimeSpan.FromMinutes(2);
-    }
-
-    // Identifies the requested window *relative to now*, quantized by the TTL, rather than by
-    // absolute wall-clock minutes. The dashboard always requests windows anchored at "now", so
-    // absolute keys changed on every visit and defeated the TTL entirely.
-    private static string WindowKey(DateTime s, DateTime e)
-    {
-        var ttl = GetCacheTtl(s, e);
-        var range = (long)Math.Round((e - s).TotalSeconds / ttl.TotalSeconds);
-        var offset = (long)Math.Round((DateTime.UtcNow - e).TotalSeconds / ttl.TotalSeconds);
-        return $"{range}r{offset}";
-    }
-
-    // Serve-stale-while-revalidate: an entry past its TTL is returned immediately and refreshed on
-    // a background thread, so requests only block on the database the very first time a window is
-    // asked for (or after the entry has gone unused for several TTLs and been evicted).
-    private T GetOrCreateReport<T>(string cacheKey, DateTime start, DateTime end, Func<T> factory)
-    {
-        var ttl = GetCacheTtl(start, end);
-
-        if (Cache.TryGetValue<StaleWhileRevalidateEntry>(cacheKey, out var cached))
-        {
-            if (DateTime.UtcNow > cached.FreshUntil && RefreshesInFlight.TryAdd(cacheKey, 0))
-            {
-                _ = Task.Run(() =>
-                {
-                    try
-                    {
-                        Cache.Set(cacheKey, new StaleWhileRevalidateEntry(factory(), DateTime.UtcNow + ttl), ttl * 6);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Warning("Background refresh of {CacheKey} failed: {Message}", cacheKey, ex.Message);
-                    }
-                    finally
-                    {
-                        RefreshesInFlight.TryRemove(cacheKey, out _);
-                    }
-                });
-            }
-
-            return (T)cached.Value;
-        }
-
-        var value = factory();
-        Cache.Set(cacheKey, new StaleWhileRevalidateEntry(value, DateTime.UtcNow + ttl), ttl * 6);
-        return value;
-    }
-
-    private DbConnection OpenConnection(Database database)
-    {
-        DbConnection conn = new NpgsqlConnection(ConnectionStrings[database]);
-        conn.Open();
-        return conn;
-    }
-
-    // Normalise DateTime values to UTC kind so Npgsql accepts them for timestamptz columns.
-    // For SQLite the kind is ignored by Dapper so this is safe for both providers.
-    private static DateTime Utc(DateTime dt) => DateTime.SpecifyKind(dt, DateTimeKind.Utc);
 
     /// <summary>
     ///     Returns a summary of all transfer data grouped by direction and final transfer state. Includes only
@@ -823,7 +747,7 @@ public class ReportsService
                     SELECT Filename, COUNT(*) AS Count, COUNT(DISTINCT ""Username"") AS DistinctUsers, SUM(""Size"") AS TotalBytes
                     FROM files
                     GROUP BY Filename
-                    ORDER BY Count DESC, DistinctUsers DESC
+                    ORDER BY DistinctUsers DESC, Count DESC
                     LIMIT @Limit OFFSET @Offset
                 ";
             }
@@ -844,7 +768,7 @@ public class ReportsService
                     SELECT Filename, COUNT(*) AS Count, COUNT(DISTINCT Username) AS DistinctUsers, SUM(Size) AS TotalBytes
                     FROM files
                     GROUP BY LOWER(Filename)
-                    ORDER BY Count DESC, DistinctUsers DESC
+                    ORDER BY DistinctUsers DESC, Count DESC
                     LIMIT @Limit OFFSET @Offset
                 ";
             }
@@ -875,13 +799,27 @@ public class ReportsService
             throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than zero");
         }
 
+        search = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+
+        // Aggregated columns are exposed unquoted by the CTE, so they sort by output
+        // name in both providers. The network columns come off the LEFT JOIN and must
+        // be table-qualified and Postgres-quoted; the speed averages are NULL for a
+        // user with no transfers in that direction, so COALESCE keeps them off the top
+        // on a DESC sort. `q` is the provider's identifier quote.
+        var q = UsePostgres ? "\"" : string.Empty;
         var sortColumn = sortBy switch
         {
             UserReportSortBy.UploadCount => "UploadCount",
             UserReportSortBy.DownloadCount => "DownloadCount",
             UserReportSortBy.UploadBytes => "UploadBytes",
             UserReportSortBy.DownloadBytes => "DownloadBytes",
+            UserReportSortBy.UploadSpeed => "COALESCE(UploadAverageSpeed, 0)",
+            UserReportSortBy.DownloadSpeed => "COALESCE(DownloadAverageSpeed, 0)",
             UserReportSortBy.Errors => "UploadErrorCount + DownloadErrorCount",
+            UserReportSortBy.Username => $"a.{q}Username{q}",
+            UserReportSortBy.IpAddress => $"n.{q}IpAddress{q}",
+            UserReportSortBy.Country => $"n.{q}Country{q}",
+            UserReportSortBy.City => $"n.{q}City{q}",
             UserReportSortBy.LastSeen => "LastSeen",
             _ => "LastSeen",
         };
@@ -889,15 +827,34 @@ public class ReportsService
         string sql;
         if (UsePostgres)
         {
+            // Resolve the matching usernames up front and aggregate only their rows. Filtering
+            // after the CTE reads correctly but forces every user in the window to be aggregated
+            // before the search can discard them, so a one-city search costs as much as the full
+            // list. Both sides of the union are trigram-indexed, and the IN list lets the
+            // aggregate seek on IDX_Transfers_UserUploadStatistics instead of scanning.
+            //
+            // ILIKE, not LIKE: Postgres LIKE is case-sensitive, and nobody types a city with the
+            // casing the geo-IP provider happened to store.
+            var searchCte = search is not null
+                ? @"matched AS (
+                        SELECT ""Username"" FROM transfers.""TransferNetworkInfo""
+                        WHERE ""Username"" ILIKE @Search ESCAPE '\'
+                           OR ""IpAddress"" ILIKE @Search ESCAPE '\'
+                           OR ""Country"" ILIKE @Search ESCAPE '\'
+                           OR ""City"" ILIKE @Search ESCAPE '\'
+                        UNION
+                        SELECT DISTINCT ""Username"" FROM transfers.""Transfers""
+                        WHERE ""Username"" ILIKE @Search ESCAPE '\'
+                    ),"
+                : string.Empty;
+
             var searchClause = search is not null
-                ? @"AND (a.""Username"" LIKE @Search
-                      OR n.""IpAddress"" LIKE @Search
-                      OR n.""Country"" LIKE @Search
-                      OR n.""City"" LIKE @Search)"
+                ? @"AND ""Username"" IN (SELECT ""Username"" FROM matched)"
                 : string.Empty;
 
             sql = $@"
-                WITH aggregated AS (
+                WITH {searchCte}
+                aggregated AS (
                     SELECT
                         ""Username"",
                         SUM(CASE WHEN ""Direction"" = 'Upload'   AND ""State"" = 48 THEN 1 ELSE 0 END) AS UploadCount,
@@ -912,12 +869,12 @@ public class ReportsService
                     FROM transfers.""Transfers""
                     WHERE ""EndedAt"" IS NOT NULL
                         AND ""EndedAt"" BETWEEN @Start AND @End
+                        {searchClause}
                     GROUP BY ""Username""
                 )
                 SELECT a.*, n.""IpAddress"", n.""Country"", n.""City"", n.""IsVpn"", n.""Lat"", n.""Lon"", COUNT(*) OVER() AS TotalCount
                 FROM aggregated a
                 LEFT JOIN transfers.""TransferNetworkInfo"" n ON n.""Username"" = a.""Username""
-                WHERE 1=1 {searchClause}
                 ORDER BY {sortColumn} {sortOrder}, a.""Username"" DESC
                 LIMIT @Limit
                 OFFSET @Offset
@@ -925,11 +882,13 @@ public class ReportsService
         }
         else
         {
+            // LIKE is already case-insensitive for ASCII on SQLite, so it needs no ILIKE
+            // equivalent; the term is escaped either way, hence the ESCAPE clause.
             var searchClause = search is not null
-                ? @"AND (a.Username LIKE @Search
-                      OR n.IpAddress LIKE @Search
-                      OR n.Country LIKE @Search
-                      OR n.City LIKE @Search)"
+                ? @"AND (a.Username LIKE @Search ESCAPE '\'
+                      OR n.IpAddress LIKE @Search ESCAPE '\'
+                      OR n.Country LIKE @Search ESCAPE '\'
+                      OR n.City LIKE @Search ESCAPE '\')"
                 : string.Empty;
 
             sql = $@"
@@ -969,7 +928,7 @@ public class ReportsService
             {
                 Start = s,
                 End = e,
-                Search = search is not null ? "%" + search + "%" : null,
+                Search = search is not null ? "%" + EscapeLike(search) + "%" : null,
                 Limit = limit,
                 Offset = offset,
             };
@@ -991,6 +950,7 @@ public class ReportsService
         DateTime? start = null,
         DateTime? end = null,
         SortOrder sortOrder = SortOrder.DESC,
+        string search = null,
         int limit = 25,
         int offset = 0)
     {
@@ -1002,10 +962,17 @@ public class ReportsService
             throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than zero");
         }
 
+        search = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+
         string sql, countSql;
         if (UsePostgres)
         {
             var dirClause = direction is not null ? "AND \"Direction\" = @Direction" : string.Empty;
+
+            // ILIKE, not LIKE: Postgres LIKE is case-sensitive, and nobody types
+            // a track name with the original casing. Matched against the whole
+            // stored path so a folder name finds its contents too.
+            var searchClause = search is not null ? "AND \"Filename\" ILIKE @Search ESCAPE '\\'" : string.Empty;
             sql = $@"
                 SELECT
                     ""Id""::text AS ""Id"",
@@ -1032,6 +999,7 @@ public class ReportsService
                     AND ""EndedAt"" IS NOT NULL
                     AND ""EndedAt"" BETWEEN @Start AND @End
                     {dirClause}
+                    {searchClause}
                 ORDER BY ""EndedAt"" {sortOrder}
                 LIMIT @Limit
                 OFFSET @Offset
@@ -1043,11 +1011,15 @@ public class ReportsService
                     AND ""EndedAt"" IS NOT NULL
                     AND ""EndedAt"" BETWEEN @Start AND @End
                     {dirClause}
+                    {searchClause}
             ";
         }
         else
         {
             var dirClause = direction is not null ? "AND Direction = @Direction" : string.Empty;
+
+            // SQLite's LIKE is already case-insensitive for ASCII.
+            var searchClause = search is not null ? "AND Filename LIKE @Search ESCAPE '\\'" : string.Empty;
             sql = $@"
                 SELECT
                     Id,
@@ -1074,6 +1046,7 @@ public class ReportsService
                     AND EndedAt IS NOT NULL
                     AND EndedAt BETWEEN @Start AND @End
                     {dirClause}
+                    {searchClause}
                 ORDER BY EndedAt {sortOrder}
                 LIMIT @Limit
                 OFFSET @Offset
@@ -1085,6 +1058,7 @@ public class ReportsService
                     AND EndedAt IS NOT NULL
                     AND EndedAt BETWEEN @Start AND @End
                     {dirClause}
+                    {searchClause}
             ";
         }
 
@@ -1096,6 +1070,7 @@ public class ReportsService
             Direction = direction?.ToString(),
             Start = s,
             End = e,
+            Search = search is not null ? "%" + EscapeLike(search) + "%" : null,
             Limit = limit,
             Offset = offset,
         };
@@ -1690,10 +1665,15 @@ public class ReportsService
             string sql;
             if (UsePostgres)
             {
+                // Keep the DISTINCT in a subquery: COUNT(DISTINCT ...) forces a sort that spills to
+                // disk at this row count, while the subquery form can hash-aggregate.
                 sql = @"
-                    SELECT COUNT(DISTINCT LOWER(SUBSTR(""Filename"", LENGTH(RTRIM(""Filename"", REPLACE(REPLACE(""Filename"", '/', ''), '\', ''))) + 1)))
-                    FROM transfers.""Transfers""
-                    WHERE ""Direction"" = 'Upload' AND ""State"" = 48
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT DISTINCT LOWER(SUBSTRING(""Filename"" FROM '[^/\\]*$'))
+                        FROM transfers.""Transfers""
+                        WHERE ""Direction"" = 'Upload' AND ""State"" = 48
+                    ) basenames
                 ";
             }
             else
@@ -1760,6 +1740,98 @@ public class ReportsService
             using var connection = OpenConnection(Database.Events);
             return connection.QueryFirstOrDefault<SocialActivity>(sql, new { Start = s, End = e }) ?? new SocialActivity();
         });
+    }
+
+    // Longer TTL for wider time windows — no point refreshing a 30-day summary every 30s.
+    private static TimeSpan GetCacheTtl(DateTime start, DateTime end)
+    {
+        var range = end - start;
+
+        if (range >= TimeSpan.FromDays(7))
+        {
+            return TimeSpan.FromMinutes(10);
+        }
+
+        if (range >= TimeSpan.FromDays(1))
+        {
+            return TimeSpan.FromMinutes(5);
+        }
+
+        return TimeSpan.FromMinutes(2);
+    }
+
+    // Identifies the requested window *relative to now*, quantized by the TTL, rather than by
+    // absolute wall-clock minutes. The dashboard always requests windows anchored at "now", so
+    // absolute keys changed on every visit and defeated the TTL entirely.
+    private static string WindowKey(DateTime s, DateTime e)
+    {
+        var ttl = GetCacheTtl(s, e);
+        var range = (long)Math.Round((e - s).TotalSeconds / ttl.TotalSeconds);
+        var offset = (long)Math.Round((DateTime.UtcNow - e).TotalSeconds / ttl.TotalSeconds);
+        return $"{range}r{offset}";
+    }
+
+    // Normalise DateTime values to UTC kind so Npgsql accepts them for timestamptz columns.
+    // For SQLite the kind is ignored by Dapper so this is safe for both providers.
+    private static DateTime Utc(DateTime dt) => DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+
+    /// <summary>
+    ///     Escapes LIKE/ILIKE wildcards so a search term matches literally.
+    /// </summary>
+    /// <remarks>
+    ///     Music filenames are full of underscores, and '_' is the single-character
+    ///     wildcard — left unescaped, "track_01" would also match "track-01".
+    ///     Pair with an ESCAPE '\' clause.
+    /// </remarks>
+    /// <param name="value">The raw search term.</param>
+    /// <returns>The term with backslash, percent and underscore escaped.</returns>
+    private static string EscapeLike(string value) =>
+        value
+            .Replace("\\", "\\\\")
+            .Replace("%", "\\%")
+            .Replace("_", "\\_");
+
+    // Serve-stale-while-revalidate: an entry past its TTL is returned immediately and refreshed on
+    // a background thread, so requests only block on the database the very first time a window is
+    // asked for (or after the entry has gone unused for several TTLs and been evicted).
+    private T GetOrCreateReport<T>(string cacheKey, DateTime start, DateTime end, Func<T> factory)
+    {
+        var ttl = GetCacheTtl(start, end);
+
+        if (Cache.TryGetValue<StaleWhileRevalidateEntry>(cacheKey, out var cached))
+        {
+            if (DateTime.UtcNow > cached.FreshUntil && RefreshesInFlight.TryAdd(cacheKey, 0))
+            {
+                _ = Task.Run(() =>
+                {
+                    try
+                    {
+                        Cache.Set(cacheKey, new StaleWhileRevalidateEntry(factory(), DateTime.UtcNow + ttl), ttl * 6);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning("Background refresh of {CacheKey} failed: {Message}", cacheKey, ex.Message);
+                    }
+                    finally
+                    {
+                        RefreshesInFlight.TryRemove(cacheKey, out _);
+                    }
+                });
+            }
+
+            return (T)cached.Value;
+        }
+
+        var value = factory();
+        Cache.Set(cacheKey, new StaleWhileRevalidateEntry(value, DateTime.UtcNow + ttl), ttl * 6);
+        return value;
+    }
+
+    private DbConnection OpenConnection(Database database)
+    {
+        DbConnection conn = new NpgsqlConnection(ConnectionStrings[database]);
+        conn.Open();
+        return conn;
     }
 
     private sealed record StaleWhileRevalidateEntry(object Value, DateTime FreshUntil);

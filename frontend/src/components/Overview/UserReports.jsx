@@ -31,6 +31,18 @@ import * as reportsAPI from '../../lib/reports';
 import { onTransferComplete } from '../../lib/transferEvents';
 import { formatBytes, formatDate } from '../../lib/util';
 import UsernameLink from '../Shared/UsernameLink';
+import {
+  Building2,
+  Clock,
+  FileMusic,
+  Flag,
+  Gauge,
+  HardDrive,
+  Network,
+  RotateCcw,
+  TriangleAlert,
+  User,
+} from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 
 const PAGE_SIZE = 50;
@@ -39,13 +51,21 @@ const AUTO_REFRESH_MS = 30_000;
 // live-refresh triggers so we never refetch the list more than once per window.
 const LIVE_REFRESH_COOLDOWN_MS = 2_500;
 
-const SORT_COLS = [
-  { key: 'LastSeen', label: 'Last Seen' },
-  { key: 'UploadCount', label: 'UL Files' },
-  { key: 'UploadBytes', label: 'UL Data' },
-  { key: 'DownloadCount', label: 'DL Files' },
-  { key: 'DownloadBytes', label: 'DL Data' },
-  { key: 'Errors', label: 'Errors' },
+// Every column is sortable; `num` right-aligns and picks the numeric sort key.
+// Keys match the backend UserReportSortBy enum (parsed case-insensitively).
+const COLUMNS = [
+  { key: 'Username', label: 'User', Icon: User },
+  { key: 'IpAddress', label: 'IP', Icon: Network },
+  { key: 'Country', label: 'Country', Icon: Flag },
+  { key: 'City', label: 'City', Icon: Building2 },
+  { key: 'LastSeen', label: 'Last Seen', Icon: Clock, num: true },
+  { key: 'UploadCount', label: 'UL Files', Icon: FileMusic, num: true },
+  { key: 'UploadBytes', label: 'UL Data', Icon: HardDrive, num: true },
+  { key: 'DownloadCount', label: 'DL Files', Icon: FileMusic, num: true },
+  { key: 'DownloadBytes', label: 'DL Data', Icon: HardDrive, num: true },
+  { key: 'Errors', label: 'Errors', Icon: TriangleAlert, num: true },
+  { key: 'UploadSpeed', label: 'UL Speed', Icon: Gauge, num: true },
+  { key: 'DownloadSpeed', label: 'DL Speed', Icon: Gauge, num: true },
 ];
 
 const formatSpeed = (speed) => (speed > 0 ? `${formatBytes(speed)}/s` : '—');
@@ -53,14 +73,22 @@ const formatSpeed = (speed) => (speed > 0 ? `${formatBytes(speed)}/s` : '—');
 const SortHeader = ({ col, onSort, sortBy, sortOrder }) => {
   const active = sortBy === col.key;
   const arrow = active ? (sortOrder === 'DESC' ? ' ▼' : ' ▲') : '';
+  const { Icon } = col;
   return (
     <th
-      className={`user-reports-th user-reports-num${active ? ' active' : ''}`}
+      className={`user-reports-th${col.num ? ' user-reports-num' : ''}${active ? ' active' : ''}`}
       onClick={() => onSort(col.key)}
       style={{ cursor: 'pointer', userSelect: 'none' }}
     >
-      {col.label}
-      {arrow}
+      <span className="user-reports-th-inner">
+        <Icon
+          className="user-reports-th-icon"
+          size={13}
+          strokeWidth={1.75}
+        />
+        {col.label}
+        {arrow}
+      </span>
     </th>
   );
 };
@@ -77,7 +105,15 @@ const UserReports = () => {
     () => new URLSearchParams(window.location.search).get('user') ?? '',
   );
   const [loading, setLoading] = useState(true);
+  // Non-destructive in-flight flag for user-initiated page navigation. Unlike
+  // `loading` (which clears the table on search/sort), this dims the existing
+  // rows and shows a spinner so flicking pages has immediate feedback. It is
+  // deliberately not set by the silent 30s background refresh.
+  const [paging, setPaging] = useState(false);
   const [page, setPage] = useState(0);
+  // Local text for the editable page-number box; kept in sync with `page` so
+  // programmatic navigation (prev/next/reset) updates the field too.
+  const [pageInput, setPageInput] = useState('1');
   const [tick, setTick] = useState(0);
   const [newUsernames, setNewUsernames] = useState(() => new Set());
   const debounceRef = useRef(null);
@@ -117,6 +153,7 @@ const UserReports = () => {
           setItems(rows);
           setTotal(t);
           setLoading(false);
+          setPaging(false);
         }
       })
       .catch(() => {
@@ -124,6 +161,7 @@ const UserReports = () => {
           setItems([]);
           setTotal(0);
           setLoading(false);
+          setPaging(false);
         }
       });
     return () => {
@@ -178,6 +216,36 @@ const UserReports = () => {
 
   const pageCount = Math.ceil(total / PAGE_SIZE);
 
+  // Reflect the current page in the editable box whenever it changes for any
+  // reason (prev/next buttons, reset, search clamping back to page 0).
+  useEffect(() => {
+    setPageInput(String(page + 1));
+  }, [page]);
+
+  // Navigate to a 0-based page, clamped to range and skipping no-op jumps.
+  const goToPage = (target) => {
+    const clamped = Math.max(0, Math.min(target, pageCount - 1));
+    if (clamped === page) {
+      setPageInput(String(page + 1));
+      return;
+    }
+
+    setPaging(true);
+    setPage(clamped);
+  };
+
+  // Parse the page box (1-based) and jump; revert to the current page if the
+  // entry is blank or not a number.
+  const commitPageInput = () => {
+    const parsed = Number.parseInt(pageInput, 10);
+    if (Number.isNaN(parsed)) {
+      setPageInput(String(page + 1));
+      return;
+    }
+
+    goToPage(parsed - 1);
+  };
+
   const handleSearchChange = (e) => {
     const value = e.target.value;
     setSearchInput(value);
@@ -202,6 +270,21 @@ const UserReports = () => {
     }
   };
 
+  // Back to the pristine view: no filter, sorted by most recently seen.
+  const isDefaultView =
+    searchInput === '' && sortBy === 'LastSeen' && sortOrder === 'DESC';
+
+  const handleReset = () => {
+    clearTimeout(debounceRef.current);
+    setSearchInput('');
+    setSearch('');
+    setSortBy('LastSeen');
+    setSortOrder('DESC');
+    setLoading(true);
+    setItems([]);
+    setPage(0);
+  };
+
   return (
     <div className="section-card user-reports-card">
       <div className="section-card-header">
@@ -219,6 +302,19 @@ const UserReports = () => {
           type="text"
           value={searchInput}
         />
+        <button
+          className="user-reports-reset hover-fx"
+          disabled={isDefaultView}
+          onClick={handleReset}
+          title="Clear the filter and sort by Last Seen"
+          type="button"
+        >
+          <RotateCcw
+            size={13}
+            strokeWidth={1.75}
+          />
+          Reset
+        </button>
       </div>
 
       {loading ? (
@@ -227,17 +323,21 @@ const UserReports = () => {
         <div className="leaderboard-empty">No users found</div>
       ) : (
         <div
-          className="user-reports-scroll"
+          className={`user-reports-scroll${paging ? ' user-reports-scroll--paging' : ''}`}
           ref={scrollRef}
         >
+          {paging && (
+            <div
+              aria-hidden="true"
+              className="user-reports-paging-overlay"
+            >
+              <div className="overview-glass-spinner" />
+            </div>
+          )}
           <table className="leaderboard-table user-reports-table">
             <thead className="user-reports-thead">
               <tr>
-                <th className="user-reports-th">User</th>
-                <th className="user-reports-th">IP</th>
-                <th className="user-reports-th">Country</th>
-                <th className="user-reports-th">City</th>
-                {SORT_COLS.map((col) => (
+                {COLUMNS.map((col) => (
                   <SortHeader
                     col={col}
                     key={col.key}
@@ -246,8 +346,6 @@ const UserReports = () => {
                     sortOrder={sortOrder}
                   />
                 ))}
-                <th className="user-reports-th user-reports-num">UL Speed</th>
-                <th className="user-reports-th user-reports-num">DL Speed</th>
               </tr>
             </thead>
             <tbody>
@@ -327,19 +425,47 @@ const UserReports = () => {
         <div className="user-reports-pagination">
           <button
             className="user-report-page-btn"
-            disabled={page === 0}
-            onClick={() => setPage((p) => p - 1)}
+            disabled={page === 0 || paging}
+            onClick={() => goToPage(0)}
+            title="First page"
+            type="button"
+          >
+            «
+          </button>
+          <button
+            className="user-report-page-btn"
+            disabled={page === 0 || paging}
+            onClick={() => goToPage(page - 1)}
+            title="Previous page"
             type="button"
           >
             ‹
           </button>
           <span className="user-report-page-info">
-            {page + 1} / {pageCount}
+            <input
+              aria-label="Page number"
+              className="user-report-page-input"
+              disabled={paging}
+              inputMode="numeric"
+              onBlur={commitPageInput}
+              onChange={(e) =>
+                setPageInput(e.target.value.replaceAll(/\D/g, ''))
+              }
+              onFocus={(e) => e.target.select()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.currentTarget.blur();
+                }
+              }}
+              value={pageInput}
+            />
+            <span className="user-report-page-total">/ {pageCount}</span>
           </span>
           <button
             className="user-report-page-btn"
-            disabled={page >= pageCount - 1}
-            onClick={() => setPage((p) => p + 1)}
+            disabled={page >= pageCount - 1 || paging}
+            onClick={() => goToPage(page + 1)}
+            title="Next page"
             type="button"
           >
             ›

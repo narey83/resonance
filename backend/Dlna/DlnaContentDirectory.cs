@@ -39,6 +39,8 @@ namespace resonance.Dlna
 
     public static class DlnaContentDirectory
     {
+        private const string DlnaFlags = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000";
+
         private static readonly Dictionary<string, string> MimeTypes = new(StringComparer.OrdinalIgnoreCase)
         {
             { ".mp3",  "audio/mpeg" },
@@ -70,7 +72,9 @@ namespace resonance.Dlna
             { ".wma",  "WMAFULL" },
         };
 
-        private const string DlnaFlags = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000";
+        internal static string SystemUpdateId { get; } = ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeSeconds().ToString();
+
+        internal static bool ServeArtwork { get; set; } = true;
 
         public static string GetMimeType(string extension) =>
             MimeTypes.TryGetValue(extension, out var mime) ? mime : "audio/mpeg";
@@ -85,9 +89,6 @@ namespace resonance.Dlna
         // Returns true if the path is a standalone image file, false if it's an audio file with embedded art
         public static bool IsImageFile(string path) =>
             ImageExtensions.Contains(Path.GetExtension(path));
-
-        internal static string SystemUpdateId { get; } = ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeSeconds().ToString();
-        internal static bool ServeArtwork { get; set; } = true;
 
         public static string HandleSoap(string soapBody, string serverBase, IMusicLibraryService musicLibrary)
         {
@@ -146,6 +147,29 @@ namespace resonance.Dlna
             {
                 Serilog.Log.Warning(ex, "DLNA ContentDirectory SOAP error");
                 return ErrorResponse(501, "Action Not Implemented");
+            }
+        }
+
+        public static string EncodeSegment(string value) =>
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(value))
+                .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+        public static string? DecodeSegment(string encoded)
+        {
+            try
+            {
+                var padded = encoded.Replace('-', '+').Replace('_', '/');
+                var mod = padded.Length % 4;
+                if (mod > 0)
+                {
+                    padded += new string('=', 4 - mod);
+                }
+
+                return Encoding.UTF8.GetString(Convert.FromBase64String(padded));
+            }
+            catch
+            {
+                return null;
             }
         }
 
@@ -701,29 +725,6 @@ namespace resonance.Dlna
             $@"<DIDL-Lite xmlns=""urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/"" xmlns:dc=""http://purl.org/dc/elements/1.1/"" xmlns:upnp=""urn:schemas-upnp-org:metadata-1-0/upnp/"">{inner}</DIDL-Lite>";
 
         private static string EmptyDidl() => WrapDidl(string.Empty);
-
-        public static string EncodeSegment(string value) =>
-            Convert.ToBase64String(Encoding.UTF8.GetBytes(value))
-                .TrimEnd('=').Replace('+', '-').Replace('/', '_');
-
-        public static string? DecodeSegment(string encoded)
-        {
-            try
-            {
-                var padded = encoded.Replace('-', '+').Replace('_', '/');
-                var mod = padded.Length % 4;
-                if (mod > 0)
-                {
-                    padded += new string('=', 4 - mod);
-                }
-
-                return Encoding.UTF8.GetString(Convert.FromBase64String(padded));
-            }
-            catch
-            {
-                return null;
-            }
-        }
 
         private static string EscapeXml(string s) =>
             s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;");

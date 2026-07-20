@@ -350,18 +350,13 @@ namespace resonance.Core.API
 
         private string GetCallerIp()
         {
+            // UseForwardedHeaders (configured in Program.cs, trusting only the private proxy network)
+            // has already resolved RemoteIpAddress to the genuine client, so read it directly rather
+            // than re-parsing X-Forwarded-For — which any client can spoof when read unconditionally.
             var ip = HttpContext.Connection.RemoteIpAddress;
             if (ip is not null && ip.IsIPv4MappedToIPv6)
             {
                 ip = ip.MapToIPv4();
-            }
-
-            // Only trust X-Forwarded-For when the direct peer is the local machine (reverse proxy
-            // or dev server on the same host); any remote client can set the header to an arbitrary value.
-            var forwarded = Request.Headers["X-Forwarded-For"].FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(forwarded) && ip is not null && IPAddress.IsLoopback(ip))
-            {
-                return forwarded.Split(',')[0].Trim();
             }
 
             return ip?.ToString();

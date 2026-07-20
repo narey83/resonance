@@ -40,6 +40,18 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using resonance;
 
+public interface ISubscriptionOverrideFields
+{
+    string? OutputDirectory { get; }
+    string? AudioFormat { get; }
+    int? AudioQuality { get; }
+    string? DefaultGenre { get; }
+    int? MinTrackDurationSeconds { get; }
+    int? MaxTrackDurationSeconds { get; }
+    string? ConvertOnCompletionFormat { get; }
+    string? UploadedAfter { get; }
+}
+
 [Route("api/v{version:apiVersion}/ytdlp")]
 [ApiVersion("0")]
 [Produces("application/json")]
@@ -95,6 +107,20 @@ public class YtDlpController : ControllerBase
     public async Task<IActionResult> RemoveJob(Guid jobId)
     {
         await Service.RemoveJobAsync(jobId);
+        return NoContent();
+    }
+
+    [HttpDelete("events")]
+    public async Task<IActionResult> ClearEvents()
+    {
+        await Service.ClearEventsAsync();
+        return NoContent();
+    }
+
+    [HttpDelete("events/{jobId:guid}")]
+    public async Task<IActionResult> ClearJobEvents(Guid jobId)
+    {
+        await Service.ClearJobEventsAsync(jobId);
         return NoContent();
     }
 
@@ -207,9 +233,6 @@ public class YtDlpController : ControllerBase
         await Service.CheckSubscriptionNowAsync(id, cancellationToken);
         return NoContent();
     }
-
-    private static YtDlpSubscriptionOverrides ToOverrides(ISubscriptionOverrideFields f)
-        => new(f.OutputDirectory, f.AudioFormat, f.AudioQuality, f.DefaultGenre, f.MinTrackDurationSeconds, f.MaxTrackDurationSeconds, f.ConvertOnCompletionFormat, f.UploadedAfter);
 
     // ── Search ──────────────────────────────────────────────────────────────
     [HttpGet("search")]
@@ -349,6 +372,9 @@ public class YtDlpController : ControllerBase
 
         return NoContent();
     }
+
+    private static YtDlpSubscriptionOverrides ToOverrides(ISubscriptionOverrideFields f)
+        => new(f.OutputDirectory, f.AudioFormat, f.AudioQuality, f.DefaultGenre, f.MinTrackDurationSeconds, f.MaxTrackDurationSeconds, f.ConvertOnCompletionFormat, f.UploadedAfter);
 }
 
 // All props nullable: non-nullable ref-type props are implicitly [Required] under
@@ -365,18 +391,6 @@ public record SubmitJobRequest(
     int? MaxTrackDurationSeconds,
     string? ConvertOnCompletionFormat,
     string? UploadedAfter);
-
-public interface ISubscriptionOverrideFields
-{
-    string? OutputDirectory { get; }
-    string? AudioFormat { get; }
-    int? AudioQuality { get; }
-    string? DefaultGenre { get; }
-    int? MinTrackDurationSeconds { get; }
-    int? MaxTrackDurationSeconds { get; }
-    string? ConvertOnCompletionFormat { get; }
-    string? UploadedAfter { get; }
-}
 
 public record AddSubscriptionRequest(
     string ChannelUrl,

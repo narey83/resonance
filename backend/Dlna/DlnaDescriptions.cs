@@ -31,42 +31,6 @@ namespace resonance.Dlna
 {
     public static class DlnaDescriptions
     {
-        public static string BuildDeviceDescription(string uuid, string friendlyName, string localIp, int port)
-        {
-            var baseUrl = $"http://{localIp}:{port}";
-            return $"""
-                <?xml version="1.0"?>
-                <root xmlns="urn:schemas-upnp-org:device-1-0" xmlns:dlna="urn:schemas-dlna-org:device-1-0">
-                  <specVersion><major>1</major><minor>0</minor></specVersion>
-                  <device>
-                    <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
-                    <friendlyName>{EscapeXml(friendlyName)}</friendlyName>
-                    <manufacturer>Resonance</manufacturer>
-                    <modelName>Resonance</modelName>
-                    <UDN>uuid:{uuid}</UDN>
-                    <dlna:X_DLNADOC xmlns:dlna="urn:schemas-dlna-org:device-1-0">DMS-1.50</dlna:X_DLNADOC>
-                    <dlna:X_DLNACAP xmlns:dlna="urn:schemas-dlna-org:device-1-0"></dlna:X_DLNACAP>
-                    <serviceList>
-                      <service>
-                        <serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType>
-                        <serviceId>urn:upnp-org:serviceId:ContentDirectory</serviceId>
-                        <controlURL>{baseUrl}/ContentDirectory/control</controlURL>
-                        <eventSubURL>{baseUrl}/ContentDirectory/events</eventSubURL>
-                        <SCPDURL>{baseUrl}/ContentDirectory/description.xml</SCPDURL>
-                      </service>
-                      <service>
-                        <serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType>
-                        <serviceId>urn:upnp-org:serviceId:ConnectionManager</serviceId>
-                        <controlURL>{baseUrl}/ConnectionManager/control</controlURL>
-                        <eventSubURL>{baseUrl}/ConnectionManager/events</eventSubURL>
-                        <SCPDURL>{baseUrl}/ConnectionManager/description.xml</SCPDURL>
-                      </service>
-                    </serviceList>
-                  </device>
-                </root>
-                """;
-        }
-
         public const string ContentDirectoryDescription = """
             <?xml version="1.0"?>
             <scpd xmlns="urn:schemas-upnp-org:service-1-0">
@@ -156,6 +120,42 @@ namespace resonance.Dlna
               </serviceStateTable>
             </scpd>
             """;
+
+        public static string BuildDeviceDescription(string uuid, string friendlyName, string localIp, int port)
+        {
+            var baseUrl = $"http://{localIp}:{port}";
+            return $"""
+                <?xml version="1.0"?>
+                <root xmlns="urn:schemas-upnp-org:device-1-0" xmlns:dlna="urn:schemas-dlna-org:device-1-0">
+                  <specVersion><major>1</major><minor>0</minor></specVersion>
+                  <device>
+                    <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
+                    <friendlyName>{EscapeXml(friendlyName)}</friendlyName>
+                    <manufacturer>Resonance</manufacturer>
+                    <modelName>Resonance</modelName>
+                    <UDN>uuid:{uuid}</UDN>
+                    <dlna:X_DLNADOC xmlns:dlna="urn:schemas-dlna-org:device-1-0">DMS-1.50</dlna:X_DLNADOC>
+                    <dlna:X_DLNACAP xmlns:dlna="urn:schemas-dlna-org:device-1-0"></dlna:X_DLNACAP>
+                    <serviceList>
+                      <service>
+                        <serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType>
+                        <serviceId>urn:upnp-org:serviceId:ContentDirectory</serviceId>
+                        <controlURL>{baseUrl}/ContentDirectory/control</controlURL>
+                        <eventSubURL>{baseUrl}/ContentDirectory/events</eventSubURL>
+                        <SCPDURL>{baseUrl}/ContentDirectory/description.xml</SCPDURL>
+                      </service>
+                      <service>
+                        <serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType>
+                        <serviceId>urn:upnp-org:serviceId:ConnectionManager</serviceId>
+                        <controlURL>{baseUrl}/ConnectionManager/control</controlURL>
+                        <eventSubURL>{baseUrl}/ConnectionManager/events</eventSubURL>
+                        <SCPDURL>{baseUrl}/ConnectionManager/description.xml</SCPDURL>
+                      </service>
+                    </serviceList>
+                  </device>
+                </root>
+                """;
+        }
 
         private static string EscapeXml(string s) =>
             s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");

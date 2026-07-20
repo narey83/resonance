@@ -56,7 +56,26 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 {
     private const int EventBufferMax = 500;
 
+    // Per-track auto-retry rounds, in memory (resets on restart, which also grants a fresh budget).
+    private const int MaxAutoRetryRounds = 10;
+
+    // Completed tracks are published from staging to the music folder in batches of this size,
+    // rather than all at job end, so staging doesn't accumulate a whole large job's files.
+    private const int BatchMoveSize = 100;
+
     private static readonly ILogger Log = Serilog.Log.ForContext<YtDlpService>();
+
+    // Coalesce post-publish library/share rescans: touched folders accumulate and are scanned at
+    // most once per interval, so a steady stream of batch moves doesn't fire a scan every minute.
+    private static readonly TimeSpan RescanMinInterval = TimeSpan.FromMinutes(5);
+
+    // Formats the tag writer (and AudioConverter) know how to handle — checked in order when a
+    // track's recorded extension no longer matches what's on disk.
+    private static readonly string[] KnownAudioExtensions = [".mp3", ".opus", ".m4a", ".flac", ".ogg", ".wav"];
+
+    // yt-dlp leftovers that share a track's stem and should be removed from staging once moved.
+    private static readonly string[] SidecarExtensions =
+        [".webp", ".jpg", ".jpeg", ".png", ".part", ".ytdl", ".temp", ".info.json", ".description"];
 
     private readonly IOptionsMonitor<resonance.Options> options;
     private readonly IHubContext<YtDlpHub> hub;
@@ -72,18 +91,10 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     private readonly ConcurrentDictionary<Guid, YtDlpSubscription> subscriptions = new();
     private readonly SemaphoreSlim subscriptionCheckLock = new(1, 1);
 
-    // Per-track auto-retry rounds, in memory (resets on restart, which also grants a fresh budget).
-    private const int MaxAutoRetryRounds = 10;
     private readonly ConcurrentDictionary<Guid, int> autoRetryCounts = new();
 
-    // Completed tracks are published from staging to the music folder in batches of this size,
-    // rather than all at job end, so staging doesn't accumulate a whole large job's files.
-    private const int BatchMoveSize = 100;
     private readonly SemaphoreSlim batchMoveLock = new(1, 1);
 
-    // Coalesce post-publish library/share rescans: touched folders accumulate and are scanned at
-    // most once per interval, so a steady stream of batch moves doesn't fire a scan every minute.
-    private static readonly TimeSpan RescanMinInterval = TimeSpan.FromMinutes(5);
     private readonly object rescanGate = new();
     private readonly HashSet<string> pendingRescanDirs = new(StringComparer.Ordinal);
     private DateTime lastRescanAt = DateTime.MinValue;
@@ -199,6 +210,19 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             await db.SaveChangesAsync(cancellationToken);
         }
 
+        // Rehydrate the Events pane from the durable log so it survives restarts and buffer
+        // eviction. Load the most recent window (the buffer cap) oldest-first so the queue keeps
+        // chronological order (newest last).
+        var recentEvents = await db.Events
+            .OrderByDescending(e => e.Id)
+            .Take(EventBufferMax)
+            .ToListAsync(cancellationToken);
+        recentEvents.Reverse();
+        foreach (var e in recentEvents)
+        {
+            eventBuffer.Enqueue(new YtDlpEvent(e.Timestamp, e.JobId, e.JobTitle, e.Level, e.Message));
+        }
+
         // Load channel subscriptions into the hot cache and start the poll loop
         var allSubs = await db.Subscriptions.OrderByDescending(s => s.CreatedAt).ToListAsync(cancellationToken);
         foreach (var sub in allSubs)
@@ -233,6 +257,31 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         => jobs.Values.OrderByDescending(j => j.RequestedAt).ToList();
 
     public IReadOnlyList<YtDlpEvent> GetRecentEvents() => eventBuffer.ToArray();
+
+    public async Task ClearEventsAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        await db.Events.ExecuteDeleteAsync();
+
+        eventBuffer.Clear();
+        await hub.BroadcastEventSnapshotAsync(GetRecentEvents());
+    }
+
+    public async Task ClearJobEventsAsync(Guid jobId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        await db.Events.Where(e => e.JobId == jobId).ExecuteDeleteAsync();
+
+        // ConcurrentQueue has no remove-by-predicate — drain and re-enqueue the survivors in order.
+        var kept = eventBuffer.Where(e => e.JobId != jobId).ToArray();
+        eventBuffer.Clear();
+        foreach (var e in kept)
+        {
+            eventBuffer.Enqueue(e);
+        }
+
+        await hub.BroadcastEventSnapshotAsync(GetRecentEvents());
+    }
 
     // ponytail: subscriptionId trails cancellationToken so the controller call site needs no change; only the poller sets it.
     public async Task<YtDlpJob> SubmitAsync(string url, string? outputDirectory = null, string? audioFormat = null, int? audioQuality = null, string? defaultGenre = null, int? minTrackDurationSeconds = null, int? maxTrackDurationSeconds = null, string? convertOnCompletionFormat = null, string? uploadedAfter = null, CancellationToken cancellationToken = default, Guid? subscriptionId = null)
@@ -520,81 +569,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     public Task SetTrackTagsAsync(Guid trackId, string artist, string title, string? album)
         => RewriteTagsAsync(trackId, (artist, title, album));
 
-    private async Task RewriteTagsAsync(Guid trackId, (string Artist, string Title, string? Album)? overrides)
-    {
-        await using var db = await dbFactory.CreateDbContextAsync();
-        var track = await db.Tracks.FindAsync(trackId);
-
-        if (track is null || track.State != YtDlpTrackState.Completed || track.FilePath is null)
-        {
-            return;
-        }
-
-        if (!File.Exists(track.FilePath))
-        {
-            // The stored path can go stale if the file was re-encoded to a different container
-            // after completion (e.g. a convert-on-completion run, or a manual conversion) without
-            // this row's FilePath being updated. Before giving up, look for a sibling file with
-            // the same name under any format we know how to tag.
-            var resolved = FindTrackFileUnderKnownExtensions(track.FilePath);
-            if (resolved != null)
-            {
-                track.FilePath = resolved;
-            }
-            else
-            {
-                track.TagWritingError = "File no longer exists on disk.";
-                await db.SaveChangesAsync();
-                await BroadcastJobsAsync();
-                return;
-            }
-        }
-
-        var opts = options.CurrentValue.Integrations.YtDlp;
-        var metadata = YtDlpMetadataParser.Parse(track.Title, track.Uploader, track.PlaylistIndex, track.UploadDate, opts.DefaultGenre);
-        if (overrides is { } o)
-        {
-            metadata = metadata with { Artist = o.Artist, Title = o.Title, Album = o.Album ?? metadata.Album };
-        }
-
-        var error = YtDlpTagWriter.Write(track.FilePath, metadata, track.Url, out _);
-
-        if (jobs.TryGetValue(track.JobId, out var job))
-        {
-            if (error is null && track.TagWritingError != null)
-            {
-                job.TagFailedTracks = Math.Max(0, job.TagFailedTracks - 1);
-            }
-            else if (error != null && track.TagWritingError is null)
-            {
-                job.TagFailedTracks++;
-            }
-        }
-
-        track.TagWritingError = error;
-        await db.SaveChangesAsync();
-        await BroadcastJobsAsync();
-    }
-
-    // Formats the tag writer (and AudioConverter) know how to handle — checked in order when a
-    // track's recorded extension no longer matches what's on disk.
-    private static readonly string[] KnownAudioExtensions = [".mp3", ".opus", ".m4a", ".flac", ".ogg", ".wav"];
-
-    private static string? FindTrackFileUnderKnownExtensions(string filePath)
-    {
-        var stem = Path.ChangeExtension(filePath, null);
-        foreach (var ext in KnownAudioExtensions)
-        {
-            var candidate = stem + ext;
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        return null;
-    }
-
     public async Task<IReadOnlyList<YtDlpSearchResult>> SearchAsync(string query, int limit = 25, string? type = null, string? duration = null, string? uploadDate = null, string? sortBy = null, CancellationToken cancellationToken = default)
     {
         var opts = options.CurrentValue.Integrations.YtDlp;
@@ -676,56 +650,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         }
     }
 
-    // YouTube's sp parameter is a base64 protobuf: field 1 = sort order,
-    // field 2 = embedded filter message { 1: upload date, 2: type, 3: duration }
-    private static string? BuildSearchFilterParam(string? type, string? duration, string? uploadDate, string? sortBy)
-    {
-        var sort = sortBy switch { "rating" => 1, "date" => 2, "views" => 3, _ => 0 };
-        var dateValue = uploadDate switch { "hour" => 1, "today" => 2, "week" => 3, "month" => 4, "year" => 5, _ => 0 };
-        var typeValue = type switch { "video" => 1, "channel" => 2, "playlist" => 3, "movie" => 4, _ => 0 };
-        var durationValue = duration switch { "short" => 1, "long" => 2, "medium" => 3, _ => 0 };
-
-        if (sort == 0 && dateValue == 0 && typeValue == 0 && durationValue == 0)
-        {
-            return null;
-        }
-
-        var filters = new List<byte>();
-        if (dateValue > 0)
-        {
-            filters.Add(0x08);
-            filters.Add((byte)dateValue);
-        }
-
-        if (typeValue > 0)
-        {
-            filters.Add(0x10);
-            filters.Add((byte)typeValue);
-        }
-
-        if (durationValue > 0)
-        {
-            filters.Add(0x18);
-            filters.Add((byte)durationValue);
-        }
-
-        var bytes = new List<byte>();
-        if (sort > 0)
-        {
-            bytes.Add(0x08);
-            bytes.Add((byte)sort);
-        }
-
-        if (filters.Count > 0)
-        {
-            bytes.Add(0x12);
-            bytes.Add((byte)filters.Count);
-            bytes.AddRange(filters);
-        }
-
-        return Convert.ToBase64String(bytes.ToArray());
-    }
-
     public async Task<YtDlpSearchResult?> ResolveUrlAsync(string url, CancellationToken cancellationToken = default)
     {
         var opts = options.CurrentValue.Integrations.YtDlp;
@@ -790,66 +714,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         finally
         {
             ReleaseCookieFile(cookieFile);
-        }
-    }
-
-    private static YtDlpSearchResult? ParseResolvedUrl(string json)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            var id = root.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? string.Empty : string.Empty;
-            var title = root.TryGetProperty("title", out var t) ? t.GetString() ?? string.Empty : string.Empty;
-            var uploader = root.TryGetProperty("uploader", out var up) ? up.GetString() ?? string.Empty : string.Empty;
-            var pageUrl = root.TryGetProperty("webpage_url", out var wu) ? wu.GetString() ?? string.Empty : string.Empty;
-
-            if (pageUrl.Length == 0 || title.Length == 0)
-            {
-                return null;
-            }
-
-            // Channels and playlists both dump as _type "playlist"; only real playlist
-            // URLs contain "/playlist". Videos dump as "video" (or omit _type entirely).
-            var isListing = root.TryGetProperty("_type", out var typeEl) && typeEl.GetString() == "playlist";
-            var resultType = !isListing ? "video"
-                : pageUrl.Contains("/playlist", StringComparison.OrdinalIgnoreCase) ? "playlist"
-                : "channel";
-
-            var thumbnail = root.TryGetProperty("thumbnail", out var th) ? th.GetString() : null;
-
-            // Channel/playlist dumps have no top-level "thumbnail", only a "thumbnails" array (smallest first)
-            if (thumbnail is null
-                && root.TryGetProperty("thumbnails", out var thumbs)
-                && thumbs.ValueKind == JsonValueKind.Array
-                && thumbs.GetArrayLength() > 0
-                && thumbs[thumbs.GetArrayLength() - 1].TryGetProperty("url", out var thumbUrl))
-            {
-                thumbnail = thumbUrl.GetString();
-            }
-
-            var duration = root.TryGetProperty("duration", out var dur) && dur.ValueKind == JsonValueKind.Number
-                ? (int?)(int)dur.GetDouble()
-                : null;
-
-            // A video dump also carries its uploader's follower count; only meaningful for channels
-            var subscriberCount = resultType == "channel"
-                && root.TryGetProperty("channel_follower_count", out var followers)
-                && followers.ValueKind == JsonValueKind.Number
-                ? (long?)followers.GetInt64()
-                : null;
-
-            if (resultType == "channel" && string.IsNullOrEmpty(uploader))
-            {
-                uploader = root.TryGetProperty("uploader_id", out var handle) ? handle.GetString() ?? string.Empty : string.Empty;
-            }
-
-            return new YtDlpSearchResult(id, pageUrl, title, uploader, thumbnail, duration, resultType, subscriberCount);
-        }
-        catch
-        {
-            return null;
         }
     }
 
@@ -928,10 +792,652 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         return tag;
     }
 
+    public async Task ReconcileJobAsync(Guid jobId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        // Load from DB if not in hot cache (e.g. already-completed jobs not reloaded on startup)
+        if (!jobs.TryGetValue(jobId, out var job))
+        {
+            var dbJob = await db.Jobs.FindAsync(jobId);
+            if (dbJob == null)
+            {
+                return;
+            }
+
+            job = dbJob;
+            jobs[jobId] = job;
+        }
+
+        var pending = await db.Tracks
+            .CountAsync(t => t.JobId == jobId && (t.State == YtDlpTrackState.Queued || t.State == YtDlpTrackState.InProgress));
+
+        if (pending > 0)
+        {
+            return;
+        }
+
+        Log.Information("YtDlp: reconciling job {Title} — moving files and triggering library sync", job.Title ?? job.Url);
+        await FinalizeJobAsync(job, db);
+        await BroadcastJobsAsync();
+    }
+
+    public async Task<(int Updated, int Failed, int Skipped)> BackfillDurationsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        var tracks = await db.Tracks
+            .Where(t => t.State == YtDlpTrackState.Completed && t.FilePath != null && (t.Duration == null || t.Duration == 0))
+            .ToListAsync(cancellationToken);
+
+        int updated = 0, failed = 0, skipped = 0;
+
+        foreach (var track in tracks)
+        {
+            if (!File.Exists(track.FilePath))
+            {
+                skipped++;
+                continue;
+            }
+
+            try
+            {
+                using var file = TagLib.File.Create(track.FilePath);
+                var duration = (int)file.Properties.Duration.TotalSeconds;
+                if (duration > 0)
+                {
+                    track.Duration = duration;
+                    updated++;
+                }
+                else
+                {
+                    skipped++;
+                }
+            }
+            catch
+            {
+                failed++;
+            }
+        }
+
+        if (updated > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        Log.Information("YtDlp: duration backfill complete — updated={Updated} failed={Failed} skipped={Skipped}", updated, failed, skipped);
+        return (updated, failed, skipped);
+    }
+
+    // ── Subscriptions ─────────────────────────────────────────────────────────
+    public IReadOnlyList<YtDlpSubscription> ListSubscriptions()
+        => subscriptions.Values.OrderByDescending(s => s.CreatedAt).ToList();
+
+    public async Task<YtDlpSubscription> AddSubscriptionAsync(string channelUrl, YtDlpSubscriptionOverrides? overrides = null, CancellationToken cancellationToken = default)
+    {
+        var url = NormalizeChannelUrl(channelUrl.Trim());
+
+        var existing = subscriptions.Values.FirstOrDefault(s =>
+            string.Equals(s.ChannelUrl, url, StringComparison.OrdinalIgnoreCase));
+        if (existing != null)
+        {
+            throw new InvalidOperationException("Already subscribed to this channel.");
+        }
+
+        var sub = new YtDlpSubscription
+        {
+            ChannelUrl = url,
+            OutputDirectoryOverride = overrides?.OutputDirectory,
+            AudioFormatOverride = overrides?.AudioFormat,
+            AudioQualityOverride = overrides?.AudioQuality,
+            DefaultGenreOverride = overrides?.DefaultGenre,
+            MinTrackDurationSecondsOverride = overrides?.MinTrackDurationSeconds,
+            MaxTrackDurationSecondsOverride = overrides?.MaxTrackDurationSeconds,
+            ConvertOnCompletionFormatOverride = overrides?.ConvertOnCompletionFormat,
+            UploadedAfterOverride = overrides?.UploadedAfter,
+        };
+
+        subscriptions[sub.Id] = sub;
+
+        await using (var db = await dbFactory.CreateDbContextAsync(cancellationToken))
+        {
+            db.Subscriptions.Add(sub);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        await BroadcastSubscriptionsAsync();
+        await EmitEventAsync(null, "info", $"Subscription added: {url}");
+
+        // First check establishes the baseline (records the newest video, downloads nothing)
+        // so subscribing doesn't pull the channel's entire back-catalogue.
+        await CheckSubscriptionAsync(sub, cancellationToken);
+
+        return sub;
+    }
+
+    public async Task UpdateSubscriptionAsync(Guid id, bool? enabled, int? pollIntervalMinutes, YtDlpSubscriptionOverrides? overrides, CancellationToken cancellationToken = default)
+    {
+        if (!subscriptions.TryGetValue(id, out var sub))
+        {
+            return;
+        }
+
+        if (enabled.HasValue)
+        {
+            sub.Enabled = enabled.Value;
+        }
+
+        if (pollIntervalMinutes.HasValue)
+        {
+            sub.PollIntervalMinutes = Math.Max(0, pollIntervalMinutes.Value);
+        }
+
+        if (overrides != null)
+        {
+            sub.OutputDirectoryOverride = overrides.OutputDirectory;
+            sub.AudioFormatOverride = overrides.AudioFormat;
+            sub.AudioQualityOverride = overrides.AudioQuality;
+            sub.DefaultGenreOverride = overrides.DefaultGenre;
+            sub.MinTrackDurationSecondsOverride = overrides.MinTrackDurationSeconds;
+            sub.MaxTrackDurationSecondsOverride = overrides.MaxTrackDurationSeconds;
+            sub.ConvertOnCompletionFormatOverride = overrides.ConvertOnCompletionFormat;
+            sub.UploadedAfterOverride = overrides.UploadedAfter;
+        }
+
+        await PersistSubscriptionAsync(sub, cancellationToken);
+        await BroadcastSubscriptionsAsync();
+    }
+
+    public async Task RemoveSubscriptionAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!subscriptions.TryRemove(id, out var sub))
+        {
+            return;
+        }
+
+        await using (var db = await dbFactory.CreateDbContextAsync(cancellationToken))
+        {
+            var dbSub = await db.Subscriptions.FindAsync([id], cancellationToken);
+            if (dbSub != null)
+            {
+                db.Subscriptions.Remove(dbSub);
+                await db.SaveChangesAsync(cancellationToken);
+            }
+        }
+
+        await BroadcastSubscriptionsAsync();
+        await EmitEventAsync(null, "info", $"Subscription removed: {sub.ChannelTitle ?? sub.ChannelUrl}");
+    }
+
+    public async Task CheckSubscriptionNowAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (subscriptions.TryGetValue(id, out var sub))
+        {
+            await CheckSubscriptionAsync(sub, cancellationToken);
+        }
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        cts.Dispose();
+        workerSlots?.Dispose();
+        subscriptionCheckLock.Dispose();
+        batchMoveLock.Dispose();
+    }
+
+    private static string? FindTrackFileUnderKnownExtensions(string filePath)
+    {
+        var stem = Path.ChangeExtension(filePath, null);
+        foreach (var ext in KnownAudioExtensions)
+        {
+            var candidate = stem + ext;
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    // YouTube's sp parameter is a base64 protobuf: field 1 = sort order,
+    // field 2 = embedded filter message { 1: upload date, 2: type, 3: duration }
+    private static string? BuildSearchFilterParam(string? type, string? duration, string? uploadDate, string? sortBy)
+    {
+        var sort = sortBy switch { "rating" => 1, "date" => 2, "views" => 3, _ => 0 };
+        var dateValue = uploadDate switch { "hour" => 1, "today" => 2, "week" => 3, "month" => 4, "year" => 5, _ => 0 };
+        var typeValue = type switch { "video" => 1, "channel" => 2, "playlist" => 3, "movie" => 4, _ => 0 };
+        var durationValue = duration switch { "short" => 1, "long" => 2, "medium" => 3, _ => 0 };
+
+        if (sort == 0 && dateValue == 0 && typeValue == 0 && durationValue == 0)
+        {
+            return null;
+        }
+
+        var filters = new List<byte>();
+        if (dateValue > 0)
+        {
+            filters.Add(0x08);
+            filters.Add((byte)dateValue);
+        }
+
+        if (typeValue > 0)
+        {
+            filters.Add(0x10);
+            filters.Add((byte)typeValue);
+        }
+
+        if (durationValue > 0)
+        {
+            filters.Add(0x18);
+            filters.Add((byte)durationValue);
+        }
+
+        var bytes = new List<byte>();
+        if (sort > 0)
+        {
+            bytes.Add(0x08);
+            bytes.Add((byte)sort);
+        }
+
+        if (filters.Count > 0)
+        {
+            bytes.Add(0x12);
+            bytes.Add((byte)filters.Count);
+            bytes.AddRange(filters);
+        }
+
+        return Convert.ToBase64String(bytes.ToArray());
+    }
+
+    private static YtDlpSearchResult? ParseResolvedUrl(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            var id = root.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? string.Empty : string.Empty;
+            var title = root.TryGetProperty("title", out var t) ? t.GetString() ?? string.Empty : string.Empty;
+            var uploader = root.TryGetProperty("uploader", out var up) ? up.GetString() ?? string.Empty : string.Empty;
+            var pageUrl = root.TryGetProperty("webpage_url", out var wu) ? wu.GetString() ?? string.Empty : string.Empty;
+
+            if (pageUrl.Length == 0 || title.Length == 0)
+            {
+                return null;
+            }
+
+            // Channels and playlists both dump as _type "playlist"; only real playlist
+            // URLs contain "/playlist". Videos dump as "video" (or omit _type entirely).
+            var isListing = root.TryGetProperty("_type", out var typeEl) && typeEl.GetString() == "playlist";
+            var resultType = !isListing ? "video"
+                : pageUrl.Contains("/playlist", StringComparison.OrdinalIgnoreCase) ? "playlist"
+                : "channel";
+
+            var thumbnail = root.TryGetProperty("thumbnail", out var th) ? th.GetString() : null;
+
+            // Channel/playlist dumps have no top-level "thumbnail", only a "thumbnails" array (smallest first)
+            if (thumbnail is null
+                && root.TryGetProperty("thumbnails", out var thumbs)
+                && thumbs.ValueKind == JsonValueKind.Array
+                && thumbs.GetArrayLength() > 0
+                && thumbs[thumbs.GetArrayLength() - 1].TryGetProperty("url", out var thumbUrl))
+            {
+                thumbnail = thumbUrl.GetString();
+            }
+
+            var duration = root.TryGetProperty("duration", out var dur) && dur.ValueKind == JsonValueKind.Number
+                ? (int?)(int)dur.GetDouble()
+                : null;
+
+            // A video dump also carries its uploader's follower count; only meaningful for channels
+            var subscriberCount = resultType == "channel"
+                && root.TryGetProperty("channel_follower_count", out var followers)
+                && followers.ValueKind == JsonValueKind.Number
+                ? (long?)followers.GetInt64()
+                : null;
+
+            if (resultType == "channel" && string.IsNullOrEmpty(uploader))
+            {
+                uploader = root.TryGetProperty("uploader_id", out var handle) ? handle.GetString() ?? string.Empty : string.Empty;
+            }
+
+            return new YtDlpSearchResult(id, pageUrl, title, uploader, thumbnail, duration, resultType, subscriberCount);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     // ponytail: substring heuristic covers youtube watch/youtu.be; extend the check if other hosts matter.
     private static bool IsSingleVideoUrl(string url) =>
         (url.Contains("watch?v=", StringComparison.OrdinalIgnoreCase) || url.Contains("youtu.be/", StringComparison.OrdinalIgnoreCase))
         && !url.Contains("list=", StringComparison.OrdinalIgnoreCase);
+
+    // Deletes any leftover files in staging that share the moved track's stem.
+    private static void RemoveStagingSidecars(string movedStagingPath)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(movedStagingPath);
+            if (dir == null)
+            {
+                return;
+            }
+
+            var stem = Path.GetFileNameWithoutExtension(movedStagingPath);
+            foreach (var ext in SidecarExtensions)
+            {
+                var sidecar = Path.Combine(dir, stem + ext);
+                if (File.Exists(sidecar))
+                {
+                    File.Delete(sidecar);
+                }
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private static resonance.Options.IntegrationsOptions.YtDlpOptions ApplyJobOverrides(
+        resonance.Options.IntegrationsOptions.YtDlpOptions opts, YtDlpJob job)
+    {
+        if (job.AudioFormatOverride == null && job.AudioQualityOverride == null &&
+            job.DefaultGenreOverride == null && job.MinTrackDurationSecondsOverride == null &&
+            job.MaxTrackDurationSecondsOverride == null && job.UploadedAfterOverride == null)
+        {
+            return opts;
+        }
+
+        return new resonance.Options.IntegrationsOptions.YtDlpOptions
+        {
+            Enabled = opts.Enabled,
+            ExecutablePath = opts.ExecutablePath,
+            FfmpegPath = opts.FfmpegPath,
+            AudioFormat = job.AudioFormatOverride ?? opts.AudioFormat,
+            AudioQuality = job.AudioQualityOverride ?? opts.AudioQuality,
+            OutputTemplate = opts.OutputTemplate,
+            OutputDirectory = opts.OutputDirectory,
+            MaxConcurrentDownloads = opts.MaxConcurrentDownloads,
+            MaxRetryAttempts = opts.MaxRetryAttempts,
+            BandwidthLimit = opts.BandwidthLimit,
+            DefaultGenre = job.DefaultGenreOverride ?? opts.DefaultGenre,
+            SponsorBlock = opts.SponsorBlock,
+            SkipExistingFiles = opts.SkipExistingFiles,
+            MinTrackDurationSeconds = job.MinTrackDurationSecondsOverride ?? opts.MinTrackDurationSeconds,
+            MaxTrackDurationSeconds = job.MaxTrackDurationSecondsOverride ?? opts.MaxTrackDurationSeconds,
+            ConvertOnCompletionFormat = opts.ConvertOnCompletionFormat,
+            UploadedAfter = job.UploadedAfterOverride ?? opts.UploadedAfter,
+        };
+    }
+
+    // Operator-controlled config value (not user input), so it's trusted the same as
+    // ExecutablePath/BandwidthLimit elsewhere in this file — interpolated as-is.
+    private static string ExtractorArgsFlag(resonance.Options.IntegrationsOptions.YtDlpOptions opts) =>
+        string.IsNullOrWhiteSpace(opts.ExtractorArgs) ? string.Empty : $" --extractor-args \"{opts.ExtractorArgs}\"";
+
+    private static void AppendExtractorArgs(System.Text.StringBuilder args, resonance.Options.IntegrationsOptions.YtDlpOptions opts) =>
+        args.Append(ExtractorArgsFlag(opts));
+
+    // yt-dlp only auto-discovers plugins under its OS config dir or PYTHONPATH, neither of
+    // which applies to our standalone binary — so point it at the folder next to the binary
+    // itself. --plugin-dirs takes the *parent* of a "yt-dlp-plugins" folder, matching how
+    // yt-dlp's own default search dirs work. Currently ships the bgutil PO-token provider
+    // (backend/tools/yt-dlp-plugins), which talks to the bgutil-provider sidecar container
+    // (docker/docker-compose.yml) at its default http://127.0.0.1:4416. No-ops if the
+    // executable is a bare PATH name or the plugins folder isn't present next to it.
+    private static string PluginDirsFlag(resonance.Options.IntegrationsOptions.YtDlpOptions opts)
+    {
+        var dir = Path.GetDirectoryName(opts.ExecutablePath);
+        if (string.IsNullOrEmpty(dir) || !Directory.Exists(Path.Combine(dir, "yt-dlp-plugins")))
+        {
+            return string.Empty;
+        }
+
+        return $" --plugin-dirs \"{dir}\"";
+    }
+
+    private static void AppendPluginDirs(System.Text.StringBuilder args, resonance.Options.IntegrationsOptions.YtDlpOptions opts) =>
+        args.Append(PluginDirsFlag(opts));
+
+    // yt-dlp rewrites the cookie file on every run to persist updated cookies, so concurrent
+    // workers sharing the master file corrupt it. Each invocation gets a private throwaway
+    // copy; the uploaded master is never handed to yt-dlp directly.
+    private static string? AcquireCookieFile()
+    {
+        var path = Path.Combine(resonance.Program.AppDirectory, "ytdlp-cookies.txt");
+        try
+        {
+            if (!File.Exists(path) || new FileInfo(path).Length == 0)
+            {
+                return null;
+            }
+
+            var temp = Path.Combine(Path.GetTempPath(), $"resonance-ytdlp-cookies-{Guid.NewGuid():N}.txt");
+            File.Copy(path, temp, overwrite: true);
+            return temp;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+    }
+
+    private static void ReleaseCookieFile(string? tempPath)
+    {
+        if (tempPath == null)
+        {
+            return;
+        }
+
+        try
+        {
+            File.Delete(tempPath);
+        }
+        catch
+        {
+        }
+    }
+
+    private static string FormatDuration(int seconds)
+    {
+        var m = seconds / 60;
+        var s = seconds % 60;
+        return m > 0 ? $"{m}m{s:D2}s" : $"{s}s";
+    }
+
+    private static async Task<string?> DetectJsRuntimeAsync()
+    {
+        // Try each JS runtime yt-dlp supports, in preference order
+        string[] candidates = ["node", "bun", "deno"];
+        foreach (var runtime in candidates)
+        {
+            var whichCmd = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "where" : "which";
+            try
+            {
+                using var p = new Process
+                {
+                    StartInfo = new ProcessStartInfo(whichCmd, runtime)
+                    {
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                    },
+                };
+                p.Start();
+                var path = (await p.StandardOutput.ReadLineAsync())?.Trim();
+                await p.WaitForExitAsync();
+                if (p.ExitCode == 0 && !string.IsNullOrWhiteSpace(path))
+                {
+                    return $"--js-runtimes {runtime}:{path}";
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        return null;
+    }
+
+    private static ChannelEntry? ParseChannelEntry(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            var videoId = root.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? string.Empty : string.Empty;
+            if (string.IsNullOrEmpty(videoId))
+            {
+                return null;
+            }
+
+            var url = root.TryGetProperty("url", out var urlProp) ? urlProp.GetString() ?? string.Empty : string.Empty;
+            if (!url.StartsWith("http"))
+            {
+                url = $"https://www.youtube.com/watch?v={videoId}";
+            }
+
+            var title = root.TryGetProperty("title", out var titleProp) ? titleProp.GetString() ?? string.Empty : string.Empty;
+
+            // Resolve the channel/uploader name for the subscription title. Flat-playlist of a
+            // channel usually omits the per-entry uploader/channel but exposes the playlist-level
+            // ones (e.g. "HATE"), so fall back through those.
+            string EntryStr(string key) => root.TryGetProperty(key, out var p) ? p.GetString() ?? string.Empty : string.Empty;
+            var uploader = new[] { EntryStr("uploader"), EntryStr("channel"), EntryStr("playlist_uploader"), EntryStr("playlist_channel") }
+                .FirstOrDefault(s => !string.IsNullOrEmpty(s)) ?? string.Empty;
+
+            var thumbnail = root.TryGetProperty("thumbnail", out var thumbProp) ? thumbProp.GetString() : null;
+
+            return new ChannelEntry(videoId, url, title, uploader, thumbnail);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // Point bare channel URLs at the Videos tab so we enumerate uploads (newest-first) rather
+    // than the channel home, which mixes in shorts, playlists and featured sections.
+    private static string NormalizeChannelUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return url;
+        }
+
+        var isChannel = url.Contains("/@", StringComparison.OrdinalIgnoreCase)
+            || url.Contains("/channel/", StringComparison.OrdinalIgnoreCase)
+            || url.Contains("/c/", StringComparison.OrdinalIgnoreCase)
+            || url.Contains("/user/", StringComparison.OrdinalIgnoreCase);
+
+        if (!isChannel)
+        {
+            return url;
+        }
+
+        var trimmed = url.TrimEnd('/');
+        foreach (var tab in new[] { "/videos", "/streams", "/shorts", "/playlists", "/featured", "/community" })
+        {
+            if (trimmed.EndsWith(tab, StringComparison.OrdinalIgnoreCase))
+            {
+                return trimmed;
+            }
+        }
+
+        return trimmed + "/videos";
+    }
+
+    // Failures that won't be fixed by retrying — don't waste sweeps on them.
+    private static bool IsPermanentFailure(string? error)
+    {
+        if (string.IsNullOrWhiteSpace(error))
+        {
+            return false;
+        }
+
+        var e = error.ToLowerInvariant();
+        return e.Contains("age-restricted")
+            || e.Contains("age restricted")
+            || e.Contains("private video")
+            || e.Contains("video unavailable")
+            || e.Contains("this video is unavailable")
+            || e.Contains("has been removed")
+            || e.Contains("members-only")
+            || e.Contains("members only")
+            || e.Contains("sign in to confirm")
+            || e.Contains("copyright")
+            || e.Contains("account associated with this video has been terminated")
+            || e.Contains("removed by the uploader")
+            || e.Contains("no longer available");
+    }
+
+    private async Task RewriteTagsAsync(Guid trackId, (string Artist, string Title, string? Album)? overrides)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var track = await db.Tracks.FindAsync(trackId);
+
+        if (track is null || track.State != YtDlpTrackState.Completed || track.FilePath is null)
+        {
+            return;
+        }
+
+        if (!File.Exists(track.FilePath))
+        {
+            // The stored path can go stale if the file was re-encoded to a different container
+            // after completion (e.g. a convert-on-completion run, or a manual conversion) without
+            // this row's FilePath being updated. Before giving up, look for a sibling file with
+            // the same name under any format we know how to tag.
+            var resolved = FindTrackFileUnderKnownExtensions(track.FilePath);
+            if (resolved != null)
+            {
+                track.FilePath = resolved;
+            }
+            else
+            {
+                track.TagWritingError = "File no longer exists on disk.";
+                await db.SaveChangesAsync();
+                await BroadcastJobsAsync();
+                return;
+            }
+        }
+
+        var opts = options.CurrentValue.Integrations.YtDlp;
+        var metadata = YtDlpMetadataParser.Parse(track.Title, track.Uploader, track.PlaylistIndex, track.UploadDate, opts.DefaultGenre);
+        if (overrides is { } o)
+        {
+            metadata = metadata with { Artist = o.Artist, Title = o.Title, Album = o.Album ?? metadata.Album };
+        }
+
+        var error = YtDlpTagWriter.Write(track.FilePath, metadata, track.Url, out _);
+
+        if (jobs.TryGetValue(track.JobId, out var job))
+        {
+            if (error is null && track.TagWritingError != null)
+            {
+                job.TagFailedTracks = Math.Max(0, job.TagFailedTracks - 1);
+            }
+            else if (error != null && track.TagWritingError is null)
+            {
+                job.TagFailedTracks++;
+            }
+        }
+
+        track.TagWritingError = error;
+        await db.SaveChangesAsync();
+        await BroadcastJobsAsync();
+    }
 
     // ── Job execution ────────────────────────────────────────────────────────
     private async Task RunJobAsync(YtDlpJob job, CancellationToken cancellationToken)
@@ -1016,10 +1522,18 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 return;
             }
 
+            await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+            // `tracksFound` counts only queued (downloadable) tracks. A job whose every entry was
+            // filtered out at enumeration (duration/duplicate skips) still enumerated successfully
+            // and simply has nothing to download — distinguish that from a genuinely empty result
+            // by looking at whether any track rows were inserted at all.
+            var insertedTracks = await db.Tracks.CountAsync(t => t.JobId == job.Id, cancellationToken);
+
             // yt-dlp can exit 0 while still failing to produce anything (e.g. an expired/invalid
-            // cookie causing YouTube to hard-block the request) — treat "no tracks" as a failure
+            // cookie causing YouTube to hard-block the request) — treat "no entries" as a failure
             // instead of leaving the job stuck in Active forever with nothing to do.
-            if (tracksFound == 0)
+            if (insertedTracks == 0)
             {
                 var reason = process.ExitCode != 0
                     ? $"yt-dlp exited with code {process.ExitCode} and found no tracks"
@@ -1045,7 +1559,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 return;
             }
 
-            await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
             var dbJob = await db.Jobs.FindAsync([job.Id], cancellationToken);
             if (dbJob != null)
             {
@@ -1055,6 +1568,18 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
             job.State = YtDlpJobState.Active;
             await BroadcastJobsAsync();
+
+            // Every enumerated entry was filtered at enumeration (all out of the duration range or
+            // already downloaded), so there is nothing to download. Rather than leave a phantom
+            // job in the list — which would otherwise hang in Active or settle as an empty
+            // Completed/Failed row — just drop it. This is the common shape for a per-video
+            // subscription auto-download of a too-short/too-long (extended-mix) upload.
+            if (tracksFound == 0)
+            {
+                await EmitEventAsync(job.Id, "info", $"Dropped — every track was skipped, nothing to download: {job.Title ?? job.Url}", job);
+                await RemoveJobAsync(job.Id);
+                return;
+            }
         }
         catch (OperationCanceledException)
         {
@@ -1100,6 +1625,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 ? uploader
                 : new[] { JsonStr("playlist_uploader"), JsonStr("playlist_channel"), JsonStr("channel") }
                     .FirstOrDefault(s => !string.IsNullOrEmpty(s)) ?? string.Empty;
+
             // A standalone video (not part of a playlist) reports playlist_index as JSON null
             // rather than omitting it, and TryGetInt32 throws (not just returns false) on a
             // non-Number element — so the ValueKind check is required, not just belt-and-braces.
@@ -1477,6 +2003,11 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         }
 
         var dbTrack = await db.Tracks.FindAsync(track.Id);
+
+        // Whether this track was already carrying a tag error from a prior attempt, captured
+        // before we overwrite it below so the job counter can be adjusted by transition.
+        var wasTagFailed = dbTrack?.TagWritingError != null;
+
         if (dbTrack != null)
         {
             dbTrack.State = track.State;
@@ -1500,9 +2031,18 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 job.FailedTracks = Math.Max(0, job.FailedTracks - 1);
             }
 
-            if (tagError != null)
+            // Tag-error tally follows the track's current state across retries: count a newly
+            // flagged track, and uncount one whose retry finally tagged cleanly. Only reacting to
+            // transitions keeps the counter accurate — a plain increment would double-count a
+            // track that fails tagging on more than one attempt and never recover on success.
+            var nowTagFailed = tagError != null;
+            if (nowTagFailed && !wasTagFailed)
             {
                 job.TagFailedTracks++;
+            }
+            else if (!nowTagFailed && wasTagFailed)
+            {
+                job.TagFailedTracks = Math.Max(0, job.TagFailedTracks - 1);
             }
 
             var dbJob = await db.Jobs.FindAsync(job.Id);
@@ -1793,10 +2333,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             job);
     }
 
-    // yt-dlp leftovers that share a track's stem and should be removed from staging once moved.
-    private static readonly string[] SidecarExtensions =
-        [".webp", ".jpg", ".jpeg", ".png", ".part", ".ytdl", ".temp", ".info.json", ".description"];
-
     // Periodically drains completed tracks out of staging into the music folder, in batches of
     // BatchMoveSize, for every active job — including any backlog that built up before a restart.
     private async Task RunBatchMoveLoopAsync(CancellationToken cancellationToken)
@@ -2010,117 +2546,40 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         }
     }
 
-    // Deletes any leftover files in staging that share the moved track's stem.
-    private static void RemoveStagingSidecars(string movedStagingPath)
-    {
-        try
-        {
-            var dir = Path.GetDirectoryName(movedStagingPath);
-            if (dir == null)
-            {
-                return;
-            }
-
-            var stem = Path.GetFileNameWithoutExtension(movedStagingPath);
-            foreach (var ext in SidecarExtensions)
-            {
-                var sidecar = Path.Combine(dir, stem + ext);
-                if (File.Exists(sidecar))
-                {
-                    File.Delete(sidecar);
-                }
-            }
-        }
-        catch
-        {
-        }
-    }
-
-    public async Task ReconcileJobAsync(Guid jobId)
-    {
-        await using var db = await dbFactory.CreateDbContextAsync();
-
-        // Load from DB if not in hot cache (e.g. already-completed jobs not reloaded on startup)
-        if (!jobs.TryGetValue(jobId, out var job))
-        {
-            var dbJob = await db.Jobs.FindAsync(jobId);
-            if (dbJob == null)
-            {
-                return;
-            }
-
-            job = dbJob;
-            jobs[jobId] = job;
-        }
-
-        var pending = await db.Tracks
-            .CountAsync(t => t.JobId == jobId && (t.State == YtDlpTrackState.Queued || t.State == YtDlpTrackState.InProgress));
-
-        if (pending > 0)
-        {
-            return;
-        }
-
-        Log.Information("YtDlp: reconciling job {Title} — moving files and triggering library sync", job.Title ?? job.Url);
-        await FinalizeJobAsync(job, db);
-        await BroadcastJobsAsync();
-    }
-
-    public async Task<(int Updated, int Failed, int Skipped)> BackfillDurationsAsync(CancellationToken cancellationToken = default)
-    {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-
-        var tracks = await db.Tracks
-            .Where(t => t.State == YtDlpTrackState.Completed && t.FilePath != null && (t.Duration == null || t.Duration == 0))
-            .ToListAsync(cancellationToken);
-
-        int updated = 0, failed = 0, skipped = 0;
-
-        foreach (var track in tracks)
-        {
-            if (!File.Exists(track.FilePath))
-            {
-                skipped++;
-                continue;
-            }
-
-            try
-            {
-                using var file = TagLib.File.Create(track.FilePath);
-                var duration = (int)file.Properties.Duration.TotalSeconds;
-                if (duration > 0)
-                {
-                    track.Duration = duration;
-                    updated++;
-                }
-                else
-                {
-                    skipped++;
-                }
-            }
-            catch
-            {
-                failed++;
-            }
-        }
-
-        if (updated > 0)
-        {
-            await db.SaveChangesAsync(cancellationToken);
-        }
-
-        Log.Information("YtDlp: duration backfill complete — updated={Updated} failed={Failed} skipped={Skipped}", updated, failed, skipped);
-        return (updated, failed, skipped);
-    }
-
     // ── Helpers ─────────────────────────────────────────────────────────────
     private async Task EmitEventAsync(Guid? jobId, string level, string message, YtDlpJob? job = null)
     {
-        var ev = new YtDlpEvent(DateTime.UtcNow, jobId, job?.Title ?? job?.Url, level, message);
+        var timestamp = DateTime.UtcNow;
+        var title = job?.Title ?? job?.Url;
+        var ev = new YtDlpEvent(timestamp, jobId, title, level, message);
         eventBuffer.Enqueue(ev);
         while (eventBuffer.Count > EventBufferMax)
         {
             eventBuffer.TryDequeue(out _);
+        }
+
+        // Persist everything except the high-volume raw yt-dlp stderr/progress lines (which would
+        // bloat the table) — those live in the volatile buffer only. Persisted events survive
+        // restarts and buffer eviction, and are removed only when the user clears the log.
+        if (!string.Equals(level, "raw", StringComparison.Ordinal))
+        {
+            try
+            {
+                await using var db = await dbFactory.CreateDbContextAsync();
+                db.Events.Add(new YtDlpEventRecord
+                {
+                    Timestamp = timestamp,
+                    JobId = jobId,
+                    JobTitle = title,
+                    Level = level,
+                    Message = message,
+                });
+                await db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("YtDlp: failed to persist event: {Message}", ex.Message);
+            }
         }
 
         await hub.BroadcastEventAsync(ev);
@@ -2136,38 +2595,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
     private string GetStagingDirectory(Guid jobId)
         => Path.Combine(GetStagingRoot(), jobId.ToString());
-
-    private static resonance.Options.IntegrationsOptions.YtDlpOptions ApplyJobOverrides(
-        resonance.Options.IntegrationsOptions.YtDlpOptions opts, YtDlpJob job)
-    {
-        if (job.AudioFormatOverride == null && job.AudioQualityOverride == null &&
-            job.DefaultGenreOverride == null && job.MinTrackDurationSecondsOverride == null &&
-            job.MaxTrackDurationSecondsOverride == null && job.UploadedAfterOverride == null)
-        {
-            return opts;
-        }
-
-        return new resonance.Options.IntegrationsOptions.YtDlpOptions
-        {
-            Enabled = opts.Enabled,
-            ExecutablePath = opts.ExecutablePath,
-            FfmpegPath = opts.FfmpegPath,
-            AudioFormat = job.AudioFormatOverride ?? opts.AudioFormat,
-            AudioQuality = job.AudioQualityOverride ?? opts.AudioQuality,
-            OutputTemplate = opts.OutputTemplate,
-            OutputDirectory = opts.OutputDirectory,
-            MaxConcurrentDownloads = opts.MaxConcurrentDownloads,
-            MaxRetryAttempts = opts.MaxRetryAttempts,
-            BandwidthLimit = opts.BandwidthLimit,
-            DefaultGenre = job.DefaultGenreOverride ?? opts.DefaultGenre,
-            SponsorBlock = opts.SponsorBlock,
-            SkipExistingFiles = opts.SkipExistingFiles,
-            MinTrackDurationSeconds = job.MinTrackDurationSecondsOverride ?? opts.MinTrackDurationSeconds,
-            MaxTrackDurationSeconds = job.MaxTrackDurationSecondsOverride ?? opts.MaxTrackDurationSeconds,
-            ConvertOnCompletionFormat = opts.ConvertOnCompletionFormat,
-            UploadedAfter = job.UploadedAfterOverride ?? opts.UploadedAfter,
-        };
-    }
 
     // ── Post-completion conversion ───────────────────────────────────────────
     // Transcodes a single staged file in place (new extension, original removed). On any
@@ -2215,6 +2642,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         args.Append($" --audio-quality {opts.AudioQuality}");
         args.Append(" --no-embed-metadata");
         args.Append(" --write-thumbnail");
+
         // YouTube serves webp thumbnails, which TagLib# fails to embed (silently, no APIC frame).
         // Convert to jpg via ffmpeg so the tag writer can reliably embed cover art.
         args.Append(" --convert-thumbnails jpg");
@@ -2286,115 +2714,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         args.Append($" \"{url}\"");
         return args.ToString();
-    }
-
-    // Operator-controlled config value (not user input), so it's trusted the same as
-    // ExecutablePath/BandwidthLimit elsewhere in this file — interpolated as-is.
-    private static string ExtractorArgsFlag(resonance.Options.IntegrationsOptions.YtDlpOptions opts) =>
-        string.IsNullOrWhiteSpace(opts.ExtractorArgs) ? string.Empty : $" --extractor-args \"{opts.ExtractorArgs}\"";
-
-    private static void AppendExtractorArgs(System.Text.StringBuilder args, resonance.Options.IntegrationsOptions.YtDlpOptions opts) =>
-        args.Append(ExtractorArgsFlag(opts));
-
-    // yt-dlp only auto-discovers plugins under its OS config dir or PYTHONPATH, neither of
-    // which applies to our standalone binary — so point it at the folder next to the binary
-    // itself. --plugin-dirs takes the *parent* of a "yt-dlp-plugins" folder, matching how
-    // yt-dlp's own default search dirs work. Currently ships the bgutil PO-token provider
-    // (backend/tools/yt-dlp-plugins), which talks to the bgutil-provider sidecar container
-    // (docker/docker-compose.yml) at its default http://127.0.0.1:4416. No-ops if the
-    // executable is a bare PATH name or the plugins folder isn't present next to it.
-    private static string PluginDirsFlag(resonance.Options.IntegrationsOptions.YtDlpOptions opts)
-    {
-        var dir = Path.GetDirectoryName(opts.ExecutablePath);
-        if (string.IsNullOrEmpty(dir) || !Directory.Exists(Path.Combine(dir, "yt-dlp-plugins")))
-        {
-            return string.Empty;
-        }
-
-        return $" --plugin-dirs \"{dir}\"";
-    }
-
-    private static void AppendPluginDirs(System.Text.StringBuilder args, resonance.Options.IntegrationsOptions.YtDlpOptions opts) =>
-        args.Append(PluginDirsFlag(opts));
-
-    // yt-dlp rewrites the cookie file on every run to persist updated cookies, so concurrent
-    // workers sharing the master file corrupt it. Each invocation gets a private throwaway
-    // copy; the uploaded master is never handed to yt-dlp directly.
-    private static string? AcquireCookieFile()
-    {
-        var path = Path.Combine(resonance.Program.AppDirectory, "ytdlp-cookies.txt");
-        try
-        {
-            if (!File.Exists(path) || new FileInfo(path).Length == 0)
-            {
-                return null;
-            }
-
-            var temp = Path.Combine(Path.GetTempPath(), $"resonance-ytdlp-cookies-{Guid.NewGuid():N}.txt");
-            File.Copy(path, temp, overwrite: true);
-            return temp;
-        }
-        catch (IOException)
-        {
-            return null;
-        }
-    }
-
-    private static void ReleaseCookieFile(string? tempPath)
-    {
-        if (tempPath == null)
-        {
-            return;
-        }
-
-        try
-        {
-            File.Delete(tempPath);
-        }
-        catch
-        {
-        }
-    }
-
-    private static string FormatDuration(int seconds)
-    {
-        var m = seconds / 60;
-        var s = seconds % 60;
-        return m > 0 ? $"{m}m{s:D2}s" : $"{s}s";
-    }
-
-    private static async Task<string?> DetectJsRuntimeAsync()
-    {
-        // Try each JS runtime yt-dlp supports, in preference order
-        string[] candidates = ["node", "bun", "deno"];
-        foreach (var runtime in candidates)
-        {
-            var whichCmd = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "where" : "which";
-            try
-            {
-                using var p = new Process
-                {
-                    StartInfo = new ProcessStartInfo(whichCmd, runtime)
-                    {
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        RedirectStandardOutput = true,
-                    },
-                };
-                p.Start();
-                var path = (await p.StandardOutput.ReadLineAsync())?.Trim();
-                await p.WaitForExitAsync();
-                if (p.ExitCode == 0 && !string.IsNullOrWhiteSpace(path))
-                {
-                    return $"--js-runtimes {runtime}:{path}";
-                }
-            }
-            catch
-            {
-            }
-        }
-
-        return null;
     }
 
     private YtDlpSearchResult? ParseSearchResult(string json)
@@ -2476,114 +2795,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         catch (Exception ex)
         {
             return $"Error: {ex.Message}";
-        }
-    }
-
-    // ── Subscriptions ─────────────────────────────────────────────────────────
-    public IReadOnlyList<YtDlpSubscription> ListSubscriptions()
-        => subscriptions.Values.OrderByDescending(s => s.CreatedAt).ToList();
-
-    public async Task<YtDlpSubscription> AddSubscriptionAsync(string channelUrl, YtDlpSubscriptionOverrides? overrides = null, CancellationToken cancellationToken = default)
-    {
-        var url = NormalizeChannelUrl(channelUrl.Trim());
-
-        var existing = subscriptions.Values.FirstOrDefault(s =>
-            string.Equals(s.ChannelUrl, url, StringComparison.OrdinalIgnoreCase));
-        if (existing != null)
-        {
-            throw new InvalidOperationException("Already subscribed to this channel.");
-        }
-
-        var sub = new YtDlpSubscription
-        {
-            ChannelUrl = url,
-            OutputDirectoryOverride = overrides?.OutputDirectory,
-            AudioFormatOverride = overrides?.AudioFormat,
-            AudioQualityOverride = overrides?.AudioQuality,
-            DefaultGenreOverride = overrides?.DefaultGenre,
-            MinTrackDurationSecondsOverride = overrides?.MinTrackDurationSeconds,
-            MaxTrackDurationSecondsOverride = overrides?.MaxTrackDurationSeconds,
-            ConvertOnCompletionFormatOverride = overrides?.ConvertOnCompletionFormat,
-            UploadedAfterOverride = overrides?.UploadedAfter,
-        };
-
-        subscriptions[sub.Id] = sub;
-
-        await using (var db = await dbFactory.CreateDbContextAsync(cancellationToken))
-        {
-            db.Subscriptions.Add(sub);
-            await db.SaveChangesAsync(cancellationToken);
-        }
-
-        await BroadcastSubscriptionsAsync();
-        await EmitEventAsync(null, "info", $"Subscription added: {url}");
-
-        // First check establishes the baseline (records the newest video, downloads nothing)
-        // so subscribing doesn't pull the channel's entire back-catalogue.
-        await CheckSubscriptionAsync(sub, cancellationToken);
-
-        return sub;
-    }
-
-    public async Task UpdateSubscriptionAsync(Guid id, bool? enabled, int? pollIntervalMinutes, YtDlpSubscriptionOverrides? overrides, CancellationToken cancellationToken = default)
-    {
-        if (!subscriptions.TryGetValue(id, out var sub))
-        {
-            return;
-        }
-
-        if (enabled.HasValue)
-        {
-            sub.Enabled = enabled.Value;
-        }
-
-        if (pollIntervalMinutes.HasValue)
-        {
-            sub.PollIntervalMinutes = Math.Max(0, pollIntervalMinutes.Value);
-        }
-
-        if (overrides != null)
-        {
-            sub.OutputDirectoryOverride = overrides.OutputDirectory;
-            sub.AudioFormatOverride = overrides.AudioFormat;
-            sub.AudioQualityOverride = overrides.AudioQuality;
-            sub.DefaultGenreOverride = overrides.DefaultGenre;
-            sub.MinTrackDurationSecondsOverride = overrides.MinTrackDurationSeconds;
-            sub.MaxTrackDurationSecondsOverride = overrides.MaxTrackDurationSeconds;
-            sub.ConvertOnCompletionFormatOverride = overrides.ConvertOnCompletionFormat;
-            sub.UploadedAfterOverride = overrides.UploadedAfter;
-        }
-
-        await PersistSubscriptionAsync(sub, cancellationToken);
-        await BroadcastSubscriptionsAsync();
-    }
-
-    public async Task RemoveSubscriptionAsync(Guid id, CancellationToken cancellationToken = default)
-    {
-        if (!subscriptions.TryRemove(id, out var sub))
-        {
-            return;
-        }
-
-        await using (var db = await dbFactory.CreateDbContextAsync(cancellationToken))
-        {
-            var dbSub = await db.Subscriptions.FindAsync([id], cancellationToken);
-            if (dbSub != null)
-            {
-                db.Subscriptions.Remove(dbSub);
-                await db.SaveChangesAsync(cancellationToken);
-            }
-        }
-
-        await BroadcastSubscriptionsAsync();
-        await EmitEventAsync(null, "info", $"Subscription removed: {sub.ChannelTitle ?? sub.ChannelUrl}");
-    }
-
-    public async Task CheckSubscriptionNowAsync(Guid id, CancellationToken cancellationToken = default)
-    {
-        if (subscriptions.TryGetValue(id, out var sub))
-        {
-            await CheckSubscriptionAsync(sub, cancellationToken);
         }
     }
 
@@ -2848,75 +3059,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         }
     }
 
-    private static ChannelEntry? ParseChannelEntry(string json)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            var videoId = root.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? string.Empty : string.Empty;
-            if (string.IsNullOrEmpty(videoId))
-            {
-                return null;
-            }
-
-            var url = root.TryGetProperty("url", out var urlProp) ? urlProp.GetString() ?? string.Empty : string.Empty;
-            if (!url.StartsWith("http"))
-            {
-                url = $"https://www.youtube.com/watch?v={videoId}";
-            }
-
-            var title = root.TryGetProperty("title", out var titleProp) ? titleProp.GetString() ?? string.Empty : string.Empty;
-
-            // Resolve the channel/uploader name for the subscription title. Flat-playlist of a
-            // channel usually omits the per-entry uploader/channel but exposes the playlist-level
-            // ones (e.g. "HATE"), so fall back through those.
-            string EntryStr(string key) => root.TryGetProperty(key, out var p) ? p.GetString() ?? string.Empty : string.Empty;
-            var uploader = new[] { EntryStr("uploader"), EntryStr("channel"), EntryStr("playlist_uploader"), EntryStr("playlist_channel") }
-                .FirstOrDefault(s => !string.IsNullOrEmpty(s)) ?? string.Empty;
-
-            var thumbnail = root.TryGetProperty("thumbnail", out var thumbProp) ? thumbProp.GetString() : null;
-
-            return new ChannelEntry(videoId, url, title, uploader, thumbnail);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    // Point bare channel URLs at the Videos tab so we enumerate uploads (newest-first) rather
-    // than the channel home, which mixes in shorts, playlists and featured sections.
-    private static string NormalizeChannelUrl(string url)
-    {
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            return url;
-        }
-
-        var isChannel = url.Contains("/@", StringComparison.OrdinalIgnoreCase)
-            || url.Contains("/channel/", StringComparison.OrdinalIgnoreCase)
-            || url.Contains("/c/", StringComparison.OrdinalIgnoreCase)
-            || url.Contains("/user/", StringComparison.OrdinalIgnoreCase);
-
-        if (!isChannel)
-        {
-            return url;
-        }
-
-        var trimmed = url.TrimEnd('/');
-        foreach (var tab in new[] { "/videos", "/streams", "/shorts", "/playlists", "/featured", "/community" })
-        {
-            if (trimmed.EndsWith(tab, StringComparison.OrdinalIgnoreCase))
-            {
-                return trimmed;
-            }
-        }
-
-        return trimmed + "/videos";
-    }
-
     private async Task PersistSubscriptionAsync(YtDlpSubscription sub, CancellationToken cancellationToken)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
@@ -3045,49 +3187,9 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         }
     }
 
-    // Failures that won't be fixed by retrying — don't waste sweeps on them.
-    private static bool IsPermanentFailure(string? error)
-    {
-        if (string.IsNullOrWhiteSpace(error))
-        {
-            return false;
-        }
-
-        var e = error.ToLowerInvariant();
-        return e.Contains("age-restricted")
-            || e.Contains("age restricted")
-            || e.Contains("private video")
-            || e.Contains("video unavailable")
-            || e.Contains("this video is unavailable")
-            || e.Contains("has been removed")
-            || e.Contains("members-only")
-            || e.Contains("members only")
-            || e.Contains("sign in to confirm")
-            || e.Contains("copyright")
-            || e.Contains("account associated with this video has been terminated")
-            || e.Contains("removed by the uploader")
-            || e.Contains("no longer available");
-    }
-
     private Task BroadcastSubscriptionsAsync() => hub.BroadcastSubscriptionsAsync(ListSubscriptions());
-
-    private sealed record ChannelEntry(string VideoId, string Url, string Title, string Uploader, string? ThumbnailUrl);
 
     private Task BroadcastJobsAsync() => hub.BroadcastJobsAsync(jobs.Values.OrderByDescending(j => j.RequestedAt));
 
-    public void Dispose()
-    {
-        try
-        {
-            cts.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-
-        cts.Dispose();
-        workerSlots?.Dispose();
-        subscriptionCheckLock.Dispose();
-        batchMoveLock.Dispose();
-    }
+    private sealed record ChannelEntry(string VideoId, string Url, string Title, string Uploader, string? ThumbnailUrl);
 }

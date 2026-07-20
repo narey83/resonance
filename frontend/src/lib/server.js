@@ -33,6 +33,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { apiBaseUrl } from '../config';
 import api from './api';
 
 export const getState = async () => {
@@ -67,4 +68,21 @@ export const getTransferErrorNotifications = async () => {
 
 export const checkPort = async () => {
   return (await api.get('/server/port-check')).data;
+};
+
+// ── Profile picture ───────────────────────────────────────────────────────────
+
+// The picture lives at a fixed path, so callers pass a cache-busting version
+// (e.g. a timestamp) to force the browser to re-fetch after a change.
+export const pictureUrl = (version) =>
+  `${apiBaseUrl}/server/picture${version ? `?v=${version}` : ''}`;
+
+export const uploadPicture = (file) => {
+  const form = new FormData();
+  form.append('file', file);
+  return api.post('/server/picture', form);
+};
+
+export const deletePicture = () => {
+  return api.delete('/server/picture');
 };

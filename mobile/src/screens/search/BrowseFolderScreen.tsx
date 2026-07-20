@@ -49,6 +49,7 @@ import * as searchApi from '../../api/searches';
 import { useAuthStore } from '../../store/auth';
 import DownloadModal, { DownloadTarget } from '../../components/DownloadModal';
 import type { SearchStackParamList } from './SearchScreen';
+import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
 type Props = NativeStackScreenProps<SearchStackParamList, 'BrowseFolder'>;
 
@@ -278,6 +279,7 @@ export default function BrowseFolderScreen({ route, navigation }: Props) {
         </View>
       ) : (
         <FlatList<DirectoryFile>
+          {...LIST_PERF_PROPS}
           data={files}
           keyExtractor={f => f.filename}
           ListHeaderComponent={

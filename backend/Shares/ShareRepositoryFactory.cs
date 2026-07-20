@@ -61,6 +61,7 @@ namespace resonance.Shares
         /// <summary>
         ///     Not supported on PostgreSQL — share caches aren't portable DB files.
         /// </summary>
+        /// <returns>Never returns; always throws.</returns>
         public IShareRepository CreateFromFile(string filename, bool pooling = false)
             => throw new NotSupportedException("File-based share repositories are not supported on PostgreSQL.");
     }

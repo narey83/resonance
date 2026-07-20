@@ -160,6 +160,54 @@ public sealed class ConverterService : IConverterService
         }
     }
 
+    private static void AddError(ConverterJob job, string message)
+    {
+        if (job.Errors.Count < MaxErrorsRetained)
+        {
+            job.Errors.Add(message);
+        }
+    }
+
+    private static IEnumerable<string> EnumerateAudioFiles(string directory)
+    {
+        IEnumerable<string> entries;
+        try
+        {
+            entries = Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("Converter: could not enumerate {Directory}: {Error}", directory, ex.Message);
+            yield break;
+        }
+
+        foreach (var file in entries)
+        {
+            var ext = Path.GetExtension(file).TrimStart('.');
+            if (AudioExtensions.Contains(ext))
+            {
+                yield return file;
+            }
+        }
+    }
+
+    private static bool IsWithinShare(string fullPath, IReadOnlyList<string> shareDirs)
+        => shareDirs.Any(shareDir =>
+            fullPath.StartsWith(shareDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(fullPath, shareDir, StringComparison.OrdinalIgnoreCase));
+
+    private static string? SafeFullPath(string path)
+    {
+        try
+        {
+            return Path.GetFullPath(path);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private async Task RunAsync(ConverterJob job, IReadOnlyList<string> files, CancellationToken cancellationToken)
     {
         var affectedDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -263,14 +311,6 @@ public sealed class ConverterService : IConverterService
         }
     }
 
-    private static void AddError(ConverterJob job, string message)
-    {
-        if (job.Errors.Count < MaxErrorsRetained)
-        {
-            job.Errors.Add(message);
-        }
-    }
-
     private void TrimJobs()
     {
         if (jobs.Count <= MaxJobsRetained)
@@ -287,50 +327,10 @@ public sealed class ConverterService : IConverterService
         }
     }
 
-    private static IEnumerable<string> EnumerateAudioFiles(string directory)
-    {
-        IEnumerable<string> entries;
-        try
-        {
-            entries = Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories);
-        }
-        catch (Exception ex)
-        {
-            Log.Warning("Converter: could not enumerate {Directory}: {Error}", directory, ex.Message);
-            yield break;
-        }
-
-        foreach (var file in entries)
-        {
-            var ext = Path.GetExtension(file).TrimStart('.');
-            if (AudioExtensions.Contains(ext))
-            {
-                yield return file;
-            }
-        }
-    }
-
     private IReadOnlyList<string> GetShareDirectories()
         => options.CurrentValue.Shares.Directories
             .Select(d => SafeFullPath(new Share(d.TrimEnd('/', '\\')).LocalPath))
             .Where(p => p != null && Directory.Exists(p))
             .Select(p => p!)
             .ToList();
-
-    private static bool IsWithinShare(string fullPath, IReadOnlyList<string> shareDirs)
-        => shareDirs.Any(shareDir =>
-            fullPath.StartsWith(shareDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(fullPath, shareDir, StringComparison.OrdinalIgnoreCase));
-
-    private static string? SafeFullPath(string path)
-    {
-        try
-        {
-            return Path.GetFullPath(path);
-        }
-        catch
-        {
-            return null;
-        }
-    }
 }

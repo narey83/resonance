@@ -111,7 +111,7 @@ api.interceptors.response.use(
             clearToken();
             clearRefreshToken();
             clearSessionId();
-            window.location.reload(true);
+            window.location.reload();
           }
 
           throw error;
@@ -126,7 +126,9 @@ api.interceptors.response.use(
     ) {
       console.debug('received 401 from api route, logging out');
       clearToken();
-      window.location.reload(true);
+      clearRefreshToken();
+      clearSessionId();
+      window.location.reload();
     }
 
     throw error;

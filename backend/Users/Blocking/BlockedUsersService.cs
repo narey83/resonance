@@ -53,6 +53,8 @@ using Serilog;
 /// </summary>
 public class BlockedUsersService
 {
+    private volatile Snapshot current = Snapshot.Empty;
+
     public BlockedUsersService(ConnectionStringDictionary connectionStrings, resonance.Network.GeoService geoService = null)
     {
         ConnectionStrings = connectionStrings;
@@ -81,8 +83,6 @@ public class BlockedUsersService
     private ILogger Log { get; } = Serilog.Log.ForContext<BlockedUsersService>();
     private object SyncRoot { get; } = new();
 
-    private volatile Snapshot Current = Snapshot.Empty;
-
     private string UsersTable => UsePostgres ? "blocked.\"Users\"" : "BlockedUsers";
     private string OptionsTable => UsePostgres ? "blocked.\"Options\"" : "BlockedUserOptions";
     private string IpsTable => UsePostgres ? "blocked.\"Ips\"" : "BlockedIps";
@@ -92,13 +92,15 @@ public class BlockedUsersService
     /// <summary>
     ///     Gets a value indicating whether <paramref name="username"/> is blocked, regardless of scope.
     /// </summary>
+    /// <returns>A value indicating whether the user is blocked.</returns>
     public bool IsBlocked(string username)
-        => username is not null && Current.Usernames.Contains(username);
+        => username is not null && current.Usernames.Contains(username);
 
     /// <summary>
     ///     Gets a value indicating whether <paramref name="username"/> is blocked and the
     ///     specified <paramref name="scope"/> is enabled in the blocking options.
     /// </summary>
+    /// <returns>A value indicating whether the user is blocked within the given scope.</returns>
     public bool IsBlocked(string username, BlockedUserScope scope)
         => IsBlocked(username, ipAddress: null, scope);
 
@@ -108,9 +110,10 @@ public class BlockedUsersService
     ///     is enabled. An IP is blocked when it was learned from a blocked user (same-IP), when
     ///     it falls in a blocked address/CIDR range, or when it resolves to a blocked location.
     /// </summary>
+    /// <returns>A value indicating whether the user or IP address is blocked within the given scope.</returns>
     public bool IsBlocked(string username, IPAddress ipAddress, BlockedUserScope scope)
     {
-        var snapshot = Current;
+        var snapshot = current;
 
         if (!ScopeEnabled(snapshot.Options, scope))
         {
@@ -196,12 +199,13 @@ public class BlockedUsersService
             $"SELECT \"Id\" AS {nameof(BlockedPlace.Id)}, \"Country\" AS {nameof(BlockedPlace.Country)}, \"City\" AS {nameof(BlockedPlace.City)}, \"BlockedAt\" AS {nameof(BlockedPlace.BlockedAt)}, \"Reason\" AS {nameof(BlockedPlace.Reason)} FROM {PlacesTable} ORDER BY \"BlockedAt\" DESC").ToList();
     }
 
-    public BlockedUserOptions GetOptions() => Current.Options;
+    public BlockedUserOptions GetOptions() => current.Options;
 
     /// <summary>
     ///     Adds <paramref name="username"/> to the block list (updating the reason if it is
     ///     already present) and returns the updated list.
     /// </summary>
+    /// <returns>The updated list of blocked users.</returns>
     public IReadOnlyList<BlockedUser> Block(string username, string reason = null)
     {
         using (var conn = CreateConnection())
@@ -224,6 +228,7 @@ public class BlockedUsersService
     ///     Removes <paramref name="username"/> from the block list, case-insensitively, along
     ///     with any IPs learned from them, and returns the updated list.
     /// </summary>
+    /// <returns>The updated list of blocked users.</returns>
     public IReadOnlyList<BlockedUser> Unblock(string username)
     {
         using (var conn = CreateConnection())
@@ -248,6 +253,7 @@ public class BlockedUsersService
     /// <summary>
     ///     Adds an address or CIDR range to the block list and returns the updated list.
     /// </summary>
+    /// <returns>The updated list of blocked IP addresses.</returns>
     /// <exception cref="ArgumentException">Thrown when the address or range can't be parsed.</exception>
     public IReadOnlyList<BlockedIp> BlockIp(string cidr, string reason = null)
     {
@@ -278,6 +284,7 @@ public class BlockedUsersService
     /// <summary>
     ///     Removes an address or CIDR range from the block list and returns the updated list.
     /// </summary>
+    /// <returns>The updated list of blocked IP addresses.</returns>
     public IReadOnlyList<BlockedIp> UnblockIp(string cidr)
     {
         using (var conn = CreateConnection())
@@ -294,6 +301,7 @@ public class BlockedUsersService
     ///     geo database's country name or two-letter ISO code; a city narrows the rule to that
     ///     city only.
     /// </summary>
+    /// <returns>The updated list of blocked places.</returns>
     public IReadOnlyList<BlockedPlace> BlockPlace(string country, string city = null, string reason = null)
     {
         if (string.IsNullOrWhiteSpace(country))
@@ -322,6 +330,7 @@ public class BlockedUsersService
     /// <summary>
     ///     Removes a location from the block list and returns the updated list.
     /// </summary>
+    /// <returns>The updated list of blocked places.</returns>
     public IReadOnlyList<BlockedPlace> UnblockPlace(int id)
     {
         using (var conn = CreateConnection())
@@ -352,7 +361,7 @@ public class BlockedUsersService
 
         Log.Information("Updated blocked user options: {Options}", options.ToJson());
         Reload();
-        return Current.Options;
+        return current.Options;
     }
 
     private static bool ScopeEnabled(BlockedUserOptions options, BlockedUserScope scope) => scope switch
@@ -409,14 +418,14 @@ public class BlockedUsersService
     {
         var ip = ipAddress.ToString();
 
-        if (Current.BlockedUserIps.Contains(ip))
+        if (current.BlockedUserIps.Contains(ip))
         {
             return;
         }
 
         lock (SyncRoot)
         {
-            if (Current.BlockedUserIps.Contains(ip))
+            if (current.BlockedUserIps.Contains(ip))
             {
                 return;
             }
@@ -428,7 +437,7 @@ public class BlockedUsersService
                     $"INSERT INTO {UserIpsTable} (\"Username\", \"Ip\", \"LastSeen\") VALUES (@Username, @Ip, @LastSeen) ON CONFLICT (\"Username\", \"Ip\") DO UPDATE SET \"LastSeen\" = @LastSeen",
                     new { Username = username, Ip = ip, LastSeen = DateTime.UtcNow });
 
-                Current = Current with { BlockedUserIps = Current.BlockedUserIps.Add(ip) };
+                current = current with { BlockedUserIps = current.BlockedUserIps.Add(ip) };
                 Log.Information("Learned IP {IP} from blocked user {Username}", ip, username);
             }
             catch (Exception ex)
@@ -441,7 +450,7 @@ public class BlockedUsersService
     // a username we've never seen appeared from an IP a blocked user used — block it too
     private void AutoBlock(string username, IPAddress ipAddress)
     {
-        if (string.IsNullOrWhiteSpace(username) || Current.Usernames.Contains(username))
+        if (string.IsNullOrWhiteSpace(username) || current.Usernames.Contains(username))
         {
             return;
         }
@@ -577,7 +586,7 @@ public class BlockedUsersService
             var places = conn.Query<BlockedPlace>(
                 $"SELECT \"Id\" AS {nameof(BlockedPlace.Id)}, \"Country\" AS {nameof(BlockedPlace.Country)}, \"City\" AS {nameof(BlockedPlace.City)} FROM {PlacesTable}").ToList();
 
-            Current = new Snapshot(usernames, options, blockedUserIps, ipRanges, places);
+            current = new Snapshot(usernames, options, blockedUserIps, ipRanges, places);
         }
     }
 

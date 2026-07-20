@@ -153,6 +153,37 @@ namespace resonance.KeyAnalysis
             ScanTask = Task.Run(() => RunScanAsync(request, ct), ct);
         }
 
+        public bool CancelScan()
+        {
+            if (Cts == null || Cts.IsCancellationRequested)
+            {
+                return false;
+            }
+
+            Cts.Cancel();
+            return true;
+        }
+
+        public void SetKey(string maskedFilename, string key)
+        {
+            var existing = ShareService.GetAllTags().TryGetValue(maskedFilename, out var t) ? t : null;
+            var updated = existing != null
+                ? existing with { Key = key }
+                : new FileTags(null, null, null, null, 0, 0, key);
+            ShareService.WriteFileTags(maskedFilename, updated);
+        }
+
+        public void ClearKey(string maskedFilename)
+        {
+            var existing = ShareService.GetAllTags().TryGetValue(maskedFilename, out var t) ? t : null;
+            if (existing == null)
+            {
+                return;
+            }
+
+            ShareService.WriteFileTags(maskedFilename, existing with { Key = null });
+        }
+
         private async Task RunScanAsync(KeyScanRequest request, CancellationToken ct)
         {
             MusicLibrary?.RegisterQueue("key");
@@ -328,37 +359,6 @@ namespace resonance.KeyAnalysis
                 MusicLibrary?.DeregisterQueue("key");
                 SyncRoot.Release();
             }
-        }
-
-        public bool CancelScan()
-        {
-            if (Cts == null || Cts.IsCancellationRequested)
-            {
-                return false;
-            }
-
-            Cts.Cancel();
-            return true;
-        }
-
-        public void SetKey(string maskedFilename, string key)
-        {
-            var existing = ShareService.GetAllTags().TryGetValue(maskedFilename, out var t) ? t : null;
-            var updated = existing != null
-                ? existing with { Key = key }
-                : new FileTags(null, null, null, null, 0, 0, key);
-            ShareService.WriteFileTags(maskedFilename, updated);
-        }
-
-        public void ClearKey(string maskedFilename)
-        {
-            var existing = ShareService.GetAllTags().TryGetValue(maskedFilename, out var t) ? t : null;
-            if (existing == null)
-            {
-                return;
-            }
-
-            ShareService.WriteFileTags(maskedFilename, existing with { Key = null });
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────

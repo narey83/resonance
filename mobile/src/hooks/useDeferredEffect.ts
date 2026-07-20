@@ -30,14 +30,20 @@
 // Effects that defer their work until after the in-flight navigation transition
 // completes. On a fast (LAN) backend a fetch kicked off during a native-stack push
 // resolves mid-slide, and rendering the resulting list/dashboard on the JS thread
-// stutters the animation — the classic "tap → pause → screen" feel. Wrapping the
-// initial load in InteractionManager.runAfterInteractions lets the slide finish
-// first, then paints the data one frame later.
+// stutters the animation — the classic "tap → pause → screen" feel. Scheduling the
+// initial load with requestIdleCallback lets the slide finish first, then paints the
+// data during the next idle window. The `timeout` is a safety net: if the JS thread
+// never goes idle, the callback still fires by then so a screen can't be left blank.
+//
+// (Migrated off the now-deprecated InteractionManager.runAfterInteractions, which
+// RN 0.85 flags for removal in favour of requestIdleCallback.)
 
 import { useCallback, useEffect } from 'react';
 import type { DependencyList } from 'react';
-import { InteractionManager } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+
+// Fire the deferred callback by this deadline even if the JS thread never idles.
+const IDLE_TIMEOUT_MS = 500;
 
 // useEffect variant: runs `effect` after interactions whenever `deps` change
 // (including the initial mount). `effect` may return a cleanup function.
@@ -47,11 +53,14 @@ export function useAfterInteractions(
 ) {
   useEffect(() => {
     let cleanup: void | (() => void);
-    const task = InteractionManager.runAfterInteractions(() => {
-      cleanup = effect();
-    });
+    const handle = requestIdleCallback(
+      () => {
+        cleanup = effect();
+      },
+      { timeout: IDLE_TIMEOUT_MS },
+    );
     return () => {
-      task.cancel();
+      cancelIdleCallback(handle);
       if (typeof cleanup === 'function') cleanup();
     };
     // `deps` is the caller's dependency surface, mirroring useEffect.
@@ -66,11 +75,14 @@ export function useDeferredFocusEffect(effect: () => void | (() => void)) {
   useFocusEffect(
     useCallback(() => {
       let cleanup: void | (() => void);
-      const task = InteractionManager.runAfterInteractions(() => {
-        cleanup = effect();
-      });
+      const handle = requestIdleCallback(
+        () => {
+          cleanup = effect();
+        },
+        { timeout: IDLE_TIMEOUT_MS },
+      );
       return () => {
-        task.cancel();
+        cancelIdleCallback(handle);
         if (typeof cleanup === 'function') cleanup();
       };
     }, [effect]),

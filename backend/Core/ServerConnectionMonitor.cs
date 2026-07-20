@@ -67,6 +67,12 @@ namespace resonance
     public sealed class ServerConnectionMonitor : IHostedService, IDisposable
     {
         /// <summary>
+        ///     The number of consecutive failed probes tolerated before forcing a reconnect. A small allowance avoids
+        ///     reacting to a single transient hiccup on an otherwise healthy connection.
+        /// </summary>
+        private const int MaxConsecutiveFailures = 2;
+
+        /// <summary>
         ///     How often to probe the server connection for liveness.
         /// </summary>
         private static readonly TimeSpan ProbeInterval = TimeSpan.FromMinutes(2);
@@ -75,12 +81,6 @@ namespace resonance
         ///     How long to wait for a probe round-trip before treating it as failed.
         /// </summary>
         private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(15);
-
-        /// <summary>
-        ///     The number of consecutive failed probes tolerated before forcing a reconnect. A small allowance avoids
-        ///     reacting to a single transient hiccup on an otherwise healthy connection.
-        /// </summary>
-        private const int MaxConsecutiveFailures = 2;
 
         /// <summary>
         ///     Initializes a new instance of the <see cref="ServerConnectionMonitor"/> class.

@@ -45,6 +45,7 @@ public class YtDlpDbContext : DbContext
     public DbSet<YtDlpJob> Jobs { get; set; }
     public DbSet<YtDlpTrack> Tracks { get; set; }
     public DbSet<YtDlpSubscription> Subscriptions { get; set; }
+    public DbSet<YtDlpEventRecord> Events { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -111,5 +112,17 @@ public class YtDlpDbContext : DbContext
         modelBuilder.Entity<YtDlpSubscription>()
             .Property(e => e.LastCheckedAt)
             .HasConversion(v => v, v => v.HasValue ? DateTime.SpecifyKind(v.Value, DateTimeKind.Utc) : null);
+
+        modelBuilder.Entity<YtDlpEventRecord>()
+            .Property(e => e.Timestamp)
+            .HasConversion(v => v, v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
+
+        // The Events pane always reads newest events per job, so index both the ordering key and
+        // the per-job filter used by the "clear this job's log" action.
+        modelBuilder.Entity<YtDlpEventRecord>()
+            .HasIndex(e => e.Id);
+
+        modelBuilder.Entity<YtDlpEventRecord>()
+            .HasIndex(e => e.JobId);
     }
 }

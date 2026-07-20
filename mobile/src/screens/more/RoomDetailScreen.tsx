@@ -43,11 +43,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useRoomStore } from '../../store/roomStore';
+import { useTranslationStore } from '../../store/translationStore';
+import { languageName } from '../../api/translation';
 import type { RoomMessage, RoomUser } from '../../api/rooms';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import type { MoreStackParamList } from '../../navigation/MainTabs';
 import UserActionSheet from '../../components/UserActionSheet';
+import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'RoomDetail'>;
 
@@ -75,7 +78,23 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
 
   const { joined, messages, loadMessages, sendMessage } = useRoomStore();
   const room = joined.find((r) => r.name === roomName);
-  const thread = messages[roomName] ?? [];
+  const thread = useMemo(() => messages[roomName] ?? [], [messages, roomName]);
+
+  // Translation
+  const threadKey = `room:${roomName}`;
+  const translationEnabled = useTranslationStore((st) => st.enabled);
+  const targetLang = useTranslationStore((st) => st.targetLang);
+  const auto = useTranslationStore((st) => Boolean(st.autoByThread[threadKey]));
+  const reply = useTranslationStore((st) => Boolean(st.replyByThread[threadKey]));
+  const translations = useTranslationStore((st) => st.translations);
+  const originals = useTranslationStore((st) => st.originals);
+  const sentOriginals = useTranslationStore((st) => st.sentOriginals);
+  const toggleAuto = useTranslationStore((st) => st.toggleAuto);
+  const toggleReply = useTranslationStore((st) => st.toggleReply);
+  const translateOutgoing = useTranslationStore((st) => st.translateOutgoing);
+  const ensureTranslated = useTranslationStore((st) => st.ensureTranslated);
+  const toggleOriginal = useTranslationStore((st) => st.toggleOriginal);
+  const loadTranslationStatus = useTranslationStore((st) => st.loadStatus);
 
   // Rendered newest-first into an `inverted` FlatList so the viewport is
   // anchored to the latest message — see ChatConversationScreen for why
@@ -98,17 +117,28 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
     navigation.setOptions({
       title: roomName,
       headerRight: () => (
-        <Pressable hitSlop={8} onPress={() => setShowUsers(true)}>
-          <View style={s.userCountWrap}>
-            <Ionicons color={colors.accent} name="people-outline" size={20} />
-            {room && (
-              <Text style={s.userCount}>{room.users.length}</Text>
-            )}
-          </View>
-        </Pressable>
+        <View style={s.headerActions}>
+          {translationEnabled && (
+            <Pressable hitSlop={8} onPress={() => toggleAuto(threadKey)}>
+              <Ionicons
+                color={auto ? colors.accent : colors.textMuted}
+                name="language"
+                size={20}
+              />
+            </Pressable>
+          )}
+          <Pressable hitSlop={8} onPress={() => setShowUsers(true)}>
+            <View style={s.userCountWrap}>
+              <Ionicons color={colors.accent} name="people-outline" size={20} />
+              {room && (
+                <Text style={s.userCount}>{room.users.length}</Text>
+              )}
+            </View>
+          </Pressable>
+        </View>
       ),
     });
-  }, [navigation, roomName, colors, room, s]);
+  }, [navigation, roomName, colors, room, s, translationEnabled, auto, threadKey, toggleAuto]);
 
   useFocusEffect(
     useCallback(() => {
@@ -116,13 +146,35 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
     }, [roomName, loadMessages])
   );
 
+  React.useEffect(() => {
+    loadTranslationStatus();
+  }, [loadTranslationStatus]);
+
+  // Translate not-yet-translated incoming messages when auto-translate is on.
+  React.useEffect(() => {
+    if (!translationEnabled || !auto) return;
+    const pending = thread
+      // incoming messages, plus your own sends we didn't capture an original for
+      .filter(
+        (m) =>
+          m.message?.trim() && (m.self !== true || !sentOriginals[m.message]),
+      )
+      .map((m) => ({ key: `${m.username}|${m.timestamp}|${m.message}`, text: m.message }));
+    if (pending.length > 0) ensureTranslated(threadKey, pending);
+  }, [thread, auto, translationEnabled, ensureTranslated, threadKey, sentOriginals]);
+
   const handleSend = async () => {
     const msg = text.trim();
     if (!msg || sending) return;
     setText('');
     setSending(true);
     try {
-      await sendMessage(roomName, msg);
+      let toSend = msg;
+      if (translationEnabled && reply) {
+        const latestInbound = [...thread].reverse().find((m) => m.self !== true)?.message;
+        toSend = await translateOutgoing(threadKey, msg, latestInbound);
+      }
+      await sendMessage(roomName, toSend);
     } finally {
       setSending(false);
     }
@@ -141,6 +193,33 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
 
     const ts = new Date(item.timestamp);
     const timeStr = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const msgKey = `${item.username}|${item.timestamp}|${item.message}`;
+    const tr = translations[msgKey];
+    const canTranslate = translationEnabled && auto && !isSelf;
+    const translatedDiffers =
+      !!tr?.text &&
+      !!tr?.detectedSourceLanguage &&
+      tr.detectedSourceLanguage.toUpperCase().split('-')[0] !== targetLang.toUpperCase();
+    const showTranslated = canTranslate && translatedDiffers && !originals[msgKey];
+
+    // Your own message shown in your language: exact original if captured at send
+    // time, else a back-translation of the sent (foreign) text.
+    const captured = isSelf ? sentOriginals[item.message] : undefined;
+    const backTr =
+      isSelf &&
+      !captured &&
+      tr?.text &&
+      (tr.detectedSourceLanguage || '').toUpperCase().split('-')[0] !==
+        targetLang.toUpperCase()
+        ? tr
+        : undefined;
+    const selfForeign =
+      (!!captured && captured.original !== item.message) || !!backTr;
+    const selfExact = !!captured;
+    const selfInLang = captured ? captured.original : backTr?.text;
+    const selfSourceLang = captured ? captured.lang : backTr?.detectedSourceLanguage;
+    const showSelfInLang = selfForeign && !!originals[msgKey];
 
     return (
       <View>
@@ -164,7 +243,33 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
             {showSender && !isSelf && (
               <Text style={s.senderName}>{item.username}</Text>
             )}
-            <Text style={[s.messageText, isSelf && s.messageTextSelf]}>{item.message}</Text>
+            <Text style={[s.messageText, isSelf && s.messageTextSelf]}>
+              {isSelf
+                ? showSelfInLang
+                  ? selfInLang
+                  : item.message
+                : showTranslated
+                  ? tr!.text
+                  : item.message}
+            </Text>
+            {canTranslate && translatedDiffers && (
+              <Pressable onPress={() => toggleOriginal(msgKey)}>
+                <Text style={s.translateNote}>
+                  {showTranslated
+                    ? `Translated from ${languageName(tr!.detectedSourceLanguage)} · Show original`
+                    : 'Show translation'}
+                </Text>
+              </Pressable>
+            )}
+            {selfForeign && (
+              <Pressable onPress={() => toggleOriginal(msgKey)}>
+                <Text style={[s.translateNote, s.translateNoteSelf]}>
+                  {showSelfInLang
+                    ? 'Show sent message'
+                    : `Sent in ${languageName(selfSourceLang)} · ${selfExact ? 'Show original' : `Show in ${languageName(targetLang)}`}`}
+                </Text>
+              </Pressable>
+            )}
             <Text style={[s.timestamp, isSelf && s.timestampSelf]}>{timeStr}</Text>
           </View>
         </Pressable>
@@ -195,6 +300,10 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
       style={s.container}
     >
       <FlatList
+        {...LIST_PERF_PROPS}
+        // removeClippedSubviews is unreliable on Android inverted lists (blanks rows),
+        // so opt this one back out while keeping the batching/window tuning.
+        removeClippedSubviews={false}
         data={reversedThread}
         inverted
         keyExtractor={(item, index) => `${item.username}-${item.timestamp}-${index}`}
@@ -212,11 +321,24 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
         }
       />
       <View style={s.inputBar}>
+        {translationEnabled && (
+          <Pressable
+            hitSlop={8}
+            onPress={() => toggleReply(threadKey)}
+            style={[s.replyToggle, reply && s.replyToggleOn]}
+          >
+            <Ionicons
+              color={reply ? '#fff' : colors.textMuted}
+              name="globe-outline"
+              size={18}
+            />
+          </Pressable>
+        )}
         <TextInput
           multiline
           onChangeText={setText}
           onSubmitEditing={handleSend}
-          placeholder={`Message ${roomName}…`}
+          placeholder={reply ? 'Reply in their language…' : `Message ${roomName}…`}
           placeholderTextColor={colors.textMuted}
           returnKeyType="send"
           style={s.input}
@@ -251,6 +373,7 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
               {room?.users.length ?? 0} user{(room?.users.length ?? 0) !== 1 ? 's' : ''} in {roomName}
             </Text>
             <FlatList
+              {...LIST_PERF_PROPS}
               data={room?.users ?? []}
               keyExtractor={(item) => item.username}
               renderItem={renderUser}
@@ -304,6 +427,10 @@ function makeStyles(c: ThemeColors) {
     messageTextSelf: { color: '#fff' },
     timestamp:       { fontSize: Typography.xs, color: c.textMuted, alignSelf: 'flex-end', marginTop: 2 },
     timestampSelf:   { color: 'rgba(255,255,255,0.65)' },
+
+    headerActions:   { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+    translateNote:   { fontSize: Typography.xs, color: c.accent, marginTop: 3, opacity: 0.9 },
+    translateNoteSelf: { color: 'rgba(255,255,255,0.85)', alignSelf: 'flex-end' },
 
     empty: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.xxl },
     emptyText: { fontSize: Typography.sm, color: c.textMuted },
@@ -359,6 +486,15 @@ function makeStyles(c: ThemeColors) {
       shadowOpacity: 0,
       elevation: 0,
     },
+    replyToggle: {
+      width: 40,
+      height: 40,
+      borderRadius: Radius.full,
+      backgroundColor: c.bgElevated,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    replyToggleOn: { backgroundColor: c.accent },
 
     userCountWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     userCount:     { fontSize: Typography.sm, color: c.accent, fontWeight: '600' },

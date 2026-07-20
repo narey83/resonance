@@ -62,22 +62,6 @@ namespace resonance.Mixtapes.API
 
         private StreamUrlSigner UrlSigner { get; }
 
-        // Stamp each track's FilePath with a fresh artwork/stream signature so clients skip the
-        // separate POST /sign round-trip (see StreamUrlSigner / MusicLibraryController).
-        private MixtapeTrack SignTrack(MixtapeTrack t)
-        {
-            if (string.IsNullOrEmpty(t.FilePath))
-            {
-                return t;
-            }
-
-            var (exp, sig) = UrlSigner.Sign(t.FilePath);
-            return t with { Exp = exp, Sig = sig };
-        }
-
-        private Mixtape SignMixtape(Mixtape m) =>
-            m.Tracks == null ? m : m with { Tracks = m.Tracks.Select(SignTrack).ToList() };
-
         [HttpGet]
         [ProducesResponseType(typeof(IReadOnlyList<Mixtape>), 200)]
         public IActionResult GetAll() => Ok(Service.GetAll().Select(SignMixtape).ToList());
@@ -290,13 +274,6 @@ namespace resonance.Mixtapes.API
             return File(Encoding.UTF8.GetBytes(content), "audio/x-mpegurl", fileName);
         }
 
-        private static string SanitizeName(string name)
-        {
-            var invalid = System.IO.Path.GetInvalidFileNameChars();
-            var safe = string.Concat(name.Select(c => invalid.Contains(c) ? '_' : c)).Trim();
-            return string.IsNullOrEmpty(safe) ? "mixtape" : safe;
-        }
-
         [HttpPost("{id}/soulseek")]
         [ProducesResponseType(typeof(Mixtape), 200)]
         [ProducesResponseType(404)]
@@ -327,5 +304,28 @@ namespace resonance.Mixtapes.API
                 return NotFound();
             }
         }
+
+        private static string SanitizeName(string name)
+        {
+            var invalid = System.IO.Path.GetInvalidFileNameChars();
+            var safe = string.Concat(name.Select(c => invalid.Contains(c) ? '_' : c)).Trim();
+            return string.IsNullOrEmpty(safe) ? "mixtape" : safe;
+        }
+
+        // Stamp each track's FilePath with a fresh artwork/stream signature so clients skip the
+        // separate POST /sign round-trip (see StreamUrlSigner / MusicLibraryController).
+        private MixtapeTrack SignTrack(MixtapeTrack t)
+        {
+            if (string.IsNullOrEmpty(t.FilePath))
+            {
+                return t;
+            }
+
+            var (exp, sig) = UrlSigner.Sign(t.FilePath);
+            return t with { Exp = exp, Sig = sig };
+        }
+
+        private Mixtape SignMixtape(Mixtape m) =>
+            m.Tracks == null ? m : m with { Tracks = m.Tracks.Select(SignTrack).ToList() };
     }
 }

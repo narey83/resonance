@@ -153,13 +153,6 @@ public class BrowseRateLimiter
         Counters.TryRemove(username, out _);
     }
 
-    public record BrowseRateLimitUser(
-        string Username,
-        int Requests,
-        DateTime? WindowStart,
-        bool Blocked,
-        DateTime? BlockedUntil);
-
     private async System.Threading.Tasks.Task TrySendMessageAsync(string username, string message)
     {
         try
@@ -172,4 +165,11 @@ public class BrowseRateLimiter
             Log.Warning(ex, "Failed to send rate-limit notification to {Username}", username);
         }
     }
+
+    public record BrowseRateLimitUser(
+        string Username,
+        int Requests,
+        DateTime? WindowStart,
+        bool Blocked,
+        DateTime? BlockedUntil);
 }

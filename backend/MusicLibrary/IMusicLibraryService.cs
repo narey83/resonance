@@ -41,6 +41,7 @@ namespace resonance.MusicLibrary
         ///     configured library (share) directories. Used to ensure the server only ever
         ///     signs/serves library paths — never an arbitrary location on disk.
         /// </summary>
+        /// <returns>A value indicating whether the path resolves inside a configured library directory.</returns>
         bool IsLibraryPath(string path);
 
         (int Total, double TotalDuration) GetStats();
@@ -94,6 +95,7 @@ namespace resonance.MusicLibrary
         void DeregisterQueue(string name);
 
         /// <summary>Returns whether an analysis queue with the given name is currently registered.</summary>
+        /// <returns>A value indicating whether the named queue is currently registered.</returns>
         bool IsQueueActive(string name);
     }
 }

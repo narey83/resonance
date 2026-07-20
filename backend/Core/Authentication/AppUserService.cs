@@ -81,9 +81,26 @@ public class AppUserService
     {
         using var db = ContextFactory.CreateDbContext();
         var user = db.Users.FirstOrDefault(u => u.Username == username);
-        if (user is null || !VerifyPassword(password, user.PasswordHash))
+
+        // Constant-time on the missing-user path: verify against a fixed dummy hash so an unknown
+        // username costs the same PBKDF2 work as a known one. Otherwise the early return leaks which
+        // usernames exist via response timing (user enumeration).
+        if (user is null)
+        {
+            VerifyPassword(password, DummyHash);
+            return null;
+        }
+
+        if (!VerifyPassword(password, user.PasswordHash))
         {
             return null;
+        }
+
+        // Transparently upgrade legacy / lower-cost hashes to the current parameters on successful login.
+        if (NeedsRehash(user.PasswordHash))
+        {
+            user.PasswordHash = HashPassword(password);
+            db.SaveChanges();
         }
 
         return user;
@@ -169,6 +186,17 @@ public class AppUserService
         db.SaveChanges();
     }
 
+    // OWASP guidance for PBKDF2-HMAC-SHA256 is >= 600k iterations. Legacy hashes were produced at 100k
+    // and don't record their cost, so they're recognised by the older "salt:hash" format and verified at
+    // the legacy count, then rehashed to the current parameters on the next successful login.
+    private const int CurrentIterations = 600_000;
+    private const int LegacyIterations = 100_000;
+    private const string HashPrefix = "pbkdf2-sha256";
+
+    // A pre-computed hash of a throwaway password, used only to spend equivalent PBKDF2 time on the
+    // unknown-user path so authentication is constant-time regardless of whether the account exists.
+    private static readonly string DummyHash = HashPassword("resonance-dummy-password-for-constant-time");
+
     private static string HashPassword(string password)
     {
         var salt = new byte[16];
@@ -179,30 +207,77 @@ public class AppUserService
             password,
             salt,
             KeyDerivationPrf.HMACSHA256,
-            iterationCount: 100_000,
+            iterationCount: CurrentIterations,
             numBytesRequested: 32);
 
-        return $"{Convert.ToBase64String(salt)}:{Convert.ToBase64String(hash)}";
+        // Versioned format so the iteration count travels with the hash and can be raised again later.
+        return $"{HashPrefix}${CurrentIterations}${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
     }
 
     private static bool VerifyPassword(string password, string storedHash)
     {
-        var parts = storedHash.Split(':');
-        if (parts.Length != 2)
+        if (!TryParseHash(storedHash, out var iterations, out var salt, out var expectedHash))
         {
             return false;
         }
-
-        var salt = Convert.FromBase64String(parts[0]);
-        var expectedHash = Convert.FromBase64String(parts[1]);
 
         var actualHash = KeyDerivation.Pbkdf2(
             password,
             salt,
             KeyDerivationPrf.HMACSHA256,
-            iterationCount: 100_000,
-            numBytesRequested: 32);
+            iterationCount: iterations,
+            numBytesRequested: expectedHash.Length);
 
         return CryptographicOperations.FixedTimeEquals(actualHash, expectedHash);
     }
+
+    // Parses both the versioned "pbkdf2-sha256$<iters>$<salt>$<hash>" format and the legacy "salt:hash"
+    // format (implicitly 100k iterations).
+    private static bool TryParseHash(string storedHash, out int iterations, out byte[] salt, out byte[] hash)
+    {
+        iterations = 0;
+        salt = null;
+        hash = null;
+
+        if (string.IsNullOrEmpty(storedHash))
+        {
+            return false;
+        }
+
+        try
+        {
+            if (storedHash.StartsWith(HashPrefix + "$", StringComparison.Ordinal))
+            {
+                var parts = storedHash.Split('$');
+                if (parts.Length != 4 || !int.TryParse(parts[1], out iterations) || iterations <= 0)
+                {
+                    return false;
+                }
+
+                salt = Convert.FromBase64String(parts[2]);
+                hash = Convert.FromBase64String(parts[3]);
+                return true;
+            }
+
+            var legacy = storedHash.Split(':');
+            if (legacy.Length != 2)
+            {
+                return false;
+            }
+
+            iterations = LegacyIterations;
+            salt = Convert.FromBase64String(legacy[0]);
+            hash = Convert.FromBase64String(legacy[1]);
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    // True when the stored hash isn't in the current format at the current cost, so a successful login
+    // should opportunistically re-hash the password with the up-to-date parameters.
+    private static bool NeedsRehash(string storedHash)
+        => !TryParseHash(storedHash, out var iterations, out _, out _) || iterations < CurrentIterations;
 }

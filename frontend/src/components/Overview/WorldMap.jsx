@@ -30,7 +30,7 @@
 import { lookupIp } from '../../lib/network';
 import { formatBytes, parseUtcDate } from '../../lib/util';
 import UsernameLink from '../Shared/UsernameLink';
-import UserReportModal from './UserReportModal';
+import UserReportWindow from './UserReportWindow';
 import React, {
   useCallback,
   useEffect,
@@ -161,7 +161,7 @@ const WorldMap = ({
   const wrapRef = useRef(null);
   const [peerLocations, setPeerLocations] = useState([]);
   const [tooltip, setTooltip] = useState(null);
-  const [modalUser, setModalUser] = useState(null);
+  const [reportUser, setReportUser] = useState(null);
   const hideTimerRef = useRef(null);
   const moveFrameRef = useRef(null);
   const [position, setPosition] = useState({ coordinates: [0, 15], zoom: 1 });
@@ -289,13 +289,16 @@ const WorldMap = ({
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
   };
 
-  const openUserModal = (peer, initialTab) => {
+  // The report is hosted here rather than by the tooltip's UsernameLink so the
+  // tooltip can be dismissed as the modal opens — otherwise it would sit on top
+  // of the modal, and unmounting it would take the modal down with it. The dot
+  // already resolved this peer's geo, so seed the modal to skip a repeat lookup.
+  const openReport = (peer) => {
     if (!peer.username) return;
     cancelHide();
     setTooltip(null);
-    setModalUser({
+    setReportUser({
       username: peer.username,
-      initialTab,
       seed: {
         ip: peer.ip,
         city: peer.city,
@@ -642,12 +645,6 @@ const WorldMap = ({
       {tooltip &&
         (() => {
           const p = tooltip.peer;
-          const uploadBytes = p.uploadBytes ?? 0;
-          const downloadBytes = p.downloadBytes ?? 0;
-          const uploadCount = p.uploadCount ?? 0;
-          const downloadCount = p.downloadCount ?? 0;
-          const browseCount = p.browseCount ?? 0;
-          const chatCount = p.chatCount ?? 0;
           const lastSeen = parseUtcDate(p.lastSeen);
           const lastSeenString = lastSeen
             ? lastSeen.toLocaleDateString(undefined, {
@@ -673,10 +670,20 @@ const WorldMap = ({
               onMouseLeave={() => setTooltip(null)}
               style={{ left, top }}
             >
+              <button
+                aria-label="Close"
+                className="map-tooltip-close"
+                onClick={() => setTooltip(null)}
+                type="button"
+              >
+                ✕
+              </button>
+
               <div className="map-tooltip-header">
                 {p.username ? (
                   <UsernameLink
                     className="map-tooltip-user"
+                    onReport={() => openReport(p)}
                     username={p.username}
                   />
                 ) : (
@@ -707,79 +714,19 @@ const WorldMap = ({
                 )}
               </div>
 
-              {(uploadCount > 0 ||
-                downloadCount > 0 ||
-                browseCount > 0 ||
-                chatCount > 0) && (
-                <div className="map-tooltip-stats">
-                  {(uploadCount > 0 || uploadBytes > 0) && (
-                    <div className="map-tooltip-stat">
-                      <span className="map-tooltip-stat-icon">↑</span>
-                      <span>
-                        {uploadCount} file{uploadCount !== 1 ? 's' : ''}
-                      </span>
-                      <span className="map-tooltip-stat-bytes">
-                        {formatBytes(uploadBytes)}
-                      </span>
-                    </div>
-                  )}
-                  {(downloadCount > 0 || downloadBytes > 0) && (
-                    <div className="map-tooltip-stat">
-                      <span className="map-tooltip-stat-icon">↓</span>
-                      <span>
-                        {downloadCount} file{downloadCount !== 1 ? 's' : ''}
-                      </span>
-                      <span className="map-tooltip-stat-bytes">
-                        {formatBytes(downloadBytes)}
-                      </span>
-                    </div>
-                  )}
-                  {browseCount > 0 && (
-                    <div className="map-tooltip-stat">
-                      <span className="map-tooltip-stat-icon">👁</span>
-                      <span>
-                        {browseCount} browse{browseCount !== 1 ? 's' : ''}
-                      </span>
-                    </div>
-                  )}
-                  {chatCount > 0 && (
-                    <div className="map-tooltip-stat">
-                      <span className="map-tooltip-stat-icon">💬</span>
-                      <span>
-                        {chatCount} message{chatCount !== 1 ? 's' : ''}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-
               {lastSeenString && (
                 <div className="map-tooltip-lastseen">
                   Last seen {lastSeenString}
                 </div>
               )}
-
-              {p.username && (
-                <div className="map-tooltip-actions">
-                  <button
-                    className="map-tooltip-action"
-                    onClick={() => openUserModal(p, 'overview')}
-                    type="button"
-                  >
-                    View user
-                  </button>
-                </div>
-              )}
             </div>
           );
         })()}
-
-      {modalUser && (
-        <UserReportModal
-          initialTab={modalUser.initialTab}
-          onClose={() => setModalUser(null)}
-          seed={modalUser.seed}
-          username={modalUser.username}
+      {reportUser && (
+        <UserReportWindow
+          onClose={() => setReportUser(null)}
+          seed={reportUser.seed}
+          username={reportUser.username}
         />
       )}
     </div>

@@ -44,7 +44,7 @@ namespace resonance.Shares
     ///     (writers) and searches (readers) never block one another. One physical schema (<c>shares</c>)
     ///     holds all hosts, distinguished by a <c>host</c> column.
     /// </summary>
-    public class PostgresShareRepository : IShareRepository
+    public sealed class PostgresShareRepository : IShareRepository
     {
         // Audio extensions eligible for tag enrichment (mirrors the SQLite repository).
         private const string AudioExtensionsInClause =
@@ -118,27 +118,35 @@ namespace resonance.Shares
 
             if (discardExisting)
             {
-                Execute(conn, "DROP TABLE IF EXISTS shares.files; DROP TABLE IF EXISTS shares.directories; "
-                    + "DROP TABLE IF EXISTS shares.scans; DROP TABLE IF EXISTS shares.version;");
+                var drop = "DROP TABLE IF EXISTS shares.files; DROP TABLE IF EXISTS shares.directories; "
+                    + "DROP TABLE IF EXISTS shares.scans; DROP TABLE IF EXISTS shares.version;";
+
+                Execute(conn, drop);
             }
 
             Execute(conn, "CREATE TABLE IF NOT EXISTS shares.version (host text NOT NULL, a integer, PRIMARY KEY (host, a));");
 
-            Execute(conn, "CREATE TABLE IF NOT EXISTS shares.scans "
+            var createScans = "CREATE TABLE IF NOT EXISTS shares.scans "
                 + "(host text NOT NULL, timestamp bigint NOT NULL, options text NOT NULL, \"end\" bigint, suspect boolean NOT NULL DEFAULT false, "
-                + "PRIMARY KEY (host, timestamp));");
+                + "PRIMARY KEY (host, timestamp));";
 
-            Execute(conn, "CREATE TABLE IF NOT EXISTS shares.directories "
-                + "(host text NOT NULL, name text COLLATE \"C\" NOT NULL, timestamp bigint NOT NULL, PRIMARY KEY (host, name));");
+            Execute(conn, createScans);
+
+            var createDirectories = "CREATE TABLE IF NOT EXISTS shares.directories "
+                + "(host text NOT NULL, name text COLLATE \"C\" NOT NULL, timestamp bigint NOT NULL, PRIMARY KEY (host, name));";
+
+            Execute(conn, createDirectories);
 
             // search_vector is generated from the masked filename, so it stays current on every
             // upsert with no separate index table to maintain (RebuildFilenameIndex is a no-op).
-            Execute(conn, "CREATE TABLE IF NOT EXISTS shares.files "
+            var createFiles = "CREATE TABLE IF NOT EXISTS shares.files "
                 + "(host text NOT NULL, masked_filename text COLLATE \"C\" NOT NULL, original_filename text NOT NULL, size bigint NOT NULL, "
                 + "touched_at text NOT NULL, code integer NOT NULL DEFAULT 1, extension text, attribute_json text NOT NULL, tags_json text, "
                 + "timestamp bigint NOT NULL, "
                 + "search_vector tsvector GENERATED ALWAYS AS (to_tsvector('simple', masked_filename)) STORED, "
-                + "PRIMARY KEY (host, masked_filename));");
+                + "PRIMARY KEY (host, masked_filename));";
+
+            Execute(conn, createFiles);
 
             Execute(conn, "CREATE INDEX IF NOT EXISTS idx_files_search ON shares.files USING gin (search_vector);");
             Execute(conn, "CREATE INDEX IF NOT EXISTS idx_files_timestamp ON shares.files (host, timestamp);");
@@ -363,14 +371,20 @@ namespace resonance.Shares
             return results;
         }
 
-        public void UpdateFileTags(string maskedFilename, FileTags tags)
+        public void UpdateFileTags(string maskedFilename, FileTags tags, long size, DateTime touchedAt)
         {
             using var conn = GetConnection();
             using var cmd = new NpgsqlCommand(
-                "UPDATE shares.files SET tags_json = @tags WHERE host = @host AND masked_filename = @masked;", conn);
+                "UPDATE shares.files SET tags_json = @tags, size = @size, touched_at = @touched "
+                + "WHERE host = @host AND masked_filename = @masked;", conn);
             cmd.Parameters.AddWithValue("host", Host);
             cmd.Parameters.AddWithValue("masked", maskedFilename);
             cmd.Parameters.AddWithValue("tags", tags != null ? tags.ToJson() : (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("size", size);
+
+            // must round-trip through the same "O" format ListDirectoryFiles parses, otherwise the
+            // scanner's unchanged-file fast path can't match this row and re-reads its tags forever.
+            cmd.Parameters.AddWithValue("touched", touchedAt.ToString("O", CultureInfo.InvariantCulture));
             cmd.ExecuteNonQuery();
         }
 

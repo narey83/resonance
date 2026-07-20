@@ -59,6 +59,10 @@ namespace resonance.MusicLibrary
     /// </summary>
     public class MusicLibraryService : IMusicLibraryService
     {
+        // Tag reads are I/O + CPU bound and independent per file, so a full scan reads them in parallel
+        // (capped to avoid thrashing the storage) and writes results to the DB in batched transactions.
+        private const int SyncWriteBatchSize = 500;
+
         private static readonly HashSet<string> AudioExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
             "mp3", "flac", "aac", "ogg", "oga", "wav", "wma", "m4a", "m4b", "m4p",
@@ -67,6 +71,44 @@ namespace resonance.MusicLibrary
 
         private static readonly TimeSpan SyncInterval = TimeSpan.FromMinutes(15);
         private static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(45);
+
+        private static readonly int SyncReadParallelism = Math.Min(Environment.ProcessorCount, 8);
+
+        // throttles the high-frequency progress broadcasts so a large scan doesn't flood clients with
+        // SignalR messages; start/complete/exit transitions are always sent (throttle: false).
+        private static readonly TimeSpan SyncBroadcastThrottle = TimeSpan.FromMilliseconds(500);
+
+        private static readonly TimeSpan DebounceDelay = TimeSpan.FromSeconds(30);
+
+        // Long-running queues (e.g. a metadata enrichment pass over the whole library) can hold
+        // their registration for days; without a cap they'd starve the sync entirely and the
+        // library would stop reflecting the filesystem. After this long, sync runs anyway — the
+        // worst case is indexing a file mid-tag-write, which the next sync corrects.
+        private static readonly TimeSpan MaxSyncDeferral = TimeSpan.FromMinutes(10);
+
+        // SetState is called concurrently from the parallel read workers during a scan, so it must be
+        // serialized; this guards CurrentState + the throttle bookkeeping.
+        private readonly object syncStateLock = new();
+
+        private readonly object debounceLock = new();
+        private readonly HashSet<string> activeQueues = new(StringComparer.OrdinalIgnoreCase);
+        private readonly object queueLock = new();
+
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> syncExcluded =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        // Filesystem watchers over the share roots — one per scan directory. They translate any on-disk
+        // change (a completed download, a converter output, a tag rewrite, an external SMB edit, a
+        // deletion) into a debounced TriggerSync so the library reflects reality within ~30s instead of
+        // waiting up to a full SyncInterval for the periodic scan to notice.
+        private readonly List<FileSystemWatcher> watchers = new();
+
+        private DateTime lastSyncBroadcast = DateTime.MinValue;
+
+        // cancels only the in-flight scan (not the whole background loop); see CancelSync.
+        private CancellationTokenSource currentRunCts;
+
+        private DateTime? syncDeferredSinceUtc;
 
         public MusicLibraryService(OptionsAtStartup options, MusicRepository repository, EventBus eventBus, IHubContext<LibraryActivityHub> hub, ILibraryActivityService activity)
         {
@@ -90,41 +132,11 @@ namespace resonance.MusicLibrary
         private MusicLibrarySyncState CurrentState { get; set; } =
             new(false, false, null, 0, 0, 0, 0, 0, 0, 0);
 
-        // throttles the high-frequency progress broadcasts so a large scan doesn't flood clients with
-        // SignalR messages; start/complete/exit transitions are always sent (throttle: false).
-        private DateTime lastSyncBroadcast = DateTime.MinValue;
-        private static readonly TimeSpan SyncBroadcastThrottle = TimeSpan.FromMilliseconds(500);
-
-        // SetState is called concurrently from the parallel read workers during a scan, so it must be
-        // serialized; this guards CurrentState + the throttle bookkeeping.
-        private readonly object syncStateLock = new();
-
-        // Tag reads are I/O + CPU bound and independent per file, so a full scan reads them in parallel
-        // (capped to avoid thrashing the storage) and writes results to the DB in batched transactions.
-        private static readonly int SyncReadParallelism = Math.Min(Environment.ProcessorCount, 8);
-        private const int SyncWriteBatchSize = 500;
-
-        // cancels only the in-flight scan (not the whole background loop); see CancelSync.
-        private CancellationTokenSource currentRunCts;
-
-        private static readonly TimeSpan DebounceDelay = TimeSpan.FromSeconds(30);
-
         private CancellationTokenSource LoopCts { get; set; }
+
         private SemaphoreSlim SyncNow { get; } = new(0, 1);
+
         private CancellationTokenSource DebounceCts { get; set; }
-        private readonly object debounceLock = new();
-        private readonly HashSet<string> activeQueues = new(StringComparer.OrdinalIgnoreCase);
-        private readonly object queueLock = new();
-
-        // Long-running queues (e.g. a metadata enrichment pass over the whole library) can hold
-        // their registration for days; without a cap they'd starve the sync entirely and the
-        // library would stop reflecting the filesystem. After this long, sync runs anyway — the
-        // worst case is indexing a file mid-tag-write, which the next sync corrects.
-        private static readonly TimeSpan MaxSyncDeferral = TimeSpan.FromMinutes(10);
-        private DateTime? syncDeferredSinceUtc;
-
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> syncExcluded =
-            new(StringComparer.OrdinalIgnoreCase);
 
         // ── IHostedService ────────────────────────────────────────────────────
         public Task StartAsync(CancellationToken cancellationToken)
@@ -137,6 +149,7 @@ namespace resonance.MusicLibrary
             });
             LoopCts = new CancellationTokenSource();
             _ = RunLoopAsync(LoopCts.Token);
+            StartWatchers();
             return Task.CompletedTask;
         }
 
@@ -157,6 +170,7 @@ namespace resonance.MusicLibrary
                 }
             }
 
+            StopWatchers();
             LoopCts?.Cancel();
         }
 
@@ -165,8 +179,11 @@ namespace resonance.MusicLibrary
             => Repository.Query(search, artist, album, genre, year, folder, missingKey, missingBpm, missingTitle, missingArtist, missingArtwork, limit, offset, sort, descending);
 
         public System.Collections.Generic.IReadOnlyList<MusicGenre> GetGenres() => Repository.GetGenres();
+
         public System.Collections.Generic.IReadOnlyList<MusicYear> GetYears() => Repository.GetYears();
+
         public System.Collections.Generic.IReadOnlyList<MusicFolder> GetFolders() => Repository.GetFolders();
+
         public MusicTrack GetTrack(string path) => Repository.GetByPath(path);
 
         public (int Total, double TotalDuration) GetStats() => Repository.GetStats();
@@ -366,6 +383,157 @@ namespace resonance.MusicLibrary
                 return activeQueues.Contains(name);
             }
         }
+
+        /// <inheritdoc/>
+        public bool IsLibraryPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            string fullPath;
+            try
+            {
+                // Resolve "..", symlinks-as-text, etc. so a traversal can't escape a share root.
+                fullPath = Path.GetFullPath(path);
+            }
+            catch
+            {
+                return false;
+            }
+
+            foreach (var dir in GetScanDirectories())
+            {
+                var root = Path.GetFullPath(dir)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                    + Path.DirectorySeparatorChar;
+                if (fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static IEnumerable<FileInfo> EnumerateAudio(string root)
+            => new DirectoryInfo(root)
+
+                // IgnoreInaccessible so an unreadable subdir (e.g. a mount root's lost+found) is skipped
+                // rather than aborting the whole walk — same as the share scanner.
+                .EnumerateFiles("*", new EnumerationOptions
+                {
+                    RecurseSubdirectories = true,
+                    IgnoreInaccessible = true,
+                    AttributesToSkip = FileAttributes.Hidden | FileAttributes.System,
+                })
+                .Where(f => AudioExtensions.Contains(f.Extension.TrimStart('.').ToLowerInvariant()));
+
+        private static string DetectTagTypes(TagLib.File tf)
+        {
+            var parts = new System.Collections.Generic.List<string>();
+
+            if (tf.GetTag(TagLib.TagTypes.Id3v1) != null)
+            {
+                parts.Add("ID3v1");
+            }
+
+            if (tf.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3v2Tag)
+            {
+                parts.Add($"ID3v2.{id3v2Tag.Version}");
+            }
+
+            if (tf.GetTag(TagLib.TagTypes.Xiph) != null)
+            {
+                parts.Add("Xiph");
+            }
+
+            if (tf.GetTag(TagLib.TagTypes.Ape) != null)
+            {
+                parts.Add("APEv2");
+            }
+
+            if (tf.GetTag(TagLib.TagTypes.Apple) != null)
+            {
+                parts.Add("iTunes");
+            }
+
+            if (tf.GetTag(TagLib.TagTypes.Asf) != null)
+            {
+                parts.Add("ASF");
+            }
+
+            return parts.Count > 0 ? string.Join(", ", parts) : null;
+        }
+
+        private static MusicTrack ReadTrack(string path, long size, long modified)
+        {
+            using var tf = TagLib.File.Create(path, TagLib.ReadStyle.Average);
+            var tag = tf.Tag;
+
+            string key = null;
+            if (tf.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3v2)
+            {
+                key = KeyTagHelper.ReadKey(id3v2);
+            }
+            else if (tf.GetTag(TagLib.TagTypes.Xiph) is TagLib.Ogg.XiphComment xiph)
+            {
+                var fields = xiph.GetField("INITIALKEY");
+                if (fields.Length > 0 && !string.IsNullOrEmpty(fields[0]))
+                {
+                    key = fields[0].Trim();
+                }
+            }
+
+            return new MusicTrack(
+                Path: path,
+                Filename: Path.GetFileName(path),
+                Directory: Path.GetDirectoryName(path) ?? string.Empty,
+                Extension: Path.GetExtension(path).TrimStart('.').ToLowerInvariant(),
+                FileSize: size,
+                FileModified: modified,
+                IndexedAt: DateTimeOffset.UtcNow.Ticks,
+                Duration: tf.Properties?.Duration.TotalSeconds,
+                Title: Trim(tag.Title),
+                Artist: Trim(tag.JoinedPerformers),
+                AlbumArtist: Trim(tag.JoinedAlbumArtists),
+                Album: Trim(tag.Album),
+                Year: tag.Year == 0 ? null : (int?)tag.Year,
+                TrackNumber: tag.Track == 0 ? null : (int?)tag.Track,
+                DiscNumber: tag.Disc == 0 ? null : (int?)tag.Disc,
+                Genre: Trim(tag.Genres?.Length > 0 ? tag.Genres[0] : null),
+                Bpm: tag.BeatsPerMinute == 0 ? null : (int?)tag.BeatsPerMinute,
+                Key: key,
+                Comment: Trim(tag.Comment),
+                HasArtwork: HasServableArtwork(tag),
+                TagTypes: DetectTagTypes(tf),
+                BitRate: tf.Properties?.AudioBitrate is int br && br > 0 ? br : null,
+                SampleRate: tf.Properties?.AudioSampleRate is int sr && sr > 0 ? sr : null,
+                BitDepth: tf.Properties?.BitsPerSample is int bd && bd > 0 ? bd : null);
+        }
+
+        private static bool HasServableArtwork(TagLib.Tag tag)
+        {
+            var pic = tag.Pictures?.FirstOrDefault();
+            if (pic == null || pic.Data.Count == 0)
+            {
+                return false;
+            }
+
+            var b = pic.Data.Data;
+            if (b.Length < 4)
+            {
+                return false;
+            }
+
+            return (b[0] == 0xFF && b[1] == 0xD8)
+                || (b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47)
+                || (b[0] == 0x47 && b[1] == 0x49 && b[2] == 0x46)
+                || (b.Length >= 12 && b[8] == 0x57 && b[9] == 0x45 && b[10] == 0x42 && b[11] == 0x50);
+        }
+
+        private static string Trim(string s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
         // ── Background loop ───────────────────────────────────────────────────
         private async Task RunLoopAsync(CancellationToken ct)
@@ -641,45 +809,119 @@ namespace resonance.MusicLibrary
             await Task.Yield(); // yield back to caller
         }
 
+        // ── Filesystem watchers ───────────────────────────────────────────────
+        private void StartWatchers()
+        {
+            foreach (var dir in GetScanDirectories())
+            {
+                try
+                {
+                    var watcher = new FileSystemWatcher(dir)
+                    {
+                        IncludeSubdirectories = true,
+
+                        // FileName/DirectoryName cover create/delete/rename; LastWrite/Size cover
+                        // in-place edits (tag & metadata rewrites). We deliberately omit LastAccess.
+                        NotifyFilter = NotifyFilters.FileName
+                            | NotifyFilters.DirectoryName
+                            | NotifyFilters.LastWrite
+                            | NotifyFilters.Size,
+
+                        // A bulk download/delete can emit hundreds of events at once; a larger buffer
+                        // makes an overflow (→ Error, handled below) far less likely.
+                        InternalBufferSize = 64 * 1024,
+                    };
+
+                    watcher.Created += OnFsChange;
+                    watcher.Deleted += OnFsChange;
+                    watcher.Changed += OnFsChange;
+                    watcher.Renamed += OnFsRenamed;
+                    watcher.Error += OnFsError;
+                    watcher.EnableRaisingEvents = true;
+
+                    watchers.Add(watcher);
+                    Log.Information("Watching library directory for changes: {Dir}", dir);
+                }
+                catch (Exception ex)
+                {
+                    // A watcher failing to attach (e.g. a filesystem without inotify support) must not
+                    // break the service — the periodic scan still keeps the library in sync.
+                    Log.Warning("Could not watch library directory {Dir}: {Err}", dir, ex.Message);
+                }
+            }
+        }
+
+        private void StopWatchers()
+        {
+            foreach (var watcher in watchers)
+            {
+                try
+                {
+                    watcher.EnableRaisingEvents = false;
+                    watcher.Dispose();
+                }
+                catch
+                { /* best-effort teardown on shutdown */
+                }
+            }
+
+            watchers.Clear();
+        }
+
+        // Returns true if a filesystem path is worth reacting to: audio files, and structural changes
+        // (directories, which have no extension). Non-audio files (.jpg covers, .part/.tmp download
+        // scratch, .nfo) are ignored so an in-progress download doesn't churn the debounce needlessly.
+        private bool ShouldReactTo(string path)
+        {
+            if (string.IsNullOrEmpty(path) || IsExcludedFromSync(path))
+            {
+                return false;
+            }
+
+            var ext = Path.GetExtension(path);
+            if (string.IsNullOrEmpty(ext))
+            {
+                // No extension → almost certainly a directory create/delete/rename; react so newly
+                // added or removed folders are picked up.
+                return true;
+            }
+
+            return AudioExtensions.Contains(ext.TrimStart('.').ToLowerInvariant());
+        }
+
+        private void OnFsChange(object sender, FileSystemEventArgs e)
+        {
+            if (ShouldReactTo(e.FullPath))
+            {
+                TriggerSync();
+            }
+        }
+
+        private void OnFsRenamed(object sender, RenamedEventArgs e)
+        {
+            // A temp-to-final rename (song.mp3.part → song.mp3, common for yt-dlp and other downloaders)
+            // only becomes interesting via the new name, so check both ends.
+            if (ShouldReactTo(e.FullPath) || ShouldReactTo(e.OldFullPath))
+            {
+                TriggerSync();
+            }
+        }
+
+        private void OnFsError(object sender, ErrorEventArgs e)
+        {
+            // Buffer overflow (or a transient inotify error) means we've lost events, so we can't trust
+            // incremental change signals — fall back to a full immediate reconciliation. The watcher
+            // recovers on its own once the buffer drains; we don't tear it down.
+            Log.Warning("Library watcher error — forcing a full sync to catch missed changes: {Err}", e.GetException()?.Message);
+            TriggerImmediateSync();
+        }
+
         // ── Helpers ───────────────────────────────────────────────────────────
         private IEnumerable<string> GetScanDirectories()
             => Options.Shares.Directories
                 .Select(d => new Share(d.TrimEnd('/', '\\')).LocalPath)
                 .Where(Directory.Exists)
                 .Distinct(StringComparer.OrdinalIgnoreCase);
-
-        /// <inheritdoc/>
-        public bool IsLibraryPath(string path)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                return false;
-            }
-
-            string fullPath;
-            try
-            {
-                // Resolve "..", symlinks-as-text, etc. so a traversal can't escape a share root.
-                fullPath = Path.GetFullPath(path);
-            }
-            catch
-            {
-                return false;
-            }
-
-            foreach (var dir in GetScanDirectories())
-            {
-                var root = Path.GetFullPath(dir)
-                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                    + Path.DirectorySeparatorChar;
-                if (fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
 
         private bool IsExcludedFromSync(string filePath)
         {
@@ -695,122 +937,5 @@ namespace resonance.MusicLibrary
 
             return false;
         }
-
-        private static IEnumerable<FileInfo> EnumerateAudio(string root)
-            => new DirectoryInfo(root)
-                // IgnoreInaccessible so an unreadable subdir (e.g. a mount root's lost+found) is skipped
-                // rather than aborting the whole walk — same as the share scanner.
-                .EnumerateFiles("*", new EnumerationOptions
-                {
-                    RecurseSubdirectories = true,
-                    IgnoreInaccessible = true,
-                    AttributesToSkip = FileAttributes.Hidden | FileAttributes.System,
-                })
-                .Where(f => AudioExtensions.Contains(f.Extension.TrimStart('.').ToLowerInvariant()));
-
-        private static string DetectTagTypes(TagLib.File tf)
-        {
-            var parts = new System.Collections.Generic.List<string>();
-
-            if (tf.GetTag(TagLib.TagTypes.Id3v1) != null)
-            {
-                parts.Add("ID3v1");
-            }
-
-            if (tf.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3v2Tag)
-            {
-                parts.Add($"ID3v2.{id3v2Tag.Version}");
-            }
-
-            if (tf.GetTag(TagLib.TagTypes.Xiph) != null)
-            {
-                parts.Add("Xiph");
-            }
-
-            if (tf.GetTag(TagLib.TagTypes.Ape) != null)
-            {
-                parts.Add("APEv2");
-            }
-
-            if (tf.GetTag(TagLib.TagTypes.Apple) != null)
-            {
-                parts.Add("iTunes");
-            }
-
-            if (tf.GetTag(TagLib.TagTypes.Asf) != null)
-            {
-                parts.Add("ASF");
-            }
-
-            return parts.Count > 0 ? string.Join(", ", parts) : null;
-        }
-
-        private static MusicTrack ReadTrack(string path, long size, long modified)
-        {
-            using var tf = TagLib.File.Create(path, TagLib.ReadStyle.Average);
-            var tag = tf.Tag;
-
-            string key = null;
-            if (tf.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3v2)
-            {
-                key = KeyTagHelper.ReadKey(id3v2);
-            }
-            else if (tf.GetTag(TagLib.TagTypes.Xiph) is TagLib.Ogg.XiphComment xiph)
-            {
-                var fields = xiph.GetField("INITIALKEY");
-                if (fields.Length > 0 && !string.IsNullOrEmpty(fields[0]))
-                {
-                    key = fields[0].Trim();
-                }
-            }
-
-            return new MusicTrack(
-                Path: path,
-                Filename: Path.GetFileName(path),
-                Directory: Path.GetDirectoryName(path) ?? string.Empty,
-                Extension: Path.GetExtension(path).TrimStart('.').ToLowerInvariant(),
-                FileSize: size,
-                FileModified: modified,
-                IndexedAt: DateTimeOffset.UtcNow.Ticks,
-                Duration: tf.Properties?.Duration.TotalSeconds,
-                Title: Trim(tag.Title),
-                Artist: Trim(tag.JoinedPerformers),
-                AlbumArtist: Trim(tag.JoinedAlbumArtists),
-                Album: Trim(tag.Album),
-                Year: tag.Year == 0 ? null : (int?)tag.Year,
-                TrackNumber: tag.Track == 0 ? null : (int?)tag.Track,
-                DiscNumber: tag.Disc == 0 ? null : (int?)tag.Disc,
-                Genre: Trim(tag.Genres?.Length > 0 ? tag.Genres[0] : null),
-                Bpm: tag.BeatsPerMinute == 0 ? null : (int?)tag.BeatsPerMinute,
-                Key: key,
-                Comment: Trim(tag.Comment),
-                HasArtwork: HasServableArtwork(tag),
-                TagTypes: DetectTagTypes(tf),
-                BitRate: tf.Properties?.AudioBitrate is int br && br > 0 ? br : null,
-                SampleRate: tf.Properties?.AudioSampleRate is int sr && sr > 0 ? sr : null,
-                BitDepth: tf.Properties?.BitsPerSample is int bd && bd > 0 ? bd : null);
-        }
-
-        private static bool HasServableArtwork(TagLib.Tag tag)
-        {
-            var pic = tag.Pictures?.FirstOrDefault();
-            if (pic == null || pic.Data.Count == 0)
-            {
-                return false;
-            }
-
-            var b = pic.Data.Data;
-            if (b.Length < 4)
-            {
-                return false;
-            }
-
-            return (b[0] == 0xFF && b[1] == 0xD8)
-                || (b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47)
-                || (b[0] == 0x47 && b[1] == 0x49 && b[2] == 0x46)
-                || (b.Length >= 12 && b[8] == 0x57 && b[9] == 0x45 && b[10] == 0x42 && b[11] == 0x50);
-        }
-
-        private static string Trim(string s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
     }
 }

@@ -1,4 +1,4 @@
-// <copyright file="SystemScreen.tsx" company="John Narey">
+// <copyright file="ITranslationService.cs" company="John Narey">
 //    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
 //   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
@@ -27,8 +27,41 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import React from 'react';
-import PlaceholderScreen from '../../components/PlaceholderScreen';
-export default function SystemScreen() {
-  return <PlaceholderScreen title="System" subtitle="Server config & logs" />;
+namespace resonance.Translation
+{
+    using System.Collections.Generic;
+    using System.Threading;
+    using System.Threading.Tasks;
+
+    /// <summary>
+    ///     The outcome of translating a single piece of text.
+    /// </summary>
+    /// <param name="Text">The translated text.</param>
+    /// <param name="DetectedSourceLanguage">The language DeepL detected the source text to be, as an uppercase code (e.g. DE).</param>
+    public record TranslationResult(string Text, string DetectedSourceLanguage);
+
+    /// <summary>
+    ///     Translates chat and chatroom messages via an external provider.
+    /// </summary>
+    public interface ITranslationService
+    {
+        /// <summary>
+        ///     Gets a value indicating whether translation is enabled and configured.
+        /// </summary>
+        bool IsEnabled { get; }
+
+        /// <summary>
+        ///     Gets the default target language code used when a caller does not specify one.
+        /// </summary>
+        string DefaultTargetLanguage { get; }
+
+        /// <summary>
+        ///     Translates the given <paramref name="texts"/> into the <paramref name="targetLanguage"/>.
+        /// </summary>
+        /// <param name="texts">The texts to translate. Results are returned in the same order.</param>
+        /// <param name="targetLanguage">The target language code (e.g. EN, DE, FR). Blank uses <see cref="DefaultTargetLanguage"/>.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>The translations, one per input text, in the same order.</returns>
+        Task<IReadOnlyList<TranslationResult>> TranslateAsync(IReadOnlyList<string> texts, string targetLanguage, CancellationToken cancellationToken = default);
+    }
 }

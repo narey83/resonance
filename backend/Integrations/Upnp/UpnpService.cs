@@ -185,6 +185,9 @@ public class UpnpService : IDisposable
         }
     }
 
+    private static string DeviceKey(INatDevice device)
+        => device?.DeviceEndpoint?.ToString() ?? device?.GetHashCode().ToString();
+
     private void OnDeviceFound(object sender, DeviceEventArgs args)
     {
         var device = args.Device;
@@ -336,7 +339,4 @@ public class UpnpService : IDisposable
             }
         }
     }
-
-    private static string DeviceKey(INatDevice device)
-        => device?.DeviceEndpoint?.ToString() ?? device?.GetHashCode().ToString();
 }

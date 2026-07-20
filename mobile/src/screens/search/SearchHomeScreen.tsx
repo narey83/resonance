@@ -49,6 +49,7 @@ import type { ThemeColors } from '../../theme';
 import * as searchApi from '../../api/searches';
 import type { Search } from '../../api/searches';
 import type { SearchStackParamList } from './SearchScreen';
+import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
 type Nav = NativeStackNavigationProp<SearchStackParamList, 'SearchHome'>;
 
@@ -239,6 +240,7 @@ export default function SearchHomeScreen() {
 
       {/* History list */}
       <FlatList
+        {...LIST_PERF_PROPS}
         data={searches}
         keyExtractor={item => item.id}
         renderItem={({ item }) => (

@@ -617,6 +617,7 @@ public class ReportsController : ControllerBase
     /// <param name="start">The start time of the window (default: genesis).</param>
     /// <param name="end">The end time of the window (default: now).</param>
     /// <param name="sortOrder">The sort order (ASC, DESC. Default: DESC).</param>
+    /// <param name="search">An optional term matched against the filename (and its path).</param>
     /// <param name="limit">The number of records to return (Default: 25).</param>
     /// <param name="offset">The record offset (if paginating).</param>
     /// <returns></returns>
@@ -634,6 +635,7 @@ public class ReportsController : ControllerBase
         [FromQuery] DateTime? start = null,
         [FromQuery] DateTime? end = null,
         [FromQuery] string sortOrder = "DESC",
+        [FromQuery] string search = null,
         [FromQuery] int limit = 25,
         [FromQuery] int offset = 0)
     {
@@ -685,6 +687,7 @@ public class ReportsController : ControllerBase
                 start: start.Value,
                 end: end,
                 sortOrder: parsedSortOrder,
+                search: search,
                 limit: limit,
                 offset: offset);
 

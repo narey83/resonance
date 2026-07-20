@@ -39,6 +39,7 @@ import { activeChatKey } from '../../config';
 import * as chat from '../../lib/chat';
 import { onPrivateMessage } from '../../lib/chatEvents';
 import * as prefs from '../../lib/prefs';
+import * as translation from '../../lib/translation';
 import EmojiPickerButton from '../Shared/EmojiPickerButton';
 import UsernameLink from '../Shared/UsernameLink';
 import {
@@ -49,7 +50,7 @@ import {
 } from './chatUtils';
 import SendMessageModal from './SendMessageModal';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { MessageSquare, Plus, Send, X } from 'lucide-react';
+import { Globe, Languages, MessageSquare, Plus, Send, X } from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
@@ -138,6 +139,11 @@ const SIDEBAR_WIDTH_KEY = 'resonance-chat-sidebar-width';
 const SIDEBAR_MIN = 180;
 const SIDEBAR_MAX = 420;
 
+const translatePrefKey = (username) => `resonance:chatTranslate:${username}`;
+const replyPrefKey = (username) => `resonance:chatReply:${username}`;
+
+const baseLang = (code) => (code || '').toUpperCase().split('-')[0];
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 const Chat = ({ history, location }) => {
@@ -151,6 +157,19 @@ const Chat = ({ history, location }) => {
     const saved = Number(prefs.get(SIDEBAR_WIDTH_KEY, 256));
     return Number.isFinite(saved) ? saved : 256;
   });
+
+  // Translation
+  const [translateStatus, setTranslateStatus] = useState({
+    defaultTargetLanguage: 'EN',
+    enabled: false,
+  });
+  const [autoTranslate, setAutoTranslate] = useState(false);
+  const [replyTranslate, setReplyTranslate] = useState(false);
+  const [translations, setTranslations] = useState({});
+  const [showOriginal, setShowOriginal] = useState(() => new Set());
+  const translationsRef = useRef({});
+
+  const targetLang = translateStatus.defaultTargetLanguage || 'EN';
 
   const chatScrollRef = useRef(null);
   const inputRef = useRef(null);
@@ -307,15 +326,168 @@ const Chat = ({ history, location }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Translation ──────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    translation
+      .getStatus()
+      .then((status) => {
+        if (mountedRef.current && status) setTranslateStatus(status);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    translationsRef.current = translations;
+  }, [translations]);
+
+  // Load the per-conversation translate preferences when the active chat changes.
+  useEffect(() => {
+    setAutoTranslate(
+      active ? Boolean(prefs.get(translatePrefKey(active), false)) : false,
+    );
+    setReplyTranslate(
+      active ? Boolean(prefs.get(replyPrefKey(active), false)) : false,
+    );
+  }, [active]);
+
+  const toggleAutoTranslate = useCallback(() => {
+    setAutoTranslate((previous) => {
+      const next = !previous;
+      if (active) prefs.set(translatePrefKey(active), next);
+      return next;
+    });
+  }, [active]);
+
+  const toggleReplyTranslate = useCallback(() => {
+    setReplyTranslate((previous) => {
+      const next = !previous;
+      if (active) prefs.set(replyPrefKey(active), next);
+      return next;
+    });
+  }, [active]);
+
+  // Resolve the language to translate an outgoing reply into: the most recent
+  // incoming message's detected language (from cache, or probed on demand).
+  const resolveReplyLang = useCallback(async () => {
+    const msgs = conversations[active]?.messages || [];
+    for (let index = msgs.length - 1; index >= 0; index--) {
+      const m = msgs[index];
+      if (m.direction === 'Out' || !m.message?.trim()) continue;
+
+      const cached = translationsRef.current[translation.messageKey(m)];
+      if (cached?.detectedSourceLanguage) {
+        return baseLang(cached.detectedSourceLanguage);
+      }
+
+      try {
+        const [probe] = await translation.translate({
+          targetLanguage: targetLang,
+          texts: [m.message],
+        });
+        return baseLang(probe?.detectedSourceLanguage);
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  }, [active, conversations, targetLang]);
+
+  const toggleShowOriginal = useCallback((key) => {
+    setShowOriginal((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  // Translate any not-yet-translated incoming messages in the active conversation.
+  useEffect(() => {
+    if (!translateStatus.enabled || !autoTranslate || !active) return undefined;
+
+    const msgs = conversations[active]?.messages || [];
+    // Translate incoming messages, plus your own sent messages that we didn't
+    // capture an original for (so a foreign-language send can be read back).
+    const pending = msgs.filter(
+      (m) =>
+        m.message &&
+        m.message.trim() &&
+        !(translation.messageKey(m) in translationsRef.current) &&
+        (m.direction !== 'Out' || !translation.recallOutgoing(m.message)),
+    );
+
+    if (pending.length === 0) return undefined;
+
+    let cancelled = false;
+    translation
+      .translate({
+        targetLanguage: targetLang,
+        texts: pending.map((m) => m.message),
+      })
+      .then((results) => {
+        if (cancelled || !mountedRef.current) return;
+        setTranslations((previous) => {
+          const next = { ...previous };
+          for (const [index, m] of pending.entries()) {
+            next[translation.messageKey(m)] = results[index];
+          }
+
+          return next;
+        });
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    active,
+    autoTranslate,
+    translateStatus.enabled,
+    targetLang,
+    conversations,
+  ]);
+
   // ── Actions ──────────────────────────────────────────────────────────────────
 
   const sendReply = useCallback(async () => {
     if (!active || !message.trim()) return;
-    await chat.send({ username: active, message });
+
+    let toSend = message;
+    if (translateStatus.enabled && replyTranslate) {
+      const lang = await resolveReplyLang();
+      if (lang && lang !== targetLang.toUpperCase()) {
+        try {
+          const [translated] = await translation.translate({
+            targetLanguage: lang,
+            texts: [message],
+          });
+          if (translated?.text) {
+            toSend = translated.text;
+            // Remember what we typed so the sent bubble can reveal the original.
+            translation.rememberOutgoing(toSend, message, lang);
+          }
+        } catch {
+          /* fall back to sending the original text */
+        }
+      }
+    }
+
+    await chat.send({ username: active, message: toSend });
     if (!mountedRef.current) return;
     setMessage('');
     fetchConversations();
-  }, [active, fetchConversations, message]);
+  }, [
+    active,
+    fetchConversations,
+    message,
+    replyTranslate,
+    resolveReplyLang,
+    targetLang,
+    translateStatus.enabled,
+  ]);
 
   const handleEmojiSelect = useCallback(
     (emoji) => {
@@ -575,6 +747,23 @@ const Chat = ({ history, location }) => {
                   />
                 </div>
                 <div className="sr-detail-header-actions">
+                  {translateStatus.enabled && (
+                    <button
+                      className={`sr-btn hover-fx chat-translate-toggle${autoTranslate ? ' chat-translate-toggle--on' : ''}`}
+                      onClick={toggleAutoTranslate}
+                      title={
+                        autoTranslate
+                          ? `Auto-translating incoming messages to ${translation.languageName(targetLang)}`
+                          : 'Auto-translate incoming messages'
+                      }
+                      type="button"
+                    >
+                      <Languages size={13} />{' '}
+                      {autoTranslate
+                        ? `Translating → ${targetLang}`
+                        : 'Translate'}
+                    </button>
+                  )}
                   <button
                     className="sr-btn sr-btn--danger hover-fx"
                     onClick={() => deleteConversation(active)}
@@ -618,6 +807,56 @@ const Chat = ({ history, location }) => {
                   >
                     {messageVirtualizer.getVirtualItems().map((vRow) => {
                       const item = flatItems[vRow.index];
+                      const msgKey =
+                        item.type === 'msg'
+                          ? translation.messageKey(item.msg)
+                          : null;
+                      const tr = msgKey ? translations[msgKey] : null;
+                      const canTranslate =
+                        item.type === 'msg' &&
+                        !item.isSelf &&
+                        autoTranslate &&
+                        translateStatus.enabled;
+                      const translatedDiffers =
+                        Boolean(tr?.text) &&
+                        Boolean(tr?.detectedSourceLanguage) &&
+                        tr.detectedSourceLanguage
+                          .toUpperCase()
+                          .split('-')[0] !== targetLang.toUpperCase();
+                      const viewingOriginal = msgKey
+                        ? showOriginal.has(msgKey)
+                        : false;
+                      const showTranslated =
+                        canTranslate && translatedDiffers && !viewingOriginal;
+                      // Your own message shown in your language: the exact
+                      // original if we captured it at send time, otherwise a
+                      // back-translation of the sent (foreign) text.
+                      const captured =
+                        item.type === 'msg' && item.isSelf
+                          ? translation.recallOutgoing(item.msg.message)
+                          : null;
+                      const backTranslation =
+                        item.isSelf &&
+                        !captured &&
+                        Boolean(tr?.text) &&
+                        Boolean(tr?.detectedSourceLanguage) &&
+                        tr.detectedSourceLanguage
+                          .toUpperCase()
+                          .split('-')[0] !== targetLang.toUpperCase()
+                          ? tr
+                          : null;
+                      const selfForeign =
+                        (Boolean(captured) &&
+                          captured.original !== item.msg.message) ||
+                        Boolean(backTranslation);
+                      const selfExact = Boolean(captured);
+                      const selfInLang = captured
+                        ? captured.original
+                        : backTranslation?.text;
+                      const selfSourceLang = captured
+                        ? captured.lang
+                        : backTranslation?.detectedSourceLanguage;
+                      const showSelfInLang = selfForeign && viewingOriginal;
                       return (
                         <div
                           data-index={vRow.index}
@@ -662,8 +901,36 @@ const Chat = ({ history, location }) => {
                                 <div
                                   className={`chat-bubble${item.isSelf ? ' chat-bubble--self' : ' chat-bubble--other'}`}
                                 >
-                                  {item.msg.message}
+                                  {item.isSelf
+                                    ? showSelfInLang
+                                      ? selfInLang
+                                      : item.msg.message
+                                    : showTranslated
+                                      ? tr.text
+                                      : item.msg.message}
                                 </div>
+                                {canTranslate && translatedDiffers && (
+                                  <button
+                                    className="chat-translate-note"
+                                    onClick={() => toggleShowOriginal(msgKey)}
+                                    type="button"
+                                  >
+                                    {showTranslated
+                                      ? `Translated from ${translation.languageName(tr.detectedSourceLanguage)} · Show original`
+                                      : 'Show translation'}
+                                  </button>
+                                )}
+                                {selfForeign && (
+                                  <button
+                                    className="chat-translate-note chat-translate-note--self"
+                                    onClick={() => toggleShowOriginal(msgKey)}
+                                    type="button"
+                                  >
+                                    {showSelfInLang
+                                      ? 'Show sent message'
+                                      : `Sent in ${translation.languageName(selfSourceLang)} · ${selfExact ? 'Show original' : `Show in ${translation.languageName(targetLang)}`}`}
+                                  </button>
+                                )}
                                 <span className="chat-bubble-time">
                                   {formatTime(item.msg.timestamp)}
                                 </span>
@@ -680,6 +947,23 @@ const Chat = ({ history, location }) => {
               {/* Input bar */}
               <div className="chat-input-bar">
                 <EmojiPickerButton onSelect={handleEmojiSelect} />
+                {translateStatus.enabled && (
+                  <button
+                    className={`chat-reply-toggle hover-fx${replyTranslate ? ' chat-reply-toggle--on' : ''}`}
+                    onClick={toggleReplyTranslate}
+                    title={
+                      replyTranslate
+                        ? "Reply translation on — your message is translated into the other person's language before sending"
+                        : 'Reply in their language'
+                    }
+                    type="button"
+                  >
+                    <Globe
+                      size={16}
+                      strokeWidth={2}
+                    />
+                  </button>
+                )}
                 <input
                   autoComplete="off"
                   className="chat-input-field"
@@ -691,7 +975,11 @@ const Chat = ({ history, location }) => {
                       sendReply();
                     }
                   }}
-                  placeholder={`Message ${active}…`}
+                  placeholder={
+                    replyTranslate
+                      ? `Reply to ${active} in their language…`
+                      : `Message ${active}…`
+                  }
                   ref={inputRef}
                   type="text"
                   value={message}

@@ -38,12 +38,10 @@
   </Target>
 
   <Target Name="CopyAfterBuild" AfterTargets="AfterBuild">
-    <Copy SourceFiles="config\resonance.yml.example" DestinationFolder="$(OutDir)\config" />
     <Copy SourceFiles="$(OutDir)\resonance.xml" DestinationFolder="$(OutDir)\etc" />
     <Copy SourceFiles="$(MSBuildThisFileDirectory)tools/ffmpeg" DestinationFolder="$(OutDir)" Condition="Exists('$(MSBuildThisFileDirectory)tools/ffmpeg')" />
   </Target>
   <Target Name="CopyOnPublish" AfterTargets="Publish">
-    <Copy SourceFiles="config\resonance.yml.example" DestinationFolder="$(PublishDir)\config" />
     <Move SourceFiles="$(PublishDir)\resonance.xml" DestinationFolder="$(PublishDir)\etc" />
     <Copy SourceFiles="$(MSBuildThisFileDirectory)tools/ffmpeg" DestinationFolder="$(PublishDir)" Condition="Exists('$(MSBuildThisFileDirectory)tools/ffmpeg')" />
   </Target>
@@ -54,6 +52,12 @@
     <PackageReference Include="Dapper" Version="2.1.66" />
     <PackageReference Include="FluentFTP" Version="49.0.2" />
     <PackageReference Include="IPAddressRange" Version="6.0.0" />
+    <!-- IPNetwork2 (transitive) ships a System.Net.IPNetwork type that collides with the BCL
+         System.Net.IPNetwork added in .NET 10. Drop it from the COMPILE reference set (keeping
+         runtime assets so the precompiled IPAddressRange.dll still works) so our source binds to
+         the BCL type that KnownIPNetworks expects. ExcludeAssets is honored by dotnet watch's
+         hot-reload compiler, whereas an Aliases-based fix is not. -->
+    <PackageReference Include="IPNetwork2" Version="2.1.2" ExcludeAssets="compile" />
     <PackageReference Include="Makaretu.Dns.Multicast" Version="0.27.0" />
     <PackageReference Include="Mono.Nat" Version="3.0.4" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.6" />

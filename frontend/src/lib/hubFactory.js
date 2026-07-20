@@ -85,7 +85,7 @@ const createInfiniteRetryPolicy = (onRetry) => ({
     onRetry?.(context);
     if (context.elapsedMilliseconds < 10_000)
       return Math.min(2 ** context.previousRetryCount * 500, 5_000);
-    return 30_000;
+    return 10_000;
   },
 });
 

@@ -40,7 +40,9 @@ import { enableRemoteLogging, disableRemoteLogging } from '../api/remoteLogger';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { initNotifications, useNotificationHub } from '../services/notificationService';
 import { useConnectionMonitor } from '../services/connectionMonitor';
+import { useFloatingOverlay } from '../hooks/useFloatingOverlay';
 import PlayerOverlay from '../components/PlayerOverlay';
+import { PlayerBubble } from '../components/PlayerBubble';
 import ConnectionBanner from '../components/ConnectionBanner';
 import AuthStack from './AuthStack';
 import MainTabs  from './MainTabs';
@@ -50,9 +52,15 @@ function AuthenticatedApp() {
   useLibraryActivityHub();
   useNotificationHub();
   useConnectionMonitor();
+  const playerMode = useAppSettings((s) => s.playerMode);
+  // The native overlay (draws over other apps + home screen) takes over as the
+  // controller when it's available and permitted; otherwise fall back to the
+  // in-app JS bubble. Never show both.
+  const { overlayActive } = useFloatingOverlay();
   return (
     <>
       <MainTabs />
+      {playerMode === 'bubble' && !overlayActive && <PlayerBubble />}
       <PlayerOverlay />
       <ConnectionBanner />
     </>

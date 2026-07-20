@@ -34,6 +34,7 @@
 // </copyright>
 
 import '../System.css';
+import { urlBase } from '../../../config';
 import { createLogsHubConnection } from '../../../lib/hubFactory';
 import { getHttpCaptureHar, getLogs } from '../../../lib/logs';
 import { downloadFile, parseUtcDate } from '../../../lib/util';
@@ -894,6 +895,17 @@ const HistoryTab = () => {
 
 // ─── Root component ───────────────────────────────────────────────────────────
 
+const isPopout = () =>
+  typeof window !== 'undefined' &&
+  window.location.pathname.replace(/\/$/, '') === `${urlBase}/logs-popup`;
+
+const openPopout = () =>
+  window.open(
+    `${urlBase}/logs-popup`,
+    'resonance-logs',
+    'width=1100,height=700,resizable=yes',
+  );
+
 const Logs = () => {
   const [mode, setMode] = useState('live');
   const [exporting, setExporting] = useState(false);
@@ -932,6 +944,16 @@ const Logs = () => {
           History
         </button>
         <span style={{ flex: 1 }} />
+        {!isPopout() && (
+          <button
+            className="logs-tab hover-fx"
+            onClick={openPopout}
+            title="Open logs in their own window"
+            type="button"
+          >
+            ⧉ Popout
+          </button>
+        )}
         <button
           className="logs-tab hover-fx"
           disabled={exporting}

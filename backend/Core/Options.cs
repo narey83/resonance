@@ -222,17 +222,6 @@ namespace resonance
         public string AppDirectory { get; init; } = Program.DefaultAppDirectory;
 
         /// <summary>
-        ///     Gets the path where application data is saved.
-        /// </summary>
-        [Argument('c', "config")]
-        [EnvironmentVariable("CONFIG")]
-        [Description("path to configuration file")]
-        [Obsolete("Used only for documentation; see Program for actual implementation")]
-        [JsonIgnore]
-        [YamlIgnore]
-        public string ConfigurationFile { get; init; } = Program.DefaultConfigurationFile;
-
-        /// <summary>
         ///     Gets relay options.
         /// </summary>
         [Validate]
@@ -467,15 +456,6 @@ namespace resonance
             [Description("quit the application after initialization")]
             [RequiresRestart]
             public bool NoStart { get; init; } = false;
-
-            /// <summary>
-            ///     Gets a value indicating whether the application should watch the configuration file for changes.
-            /// </summary>
-            [Argument(default, "no-config-watch")]
-            [EnvironmentVariable("NO_CONFIG_WATCH")]
-            [Description("do not watch the config file for changes")]
-            [RequiresRestart]
-            public bool NoConfigWatch { get; init; } = false;
 
             /// <summary>
             ///     Gets a value indicating whether the application should connect to the Soulseek network on startup.
@@ -1577,18 +1557,6 @@ namespace resonance
             public MusicBrainzOptions MusicBrainz { get; init; } = new MusicBrainzOptions();
 
             /// <summary>
-            ///     MusicBrainz provider options. (Contact and Base URL live at the parent level for
-            ///     backward compatibility.)
-            /// </summary>
-            public class MusicBrainzOptions
-            {
-                /// <summary>
-                ///     Gets a value indicating whether MusicBrainz should be used as a lookup source.
-                /// </summary>
-                public bool Enabled { get; init; } = true;
-            }
-
-            /// <summary>
             ///     Gets Last.fm provider options (a genre source).
             /// </summary>
             [Validate]
@@ -1599,6 +1567,18 @@ namespace resonance
             /// </summary>
             [Validate]
             public DeezerOptions Deezer { get; init; } = new DeezerOptions();
+
+            /// <summary>
+            ///     MusicBrainz provider options. (Contact and Base URL live at the parent level for
+            ///     backward compatibility.)
+            /// </summary>
+            public class MusicBrainzOptions
+            {
+                /// <summary>
+                ///     Gets a value indicating whether MusicBrainz should be used as a lookup source.
+                /// </summary>
+                public bool Enabled { get; init; } = true;
+            }
 
             /// <summary>
             ///     Last.fm provider options.
@@ -2157,12 +2137,18 @@ namespace resonance
             ///     Gets the database type. PostgreSQL is the only supported backend.
             /// </summary>
             [Description("database type; postgresql")]
+            [EnvironmentVariable("DATABASE_TYPE")]
             public string Type { get; init; } = "postgresql";
 
             /// <summary>
             ///     Gets the connection string for the database.
             /// </summary>
+            /// <remarks>
+            ///     This is the one setting that cannot be stored in the database; it is bootstrap-only and must
+            ///     be supplied via the environment (or, for legacy installs, the configuration file).
+            /// </remarks>
             [Description("connection string; required")]
+            [EnvironmentVariable("DATABASE_CONNECTION_STRING")]
             [Secret]
             public string ConnectionString { get; init; } = null;
 
@@ -2235,10 +2221,15 @@ namespace resonance
             /// <summary>
             ///     Gets the file path for the user's profile picture.
             /// </summary>
+            /// <remarks>
+            ///     Deliberately not validated with <c>[FileExists]</c>: options are re-validated on every config
+            ///     reload, so a missing file here would invalidate the entire configuration at runtime (throwing on
+            ///     every options access) rather than just failing at startup. The consumer reads this file defensively
+            ///     and simply omits the picture if it is missing or unreadable.
+            /// </remarks>
             [Argument(default, "slsk-picture")]
             [EnvironmentVariable("SLSK_PICTURE")]
             [Description("user picture for the Soulseek network")]
-            [FileExists(FileAccess.Read)]
             public string Picture { get; init; } = null;
 
             /// <summary>
@@ -2961,6 +2952,58 @@ namespace resonance
             /// </summary>
             [Validate]
             public YtDlpOptions YtDlp { get; init; } = new YtDlpOptions();
+
+            /// <summary>
+            ///     Gets chat/room message translation options.
+            /// </summary>
+            [Validate]
+            public TranslationOptions Translation { get; init; } = new TranslationOptions();
+
+            /// <summary>
+            ///     Message translation options.
+            /// </summary>
+            /// <remarks>
+            ///     When enabled, private and room messages can be translated on demand via the DeepL API.
+            ///     The API key selects the endpoint automatically: free keys (which end in <c>:fx</c>) use
+            ///     the free endpoint, all others use the pro endpoint. Set <see cref="ApiUrl"/> to override.
+            /// </remarks>
+            public class TranslationOptions
+            {
+                /// <summary>
+                ///     Gets a value indicating whether message translation is enabled.
+                /// </summary>
+                [Argument(default, "translation")]
+                [EnvironmentVariable("TRANSLATION")]
+                [Description("enable chat and chatroom message translation")]
+                public bool Enabled { get; init; } = false;
+
+                /// <summary>
+                ///     Gets the DeepL API authentication key.
+                /// </summary>
+                [Argument(default, "deepl-api-key")]
+                [EnvironmentVariable("DEEPL_API_KEY")]
+                [Description("DeepL API authentication key (free keys end in ':fx')")]
+                [Secret]
+                public string ApiKey { get; init; } = string.Empty;
+
+                /// <summary>
+                ///     Gets an explicit DeepL API base URL. When blank, the endpoint is selected
+                ///     automatically from the API key (free keys use the free endpoint).
+                /// </summary>
+                [Argument(default, "deepl-api-url")]
+                [EnvironmentVariable("DEEPL_API_URL")]
+                [Description("DeepL API base URL override; blank auto-selects free/pro from the key")]
+                public string ApiUrl { get; init; } = string.Empty;
+
+                /// <summary>
+                ///     Gets the default target language code (e.g. EN, DE, FR) used when a client
+                ///     does not specify one.
+                /// </summary>
+                [Argument(default, "translation-default-target-lang")]
+                [EnvironmentVariable("TRANSLATION_DEFAULT_TARGET_LANG")]
+                [Description("default target language code for translations (e.g. EN, DE, FR)")]
+                public string DefaultTargetLanguage { get; init; } = "EN";
+            }
 
             /// <summary>
             ///     UPnP options.

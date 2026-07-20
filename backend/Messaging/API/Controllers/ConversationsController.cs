@@ -63,6 +63,7 @@ namespace resonance.Messaging.API
         /// <param name="messagingService"></param>
         /// <param name="userService"></param>
         /// <param name="optionsSnapshot"></param>
+        /// <param name="blockedUsersService"></param>
         public ConversationsController(
             IStateMonitor<State> applicationStateMonitor,
             IMessagingService messagingService,

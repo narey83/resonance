@@ -33,7 +33,11 @@ const stripExtension = (name) => name.replace(/\.[^./]+$/, '');
 
 const TopFiles = ({ files }) => {
   const list = Array.isArray(files) ? files.slice(0, 10) : [];
-  const max = list[0]?.count ?? 1;
+  // Ranked by distinct users, not raw downloads — one peer re-fetching a track
+  // hundreds of times shouldn't crown it. Bar tracks the metric it's sorted by,
+  // scaled off the real max rather than assuming row 0 holds it (a stale cache
+  // can still hand back a differently-sorted page).
+  const max = Math.max(...list.map((f) => f.distinctUsers ?? 0), 1);
 
   return (
     <div className="section-card">
@@ -47,7 +51,7 @@ const TopFiles = ({ files }) => {
           {list.map((item, index) => {
             const pct = Math.max(
               4,
-              ((item.count ?? 0) / Math.max(max, 1)) * 100,
+              ((item.distinctUsers ?? 0) / Math.max(max, 1)) * 100,
             );
             const name = stripExtension(item.filename ?? '—');
             return (

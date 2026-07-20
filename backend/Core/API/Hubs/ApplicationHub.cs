@@ -135,6 +135,7 @@ namespace resonance.Core.API
         ///     Alerts all clients that a new username was auto-blocked for evading a block
         ///     (it appeared from an IP a blocked user had used).
         /// </summary>
+        /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         public static Task BroadcastBlockedUserAlertAsync(this IHubContext<ApplicationHub> hub, string username, string ip)
         {
             return hub.Clients.All.SendAsync(ApplicationHubMethods.BlockedUserAlert, new { username, ip });

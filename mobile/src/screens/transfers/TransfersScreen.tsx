@@ -354,7 +354,7 @@ export default function TransfersScreen() {
   const storeCancel     = useTransferStore(s => s.cancel);
   const storeClear      = useTransferStore(s => s.clearCompleted);
 
-  const [dir, setDir]               = useState<TransferDir>('download');
+  const [dir, setDir]               = useState<TransferDir>('upload');
   const [filter, setFilter]         = useState<FilterType>('all');
   const [refreshing, setRefreshing] = useState(false);
   const [openFolder, setOpenFolder] = useState<string | null>(null);
@@ -472,7 +472,7 @@ export default function TransfersScreen() {
     <View style={styles.root}>
       {/* Segment control */}
       <View style={styles.segWrapper}>
-        {(['download', 'upload'] as TransferDir[]).map(d => {
+        {(['upload', 'download'] as TransferDir[]).map(d => {
           const active = dir === d;
           return (
             <Pressable

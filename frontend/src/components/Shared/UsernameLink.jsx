@@ -34,7 +34,7 @@ import {
   useBlockedUsers,
 } from '../../lib/blockedUsers';
 import { isAdmin } from '../../lib/token';
-import UserReportModal from '../Overview/UserReportModal';
+import UserReportWindow from '../Overview/UserReportWindow';
 import { Ban, BarChart3, FolderSearch, MessageSquare } from 'lucide-react';
 import React, { useState } from 'react';
 import { useHistory } from 'react-router-dom';
@@ -43,7 +43,11 @@ import { useHistory } from 'react-router-dom';
 // 'browse'. That action's button is greyed out and disabled (rather than
 // removed) so the icon row stays visually stable; e.g. the report modal and
 // the chat pane each render a UsernameLink in their own header.
-const UsernameLink = ({ active, className, style, username }) => {
+// `onReport` lets a caller host the report modal itself instead of letting this
+// component render it. Needed where the link lives in a transient container (the
+// map tooltip): the caller can dismiss that container and still keep the modal
+// mounted, which wouldn't survive if the modal hung off this subtree.
+const UsernameLink = ({ active, className, onReport, style, username }) => {
   const history = useHistory();
   const [showReport, setShowReport] = useState(false);
 
@@ -63,6 +67,11 @@ const UsernameLink = ({ active, className, style, username }) => {
 
   const openReport = (e) => {
     e.stopPropagation();
+    if (onReport) {
+      onReport(username);
+      return;
+    }
+
     setShowReport(true);
   };
 
@@ -140,7 +149,7 @@ const UsernameLink = ({ active, className, style, username }) => {
         />
       </button>
       {showReport && (
-        <UserReportModal
+        <UserReportWindow
           onClose={() => setShowReport(false)}
           username={username}
         />

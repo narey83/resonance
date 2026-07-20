@@ -191,20 +191,6 @@ namespace resonance.Shares
             });
         }
 
-        private IEnumerable<VirtualShareDirectory> CollectVirtualDirectories()
-            => VirtualShareProviders.SelectMany(provider =>
-            {
-                try
-                {
-                    return provider() ?? Enumerable.Empty<VirtualShareDirectory>();
-                }
-                catch (Exception ex)
-                {
-                    Log.Warning(ex, "A virtual share provider threw during collection: {Message}", ex.Message);
-                    return Enumerable.Empty<VirtualShareDirectory>();
-                }
-            }).ToList();
-
         /// <summary>
         ///     Adds a new, or updates an existing, share host.
         /// </summary>
@@ -292,20 +278,6 @@ namespace resonance.Shares
         public IEnumerable<TaggedFile> GetIncompleteFiles()
         {
             return GetTaggedFiles().Where(f => IsIncomplete(f.Tags));
-        }
-
-        // The tag editor's "incomplete" bar: title and artist are the only mandatory fields;
-        // album/year/genre are optional here. (The online lookup still tries to fill those
-        // separately — see MetadataLookup.NeedsEnrichment — this is just the manual-fix list.)
-        private static bool IsIncomplete(FileTags tags)
-        {
-            if (tags == null)
-            {
-                return true;
-            }
-
-            return string.IsNullOrWhiteSpace(tags.Title)
-                || string.IsNullOrWhiteSpace(tags.Artist);
         }
 
         /// <summary>
@@ -401,7 +373,14 @@ namespace resonance.Shares
                 Log.Warning("Tag consolidation after write failed for {File}: {Message}", originalFilename, ex.Message);
             }
 
-            Local.Repository.UpdateFileTags(maskedFilename, tags);
+            // The save and consolidation above both change the file's length and mtime, leaving the size from
+            // the last scan wrong. Search responses serve that column straight to peers, so a stale value
+            // disagrees with the real length UploadService sends at transfer time. Refresh it here instead of
+            // waiting for a re-scan, which may never run: the stat hits page cache (we just wrote the file)
+            // and the values ride along on the tag UPDATE rather than costing another round-trip.
+            var info = new System.IO.FileInfo(originalFilename);
+
+            Local.Repository.UpdateFileTags(maskedFilename, tags, info.Length, info.LastWriteTimeUtc);
             MusicLibrary?.TriggerSync();
         }
 
@@ -855,19 +834,6 @@ namespace resonance.Shares
             }
         }
 
-        private void ComputeShareStatistics()
-        {
-            foreach (var share in Local.Host.Shares)
-            {
-                var prefix = share.RemotePath + (share.RemotePath.EndsWith('\\') ? string.Empty : '\\');
-
-                var dirs = Local.Repository.CountDirectories(prefix);
-                var files = Local.Repository.CountFiles(prefix);
-
-                share.UpdateStatistics(dirs, files);
-            }
-        }
-
         public void SetManagedShare(string localPath, string alias, bool isExcluded = false)
         {
             ManagedShares[localPath] = Share.CreateManaged(localPath, alias, isExcluded);
@@ -879,6 +845,47 @@ namespace resonance.Shares
             if (ManagedShares.Remove(localPath, out _))
             {
                 RebuildSharesList(OptionsMonitor.CurrentValue);
+            }
+        }
+
+        // The tag editor's "incomplete" bar: title and artist are the only mandatory fields;
+        // album/year/genre are optional here. (The online lookup still tries to fill those
+        // separately — see MetadataLookup.NeedsEnrichment — this is just the manual-fix list.)
+        private static bool IsIncomplete(FileTags tags)
+        {
+            if (tags == null)
+            {
+                return true;
+            }
+
+            return string.IsNullOrWhiteSpace(tags.Title)
+                || string.IsNullOrWhiteSpace(tags.Artist);
+        }
+
+        private IEnumerable<VirtualShareDirectory> CollectVirtualDirectories()
+            => VirtualShareProviders.SelectMany(provider =>
+            {
+                try
+                {
+                    return provider() ?? Enumerable.Empty<VirtualShareDirectory>();
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "A virtual share provider threw during collection: {Message}", ex.Message);
+                    return Enumerable.Empty<VirtualShareDirectory>();
+                }
+            }).ToList();
+
+        private void ComputeShareStatistics()
+        {
+            foreach (var share in Local.Host.Shares)
+            {
+                var prefix = share.RemotePath + (share.RemotePath.EndsWith('\\') ? string.Empty : '\\');
+
+                var dirs = Local.Repository.CountDirectories(prefix);
+                var files = Local.Repository.CountFiles(prefix);
+
+                share.UpdateStatistics(dirs, files);
             }
         }
 

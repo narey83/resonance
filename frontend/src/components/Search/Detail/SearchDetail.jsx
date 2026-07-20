@@ -45,6 +45,11 @@ import {
   extractMetadata,
   matchesMetaFilters,
 } from '../../../lib/searchMetadata';
+import {
+  basenameHasAllTerms,
+  parseQueryTerms,
+  scoreFilename,
+} from '../../../lib/searchRelevance';
 import * as transfers from '../../../lib/transfers';
 import { getDirectoryContents, getStatus } from '../../../lib/users';
 import {
@@ -545,6 +550,12 @@ const SearchDetail = ({
   const [activeFilters, setActiveFilters] = useState(new Set());
   const [selectedExtensions, setSelectedExtensions] = useState([]);
   const [groupSimilar, setGroupSimilar] = useState(false);
+  const [filenameOnly, setFilenameOnly] = useState(false);
+
+  const terms = useMemo(
+    () => parseQueryTerms(search.searchText ?? ''),
+    [search.searchText],
+  );
   const [metaFilters, setMetaFilters] = useState({
     artist: '',
     folder: '',
@@ -629,11 +640,12 @@ const SearchDetail = ({
           ...extractMetadata(f.filename),
           _directory: getDirectoryName(f.filename),
           _hasFreeUploadSlot: r.hasFreeUploadSlot,
+          _relevance: scoreFilename(terms, f.filename),
           _uploadSpeed: r.uploadSpeed,
           _username: r.username,
         })),
       );
-  }, [resultSort, results]);
+  }, [resultSort, results, terms]);
 
   const availableFormats = useMemo(() => {
     const extensions = new Set();
@@ -670,10 +682,19 @@ const SearchDetail = ({
     );
   }, [debouncedMetaFilters, filteredByPills]);
 
+  // Optional hard filter: keep only files whose *filename* contains every query
+  // term (drops loose matches where a term only appears in a parent folder).
+  const filteredByFilename = useMemo(() => {
+    if (!filenameOnly || terms.length === 0) return filteredByMeta;
+    return filteredByMeta.filter((file) =>
+      basenameHasAllTerms(terms, file.filename),
+    );
+  }, [filenameOnly, filteredByMeta, terms]);
+
   const folderGroups = useMemo(() => {
     const byDirectory = new Map();
 
-    for (const file of filteredByMeta) {
+    for (const file of filteredByFilename) {
       const directory = file._directory;
 
       if (!byDirectory.has(directory)) {
@@ -683,6 +704,7 @@ const SearchDetail = ({
           files: [],
           hasFreeSlot: false,
           label: getDirectoryName(file.displayFilename ?? file.filename),
+          relevance: 0,
         });
       }
 
@@ -692,15 +714,38 @@ const SearchDetail = ({
       if (file._uploadSpeed > group.bestSpeed)
         group.bestSpeed = file._uploadSpeed;
       if (file._hasFreeUploadSlot) group.hasFreeSlot = true;
+      if ((file._relevance ?? 0) > group.relevance)
+        group.relevance = file._relevance;
     }
 
-    return [...byDirectory.values()].sort((a, b) => b.bestSpeed - a.bestSpeed);
-  }, [filteredByMeta]);
+    // Rank by query relevance first (when there is a query), then upload speed,
+    // so true phrase / filename matches lead over loose whole-path matches.
+    return [...byDirectory.values()].sort((a, b) => {
+      if (terms.length && b.relevance !== a.relevance)
+        return b.relevance - a.relevance;
+      return b.bestSpeed - a.bestSpeed;
+    });
+  }, [filteredByFilename, terms]);
 
-  const albumGroups = useMemo(
-    () => (groupSimilar ? groupFoldersByName(folderGroups) : null),
-    [folderGroups, groupSimilar],
-  );
+  const albumGroups = useMemo(() => {
+    if (!groupSimilar) return null;
+    const grouped = groupFoldersByName(folderGroups);
+    if (terms.length === 0) return grouped;
+    // groupFoldersByName sorts by source count; re-rank by relevance first.
+    return [...grouped]
+      .map((album) => ({
+        ...album,
+        relevance: album.folders.reduce(
+          (max, f) => Math.max(max, f.relevance ?? 0),
+          0,
+        ),
+      }))
+      .sort((a, b) =>
+        b.relevance !== a.relevance
+          ? b.relevance - a.relevance
+          : b.folders.length - a.folders.length,
+      );
+  }, [folderGroups, groupSimilar, terms]);
 
   const visibleGroups =
     groupSimilar && albumGroups ? albumGroups : folderGroups;
@@ -805,6 +850,7 @@ const SearchDetail = ({
     setActiveFilters(new Set());
     setSelectedExtensions([]);
     setGroupSimilar(false);
+    setFilenameOnly(false);
     setMetaFilters({ artist: '', folder: '', title: '', year: '' });
     lastSuggestionRef.current = '';
   };
@@ -886,6 +932,16 @@ const SearchDetail = ({
                     {sf.label}
                   </button>
                 ))}
+                {terms.length > 0 && (
+                  <button
+                    className={`sr-filter-pill hover-fx${filenameOnly ? ' sr-filter-pill--active' : ''}`}
+                    onClick={() => setFilenameOnly((v) => !v)}
+                    title="Only show files whose filename contains every search term"
+                    type="button"
+                  >
+                    In Filename
+                  </button>
+                )}
                 {activeFilters.size > 0 && (
                   <button
                     className="sr-filter-pill-clear hover-fx"
@@ -927,8 +983,8 @@ const SearchDetail = ({
 
               {folderGroups.length > 0 && (
                 <span className="sr-file-count">
-                  {filteredByMeta.length}{' '}
-                  {filteredByMeta.length === 1 ? 'file' : 'files'}
+                  {filteredByFilename.length}{' '}
+                  {filteredByFilename.length === 1 ? 'file' : 'files'}
                   {' · '}
                   {groupSimilar && albumGroups
                     ? `${albumGroups.length} ${albumGroups.length === 1 ? 'album' : 'albums'}`

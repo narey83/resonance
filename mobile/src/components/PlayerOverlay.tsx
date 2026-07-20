@@ -192,6 +192,24 @@ const ProgressBar = ({
   );
 };
 
+// Isolated per-tick consumer: the playback position updates ~4×/sec, and the seek
+// bar is its only consumer. Subscribing here (instead of in PlayerOverlay's body)
+// keeps those ticks from re-rendering the entire ~1k-line overlay tree — which
+// matters most while the morph/drag animations want the JS thread, and lets the
+// overlay stay mounted-but-idle with zero per-tick cost.
+const ActiveProgressBar = ({ isGoogleCasting, castPositionSec, castDurationSec, onSeek }: {
+  isGoogleCasting: boolean; castPositionSec: number; castDurationSec: number; onSeek: (s: number) => void;
+}) => {
+  const { positionSec, durationSec } = usePlaybackPosition();
+  return (
+    <ProgressBar
+      durationSec={isGoogleCasting ? castDurationSec : durationSec}
+      onSeek={onSeek}
+      positionSec={isGoogleCasting ? castPositionSec : positionSec}
+    />
+  );
+};
+
 // ── Marquee title ─────────────────────────────────────────────────────────────
 // Keeps a title on a single line. If it's wider than the available width it scrolls
 // horizontally in a seamless loop (a duplicate copy fills the gap); otherwise it sits static.
@@ -273,7 +291,7 @@ function FeatheredArt({ uri, cacheKey, style, onError }: {
   return (
     <MaskedView maskElement={mask(false)} style={style}>
       <MaskedView maskElement={mask(true)} style={style}>
-        <Image contentFit="cover" onError={onError} source={{ uri, cacheKey }} style={style} />
+        <Image cachePolicy="memory-disk" contentFit="cover" onError={onError} source={{ uri, cacheKey }} style={style} />
       </MaskedView>
     </MaskedView>
   );
@@ -388,14 +406,13 @@ function MixtapePickerModal({ visible, onClose, onSelect }: {
 // ── Main overlay ──────────────────────────────────────────────────────────────
 
 export default function PlayerOverlay() {
-  const { expanded, collapse } = usePlayerUI();
+  const { expanded, collapse, morphFrom } = usePlayerUI();
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
 
   const { track, shuffle, queue, queueIndex, repeatMode, cycleRepeat, togglePlayPause, next, prev, seekTo, toggleShuffle, skipToIndex } = usePlayer();
   const { isPlaying, isBuffering } = usePlaybackStatus();
-  const { positionSec, durationSec } = usePlaybackPosition();
   const {
     isCasting, isGoogleCasting, googleCastDeviceName, googleCastTitle,
     castIsPlaying, castPositionSec, castDurationSec,
@@ -408,8 +425,6 @@ export default function PlayerOverlay() {
   const canSkip = queue.length > 1 || (queue.length === 0 && track != null);
 
   const activeIsPlaying   = isGoogleCasting ? castIsPlaying   : isPlaying;
-  const activePositionSec = isGoogleCasting ? castPositionSec : positionSec;
-  const activeDurationSec = isGoogleCasting ? castDurationSec : durationSec;
 
   const activeTogglePlay  = isGoogleCasting ? castTogglePlayPause : togglePlayPause;
   const activeSeek        = isGoogleCasting ? castSeek        : seekTo;
@@ -422,16 +437,46 @@ export default function PlayerOverlay() {
   const [mixtapeModalVisible, setMixtapeModalVisible] = useState(false);
   const [artworkError, setArtworkError]               = useState(false);
   const [mounted, setMounted]                         = useState(false);
+  // Once opened, the overlay stays MOUNTED and is merely hidden (display:none) when
+  // idle — remounting this heavy tree (nested MaskedViews, a full-bleed blurred
+  // image, gradients, the queue list) on every open used to collide with the morph
+  // animation on the JS thread and drop its first frames. `visible` gates paint +
+  // touches; it flips false only after the close animation finishes.
+  const [visible, setVisible]                         = useState(false);
+  // True only while the user is dragging the sheet down. During the drag the sheet's
+  // content is static (it just translates), so flattening it to one GPU texture makes
+  // the swipe glide instead of re-compositing the blurred image + gradients per frame.
+  // (We must NOT rasterize during the morph, whose children animate every frame.)
+  const [dragging, setDragging]                       = useState(false);
+  const rafRef                                        = useRef<number | null>(null);
   const [queueShowing, setQueueShowing]               = useState(false);
 
   const slideY          = useRef(new Animated.Value(SCREEN_H)).current;
   const overlayOpacity  = useRef(new Animated.Value(0)).current;
+  // Morph progress: 0 = collapsed into the bubble, 1 = full player at rest. Only
+  // drives the entrance when opened from the floating bubble (morphFrom set); in
+  // mini-bar mode it's pinned to 1 and the classic slideY entrance is used.
+  // Two values kept in lock-step: `expandP` runs on the NATIVE driver (opacity +
+  // transform → no per-frame layout, so the morph is smooth) while `expandPr`
+  // runs on the JS driver purely for the hero's border-radius (circle→square),
+  // which the native driver can't animate. They must live on separate nodes.
+  const expandP         = useRef(new Animated.Value(0)).current;
+  const expandPr        = useRef(new Animated.Value(0)).current;
   const chevronNudge    = useRef(new Animated.Value(0)).current;
   const queueX          = useRef(new Animated.Value(0)).current; // 0 = artwork, -SCREEN_W = queue
   const artScale        = useRef(new Animated.Value(1)).current; // 1 = playing, shrinks when paused
   const queueBaseX      = useRef(0);
   const queueShowingRef = useRef(false);
   const flatListRef     = useRef<FlatList<MusicTrack>>(null);
+
+  // Resting rect of the artwork in window coords — the target the bubble morphs
+  // into. Measured from a non-transformed wrapper so scale-breathing doesn't skew
+  // it. The PlayerOverlay instance stays mounted, so this survives open/close.
+  const artWrapRef = useRef<View>(null);
+  const [artRect, setArtRect] = useState<{ x: number; y: number; size: number } | null>(null);
+  const measureArt = () => {
+    artWrapRef.current?.measureInWindow((x, y, w) => { if (w > 0) setArtRect({ x, y, size: w }); });
+  };
 
   const queuePanelX = queueX.interpolate({ inputRange: [-SCREEN_W, 0], outputRange: [0, SCREEN_W] });
   // Drive the Artwork/Queue toggle: the active tab is bright, the inactive one dim, and they
@@ -487,7 +532,8 @@ export default function PlayerOverlay() {
   }
 
   useEffect(() => {
-    if (!mounted) return;
+    if (!visible) return;
+    chevronNudge.setValue(0);
     const anim = Animated.loop(
       Animated.sequence([
         Animated.delay(1400),
@@ -499,21 +545,60 @@ export default function PlayerOverlay() {
     anim.start();
     return () => anim.stop();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted]);
+  }, [visible]);
 
   useEffect(() => {
+    // Read fresh so the close branch still sees the rect the bubble opened with.
+    const morph = usePlayerUI.getState().morphFrom != null;
+    if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     if (expanded) {
       setMounted(true);
-      Animated.parallel([
-        Animated.timing(slideY, { toValue: 0, duration: 420, easing: Easing.bezier(0.16, 1, 0.3, 1), useNativeDriver: true }),
-        Animated.timing(overlayOpacity, { toValue: 1, duration: 260, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-      ]).start();
+      setVisible(true);
+      if (morph) {
+        // Grow the hero from the bubble; the overlay itself doesn't slide.
+        slideY.setValue(0);
+        overlayOpacity.setValue(1);
+        expandP.setValue(0);
+        expandPr.setValue(0);
+        // Defer the entrance one frame: the tree may have just been revealed
+        // (display:none → flex), so let it paint + settle its layout before the
+        // morph runs, otherwise the first frames race that work and stutter.
+        rafRef.current = requestAnimationFrame(() => {
+          rafRef.current = null;
+          Animated.parallel([
+            Animated.timing(expandP,  { toValue: 1, duration: 460, easing: Easing.bezier(0.16, 1, 0.3, 1), useNativeDriver: true }),
+            Animated.timing(expandPr, { toValue: 1, duration: 460, easing: Easing.bezier(0.16, 1, 0.3, 1), useNativeDriver: false }),
+          ]).start();
+        });
+      } else {
+        // Classic mini-bar entrance: slide up, fully-formed.
+        expandP.setValue(1);
+        expandPr.setValue(1);
+        overlayOpacity.setValue(0);
+        slideY.setValue(SCREEN_H);
+        rafRef.current = requestAnimationFrame(() => {
+          rafRef.current = null;
+          Animated.parallel([
+            Animated.timing(slideY, { toValue: 0, duration: 420, easing: Easing.bezier(0.16, 1, 0.3, 1), useNativeDriver: true }),
+            Animated.timing(overlayOpacity, { toValue: 1, duration: 260, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+          ]).start();
+        });
+      }
     } else if (mounted) {
-      Animated.parallel([
-        Animated.timing(slideY, { toValue: SCREEN_H, duration: 320, easing: Easing.bezier(0.4, 0, 1, 1), useNativeDriver: true }),
-        Animated.timing(overlayOpacity, { toValue: 0, duration: 220, easing: Easing.in(Easing.ease), useNativeDriver: true }),
-      ]).start(() => setMounted(false));
+      if (morph) {
+        slideY.setValue(0);
+        Animated.parallel([
+          Animated.timing(expandP,  { toValue: 0, duration: 340, easing: Easing.bezier(0.4, 0, 1, 1), useNativeDriver: true }),
+          Animated.timing(expandPr, { toValue: 0, duration: 340, easing: Easing.bezier(0.4, 0, 1, 1), useNativeDriver: false }),
+        ]).start(({ finished }) => { if (finished) setVisible(false); });
+      } else {
+        Animated.parallel([
+          Animated.timing(slideY, { toValue: SCREEN_H, duration: 320, easing: Easing.bezier(0.4, 0, 1, 1), useNativeDriver: true }),
+          Animated.timing(overlayOpacity, { toValue: 0, duration: 220, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+        ]).start(({ finished }) => { if (finished) setVisible(false); });
+      }
     }
+    return () => { if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; } };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded]);
 
@@ -572,18 +657,23 @@ export default function PlayerOverlay() {
       // Claim downward-ish drags early (small threshold, lenient vertical bias) so gentle swipes
       // still register instead of falling through to a no-op.
       onMoveShouldSetPanResponder: (_, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx) * 1.2,
+      // Flatten the sheet to a texture for the duration of the drag (see `dragging`).
+      onPanResponderGrant: () => setDragging(true),
       // Track the finger so the sheet visibly follows the drag — this is the feedback that was
       // missing, which made short/slow swipes feel like they "didn't register".
       onPanResponderMove: (_, g) => slideY.setValue(Math.max(0, g.dy)),
       onPanResponderRelease: (_, g) => {
+        setDragging(false);
         if (g.dy > SNAP_DISTANCE || g.vy > SNAP_VELOCITY) {
           collapse();
         } else {
           Animated.spring(slideY, { toValue: 0, useNativeDriver: true, tension: 220, friction: 26 }).start();
         }
       },
-      onPanResponderTerminate: () =>
-        Animated.spring(slideY, { toValue: 0, useNativeDriver: true, tension: 220, friction: 26 }).start(),
+      onPanResponderTerminate: () => {
+        setDragging(false);
+        Animated.spring(slideY, { toValue: 0, useNativeDriver: true, tension: 220, friction: 26 }).start();
+      },
     }),
   ).current;
 
@@ -604,39 +694,80 @@ export default function PlayerOverlay() {
   const album      = track?.album  ?? '';
   const folder     = track ? (track.directory.split('/').filter(Boolean).pop() ?? track.directory) : '';
 
+  // ── Morph geometry ──
+  // Background, chrome and hero all read off the single expandP value. In mini-bar
+  // mode expandP rests at 1, so these evaluate to the fully-open state and the
+  // hero (which is only rendered when morphFrom is set) never appears.
+  const bgOpacity     = expandP.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 1, 1] });
+  const chromeOpacity = expandP.interpolate({ inputRange: [0, 0.5, 0.85, 1], outputRange: [0, 0, 1, 1] });
+  const heroOpacity   = expandP.interpolate({ inputRange: [0, 0.82, 1], outputRange: [1, 1, 0] });
+  const artTarget = artRect ?? {
+    x: (SCREEN_W - ARTWORK_SIZE) / 2,
+    y: Math.max(insets.top + 60, SCREEN_H * 0.42 - ARTWORK_SIZE / 2),
+    size: ARTWORK_SIZE,
+  };
+  // The hero is laid out statically at the artwork's resting rect, then moved +
+  // scaled into the bubble at expandP=0. Transform-based (not width/height/left/
+  // top) so it runs on the native driver with no per-frame layout. RN applies the
+  // transform list right-to-left, so scale (about the view centre) happens first,
+  // then translate in screen points — moving the centre to the bubble's centre.
+  const srcCX = (morphFrom?.x ?? 0) + (morphFrom?.size ?? 0) / 2;
+  const srcCY = (morphFrom?.y ?? 0) + (morphFrom?.size ?? 0) / 2;
+  const tgtCX = artTarget.x + artTarget.size / 2;
+  const tgtCY = artTarget.y + artTarget.size / 2;
+  const heroScale = morphFrom ? expandP.interpolate({ inputRange: [0, 1], outputRange: [morphFrom.size / artTarget.size, 1] }) : 1;
+  const heroTX    = morphFrom ? expandP.interpolate({ inputRange: [0, 1], outputRange: [srcCX - tgtCX, 0] }) : 0;
+  const heroTY    = morphFrom ? expandP.interpolate({ inputRange: [0, 1], outputRange: [srcCY - tgtCY, 0] }) : 0;
+  const heroRadius = morphFrom ? expandPr.interpolate({ inputRange: [0, 1], outputRange: [artTarget.size / 2, 0] }) : 0;
+
   return (
     <>
-      <StatusBar style="light" />
+      {visible && <StatusBar style="light" />}
       <Animated.View
         {...dragPan.panHandlers}
-        style={[s.overlay, { opacity: overlayOpacity, transform: [{ translateY: slideY }] }]}
+        pointerEvents={visible ? 'auto' : 'none'}
+        // Only while dragging: composite the whole sheet as one GPU texture so the
+        // swipe-down translates a single static layer instead of re-compositing the
+        // blurred image + masked art + gradients every frame.
+        renderToHardwareTextureAndroid={dragging}
+        shouldRasterizeIOS={dragging}
+        style={[
+          s.overlay,
+          { opacity: overlayOpacity, transform: [{ translateY: slideY }] },
+          !visible && { display: 'none' as const },
+        ]}
       >
-        {/* Full-bleed blurred artwork background — scaled up so its colour bleeds edge-to-edge */}
-        {hasArt && (
-          <Image
-            blurRadius={28}
-            contentFit="cover"
-            source={{ uri: artworkUrl!, cacheKey: artworkCacheKey }}
-            style={[StyleSheet.absoluteFill, { transform: [{ scale: 1.3 }] }]}
-          />
-        )}
-        {/* Gradient scrim — dark at the top/bottom for legibility, but lets the artwork's
-            colour glow through the middle of the screen. Falls back to a flat dark wash
-            when there's no artwork to colour the background. */}
-        {hasArt ? (
-          <LinearGradient
-            colors={[
-              'rgba(0,0,0,0.55)',
-              'rgba(0,0,0,0.22)',
-              'rgba(0,0,0,0.28)',
-              'rgba(0,0,0,0.72)',
-            ]}
-            locations={[0, 0.34, 0.62, 1]}
-            style={StyleSheet.absoluteFill}
-          />
-        ) : (
-          <View style={[StyleSheet.absoluteFill, s.scrim]} />
-        )}
+        {/* Background (blurred art + scrim). Fades in with the morph so the hero
+            appears to grow out of the app rather than out of a dark sheet. */}
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: bgOpacity }]}>
+          {/* Full-bleed blurred artwork background — scaled up so its colour bleeds edge-to-edge */}
+          {hasArt && (
+            <Image
+              blurRadius={28}
+              cachePolicy="memory-disk"
+              contentFit="cover"
+              source={{ uri: artworkUrl!, cacheKey: artworkCacheKey }}
+              style={[StyleSheet.absoluteFill, { transform: [{ scale: 1.3 }] }]}
+            />
+          )}
+          {/* Gradient scrim — dark at the top/bottom for legibility, but lets the artwork's
+              colour glow through the middle of the screen. Falls back to a flat dark wash
+              when there's no artwork to colour the background. */}
+          {hasArt ? (
+            <LinearGradient
+              colors={[
+                'rgba(0,0,0,0.55)',
+                'rgba(0,0,0,0.22)',
+                'rgba(0,0,0,0.28)',
+                'rgba(0,0,0,0.72)',
+              ]}
+              locations={[0, 0.34, 0.62, 1]}
+              style={StyleSheet.absoluteFill}
+            />
+          ) : (
+            <View style={[StyleSheet.absoluteFill, s.scrim]} />
+          )}
+        </Animated.View>
 
         {/* ── Casting-only state ── */}
         {!track && isGoogleCasting && (
@@ -657,7 +788,7 @@ export default function PlayerOverlay() {
 
         {/* ── Main player ── */}
         {track && (
-          <View style={s.content}>
+          <Animated.View style={[s.content, { opacity: chromeOpacity }]}>
             {/* Dismiss handle */}
             <View style={[s.handleBar, { paddingTop: insets.top + Spacing.xs }]}>
               <Pressable hitSlop={16} onPress={collapse} style={s.handleInner}>
@@ -676,14 +807,18 @@ export default function PlayerOverlay() {
               {hasArt && (
                 <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ translateX: queueX }] }]}>
                   <View style={s.artworkWrap}>
-                    <Animated.View style={{ transform: [{ scale: artScale }] }}>
-                      <FeatheredArt
-                        cacheKey={artworkCacheKey}
-                        onError={() => setArtworkError(true)}
-                        style={s.artwork}
-                        uri={artworkUrl!}
-                      />
-                    </Animated.View>
+                    {/* Non-transformed wrapper so measureInWindow yields the true
+                        resting rect the bubble morphs into (scale-breathing is inside). */}
+                    <View ref={artWrapRef} onLayout={measureArt} style={{ width: ARTWORK_SIZE, height: ARTWORK_SIZE }}>
+                      <Animated.View style={{ transform: [{ scale: artScale }] }}>
+                        <FeatheredArt
+                          cacheKey={artworkCacheKey}
+                          onError={() => setArtworkError(true)}
+                          style={s.artwork}
+                          uri={artworkUrl!}
+                        />
+                      </Animated.View>
+                    </View>
                   </View>
                 </Animated.View>
               )}
@@ -792,7 +927,7 @@ export default function PlayerOverlay() {
               </View>
 
               {/* Progress */}
-              <ProgressBar durationSec={activeDurationSec} onSeek={activeSeek} positionSec={activePositionSec} />
+              <ActiveProgressBar castDurationSec={castDurationSec} castPositionSec={castPositionSec} isGoogleCasting={isGoogleCasting} onSeek={activeSeek} />
 
               {/* Transport controls */}
               <View style={s.controls}>
@@ -838,7 +973,40 @@ export default function PlayerOverlay() {
                 </Pressable>
               )}
             </View>
-          </View>
+          </Animated.View>
+        )}
+
+        {/* Hero artwork — the bubble's disc, grown into place (bubble mode only).
+            Outer node: native-driven transform + opacity. Inner node: JS-driven
+            border-radius (circle→square). Two nodes so the drivers don't clash. */}
+        {morphFrom && track && (
+          <Animated.View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              left: artTarget.x,
+              top: artTarget.y,
+              width: artTarget.size,
+              height: artTarget.size,
+              opacity: heroOpacity,
+              transform: [{ translateX: heroTX }, { translateY: heroTY }, { scale: heroScale }],
+            }}
+          >
+            <Animated.View style={{ width: '100%', height: '100%', borderRadius: heroRadius, overflow: 'hidden' }}>
+              {hasArt ? (
+                <Image
+                  cachePolicy="memory-disk"
+                  contentFit="cover"
+                  source={{ uri: artworkUrl!, cacheKey: artworkCacheKey }}
+                  style={{ width: '100%', height: '100%' }}
+                />
+              ) : (
+                <View style={{ width: '100%', height: '100%', backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons color="#fff" name="musical-note" size={28} />
+                </View>
+              )}
+            </Animated.View>
+          </Animated.View>
         )}
 
         <MixtapePickerModal

@@ -61,6 +61,11 @@ public static class YtDlpHubExtensions
     public static Task BroadcastEventAsync(this IHubContext<YtDlpHub> hub, YtDlpEvent ev)
         => hub.Clients.All.SendAsync(YtDlpHubMethods.Event, ev);
 
+    // Pushed to every client after the log is cleared so their Events pane rebuilds from the
+    // authoritative buffer instead of holding on to events that no longer exist server-side.
+    public static Task BroadcastEventSnapshotAsync(this IHubContext<YtDlpHub> hub, IReadOnlyList<YtDlpEvent> events)
+        => hub.Clients.All.SendAsync(YtDlpHubMethods.EventSnapshot, events);
+
     public static Task BroadcastSubscriptionsAsync(this IHubContext<YtDlpHub> hub, IEnumerable<YtDlpSubscription> subscriptions)
         => hub.Clients.All.SendAsync(YtDlpHubMethods.Subscriptions, subscriptions);
 }

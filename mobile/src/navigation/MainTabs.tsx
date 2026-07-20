@@ -37,6 +37,7 @@ import { makeScreenOptions } from '../theme';
 import { PlayerMiniBar } from '../components/PlayerMiniBar';
 import { FloatingTabBar } from '../components/FloatingTabBar';
 import { useConversationStore } from '../store/conversationStore';
+import { useAppSettings } from '../store/appSettingsStore';
 
 // Screens
 import SearchScreen              from '../screens/search/SearchScreen';
@@ -53,7 +54,7 @@ import ChatScreen                from '../screens/more/ChatScreen';
 import ChatConversationScreen    from '../screens/more/ChatConversationScreen';
 import TagsScreen                from '../screens/more/TagsScreen';
 import AnalysisScreen            from '../screens/more/AnalysisScreen';
-import SystemScreen              from '../screens/more/SystemScreen';
+import LogsScreen                from '../screens/more/LogsScreen';
 import BlockedScreen             from '../screens/more/BlockedScreen';
 import BlockedUsersScreen        from '../screens/more/BlockedUsersScreen';
 import SettingsScreen            from '../screens/more/SettingsScreen';
@@ -78,7 +79,7 @@ export type MoreStackParamList = {
   ChatConversation: { username: string };
   Tags:             undefined;
   Analysis:         undefined;
-  System:           undefined;
+  Logs:             undefined;
   Blocked:          undefined;
   BlockedUsers:     undefined;
   Settings:         undefined;
@@ -104,7 +105,7 @@ function MoreStack() {
       <More.Screen name="ChatConversation" component={ChatConversationScreen} options={{ title: '' }} />
       <More.Screen name="Tags"             component={TagsScreen}             options={{ title: 'Tags' }} />
       <More.Screen name="Analysis"         component={AnalysisScreen}         options={{ title: 'Analysis' }} />
-      <More.Screen name="System"           component={SystemScreen}           options={{ title: 'System' }} />
+      <More.Screen name="Logs"             component={LogsScreen}             options={{ title: 'Server Logs' }} />
       <More.Screen name="Blocked"          component={BlockedScreen}          options={{ title: 'Blocked' }} />
       <More.Screen name="BlockedUsers"     component={BlockedUsersScreen}     options={{ title: 'Blocked Users' }} />
       <More.Screen name="Settings"         component={SettingsScreen}         options={{ title: 'Settings' }} />
@@ -116,13 +117,14 @@ function MoreStack() {
 export default function MainTabs() {
   const { colors } = useTheme();
   const totalUnread = useConversationStore((s) => s.totalUnread);
+  const playerMode = useAppSettings((s) => s.playerMode);
 
   return (
     <Tab.Navigator
       initialRouteName="LibraryTab"
       tabBar={(props) => (
         <View>
-          <PlayerMiniBar />
+          {playerMode === 'bar' && <PlayerMiniBar />}
           <FloatingTabBar {...props} />
         </View>
       )}

@@ -43,6 +43,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useConversationStore } from '../../store/conversationStore';
+import { useTranslationStore } from '../../store/translationStore';
+import { languageName } from '../../api/translation';
 import type { PrivateMessage } from '../../api/chat';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
@@ -74,7 +76,23 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
   const s = useMemo(() => makeStyles(colors), [colors]);
 
   const { messages, loadMessages, sendMessage, acknowledge } = useConversationStore();
-  const thread = messages[username] ?? [];
+  const thread = useMemo(() => messages[username] ?? [], [messages, username]);
+
+  // Translation
+  const threadKey = `chat:${username}`;
+  const translationEnabled = useTranslationStore((st) => st.enabled);
+  const targetLang = useTranslationStore((st) => st.targetLang);
+  const auto = useTranslationStore((st) => Boolean(st.autoByThread[threadKey]));
+  const reply = useTranslationStore((st) => Boolean(st.replyByThread[threadKey]));
+  const translations = useTranslationStore((st) => st.translations);
+  const originals = useTranslationStore((st) => st.originals);
+  const sentOriginals = useTranslationStore((st) => st.sentOriginals);
+  const toggleAuto = useTranslationStore((st) => st.toggleAuto);
+  const toggleReply = useTranslationStore((st) => st.toggleReply);
+  const translateOutgoing = useTranslationStore((st) => st.translateOutgoing);
+  const ensureTranslated = useTranslationStore((st) => st.ensureTranslated);
+  const toggleOriginal = useTranslationStore((st) => st.toggleOriginal);
+  const loadTranslationStatus = useTranslationStore((st) => st.loadStatus);
 
   // Rendered newest-first into an `inverted` FlatList: the viewport is anchored
   // to index 0, so the latest message is always what's on screen (and stays
@@ -114,12 +132,23 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
     navigation.setOptions({
       title: username,
       headerRight: () => (
-        <Pressable hitSlop={8} onPress={() => setActionUser(username)}>
-          <Ionicons color={colors.accent} name="ellipsis-horizontal" size={22} />
-        </Pressable>
+        <View style={s.headerActions}>
+          {translationEnabled && (
+            <Pressable hitSlop={8} onPress={() => toggleAuto(threadKey)}>
+              <Ionicons
+                color={auto ? colors.accent : colors.textMuted}
+                name="language"
+                size={21}
+              />
+            </Pressable>
+          )}
+          <Pressable hitSlop={8} onPress={() => setActionUser(username)}>
+            <Ionicons color={colors.accent} name="ellipsis-horizontal" size={22} />
+          </Pressable>
+        </View>
       ),
     });
-  }, [navigation, username, colors]);
+  }, [navigation, username, colors, s, translationEnabled, auto, threadKey, toggleAuto]);
 
   useFocusEffect(
     useCallback(() => {
@@ -129,13 +158,36 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
     }, [username, loadMessages, acknowledge])
   );
 
+  React.useEffect(() => {
+    loadTranslationStatus();
+  }, [loadTranslationStatus]);
+
+  // Translate not-yet-translated incoming messages when auto-translate is on.
+  React.useEffect(() => {
+    if (!translationEnabled || !auto) return;
+    const pending = thread
+      // incoming messages, plus your own sends we didn't capture an original for
+      .filter(
+        (m) =>
+          m.message?.trim() &&
+          (m.direction === 'In' || !sentOriginals[m.message]),
+      )
+      .map((m) => ({ key: `${m.direction}|${m.id}|${m.timestamp}`, text: m.message }));
+    if (pending.length > 0) ensureTranslated(threadKey, pending);
+  }, [thread, auto, translationEnabled, ensureTranslated, threadKey, sentOriginals]);
+
   const handleSend = async () => {
     const msg = text.trim();
     if (!msg || sending) return;
     setText('');
     setSending(true);
     try {
-      await sendMessage(username, msg);
+      let toSend = msg;
+      if (translationEnabled && reply) {
+        const latestInbound = [...thread].reverse().find((m) => m.direction === 'In')?.message;
+        toSend = await translateOutgoing(threadKey, msg, latestInbound);
+      }
+      await sendMessage(username, toSend);
     } finally {
       setSending(false);
     }
@@ -155,6 +207,33 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
     const ts = new Date(item.timestamp);
     const timeStr = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+    const msgKey = `${item.direction}|${item.id}|${item.timestamp}`;
+    const tr = translations[msgKey];
+    const canTranslate = translationEnabled && auto && !isSelf;
+    const translatedDiffers =
+      !!tr?.text &&
+      !!tr?.detectedSourceLanguage &&
+      tr.detectedSourceLanguage.toUpperCase().split('-')[0] !== targetLang.toUpperCase();
+    const showTranslated = canTranslate && translatedDiffers && !originals[msgKey];
+
+    // Your own message shown in your language: exact original if captured at send
+    // time, else a back-translation of the sent (foreign) text.
+    const captured = isSelf ? sentOriginals[item.message] : undefined;
+    const backTr =
+      isSelf &&
+      !captured &&
+      tr?.text &&
+      (tr.detectedSourceLanguage || '').toUpperCase().split('-')[0] !==
+        targetLang.toUpperCase()
+        ? tr
+        : undefined;
+    const selfForeign =
+      (!!captured && captured.original !== item.message) || !!backTr;
+    const selfExact = !!captured;
+    const selfInLang = captured ? captured.original : backTr?.text;
+    const selfSourceLang = captured ? captured.lang : backTr?.detectedSourceLanguage;
+    const showSelfInLang = selfForeign && !!originals[msgKey];
+
     return (
       <View>
         {showDateSeparator && (
@@ -172,7 +251,33 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
             {showSender && (
               <Text style={s.senderName}>{item.username}</Text>
             )}
-            <Text style={[s.messageText, isSelf && s.messageTextSelf]}>{item.message}</Text>
+            <Text style={[s.messageText, isSelf && s.messageTextSelf]}>
+              {isSelf
+                ? showSelfInLang
+                  ? selfInLang
+                  : item.message
+                : showTranslated
+                  ? tr!.text
+                  : item.message}
+            </Text>
+            {canTranslate && translatedDiffers && (
+              <Pressable onPress={() => toggleOriginal(msgKey)}>
+                <Text style={s.translateNote}>
+                  {showTranslated
+                    ? `Translated from ${languageName(tr!.detectedSourceLanguage)} · Show original`
+                    : 'Show translation'}
+                </Text>
+              </Pressable>
+            )}
+            {selfForeign && (
+              <Pressable onPress={() => toggleOriginal(msgKey)}>
+                <Text style={[s.translateNote, s.translateNoteSelf]}>
+                  {showSelfInLang
+                    ? 'Show sent message'
+                    : `Sent in ${languageName(selfSourceLang)} · ${selfExact ? 'Show original' : `Show in ${languageName(targetLang)}`}`}
+                </Text>
+              </Pressable>
+            )}
             <Text style={[s.timestamp, isSelf && s.timestampSelf]}>{timeStr}</Text>
           </View>
         </View>
@@ -194,11 +299,24 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
       />
       <KeyboardStickyView offset={{ opened: tabBarHeight }}>
         <View style={s.inputBar}>
+          {translationEnabled && (
+            <Pressable
+              hitSlop={8}
+              onPress={() => toggleReply(threadKey)}
+              style={[s.replyToggle, reply && s.replyToggleOn]}
+            >
+              <Ionicons
+                color={reply ? '#fff' : colors.textMuted}
+                name="globe-outline"
+                size={18}
+              />
+            </Pressable>
+          )}
           <TextInput
             multiline
             onChangeText={setText}
             onSubmitEditing={handleSend}
-            placeholder="Message…"
+            placeholder={reply ? 'Reply in their language…' : 'Message…'}
             placeholderTextColor={colors.textMuted}
             returnKeyType="send"
             style={s.input}
@@ -268,6 +386,10 @@ function makeStyles(c: ThemeColors) {
     timestamp:       { fontSize: Typography.xs, color: c.textMuted, alignSelf: 'flex-end', marginTop: 2 },
     timestampSelf:   { color: 'rgba(255,255,255,0.65)' },
 
+    headerActions:   { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+    translateNote:   { fontSize: Typography.xs, color: c.accent, marginTop: 3, opacity: 0.9 },
+    translateNoteSelf: { color: 'rgba(255,255,255,0.85)', alignSelf: 'flex-end' },
+
     daySeparator:     { alignItems: 'center', marginVertical: Spacing.md },
     daySeparatorText: {
       fontSize: Typography.xs,
@@ -319,5 +441,14 @@ function makeStyles(c: ThemeColors) {
       shadowOpacity: 0,
       elevation: 0,
     },
+    replyToggle: {
+      width: 40,
+      height: 40,
+      borderRadius: Radius.full,
+      backgroundColor: c.bgElevated,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    replyToggleOn: { backgroundColor: c.accent },
   });
 }

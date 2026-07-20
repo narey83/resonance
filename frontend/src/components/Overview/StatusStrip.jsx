@@ -31,15 +31,16 @@ import * as serverAPI from '../../lib/server';
 import * as session from '../../lib/session';
 import * as sharesAPI from '../../lib/shares';
 import { formatBytes } from '../../lib/util';
+import ResonanceMark from '../Shared/ResonanceMark';
 import {
   ArrowDown,
   ArrowUp,
   Check,
-  CloudOff,
   Cpu,
   FolderOpen,
   Globe,
   HardDrive,
+  ImageUp,
   Loader2,
   LogOut,
   Moon,
@@ -49,12 +50,31 @@ import {
   Shield,
   ShieldOff,
   Star,
+  Trash2,
   Wifi,
   WifiOff,
 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { toast } from 'react-toastify';
+
+// Format a byte/second throughput as a bit/second rate (Mbps/Gbps), matching the
+// units used by the Speed Limit setting so the header speaks the same language as
+// the cap. 1 Mbps = 1e6 bits/s = 125000 B/s.
+const formatBitrate = (bytesPerSecond) => {
+  const mbps = ((bytesPerSecond ?? 0) * 8) / 1_000_000;
+
+  if (mbps >= 1_000) {
+    const gbps = mbps / 1_000;
+    return `${gbps % 1 === 0 ? gbps : gbps.toFixed(2)} Gbps`;
+  }
+
+  if (mbps > 0 && mbps < 10) {
+    return `${mbps.toFixed(1)} Mbps`;
+  }
+
+  return `${Math.round(mbps)} Mbps`;
+};
 
 const StatusStrip = ({
   brand,
@@ -79,17 +99,67 @@ const StatusStrip = ({
   const [descDraft, setDescDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const [portStatus, setPortStatus] = useState(null);
+  const [hasPicture, setHasPicture] = useState(false);
+  // bumped after every picture change to bust the browser cache of the fixed picture URL
+  const [pictureVersion, setPictureVersion] = useState(0);
+  const [uploadingPicture, setUploadingPicture] = useState(false);
   const menuRef = useRef(null);
   const triggerRef = useRef(null);
+  const pictureInputRef = useRef(null);
+
+  // Instantaneous transfer throughput. The API's averageSpeed is a lifetime
+  // average (total bytes ÷ the transfer's whole lifetime), so summing it makes
+  // the header wildly over-report: a completed-but-not-yet-cleared transfer keeps
+  // contributing its old average even though nothing is moving. Instead we derive
+  // the true current rate from how many bytes actually moved since the last poll.
+  const [rates, setRates] = useState({ down: 0, up: 0 });
+  const prevBytesRef = useRef({
+    down: new Map(),
+    t: Date.now(),
+    up: new Map(),
+  });
+
+  useEffect(() => {
+    const now = Date.now();
+    const elapsed = (now - prevBytesRef.current.t) / 1_000;
+
+    // Guard against rapid double-fires (elapsed too small → divide-by-near-zero
+    // spikes); keep the previous sample so the next real poll spans a full window.
+    if (elapsed < 0.5) {
+      return;
+    }
+
+    const rate = (list, prevMap) => {
+      const nextMap = new Map();
+      let delta = 0;
+      for (const t of Array.isArray(list) ? list : []) {
+        const bytes = t.bytesTransferred ?? 0;
+        nextMap.set(t.id, bytes);
+        const prev = prevMap.get(t.id);
+
+        if (prev != null && bytes > prev) {
+          delta += bytes - prev;
+        }
+      }
+
+      return { bytesPerSecond: delta / elapsed, nextMap };
+    };
+
+    const down = rate(downloads, prevBytesRef.current.down);
+    const up = rate(uploads, prevBytesRef.current.up);
+    prevBytesRef.current = { down: down.nextMap, t: now, up: up.nextMap };
+    setRates({ down: down.bytesPerSecond, up: up.bytesPerSecond });
+  }, [downloads, uploads]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
     session
       .getStatus()
-      .then(({ description: d, presence: p }) => {
+      .then(({ description: d, hasPicture: hp, presence: p }) => {
         setPresence(p ?? 'Online');
         setDescription(d ?? '');
         setDescDraft(d ?? '');
+        setHasPicture(Boolean(hp));
       })
       .catch(() => {});
   }, [isLoggedIn]);
@@ -154,6 +224,39 @@ const StatusStrip = ({
     }
   };
 
+  const handlePictureSelected = async (e) => {
+    const file = e.target.files?.[0];
+    // reset the input so selecting the same file again still fires onChange
+    e.target.value = '';
+    if (!file) return;
+
+    setUploadingPicture(true);
+    try {
+      await serverAPI.uploadPicture(file);
+      setHasPicture(true);
+      setPictureVersion((v) => v + 1);
+      toast.success('Profile photo updated');
+    } catch {
+      toast.error('Failed to upload profile photo');
+    } finally {
+      setUploadingPicture(false);
+    }
+  };
+
+  const handleRemovePicture = async () => {
+    setUploadingPicture(true);
+    try {
+      await serverAPI.deletePicture();
+      setHasPicture(false);
+      setPictureVersion((v) => v + 1);
+      toast.success('Profile photo removed');
+    } catch {
+      toast.error('Failed to remove profile photo');
+    } finally {
+      setUploadingPicture(false);
+    }
+  };
+
   const isConnected = server?.isLoggedIn;
 
   // Surface what's happening before the user is logged in. Soulseek connection waits for the
@@ -185,12 +288,6 @@ const StatusStrip = ({
   const scanPct = Math.round((shares?.scanProgress ?? 0) * 100);
   const scanPending = shares?.scanPending;
 
-  const activeDownloads = Array.isArray(downloads)
-    ? downloads.filter((t) => t.state === 'InProgress')
-    : [];
-  const activeUploads = Array.isArray(uploads)
-    ? uploads.filter((t) => t.state === 'InProgress')
-    : [];
   const queuedCount =
     (Array.isArray(downloads)
       ? downloads.filter(
@@ -202,11 +299,8 @@ const StatusStrip = ({
           (t) => t.state?.startsWith('Queued') || t.state === 'Requested',
         ).length
       : 0);
-  const dlSpeed = activeDownloads.reduce(
-    (s, t) => s + (t.averageSpeed ?? 0),
-    0,
-  );
-  const ulSpeed = activeUploads.reduce((s, t) => s + (t.averageSpeed ?? 0), 0);
+  const dlSpeed = rates.down;
+  const ulSpeed = rates.up;
 
   const handleRescan = async () => {
     if (scanning || rescanning) return;
@@ -232,51 +326,9 @@ const StatusStrip = ({
         </>
       )}
 
-      {/* Connection toggle */}
-      <button
-        className={`status-strip-item status-strip-conn-btn${isConnected ? ' connected' : ' disconnected'}`}
-        onClick={() => (isConnected ? onDisconnect?.() : onConnect?.())}
-        title={
-          isConnected
-            ? 'Click to disconnect from Soulseek'
-            : 'Click to connect to Soulseek'
-        }
-        type="button"
-      >
-        {isConnected ? (
-          <Wifi
-            className="status-icon connected"
-            size={13}
-            strokeWidth={1.75}
-          />
-        ) : (
-          <WifiOff
-            className="status-icon disconnected"
-            size={13}
-            strokeWidth={1.75}
-          />
-        )}
-      </button>
-
-      {/* Connection phase — tells the user what's happening before login completes */}
-      {connPhase && (
-        <div
-          className={`status-strip-item status-conn-phase${connBusy ? ' busy' : ''}`}
-          title={connPhase}
-        >
-          {connBusy && (
-            <Loader2
-              className="status-icon status-spin"
-              size={12}
-              strokeWidth={2}
-            />
-          )}
-          <span className="status-conn-phase-text">{connPhase}</span>
-        </div>
-      )}
-
-      {/* Username + status context menu */}
-      {isConnected && username && (
+      {/* Identity + connection — one control. The button leads with the
+          connection icon and opens a menu that includes connect/disconnect. */}
+      {isLoggedIn && (
         <div className="status-user-wrap">
           <button
             className="status-strip-item status-strip-username-btn"
@@ -292,41 +344,73 @@ const StatusStrip = ({
               setMenuOpen(true);
             }}
             ref={triggerRef}
+            title={isConnected ? 'Connected to Soulseek' : connPhase}
             type="button"
           >
-            {presence === 'Away' ? (
-              <Moon
-                className="status-icon"
-                size={12}
-                strokeWidth={1.75}
-                style={{ color: '#ecc94b' }}
+            {/* Connection status indicator */}
+            {connBusy ? (
+              <Loader2
+                className="status-icon status-spin"
+                size={13}
+                strokeWidth={2}
               />
-            ) : presenceColor ? (
-              <span
-                className="status-presence-dot"
-                style={{ background: presenceColor }}
+            ) : isConnected ? (
+              <Wifi
+                className="status-icon connected"
+                size={13}
+                strokeWidth={1.75}
               />
             ) : (
-              <CloudOff
-                className="status-icon"
-                size={12}
+              <WifiOff
+                className="status-icon disconnected"
+                size={13}
                 strokeWidth={1.75}
-                style={{ color: '#6b7280' }}
               />
             )}
-            <span className="status-strip-text">{username}</span>
-            {isPrivileged && (
-              <span className="status-chip privilege">
-                <Star size={9} />
-                {privilegeSeconds == null
-                  ? 'Privileged'
-                  : privilegeSeconds >= 86_400
-                    ? `${Math.floor(privilegeSeconds / 86_400)}d`
-                    : privilegeSeconds >= 3_600
-                      ? `${Math.floor(privilegeSeconds / 3_600)}h`
-                      : privilegeSeconds >= 60
-                        ? `${Math.floor(privilegeSeconds / 60)}m`
-                        : `${privilegeSeconds}s`}
+
+            {isConnected && username ? (
+              <>
+                <span className="status-avatar">
+                  {hasPicture ? (
+                    <img
+                      alt=""
+                      className="status-avatar-img"
+                      src={serverAPI.pictureUrl(pictureVersion)}
+                    />
+                  ) : (
+                    <ResonanceMark size={16} />
+                  )}
+                  <span
+                    className={`status-avatar-presence${presence === 'Away' ? ' away' : presenceColor ? ' online' : ' offline'}`}
+                  />
+                </span>
+                <span className="status-strip-text">{username}</span>
+                {description && (
+                  <span
+                    className="status-chip status-comment-chip"
+                    title={description}
+                  >
+                    {description}
+                  </span>
+                )}
+                {isPrivileged && (
+                  <span className="status-chip privilege">
+                    <Star size={9} />
+                    {privilegeSeconds == null
+                      ? 'Privileged'
+                      : privilegeSeconds >= 86_400
+                        ? `${Math.floor(privilegeSeconds / 86_400)}d`
+                        : privilegeSeconds >= 3_600
+                          ? `${Math.floor(privilegeSeconds / 3_600)}h`
+                          : privilegeSeconds >= 60
+                            ? `${Math.floor(privilegeSeconds / 60)}m`
+                            : `${privilegeSeconds}s`}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="status-strip-text status-strip-muted">
+                {connPhase}
               </span>
             )}
           </button>
@@ -343,66 +427,158 @@ const StatusStrip = ({
                   top: menuPos.top,
                 }}
               >
-                <div className="status-menu-section">Presence</div>
+                <div className="status-menu-section">Connection</div>
                 <button
-                  className={`status-menu-item${presence === 'Online' ? ' active' : ''}`}
-                  onClick={() => handleSetPresence('Online')}
+                  className="status-menu-item status-menu-toggle"
+                  onClick={() => {
+                    if (isConnected) onDisconnect?.();
+                    else onConnect?.();
+                    setMenuOpen(false);
+                    setMenuPos(null);
+                  }}
                   type="button"
                 >
+                  {connBusy ? (
+                    <Loader2
+                      className="status-icon status-spin"
+                      size={13}
+                      strokeWidth={2}
+                    />
+                  ) : isConnected ? (
+                    <Wifi
+                      className="status-icon connected"
+                      size={13}
+                      strokeWidth={1.75}
+                    />
+                  ) : (
+                    <WifiOff
+                      className="status-icon disconnected"
+                      size={13}
+                      strokeWidth={1.75}
+                    />
+                  )}
+                  Soulseek
                   <span
-                    className="status-menu-dot"
-                    style={{ background: '#48bb78' }}
-                  />
-                  Online
-                  {presence === 'Online' && (
-                    <Check
-                      className="status-menu-check"
-                      size={11}
-                    />
-                  )}
-                </button>
-                <button
-                  className={`status-menu-item${presence === 'Away' ? ' active' : ''}`}
-                  onClick={() => handleSetPresence('Away')}
-                  type="button"
-                >
-                  <Moon
-                    size={12}
-                    strokeWidth={1.75}
-                    style={{ color: '#ecc94b', flexShrink: 0 }}
-                  />
-                  Away
-                  {presence === 'Away' && (
-                    <Check
-                      className="status-menu-check"
-                      size={11}
-                    />
-                  )}
+                    className={`status-toggle-switch${isConnected ? ' on' : ''}`}
+                  >
+                    <span className="status-toggle-knob" />
+                  </span>
                 </button>
 
-                <div className="status-menu-divider" />
-                <div className="status-menu-section">Status comment</div>
-                <div className="status-menu-desc-row">
-                  <input
-                    className="status-menu-desc-input"
-                    maxLength={120}
-                    onChange={(e) => setDescDraft(e.target.value)}
-                    onKeyDown={(e) =>
-                      e.key === 'Enter' && handleSaveDescription()
-                    }
-                    placeholder="What are you up to?"
-                    type="text"
-                    value={descDraft}
-                  />
-                  <button
-                    className="status-menu-desc-save"
-                    disabled={saving || descDraft === description}
-                    onClick={handleSaveDescription}
-                    type="button"
-                  >
-                    <Check size={12} />
-                  </button>
-                </div>
+                {isConnected && (
+                  <>
+                    <div className="status-menu-divider" />
+                    <div className="status-menu-section">Presence</div>
+                    <button
+                      className={`status-menu-item${presence === 'Online' ? ' active' : ''}`}
+                      onClick={() => handleSetPresence('Online')}
+                      type="button"
+                    >
+                      <span
+                        className="status-menu-dot"
+                        style={{ background: '#48bb78' }}
+                      />
+                      Online
+                      {presence === 'Online' && (
+                        <Check
+                          className="status-menu-check"
+                          size={11}
+                        />
+                      )}
+                    </button>
+                    <button
+                      className={`status-menu-item${presence === 'Away' ? ' active' : ''}`}
+                      onClick={() => handleSetPresence('Away')}
+                      type="button"
+                    >
+                      <Moon
+                        size={12}
+                        strokeWidth={1.75}
+                        style={{ color: '#ecc94b', flexShrink: 0 }}
+                      />
+                      Away
+                      {presence === 'Away' && (
+                        <Check
+                          className="status-menu-check"
+                          size={11}
+                        />
+                      )}
+                    </button>
+
+                    <div className="status-menu-divider" />
+                    <div className="status-menu-section">Status comment</div>
+                    <div className="status-menu-desc-row">
+                      <input
+                        className="status-menu-desc-input"
+                        maxLength={120}
+                        onChange={(e) => setDescDraft(e.target.value)}
+                        onKeyDown={(e) =>
+                          e.key === 'Enter' && handleSaveDescription()
+                        }
+                        placeholder="What are you up to?"
+                        type="text"
+                        value={descDraft}
+                      />
+                      <button
+                        className="status-menu-desc-save"
+                        disabled={saving || descDraft === description}
+                        onClick={handleSaveDescription}
+                        type="button"
+                      >
+                        <Check size={12} />
+                      </button>
+                    </div>
+
+                    <div className="status-menu-divider" />
+                    <div className="status-menu-section">Profile photo</div>
+                    <div className="status-menu-photo-row">
+                      <span className="status-menu-photo-preview">
+                        {hasPicture ? (
+                          <img
+                            alt=""
+                            src={serverAPI.pictureUrl(pictureVersion)}
+                          />
+                        ) : (
+                          <ResonanceMark size={22} />
+                        )}
+                      </span>
+                      <input
+                        accept="image/*"
+                        onChange={handlePictureSelected}
+                        ref={pictureInputRef}
+                        style={{ display: 'none' }}
+                        type="file"
+                      />
+                      <button
+                        className="status-menu-photo-btn"
+                        disabled={uploadingPicture}
+                        onClick={() => pictureInputRef.current?.click()}
+                        type="button"
+                      >
+                        {uploadingPicture ? (
+                          <Loader2
+                            className="status-spin"
+                            size={12}
+                          />
+                        ) : (
+                          <ImageUp size={12} />
+                        )}
+                        {hasPicture ? 'Change' : 'Upload'}
+                      </button>
+                      {hasPicture && (
+                        <button
+                          className="status-menu-photo-btn danger"
+                          disabled={uploadingPicture}
+                          onClick={handleRemovePicture}
+                          type="button"
+                        >
+                          <Trash2 size={12} />
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>,
               document.body,
             )}
@@ -504,7 +680,7 @@ const StatusStrip = ({
           strokeWidth={1.75}
         />
         <span className="status-strip-text status-strip-speed">
-          {formatBytes(dlSpeed)}/s
+          {formatBitrate(dlSpeed)}
         </span>
         <ArrowUp
           className="status-icon"
@@ -512,7 +688,7 @@ const StatusStrip = ({
           strokeWidth={1.75}
         />
         <span className="status-strip-text status-strip-speed">
-          {formatBytes(ulSpeed)}/s
+          {formatBitrate(ulSpeed)}
         </span>
       </div>
 

@@ -73,6 +73,28 @@ namespace resonance.MetadataLookup
         private DateTime LastRequestUtc { get; set; } = DateTime.MinValue;
 
         /// <summary>
+        ///     Parses a MusicBrainz recording-search JSON response into ordered candidates. Exposed for
+        ///     testing the projection logic without making a network request.
+        /// </summary>
+        /// <returns>The candidate matches, best first.</returns>
+        public static IReadOnlyList<MetadataMatch> ParseSearchResponse(string json, string preferredAlbum)
+        {
+            using var doc = JsonDocument.Parse(json);
+            return ParseRecordings(doc.RootElement, preferredAlbum);
+        }
+
+        /// <summary>
+        ///     Parses a genre out of a MusicBrainz recording-lookup JSON response. Exposed for testing
+        ///     the genre fallback chain without making a network request.
+        /// </summary>
+        /// <returns>The resolved genre, or null.</returns>
+        public static string ParseGenre(string json)
+        {
+            using var doc = JsonDocument.Parse(json);
+            return ParseGenreFromRecording(doc.RootElement);
+        }
+
+        /// <summary>
         ///     Searches MusicBrainz for recordings matching the supplied <paramref name="artist"/> and
         ///     <paramref name="title"/> (and optionally <paramref name="album"/>), returning the best
         ///     candidates ordered by score (highest first). Genre is not populated here; use
@@ -105,14 +127,22 @@ namespace resonance.MetadataLookup
         }
 
         /// <summary>
-        ///     Parses a MusicBrainz recording-search JSON response into ordered candidates. Exposed for
-        ///     testing the projection logic without making a network request.
+        ///     Resolves a genre for the specified recording by walking the curated genre lists
+        ///     (recording → release → release-group → artist) and falling back to community tags.
+        ///     Returns null when no plausible genre can be found.
         /// </summary>
-        /// <returns>The candidate matches, best first.</returns>
-        public static IReadOnlyList<MetadataMatch> ParseSearchResponse(string json, string preferredAlbum)
+        /// <returns>The resolved genre, or null.</returns>
+        public async Task<string> ResolveGenreAsync(string recordingMbid, CancellationToken ct)
         {
-            using var doc = JsonDocument.Parse(json);
-            return ParseRecordings(doc.RootElement, preferredAlbum);
+            if (string.IsNullOrWhiteSpace(recordingMbid))
+            {
+                return null;
+            }
+
+            var url = $"recording/{recordingMbid}?fmt=json&inc=artists+releases+release-groups+genres+tags";
+
+            using var doc = await GetJsonAsync(url, ct);
+            return doc == null ? null : ParseGenreFromRecording(doc.RootElement);
         }
 
         private static IReadOnlyList<MetadataMatch> ParseRecordings(JsonElement root, string preferredAlbum)
@@ -135,36 +165,6 @@ namespace resonance.MetadataLookup
             return results
                 .OrderByDescending(r => r.Score)
                 .ToList();
-        }
-
-        /// <summary>
-        ///     Resolves a genre for the specified recording by walking the curated genre lists
-        ///     (recording → release → release-group → artist) and falling back to community tags.
-        ///     Returns null when no plausible genre can be found.
-        /// </summary>
-        /// <returns>The resolved genre, or null.</returns>
-        public async Task<string> ResolveGenreAsync(string recordingMbid, CancellationToken ct)
-        {
-            if (string.IsNullOrWhiteSpace(recordingMbid))
-            {
-                return null;
-            }
-
-            var url = $"recording/{recordingMbid}?fmt=json&inc=artists+releases+release-groups+genres+tags";
-
-            using var doc = await GetJsonAsync(url, ct);
-            return doc == null ? null : ParseGenreFromRecording(doc.RootElement);
-        }
-
-        /// <summary>
-        ///     Parses a genre out of a MusicBrainz recording-lookup JSON response. Exposed for testing
-        ///     the genre fallback chain without making a network request.
-        /// </summary>
-        /// <returns>The resolved genre, or null.</returns>
-        public static string ParseGenre(string json)
-        {
-            using var doc = JsonDocument.Parse(json);
-            return ParseGenreFromRecording(doc.RootElement);
         }
 
         private static string ParseGenreFromRecording(JsonElement root)
@@ -393,6 +393,13 @@ namespace resonance.MetadataLookup
                 ? value.GetString()
                 : null;
 
+        private static string BuildUserAgent(string contact)
+        {
+            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0";
+            var contactPart = string.IsNullOrWhiteSpace(contact) ? "https://github.com/narey83/resonance" : contact.Trim();
+            return $"resonance/{version} ( {contactPart} )";
+        }
+
         private async Task<JsonDocument> GetJsonAsync(string relativeUrl, CancellationToken ct)
         {
             await PaceAsync(ct);
@@ -448,13 +455,6 @@ namespace resonance.MetadataLookup
             {
                 PacingGate.Release();
             }
-        }
-
-        private static string BuildUserAgent(string contact)
-        {
-            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0";
-            var contactPart = string.IsNullOrWhiteSpace(contact) ? "https://github.com/narey83/resonance" : contact.Trim();
-            return $"resonance/{version} ( {contactPart} )";
         }
     }
 }

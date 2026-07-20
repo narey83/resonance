@@ -75,9 +75,6 @@ namespace resonance.Transfers.API
         private static readonly Timer PreviewCleanupTimer = new(
             _ => CleanupPreviewFiles(), null, TimeSpan.Zero, TimeSpan.FromHours(6));
 
-        // Resolved by the app-wide ffmpeg service (auto-downloaded/updated); null until provisioned.
-        private string? FfmpegPath => Ffmpeg.FfmpegPath;
-
         public StreamsController(ISoulseekClient client, ITransferService transferService, IOptionsMonitor<resonance.Options> optionsMonitor, IShareService shareService, resonance.Common.Ffmpeg.IFfmpegService ffmpeg)
         {
             Client = client;
@@ -92,6 +89,9 @@ namespace resonance.Transfers.API
         private IOptionsMonitor<resonance.Options> OptionsMonitor { get; }
         private IShareService Shares { get; }
         private resonance.Common.Ffmpeg.IFfmpegService Ffmpeg { get; }
+
+        // Resolved by the app-wide ffmpeg service (auto-downloaded/updated); null until provisioned.
+        private string? FfmpegPath => Ffmpeg.FfmpegPath;
 
         /// <summary>
         ///     Streams a file from a remote peer directly to the HTTP response, enabling audio preview.
@@ -399,6 +399,66 @@ namespace resonance.Transfers.API
             return new EmptyResult();
         }
 
+        private static string GetFfmpegInputFormat(string extension) => extension switch
+        {
+            "ape" => "ape",
+            "wma" => "asf",
+            "aiff" or "aif" => "aiff",
+            "alac" => "alac",
+            _ => extension,
+        };
+
+        private static void CleanupPreviewFiles()
+        {
+            try
+            {
+                if (System.IO.Directory.Exists(PreviewTempDir))
+                {
+                    foreach (var file in System.IO.Directory.GetFiles(PreviewTempDir, "*"))
+                    {
+                        try
+                        {
+                            System.IO.File.Delete(file);
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            lock (PreviewLock)
+            {
+                PreviewInProgress.Clear();
+                PreviewFailed.Clear();
+            }
+        }
+
+        private static string GetPreviewTempPath(string username, string filename)
+        {
+            var bytes = Encoding.UTF8.GetBytes($"{username}::{filename}");
+            var hash = Convert.ToHexString(SHA256.HashData(bytes));
+            var ext = Path.GetExtension(filename);
+            return Path.Combine(PreviewTempDir, $"{hash[..16]}{ext}");
+        }
+
+        private static string GetAudioContentType(string extension) => extension switch
+        {
+            "mp3" => "audio/mpeg",
+            "flac" => "audio/flac",
+            "ogg" => "audio/ogg",
+            "wav" => "audio/wav",
+            "m4a" => "audio/mp4",
+            "aac" => "audio/aac",
+            "opus" => "audio/ogg; codecs=opus",
+            "wma" => "audio/x-ms-wma",
+            "aiff" or "aif" => "audio/aiff",
+            _ => "audio/mpeg",
+        };
+
         private async Task StreamDirect(string username, string filename, long? size, CancellationToken cancellationToken)
         {
             var pipe = new Pipe();
@@ -569,65 +629,5 @@ namespace resonance.Transfers.API
                 System.IO.File.Delete(tempFile);
             }
         }
-
-        private static string GetFfmpegInputFormat(string extension) => extension switch
-        {
-            "ape" => "ape",
-            "wma" => "asf",
-            "aiff" or "aif" => "aiff",
-            "alac" => "alac",
-            _ => extension,
-        };
-
-        private static void CleanupPreviewFiles()
-        {
-            try
-            {
-                if (System.IO.Directory.Exists(PreviewTempDir))
-                {
-                    foreach (var file in System.IO.Directory.GetFiles(PreviewTempDir, "*"))
-                    {
-                        try
-                        {
-                            System.IO.File.Delete(file);
-                        }
-                        catch
-                        {
-                        }
-                    }
-                }
-            }
-            catch
-            {
-            }
-
-            lock (PreviewLock)
-            {
-                PreviewInProgress.Clear();
-                PreviewFailed.Clear();
-            }
-        }
-
-        private static string GetPreviewTempPath(string username, string filename)
-        {
-            var bytes = Encoding.UTF8.GetBytes($"{username}::{filename}");
-            var hash = Convert.ToHexString(SHA256.HashData(bytes));
-            var ext = Path.GetExtension(filename);
-            return Path.Combine(PreviewTempDir, $"{hash[..16]}{ext}");
-        }
-
-        private static string GetAudioContentType(string extension) => extension switch
-        {
-            "mp3" => "audio/mpeg",
-            "flac" => "audio/flac",
-            "ogg" => "audio/ogg",
-            "wav" => "audio/wav",
-            "m4a" => "audio/mp4",
-            "aac" => "audio/aac",
-            "opus" => "audio/ogg; codecs=opus",
-            "wma" => "audio/x-ms-wma",
-            "aiff" or "aif" => "audio/aiff",
-            _ => "audio/mpeg",
-        };
     }
 }

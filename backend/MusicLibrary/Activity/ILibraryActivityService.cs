@@ -41,7 +41,7 @@ public interface ILibraryActivityService
     /// Loved entries whose file is no longer present are omitted. Saves clients from having to
     /// download the entire library just to display a handful of loved tracks.
     /// </summary>
-    /// <returns><placeholder>The loved tracks present in the library.</placeholder></returns>
+    /// <returns>The loved tracks present in the library.</returns>
     MusicTrack[] GetLovedTracks(string username);
 
     Task LoveTrackAsync(string username, string path);
@@ -52,7 +52,7 @@ public interface ILibraryActivityService
     /// Reconciles every loved track against the music library: repoints entries whose file
     /// had its extension changed (e.g. opus→mp3) and prunes entries whose file is gone.
     /// </summary>
-    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
+    /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
     Task ReconcileLovedTracksAsync();
 
     Task<PlayStat> RecordPlayAsync(string username, string path, string title = null, string artist = null, string folder = null, string source = null);

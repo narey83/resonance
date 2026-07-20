@@ -34,8 +34,9 @@
 // backend's own permission boundary) lives in the separate ConnectionScreen
 // instead — see that file.
 
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -192,6 +193,27 @@ export default function OverviewScreen({ navigation }: Props) {
 
   const fetchedRef = useRef<Set<string>>(new Set());
 
+  // All of AnalyticsData is range-scoped, but there's one visible `data` object, so a
+  // fetch for one range overwrites another's. Cache each range's data separately and
+  // restore it on switch — otherwise returning to a range you've already loaded shows
+  // the *other* range's numbers (the "back to 24h won't update / frozen" bug).
+  const dataByRange = useRef<Record<number, AnalyticsData>>({});
+  const rangeHoursRef = useRef(rangeHours);
+  rangeHoursRef.current = rangeHours;
+
+  const applyData = useCallback((hours: number, patch: Partial<AnalyticsData>) => {
+    const next = { ...(dataByRange.current[hours] ?? emptyAnalytics), ...patch };
+    dataByRange.current[hours] = next;
+    // Only reflect into the visible state if this fetch was for the range on screen.
+    if (hours === rangeHoursRef.current) setData(next);
+  }, []);
+
+  // Instantly restore a range's cached data when it's selected (or clear to the
+  // loading state for a range not yet fetched).
+  useEffect(() => {
+    setData(dataByRange.current[rangeHours] ?? emptyAnalytics);
+  }, [rangeHours]);
+
   const fetchGroup = useCallback(async (group: FetchGroup, hours: number) => {
     const now = new Date();
     const end = now.toISOString();
@@ -206,7 +228,7 @@ export default function OverviewScreen({ navigation }: Props) {
           analytics.getSummary({ start: prevStart, end: start }),
           analytics.getSocialActivity(range),
         ]);
-        setData((d) => ({ ...d, summary, prevSummary, social }));
+        applyData(hours, { summary, prevSummary, social });
         break;
       }
       case 'activity': {
@@ -214,7 +236,7 @@ export default function OverviewScreen({ navigation }: Props) {
           analytics.getHistogram({ ...range, interval: histogramInterval(hours) }),
           analytics.getHeatmap(range),
         ]);
-        setData((d) => ({ ...d, histogram, heatmap }));
+        applyData(hours, { histogram, heatmap });
         break;
       }
       case 'reliability': {
@@ -226,7 +248,7 @@ export default function OverviewScreen({ navigation }: Props) {
           analytics.getRetryFunnel(range),
           analytics.getQueueWait(range),
         ]);
-        setData((d) => ({ ...d, summary, histogram, exceptions: [...dlExceptions, ...ulExceptions], retryFunnel, queueWait }));
+        applyData(hours, { summary, histogram, exceptions: [...dlExceptions, ...ulExceptions], retryFunnel, queueWait });
         break;
       }
       case 'top': {
@@ -236,7 +258,7 @@ export default function OverviewScreen({ navigation }: Props) {
           analytics.getTopFiles(range),
           analytics.getDirectories(range),
         ]);
-        setData((d) => ({ ...d, leaderboard: { download: dlBoard, upload: ulBoard }, topFiles, directories }));
+        applyData(hours, { leaderboard: { download: dlBoard, upload: ulBoard }, topFiles, directories });
         break;
       }
       case 'geography': {
@@ -245,7 +267,7 @@ export default function OverviewScreen({ navigation }: Props) {
           analytics.getPeerRetention(range),
           analytics.getUserList({ ...range, sortBy: 'DownloadBytes', limit: 100 }),
         ]);
-        setData((d) => ({ ...d, geography, peerRetention, mapUsers: mapUsersPage.items }));
+        applyData(hours, { geography, peerRetention, mapUsers: mapUsersPage.items });
         break;
       }
       case 'coverage': {
@@ -273,7 +295,7 @@ export default function OverviewScreen({ navigation }: Props) {
         break;
       }
     }
-  }, []);
+  }, [applyData]);
 
   const loadTab = useCallback(async (targetTab: TabId, hours: number, force = false) => {
     if (!isAdmin) { setTabLoading(false); return; }
@@ -298,8 +320,32 @@ export default function OverviewScreen({ navigation }: Props) {
   const onRefresh = () => {
     setRefreshing(true);
     fetchedRef.current.clear();
+    dataByRange.current = {};
     loadTab(tab, rangeHours, true).finally(() => setRefreshing(false));
   };
+
+  // Whether the current tab already has data to show. A range/tab switch overwrites
+  // `data` only once the new fetch resolves, so until then the previous window's
+  // numbers are still here — we keep showing them (stale-while-loading) instead of
+  // blanking to skeletons, which is what made switching timescales feel so slow.
+  const tabHasData = useCallback((t: TabId): boolean => {
+    switch (t) {
+      case 'glance':      return data.summary != null;
+      case 'activity':    return data.histogram != null || data.heatmap.length > 0;
+      case 'reliability': return data.summary != null || data.histogram != null;
+      case 'top':         return data.leaderboard.download.length > 0
+                              || data.leaderboard.upload.length > 0
+                              || data.topFiles.length > 0;
+      case 'geography':   return data.geography != null || data.mapUsers.length > 0;
+      case 'library':     return genres.length > 0 || years.length > 0;
+      case 'feed':        return events.length > 0;
+    }
+  }, [data, genres, years, events]);
+
+  const hasData      = tabHasData(tab);
+  const showSkeleton = tabLoading && !hasData;   // cold load: nothing to show yet
+  const showError    = !!error && !hasData;      // keep stale numbers over a failed refresh
+  const reloading    = tabLoading && hasData;    // refreshing in place — dim + spinner
 
   // Only admins get the full analytics dashboard; everyone else gets a
   // small personal summary instead (mirrors the web frontend's Overview).
@@ -342,22 +388,31 @@ export default function OverviewScreen({ navigation }: Props) {
           })}
         </ScrollView>
 
-        <View style={s.tabContent}>
-          {tabLoading && (
+        {/* Refreshing in place: keep the previous window's numbers visible (dimmed)
+            rather than blanking to skeletons, so switching timescales feels instant. */}
+        {reloading && (
+          <View style={s.reloadRow}>
+            <ActivityIndicator size="small" color={colors.accent} />
+            <Text style={s.reloadText}>Updating…</Text>
+          </View>
+        )}
+
+        <View style={[s.tabContent, reloading && s.tabContentDim]}>
+          {showSkeleton && (
             <>
               <SkeletonCard height={90} />
               <SkeletonCard height={140} />
               <SkeletonRows rows={3} />
             </>
           )}
-          {!tabLoading && error && (
+          {showError && (
             <View style={s.inlineError}>
               <Ionicons name="alert-circle-outline" size={32} color={colors.danger} />
               <Text style={s.errorText}>{error}</Text>
               <Text style={s.errorHint}>Pull down to retry.</Text>
             </View>
           )}
-          {!tabLoading && !error && tab === 'glance' && (
+          {!showSkeleton && !showError && tab === 'glance' && (
             <>
               <KpiCards summary={data.summary} prevSummary={data.prevSummary} colors={colors} />
               <SectionHeader title="Ratio" colors={colors} />
@@ -372,7 +427,7 @@ export default function OverviewScreen({ navigation }: Props) {
               <SocialPulse data={data.social} colors={colors} />
             </>
           )}
-          {!tabLoading && !error && tab === 'activity' && (
+          {!showSkeleton && !showError && tab === 'activity' && (
             <>
               <SectionHeader title="Transfer Volume" colors={colors} />
               <ActivityChart data={data.histogram} colors={colors} />
@@ -380,7 +435,7 @@ export default function OverviewScreen({ navigation }: Props) {
               <ActivityHeatmap data={data.heatmap} colors={colors} />
             </>
           )}
-          {!tabLoading && !error && tab === 'reliability' && (
+          {!showSkeleton && !showError && tab === 'reliability' && (
             <>
               <SectionHeader title="Errors Over Time" colors={colors} />
               <ErrorChart data={data.histogram} colors={colors} />
@@ -392,7 +447,7 @@ export default function OverviewScreen({ navigation }: Props) {
               <TransferHealth summary={data.summary} exceptions={data.exceptions} colors={colors} />
             </>
           )}
-          {!tabLoading && !error && tab === 'top' && (
+          {!showSkeleton && !showError && tab === 'top' && (
             <>
               <SectionHeader title="Leaderboard" colors={colors} />
               <UserLeaderboard leaderboard={data.leaderboard} colors={colors} onSelectUser={setSelectedUser} />
@@ -404,7 +459,7 @@ export default function OverviewScreen({ navigation }: Props) {
               <UserReports colors={colors} onSelectUser={setSelectedUser} />
             </>
           )}
-          {!tabLoading && !error && tab === 'geography' && (
+          {!showSkeleton && !showError && tab === 'geography' && (
             <>
               <SectionHeader title="Peer Map" colors={colors} />
               <WorldMap users={data.mapUsers} colors={colors} onSelectUser={setSelectedUser} />
@@ -414,7 +469,7 @@ export default function OverviewScreen({ navigation }: Props) {
               <PeerRetentionCard data={data.peerRetention} colors={colors} />
             </>
           )}
-          {!tabLoading && !error && tab === 'library' && (
+          {!showSkeleton && !showError && tab === 'library' && (
             <>
               <SectionHeader title="Composition" colors={colors} />
               <LibraryComposition genres={genres} years={years} playStats={playStats} colors={colors} />
@@ -422,7 +477,7 @@ export default function OverviewScreen({ navigation }: Props) {
               <FileTypeChart counts={fileTypeCounts} colors={colors} />
             </>
           )}
-          {!tabLoading && !error && tab === 'feed' && (
+          {!showSkeleton && !showError && tab === 'feed' && (
             <>
               <SectionHeader title="Recent Activity" colors={colors} />
               <NotificationFeed events={events} colors={colors} />
@@ -472,5 +527,14 @@ function makeStyles(c: ThemeColors) {
     },
     tabLabel: { fontSize: Typography.sm, fontWeight: '600' },
     tabContent: { gap: Spacing.sm, marginTop: Spacing.sm },
+    tabContentDim: { opacity: 0.45 },
+    reloadRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: Spacing.sm,
+      marginTop: Spacing.sm,
+    },
+    reloadText: { fontSize: Typography.xs, color: c.textMuted, fontWeight: '600' },
   });
 }

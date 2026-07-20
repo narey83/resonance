@@ -57,6 +57,16 @@ namespace resonance.MetadataLookup
         private DateTime LastRequestUtc { get; set; } = DateTime.MinValue;
 
         /// <summary>
+        ///     Parses a Deezer album JSON response for its genre. Exposed for testing.
+        /// </summary>
+        /// <returns>The genre, or null.</returns>
+        public static string ParseAlbumGenre(string json)
+        {
+            using var doc = JsonDocument.Parse(json);
+            return PickGenre(doc.RootElement);
+        }
+
+        /// <summary>
         ///     Searches Deezer for a track, then resolves its album for year and genre. The track title
         ///     and artist from the query are preserved. Returns null when no match.
         /// </summary>
@@ -112,16 +122,6 @@ namespace resonance.MetadataLookup
                 Score: Confidence(resolvedArtist, artist),
                 RecordingMbid: null,
                 Source: "Deezer");
-        }
-
-        /// <summary>
-        ///     Parses a Deezer album JSON response for its genre. Exposed for testing.
-        /// </summary>
-        /// <returns>The genre, or null.</returns>
-        public static string ParseAlbumGenre(string json)
-        {
-            using var doc = JsonDocument.Parse(json);
-            return PickGenre(doc.RootElement);
         }
 
         private static string PickGenre(JsonElement album)

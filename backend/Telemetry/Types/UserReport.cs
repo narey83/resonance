@@ -31,6 +31,22 @@ namespace resonance.Telemetry;
 
 using System;
 
+public enum UserReportSortBy
+{
+    UploadCount,
+    DownloadCount,
+    UploadBytes,
+    DownloadBytes,
+    Errors,
+    LastSeen,
+    Username,
+    IpAddress,
+    Country,
+    City,
+    UploadSpeed,
+    DownloadSpeed,
+}
+
 public record UserReportSummary
 {
     public string Username { get; init; }
@@ -77,13 +93,3 @@ public record TransferFileSummary
 }
 
 public record UserEventCounts(int BrowseCount, int ChatCount);
-
-public enum UserReportSortBy
-{
-    UploadCount,
-    DownloadCount,
-    UploadBytes,
-    DownloadBytes,
-    Errors,
-    LastSeen,
-}

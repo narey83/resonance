@@ -160,11 +160,13 @@ namespace resonance.Shares
         IEnumerable<(string MaskedFilename, string OriginalFilename)> ListUntaggedFiles();
 
         /// <summary>
-        ///     Updates tag metadata for the file with the specified <paramref name="maskedFilename"/>.
+        ///     Updates tag metadata, size and mtime for the file with the specified <paramref name="maskedFilename"/>.
         /// </summary>
         /// <param name="maskedFilename">The masked filename of the file to update.</param>
         /// <param name="tags">The new tag data.</param>
-        void UpdateFileTags(string maskedFilename, FileTags tags);
+        /// <param name="size">The size of the file on disk after the tag write.</param>
+        /// <param name="touchedAt">The last write time of the file on disk after the tag write.</param>
+        void UpdateFileTags(string maskedFilename, FileTags tags, long size, DateTime touchedAt);
 
         /// <summary>
         ///     Returns the physical directory path for any file in the specified <paramref name="maskedDirectory"/>.

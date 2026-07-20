@@ -278,13 +278,6 @@ namespace resonance.Mixtapes
         private static string EscapeLike(string s) => s.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 
         // ── Helpers ───────────────────────────────────────────────────────────
-        private DbConnection OpenConnection()
-        {
-            DbConnection conn = new NpgsqlConnection(ConnectionString);
-            conn.Open();
-            return conn;
-        }
-
         private static void AddParam(DbCommand cmd, string name, object value)
         {
             var p = cmd.CreateParameter();
@@ -336,5 +329,12 @@ namespace resonance.Mixtapes
             r.IsDBNull(5) ? null : r.GetString(5),
             r.IsDBNull(6) ? null : r.GetDouble(6),
             r.GetInt32(7));
+
+        private DbConnection OpenConnection()
+        {
+            DbConnection conn = new NpgsqlConnection(ConnectionString);
+            conn.Open();
+            return conn;
+        }
     }
 }

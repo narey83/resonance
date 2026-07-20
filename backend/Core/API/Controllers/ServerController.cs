@@ -38,6 +38,7 @@ using Microsoft.Extensions.Options;
 namespace resonance.Core.API
 {
     using System;
+    using System.Collections.Generic;
     using System.Net.Http;
     using System.Text.RegularExpressions;
     using System.Threading;
@@ -46,6 +47,10 @@ namespace resonance.Core.API
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Http;
     using Microsoft.AspNetCore.Mvc;
+    using resonance.Configuration;
+    using SixLabors.ImageSharp;
+    using SixLabors.ImageSharp.Formats.Jpeg;
+    using SixLabors.ImageSharp.Processing;
     using Soulseek;
 
     /// <summary>
@@ -170,6 +175,7 @@ namespace resonance.Core.API
             {
                 presence = StateSnapshot.Value.User.Presence,
                 description = OptionsSnapshot.Value.Soulseek.Description ?? string.Empty,
+                hasPicture = System.IO.File.Exists(ManagedPicturePath),
             });
         }
 
@@ -177,6 +183,7 @@ namespace resonance.Core.API
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(200)]
         [ProducesResponseType(400)]
+        [ProducesResponseType(403)]
         public async Task<IActionResult> SetStatus([FromBody] SetStatusRequest request)
         {
             if (request.Presence is not null)
@@ -201,22 +208,144 @@ namespace resonance.Core.API
 
             if (request.Description is not null)
             {
-                var existing = Program.ConfigurationOverlay;
-                Program.ApplyConfigurationOverlay(new OptionsOverlay
+                // the description is written durably to the YAML config (picked up by reloadOnChange), not to
+                // the volatile overlay, so it survives a restart. only administrators may change the config.
+                if (!User.IsInRole(AuthRole.AdministratorOnly))
                 {
-                    Soulseek = new OptionsOverlay.SoulseekOptionsPatch
-                    {
-                        ListenIpAddress = existing?.Soulseek?.ListenIpAddress,
-                        ListenPort = existing?.Soulseek?.ListenPort,
-                        Description = request.Description,
-                    },
-                });
+                    return Forbid();
+                }
+
+                // an empty description removes the key entirely, clearing it
+                PatchSoulseekConfig("description", string.IsNullOrEmpty(request.Description) ? null : request.Description);
             }
 
             return Ok(new
             {
                 presence = StateSnapshot.Value.User.Presence,
-                description = OptionsSnapshot.Value.Soulseek.Description ?? string.Empty,
+
+                // echo what was just requested; the reloaded snapshot isn't visible synchronously after a YAML write
+                description = request.Description ?? OptionsSnapshot.Value.Soulseek.Description ?? string.Empty,
+                hasPicture = System.IO.File.Exists(ManagedPicturePath),
+            });
+        }
+
+        /// <summary>
+        ///     Gets the current user's profile picture, as served to the web UI.
+        /// </summary>
+        /// <returns></returns>
+        [HttpGet("picture")]
+        [AllowAnonymous]
+        [ProducesResponseType(200)]
+        [ProducesResponseType(404)]
+        public IActionResult GetPicture()
+        {
+            var path = ManagedPicturePath;
+            return System.IO.File.Exists(path) ? PhysicalFile(path, "image/jpeg") : NotFound();
+        }
+
+        /// <summary>
+        ///     Sets the current user's profile picture. The image is normalised to a bounded JPEG and pointed at by the
+        ///     Soulseek picture config, so peers see it too.
+        /// </summary>
+        /// <param name="file">The uploaded image.</param>
+        /// <returns></returns>
+        [HttpPost("picture")]
+        [Authorize(Policy = AuthPolicy.JwtOnly, Roles = AuthRole.AdministratorOnly)]
+        [Consumes("multipart/form-data")]
+
+        // accept a large original (e.g. a full-resolution phone photo); it's downscaled to a bounded JPEG below.
+        // the default request-body limit (~28 MB) would otherwise reject big images with a 413 before we resize.
+        [RequestSizeLimit(MaxPictureUploadBytes)]
+        [RequestFormLimits(MultipartBodyLengthLimit = MaxPictureUploadBytes)]
+        [ProducesResponseType(200)]
+        [ProducesResponseType(400)]
+        public async Task<IActionResult> UploadPicture(IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest("No file provided");
+            }
+
+            if (!file.ContentType.StartsWith("image/"))
+            {
+                return BadRequest("File must be an image");
+            }
+
+            var path = ManagedPicturePath;
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
+
+            // write to a temp file first, then move into place, so a decode/encode failure never corrupts an
+            // existing picture that peers may be fetching
+            var tempPath = path + ".tmp";
+
+            try
+            {
+                await using (var stream = file.OpenReadStream())
+                using (var image = await Image.LoadAsync(stream))
+                {
+                    image.Mutate(x => x.Resize(new ResizeOptions
+                    {
+                        Size = new Size(800, 800),
+                        Mode = ResizeMode.Max,
+                    }));
+
+                    await image.SaveAsJpegAsync(tempPath, new JpegEncoder { Quality = 85 });
+                }
+
+                System.IO.File.Move(tempPath, path, overwrite: true);
+            }
+            catch (Exception ex)
+            {
+                if (System.IO.File.Exists(tempPath))
+                {
+                    System.IO.File.Delete(tempPath);
+                }
+
+                return BadRequest($"Failed to process image: {ex.Message}");
+            }
+
+            PatchSoulseekConfig("picture", path);
+            return Ok();
+        }
+
+        /// <summary>
+        ///     Removes the current user's profile picture.
+        /// </summary>
+        /// <returns></returns>
+        [HttpDelete("picture")]
+        [Authorize(Policy = AuthPolicy.JwtOnly, Roles = AuthRole.AdministratorOnly)]
+        [ProducesResponseType(204)]
+        public IActionResult DeletePicture()
+        {
+            // clear the config key *before* deleting the file, so the Soulseek picture path (which fails startup
+            // validation if it points at a missing file) is never left dangling
+            PatchSoulseekConfig("picture", null);
+
+            var path = ManagedPicturePath;
+            if (System.IO.File.Exists(path))
+            {
+                System.IO.File.Delete(path);
+            }
+
+            return NoContent();
+        }
+
+        /// <summary>
+        ///     The maximum size of an uploaded profile picture, before downscaling. Generous enough for any
+        ///     full-resolution photo, but bounded to avoid unbounded uploads.
+        /// </summary>
+        private const long MaxPictureUploadBytes = 64L * 1024 * 1024;
+
+        /// <summary>
+        ///     The fixed on-disk path of the profile picture managed by the web UI.
+        /// </summary>
+        private static string ManagedPicturePath => Program.ProfilePicturePath;
+
+        private static void PatchSoulseekConfig(string key, string value)
+        {
+            Program.PersistSettings(new Dictionary<string, string>
+            {
+                [$"{Program.AppName}:soulseek:{key}"] = value,
             });
         }
 

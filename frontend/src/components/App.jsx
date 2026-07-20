@@ -79,6 +79,7 @@ import Searches from './Search/Searches';
 import Setup from './Setup';
 import ResonanceMark from './Shared/ResonanceMark';
 import DatabaseViewer from './System/DatabaseViewer';
+import Logs from './System/Logs';
 import System from './System/System';
 import Tags from './Tags/Tags';
 import TrackAnalysis from './TrackAnalysis/TrackAnalysis';
@@ -983,6 +984,25 @@ const App = () => {
         }}
       >
         <DatabaseViewer />
+      </div>
+    );
+  }
+
+  if (
+    window.location.pathname === `${urlBase}/logs-popup` ||
+    window.location.pathname === `${urlBase}/logs-popup/`
+  ) {
+    return (
+      <div
+        style={{
+          height: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          background: 'var(--bg-primary)',
+          color: 'var(--text-primary)',
+        }}
+      >
+        <Logs />
       </div>
     );
   }

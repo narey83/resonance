@@ -48,6 +48,7 @@ import { Radius, Spacing, Typography } from '../../theme';
 import type { ThemeColors } from '../../theme';
 import type { MoreStackParamList } from '../../navigation/MainTabs';
 import UserActionSheet from '../../components/UserActionSheet';
+import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'Browse'>;
 
@@ -144,6 +145,7 @@ export default function BrowseScreen({ navigation }: Props) {
       </View>
 
       <FlatList<string>
+        {...LIST_PERF_PROPS}
         data={history}
         keyExtractor={u => u}
         ListHeaderComponent={

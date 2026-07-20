@@ -68,6 +68,16 @@ namespace resonance.MetadataLookup
         private DateTime LastRequestUtc { get; set; } = DateTime.MinValue;
 
         /// <summary>
+        ///     Parses a Last.fm <c>track.getInfo</c> JSON response into a match. Exposed for testing.
+        /// </summary>
+        /// <returns>The match, or null.</returns>
+        public static MetadataMatch ParseTrackInfo(string json, string queryArtist, string queryTitle)
+        {
+            using var doc = JsonDocument.Parse(json);
+            return ParseTrackInfo(doc.RootElement, queryArtist, queryTitle);
+        }
+
+        /// <summary>
         ///     Looks up a track on Last.fm and projects it to a match (genre/album/track number; the
         ///     track title and artist from the query are preserved). Returns null when no match.
         /// </summary>
@@ -84,16 +94,6 @@ namespace resonance.MetadataLookup
 
             using var doc = await GetJsonAsync(url, ct);
             return doc == null ? null : ParseTrackInfo(doc.RootElement, artist, title);
-        }
-
-        /// <summary>
-        ///     Parses a Last.fm <c>track.getInfo</c> JSON response into a match. Exposed for testing.
-        /// </summary>
-        /// <returns>The match, or null.</returns>
-        public static MetadataMatch ParseTrackInfo(string json, string queryArtist, string queryTitle)
-        {
-            using var doc = JsonDocument.Parse(json);
-            return ParseTrackInfo(doc.RootElement, queryArtist, queryTitle);
         }
 
         private static MetadataMatch ParseTrackInfo(JsonElement root, string queryArtist, string queryTitle)

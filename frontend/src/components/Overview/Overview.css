@@ -162,28 +162,7 @@
   flex: 1;
 }
 
-.status-strip-conn-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 100%;
-  padding: 0 8px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  border-radius: 0;
-  transition: background 0.12s;
-}
-
-.status-strip-conn-btn:hover {
-  background: var(--surface-hover);
-}
-
-.status-strip-conn-btn:hover .status-icon.connected {
-  color: var(--danger);
-}
-
-/* ── Username + status menu ─────────────────────────────── */
+/* ── Username + connection + status menu ─────────────────── */
 
 .status-user-wrap {
   position: relative;
@@ -254,6 +233,39 @@
 .status-menu-item--danger { color: var(--danger); }
 .status-menu-item--danger:hover { background: rgba(239,68,68,0.08); }
 
+/* Connection on/off toggle row: label on the left, switch pushed to the right */
+.status-menu-toggle .status-toggle-switch {
+  margin-left: auto;
+}
+
+.status-toggle-switch {
+  align-items: center;
+  background: var(--border);
+  border-radius: 999px;
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 16px;
+  padding: 2px;
+  transition: background 0.15s;
+  width: 28px;
+}
+
+.status-toggle-switch.on {
+  background: var(--success);
+}
+
+.status-toggle-knob {
+  background: #fff;
+  border-radius: 50%;
+  height: 12px;
+  transition: transform 0.15s;
+  width: 12px;
+}
+
+.status-toggle-switch.on .status-toggle-knob {
+  transform: translateX(12px);
+}
+
 .status-menu-dot {
   border-radius: 50%;
   display: inline-block;
@@ -312,6 +324,116 @@
 .status-menu-desc-save:disabled {
   opacity: 0.35;
   cursor: default;
+}
+
+/* ── Profile avatar + status comment chip ───────────────── */
+
+.status-avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  overflow: visible;
+  color: var(--accent);
+}
+
+.status-avatar-img {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.status-avatar-presence {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--bg-elevated, #fff);
+  box-sizing: content-box;
+}
+
+.status-avatar-presence.online { background: #48bb78; }
+.status-avatar-presence.away { background: #ecc94b; }
+.status-avatar-presence.offline { background: #6b7280; }
+
+.status-comment-chip {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  background: var(--surface-hover);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.status-menu-photo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 8px;
+}
+
+.status-menu-photo-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--surface-input);
+  color: var(--accent);
+}
+
+.status-menu-photo-preview img {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+}
+
+.status-menu-photo-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.status-menu-photo-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.status-menu-photo-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.status-menu-photo-btn.danger {
+  color: var(--danger);
+}
+
+.status-menu-photo-btn.danger:hover:not(:disabled) {
+  background: rgba(var(--danger-rgb, 239, 68, 68), 0.08);
+  border-color: rgba(var(--danger-rgb, 239, 68, 68), 0.4);
+}
+
+.status-menu-photo-btn .status-spin {
+  animation: spin 0.8s linear infinite;
 }
 
 .status-strip-btn {
@@ -381,12 +503,8 @@
   --tip-text:       #333;
   --tip-muted:      #777;
   --tip-dim:        #aaa;
-  --tip-divider:    rgba(0,0,0,0.1);
   --tip-ip-bg:      rgba(0,0,0,0.06);
   --tip-ip-color:   #444;
-  --tip-btn-bg:     rgba(0,0,0,0.07);
-  --tip-btn-hover:  rgba(0,0,0,0.14);
-  --tip-btn-color:  #222;
   --tip-close:      #aaa;
   --tip-close-hover:#333;
   --tip-vpn-bg:     rgba(180,120,0,0.15);
@@ -394,7 +512,7 @@
 }
 
 /* ─── Map CSS vars — dark theme ──────────────────────────────────────────────── */
-html.dark, html.amoled {
+html.amoled {
   --map-bg:         #07101e;
   --map-land:       #192540;
   --map-land-hover: #1f2f50;
@@ -414,12 +532,8 @@ html.dark, html.amoled {
   --tip-text:       rgba(255,255,255,0.85);
   --tip-muted:      rgba(255,255,255,0.5);
   --tip-dim:        rgba(255,255,255,0.3);
-  --tip-divider:    rgba(255,255,255,0.1);
   --tip-ip-bg:      rgba(255,255,255,0.06);
   --tip-ip-color:   rgba(255,255,255,0.6);
-  --tip-btn-bg:     rgba(255,255,255,0.1);
-  --tip-btn-hover:  rgba(255,255,255,0.2);
-  --tip-btn-color:  rgba(255,255,255,0.85);
   --tip-close:      rgba(255,255,255,0.35);
   --tip-close-hover:rgba(255,255,255,0.8);
   --tip-vpn-bg:     rgba(251,191,36,0.25);
@@ -687,6 +801,8 @@ html.dark, html.amoled {
   display: flex;
   align-items: center;
   gap: 6px;
+  /* Keep a long username's action icons clear of the close button */
+  padding-right: 14px;
 }
 
 .map-tooltip-user,
@@ -742,70 +858,10 @@ html.dark, html.amoled {
   border-radius: 3px;
 }
 
-.map-tooltip-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin-top: 7px;
-  padding-top: 7px;
-  border-top: 1px solid var(--tip-divider);
-}
-
-.map-tooltip-stat {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--tip-text);
-}
-
-.map-tooltip-stat-icon {
-  width: 14px;
-  text-align: center;
-  flex-shrink: 0;
-  color: var(--tip-muted);
-}
-
-.map-tooltip-stat-bytes {
-  margin-left: auto;
-  color: var(--tip-muted);
-  font-variant-numeric: tabular-nums;
-  font-size: 10px;
-}
-
 .map-tooltip-lastseen {
   font-size: 10px;
   color: var(--tip-dim);
   margin-top: 6px;
-}
-
-.map-tooltip-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--tip-divider);
-}
-
-.map-tooltip-action {
-  flex: 1;
-  text-align: center;
-  padding: 4px 8px;
-  border: none;
-  border-radius: 5px;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 500;
-  background: var(--tip-btn-bg);
-  color: var(--tip-btn-color) !important;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-
-.map-tooltip-action:hover {
-  background: var(--tip-btn-hover);
-  text-decoration: none;
 }
 
 .map-tooltip-close {
@@ -1168,6 +1224,13 @@ html.dark, html.amoled {
   color: var(--text-primary);
 }
 
+.section-card-meta {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .section-card-tabs {
   display: flex;
   gap: 0;
@@ -1218,8 +1281,8 @@ html.dark, html.amoled {
   border-bottom: none;
 }
 
-/* Leaderboard rows aren't clickable (actions live on the username's icons),
-   so they stay static — no pointer cursor or hover affordance. */
+/* No rows here are clickable — every per-user action lives on the username's
+   own icon row — so they stay static: no pointer cursor, no hover affordance. */
 .leaderboard-table tr:hover td {
   background: transparent;
 }
@@ -1555,35 +1618,6 @@ html.dark, html.amoled {
   background: var(--surface-hover);
 }
 
-/* ─── User detail modal ─────────────────────────────────────────────────────── */
-.user-detail-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.user-detail-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px;
-  background: var(--bg-primary);
-  border-radius: 6px;
-}
-
-.user-detail-stat-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.user-detail-stat-value {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
 /* ─── User Reports section ──────────────────────────────────────────────────── */
 .user-reports-card {
   margin-bottom: 16px;
@@ -1615,8 +1649,32 @@ html.dark, html.amoled {
 }
 
 .user-reports-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 14px;
   border-bottom: 1px solid var(--border);
+}
+
+.user-reports-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 5px 10px;
+  background: var(--surface-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, opacity 0.15s;
+}
+
+.user-reports-reset:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .user-reports-search {
@@ -1635,9 +1693,40 @@ html.dark, html.amoled {
 .user-reports-search:focus { border-color: var(--accent); }
 
 .user-reports-scroll {
+  position: relative;
   overflow-y: auto;
   max-height: min(600px, calc(100vh - 330px));
   min-height: 120px;
+}
+
+/* Page-flick feedback: dim the stale rows and lock scroll while the next
+   page loads, so the overlay spinner reads clearly over a muted table. */
+.user-reports-scroll--paging {
+  overflow-y: hidden;
+}
+
+.user-reports-scroll--paging .user-reports-table {
+  opacity: 0.4;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+/* Pinned to the top of the visible table (scroll resets to 0 on page change)
+   and given zero height so it never adds scroll length or shifts the rows. */
+.user-reports-paging-overlay {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 0;
+  overflow: visible;
+}
+
+.user-reports-paging-overlay > .overview-glass-spinner {
+  position: absolute;
+  top: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  animation: spin 0.7s linear infinite, overview-glass-in 0.15s ease;
 }
 
 .user-reports-table th { white-space: nowrap; }
@@ -1651,6 +1740,21 @@ html.dark, html.amoled {
 
 .user-reports-th { white-space: nowrap; }
 .user-reports-th.active { color: var(--text-primary); }
+
+/* Header label + leading column icon. inline-flex so it obeys the cell's
+   text-align (left for text columns, right for numeric ones). */
+.user-reports-th-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.user-reports-th-icon {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.user-reports-th.active .user-reports-th-icon { opacity: 0.9; }
 
 .user-reports-num,
 .user-reports-table th.user-reports-num {
@@ -1697,169 +1801,863 @@ html.dark, html.amoled {
   }
 }
 
-/* ─── User Report Modal ─────────────────────────────────────────────────────── */
+/* ─── User Report Window ────────────────────────────────────────────────────── */
 
-/* Wider modal and scrollable content */
-.user-report-modal.ui.modal {
-  width: 90vw !important;
+/* A plain fixed-position window rather than a semantic-ui Modal. Drag and
+   minimise are incompatible with a modal: the dimmer blocks the page behind, so
+   minimising to reach it would be pointless, and semantic re-measures and
+   repositions the modal every frame. Owning the element outright also drops the
+   overrides that fight it had needed (`display: flex !important` against
+   transition.less, a max-height reserve to dodge its canFit() "scrolling" mode,
+   and working around the dimmer's un-reset 1em padding).
+
+   Flex column: title bar and tabs hold their height, the body takes the rest.
+   Centred until dragged, at which point --placed hands positioning to the
+   inline left/top the drag writes. */
+.user-report-window {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  width: min(1080px, 94vw);
+  max-height: min(860px, calc(100vh - 80px));
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
 }
 
-.user-report-modal.ui.modal > .content {
-  max-height: calc(80vh - 60px);
-  overflow-y: auto;
-}
+.user-report-window--placed { transform: none; }
 
-.user-report-network-bar {
+/* Kept mounted so a restore doesn't refetch or lose the active tab. */
+.user-report-window--minimized { display: none; }
+
+/* ── Dock ──────────────────────────────────────────────────────────────────── */
+
+/* Minimised windows park bottom-right, side by side (slot spacing lives in the
+   inline `right`, since it depends on the window's index in the dock). */
+.user-report-dock {
+  position: fixed;
+  bottom: 16px;
+  z-index: 2999;
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 0 0 12px;
-  margin-bottom: 4px;
-  flex-wrap: wrap;
-  font-size: 13px;
+  width: 192px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+  animation: user-report-dock-in var(--dur-base) var(--ease-emphasized);
 }
 
-.user-report-network-item {
+@keyframes user-report-dock-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .user-report-dock { animation: none; }
+}
+
+.user-report-dock-restore {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
+  gap: 8px;
+  padding: 8px 4px 8px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.user-report-dock-restore:hover { background: var(--surface-hover); }
+
+.user-report-dock-avatar {
+  position: relative;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.user-report-dock-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.user-report-dock-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The presence dot rides inline in the pill rather than pinned to an avatar. */
+.user-report-dock .user-report-presence {
+  position: static;
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border: none;
+}
+
+.user-report-dock-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  align-self: stretch;
+  border: none;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.user-report-dock-close:hover {
+  background: var(--surface-hover);
+  color: var(--danger);
+}
+
+/* ── Hero / title bar ──────────────────────────────────────────────────────── */
+
+/* Doubles as the drag handle. `touch-action: none` is what lets a touch drag
+   move the window instead of scrolling the page behind it; without it the
+   browser claims the gesture and pointermove never fires. */
+.user-report-hero {
+  flex-shrink: 0;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+  background:
+    radial-gradient(
+      120% 140% at 0% 0%,
+      rgba(var(--accent-rgb), 0.10) 0%,
+      transparent 60%
+    ),
+    var(--surface-card);
+}
+
+.user-report-hero:active { cursor: grabbing; }
+
+/* The controls in the title bar are click targets, not drag surfaces. */
+.user-report-hero button,
+.user-report-hero input {
+  cursor: pointer;
+}
+
+.user-report-identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.user-report-avatar {
+  position: relative;
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 600;
+  color: #fff;
+  overflow: visible;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+}
+
+.user-report-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.user-report-presence {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-surface);
+  background: var(--text-muted);
+}
+
+.user-report-presence--online { background: var(--success); }
+.user-report-presence--away { background: var(--warning); }
+.user-report-presence--offline { background: var(--text-muted); }
+
+.user-report-identity-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
 }
 
-.user-report-network-label {
+.user-report-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.user-report-name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.2;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* Peer-authored free text: clamp it so a wall of ASCII art can't push the
+   tabs off screen. */
+.user-report-description {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.user-report-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.user-report-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-card);
   color: var(--text-muted);
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
-.user-report-vpn-badge {
-  padding: 2px 8px;
-  border-radius: 4px;
+.user-report-chip code {
+  font-family: monospace;
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  color: var(--text-primary);
 }
 
-.user-report-vpn-badge--yes {
-  background: rgba(var(--warning-rgb), 0.15);
-  color: var(--warning);
-}
+.user-report-chip svg { flex-shrink: 0; }
 
-.user-report-vpn-badge--no {
-  background: rgba(54, 179, 126, 0.12);
+.user-report-chip--online {
+  border-color: color-mix(in srgb, var(--success) 40%, transparent);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
   color: var(--success);
 }
 
-.user-report-modal-tabs {
-  display: flex;
-  gap: 0;
-  margin-bottom: 16px;
-  border-bottom: 1px solid var(--border);
+.user-report-chip--away {
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  color: var(--warning);
 }
 
-.user-report-modal-tab {
-  padding: 8px 16px;
+.user-report-chip--offline { opacity: 0.85; }
+
+.user-report-chip--privileged,
+.user-report-chip--free {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+.user-report-chip--vpn {
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+}
+
+.user-report-chip--blocked {
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.user-report-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.user-report-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-standard),
+              background var(--dur-fast) var(--ease-standard);
+}
+
+.user-report-action:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.user-report-action--on {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.user-report-action--close { margin-left: 4px; }
+
+/* ── KPI rail ──────────────────────────────────────────────────────────────── */
+.user-report-kpis {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.user-report-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+
+.user-report-kpi-label {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-report-kpi-value {
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-report-kpi-value--danger { color: var(--danger); }
+.user-report-kpi-value--warning { color: var(--warning); }
+
+.user-report-kpi-hint {
+  font-size: 10px;
+  color: var(--text-dim, var(--text-muted));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Tabs ──────────────────────────────────────────────────────────────────── */
+.user-report-window-tabs {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  gap: 0;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.user-report-window-tabs::-webkit-scrollbar { display: none; }
+
+.user-report-window-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 10px 14px;
   border: none;
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--text-muted);
   font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
-  transition: color 0.12s, border-color 0.12s;
+  transition: color var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard);
   margin-bottom: -1px;
 }
 
-.user-report-modal-tab:hover { color: var(--text-primary); }
+.user-report-window-tab:hover { color: var(--text-primary); }
 
-.user-report-modal-tab.active {
+.user-report-window-tab.active {
   color: var(--accent);
   border-bottom-color: var(--accent);
   font-weight: 600;
 }
 
-.user-report-modal-tab--link {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 5px;
+.user-report-tab-badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-active);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Fixed height keeps the modal the same size across every tab so it doesn't
-   jump when switching. Shorter tabs scroll within; Chat fills it. */
-.user-report-modal-body {
-  height: 460px;
-  overflow-y: auto;
+.user-report-window-tab.active .user-report-tab-badge {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
 }
 
-.user-report-modal-body .user-chat-tab {
-  height: 100%;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+.user-report-window-tab--link { margin-left: auto; }
+
+/* ── Body ──────────────────────────────────────────────────────────────────── */
+/* The body delegates scrolling to whichever tab is mounted rather than
+   scrolling itself. Scrolling here instead would push each tab's pagination
+   hundreds of px below the fold behind a full page of rows — the list reads as
+   truncated and the controls are effectively unreachable. Each tab instead
+   fills this box and scrolls only its own list, keeping pagination pinned. */
+.user-report-window-body {
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
-}
-
-.user-chat-tab {
   display: flex;
   flex-direction: column;
+  padding: 16px 20px 20px;
   background: var(--bg-primary);
 }
 
-.user-chat-messages {
-  flex: 1;
-  overflow-y: auto;
-}
-
+/* Sole child of a tab (or of the body) — fill and centre rather than clinging
+   to the top of an otherwise empty panel. */
 .user-report-loading,
 .user-report-empty {
-  padding: 24px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
   font-size: 12px;
   color: var(--text-muted);
   text-align: center;
   font-style: italic;
 }
 
-.user-report-overview-tab { display: flex; flex-direction: column; gap: 16px; }
+/* ── Panels ────────────────────────────────────────────────────────────────── */
+.user-report-panel {
+  padding: 12px 14px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-surface);
+}
 
-.user-report-dir-block { display: flex; flex-direction: column; gap: 8px; }
+.user-report-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
 
-.user-report-dir-label {
+.user-report-panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.user-report-panel-note {
+  font-size: 10px;
+  color: var(--text-dim, var(--text-muted));
+}
+
+/* ── Overview tab ──────────────────────────────────────────────────────────── */
+
+/* Overview has no pinned footer, so it just scrolls as one column. */
+.user-report-overview-tab {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.user-report-trend-empty {
+  height: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.user-report-legend {
+  display: flex;
+  gap: 14px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.user-report-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.user-report-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.user-report-swatch--up { background: var(--success); }
+.user-report-swatch--down { background: var(--accent); }
+
+.user-report-balance-track {
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  overflow: hidden;
+}
+
+.user-report-balance-up {
+  height: 100%;
+  border-radius: 999px 0 0 999px;
+  background: var(--success);
+  transition: width var(--dur-slow) var(--ease-emphasized);
+}
+
+.user-report-balance-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 7px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.user-report-balance-up-label { color: var(--success); }
+.user-report-balance-down-label { color: var(--accent); }
+
+.user-report-dir-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.user-report-dir-panel { border-top: 2px solid transparent; }
+.user-report-dir-panel--up { border-top-color: var(--success); }
+.user-report-dir-panel--down { border-top-color: var(--accent); }
+
+.user-report-dir-headline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.user-report-dir-bytes {
+  font-size: 20px;
+  font-weight: 650;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+.user-report-dir-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Success / error / cancelled mix, sized by share of the direction's total. */
+.user-report-mix {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+  margin-bottom: 12px;
+}
+
+.user-report-mix-seg {
+  border-radius: 2px;
+  min-width: 0;
+}
+
+.user-report-mix-seg--ok { background: var(--success); }
+.user-report-mix-seg--err { background: var(--danger); }
+.user-report-mix-seg--cancel { background: var(--text-muted); opacity: 0.5; }
+
+.user-report-mix-seg--none {
+  flex: 1;
+  background: var(--surface-active);
+}
+
+.user-report-dir-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.user-report-mini-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.user-report-mini-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.user-report-mini-value {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.user-report-exceptions { margin-top: 8px; }
+.user-report-mini-value--danger { color: var(--danger); }
+
+/* ── Exceptions ────────────────────────────────────────────────────────────── */
+.user-report-exceptions {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 
 .user-report-exceptions-title {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 4px;
+  letter-spacing: 0.05em;
 }
 
+.user-report-error-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.user-report-error-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.user-report-error-msg {
+  font-size: 11px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.user-report-error-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.user-report-error-track {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--surface-active);
+  overflow: hidden;
+}
+
+.user-report-error-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--danger) 60%, transparent);
+}
+
+/* ── Paginated tabs ────────────────────────────────────────────────────────── */
+
+/* Controls / scrolling list / pinned pagination. */
+.user-report-transfers-tab,
+.user-report-browse-tab {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Tab controls ──────────────────────────────────────────────────────────── */
 .user-report-tab-controls {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-bottom: 12px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
-.user-report-select {
-  padding: 4px 8px;
-  background: var(--surface-input);
+.user-report-segmented {
+  display: inline-flex;
+  padding: 2px;
   border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-card);
+}
+
+.user-report-segment {
+  padding: 4px 12px;
+  border: none;
   border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease-standard),
+              color var(--dur-fast) var(--ease-standard);
+}
+
+.user-report-segment:hover { color: var(--text-primary); }
+
+.user-report-segment.active {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.10);
+}
+
+.user-report-tab-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── Filename filter ───────────────────────────────────────────────────────── */
+.user-report-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 120px;
+  max-width: 260px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-input);
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+.user-report-search:focus-within { border-color: var(--accent); }
+
+.user-report-search-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.user-report-search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 0;
+  border: none;
+  background: transparent;
   color: var(--text-primary);
   font-size: 12px;
-  cursor: pointer;
   outline: none;
+}
+
+.user-report-search-input::placeholder { color: var(--text-muted); }
+
+.user-report-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 2px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.user-report-search-clear:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
 .user-report-count {
   font-size: 11px;
   color: var(--text-muted);
   margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Transfers table ───────────────────────────────────────────────────────── */
+/* The rows scroll here rather than in the modal body, which is also what makes
+   the sticky header work: `position: sticky` resolves against the nearest
+   scrollport, so while this box was only `overflow-x` (height driven by
+   content, never scrolling vertically) the header had nothing to stick to. */
+.user-report-table-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-surface);
 }
 
 .user-report-table {
@@ -1870,17 +2668,22 @@ html.dark, html.amoled {
 
 .user-report-table th {
   text-align: left;
-  padding: 6px 8px;
+  padding: 8px 12px;
   color: var(--text-muted);
   font-weight: 500;
-  font-size: 11px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   border-bottom: 1px solid var(--border);
-  background: var(--bg-surface);
+  background: var(--surface-card);
   white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .user-report-table td {
-  padding: 6px 8px;
+  padding: 7px 12px;
   color: var(--text-primary);
   border-bottom: 1px solid var(--border);
   font-size: 12px;
@@ -1892,7 +2695,7 @@ html.dark, html.amoled {
 .user-report-filename {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -1908,6 +2711,7 @@ html.dark, html.amoled {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+  max-width: 46ch;
   font-size: 12px;
   color: var(--text-primary);
 }
@@ -1917,6 +2721,7 @@ html.dark, html.amoled {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+  max-width: 46ch;
   font-size: 10px;
   color: var(--text-muted);
   font-family: monospace;
@@ -1928,23 +2733,24 @@ html.dark, html.amoled {
   justify-content: center;
   width: 16px;
   height: 16px;
-  border-radius: 3px;
+  margin-top: 1px;
+  border-radius: 4px;
   font-size: 10px;
   font-weight: 700;
   flex-shrink: 0;
 }
 
 .user-report-dir-badge--upload {
-  background: rgba(var(--success-rgb, 34, 197, 94), 0.15);
+  background: color-mix(in srgb, var(--success) 16%, transparent);
   color: var(--success);
 }
 
 .user-report-dir-badge--download {
-  background: rgba(var(--accent-rgb, 0, 82, 204), 0.15);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
 }
 
-.user-report-state { font-size: 11px; }
+.user-report-state { font-size: 11px; white-space: nowrap; }
 
 .user-report-num,
 .user-report-table th.user-report-num {
@@ -1955,23 +2761,70 @@ html.dark, html.amoled {
 
 .user-report-date { font-size: 11px; color: var(--text-muted); }
 
+/* ── Browse tab ────────────────────────────────────────────────────────────── */
+.user-report-browse-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-surface);
+}
+
+.user-report-browse-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+}
+
+.user-report-browse-item:last-child { border-bottom: none; }
+.user-report-browse-item:hover { background: var(--surface-hover); }
+
+.user-report-browse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.user-report-browse-when { font-variant-numeric: tabular-nums; }
+
+.user-report-browse-rel {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── Pagination ────────────────────────────────────────────────────────────── */
+
+/* Pinned below the scrolling list, never scrolled away with the rows. */
 .user-report-pagination {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 12px;
   margin-top: 12px;
+  flex-shrink: 0;
 }
 
 .user-report-page-btn {
-  padding: 4px 10px;
+  padding: 4px 12px;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-muted);
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--dur-fast) var(--ease-standard),
+              color var(--dur-fast) var(--ease-standard);
 }
 
 .user-report-page-btn:hover:not(:disabled) {
@@ -1982,21 +2835,124 @@ html.dark, html.amoled {
 .user-report-page-btn:disabled { opacity: 0.35; cursor: default; }
 
 .user-report-page-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
-.user-report-browse-list { display: flex; flex-direction: column; gap: 0; }
-
-.user-report-browse-item {
-  padding: 6px 0;
-  font-size: 12px;
+.user-report-page-input {
+  width: 3.5em;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-input);
   color: var(--text-primary);
-  border-bottom: 1px solid var(--border);
+  font-family: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.15s;
+  -moz-appearance: textfield;
 }
 
-.user-report-browse-item:last-child { border-bottom: none; }
+.user-report-page-input:focus { border-color: var(--accent); }
+.user-report-page-input:disabled { opacity: 0.5; cursor: default; }
+
+.user-report-page-total { white-space: nowrap; }
+
+/* ── Responsive ────────────────────────────────────────────────────────────── */
+
+/* Laptops / small desktops: the 7-up KPI rail stops being legible first. */
+@media (max-width: 1000px) {
+  .user-report-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* Tablets: stack the two direction panels, drop the widest table columns. */
+@media (max-width: 760px) {
+  .user-report-dir-grid { grid-template-columns: 1fr; }
+  .user-report-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .user-report-col-speed { display: none; }
+  .user-report-filename-text,
+  .user-report-folder-text { max-width: 34ch; }
+}
+
+/* Phones: full-screen sheet, and not draggable — there's nowhere to drag to,
+   and the title bar would eat the scroll gesture. `inset` must win over the
+   inline left/top a drag may already have written, hence !important. */
+@media (max-width: 640px) {
+  .user-report-window,
+  .user-report-window--placed {
+    inset: 0 !important;
+    width: auto;
+    max-width: none;
+    max-height: none;
+    transform: none;
+    border: none;
+    border-radius: 0;
+  }
+
+  .user-report-hero {
+    cursor: default;
+    touch-action: auto;
+  }
+
+  .user-report-dock {
+    right: 12px !important;
+    left: 12px;
+    width: auto;
+  }
+
+  .user-report-hero { padding: 14px 14px 12px; }
+
+  /* Actions wrap under the identity block rather than squeezing it. */
+  .user-report-identity {
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .user-report-actions {
+    order: 3;
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .user-report-avatar {
+    width: 44px;
+    height: 44px;
+    font-size: 19px;
+    border-radius: 10px;
+  }
+
+  .user-report-avatar img { border-radius: 10px; }
+  .user-report-name { font-size: 17px; }
+  .user-report-description { -webkit-line-clamp: 1; }
+
+  .user-report-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 10px;
+  }
+
+  .user-report-window-tabs { padding: 0 8px; }
+  .user-report-window-tab { padding: 10px 10px; }
+  .user-report-window-tab--link { margin-left: 0; }
+  .user-report-window-body { padding: 12px 12px 16px; }
+  .user-report-col-date { display: none; }
+  .user-report-tab-hint { display: none; }
+  .user-report-count { margin-left: 0; }
+}
+
+/* Short viewports (laptops in landscape, split-screen): trim the hero, since
+   it is the only part that can afford to lose height. Deliberately no column
+   override here — width alone decides the KPI grid, so a small-in-both-axes
+   window keeps the narrow layout instead of being forced back to 7 columns. */
+@media (max-height: 620px) {
+  .user-report-kpi-hint { display: none; }
+  .user-report-description { display: none; }
+}
 
 /* ─── New analytics cards ───────────────────────────────────────────────────── */
 
@@ -2315,19 +3271,8 @@ html.dark, html.amoled {
   font-style: italic;
 }
 
-/* ── Connection phase label (pre-login status) ──────────────────────────── */
-.status-conn-phase {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-.status-conn-phase.busy {
-  color: var(--text-primary);
-}
-.status-conn-phase .status-spin {
+/* Spinner used in the status strip (e.g. while connecting to Soulseek). */
+.status-spin {
   animation: spin 0.8s linear infinite;
 }
 

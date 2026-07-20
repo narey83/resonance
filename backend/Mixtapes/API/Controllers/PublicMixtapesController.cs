@@ -149,13 +149,6 @@ namespace resonance.Mixtapes.API
             return File(ms, "application/zip", $"{safeName}.zip");
         }
 
-        private static string SanitizeName(string name)
-        {
-            var invalid = Path.GetInvalidFileNameChars();
-            var safe = string.Concat(name.Select(c => invalid.Contains(c) ? '_' : c)).Trim();
-            return string.IsNullOrEmpty(safe) ? "mixtape" : safe;
-        }
-
         [HttpGet("{token}/tracks/{trackId}/download")]
         [ProducesResponseType(200)]
         [ProducesResponseType(404)]
@@ -187,6 +180,13 @@ namespace resonance.Mixtapes.API
             };
 
             return PhysicalFile(track.FilePath, contentType, Path.GetFileName(track.FilePath));
+        }
+
+        private static string SanitizeName(string name)
+        {
+            var invalid = Path.GetInvalidFileNameChars();
+            var safe = string.Concat(name.Select(c => invalid.Contains(c) ? '_' : c)).Trim();
+            return string.IsNullOrEmpty(safe) ? "mixtape" : safe;
         }
     }
 }

@@ -1077,6 +1077,45 @@ const SCHEMA = [
     title: 'Metadata Retrieval',
   },
   {
+    fields: [
+      { help: 'deepl', type: 'help' },
+      {
+        description:
+          'Translate incoming private and chatroom messages on demand via the DeepL API. Turn it on per conversation with the Translate button in Chat and Rooms. Requires a DeepL API key below.',
+        label: 'Enable Translation',
+        path: ['integrations', 'translation', 'enabled'],
+        requiresValue: ['integrations', 'translation', 'api_key'],
+        type: 'toggle',
+      },
+      {
+        description:
+          'Your DeepL API authentication key. Free keys end in ":fx" and automatically use the free endpoint. Stored privately and used only to translate messages.',
+        label: 'DeepL API Key',
+        path: ['integrations', 'translation', 'api_key'],
+        placeholder: 'paste your DeepL key here',
+        type: 'password',
+      },
+      {
+        description:
+          'Default language messages are translated into, as a DeepL language code (e.g. EN, DE, FR, ES, JA). Default: EN.',
+        label: 'Target Language',
+        path: ['integrations', 'translation', 'default_target_language'],
+        placeholder: 'EN',
+        type: 'text',
+      },
+      {
+        description:
+          'Optional DeepL API base URL override (e.g. for a self-hosted proxy). Leave blank to auto-select the free or pro endpoint from the key.',
+        label: 'API URL Override',
+        path: ['integrations', 'translation', 'api_url'],
+        placeholder: 'auto',
+        type: 'text',
+      },
+    ],
+    group: 'Integrations',
+    title: 'Translation',
+  },
+  {
     group: 'System',
     title: 'Developer',
     type: 'developer',
@@ -1131,29 +1170,32 @@ const Toggle = ({ disabled, onChange, value }) => (
   </button>
 );
 
-const SPEED_UNITS = { KiB: 1, MiB: 1_024, GiB: 1_048_576 };
+// Speed limits are stored internally in KiB/s (the backend option unit), but
+// humans think about connection speed in bits/s (Mbps/Gbps), so the UI presents
+// and accepts bit-based units and converts. 1 Mbps = 1e6 bits/s = 125000 B/s.
+const KIB_PER_MBPS = 1_000_000 / 8 / 1_024; // 122.0703125
+const KIB_PER_GBPS = KIB_PER_MBPS * 1_000;
+const SPEED_UNITS = { Mbps: KIB_PER_MBPS, Gbps: KIB_PER_GBPS };
 const INT_MAX = 2_147_483_647;
 const CONN_SPEED_PREFIX = 'resonance:connSpeed:';
 
 const detectSpeedUnit = (kib) => {
-  if (!kib || kib === 0 || kib === INT_MAX) return 'KiB';
-  if (kib % 1_048_576 === 0) return 'GiB';
-  if (kib % 1_024 === 0) return 'MiB';
-  return 'KiB';
+  if (!kib || kib === 0 || kib === INT_MAX) return 'Mbps';
+  return kib >= KIB_PER_GBPS ? 'Gbps' : 'Mbps';
 };
 
+// Render a KiB/s value in the given unit as a clean, human-length number string.
+const speedInputValue = (kib, unit) =>
+  String(Math.round((kib / SPEED_UNITS[unit]) * 100) / 100);
+
 const formatSpeed = (kib) => {
-  if (kib >= 1_048_576) {
-    const v = kib / 1_048_576;
-    return `${v % 1 === 0 ? v : v.toFixed(1)} GiB/s`;
+  const mbps = kib / KIB_PER_MBPS;
+  if (mbps >= 1_000) {
+    const v = mbps / 1_000;
+    return `${v % 1 === 0 ? v : v.toFixed(2)} Gbps`;
   }
 
-  if (kib >= 1_024) {
-    const v = kib / 1_024;
-    return `${v % 1 === 0 ? v : v.toFixed(1)} MiB/s`;
-  }
-
-  return `${kib} KiB/s`;
+  return `${mbps % 1 === 0 ? mbps : mbps.toFixed(mbps < 10 ? 1 : 0)} Mbps`;
 };
 
 const SpeedSliderField = ({
@@ -1176,21 +1218,19 @@ const SpeedSliderField = ({
   const [maxKib, setMaxKib] = useState(resolvedConnKib);
   const [maxInput, setMaxInput] = useState(() => {
     if (!resolvedConnKib) return '';
-    return String(
-      resolvedConnKib / SPEED_UNITS[detectSpeedUnit(resolvedConnKib)],
-    );
+    return speedInputValue(resolvedConnKib, detectSpeedUnit(resolvedConnKib));
   });
   const [maxUnit, setMaxUnit] = useState(() =>
-    resolvedConnKib ? detectSpeedUnit(resolvedConnKib) : 'MiB',
+    resolvedConnKib ? detectSpeedUnit(resolvedConnKib) : 'Mbps',
   );
 
   useEffect(() => {
     if (connectionSpeedValue != null && connectionSpeedValue !== maxKib) {
       setMaxKib(connectionSpeedValue);
       setMaxInput(
-        String(
-          connectionSpeedValue /
-            SPEED_UNITS[detectSpeedUnit(connectionSpeedValue)],
+        speedInputValue(
+          connectionSpeedValue,
+          detectSpeedUnit(connectionSpeedValue),
         ),
       );
       setMaxUnit(detectSpeedUnit(connectionSpeedValue));
@@ -1268,7 +1308,7 @@ const SpeedSliderField = ({
                 key={u}
                 value={u}
               >
-                {u}/s
+                {u}
               </option>
             ))}
           </select>
@@ -1661,6 +1701,41 @@ const LastfmKeyHelp = () => (
   </div>
 );
 
+const DeepLKeyHelp = () => (
+  <div className="opt-help">
+    <div className="opt-help-title">How to get an API key</div>
+    Message translation is powered by DeepL, which offers high-quality
+    translation with a free tier (500,000 characters per month). To use it you
+    need a free API key:
+    <ol>
+      <li>
+        Sign up for a free API account at{' '}
+        <a
+          className="opt-link"
+          href="https://www.deepl.com/pro-api"
+          rel="noreferrer"
+          target="_blank"
+        >
+          deepl.com/pro-api
+        </a>
+        .
+      </li>
+      <li>
+        Open <strong>Account → API keys</strong> and copy your{' '}
+        <strong>Authentication Key</strong>.
+      </li>
+      <li>
+        Paste it into the <strong>DeepL API Key</strong> field below (free keys
+        end in <code>:fx</code>).
+      </li>
+      <li>
+        Turn on <strong>Enable Translation</strong>, then <strong>Save</strong>.
+        A backend restart applies the change.
+      </li>
+    </ol>
+  </div>
+);
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 const SOULSEEK_ACCOUNT_TITLE = 'Soulseek Account';
@@ -2004,6 +2079,10 @@ const Options = ({ options, state = {}, theme }) => {
 
                   if (field.type === 'help' && field.help === 'lastfm') {
                     return <LastfmKeyHelp key="lastfm-help" />;
+                  }
+
+                  if (field.type === 'help' && field.help === 'deepl') {
+                    return <DeepLKeyHelp key="deepl-help" />;
                   }
 
                   const conditionallyDisabled =

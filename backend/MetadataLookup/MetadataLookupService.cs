@@ -81,40 +81,6 @@ namespace resonance.MetadataLookup
                 Log);
         }
 
-        private IShareService ShareService { get; }
-        private IOptionsMonitor<resonance.Options> Options { get; }
-        private MusicBrainzClient MusicBrainz { get; }
-        private DiscogsClient Discogs { get; }
-        private LastfmClient Lastfm { get; }
-        private DeezerClient Deezer { get; }
-        private EventBus Events { get; }
-        private IMusicLibraryService MusicLibrary { get; }
-        private MetadataAttemptCache AttemptCache { get; }
-        private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Metadata);
-
-        private Channel<bool> RunSignal { get; } = Channel.CreateBounded<bool>(new BoundedChannelOptions(1)
-        {
-            FullMode = BoundedChannelFullMode.DropWrite,
-        });
-
-        private CancellationTokenSource Cts { get; set; }
-        private CancellationTokenSource PassCts { get; set; }
-        private Task LoopTask { get; set; }
-        private Task SweepTask { get; set; }
-        private IDisposable OptionsSubscription { get; set; }
-
-        // ── scan state (guarded by StateLock) ──────────────────────────────────
-        private object StateLock { get; } = new();
-        private bool Scanning { get; set; }
-        private bool Completed { get; set; }
-        private int Total { get; set; }
-        private int Written { get; set; }
-        private int Skipped { get; set; }
-        private int Failed { get; set; }
-        private DateTime PassStartUtc { get; set; }
-        private ConcurrentDictionary<string, MetadataScanItem> InFlightItems { get; } = new();
-        private LinkedList<MetadataScanItem> RecentItems { get; } = new();
-
         public MetadataScanState State
         {
             get
@@ -145,6 +111,84 @@ namespace resonance.MetadataLookup
                         Recent: recent);
                 }
             }
+        }
+
+        private IShareService ShareService { get; }
+        private IOptionsMonitor<resonance.Options> Options { get; }
+        private MusicBrainzClient MusicBrainz { get; }
+        private DiscogsClient Discogs { get; }
+        private LastfmClient Lastfm { get; }
+        private DeezerClient Deezer { get; }
+        private EventBus Events { get; }
+        private IMusicLibraryService MusicLibrary { get; }
+        private MetadataAttemptCache AttemptCache { get; }
+        private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Metadata);
+
+        private Channel<bool> RunSignal { get; } = Channel.CreateBounded<bool>(new BoundedChannelOptions(1)
+        {
+            FullMode = BoundedChannelFullMode.DropWrite,
+        });
+
+        private CancellationTokenSource Cts { get; set; }
+
+        // a stable signature of the enabled provider set, used as the cache key — so changing which
+        // providers are enabled gives every track a fresh attempt (legacy entries = "musicbrainz")
+        private string ActiveProviderSet
+        {
+            get
+            {
+                var providers = EnabledProviders();
+                return providers.Count == 0 ? "none" : string.Join("+", providers);
+            }
+        }
+
+        // True while a user-initiated tag sanitization scan is running. Per-file safety is
+        // guaranteed by FileWriteLock; this is an optimization to avoid spending provider
+        // lookups on files a sanitization scan is about to rewrite anyway.
+        private bool SanitizationActive => MusicLibrary?.IsQueueActive(TagSanitizationService.QueueName) == true;
+
+        private CancellationTokenSource PassCts { get; set; }
+        private Task LoopTask { get; set; }
+        private Task SweepTask { get; set; }
+        private IDisposable OptionsSubscription { get; set; }
+
+        // ── scan state (guarded by StateLock) ──────────────────────────────────
+        private object StateLock { get; } = new();
+        private bool Scanning { get; set; }
+        private bool Completed { get; set; }
+        private int Total { get; set; }
+        private int Written { get; set; }
+        private int Skipped { get; set; }
+        private int Failed { get; set; }
+        private DateTime PassStartUtc { get; set; }
+        private ConcurrentDictionary<string, MetadataScanItem> InFlightItems { get; } = new();
+        private LinkedList<MetadataScanItem> RecentItems { get; } = new();
+
+        /// <summary>
+        ///     Merges a match onto existing tags fill-only: a provider value is used only when the
+        ///     existing field is empty (or zero). A value already in the file — whether from the
+        ///     original tags or a user edit — is never overwritten by an online lookup. Exposed for
+        ///     testing.
+        /// </summary>
+        /// <returns>The merged tags to write.</returns>
+        public static FileTags MergeTags(FileTags existing, MetadataMatch match)
+        {
+            var baseTags = existing ?? new FileTags(null, null, null, null, 0, 0);
+
+            return baseTags with
+            {
+                Title = Fill(baseTags.Title, match.Title),
+                Artist = Fill(baseTags.Artist, match.Artist),
+                Album = Fill(baseTags.Album, match.Album),
+                AlbumArtist = Fill(baseTags.AlbumArtist, !string.IsNullOrWhiteSpace(match.AlbumArtist) ? match.AlbumArtist : match.Artist),
+                Year = baseTags.Year != 0 ? baseTags.Year : match.Year,
+                TrackNumber = baseTags.TrackNumber != 0 ? baseTags.TrackNumber : match.TrackNumber,
+                DiscNumber = baseTags.DiscNumber != 0 ? baseTags.DiscNumber : match.DiscNumber,
+                Genre = Fill(baseTags.Genre, match.Genre),
+            };
+
+            static string Fill(string existingValue, string matchValue)
+                => string.IsNullOrWhiteSpace(existingValue) && !string.IsNullOrWhiteSpace(matchValue) ? matchValue : existingValue;
         }
 
         // ── IHostedService ──────────────────────────────────────────────────────
@@ -247,6 +291,86 @@ namespace resonance.MetadataLookup
             return Array.Empty<MetadataMatch>();
         }
 
+        // fills empty fields of acc from next; acc's identity (title/artist/source/score) is kept
+        private static MetadataMatch Merge(MetadataMatch acc, MetadataMatch next) => acc with
+        {
+            Album = string.IsNullOrWhiteSpace(acc.Album) ? next.Album : acc.Album,
+            AlbumArtist = string.IsNullOrWhiteSpace(acc.AlbumArtist) ? next.AlbumArtist : acc.AlbumArtist,
+            Year = acc.Year != 0 ? acc.Year : next.Year,
+            TrackNumber = acc.TrackNumber != 0 ? acc.TrackNumber : next.TrackNumber,
+            DiscNumber = acc.DiscNumber != 0 ? acc.DiscNumber : next.DiscNumber,
+            Genre = string.IsNullOrWhiteSpace(acc.Genre) ? next.Genre : acc.Genre,
+        };
+
+        private static bool IsComplete(MetadataMatch m)
+            => !string.IsNullOrWhiteSpace(m.Album) && m.Year != 0 && !string.IsNullOrWhiteSpace(m.Genre);
+
+        // A stable, normalized identity for the lookup query (artist|title|album). Normalization
+        // (trim, collapse whitespace, lowercase) keeps trivial tag tidy-ups from looking like a change.
+        private static string BuildIdentity(string artist, string title, string album)
+            => string.Join('|', NormalizeField(artist), NormalizeField(title), NormalizeField(album));
+
+        private static string NormalizeField(string value)
+            => string.IsNullOrWhiteSpace(value)
+                ? string.Empty
+                : string.Join(' ', value.Split((char[])null, StringSplitOptions.RemoveEmptyEntries)).ToLowerInvariant();
+
+        private static bool NeedsEnrichment(FileTags tags)
+        {
+            if (tags == null)
+            {
+                return true;
+            }
+
+            return string.IsNullOrWhiteSpace(tags.Title)
+                || string.IsNullOrWhiteSpace(tags.Artist)
+                || string.IsNullOrWhiteSpace(tags.Album)
+                || tags.Year == 0
+                || string.IsNullOrWhiteSpace(tags.Genre);
+        }
+
+        private static (string Artist, string Title) ResolveArtistTitle(string artist, string title, string filename)
+        {
+            if (!string.IsNullOrWhiteSpace(title))
+            {
+                return (artist, title);
+            }
+
+            return ParseFilename(filename);
+        }
+
+        private static (string Artist, string Title) ParseFilename(string filename)
+        {
+            if (string.IsNullOrWhiteSpace(filename))
+            {
+                return (null, null);
+            }
+
+            var name = System.IO.Path.GetFileNameWithoutExtension(filename);
+            var separator = name.IndexOf(" - ", StringComparison.Ordinal);
+            if (separator > 0)
+            {
+                var artist = name[..separator].Trim();
+                var title = name[(separator + 3)..].Trim();
+                return (string.IsNullOrWhiteSpace(artist) ? null : artist, string.IsNullOrWhiteSpace(title) ? null : title);
+            }
+
+            return (null, name.Trim());
+        }
+
+        private static string LeafName(string maskedFilename)
+        {
+            var separator = maskedFilename.LastIndexOf('\\');
+            return separator >= 0 ? maskedFilename[(separator + 1)..] : maskedFilename;
+        }
+
+        private static string FormatSummary(MetadataMatch match)
+        {
+            var year = match.Year != 0 ? $" ({match.Year})" : string.Empty;
+            var artist = string.IsNullOrWhiteSpace(match.Artist) ? string.Empty : $"{match.Artist} – ";
+            return $"{artist}{match.Title}{year}";
+        }
+
         // returns candidate list for a single provider (used by the per-track editor lookup)
         private async Task<IReadOnlyList<MetadataMatch>> LookupProviderAsync(string provider, string artist, string title, string album)
         {
@@ -312,17 +436,6 @@ namespace resonance.MetadataLookup
             return providers;
         }
 
-        // a stable signature of the enabled provider set, used as the cache key — so changing which
-        // providers are enabled gives every track a fresh attempt (legacy entries = "musicbrainz")
-        private string ActiveProviderSet
-        {
-            get
-            {
-                var providers = EnabledProviders();
-                return providers.Count == 0 ? "none" : string.Join("+", providers);
-            }
-        }
-
         // queries enabled providers in priority order, merging missing fields from each (the first
         // provider sets the identity; later ones fill empty album/year/genre/track gaps) and stopping
         // once the enrichment fields are complete
@@ -347,20 +460,6 @@ namespace resonance.MetadataLookup
 
             return accumulated;
         }
-
-        // fills empty fields of acc from next; acc's identity (title/artist/source/score) is kept
-        private static MetadataMatch Merge(MetadataMatch acc, MetadataMatch next) => acc with
-        {
-            Album = string.IsNullOrWhiteSpace(acc.Album) ? next.Album : acc.Album,
-            AlbumArtist = string.IsNullOrWhiteSpace(acc.AlbumArtist) ? next.AlbumArtist : acc.AlbumArtist,
-            Year = acc.Year != 0 ? acc.Year : next.Year,
-            TrackNumber = acc.TrackNumber != 0 ? acc.TrackNumber : next.TrackNumber,
-            DiscNumber = acc.DiscNumber != 0 ? acc.DiscNumber : next.DiscNumber,
-            Genre = string.IsNullOrWhiteSpace(acc.Genre) ? next.Genre : acc.Genre,
-        };
-
-        private static bool IsComplete(MetadataMatch m)
-            => !string.IsNullOrWhiteSpace(m.Album) && m.Year != 0 && !string.IsNullOrWhiteSpace(m.Genre);
 
         private async Task<MetadataMatch> QueryProviderAsync(string provider, string artist, string title, string album, int minScore, CancellationToken ct)
         {
@@ -450,11 +549,6 @@ namespace resonance.MetadataLookup
                 // shutting down
             }
         }
-
-        // True while a user-initiated tag sanitization scan is running. Per-file safety is
-        // guaranteed by FileWriteLock; this is an optimization to avoid spending provider
-        // lookups on files a sanitization scan is about to rewrite anyway.
-        private bool SanitizationActive => MusicLibrary?.IsQueueActive(TagSanitizationService.QueueName) == true;
 
         // Re-arm the loop after a short delay so deferred/aborted passes resume once the
         // sanitization scan releases the files (DeregisterQueue does not signal us directly).
@@ -615,33 +709,6 @@ namespace resonance.MetadataLookup
             return merged;
         }
 
-        /// <summary>
-        ///     Merges a match onto existing tags fill-only: a provider value is used only when the
-        ///     existing field is empty (or zero). A value already in the file — whether from the
-        ///     original tags or a user edit — is never overwritten by an online lookup. Exposed for
-        ///     testing.
-        /// </summary>
-        /// <returns>The merged tags to write.</returns>
-        public static FileTags MergeTags(FileTags existing, MetadataMatch match)
-        {
-            var baseTags = existing ?? new FileTags(null, null, null, null, 0, 0);
-
-            return baseTags with
-            {
-                Title = Fill(baseTags.Title, match.Title),
-                Artist = Fill(baseTags.Artist, match.Artist),
-                Album = Fill(baseTags.Album, match.Album),
-                AlbumArtist = Fill(baseTags.AlbumArtist, !string.IsNullOrWhiteSpace(match.AlbumArtist) ? match.AlbumArtist : match.Artist),
-                Year = baseTags.Year != 0 ? baseTags.Year : match.Year,
-                TrackNumber = baseTags.TrackNumber != 0 ? baseTags.TrackNumber : match.TrackNumber,
-                DiscNumber = baseTags.DiscNumber != 0 ? baseTags.DiscNumber : match.DiscNumber,
-                Genre = Fill(baseTags.Genre, match.Genre),
-            };
-
-            static string Fill(string existingValue, string matchValue)
-                => string.IsNullOrWhiteSpace(existingValue) && !string.IsNullOrWhiteSpace(matchValue) ? matchValue : existingValue;
-        }
-
         // ── Candidate selection ─────────────────────────────────────────────────
         private List<Candidate> BuildCandidates(bool fullRescan = false)
         {
@@ -703,16 +770,6 @@ namespace resonance.MetadataLookup
         private bool AlreadyAttempted(string path)
             => AttemptCache.ShouldSkip(path);
 
-        // A stable, normalized identity for the lookup query (artist|title|album). Normalization
-        // (trim, collapse whitespace, lowercase) keeps trivial tag tidy-ups from looking like a change.
-        private static string BuildIdentity(string artist, string title, string album)
-            => string.Join('|', NormalizeField(artist), NormalizeField(title), NormalizeField(album));
-
-        private static string NormalizeField(string value)
-            => string.IsNullOrWhiteSpace(value)
-                ? string.Empty
-                : string.Join(' ', value.Split((char[])null, StringSplitOptions.RemoveEmptyEntries)).ToLowerInvariant();
-
         // records the attempt (keyed by the given query identity) and persists periodically
         private void RecordAttempt(string path, string identity, string outcome = null)
         {
@@ -723,20 +780,6 @@ namespace resonance.MetadataLookup
                 Interlocked.Exchange(ref sinceLastSave, 0);
                 AttemptCache.Save();
             }
-        }
-
-        private static bool NeedsEnrichment(FileTags tags)
-        {
-            if (tags == null)
-            {
-                return true;
-            }
-
-            return string.IsNullOrWhiteSpace(tags.Title)
-                || string.IsNullOrWhiteSpace(tags.Artist)
-                || string.IsNullOrWhiteSpace(tags.Album)
-                || tags.Year == 0
-                || string.IsNullOrWhiteSpace(tags.Genre);
         }
 
         private (string Artist, string Title, string Album) ResolveQuery(MetadataLookupRequest request)
@@ -760,41 +803,6 @@ namespace resonance.MetadataLookup
             }
 
             return (request.Artist, null, request.Album);
-        }
-
-        private static (string Artist, string Title) ResolveArtistTitle(string artist, string title, string filename)
-        {
-            if (!string.IsNullOrWhiteSpace(title))
-            {
-                return (artist, title);
-            }
-
-            return ParseFilename(filename);
-        }
-
-        private static (string Artist, string Title) ParseFilename(string filename)
-        {
-            if (string.IsNullOrWhiteSpace(filename))
-            {
-                return (null, null);
-            }
-
-            var name = System.IO.Path.GetFileNameWithoutExtension(filename);
-            var separator = name.IndexOf(" - ", StringComparison.Ordinal);
-            if (separator > 0)
-            {
-                var artist = name[..separator].Trim();
-                var title = name[(separator + 3)..].Trim();
-                return (string.IsNullOrWhiteSpace(artist) ? null : artist, string.IsNullOrWhiteSpace(title) ? null : title);
-            }
-
-            return (null, name.Trim());
-        }
-
-        private static string LeafName(string maskedFilename)
-        {
-            var separator = maskedFilename.LastIndexOf('\\');
-            return separator >= 0 ? maskedFilename[(separator + 1)..] : maskedFilename;
         }
 
         // ── State helpers ────────────────────────────────────────────────────────
@@ -848,13 +856,6 @@ namespace resonance.MetadataLookup
             // before anything completes, estimate ~2 requests per track at the configured rate
             var rate = Math.Max(0.1, Options.CurrentValue.MetadataLookup.RateLimitPerSecond);
             return (int)Math.Round(remaining * 2 / rate);
-        }
-
-        private static string FormatSummary(MetadataMatch match)
-        {
-            var year = match.Year != 0 ? $" ({match.Year})" : string.Empty;
-            var artist = string.IsNullOrWhiteSpace(match.Artist) ? string.Empty : $"{match.Artist} – ";
-            return $"{artist}{match.Title}{year}";
         }
 
         private sealed record Candidate(string Masked, string OriginalPath, string Filename, string Artist, string Title, string Album);

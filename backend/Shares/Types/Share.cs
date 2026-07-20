@@ -72,22 +72,6 @@ namespace resonance.Shares
             Files = files;
         }
 
-        public static Share CreateManaged(string localPath, string alias, bool isExcluded = false)
-        {
-            var remotePath = alias;
-            return new Share(
-                id: Compute.Sha1Hash(remotePath),
-                alias: alias,
-                isExcluded: isExcluded,
-                isLocked: false,
-                isManaged: true,
-                localPath: localPath,
-                raw: $"{(isExcluded ? "!" : string.Empty)}[{alias}]{localPath}",
-                remotePath: remotePath,
-                directories: null,
-                files: null);
-        }
-
         /// <summary>
         ///     Initializes a new instance of the <see cref="Share"/> class.
         /// </summary>
@@ -136,6 +120,22 @@ namespace resonance.Shares
         public string RemotePath { get; init; }
         public int? Directories { get; private set; }
         public int? Files { get; private set; }
+
+        public static Share CreateManaged(string localPath, string alias, bool isExcluded = false)
+        {
+            var remotePath = alias;
+            return new Share(
+                id: Compute.Sha1Hash(remotePath),
+                alias: alias,
+                isExcluded: isExcluded,
+                isLocked: false,
+                isManaged: true,
+                localPath: localPath,
+                raw: $"{(isExcluded ? "!" : string.Empty)}[{alias}]{localPath}",
+                remotePath: remotePath,
+                directories: null,
+                files: null);
+        }
 
         public void UpdateStatistics(int directories, int files)
         {

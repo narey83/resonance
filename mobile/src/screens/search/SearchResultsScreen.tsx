@@ -58,6 +58,8 @@ import * as usersApi from '../../api/users';
 import type { UserPresence, UserStatus } from '../../api/users';
 import UserActionSheet from '../../components/UserActionSheet';
 import type { SearchStackParamList } from './SearchScreen';
+import { LIST_PERF_PROPS } from '../../lib/listPerf';
+import { basenameHasAllTerms, bestScore, parseQueryTerms, scoreFilename } from '../../lib/searchRelevance';
 
 type Props = NativeStackScreenProps<SearchStackParamList, 'SearchResults'>;
 
@@ -67,9 +69,10 @@ type ViewMode = 'tracks' | 'peers' | 'albums';
 type SortType = 'speed' | 'queue';
 
 interface FilterState {
-  freeSlots:   boolean;
-  lossless:    boolean;
-  highBitrate: boolean;
+  freeSlots:     boolean;
+  lossless:      boolean;
+  highBitrate:   boolean;
+  matchFilename: boolean;  // keep only files whose *filename* contains every query term
 }
 
 interface DownloadGroup {
@@ -102,6 +105,7 @@ interface MobileAlbumGroup {
   sources: MobileFolderGroup[];
   bestSpeed: number;
   hasFreeSlot: boolean;
+  relevance: number;
 }
 
 type AlbumListItem =
@@ -218,18 +222,43 @@ function stateLabel(s: Search): string {
   return 'Done';
 }
 
-function applyFilters(responses: SearchResponse[], filters: FilterState): SearchResponse[] {
+// A single file survives the active quality/relevance filters.
+function fileMatchesFilters(file: SearchFile, filters: FilterState, terms: string[]): boolean {
+  if (filters.lossless    && file.bitDepth == null)                 return false;
+  if (filters.highBitrate && (file.bitRate ?? 0) < 320)             return false;
+  if (filters.matchFilename && !basenameHasAllTerms(terms, file.filename)) return false;
+  return true;
+}
+
+function applyFilters(responses: SearchResponse[], filters: FilterState, terms: string[]): SearchResponse[] {
   let r = responses;
   if (filters.freeSlots)   r = r.filter(x => x.hasFreeUploadSlot);
   if (filters.lossless)    r = r.filter(x => x.files.some(f => f.bitDepth != null));
   if (filters.highBitrate) r = r.filter(x => x.files.some(f => (f.bitRate ?? 0) >= 320));
+  if (filters.matchFilename) {
+    r = r.filter(x =>
+      x.files.some(f => basenameHasAllTerms(terms, f.filename)) ||
+      (x.lockedFiles ?? []).some(f => basenameHasAllTerms(terms, f.filename)),
+    );
+  }
   return r;
 }
 
-function sortResponses(responses: SearchResponse[], sort: SortType): SearchResponse[] {
-  return [...responses].sort((a, b) =>
-    sort === 'speed' ? b.uploadSpeed - a.uploadSpeed : a.queueLength - b.queueLength,
-  );
+// Rank by query relevance first (when there is a query), then the chosen sort.
+// This floats true phrase / filename matches above loose whole-path matches.
+function sortResponses(responses: SearchResponse[], sort: SortType, terms: string[]): SearchResponse[] {
+  const score = (r: SearchResponse): number =>
+    bestScore(terms, [
+      ...r.files.map(f => f.filename),
+      ...(r.lockedFiles ?? []).map(f => f.filename),
+    ]);
+  return [...responses].sort((a, b) => {
+    if (terms.length) {
+      const d = score(b) - score(a);
+      if (d !== 0) return d;
+    }
+    return sort === 'speed' ? b.uploadSpeed - a.uploadSpeed : a.queueLength - b.queueLength;
+  });
 }
 
 // Key uniquely identifies a file within a particular peer's result
@@ -261,8 +290,9 @@ function buildFolderGroups(
   responses: SearchResponse[],
   filters: FilterState,
   sort: SortType,
+  terms: string[],
 ): MobileFolderGroup[] {
-  const sorted = sortResponses(applyFilters(responses, filters), sort);
+  const sorted = sortResponses(applyFilters(responses, filters, terms), sort, terms);
   const groups: MobileFolderGroup[] = [];
   for (const r of sorted) {
     const byDir = new Map<string, SearchFile[]>();
@@ -271,8 +301,7 @@ function buildFolderGroups(
       ...(r.lockedFiles ?? []).map(f => ({ ...f, isLocked: true })),
     ];
     for (const file of allFiles) {
-      if (filters.lossless    && file.bitDepth == null)     continue;
-      if (filters.highBitrate && (file.bitRate ?? 0) < 320) continue;
+      if (!fileMatchesFilters(file, filters, terms)) continue;
       const dir = getDirectory(file.filename);
       const arr = byDir.get(dir) ?? [];
       arr.push(file);
@@ -293,12 +322,12 @@ function buildFolderGroups(
   return groups;
 }
 
-function groupAlbums(folders: MobileFolderGroup[]): MobileAlbumGroup[] {
+function groupAlbums(folders: MobileFolderGroup[], terms: string[]): MobileAlbumGroup[] {
   const map = new Map<string, MobileAlbumGroup>();
   for (const folder of folders) {
     const key = normalizeFolderName(folder.directory) || folder.directory;
     if (!map.has(key)) {
-      map.set(key, { normalizedName: key, displayName: folder.label, sources: [], bestSpeed: 0, hasFreeSlot: false });
+      map.set(key, { normalizedName: key, displayName: folder.label, sources: [], bestSpeed: 0, hasFreeSlot: false, relevance: 0 });
     }
     const group = map.get(key)!;
     group.sources.push(folder);
@@ -307,12 +336,15 @@ function groupAlbums(folders: MobileFolderGroup[]): MobileAlbumGroup[] {
       group.displayName = folder.label;
     }
     if (folder.hasFreeUploadSlot) group.hasFreeSlot = true;
+    const rel = bestScore(terms, folder.files.map(f => f.filename));
+    if (rel > group.relevance) group.relevance = rel;
   }
-  return [...map.values()].sort((a, b) =>
-    b.sources.length !== a.sources.length
+  return [...map.values()].sort((a, b) => {
+    if (terms.length && b.relevance !== a.relevance) return b.relevance - a.relevance;
+    return b.sources.length !== a.sources.length
       ? b.sources.length - a.sources.length
-      : b.bestSpeed - a.bestSpeed,
-  );
+      : b.bestSpeed - a.bestSpeed;
+  });
 }
 
 function buildAlbumItems(
@@ -320,9 +352,10 @@ function buildAlbumItems(
   expandedAlbums: Set<string>,
   sort: SortType,
   filters: FilterState,
+  terms: string[],
 ): AlbumListItem[] {
-  const folders = buildFolderGroups(responses, filters, sort);
-  const albums  = groupAlbums(folders);
+  const folders = buildFolderGroups(responses, filters, sort, terms);
+  const albums  = groupAlbums(folders, terms);
   const items: AlbumListItem[] = [];
   for (const group of albums) {
     const id = group.normalizedName;
@@ -341,13 +374,13 @@ function buildTrackItems(
   responses: SearchResponse[],
   sort: SortType,
   filters: FilterState,
+  terms: string[],
 ): TrackItem[] {
-  const sorted = sortResponses(applyFilters(responses, filters), sort);
+  const sorted = sortResponses(applyFilters(responses, filters, terms), sort, terms);
   const items: TrackItem[] = [];
   for (const r of sorted) {
     for (const file of r.files) {
-      if (filters.lossless    && file.bitDepth == null)      continue;
-      if (filters.highBitrate && (file.bitRate ?? 0) < 320)  continue;
+      if (!fileMatchesFilters(file, filters, terms)) continue;
       items.push({
         key:               trackKey(r.username, file.filename),
         file,
@@ -359,8 +392,7 @@ function buildTrackItems(
       });
     }
     for (const file of (r.lockedFiles ?? [])) {
-      if (filters.lossless    && file.bitDepth == null)      continue;
-      if (filters.highBitrate && (file.bitRate ?? 0) < 320)  continue;
+      if (!fileMatchesFilters(file, filters, terms)) continue;
       items.push({
         key:               trackKey(r.username, file.filename),
         file,
@@ -372,6 +404,11 @@ function buildTrackItems(
       });
     }
   }
+  // In the flat track view, rank individual files by relevance so exact
+  // filename matches lead regardless of which peer returned them.
+  if (terms.length) {
+    items.sort((a, b) => scoreFilename(terms, b.file.filename) - scoreFilename(terms, a.file.filename));
+  }
   return items;
 }
 
@@ -380,17 +417,23 @@ function buildPeerItems(
   expanded: Set<string>,
   sort: SortType,
   filters: FilterState,
+  terms: string[],
 ): PeerListItem[] {
-  const sorted = sortResponses(applyFilters(responses, filters), sort);
+  const sorted = sortResponses(applyFilters(responses, filters, terms), sort, terms);
   const items: PeerListItem[] = [];
   for (const response of sorted) {
     const isExpanded = expanded.has(response.username);
     items.push({ type: 'header', response, isExpanded });
     if (isExpanded) {
+      // Peer browsing shows the peer's full listing; only the filename filter
+      // (not the quality pills) narrows what's shown under an expanded peer.
+      const keep = (f: SearchFile) => !filters.matchFilename || basenameHasAllTerms(terms, f.filename);
       for (const file of response.files) {
+        if (!keep(file)) continue;
         items.push({ type: 'file', username: response.username, file, isLocked: false });
       }
       for (const file of (response.lockedFiles ?? [])) {
+        if (!keep(file)) continue;
         items.push({ type: 'file', username: response.username, file, isLocked: true });
       }
     }
@@ -982,8 +1025,9 @@ export default function SearchResultsScreen({ route, navigation }: Props) {
   const [view, setView]             = useState<ViewMode>('tracks');
   const [sort, setSort]             = useState<SortType>('speed');
   const [filters, setFilters]       = useState<FilterState>({
-    freeSlots: false, lossless: false, highBitrate: false,
+    freeSlots: false, lossless: false, highBitrate: false, matchFilename: false,
   });
+  const terms = useMemo(() => parseQueryTerms(searchText), [searchText]);
   const [expanded, setExpanded]         = useState<Set<string>>(new Set());
   const [expandedAlbums, setExpandedAlbums] = useState<Set<string>>(new Set());
 
@@ -1297,18 +1341,18 @@ export default function SearchResultsScreen({ route, navigation }: Props) {
   }, [playerTrack, isPlaying, playTrack, togglePlayPause]);
 
   const trackItems = useMemo(
-    () => buildTrackItems(responses, sort, filters),
-    [responses, sort, filters],
+    () => buildTrackItems(responses, sort, filters, terms),
+    [responses, sort, filters, terms],
   );
 
   const peerItems = useMemo(
-    () => buildPeerItems(responses, expanded, sort, filters),
-    [responses, expanded, sort, filters],
+    () => buildPeerItems(responses, expanded, sort, filters, terms),
+    [responses, expanded, sort, filters, terms],
   );
 
   const albumItems = useMemo(
-    () => buildAlbumItems(responses, expandedAlbums, sort, filters),
-    [responses, expandedAlbums, sort, filters],
+    () => buildAlbumItems(responses, expandedAlbums, sort, filters, terms),
+    [responses, expandedAlbums, sort, filters, terms],
   );
 
   const styles          = useMemo(() => makeStyles(colors), [colors]);
@@ -1318,7 +1362,7 @@ export default function SearchResultsScreen({ route, navigation }: Props) {
   const albumHdrStyles  = useMemo(() => makeAlbumHeaderStyles(colors), [colors]);
   const albumSrcStyles  = useMemo(() => makeAlbumSourceStyles(colors), [colors]);
   const isActive   = search ? !search.isComplete : false;
-  const hasFilters = filters.freeSlots || filters.lossless || filters.highBitrate;
+  const hasFilters = filters.freeSlots || filters.lossless || filters.highBitrate || filters.matchFilename;
 
   const refreshControl = (
     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
@@ -1398,6 +1442,9 @@ export default function SearchResultsScreen({ route, navigation }: Props) {
           <Pill label="Free slots"  active={filters.freeSlots}   onPress={() => toggleFilter('freeSlots')}   colors={colors} />
           <Pill label="Lossless"    active={filters.lossless}    onPress={() => toggleFilter('lossless')}    colors={colors} />
           <Pill label="≥320kbps"    active={filters.highBitrate} onPress={() => toggleFilter('highBitrate')} colors={colors} />
+          {terms.length > 0 && (
+            <Pill label="In filename" active={filters.matchFilename} onPress={() => toggleFilter('matchFilename')} colors={colors} />
+          )}
         </ScrollView>
       </View>
 
@@ -1408,6 +1455,7 @@ export default function SearchResultsScreen({ route, navigation }: Props) {
         <>
           <View style={[styles.listContainer, view !== 'tracks' && styles.listHidden]}>
             <FlatList<TrackItem>
+              {...LIST_PERF_PROPS}
               data={trackItems}
               keyExtractor={item => item.key}
               renderItem={({ item }) => (
@@ -1434,6 +1482,7 @@ export default function SearchResultsScreen({ route, navigation }: Props) {
 
           <View style={[styles.listContainer, view !== 'peers' && styles.listHidden]}>
             <FlatList<PeerListItem>
+              {...LIST_PERF_PROPS}
               data={peerItems}
               keyExtractor={(item, index) =>
                 item.type === 'header' ? `h-${item.response.username}` : `f-${(item as { username: string }).username}-${index}`
@@ -1478,6 +1527,7 @@ export default function SearchResultsScreen({ route, navigation }: Props) {
 
           <View style={[styles.listContainer, view !== 'albums' && styles.listHidden]}>
             <FlatList<AlbumListItem>
+              {...LIST_PERF_PROPS}
               data={albumItems}
               keyExtractor={item => item.type === 'album' ? `alb-${item.id}` : `src-${item.id}`}
               renderItem={({ item }) => {
