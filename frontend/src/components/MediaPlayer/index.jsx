@@ -44,11 +44,14 @@ import {
 import * as castApi from '../../lib/cast';
 import { getLocalStreamUrl } from '../../lib/files';
 import { getArtworkUrl } from '../../lib/musicLibrary';
+import * as prefs from '../../lib/prefs';
 import { getToken, isPassthroughEnabled } from '../../lib/token';
 import { formatAttributes, formatSeconds, getFileName } from '../../lib/util';
 import AlbumArt from '../Library/components/AlbumArt';
+import WaveformSeekBar from './WaveformSeekBar';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
+  AudioWaveform,
   Cast,
   ChevronDown,
   Heart,
@@ -290,6 +293,10 @@ const MediaPlayer = () => {
   const [repeat, setRepeat] = useState(false);
 
   const [scrubHover, setScrubHover] = useState(null);
+  const [seekerStyle, setSeekerStyle] = useState(() =>
+    prefs.get('mediaPlayer.seekerStyle', 'bar'),
+  );
+  const [waveformReady, setWaveformReady] = useState(false);
   const [showCast, setShowCast] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
@@ -612,6 +619,16 @@ const MediaPlayer = () => {
     prev();
   };
 
+  const seekTo = (time) => {
+    if (googleCast.connected) {
+      googleCast.castSeek(time);
+      return;
+    }
+
+    const audio = audioRef.current;
+    if (audio) audio.currentTime = time;
+  };
+
   const handleSeek = (event) => {
     const dur =
       googleCast.connected && googleCast.castDuration > 0
@@ -621,14 +638,13 @@ const MediaPlayer = () => {
           : track?.length || 0;
     if (!dur) return;
     const rect = event.currentTarget.getBoundingClientRect();
-    const time = ((event.clientX - rect.left) / rect.width) * dur;
-    if (googleCast.connected) {
-      googleCast.castSeek(time);
-      return;
-    }
+    seekTo(((event.clientX - rect.left) / rect.width) * dur);
+  };
 
-    const audio = audioRef.current;
-    if (audio) audio.currentTime = time;
+  const toggleSeekerStyle = () => {
+    const style = seekerStyle === 'waveform' ? 'bar' : 'waveform';
+    setSeekerStyle(style);
+    prefs.set('mediaPlayer.seekerStyle', style);
   };
 
   const handleSeekKey = (event) => {
@@ -862,6 +878,15 @@ const MediaPlayer = () => {
                 <span className="mp-expanded-time">
                   {formatSeconds(effectiveTime)}
                 </span>
+                {seekerStyle === 'waveform' && (
+                  <WaveformSeekBar
+                    duration={displayDuration}
+                    onReady={setWaveformReady}
+                    onSeek={seekTo}
+                    progressPct={progressPct}
+                    track={track}
+                  />
+                )}
                 <div
                   aria-label="Seek"
                   aria-valuemax={displayDuration}
@@ -871,6 +896,12 @@ const MediaPlayer = () => {
                   onClick={handleSeek}
                   onKeyDown={handleSeekKey}
                   role="slider"
+                  style={{
+                    display:
+                      seekerStyle === 'waveform' && waveformReady
+                        ? 'none'
+                        : 'block',
+                  }}
                   tabIndex={0}
                 >
                   <div
@@ -885,6 +916,18 @@ const MediaPlayer = () => {
                 <span className="mp-expanded-time">
                   {formatSeconds(displayDuration)}
                 </span>
+                <button
+                  className="mp-seeker-toggle hover-fx"
+                  onClick={toggleSeekerStyle}
+                  title={
+                    seekerStyle === 'waveform'
+                      ? 'Switch to bar seeker'
+                      : 'Switch to waveform seeker'
+                  }
+                  type="button"
+                >
+                  <AudioWaveform size={14} />
+                </button>
               </div>
 
               <div className="mp-expanded-controls">
