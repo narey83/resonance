@@ -2355,6 +2355,50 @@ html.dark, html.amoled {
   margin-right: 4px;
 }
 
+.sysstats-storage {
+  padding: 8px 14px 12px;
+  border-top: 1px solid var(--border);
+}
+.sysstats-storage-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.sysstats-volume {
+  display: grid;
+  grid-template-columns: 90px 1fr 130px 40px;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+.sysstats-volume-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--border);
+  overflow: hidden;
+}
+.sysstats-volume-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+}
+.sysstats-volume-fill.danger {
+  background: var(--danger);
+}
+.sysstats-volume-label {
+  color: var(--text-secondary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sysstats-volume-pct {
+  color: var(--text-secondary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ─── Blocked users card ─────────────────────────────────────────────────── */
 .blocked-card-manage {
   font-size: 12px;

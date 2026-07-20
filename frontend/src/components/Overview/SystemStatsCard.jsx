@@ -192,6 +192,43 @@ const SystemStatsCard = () => {
           })}
         </tbody>
       </table>
+
+      {(system.volumes ?? []).length > 0 && (
+        <div className="sysstats-storage">
+          <div className="sysstats-storage-title">Storage</div>
+          {system.volumes.map((volume) => {
+            const usedPct =
+              volume.totalBytes > 0
+                ? (volume.usedBytes / volume.totalBytes) * 100
+                : 0;
+            const danger = usedPct >= 90;
+            return (
+              <div
+                className="sysstats-volume"
+                key={volume.name}
+                title={`${formatBytes(volume.totalBytes - volume.usedBytes)} free`}
+              >
+                <span className="sysstats-name">{volume.name}</span>
+                <div className="sysstats-volume-track">
+                  <div
+                    className={`sysstats-volume-fill${danger ? ' danger' : ''}`}
+                    style={{ width: `${Math.min(usedPct, 100)}%` }}
+                  />
+                </div>
+                <span className="sysstats-volume-label">
+                  {formatBytes(volume.usedBytes)} /{' '}
+                  {formatBytes(volume.totalBytes)}
+                </span>
+                <span
+                  className={`sysstats-used${danger ? ' danger' : ''} sysstats-volume-pct`}
+                >
+                  {usedPct.toFixed(0)}%
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };
