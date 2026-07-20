@@ -359,9 +359,12 @@ class Rooms extends Component {
         const next = !previousState.autoTranslate;
         if (previousState.active) {
           prefs.set(translatePrefKey(previousState.active), next);
+          if (next) prefs.set(replyPrefKey(previousState.active), true);
         }
 
-        return { autoTranslate: next };
+        return next
+          ? { autoTranslate: next, replyTranslate: true }
+          : { autoTranslate: next };
       },
       () => this.translatePending(),
     );

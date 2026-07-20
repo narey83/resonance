@@ -355,6 +355,11 @@ const Chat = ({ history, location }) => {
     setAutoTranslate((previous) => {
       const next = !previous;
       if (active) prefs.set(translatePrefKey(active), next);
+      if (next) {
+        setReplyTranslate(true);
+        if (active) prefs.set(replyPrefKey(active), true);
+      }
+
       return next;
     });
   }, [active]);

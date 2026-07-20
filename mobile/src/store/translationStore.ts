@@ -116,12 +116,16 @@ export const useTranslationStore = create<TranslationStore>((set, get) => ({
   isAuto: (threadKey) => Boolean(get().autoByThread[threadKey]),
 
   toggleAuto: async (threadKey) => {
-    const next = { ...get().autoByThread, [threadKey]: !get().autoByThread[threadKey] };
+    const turningOn = !get().autoByThread[threadKey];
+    const next = { ...get().autoByThread, [threadKey]: turningOn };
     set({ autoByThread: next });
     try {
       await SecureStore.setItemAsync(AUTO_STORE_KEY, JSON.stringify(next));
     } catch {
       // best-effort persistence
+    }
+    if (turningOn && !get().replyByThread[threadKey]) {
+      await get().toggleReply(threadKey);
     }
   },
 
