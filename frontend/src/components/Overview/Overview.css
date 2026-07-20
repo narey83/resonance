@@ -1218,13 +1218,12 @@ html.dark, html.amoled {
   border-bottom: none;
 }
 
+/* Leaderboard rows aren't clickable (actions live on the username's icons),
+   so they stay static — no pointer cursor or hover affordance. */
 .leaderboard-table tr:hover td {
-  background: var(--surface-hover);
-  cursor: pointer;
+  background: transparent;
 }
 
-/* User Activity rows aren't clickable (actions live on the username's icons),
-   so they stay static — no pointer cursor or hover affordance. */
 .user-reports-table tr:hover td {
   background: transparent;
   cursor: default;

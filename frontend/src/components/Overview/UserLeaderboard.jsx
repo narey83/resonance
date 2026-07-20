@@ -29,12 +29,11 @@
 
 import { formatBytes } from '../../lib/util';
 import UsernameLink from '../Shared/UsernameLink';
-import UserReportModal from './UserReportModal';
-import React, { useState } from 'react';
+import React from 'react';
 
 const formatSpeed = (speed) => (speed > 0 ? `${formatBytes(speed)}/s` : '—');
 
-const LeaderboardTable = ({ entries, onUserClick }) => {
+const LeaderboardTable = ({ entries }) => {
   if (!entries || entries.length === 0) {
     return <div className="leaderboard-empty">No data for this period</div>;
   }
@@ -52,10 +51,7 @@ const LeaderboardTable = ({ entries, onUserClick }) => {
       </thead>
       <tbody>
         {entries.map((entry, index) => (
-          <tr
-            key={entry.username ?? index}
-            onClick={() => onUserClick(entry.username)}
-          >
+          <tr key={entry.username ?? index}>
             <td className="leaderboard-rank">{index + 1}</td>
             <td className="leaderboard-username">
               {entry.username ? (
@@ -80,39 +76,22 @@ const LeaderboardTable = ({ entries, onUserClick }) => {
   );
 };
 
-const UserLeaderboard = ({ leaderboard }) => {
-  const [selectedUser, setSelectedUser] = useState(null);
-
-  return (
-    <>
-      <div className="section-card">
-        <div className="section-card-header">
-          <span className="section-card-title">Top Downloaders</span>
-        </div>
-        <LeaderboardTable
-          entries={leaderboard?.download ?? []}
-          onUserClick={setSelectedUser}
-        />
+const UserLeaderboard = ({ leaderboard }) => (
+  <>
+    <div className="section-card">
+      <div className="section-card-header">
+        <span className="section-card-title">Top Downloaders</span>
       </div>
+      <LeaderboardTable entries={leaderboard?.download ?? []} />
+    </div>
 
-      <div className="section-card">
-        <div className="section-card-header">
-          <span className="section-card-title">Top Uploaders</span>
-        </div>
-        <LeaderboardTable
-          entries={leaderboard?.upload ?? []}
-          onUserClick={setSelectedUser}
-        />
+    <div className="section-card">
+      <div className="section-card-header">
+        <span className="section-card-title">Top Uploaders</span>
       </div>
-
-      {selectedUser && (
-        <UserReportModal
-          onClose={() => setSelectedUser(null)}
-          username={selectedUser}
-        />
-      )}
-    </>
-  );
-};
+      <LeaderboardTable entries={leaderboard?.upload ?? []} />
+    </div>
+  </>
+);
 
 export default UserLeaderboard;
