@@ -45,6 +45,7 @@ import * as castApi from '../../lib/cast';
 import { getLocalStreamUrl } from '../../lib/files';
 import { getArtworkUrl } from '../../lib/musicLibrary';
 import * as prefs from '../../lib/prefs';
+import { ensureSigned } from '../../lib/streamSignatures';
 import { getToken, isPassthroughEnabled } from '../../lib/token';
 import { formatAttributes, formatSeconds, getFileName } from '../../lib/util';
 import AlbumArt from '../Library/components/AlbumArt';
@@ -494,9 +495,13 @@ const MediaPlayer = () => {
       : '';
     const sizeParameter = track.size ? `&size=${track.size}` : '';
     const isLocal = Boolean(track.localRelativePath);
-    const localUrl = isLocal
-      ? getLocalStreamUrl(track.localRelativePath)
-      : `/api/v0/streams/${encodeURIComponent(track.username)}/preview?filename=${encodeURIComponent(track.filename)}${sizeParameter}${tokenParameter}`;
+    // Signatures may have expired or never been warmed for this exact path (e.g.
+    // stepping past what a library-list fetch or session-restore signed) — build
+    // the URL only after making sure it's signed, not before.
+    const buildLocalUrl = () =>
+      isLocal
+        ? getLocalStreamUrl(track.localRelativePath)
+        : `/api/v0/streams/${encodeURIComponent(track.username)}/preview?filename=${encodeURIComponent(track.filename)}${sizeParameter}${tokenParameter}`;
 
     setError(null);
     setStatusMessage(null);
@@ -549,7 +554,12 @@ const MediaPlayer = () => {
       setLoading(true);
       if (!isLocal) {
         setStatusMessage('Loading...');
+      } else {
+        await ensureSigned([track.localRelativePath]);
       }
+
+      if (cancelled) return;
+      const localUrl = buildLocalUrl();
 
       // When Google Cast is active, stream to the cast device instead of local audio
       if (googleCastRef.current?.connected) {
