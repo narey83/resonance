@@ -58,6 +58,24 @@ import React, { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { toast } from 'react-toastify';
 
+// Format a byte/second throughput as a bit/second rate (Mbps/Gbps), matching the
+// units used by the Speed Limit setting so the header speaks the same language as
+// the cap. 1 Mbps = 1e6 bits/s = 125000 B/s.
+const formatBitrate = (bytesPerSecond) => {
+  const mbps = ((bytesPerSecond ?? 0) * 8) / 1_000_000;
+
+  if (mbps >= 1_000) {
+    const gbps = mbps / 1_000;
+    return `${gbps % 1 === 0 ? gbps : gbps.toFixed(2)} Gbps`;
+  }
+
+  if (mbps > 0 && mbps < 10) {
+    return `${mbps.toFixed(1)} Mbps`;
+  }
+
+  return `${Math.round(mbps)} Mbps`;
+};
+
 const StatusStrip = ({
   brand,
   disk,
@@ -88,6 +106,50 @@ const StatusStrip = ({
   const menuRef = useRef(null);
   const triggerRef = useRef(null);
   const pictureInputRef = useRef(null);
+
+  // Instantaneous transfer throughput. The API's averageSpeed is a lifetime
+  // average (total bytes ÷ the transfer's whole lifetime), so summing it makes
+  // the header wildly over-report: a completed-but-not-yet-cleared transfer keeps
+  // contributing its old average even though nothing is moving. Instead we derive
+  // the true current rate from how many bytes actually moved since the last poll.
+  const [rates, setRates] = useState({ down: 0, up: 0 });
+  const prevBytesRef = useRef({
+    down: new Map(),
+    t: Date.now(),
+    up: new Map(),
+  });
+
+  useEffect(() => {
+    const now = Date.now();
+    const elapsed = (now - prevBytesRef.current.t) / 1_000;
+
+    // Guard against rapid double-fires (elapsed too small → divide-by-near-zero
+    // spikes); keep the previous sample so the next real poll spans a full window.
+    if (elapsed < 0.5) {
+      return;
+    }
+
+    const rate = (list, prevMap) => {
+      const nextMap = new Map();
+      let delta = 0;
+      for (const t of Array.isArray(list) ? list : []) {
+        const bytes = t.bytesTransferred ?? 0;
+        nextMap.set(t.id, bytes);
+        const prev = prevMap.get(t.id);
+
+        if (prev != null && bytes > prev) {
+          delta += bytes - prev;
+        }
+      }
+
+      return { bytesPerSecond: delta / elapsed, nextMap };
+    };
+
+    const down = rate(downloads, prevBytesRef.current.down);
+    const up = rate(uploads, prevBytesRef.current.up);
+    prevBytesRef.current = { down: down.nextMap, t: now, up: up.nextMap };
+    setRates({ down: down.bytesPerSecond, up: up.bytesPerSecond });
+  }, [downloads, uploads]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
@@ -226,12 +288,6 @@ const StatusStrip = ({
   const scanPct = Math.round((shares?.scanProgress ?? 0) * 100);
   const scanPending = shares?.scanPending;
 
-  const activeDownloads = Array.isArray(downloads)
-    ? downloads.filter((t) => t.state === 'InProgress')
-    : [];
-  const activeUploads = Array.isArray(uploads)
-    ? uploads.filter((t) => t.state === 'InProgress')
-    : [];
   const queuedCount =
     (Array.isArray(downloads)
       ? downloads.filter(
@@ -243,11 +299,8 @@ const StatusStrip = ({
           (t) => t.state?.startsWith('Queued') || t.state === 'Requested',
         ).length
       : 0);
-  const dlSpeed = activeDownloads.reduce(
-    (s, t) => s + (t.averageSpeed ?? 0),
-    0,
-  );
-  const ulSpeed = activeUploads.reduce((s, t) => s + (t.averageSpeed ?? 0), 0);
+  const dlSpeed = rates.down;
+  const ulSpeed = rates.up;
 
   const handleRescan = async () => {
     if (scanning || rescanning) return;
@@ -627,7 +680,7 @@ const StatusStrip = ({
           strokeWidth={1.75}
         />
         <span className="status-strip-text status-strip-speed">
-          {formatBytes(dlSpeed)}/s
+          {formatBitrate(dlSpeed)}
         </span>
         <ArrowUp
           className="status-icon"
@@ -635,7 +688,7 @@ const StatusStrip = ({
           strokeWidth={1.75}
         />
         <span className="status-strip-text status-strip-speed">
-          {formatBytes(ulSpeed)}/s
+          {formatBitrate(ulSpeed)}
         </span>
       </div>
 
