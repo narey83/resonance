@@ -51,10 +51,13 @@ namespace resonance.WaveformAnalysis
         private const int SampleRate = 44100;
         private const int TargetDsRate = 6_000;       // downsample rate for band filters
 
-        // ~25ms/bar for a typical 5min track (was 3_000, ~100ms/bar) — coarser bins smear a
-        // kick's ~10-20ms transient across the whole bin, making the loud bar visually arrive
-        // well before the audible attack once the playhead crosses into that bin.
-        private const int NumBars = 12_000;
+        // Bars scale with track length (~5ms/bar) rather than a fixed count, so a 10-minute
+        // track gets the same time-resolution as a 3-minute one instead of always being coarser.
+        // 5ms/bar is fine enough to resolve a kick's actual transient shape (~10-20ms), not just
+        // which coarse window it falls in. Clamped so pathologically short/long files stay sane.
+        private const int BarsPerSecond = 200;
+        private const int MinBars = 500;
+        private const int MaxBars = 200_000;
         private const int BassCutoffHz = 300;
         private const int MidCutoffHz = 2_000;
 
@@ -125,7 +128,7 @@ namespace resonance.WaveformAnalysis
                 return null;
             }
 
-            var data = ComputeBands(pcm, SampleRate, NumBars);
+            var data = ComputeBands(pcm, SampleRate, BarsForDuration(pcm.Length, SampleRate));
             SaveToCache(maskedFilename, originalFilename, data);
             return data;
         }
@@ -203,6 +206,9 @@ namespace resonance.WaveformAnalysis
             Buffer.BlockCopy(bytes, 0, samples, 0, bytes.Length);
             return samples;
         }
+
+        private static int BarsForDuration(int sampleCount, int sampleRate) =>
+            Math.Clamp((int)Math.Round((double)sampleCount / sampleRate * BarsPerSecond), MinBars, MaxBars);
 
         // ── Band computation (port of JS IIR filter logic) ────────────────────
         private static WaveformData ComputeBands(float[] monoData, int sampleRate, int numBars)
@@ -399,7 +405,7 @@ namespace resonance.WaveformAnalysis
                                 continue;
                             }
 
-                            var data = ComputeBands(pcm, SampleRate, NumBars);
+                            var data = ComputeBands(pcm, SampleRate, BarsForDuration(pcm.Length, SampleRate));
                             SaveToCache(masked, original, data);
                             Interlocked.Increment(ref analysed);
                         }
