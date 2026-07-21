@@ -301,6 +301,7 @@ const MediaPlayer = () => {
     prefs.get('mediaPlayer.seekerStyle', 'bar'),
   );
   const [waveformReady, setWaveformReady] = useState(false);
+  const [miniWaveformReady, setMiniWaveformReady] = useState(false);
   const [showCast, setShowCast] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
@@ -1159,6 +1160,16 @@ const MediaPlayer = () => {
       )}
 
       {/* ── Seekable scrubber ───────────────────────────────── */}
+      {seekerStyle !== 'bar' && (
+        <WaveformSeekBar
+          duration={displayDuration}
+          onReady={setMiniWaveformReady}
+          onSeek={seekTo}
+          progressPct={progressPct}
+          track={track}
+          variant={seekerStyle === 'colored' ? 'bands' : 'mono'}
+        />
+      )}
       <div
         aria-label="Seek"
         aria-valuemax={displayDuration}
@@ -1170,6 +1181,10 @@ const MediaPlayer = () => {
         onMouseLeave={handleScrubLeave}
         onMouseMove={handleScrubMove}
         role="slider"
+        style={{
+          display:
+            seekerStyle !== 'bar' && miniWaveformReady ? 'none' : 'block',
+        }}
         tabIndex={0}
       >
         <div
