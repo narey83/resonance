@@ -185,12 +185,6 @@ const WaveformSeekBar = ({
       'rgba(128,128,128,0.3)';
 
     if (variant === 'bands') {
-      // The bands variant always sits on its own fixed dark background
-      // (see .mp-waveform-seeker--bands), so its dim colour is fixed too —
-      // not the site theme's --player-text-dim, which is tuned for whatever
-      // arbitrary surface the mono variant happens to sit on.
-      const bandsDimColour = 'rgba(255,255,255,0.25)';
-
       for (let slot = 0; slot < numberSlots; slot++) {
         const totalH = Math.max(2, (overall[slot] / max) * halfH);
         // Boost bass so kick transients dominate visually (DJ-style perceptual weighting)
@@ -204,14 +198,11 @@ const WaveformSeekBar = ({
         const x = slot * (barWidth + gap);
         const played = slot < playedSlots;
 
-        // Unplayed bars render as a single muted colour rather than a faded
-        // band colour — an alpha-faded near-white "high" band in particular
-        // would disappear against the dark backdrop otherwise.
-        if (!played) {
-          context.fillStyle = bandsDimColour;
-          context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
-          continue;
-        }
+        // The bands variant always sits on its own fixed dark background
+        // (see .mp-waveform-seeker--bands), so dimming the real band colours
+        // via alpha is safe here — unlike the mono variant, there's no
+        // arbitrary/light theme surface behind it to wash out against.
+        context.globalAlpha = played ? 1 : 0.35;
 
         // Top half — bass at centre, mids above, highs at the tip
         context.fillStyle = BAND_COLOURS.low;
@@ -229,6 +220,7 @@ const WaveformSeekBar = ({
         context.fillRect(x, halfH + lowH + midH, barWidth, highH);
       }
 
+      context.globalAlpha = 1;
       return;
     }
 
