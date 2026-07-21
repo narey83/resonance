@@ -31,21 +31,28 @@ import api from '../../lib/api';
 import { formatSeconds } from '../../lib/util';
 import React, { useEffect, useRef, useState } from 'react';
 
-// Resamples peaks into one value per bar slot (max-hold, like a hardware meter).
-// Uses proportional (float) bucket bounds rather than a fixed integer stride —
-// an integer stride leaves a truncated, unsampled tail whenever peaks.length
-// isn't an exact multiple of numberSlots, which silently compresses/misaligns
-// the back portion of the track relative to actual playback position.
-const resamplePeaks = (peaks, numberSlots) => {
+// Resamples a [startFrac, endFrac) slice of peaks into one value per bar slot
+// (max-hold, like a hardware meter). Uses proportional (float) bucket bounds
+// rather than a fixed integer stride — an integer stride leaves a truncated,
+// unsampled tail whenever the slice length isn't an exact multiple of
+// numberSlots, which silently compresses/misaligns the back portion relative
+// to actual playback position.
+const resamplePeaks = (peaks, numberSlots, startFrac = 0, endFrac = 1) => {
+  const sliceStart = startFrac * peaks.length;
+  const sliceLength = (endFrac - startFrac) * peaks.length;
   const out = new Float32Array(numberSlots);
   for (let slot = 0; slot < numberSlots; slot++) {
-    const start = Math.floor((slot / numberSlots) * peaks.length);
+    const start = Math.floor(sliceStart + (slot / numberSlots) * sliceLength);
     const end = Math.max(
       start + 1,
-      Math.floor(((slot + 1) / numberSlots) * peaks.length),
+      Math.floor(sliceStart + ((slot + 1) / numberSlots) * sliceLength),
     );
     let peak = 0;
-    for (let index = start; index < end; index++) {
+    for (
+      let index = Math.max(0, start);
+      index < Math.min(end, peaks.length);
+      index++
+    ) {
       if (peaks[index] > peak) peak = peaks[index];
     }
 
@@ -70,14 +77,21 @@ const WaveformSeekBar = ({
   progressPct,
   track,
   variant = 'mono',
+  zoom = 1,
 }) => {
   const canvasRef = useRef(null);
   const peaksRef = useRef(null);
   // Caches the resampled (shape) arrays so redraws triggered by playback
   // progress alone (many times a second) don't redo the max-hold resample
   // over the full peaks arrays every time — only the played/unplayed split
-  // actually changes between those redraws, not the bar shape.
+  // actually changes between those redraws, not the bar shape. Only used at
+  // zoom=1 (whole-track view); a zoomed, playhead-following window changes
+  // every frame, so there's nothing to usefully cache there.
   const resampledRef = useRef(null);
+  // The currently visible [start, end] time window in seconds — read by the
+  // pointer handlers so clicking/dragging seeks to the right time even when
+  // zoomed into a sub-range of the track. Updated every draw() call.
+  const windowRef = useRef({ end: 0, start: 0 });
   const [ready, setReady] = useState(false);
   const [hoverFraction, setHoverFraction] = useState(null);
   const draggingRef = useRef(false);
@@ -137,13 +151,48 @@ const WaveformSeekBar = ({
     const gap = 1;
     const numberSlots = Math.max(1, Math.floor(pixelWidth / (barWidth + gap)));
 
+    // Read the live audio position directly rather than the progressPct prop
+    // — that prop only updates as often as the browser's throttled
+    // "timeupdate" event fires (a few times a second), which makes the
+    // played/unplayed boundary visibly step rather than move smoothly. This
+    // runs inside a requestAnimationFrame loop (below), so it's cheap to
+    // read every frame.
+    const liveTime =
+      getCurrentTime && duration
+        ? getCurrentTime()
+        : (progressPct / 100) * duration;
+
+    // At zoom > 1, only a window of the track is visible, centred on (and
+    // following) the current playback position, clamped so it never scrolls
+    // past the track's start/end.
+    let windowStart = 0;
+    let windowEnd = duration || 0;
+    if (zoom > 1 && duration) {
+      const zoomedDuration = duration / zoom;
+      windowStart = Math.max(
+        0,
+        Math.min(duration - zoomedDuration, liveTime - zoomedDuration / 2),
+      );
+      windowEnd = windowStart + zoomedDuration;
+    }
+
+    windowRef.current = { end: windowEnd, start: windowStart };
+    const startFrac = duration ? windowStart / duration : 0;
+    const endFrac = duration ? windowEnd / duration : 1;
+
     let resampled = resampledRef.current;
     if (
+      zoom > 1 ||
       !resampled ||
       resampled.source !== peaks ||
       resampled.numberSlots !== numberSlots
     ) {
-      const overallSlots = resamplePeaks(peaks.overall, numberSlots);
+      const overallSlots = resamplePeaks(
+        peaks.overall,
+        numberSlots,
+        startFrac,
+        endFrac,
+      );
       let peakMax = 1e-6;
       for (const peak of overallSlots) if (peak > peakMax) peakMax = peak;
       resampled = {
@@ -151,11 +200,13 @@ const WaveformSeekBar = ({
         numberSlots,
         max: peakMax,
         overall: overallSlots,
-        low: resamplePeaks(peaks.low, numberSlots),
-        mid: resamplePeaks(peaks.mid, numberSlots),
-        high: resamplePeaks(peaks.high, numberSlots),
+        low: resamplePeaks(peaks.low, numberSlots, startFrac, endFrac),
+        mid: resamplePeaks(peaks.mid, numberSlots, startFrac, endFrac),
+        high: resamplePeaks(peaks.high, numberSlots, startFrac, endFrac),
       };
-      resampledRef.current = resampled;
+      // Only worth caching the whole-track (zoom=1) view — a following
+      // window changes every frame, so caching it would never hit anyway.
+      if (zoom <= 1) resampledRef.current = resampled;
     }
 
     const { high, low, max, mid, overall } = resampled;
@@ -164,17 +215,10 @@ const WaveformSeekBar = ({
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.clearRect(0, 0, pixelWidth, pixelHeight);
     const halfH = pixelHeight / 2;
-    // Read the live audio position directly rather than the progressPct prop
-    // — that prop only updates as often as the browser's throttled
-    // "timeupdate" event fires (a few times a second), which makes the
-    // played/unplayed boundary visibly step rather than move smoothly. This
-    // runs inside a requestAnimationFrame loop (below), so it's cheap to
-    // read every frame.
-    const livePct =
-      getCurrentTime && duration
-        ? (getCurrentTime() / duration) * 100
-        : progressPct;
-    const playedSlots = Math.round((livePct / 100) * numberSlots);
+    const windowDuration = windowEnd - windowStart || 1;
+    const playedSlots = Math.round(
+      ((liveTime - windowStart) / windowDuration) * numberSlots,
+    );
 
     // Theme-aware muted colour for the unplayed portion of the mono bars —
     // matches whichever theme (light/AMOLED) is active rather than a fixed
@@ -268,17 +312,25 @@ const WaveformSeekBar = ({
     return Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
   };
 
+  // Maps a fraction across the canvas to a track time, through whatever
+  // window is currently visible (the whole track at zoom=1, a following
+  // sub-range at zoom>1).
+  const timeFromFraction = (fraction) => {
+    const { end, start } = windowRef.current;
+    return start + fraction * (end - start);
+  };
+
   const handlePointerDown = (event) => {
     if (!duration) return;
     draggingRef.current = true;
     canvasRef.current.setPointerCapture(event.pointerId);
-    onSeek(fractionFromEvent(event) * duration);
+    onSeek(timeFromFraction(fractionFromEvent(event)));
   };
 
   const handlePointerMove = (event) => {
     const fraction = fractionFromEvent(event);
     setHoverFraction(fraction);
-    if (draggingRef.current && duration) onSeek(fraction * duration);
+    if (draggingRef.current && duration) onSeek(timeFromFraction(fraction));
   };
 
   const handlePointerUp = (event) => {
@@ -323,7 +375,7 @@ const WaveformSeekBar = ({
           className="media-player-scrubber-tooltip"
           style={{ left: `${hoverFraction * 100}%` }}
         >
-          {formatSeconds(hoverFraction * duration)}
+          {formatSeconds(timeFromFraction(hoverFraction))}
         </div>
       )}
     </div>

@@ -69,6 +69,7 @@ import {
   Volume2,
   VolumeX,
   X,
+  ZoomIn,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -78,6 +79,7 @@ const RESUME_POSITION_KEY = 'resonance-player-position';
 const SEEKER_STYLES = ['mono', 'colored'];
 const SEEKER_STYLE_LABELS = { colored: 'Colored', mono: 'Mono' };
 const SEEKER_HEIGHTS = [40, 70, 110, 150];
+const SEEKER_ZOOMS = [1, 2, 4, 8];
 
 const CAST_CONTENT_TYPES = {
   mp3: 'audio/mpeg',
@@ -315,6 +317,9 @@ const MediaPlayer = () => {
   );
   const [seekerHeight, setSeekerHeight] = useState(() =>
     prefs.get('mediaPlayer.seekerHeight', 40),
+  );
+  const [seekerZoom, setSeekerZoom] = useState(() =>
+    prefs.get('mediaPlayer.seekerZoom', 1),
   );
   const [waveformReady, setWaveformReady] = useState(false);
   const [miniWaveformReady, setMiniWaveformReady] = useState(false);
@@ -752,6 +757,14 @@ const MediaPlayer = () => {
     prefs.set('mediaPlayer.seekerHeight', nextHeight);
   };
 
+  const cycleSeekerZoom = () => {
+    const index = SEEKER_ZOOMS.indexOf(seekerZoom);
+    const nextZoom =
+      SEEKER_ZOOMS[index === -1 ? 0 : (index + 1) % SEEKER_ZOOMS.length];
+    setSeekerZoom(nextZoom);
+    prefs.set('mediaPlayer.seekerZoom', nextZoom);
+  };
+
   const handleSeekKey = (event) => {
     const dur =
       googleCast.connected && googleCast.castDuration > 0
@@ -1014,6 +1027,15 @@ const MediaPlayer = () => {
                       <MoveVertical size={12} />
                       Taller
                     </button>
+                    <button
+                      className="mp-seeker-menu-btn hover-fx"
+                      onClick={cycleSeekerZoom}
+                      title="Zoom in, following the playhead"
+                      type="button"
+                    >
+                      <ZoomIn size={12} />
+                      {seekerZoom}×
+                    </button>
                   </>
                 )}
               </div>
@@ -1032,6 +1054,7 @@ const MediaPlayer = () => {
                     progressPct={progressPct}
                     track={track}
                     variant={seekerStyle === 'colored' ? 'bands' : 'mono'}
+                    zoom={seekerZoom}
                   />
                 )}
                 <div
@@ -1266,6 +1289,15 @@ const MediaPlayer = () => {
               <MoveVertical size={12} />
               Taller
             </button>
+            <button
+              className="mp-seeker-menu-btn hover-fx"
+              onClick={cycleSeekerZoom}
+              title="Zoom in, following the playhead"
+              type="button"
+            >
+              <ZoomIn size={12} />
+              {seekerZoom}×
+            </button>
           </>
         )}
       </div>
@@ -1280,6 +1312,7 @@ const MediaPlayer = () => {
             progressPct={progressPct}
             track={track}
             variant={seekerStyle === 'colored' ? 'bands' : 'mono'}
+            zoom={seekerZoom}
           />
         )}
         <div
