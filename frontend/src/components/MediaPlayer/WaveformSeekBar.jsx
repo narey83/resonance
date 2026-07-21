@@ -344,34 +344,60 @@ const WaveformSeekBar = ({
 
   // Maps a fraction across the canvas to a track time, through whatever
   // window is currently visible (the whole track at zoom=1, a following
-  // sub-range at zoom>1).
+  // sub-range at zoom>1). Used for plain click/drag-to-seek.
   const timeFromFraction = (fraction) => {
     const { end, start } = windowRef.current;
     return start + fraction * (end - start);
   };
+
+  // Scratching needs a fixed, zoom-independent sensitivity — grabbing the
+  // waveform should feel like grabbing a physical record: a given amount of
+  // hand movement always covers the same amount of audio, regardless of how
+  // zoomed in the view happens to be. Mapping through the visible window
+  // (like plain seeking does) meant a tiny drag at low zoom covered minutes
+  // of audio, which is what made it feel like it was "going too fast".
+  const SCRATCH_PIXELS_PER_SECOND = 400;
+  const dragStartRef = useRef({ clientX: 0, time: 0 });
 
   const handlePointerDown = (event) => {
     if (!duration) return;
     draggingRef.current = true;
     canvasRef.current.setPointerCapture(event.pointerId);
     const time = timeFromFraction(fractionFromEvent(event));
-    if (onScratchStart) onScratchStart(time);
-    else onSeek(time);
+    if (onScratchStart) {
+      dragStartRef.current = { clientX: event.clientX, time };
+      onScratchStart(time);
+    } else {
+      onSeek(time);
+    }
   };
 
   const handlePointerMove = (event) => {
     const fraction = fractionFromEvent(event);
     setHoverFraction(fraction);
     if (!draggingRef.current || !duration) return;
-    const time = timeFromFraction(fraction);
-    if (onScratchMove) onScratchMove(time);
-    else onSeek(time);
+    if (onScratchMove) {
+      const deltaTime =
+        (event.clientX - dragStartRef.current.clientX) /
+        SCRATCH_PIXELS_PER_SECOND;
+      onScratchMove(
+        Math.max(0, Math.min(duration, dragStartRef.current.time + deltaTime)),
+      );
+    } else {
+      onSeek(timeFromFraction(fraction));
+    }
   };
 
   const handlePointerUp = (event) => {
     draggingRef.current = false;
     canvasRef.current.releasePointerCapture(event.pointerId);
-    if (onScratchEnd) onScratchEnd(timeFromFraction(fractionFromEvent(event)));
+    if (!onScratchEnd) return;
+    const deltaTime =
+      (event.clientX - dragStartRef.current.clientX) /
+      SCRATCH_PIXELS_PER_SECOND;
+    onScratchEnd(
+      Math.max(0, Math.min(duration, dragStartRef.current.time + deltaTime)),
+    );
   };
 
   // Keyboard seek parity with the plain scrubber bar (±5s) — the canvas has
