@@ -1174,51 +1174,61 @@ const MediaPlayer = () => {
       )}
 
       {/* ── Seekable scrubber ───────────────────────────────── */}
-      {seekerStyle !== 'bar' && (
-        <WaveformSeekBar
-          duration={displayDuration}
-          height={seekerHeight}
-          onHeightChange={cycleSeekerHeight}
-          onReady={setMiniWaveformReady}
-          onSeek={seekTo}
-          progressPct={progressPct}
-          track={track}
-          variant={seekerStyle === 'colored' ? 'bands' : 'mono'}
-        />
-      )}
-      <div
-        aria-label="Seek"
-        aria-valuemax={displayDuration}
-        aria-valuemin={0}
-        aria-valuenow={effectiveTime}
-        className="media-player-scrubber"
-        onClick={handleSeek}
-        onKeyDown={handleSeekKey}
-        onMouseLeave={handleScrubLeave}
-        onMouseMove={handleScrubMove}
-        role="slider"
-        style={{
-          display:
-            seekerStyle !== 'bar' && miniWaveformReady ? 'none' : 'block',
-        }}
-        tabIndex={0}
-      >
-        <div
-          className="media-player-scrubber-buffered"
-          style={{ width: `${bufferedPct}%` }}
-        />
-        <div
-          className="media-player-scrubber-fill"
-          style={{ width: `${progressPct}%` }}
-        />
-        {scrubHover !== null && (
-          <div
-            className="media-player-scrubber-tooltip"
-            style={{ left: `${scrubHover * 100}%` }}
-          >
-            {formatSeconds(scrubHover * displayDuration)}
-          </div>
+      <div className="media-player-scrub-wrap">
+        {seekerStyle !== 'bar' && (
+          <WaveformSeekBar
+            duration={displayDuration}
+            height={seekerHeight}
+            onHeightChange={cycleSeekerHeight}
+            onReady={setMiniWaveformReady}
+            onSeek={seekTo}
+            progressPct={progressPct}
+            track={track}
+            variant={seekerStyle === 'colored' ? 'bands' : 'mono'}
+          />
         )}
+        <div
+          aria-label="Seek"
+          aria-valuemax={displayDuration}
+          aria-valuemin={0}
+          aria-valuenow={effectiveTime}
+          className="media-player-scrubber"
+          onClick={handleSeek}
+          onKeyDown={handleSeekKey}
+          onMouseLeave={handleScrubLeave}
+          onMouseMove={handleScrubMove}
+          role="slider"
+          style={{
+            display:
+              seekerStyle !== 'bar' && miniWaveformReady ? 'none' : 'block',
+          }}
+          tabIndex={0}
+        >
+          <div
+            className="media-player-scrubber-buffered"
+            style={{ width: `${bufferedPct}%` }}
+          />
+          <div
+            className="media-player-scrubber-fill"
+            style={{ width: `${progressPct}%` }}
+          />
+          {scrubHover !== null && (
+            <div
+              className="media-player-scrubber-tooltip"
+              style={{ left: `${scrubHover * 100}%` }}
+            >
+              {formatSeconds(scrubHover * displayDuration)}
+            </div>
+          )}
+        </div>
+        <button
+          className="mp-mini-seeker-toggle hover-fx"
+          onClick={toggleSeekerStyle}
+          title={`Seeker: ${seekerStyle} (click for ${SEEKER_STYLES[(SEEKER_STYLES.indexOf(seekerStyle) + 1) % SEEKER_STYLES.length]})`}
+          type="button"
+        >
+          <AudioWaveform size={12} />
+        </button>
       </div>
 
       {/* ── Main bar ─────────────────────────────────────────── */}

@@ -49,6 +49,35 @@
 }
 
 /* ── Seekable top scrubber ──────────────────────────────────────── */
+.media-player-scrub-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.mp-mini-seeker-toggle {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(0, 0, 0, 0.35);
+  border: none;
+  cursor: pointer;
+  transition: background var(--dur-fast, 120ms) var(--ease-standard, ease),
+              color var(--dur-fast, 120ms) var(--ease-standard, ease);
+}
+
+.mp-mini-seeker-toggle:hover {
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+}
+
 .media-player-scrubber {
   position: relative;
   height: 6px;
