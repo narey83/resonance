@@ -73,6 +73,9 @@ const WaveformSeekBar = ({
   getCurrentTime,
   height = 40,
   onReady,
+  onScratchEnd,
+  onScratchMove,
+  onScratchStart,
   onSeek,
   progressPct,
   track,
@@ -351,18 +354,24 @@ const WaveformSeekBar = ({
     if (!duration) return;
     draggingRef.current = true;
     canvasRef.current.setPointerCapture(event.pointerId);
-    onSeek(timeFromFraction(fractionFromEvent(event)));
+    const time = timeFromFraction(fractionFromEvent(event));
+    if (onScratchStart) onScratchStart(time);
+    else onSeek(time);
   };
 
   const handlePointerMove = (event) => {
     const fraction = fractionFromEvent(event);
     setHoverFraction(fraction);
-    if (draggingRef.current && duration) onSeek(timeFromFraction(fraction));
+    if (!draggingRef.current || !duration) return;
+    const time = timeFromFraction(fraction);
+    if (onScratchMove) onScratchMove(time);
+    else onSeek(time);
   };
 
   const handlePointerUp = (event) => {
     draggingRef.current = false;
     canvasRef.current.releasePointerCapture(event.pointerId);
+    if (onScratchEnd) onScratchEnd(timeFromFraction(fractionFromEvent(event)));
   };
 
   // Keyboard seek parity with the plain scrubber bar (±5s) — the canvas has

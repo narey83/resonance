@@ -45,6 +45,7 @@ import * as castApi from '../../lib/cast';
 import { getLocalStreamUrl } from '../../lib/files';
 import { getArtworkUrl } from '../../lib/musicLibrary';
 import * as prefs from '../../lib/prefs';
+import { ScratchEngine } from '../../lib/scratchEngine';
 import { ensureSigned } from '../../lib/streamSignatures';
 import { getToken, isPassthroughEnabled } from '../../lib/token';
 import { formatAttributes, formatSeconds, getFileName } from '../../lib/util';
@@ -341,16 +342,69 @@ const MediaPlayer = () => {
   const trackRef = useRef(track);
   trackRef.current = track;
 
+  // While an actual scratch drag is in progress, this holds the live scratch
+  // position so the waveform's played/unplayed boundary follows the drag
+  // instead of the (paused, frozen) <audio> element's currentTime.
+  const scratchTimeRef = useRef(null);
+  const scratchEngineRef = useRef(null);
+  const wasPlayingBeforeScratchRef = useRef(false);
+
   // Reads the live position directly from refs (not React state) so the
   // waveform's animation-frame redraw loop always sees the freshest value
   // instead of whatever currentTime last happened to re-render with.
-  const getCurrentTime = useCallback(
-    () =>
-      googleCastRef.current?.connected
-        ? googleCastRef.current.castCurrentTime
-        : audioRef.current?.currentTime ?? 0,
-    [],
-  );
+  const getCurrentTime = useCallback(() => {
+    if (scratchTimeRef.current !== null) return scratchTimeRef.current;
+    return googleCastRef.current?.connected
+      ? googleCastRef.current.castCurrentTime
+      : audioRef.current?.currentTime ?? 0;
+  }, []);
+
+  // Real scratch playback (reverse / variable speed) needs sample-level
+  // control the <audio> element can't offer at all, so this hands off to a
+  // separate Web Audio engine for the duration of the drag gesture only —
+  // pausing the normal element on grab, driving audio from a decoded buffer
+  // while dragging, then handing control straight back on release.
+  const handleScratchStart = (time) => {
+    if (!track?.localRelativePath) return;
+    const audio = audioRef.current;
+    wasPlayingBeforeScratchRef.current = Boolean(audio) && !audio.paused;
+    audio?.pause();
+    scratchTimeRef.current = time;
+    if (!scratchEngineRef.current) {
+      scratchEngineRef.current = new ScratchEngine();
+    }
+
+    void scratchEngineRef.current.startScratch(track.path, time);
+  };
+
+  const handleScratchMove = (time) => {
+    scratchTimeRef.current = time;
+    scratchEngineRef.current?.moveScratch(time);
+  };
+
+  const handleScratchEnd = (time) => {
+    scratchEngineRef.current?.endScratch();
+    scratchTimeRef.current = null;
+    const audio = audioRef.current;
+    if (audio) {
+      audio.currentTime = time;
+      if (wasPlayingBeforeScratchRef.current) void audio.play();
+    }
+  };
+
+  // Decode the current track ahead of time (once the waveform is showing)
+  // so the first actual scratch gesture doesn't stall on a multi-second
+  // decode, and free the previous track's decoded buffer on track change —
+  // a full decoded buffer is tens of MB and there's no reason to keep more
+  // than the current track resident.
+  useEffect(() => {
+    if (!seekerEnabled || !track?.localRelativePath) return undefined;
+    if (!scratchEngineRef.current)
+      scratchEngineRef.current = new ScratchEngine();
+    void scratchEngineRef.current.prepare(track.path);
+    return () => scratchEngineRef.current?.release();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seekerEnabled, track?.path]);
 
   // Position to resume at once the user presses play after a refresh — read once,
   // consumed (and cleared) the first time it matches the track being loaded.
@@ -1050,6 +1104,9 @@ const MediaPlayer = () => {
                     getCurrentTime={getCurrentTime}
                     height={seekerHeight}
                     onReady={setWaveformReady}
+                    onScratchEnd={handleScratchEnd}
+                    onScratchMove={handleScratchMove}
+                    onScratchStart={handleScratchStart}
                     onSeek={seekTo}
                     progressPct={progressPct}
                     track={track}
@@ -1308,6 +1365,9 @@ const MediaPlayer = () => {
             getCurrentTime={getCurrentTime}
             height={seekerHeight}
             onReady={setMiniWaveformReady}
+            onScratchEnd={handleScratchEnd}
+            onScratchMove={handleScratchMove}
+            onScratchStart={handleScratchStart}
             onSeek={seekTo}
             progressPct={progressPct}
             track={track}
