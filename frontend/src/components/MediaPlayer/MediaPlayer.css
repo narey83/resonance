@@ -54,16 +54,25 @@
   flex-shrink: 0;
 }
 
-.mp-mini-seeker-toggle {
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  z-index: 1;
+/* Small menu row of seeker controls (style cycle, resize) sitting above the
+   waveform/scrubber, rather than floating on top of it. */
+.mp-seeker-menu {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+}
+
+.mp-seeker-menu--mini {
+  justify-content: flex-end;
+}
+
+.mp-seeker-menu-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 5px;
   color: rgba(255, 255, 255, 0.75);
   background: rgba(0, 0, 0, 0.35);
@@ -73,7 +82,7 @@
               color var(--dur-fast, 120ms) var(--ease-standard, ease);
 }
 
-.mp-mini-seeker-toggle:hover {
+.mp-seeker-menu-btn:hover {
   color: #fff;
   background: rgba(0, 0, 0, 0.55);
 }
@@ -942,50 +951,6 @@
   height: 100%;
   cursor: pointer;
   touch-action: none;
-}
-
-.mp-waveform-resize-btn {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
-  color: rgba(255, 255, 255, 0.75);
-  background: rgba(0, 0, 0, 0.35);
-  border: none;
-  cursor: pointer;
-  transition: background var(--dur-fast, 120ms) var(--ease-standard, ease),
-              color var(--dur-fast, 120ms) var(--ease-standard, ease);
-}
-
-.mp-waveform-resize-btn:hover {
-  color: #fff;
-  background: rgba(0, 0, 0, 0.55);
-}
-
-.mp-seeker-toggle {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  color: rgba(255, 255, 255, 0.85);
-  background: rgba(255, 255, 255, 0.08);
-  border: none;
-  cursor: pointer;
-  transition: background var(--dur-fast, 120ms) var(--ease-standard, ease),
-              color var(--dur-fast, 120ms) var(--ease-standard, ease);
-}
-
-.mp-seeker-toggle:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.16);
 }
 
 .mp-expanded-controls {

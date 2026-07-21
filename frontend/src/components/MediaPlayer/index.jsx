@@ -58,6 +58,7 @@ import {
   Heart,
   ListMusic,
   Maximize2,
+  MoveVertical,
   Pause,
   Play,
   Repeat,
@@ -961,6 +962,27 @@ const MediaPlayer = () => {
                 )}
               </div>
 
+              <div className="mp-seeker-menu">
+                <button
+                  className="mp-seeker-menu-btn hover-fx"
+                  onClick={toggleSeekerStyle}
+                  title={`Seeker: ${seekerStyle} (click for ${SEEKER_STYLES[(SEEKER_STYLES.indexOf(seekerStyle) + 1) % SEEKER_STYLES.length]})`}
+                  type="button"
+                >
+                  <AudioWaveform size={12} />
+                </button>
+                {seekerStyle !== 'bar' && (
+                  <button
+                    className="mp-seeker-menu-btn hover-fx"
+                    onClick={cycleSeekerHeight}
+                    title="Make taller"
+                    type="button"
+                  >
+                    <MoveVertical size={12} />
+                  </button>
+                )}
+              </div>
+
               <div className="mp-expanded-scrub-row">
                 <span className="mp-expanded-time">
                   {formatSeconds(effectiveTime)}
@@ -970,7 +992,6 @@ const MediaPlayer = () => {
                     duration={displayDuration}
                     getCurrentTime={getCurrentTime}
                     height={seekerHeight}
-                    onHeightChange={cycleSeekerHeight}
                     onReady={setWaveformReady}
                     onSeek={seekTo}
                     progressPct={progressPct}
@@ -1005,14 +1026,6 @@ const MediaPlayer = () => {
                 <span className="mp-expanded-time">
                   {formatSeconds(displayDuration)}
                 </span>
-                <button
-                  className="mp-seeker-toggle hover-fx"
-                  onClick={toggleSeekerStyle}
-                  title={`Seeker: ${seekerStyle} (click for ${SEEKER_STYLES[(SEEKER_STYLES.indexOf(seekerStyle) + 1) % SEEKER_STYLES.length]})`}
-                  type="button"
-                >
-                  <AudioWaveform size={14} />
-                </button>
               </div>
 
               <div className="mp-expanded-controls">
@@ -1186,13 +1199,32 @@ const MediaPlayer = () => {
       )}
 
       {/* ── Seekable scrubber ───────────────────────────────── */}
+      <div className="mp-seeker-menu mp-seeker-menu--mini">
+        <button
+          className="mp-seeker-menu-btn hover-fx"
+          onClick={toggleSeekerStyle}
+          title={`Seeker: ${seekerStyle} (click for ${SEEKER_STYLES[(SEEKER_STYLES.indexOf(seekerStyle) + 1) % SEEKER_STYLES.length]})`}
+          type="button"
+        >
+          <AudioWaveform size={12} />
+        </button>
+        {seekerStyle !== 'bar' && (
+          <button
+            className="mp-seeker-menu-btn hover-fx"
+            onClick={cycleSeekerHeight}
+            title="Make taller"
+            type="button"
+          >
+            <MoveVertical size={12} />
+          </button>
+        )}
+      </div>
       <div className="media-player-scrub-wrap">
         {seekerStyle !== 'bar' && (
           <WaveformSeekBar
             duration={displayDuration}
             getCurrentTime={getCurrentTime}
             height={seekerHeight}
-            onHeightChange={cycleSeekerHeight}
             onReady={setMiniWaveformReady}
             onSeek={seekTo}
             progressPct={progressPct}
@@ -1234,14 +1266,6 @@ const MediaPlayer = () => {
             </div>
           )}
         </div>
-        <button
-          className="mp-mini-seeker-toggle hover-fx"
-          onClick={toggleSeekerStyle}
-          title={`Seeker: ${seekerStyle} (click for ${SEEKER_STYLES[(SEEKER_STYLES.indexOf(seekerStyle) + 1) % SEEKER_STYLES.length]})`}
-          type="button"
-        >
-          <AudioWaveform size={12} />
-        </button>
       </div>
 
       {/* ── Main bar ─────────────────────────────────────────── */}

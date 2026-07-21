@@ -29,7 +29,6 @@
 
 import api from '../../lib/api';
 import { formatSeconds } from '../../lib/util';
-import { MoveVertical } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 
 // Resamples peaks into one value per bar slot (max-hold, like a hardware meter).
@@ -66,7 +65,6 @@ const WaveformSeekBar = ({
   duration,
   getCurrentTime,
   height = 40,
-  onHeightChange,
   onReady,
   onSeek,
   progressPct,
@@ -335,16 +333,6 @@ const WaveformSeekBar = ({
         >
           {formatSeconds(hoverFraction * duration)}
         </div>
-      )}
-      {onHeightChange && (
-        <button
-          className="mp-waveform-resize-btn"
-          onClick={onHeightChange}
-          title="Make taller"
-          type="button"
-        >
-          <MoveVertical size={12} />
-        </button>
       )}
     </div>
   );
