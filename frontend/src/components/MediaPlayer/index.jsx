@@ -75,6 +75,7 @@ import { toast } from 'react-toastify';
 
 const RESUME_POSITION_KEY = 'resonance-player-position';
 const SEEKER_STYLES = ['bar', 'waveform', 'colored'];
+const SEEKER_HEIGHTS = [40, 70, 110, 150];
 
 const CAST_CONTENT_TYPES = {
   mp3: 'audio/mpeg',
@@ -299,6 +300,9 @@ const MediaPlayer = () => {
   const [scrubHover, setScrubHover] = useState(null);
   const [seekerStyle, setSeekerStyle] = useState(() =>
     prefs.get('mediaPlayer.seekerStyle', 'bar'),
+  );
+  const [seekerHeight, setSeekerHeight] = useState(() =>
+    prefs.get('mediaPlayer.seekerHeight', 40),
   );
   const [waveformReady, setWaveformReady] = useState(false);
   const [miniWaveformReady, setMiniWaveformReady] = useState(false);
@@ -711,6 +715,14 @@ const MediaPlayer = () => {
     prefs.set('mediaPlayer.seekerStyle', style);
   };
 
+  const cycleSeekerHeight = () => {
+    const index = SEEKER_HEIGHTS.indexOf(seekerHeight);
+    const nextHeight =
+      SEEKER_HEIGHTS[index === -1 ? 0 : (index + 1) % SEEKER_HEIGHTS.length];
+    setSeekerHeight(nextHeight);
+    prefs.set('mediaPlayer.seekerHeight', nextHeight);
+  };
+
   const handleSeekKey = (event) => {
     const dur =
       googleCast.connected && googleCast.castDuration > 0
@@ -945,6 +957,8 @@ const MediaPlayer = () => {
                 {seekerStyle !== 'bar' && (
                   <WaveformSeekBar
                     duration={displayDuration}
+                    height={seekerHeight}
+                    onHeightChange={cycleSeekerHeight}
                     onReady={setWaveformReady}
                     onSeek={seekTo}
                     progressPct={progressPct}
@@ -1163,6 +1177,8 @@ const MediaPlayer = () => {
       {seekerStyle !== 'bar' && (
         <WaveformSeekBar
           duration={displayDuration}
+          height={seekerHeight}
+          onHeightChange={cycleSeekerHeight}
           onReady={setMiniWaveformReady}
           onSeek={seekTo}
           progressPct={progressPct}

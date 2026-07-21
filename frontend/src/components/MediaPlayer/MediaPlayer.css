@@ -907,6 +907,29 @@
   touch-action: none;
 }
 
+.mp-waveform-resize-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(0, 0, 0, 0.35);
+  border: none;
+  cursor: pointer;
+  transition: background var(--dur-fast, 120ms) var(--ease-standard, ease),
+              color var(--dur-fast, 120ms) var(--ease-standard, ease);
+}
+
+.mp-waveform-resize-btn:hover {
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+}
+
 .mp-seeker-toggle {
   flex-shrink: 0;
   display: flex;

@@ -29,6 +29,7 @@
 
 import api from '../../lib/api';
 import { formatSeconds } from '../../lib/util';
+import { MoveVertical } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 
 // Resamples peaks into one value per bar slot (max-hold, like a hardware meter).
@@ -63,6 +64,8 @@ const BAND_COLOURS = { high: '#f5f5f5', low: '#2f6fed', mid: '#ff8a3d' };
 // variant: 'mono' (single accent-coloured bars) or 'bands' (Pioneer-style frequency colouring).
 const WaveformSeekBar = ({
   duration,
+  height = 40,
+  onHeightChange,
   onReady,
   onSeek,
   progressPct,
@@ -115,14 +118,14 @@ const WaveformSeekBar = ({
     // CSS-pixel width capping resolution well below what's available.
     const dpr = window.devicePixelRatio || 1;
     const width = canvas.clientWidth;
-    const height = canvas.clientHeight;
+    const cssHeight = canvas.clientHeight;
     const pixelWidth = Math.round(width * dpr);
-    const pixelHeight = Math.round(height * dpr);
+    const pixelHeight = Math.round(cssHeight * dpr);
     if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
     if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
 
     const barWidth = 1;
-    const gap = 1;
+    const gap = 0;
     const numberSlots = Math.max(1, Math.floor(pixelWidth / (barWidth + gap)));
     const overall = resamplePeaks(peaks.overall, numberSlots);
     let max = 1e-6;
@@ -225,7 +228,10 @@ const WaveformSeekBar = ({
   if (!ready) return null;
 
   return (
-    <div className="mp-waveform-seeker">
+    <div
+      className="mp-waveform-seeker"
+      style={{ height }}
+    >
       <canvas
         aria-label="Seek"
         aria-valuemax={duration}
@@ -246,6 +252,16 @@ const WaveformSeekBar = ({
         >
           {formatSeconds(hoverFraction * duration)}
         </div>
+      )}
+      {onHeightChange && (
+        <button
+          className="mp-waveform-resize-btn"
+          onClick={onHeightChange}
+          title="Make taller"
+          type="button"
+        >
+          <MoveVertical size={12} />
+        </button>
       )}
     </div>
   );
