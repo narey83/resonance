@@ -124,8 +124,13 @@ const WaveformSeekBar = ({
     if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
     if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
 
+    // gap=0 (fully packed, zero margin) is fragile: any tiny mismatch between
+    // the canvas's device-pixel buffer and how the browser actually paints it
+    // (non-100% browser zoom, sub-pixel rounding) turns a 1px-per-bar pattern
+    // into visible periodic Moiré banding unrelated to the real audio. A 1px
+    // gap gives enough tolerance that a scale mismatch just softens bar edges.
     const barWidth = 1;
-    const gap = 0;
+    const gap = 1;
     const numberSlots = Math.max(1, Math.floor(pixelWidth / (barWidth + gap)));
     const overall = resamplePeaks(peaks.overall, numberSlots);
     let max = 1e-6;
