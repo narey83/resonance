@@ -39,6 +39,13 @@
 // of size, which sounds like an unbounded-speed shriek rather than a scratch.
 const MAX_SPEED = 6;
 
+// How quickly the read head's actual speed eases toward the capped target
+// speed, per output sample. A real turntable's platter has physical mass, so
+// its speed changes gradually rather than snapping instantly — without this,
+// speed jumped straight to its new value every ~2.9ms quantum, which reads as
+// mechanical/digital rather than the "give" of an actual scratch.
+const INERTIA = 0.004;
+
 class ScratchProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -47,6 +54,7 @@ class ScratchProcessor extends AudioWorkletProcessor {
     this.position = 0; // current read head, in samples (fractional)
     this.targetPosition = 0; // where the drag wants the read head to be
     this.scratching = false;
+    this.velocity = 0; // eased/smoothed actual speed, distinct from the raw capped target
     this.reportCounter = 0;
 
     this.port.onmessage = (event) => {
@@ -89,15 +97,25 @@ class ScratchProcessor extends AudioWorkletProcessor {
     };
   }
 
-  // Linear interpolation between neighbouring samples — needed because the
-  // read head moves at a variable (and often fractional, sometimes negative)
-  // rate, not a fixed integer step.
+  // Catmull-Rom cubic interpolation between neighbouring samples — needed
+  // because the read head moves at a variable (fractional, sometimes
+  // negative) rate, not a fixed integer step. Plain linear interpolation
+  // introduces noticeable aliasing/distortion at variable speed, which reads
+  // as harsh and digital rather than the smoother character of an actual
+  // needle tracking a groove.
   readSample(channelData, position) {
     const index = Math.floor(position);
     const fraction = position - index;
-    const a = channelData[index] ?? 0;
-    const b = channelData[index + 1] ?? a;
-    return a + (b - a) * fraction;
+    const p0 = channelData[index - 1] ?? channelData[index] ?? 0;
+    const p1 = channelData[index] ?? 0;
+    const p2 = channelData[index + 1] ?? p1;
+    const p3 = channelData[index + 2] ?? p2;
+
+    const a0 = -0.5 * p0 + 1.5 * p1 - 1.5 * p2 + 0.5 * p3;
+    const a1 = p0 - 2.5 * p1 + 2 * p2 - 0.5 * p3;
+    const a2 = -0.5 * p0 + 0.5 * p2;
+    const a3 = p1;
+    return ((a0 * fraction + a1) * fraction + a2) * fraction + a3;
   }
 
   process(inputs, outputs) {
@@ -109,29 +127,32 @@ class ScratchProcessor extends AudioWorkletProcessor {
     }
 
     for (let frame = 0; frame < frameCount; frame++) {
-      let step;
+      let targetSpeed;
       if (this.scratching) {
-        // Move toward targetPosition at a capped speed rather than always
-        // closing the whole gap within this ~2.9ms quantum — a real drag can
-        // easily imply a gap of thousands of samples between pointermove
-        // updates, which without a cap made the read head "zip" to catch up
-        // at extreme, unbounded speed every quantum (sounds like a shriek,
-        // not a scratch). Falling behind and catching up gradually over
-        // several quanta instead sounds like an actual bounded-speed scratch.
+        // The capped speed needed to close the gap to targetPosition, before
+        // inertia smooths it — a real drag can easily imply a gap of
+        // thousands of samples between pointermove updates, which without a
+        // cap would mean closing it within a single ~2.9ms quantum
+        // regardless of size (sounds like an unbounded-speed shriek).
         const remaining = frameCount - frame;
         const desiredStep = (this.targetPosition - this.position) / remaining;
-        step = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, desiredStep));
+        targetSpeed = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, desiredStep));
       } else {
         // Not actively being dragged — hold position (silence/last sample)
         // rather than auto-advancing; MediaPlayer hands control straight
         // back to the normal <audio> element on release, so this processor
         // is only ever live while a drag is in progress.
-        step = 0;
+        targetSpeed = 0;
       }
+
+      // Ease the actual speed toward targetSpeed rather than snapping —
+      // simulates the platter's physical momentum instead of an instant,
+      // mechanical speed change every quantum.
+      this.velocity += (targetSpeed - this.velocity) * INERTIA;
 
       this.position = Math.max(
         0,
-        Math.min(this.length - 1, this.position + step),
+        Math.min(this.length - 1, this.position + this.velocity),
       );
 
       for (const [channel, outChannel] of output.entries()) {
