@@ -50,7 +50,11 @@ namespace resonance.WaveformAnalysis
     {
         private const int SampleRate = 44100;
         private const int TargetDsRate = 6_000;       // downsample rate for band filters
-        private const int NumBars = 3_000;        // bars stored per track
+
+        // ~25ms/bar for a typical 5min track (was 3_000, ~100ms/bar) — coarser bins smear a
+        // kick's ~10-20ms transient across the whole bin, making the loud bar visually arrive
+        // well before the audible attack once the playhead crosses into that bin.
+        private const int NumBars = 12_000;
         private const int BassCutoffHz = 300;
         private const int MidCutoffHz = 2_000;
 
