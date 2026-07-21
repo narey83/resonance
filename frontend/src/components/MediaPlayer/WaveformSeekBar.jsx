@@ -169,7 +169,7 @@ const WaveformSeekBar = ({
     // already-quantised grid instead is far more stable (same underlying
     // "atoms" every frame, just grouped differently) and cheaper (a much
     // smaller array to scan than the raw peaks).
-    const MAX_ZOOM = 8;
+    const MAX_ZOOM = 32;
     let resampled = resampledRef.current;
     if (
       !resampled ||

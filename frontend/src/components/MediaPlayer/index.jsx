@@ -79,7 +79,7 @@ const RESUME_POSITION_KEY = 'resonance-player-position';
 const SEEKER_STYLES = ['mono', 'colored'];
 const SEEKER_STYLE_LABELS = { colored: 'Colored', mono: 'Mono' };
 const SEEKER_HEIGHTS = [40, 70, 110, 150];
-const SEEKER_ZOOMS = [1, 2, 4, 8];
+const SEEKER_ZOOMS = [1, 2, 4, 8, 16, 32];
 
 const CAST_CONTENT_TYPES = {
   mp3: 'audio/mpeg',
