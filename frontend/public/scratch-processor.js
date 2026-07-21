@@ -32,6 +32,13 @@
 // reverse/variable-speed "scratch" playback possible at all, since
 // AudioBufferSourceNode only supports a fixed, positive, one-shot playback
 // rate and can't be repositioned once started.
+
+// Caps how fast the read head can move, in samples per output sample (i.e.
+// playback speed multiples of normal). Without a cap, a large gap between
+// drag updates gets closed within a single ~2.9ms render quantum regardless
+// of size, which sounds like an unbounded-speed shriek rather than a scratch.
+const MAX_SPEED = 6;
+
 class ScratchProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -104,12 +111,16 @@ class ScratchProcessor extends AudioWorkletProcessor {
     for (let frame = 0; frame < frameCount; frame++) {
       let step;
       if (this.scratching) {
-        // Close the gap to targetPosition smoothly over the frames left in
-        // this render quantum, rather than jumping instantly — the target
-        // only updates a few dozen times a second from the main thread
-        // (pointermove), so this keeps audio continuous between updates.
+        // Move toward targetPosition at a capped speed rather than always
+        // closing the whole gap within this ~2.9ms quantum — a real drag can
+        // easily imply a gap of thousands of samples between pointermove
+        // updates, which without a cap made the read head "zip" to catch up
+        // at extreme, unbounded speed every quantum (sounds like a shriek,
+        // not a scratch). Falling behind and catching up gradually over
+        // several quanta instead sounds like an actual bounded-speed scratch.
         const remaining = frameCount - frame;
-        step = (this.targetPosition - this.position) / remaining;
+        const desiredStep = (this.targetPosition - this.position) / remaining;
+        step = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, desiredStep));
       } else {
         // Not actively being dragged — hold position (silence/last sample)
         // rather than auto-advancing; MediaPlayer hands control straight
