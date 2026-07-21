@@ -75,7 +75,8 @@ import { createPortal } from 'react-dom';
 import { toast } from 'react-toastify';
 
 const RESUME_POSITION_KEY = 'resonance-player-position';
-const SEEKER_STYLES = ['bar', 'waveform', 'colored'];
+const SEEKER_STYLES = ['mono', 'colored'];
+const SEEKER_STYLE_LABELS = { colored: 'Colored', mono: 'Mono' };
 const SEEKER_HEIGHTS = [40, 70, 110, 150];
 
 const CAST_CONTENT_TYPES = {
@@ -299,8 +300,18 @@ const MediaPlayer = () => {
   const [repeat, setRepeat] = useState(false);
 
   const [scrubHover, setScrubHover] = useState(null);
+  // Reused pref key from when this was a single 3-way cycle (bar/waveform/
+  // colored) — anything other than the old "bar" value means waveform was on.
+  const [seekerEnabled, setSeekerEnabled] = useState(() =>
+    prefs.get(
+      'mediaPlayer.seekerEnabled',
+      prefs.get('mediaPlayer.seekerStyle', 'bar') !== 'bar',
+    ),
+  );
   const [seekerStyle, setSeekerStyle] = useState(() =>
-    prefs.get('mediaPlayer.seekerStyle', 'bar'),
+    prefs.get('mediaPlayer.seekerStyle', 'mono') === 'colored'
+      ? 'colored'
+      : 'mono',
   );
   const [seekerHeight, setSeekerHeight] = useState(() =>
     prefs.get('mediaPlayer.seekerHeight', 40),
@@ -718,6 +729,12 @@ const MediaPlayer = () => {
     seekTo(((event.clientX - rect.left) / rect.width) * dur);
   };
 
+  const toggleSeekerEnabled = () => {
+    const enabled = !seekerEnabled;
+    setSeekerEnabled(enabled);
+    prefs.set('mediaPlayer.seekerEnabled', enabled);
+  };
+
   const toggleSeekerStyle = () => {
     const style =
       SEEKER_STYLES[
@@ -964,22 +981,40 @@ const MediaPlayer = () => {
 
               <div className="mp-seeker-menu">
                 <button
-                  className="mp-seeker-menu-btn hover-fx"
-                  onClick={toggleSeekerStyle}
-                  title={`Seeker: ${seekerStyle} (click for ${SEEKER_STYLES[(SEEKER_STYLES.indexOf(seekerStyle) + 1) % SEEKER_STYLES.length]})`}
+                  className={
+                    seekerEnabled
+                      ? 'mp-seeker-menu-btn mp-seeker-menu-btn--active hover-fx'
+                      : 'mp-seeker-menu-btn hover-fx'
+                  }
+                  onClick={toggleSeekerEnabled}
+                  title={
+                    seekerEnabled ? 'Turn off waveform' : 'Turn on waveform'
+                  }
                   type="button"
                 >
                   <AudioWaveform size={12} />
+                  Waveform
                 </button>
-                {seekerStyle !== 'bar' && (
-                  <button
-                    className="mp-seeker-menu-btn hover-fx"
-                    onClick={cycleSeekerHeight}
-                    title="Make taller"
-                    type="button"
-                  >
-                    <MoveVertical size={12} />
-                  </button>
+                {seekerEnabled && (
+                  <>
+                    <button
+                      className="mp-seeker-menu-btn hover-fx"
+                      onClick={toggleSeekerStyle}
+                      title={`Click for ${SEEKER_STYLE_LABELS[SEEKER_STYLES[(SEEKER_STYLES.indexOf(seekerStyle) + 1) % SEEKER_STYLES.length]]}`}
+                      type="button"
+                    >
+                      {SEEKER_STYLE_LABELS[seekerStyle]}
+                    </button>
+                    <button
+                      className="mp-seeker-menu-btn hover-fx"
+                      onClick={cycleSeekerHeight}
+                      title="Make taller"
+                      type="button"
+                    >
+                      <MoveVertical size={12} />
+                      Taller
+                    </button>
+                  </>
                 )}
               </div>
 
@@ -987,7 +1022,7 @@ const MediaPlayer = () => {
                 <span className="mp-expanded-time">
                   {formatSeconds(effectiveTime)}
                 </span>
-                {seekerStyle !== 'bar' && (
+                {seekerEnabled && (
                   <WaveformSeekBar
                     duration={displayDuration}
                     getCurrentTime={getCurrentTime}
@@ -1009,8 +1044,7 @@ const MediaPlayer = () => {
                   onKeyDown={handleSeekKey}
                   role="slider"
                   style={{
-                    display:
-                      seekerStyle !== 'bar' && waveformReady ? 'none' : 'block',
+                    display: seekerEnabled && waveformReady ? 'none' : 'block',
                   }}
                   tabIndex={0}
                 >
@@ -1201,26 +1235,42 @@ const MediaPlayer = () => {
       {/* ── Seekable scrubber ───────────────────────────────── */}
       <div className="mp-seeker-menu mp-seeker-menu--mini">
         <button
-          className="mp-seeker-menu-btn hover-fx"
-          onClick={toggleSeekerStyle}
-          title={`Seeker: ${seekerStyle} (click for ${SEEKER_STYLES[(SEEKER_STYLES.indexOf(seekerStyle) + 1) % SEEKER_STYLES.length]})`}
+          className={
+            seekerEnabled
+              ? 'mp-seeker-menu-btn mp-seeker-menu-btn--active hover-fx'
+              : 'mp-seeker-menu-btn hover-fx'
+          }
+          onClick={toggleSeekerEnabled}
+          title={seekerEnabled ? 'Turn off waveform' : 'Turn on waveform'}
           type="button"
         >
           <AudioWaveform size={12} />
+          Waveform
         </button>
-        {seekerStyle !== 'bar' && (
-          <button
-            className="mp-seeker-menu-btn hover-fx"
-            onClick={cycleSeekerHeight}
-            title="Make taller"
-            type="button"
-          >
-            <MoveVertical size={12} />
-          </button>
+        {seekerEnabled && (
+          <>
+            <button
+              className="mp-seeker-menu-btn hover-fx"
+              onClick={toggleSeekerStyle}
+              title={`Click for ${SEEKER_STYLE_LABELS[SEEKER_STYLES[(SEEKER_STYLES.indexOf(seekerStyle) + 1) % SEEKER_STYLES.length]]}`}
+              type="button"
+            >
+              {SEEKER_STYLE_LABELS[seekerStyle]}
+            </button>
+            <button
+              className="mp-seeker-menu-btn hover-fx"
+              onClick={cycleSeekerHeight}
+              title="Make taller"
+              type="button"
+            >
+              <MoveVertical size={12} />
+              Taller
+            </button>
+          </>
         )}
       </div>
       <div className="media-player-scrub-wrap">
-        {seekerStyle !== 'bar' && (
+        {seekerEnabled && (
           <WaveformSeekBar
             duration={displayDuration}
             getCurrentTime={getCurrentTime}
@@ -1244,8 +1294,7 @@ const MediaPlayer = () => {
           onMouseMove={handleScrubMove}
           role="slider"
           style={{
-            display:
-              seekerStyle !== 'bar' && miniWaveformReady ? 'none' : 'block',
+            display: seekerEnabled && miniWaveformReady ? 'none' : 'block',
           }}
           tabIndex={0}
         >
