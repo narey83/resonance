@@ -174,7 +174,13 @@ const WaveformSeekBar = ({
     if (
       !resampled ||
       resampled.source !== peaks ||
-      resampled.numberSlots !== numberSlots
+      // Tolerate small width fluctuations (e.g. the elapsed-time label's text
+      // width changing by a pixel or two each second, nudging the flex
+      // layout) rather than rebuilding this fairly expensive fine grid every
+      // time — that was causing a visible once-a-second stutter. A real
+      // resize (window resize, height/zoom change) will still be well past
+      // this tolerance.
+      Math.abs(resampled.numberSlots - numberSlots) > 20
     ) {
       const fullSlots = numberSlots * MAX_ZOOM;
       const overallFull = resamplePeaks(peaks.overall, fullSlots);
