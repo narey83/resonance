@@ -81,12 +81,10 @@ const WaveformSeekBar = ({
 }) => {
   const canvasRef = useRef(null);
   const peaksRef = useRef(null);
-  // Caches the resampled (shape) arrays so redraws triggered by playback
-  // progress alone (many times a second) don't redo the max-hold resample
-  // over the full peaks arrays every time — only the played/unplayed split
-  // actually changes between those redraws, not the bar shape. Only used at
-  // zoom=1 (whole-track view); a zoomed, playhead-following window changes
-  // every frame, so there's nothing to usefully cache there.
+  // Caches a fixed-resolution resample of the whole track (fine enough to
+  // cover the highest zoom level), so per-frame redraws only need to
+  // re-aggregate that stable grid down to the visible window, not re-derive
+  // the shape from raw peaks every time.
   const resampledRef = useRef(null);
   // The currently visible [start, end] time window in seconds — read by the
   // pointer handlers so clicking/dragging seeks to the right time even when
@@ -162,6 +160,45 @@ const WaveformSeekBar = ({
         ? getCurrentTime()
         : (progressPct / 100) * duration;
 
+    // Pre-resample the whole track once, at a fixed grid fine enough to cover
+    // every zoom level (numberSlots * max zoom), and cache it. Re-aggregating
+    // the shape straight from raw peaks every frame (60x/sec) as a following
+    // window shifts by fractions of a bin causes visible jitter —
+    // quantisation boundaries land slightly differently frame to frame even
+    // though nothing audible changed. Re-aggregating from this fixed,
+    // already-quantised grid instead is far more stable (same underlying
+    // "atoms" every frame, just grouped differently) and cheaper (a much
+    // smaller array to scan than the raw peaks).
+    const MAX_ZOOM = 8;
+    let resampled = resampledRef.current;
+    if (
+      !resampled ||
+      resampled.source !== peaks ||
+      resampled.numberSlots !== numberSlots
+    ) {
+      const fullSlots = numberSlots * MAX_ZOOM;
+      const overallFull = resamplePeaks(peaks.overall, fullSlots);
+      let peakMax = 1e-6;
+      for (const peak of overallFull) if (peak > peakMax) peakMax = peak;
+      resampled = {
+        source: peaks,
+        numberSlots,
+        fullSlots,
+        // Fixed, whole-track reference so bar heights stay stable as the
+        // window scrolls — recomputing this from only what's currently
+        // visible would make the whole waveform rescale ("breathe") as loud
+        // or quiet moments enter/leave the frame.
+        max: peakMax,
+        overall: overallFull,
+        low: resamplePeaks(peaks.low, fullSlots),
+        mid: resamplePeaks(peaks.mid, fullSlots),
+        high: resamplePeaks(peaks.high, fullSlots),
+      };
+      resampledRef.current = resampled;
+    }
+
+    const { max } = resampled;
+
     // At zoom > 1, only a window of the track is visible, centred on (and
     // following) the current playback position, clamped so it never scrolls
     // past the track's start/end.
@@ -179,37 +216,21 @@ const WaveformSeekBar = ({
     windowRef.current = { end: windowEnd, start: windowStart };
     const startFrac = duration ? windowStart / duration : 0;
     const endFrac = duration ? windowEnd / duration : 1;
-
-    let resampled = resampledRef.current;
-    if (
-      zoom > 1 ||
-      !resampled ||
-      resampled.source !== peaks ||
-      resampled.numberSlots !== numberSlots
-    ) {
-      const overallSlots = resamplePeaks(
-        peaks.overall,
-        numberSlots,
-        startFrac,
-        endFrac,
-      );
-      let peakMax = 1e-6;
-      for (const peak of overallSlots) if (peak > peakMax) peakMax = peak;
-      resampled = {
-        source: peaks,
-        numberSlots,
-        max: peakMax,
-        overall: overallSlots,
-        low: resamplePeaks(peaks.low, numberSlots, startFrac, endFrac),
-        mid: resamplePeaks(peaks.mid, numberSlots, startFrac, endFrac),
-        high: resamplePeaks(peaks.high, numberSlots, startFrac, endFrac),
-      };
-      // Only worth caching the whole-track (zoom=1) view — a following
-      // window changes every frame, so caching it would never hit anyway.
-      if (zoom <= 1) resampledRef.current = resampled;
-    }
-
-    const { high, low, max, mid, overall } = resampled;
+    // Resample the window from the cached fine grid (fullSlots), not the raw
+    // peaks — at zoom=8 this is a direct 1:1 slice, but at lower zoom levels
+    // (including zoom=1, the whole track) it's still a max-hold aggregation,
+    // just over an already-quantised, per-frame-stable set of "atoms" rather
+    // than raw high-resolution samples, which is what actually kills the
+    // frame-to-frame jitter.
+    const overall = resamplePeaks(
+      resampled.overall,
+      numberSlots,
+      startFrac,
+      endFrac,
+    );
+    const low = resamplePeaks(resampled.low, numberSlots, startFrac, endFrac);
+    const mid = resamplePeaks(resampled.mid, numberSlots, startFrac, endFrac);
+    const high = resamplePeaks(resampled.high, numberSlots, startFrac, endFrac);
 
     const context = canvas.getContext('2d');
     context.setTransform(1, 0, 0, 1, 0, 0);
