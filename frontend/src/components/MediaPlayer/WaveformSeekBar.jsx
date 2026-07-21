@@ -137,10 +137,23 @@ const WaveformSeekBar = ({
     const halfH = pixelHeight / 2;
     const playedSlots = Math.round((progressPct / 100) * numberSlots);
 
+    // Theme-aware muted colour for the unplayed portion of the mono bars —
+    // matches whichever theme (light/AMOLED) is active rather than a fixed
+    // white that washes out on light backgrounds.
+    const rootStyle = getComputedStyle(canvas);
+    const dimColour =
+      rootStyle.getPropertyValue('--player-text-dim').trim() ||
+      'rgba(128,128,128,0.3)';
+
     if (variant === 'bands') {
       const low = resamplePeaks(peaks.low, numberSlots);
       const mid = resamplePeaks(peaks.mid, numberSlots);
       const high = resamplePeaks(peaks.high, numberSlots);
+      // The bands variant always sits on its own fixed dark background
+      // (see .mp-waveform-seeker--bands), so its dim colour is fixed too —
+      // not the site theme's --player-text-dim, which is tuned for whatever
+      // arbitrary surface the mono variant happens to sit on.
+      const bandsDimColour = 'rgba(255,255,255,0.25)';
 
       for (let slot = 0; slot < numberSlots; slot++) {
         const totalH = Math.max(2, (overall[slot] / max) * halfH);
@@ -153,9 +166,17 @@ const WaveformSeekBar = ({
         const midH = Math.round((totalH * wMid) / bandSum);
         const highH = totalH - lowH - midH;
         const x = slot * (barWidth + gap);
-        const alpha = slot < playedSlots ? 1 : 0.4;
+        const played = slot < playedSlots;
 
-        context.globalAlpha = alpha;
+        // Unplayed bars render as a single muted colour rather than a faded
+        // band colour — an alpha-faded near-white "high" band in particular
+        // would disappear against the dark backdrop otherwise.
+        if (!played) {
+          context.fillStyle = bandsDimColour;
+          context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
+          continue;
+        }
+
         // Top half — bass at centre, mids above, highs at the tip
         context.fillStyle = BAND_COLOURS.low;
         context.fillRect(x, halfH - lowH, barWidth, lowH);
@@ -172,11 +193,9 @@ const WaveformSeekBar = ({
         context.fillRect(x, halfH + lowH + midH, barWidth, highH);
       }
 
-      context.globalAlpha = 1;
       return;
     }
 
-    const rootStyle = getComputedStyle(canvas);
     const accent =
       rootStyle.getPropertyValue('--art-accent').trim() ||
       rootStyle.getPropertyValue('--player-fill').trim() ||
@@ -185,8 +204,7 @@ const WaveformSeekBar = ({
     for (let slot = 0; slot < numberSlots; slot++) {
       const barH = Math.max(2, (overall[slot] / max) * halfH);
       const x = slot * (barWidth + gap);
-      context.fillStyle =
-        slot < playedSlots ? accent : 'rgba(255,255,255,0.28)';
+      context.fillStyle = slot < playedSlots ? accent : dimColour;
       context.fillRect(x, halfH - barH, barWidth, barH * 2);
     }
   };
@@ -229,7 +247,7 @@ const WaveformSeekBar = ({
 
   return (
     <div
-      className="mp-waveform-seeker"
+      className={`mp-waveform-seeker${variant === 'bands' ? ' mp-waveform-seeker--bands' : ''}`}
       style={{ height }}
     >
       <canvas

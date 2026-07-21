@@ -900,6 +900,14 @@
   height: 40px;
 }
 
+/* The Pioneer/rekordbox palette (blue/orange/white) is designed for a dark
+   CDJ-style screen — give it one regardless of site theme, or the white
+   "high" band washes out on the light theme's bright background. */
+.mp-waveform-seeker--bands {
+  background: #14161c;
+  border-radius: 4px;
+}
+
 .mp-waveform-canvas {
   width: 100%;
   height: 100%;
