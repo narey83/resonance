@@ -74,6 +74,11 @@ const WaveformSeekBar = ({
 }) => {
   const canvasRef = useRef(null);
   const peaksRef = useRef(null);
+  // Caches the resampled (shape) arrays so redraws triggered by playback
+  // progress alone (many times a second) don't redo the max-hold resample
+  // over the full peaks arrays every time — only the played/unplayed split
+  // actually changes between those redraws, not the bar shape.
+  const resampledRef = useRef(null);
   const [ready, setReady] = useState(false);
   const [hoverFraction, setHoverFraction] = useState(null);
   const draggingRef = useRef(false);
@@ -132,9 +137,29 @@ const WaveformSeekBar = ({
     const barWidth = 1;
     const gap = 1;
     const numberSlots = Math.max(1, Math.floor(pixelWidth / (barWidth + gap)));
-    const overall = resamplePeaks(peaks.overall, numberSlots);
-    let max = 1e-6;
-    for (const peak of overall) if (peak > max) max = peak;
+
+    let resampled = resampledRef.current;
+    if (
+      !resampled ||
+      resampled.source !== peaks ||
+      resampled.numberSlots !== numberSlots
+    ) {
+      const overallSlots = resamplePeaks(peaks.overall, numberSlots);
+      let peakMax = 1e-6;
+      for (const peak of overallSlots) if (peak > peakMax) peakMax = peak;
+      resampled = {
+        source: peaks,
+        numberSlots,
+        max: peakMax,
+        overall: overallSlots,
+        low: resamplePeaks(peaks.low, numberSlots),
+        mid: resamplePeaks(peaks.mid, numberSlots),
+        high: resamplePeaks(peaks.high, numberSlots),
+      };
+      resampledRef.current = resampled;
+    }
+
+    const { high, low, max, mid, overall } = resampled;
 
     const context = canvas.getContext('2d');
     context.setTransform(1, 0, 0, 1, 0, 0);
@@ -151,9 +176,6 @@ const WaveformSeekBar = ({
       'rgba(128,128,128,0.3)';
 
     if (variant === 'bands') {
-      const low = resamplePeaks(peaks.low, numberSlots);
-      const mid = resamplePeaks(peaks.mid, numberSlots);
-      const high = resamplePeaks(peaks.high, numberSlots);
       // The bands variant always sits on its own fixed dark background
       // (see .mp-waveform-seeker--bands), so its dim colour is fixed too —
       // not the site theme's --player-text-dim, which is tuned for whatever
@@ -248,6 +270,16 @@ const WaveformSeekBar = ({
     canvasRef.current.releasePointerCapture(event.pointerId);
   };
 
+  // Keyboard seek parity with the plain scrubber bar (±5s) — the canvas has
+  // no native seek behaviour of its own, so without this a keyboard-only
+  // user could seek the plain bar but not the waveform.
+  const handleKeyDown = (event) => {
+    if (!duration) return;
+    const current = (progressPct / 100) * duration;
+    if (event.key === 'ArrowRight') onSeek(Math.min(current + 5, duration));
+    if (event.key === 'ArrowLeft') onSeek(Math.max(current - 5, 0));
+  };
+
   if (!ready) return null;
 
   return (
@@ -261,12 +293,14 @@ const WaveformSeekBar = ({
         aria-valuemin={0}
         aria-valuenow={(progressPct / 100) * duration}
         className="mp-waveform-canvas"
+        onKeyDown={handleKeyDown}
         onPointerDown={handlePointerDown}
         onPointerLeave={() => setHoverFraction(null)}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         ref={canvasRef}
         role="slider"
+        tabIndex={0}
       />
       {hoverFraction !== null && (
         <div
