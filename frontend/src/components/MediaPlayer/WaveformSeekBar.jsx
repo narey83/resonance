@@ -64,6 +64,7 @@ const BAND_COLOURS = { high: '#f5f5f5', low: '#2f6fed', mid: '#ff8a3d' };
 // variant: 'mono' (single accent-coloured bars) or 'bands' (Pioneer-style frequency colouring).
 const WaveformSeekBar = ({
   duration,
+  getCurrentTime,
   height = 40,
   onHeightChange,
   onReady,
@@ -165,7 +166,17 @@ const WaveformSeekBar = ({
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.clearRect(0, 0, pixelWidth, pixelHeight);
     const halfH = pixelHeight / 2;
-    const playedSlots = Math.round((progressPct / 100) * numberSlots);
+    // Read the live audio position directly rather than the progressPct prop
+    // — that prop only updates as often as the browser's throttled
+    // "timeupdate" event fires (a few times a second), which makes the
+    // played/unplayed boundary visibly step rather than move smoothly. This
+    // runs inside a requestAnimationFrame loop (below), so it's cheap to
+    // read every frame.
+    const livePct =
+      getCurrentTime && duration
+        ? (getCurrentTime() / duration) * 100
+        : progressPct;
+    const playedSlots = Math.round((livePct / 100) * numberSlots);
 
     // Theme-aware muted colour for the unplayed portion of the mono bars —
     // matches whichever theme (light/AMOLED) is active rather than a fixed
@@ -236,16 +247,31 @@ const WaveformSeekBar = ({
     }
   };
 
-  useEffect(draw);
+  // Always call the latest draw closure — the rAF loop below is set up once
+  // (on mount / when ready toggles) rather than re-subscribing every render,
+  // so it needs a stable way to reach whatever the current closure is.
+  const drawRef = useRef(draw);
+  drawRef.current = draw;
+
+  useEffect(() => {
+    if (!ready) return undefined;
+    let frameId;
+    const loop = () => {
+      drawRef.current();
+      frameId = requestAnimationFrame(loop);
+    };
+
+    frameId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(frameId);
+  }, [ready]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
-    const observer = new ResizeObserver(draw);
+    const observer = new ResizeObserver(() => drawRef.current());
     observer.observe(canvas);
     return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready]);
+  }, []);
 
   const fractionFromEvent = (event) => {
     const rect = canvasRef.current.getBoundingClientRect();

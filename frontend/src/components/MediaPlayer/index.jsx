@@ -69,7 +69,7 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'react-toastify';
 
@@ -323,6 +323,17 @@ const MediaPlayer = () => {
   googleCastRef.current = googleCast;
   const trackRef = useRef(track);
   trackRef.current = track;
+
+  // Reads the live position directly from refs (not React state) so the
+  // waveform's animation-frame redraw loop always sees the freshest value
+  // instead of whatever currentTime last happened to re-render with.
+  const getCurrentTime = useCallback(
+    () =>
+      googleCastRef.current?.connected
+        ? googleCastRef.current.castCurrentTime
+        : audioRef.current?.currentTime ?? 0,
+    [],
+  );
 
   // Position to resume at once the user presses play after a refresh — read once,
   // consumed (and cleared) the first time it matches the track being loaded.
@@ -957,6 +968,7 @@ const MediaPlayer = () => {
                 {seekerStyle !== 'bar' && (
                   <WaveformSeekBar
                     duration={displayDuration}
+                    getCurrentTime={getCurrentTime}
                     height={seekerHeight}
                     onHeightChange={cycleSeekerHeight}
                     onReady={setWaveformReady}
@@ -1178,6 +1190,7 @@ const MediaPlayer = () => {
         {seekerStyle !== 'bar' && (
           <WaveformSeekBar
             duration={displayDuration}
+            getCurrentTime={getCurrentTime}
             height={seekerHeight}
             onHeightChange={cycleSeekerHeight}
             onReady={setMiniWaveformReady}
