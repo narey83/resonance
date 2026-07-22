@@ -277,14 +277,25 @@ namespace resonance.WaveformAnalysis
             return out_;
         }
 
+        // Proportional (float) bucket bounds rather than a fixed integer stride —
+        // an integer stride (data.Length / numBars, truncated) undercounts every
+        // bar by its rounding remainder, and that undercount compounds bar over
+        // bar. For a typical track this drifts the bar-to-audio-time mapping by
+        // hundreds of milliseconds by mid-track, which shows up as the waveform's
+        // transients (kicks, hits) visibly lagging where they actually play.
+        private static (int Start, int End) BarBounds(int barIndex, int numBars, int length)
+        {
+            var start = (int)((double)barIndex / numBars * length);
+            var end = Math.Max(start + 1, (int)((double)(barIndex + 1) / numBars * length));
+            return (start, Math.Min(end, length));
+        }
+
         private static float[] ComputeRms(float[] data, int numBars)
         {
-            var samplesPerBar = Math.Max(1, data.Length / numBars);
             var rms = new float[numBars];
             for (var b = 0; b < numBars; b++)
             {
-                var start = b * samplesPerBar;
-                var end = Math.Min(start + samplesPerBar, data.Length);
+                var (start, end) = BarBounds(b, numBars, data.Length);
                 var sum = 0.0;
                 for (var i = start; i < end; i++)
                 {
@@ -299,12 +310,10 @@ namespace resonance.WaveformAnalysis
 
         private static float[] ComputePeaks(float[] data, int numBars)
         {
-            var samplesPerBar = Math.Max(1, data.Length / numBars);
             var peaks = new float[numBars];
             for (var b = 0; b < numBars; b++)
             {
-                var start = b * samplesPerBar;
-                var end = Math.Min(start + samplesPerBar, data.Length);
+                var (start, end) = BarBounds(b, numBars, data.Length);
                 var peak = 0f;
                 for (var i = start; i < end; i++)
                 {
