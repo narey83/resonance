@@ -46,6 +46,12 @@ const MAX_CUT_DB = 12;
 // jump (e.g. right when a new track's LUFS value loads) is an audible click.
 const GAIN_RAMP_SECONDS = 0.08;
 
+// Keyed by the <audio> element itself (WeakMap so it's garbage-collected if
+// the element ever is) rather than a component ref, since the constraint
+// (one MediaElementSourceNode ever, per element) is a property of the
+// element, not of any particular mount of this component.
+const audioGraphsByElement = new WeakMap();
+
 // Live LUFS-style loudness meter, fed by the actual <audio> element via the
 // Web Audio API, plus the track's cached integrated LUFS as a static reference
 // number. Approximates ITU-R BS.1770 K-weighting with two BiquadFilterNodes
@@ -81,59 +87,72 @@ const LoudnessMeter = ({ audioRef, track }) => {
     };
   }, [track?.path]);
 
-  // Build the analysis graph once per <audio> element's lifetime —
+  // Attach the analysis graph to this <audio> element — cached in a module-
+  // level map keyed by the element itself, NOT built fresh per mount.
   // createMediaElementSource throws if called more than once on the same
-  // element, so this must not re-run on track change.
+  // element for its entire lifetime (not just once per component instance),
+  // so a remount (track change, hot-reload, anything) must reuse the
+  // existing graph rather than trying to create a second one.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return undefined;
 
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    const context = new AudioContextClass();
-    const source = context.createMediaElementSource(audio);
+    let graph = audioGraphsByElement.get(audio);
+    if (!graph) {
+      const AudioContextClass =
+        window.AudioContext || window.webkitAudioContext;
+      const context = new AudioContextClass();
+      const source = context.createMediaElementSource(audio);
 
-    const highpass = context.createBiquadFilter();
-    highpass.type = 'highpass';
-    highpass.frequency.value = 60;
+      const highpass = context.createBiquadFilter();
+      highpass.type = 'highpass';
+      highpass.frequency.value = 60;
 
-    const highshelf = context.createBiquadFilter();
-    highshelf.type = 'highshelf';
-    highshelf.frequency.value = 1_500;
-    highshelf.gain.value = 4;
+      const highshelf = context.createBiquadFilter();
+      highshelf.type = 'highshelf';
+      highshelf.frequency.value = 1_500;
+      highshelf.gain.value = 4;
 
-    const analyser = context.createAnalyser();
-    analyser.fftSize = 16_384;
-    analyser.smoothingTimeConstant = 0;
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 16_384;
+      analyser.smoothingTimeConstant = 0;
 
-    // Loudness-normalisation gain sits in the actual playback path (not just
-    // the analysis path) — this is what makes normalisation audible, as
-    // opposed to the meter, which only reads the signal.
-    const gainNode = context.createGain();
-    gainNode.gain.value = 1;
+      // Loudness-normalisation gain sits in the actual playback path (not
+      // just the analysis path) — this is what makes normalisation audible,
+      // as opposed to the meter, which only reads the signal.
+      const gainNode = context.createGain();
+      gainNode.gain.value = 1;
 
-    // The element's own output was implicitly disconnected the moment
-    // createMediaElementSource ran, so playback needs its own explicit path
-    // to the speakers, entirely separate from the filtered analysis path.
-    source.connect(gainNode);
-    gainNode.connect(context.destination);
-    source.connect(highpass);
-    highpass.connect(highshelf);
-    highshelf.connect(analyser);
+      // The element's own output was implicitly disconnected the moment
+      // createMediaElementSource ran, so playback needs its own explicit
+      // path to the speakers, separate from the filtered analysis path.
+      source.connect(gainNode);
+      gainNode.connect(context.destination);
+      source.connect(highpass);
+      highpass.connect(highshelf);
+      highshelf.connect(analyser);
 
-    analyserRef.current = analyser;
-    bufferRef.current = new Float32Array(analyser.fftSize);
-    gainNodeRef.current = gainNode;
-    audioContextRef.current = context;
+      graph = {
+        analyser,
+        buffer: new Float32Array(analyser.fftSize),
+        context,
+        gainNode,
+      };
+      audioGraphsByElement.set(audio, graph);
+    }
 
-    return () => {
-      analyserRef.current = null;
-      gainNodeRef.current = null;
-      audioContextRef.current = null;
-      source.disconnect();
-      void context.close();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (graph.context.state === 'suspended') void graph.context.resume();
+
+    analyserRef.current = graph.analyser;
+    bufferRef.current = graph.buffer;
+    gainNodeRef.current = graph.gainNode;
+    audioContextRef.current = graph.context;
+
+    // No teardown — the graph must outlive this component instance (it's
+    // tied to the <audio> element, which persists across track changes and
+    // component remounts for the app's whole lifetime).
+    return undefined;
+  }, [audioRef]);
 
   // Retarget the normalisation gain whenever the track's LUFS value loads (or
   // changes) or the user toggles normalisation — ramped, not stepped, so
