@@ -305,9 +305,8 @@ const WaveformSeekBar = ({
       // zoom each bar max-holds thousands of samples, so most bars end up
       // with all three bands moderately present, and plain source-over
       // blending just muddies that into a flat pale wash. Additive blending
-      // plus a contrast curve (**1.6, pushing mid-range values down) makes
-      // only genuinely dominant peaks glow with vivid colour while quieter/
-      // mixed moments fall back toward black, instead of averaging into beige.
+      // makes overlapping bands brighten into vivid combined colour instead
+      // of muddying together, without needing to darken anything else.
       context.globalCompositeOperation = 'lighter';
       for (let slot = 0; slot < numberSlots; slot++) {
         const totalH = Math.max(2, (overall[slot] / max) * halfH);
@@ -321,9 +320,9 @@ const WaveformSeekBar = ({
         // hi-hat-heavy instant as solid white, and a full mix blends toward
         // grey as the three semi-transparent layers overlap. The 1.4/0.9
         // weights keep bass/highs perceptually balanced against mids (DJ-style).
-        const lowAlpha = Math.min(1, (low[slot] / lowMax) ** 1.6 * 1.4);
-        const midAlpha = Math.min(1, (mid[slot] / midMax) ** 1.6);
-        const highAlpha = Math.min(1, (high[slot] / highMax) ** 1.6 * 0.9);
+        const lowAlpha = Math.min(1, (low[slot] / lowMax) * 1.4);
+        const midAlpha = Math.min(1, mid[slot] / midMax);
+        const highAlpha = Math.min(1, (high[slot] / highMax) * 0.9);
 
         // The bands variant always sits on its own fixed dark background
         // (see .mp-waveform-seeker--bands), so alpha-blending the real band
