@@ -187,8 +187,20 @@ const WaveformSeekBar = ({
     ) {
       const fullSlots = numberSlots * MAX_ZOOM;
       const overallFull = resamplePeaks(peaks.overall, fullSlots);
+      const lowFull = resamplePeaks(peaks.low, fullSlots);
+      const midFull = resamplePeaks(peaks.mid, fullSlots);
+      const highFull = resamplePeaks(peaks.high, fullSlots);
       let peakMax = 1e-6;
       for (const peak of overallFull) if (peak > peakMax) peakMax = peak;
+      // Each band normalises against its OWN max, not the overall max — bass
+      // energy and hi-hat energy naturally live at very different absolute
+      // magnitudes, so a shared scale would leave one band permanently faint.
+      let lowPeakMax = 1e-6;
+      let midPeakMax = 1e-6;
+      let highPeakMax = 1e-6;
+      for (const v of lowFull) if (v > lowPeakMax) lowPeakMax = v;
+      for (const v of midFull) if (v > midPeakMax) midPeakMax = v;
+      for (const v of highFull) if (v > highPeakMax) highPeakMax = v;
       resampled = {
         source: peaks,
         numberSlots,
@@ -198,15 +210,18 @@ const WaveformSeekBar = ({
         // visible would make the whole waveform rescale ("breathe") as loud
         // or quiet moments enter/leave the frame.
         max: peakMax,
+        lowMax: lowPeakMax,
+        midMax: midPeakMax,
+        highMax: highPeakMax,
         overall: overallFull,
-        low: resamplePeaks(peaks.low, fullSlots),
-        mid: resamplePeaks(peaks.mid, fullSlots),
-        high: resamplePeaks(peaks.high, fullSlots),
+        low: lowFull,
+        mid: midFull,
+        high: highFull,
       };
       resampledRef.current = resampled;
     }
 
-    const { max } = resampled;
+    const { highMax, lowMax, max, midMax } = resampled;
 
     // At zoom > 1, only a window of the track is visible, centred on (and
     // following) the current playback position, clamped so it never scrolls
@@ -261,37 +276,35 @@ const WaveformSeekBar = ({
     if (variant === 'bands') {
       for (let slot = 0; slot < numberSlots; slot++) {
         const totalH = Math.max(2, (overall[slot] / max) * halfH);
-        // Boost bass so kick transients dominate visually (DJ-style perceptual weighting)
-        const wLow = low[slot] * 1.5;
-        const wMid = mid[slot];
-        const wHigh = high[slot] * 0.6;
-        const bandSum = wLow + wMid + wHigh + 1e-6;
-        const lowH = Math.round((totalH * wLow) / bandSum);
-        const midH = Math.round((totalH * wMid) / bandSum);
-        const highH = totalH - lowH - midH;
         const x = slot * (barWidth + gap);
         const played = slot < playedSlots;
+        const playedAlpha = played ? 1 : 0.35;
+
+        // Opacity per frequency band, not a fixed-height stacked slice — each
+        // band's alpha is how present it is RIGHT NOW relative to its own
+        // dynamic range, so a kick-heavy instant reads as solid blue, a
+        // hi-hat-heavy instant as solid white, and a full mix blends toward
+        // grey as the three semi-transparent layers overlap. The 1.4/0.9
+        // weights keep bass/highs perceptually balanced against mids (DJ-style).
+        const lowAlpha = Math.min(1, (low[slot] / lowMax) * 1.4);
+        const midAlpha = Math.min(1, mid[slot] / midMax);
+        const highAlpha = Math.min(1, (high[slot] / highMax) * 0.9);
 
         // The bands variant always sits on its own fixed dark background
-        // (see .mp-waveform-seeker--bands), so dimming the real band colours
-        // via alpha is safe here — unlike the mono variant, there's no
-        // arbitrary/light theme surface behind it to wash out against.
-        context.globalAlpha = played ? 1 : 0.35;
+        // (see .mp-waveform-seeker--bands), so alpha-blending the real band
+        // colours straight onto it is safe here — unlike the mono variant,
+        // there's no arbitrary/light theme surface behind it to wash out against.
+        context.globalAlpha = playedAlpha * lowAlpha;
+        context.fillStyle = BAND_COLOURS.low;
+        context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
 
-        // Top half — bass at centre, mids above, highs at the tip
-        context.fillStyle = BAND_COLOURS.low;
-        context.fillRect(x, halfH - lowH, barWidth, lowH);
+        context.globalAlpha = playedAlpha * midAlpha;
         context.fillStyle = BAND_COLOURS.mid;
-        context.fillRect(x, halfH - lowH - midH, barWidth, midH);
+        context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
+
+        context.globalAlpha = playedAlpha * highAlpha;
         context.fillStyle = BAND_COLOURS.high;
-        context.fillRect(x, halfH - totalH, barWidth, highH);
-        // Bottom half — mirror
-        context.fillStyle = BAND_COLOURS.low;
-        context.fillRect(x, halfH, barWidth, lowH);
-        context.fillStyle = BAND_COLOURS.mid;
-        context.fillRect(x, halfH + lowH, barWidth, midH);
-        context.fillStyle = BAND_COLOURS.high;
-        context.fillRect(x, halfH + lowH + midH, barWidth, highH);
+        context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
       }
 
       context.globalAlpha = 1;
