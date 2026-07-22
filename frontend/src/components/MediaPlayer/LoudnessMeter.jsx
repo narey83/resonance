@@ -49,11 +49,17 @@ const MAX_CUT_DB = 12;
 // jump (e.g. right when a new track's LUFS value loads) is an audible click.
 const GAIN_RAMP_SECONDS = 0.08;
 
-// Keyed by the <audio> element itself (WeakMap so it's garbage-collected if
-// the element ever is) rather than a component ref, since the constraint
-// (one MediaElementSourceNode ever, per element) is a property of the
-// element, not of any particular mount of this component.
-const audioGraphsByElement = new WeakMap();
+// Stashed directly on the <audio> DOM element (see below) rather than in a
+// module-level Map/WeakMap — this dev server hot-reloads on every deploy
+// (the running craco process recompiles in place, it's never a fresh
+// process), and a hot-swap of this module re-evaluates it from scratch,
+// silently wiping any module-scoped cache. The browser's own "already
+// connected to a MediaElementSourceNode" tracking is NOT reset by that,
+// since it lives on the persistent DOM element, not in JS module state — so
+// a module-level cache falls out of sync with the browser exactly when it's
+// needed most (right after a hot-reload) and createMediaElementSource
+// throws again. A property on the element itself survives the hot-swap.
+const GRAPH_PROPERTY = '__resonanceLoudnessGraph';
 
 // Live LUFS-style loudness meter, fed by the actual <audio> element via the
 // Web Audio API, plus the track's cached integrated LUFS as a static reference
@@ -90,17 +96,17 @@ const LoudnessMeter = ({ audioRef, track }) => {
     };
   }, [track?.path]);
 
-  // Attach the analysis graph to this <audio> element — cached in a module-
-  // level map keyed by the element itself, NOT built fresh per mount.
-  // createMediaElementSource throws if called more than once on the same
-  // element for its entire lifetime (not just once per component instance),
-  // so a remount (track change, hot-reload, anything) must reuse the
-  // existing graph rather than trying to create a second one.
+  // Attach the analysis graph to this <audio> element, stashed as a property
+  // on the element itself — NOT built fresh per mount. createMediaElementSource
+  // throws if called more than once on the same element for its entire
+  // lifetime (not just once per component instance), so a remount (track
+  // change, hot-reload, anything) must reuse the existing graph rather than
+  // trying to create a second one.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return undefined;
 
-    let graph = audioGraphsByElement.get(audio);
+    let graph = audio[GRAPH_PROPERTY];
     if (!graph) {
       const AudioContextClass =
         window.AudioContext || window.webkitAudioContext;
@@ -141,7 +147,7 @@ const LoudnessMeter = ({ audioRef, track }) => {
         context,
         gainNode,
       };
-      audioGraphsByElement.set(audio, graph);
+      audio[GRAPH_PROPERTY] = graph;
     }
 
     analyserRef.current = graph.analyser;
