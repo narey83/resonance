@@ -50,6 +50,7 @@ import { ensureSigned } from '../../lib/streamSignatures';
 import { getToken, isPassthroughEnabled } from '../../lib/token';
 import { formatAttributes, formatSeconds, getFileName } from '../../lib/util';
 import AlbumArt from '../Library/components/AlbumArt';
+import LoudnessMeter from './LoudnessMeter';
 import WaveformSeekBar from './WaveformSeekBar';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -979,8 +980,14 @@ const MediaPlayer = () => {
       className="media-player"
       ref={playerRef}
     >
+      {/* crossOrigin is required for the Web Audio API (loudness meter) to read
+          samples from this element without a tainted-canvas-style security
+          error — safe here since the stream URL is same-origin. */}
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <audio ref={audioRef} />
+      <audio
+        crossOrigin="anonymous"
+        ref={audioRef}
+      />
 
       {/* ── Immersive expanded now-playing ──────────────────── */}
       {/* Portalled to <body> so position:fixed escapes the player's
@@ -1625,6 +1632,13 @@ const MediaPlayer = () => {
                   : volume
             }
           />
+
+          {!googleCast.connected && track && (
+            <LoudnessMeter
+              audioRef={audioRef}
+              track={track}
+            />
+          )}
 
           <button
             className="media-player-btn media-player-close-btn hover-fx"

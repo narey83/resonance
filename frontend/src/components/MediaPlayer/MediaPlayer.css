@@ -386,6 +386,32 @@
   accent-color: var(--player-fill, #4d9fff);
 }
 
+.mp-loudness-meter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mp-loudness-meter-track {
+  width: 48px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--player-track-bg, rgba(255, 255, 255, 0.2));
+  overflow: hidden;
+}
+
+.mp-loudness-meter-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--art-accent, #4d9fff);
+}
+
+.mp-loudness-meter-label {
+  font-size: 11px;
+  color: var(--player-text-dim, rgba(255, 255, 255, 0.4));
+  white-space: nowrap;
+}
+
 .media-player-close-btn { color: var(--player-text-dim, rgba(255, 255, 255, 0.4)); }
 .media-player-close-btn:hover { color: var(--danger, #f85149); }
 

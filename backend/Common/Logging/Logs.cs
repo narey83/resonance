@@ -76,6 +76,7 @@ namespace resonance
             public const string BPM = "Music / BPM";
             public const string Key = "Music / Key";
             public const string Waveform = "Music / Waveform";
+            public const string Loudness = "Music / Loudness";
             public const string Tags = "Music / Tags";
             public const string Library = "Music / Library";
             public const string Metadata = "Music / Metadata";

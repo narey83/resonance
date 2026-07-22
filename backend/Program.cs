@@ -932,6 +932,11 @@ namespace resonance
                     usePostgres));
             services.AddSingleton<resonance.WaveformAnalysis.IWaveformService>(sp => sp.GetRequiredService<resonance.WaveformAnalysis.WaveformService>());
             services.AddHostedService(sp => sp.GetRequiredService<resonance.WaveformAnalysis.WaveformService>());
+            services.AddSingleton<resonance.LoudnessAnalysis.ILoudnessService>(sp =>
+                new resonance.LoudnessAnalysis.LoudnessService(
+                    sp.GetRequiredService<resonance.Common.Ffmpeg.IFfmpegService>(),
+                    connectionStringDictionary[Database.Loudness],
+                    usePostgres));
             services.AddSingleton<resonance.Cast.ICastService, resonance.Cast.CastService>();
             services.AddSingleton<resonance.TagSanitization.ITagSanitizationService, resonance.TagSanitization.TagSanitizationService>();
             services.AddTransient<IShareRepositoryFactory, ShareRepositoryFactory>();
