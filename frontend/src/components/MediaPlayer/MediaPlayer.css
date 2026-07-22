@@ -392,6 +392,33 @@
   gap: 6px;
 }
 
+.mp-loudness-normalize-btn {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--player-text-dim, rgba(255, 255, 255, 0.4));
+  background: rgba(0, 0, 0, 0.35);
+  border: none;
+  cursor: pointer;
+  transition: background var(--dur-fast, 120ms) var(--ease-standard, ease),
+              color var(--dur-fast, 120ms) var(--ease-standard, ease);
+}
+
+.mp-loudness-normalize-btn:hover {
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.mp-loudness-normalize-btn--active {
+  color: #fff;
+  background: var(--art-accent, var(--player-fill, #4d9fff));
+}
+
 .mp-loudness-meter-track {
   width: 48px;
   height: 6px;
