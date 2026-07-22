@@ -144,17 +144,34 @@ const LoudnessMeter = ({ audioRef, track }) => {
       audioGraphsByElement.set(audio, graph);
     }
 
-    if (graph.context.state === 'suspended') void graph.context.resume();
-
     analyserRef.current = graph.analyser;
     bufferRef.current = graph.buffer;
     gainNodeRef.current = graph.gainNode;
     audioContextRef.current = graph.context;
 
-    // No teardown — the graph must outlive this component instance (it's
-    // tied to the <audio> element, which persists across track changes and
-    // component remounts for the app's whole lifetime).
-    return undefined;
+    if (graph.context.state !== 'suspended') return undefined;
+
+    // This mount (triggered by restoring playback state on load, not an
+    // actual click) is NOT a user gesture, so the browser blocks resume()
+    // here — and since createMediaElementSource has already permanently
+    // rerouted this element's entire audio output through this context,
+    // never retrying would mean the track stays silent forever. Retry on
+    // the first genuine click/keypress/touch anywhere on the page instead.
+    const tryResume = () => {
+      void graph.context.resume();
+    };
+
+    tryResume();
+    const gestureEvents = ['click', 'keydown', 'touchstart'];
+    for (const eventName of gestureEvents) {
+      document.addEventListener(eventName, tryResume, { once: true });
+    }
+
+    return () => {
+      for (const eventName of gestureEvents) {
+        document.removeEventListener(eventName, tryResume);
+      }
+    };
   }, [audioRef]);
 
   // Retarget the normalisation gain whenever the track's LUFS value loads (or
