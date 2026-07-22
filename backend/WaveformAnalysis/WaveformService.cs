@@ -213,7 +213,11 @@ namespace resonance.WaveformAnalysis
         // ── Band computation (port of JS IIR filter logic) ────────────────────
         private static WaveformData ComputeBands(float[] monoData, int sampleRate, int numBars)
         {
-            var overallPeaks = ComputeRms(monoData, numBars);
+            // Peak, not RMS — RMS smooths a kick's brief transient into the
+            // surrounding envelope, so it barely reads as louder than a sustained
+            // passage. Peak amplitude is what actually makes a kick the tallest
+            // thing on a DJ-style waveform (Serato/rekordbox render this way too).
+            var overallPeaks = ComputePeaks(monoData, numBars);
 
             var dsFactor = Math.Max(1, (int)Math.Round((double)sampleRate / TargetDsRate));
             var dsData = Downsample(monoData, dsFactor);
@@ -288,24 +292,6 @@ namespace resonance.WaveformAnalysis
             var start = (int)((double)barIndex / numBars * length);
             var end = Math.Max(start + 1, (int)((double)(barIndex + 1) / numBars * length));
             return (start, Math.Min(end, length));
-        }
-
-        private static float[] ComputeRms(float[] data, int numBars)
-        {
-            var rms = new float[numBars];
-            for (var b = 0; b < numBars; b++)
-            {
-                var (start, end) = BarBounds(b, numBars, data.Length);
-                var sum = 0.0;
-                for (var i = start; i < end; i++)
-                {
-                    sum += (double)data[i] * data[i];
-                }
-
-                rms[b] = (float)Math.Sqrt(sum / (end - start));
-            }
-
-            return rms;
         }
 
         private static float[] ComputePeaks(float[] data, int numBars)
