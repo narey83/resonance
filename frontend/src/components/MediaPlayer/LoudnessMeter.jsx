@@ -36,10 +36,13 @@ import React, { useEffect, useRef, useState } from 'react';
 const METER_MIN_LUFS = -40;
 const METER_MAX_LUFS = 0;
 
-// -14 LUFS is the common streaming-loudness target (Spotify/YouTube Music
-// default to around this). Clamped so a very quiet or very loud outlier track
-// doesn't get boosted/cut to an extreme that either clips or guts it.
-const TARGET_LUFS = -14;
+// -9 LUFS, not the -14 streaming-standard target — most club/EDM/techno
+// masters run in the -6 to -9 LUFS range, well louder than -14, so a -14
+// target would pull nearly every track in a library like this down and read
+// as "everything got quieter" instead of levelling out the occasional outlier.
+// Clamped so a very quiet or very loud outlier track doesn't get boosted/cut
+// to an extreme that either clips or guts it.
+const TARGET_LUFS = -9;
 const MAX_BOOST_DB = 6;
 const MAX_CUT_DB = 12;
 // Smooth the gain change over ~80ms instead of stepping instantly — an instant
