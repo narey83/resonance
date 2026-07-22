@@ -273,6 +273,33 @@ const WaveformSeekBar = ({
       rootStyle.getPropertyValue('--player-text-dim').trim() ||
       'rgba(128,128,128,0.3)';
 
+    // Beat grid: a line every beat (60/bpm seconds), anchored at track start —
+    // there's no detected downbeat/phase offset stored per track, only a
+    // single averaged BPM, so this assumes beat 1 lands at 0:00. Correct BPM
+    // + a beat starting right at the top of the track means the kicks should
+    // sit right on these lines; an intro/pickup before the beat locks in will
+    // drift the two apart even with correct BPM.
+    const drawBeatGrid = () => {
+      const bpm = track?.bpm;
+      if (!bpm) return;
+      const secondsPerBeat = 60 / bpm;
+      const pixelsPerSecond = pixelWidth / windowDuration;
+      const firstBeat =
+        Math.ceil(windowStart / secondsPerBeat) * secondsPerBeat;
+      context.save();
+      context.strokeStyle = 'rgba(128,128,128,0.4)';
+      context.lineWidth = 1;
+      for (let time = firstBeat; time < windowEnd; time += secondsPerBeat) {
+        const x = Math.round((time - windowStart) * pixelsPerSecond) + 0.5;
+        context.beginPath();
+        context.moveTo(x, 0);
+        context.lineTo(x, pixelHeight);
+        context.stroke();
+      }
+
+      context.restore();
+    };
+
     if (variant === 'bands') {
       for (let slot = 0; slot < numberSlots; slot++) {
         const totalH = Math.max(2, (overall[slot] / max) * halfH);
@@ -308,6 +335,7 @@ const WaveformSeekBar = ({
       }
 
       context.globalAlpha = 1;
+      drawBeatGrid();
       return;
     }
 
@@ -322,6 +350,8 @@ const WaveformSeekBar = ({
       context.fillStyle = slot < playedSlots ? accent : dimColour;
       context.fillRect(x, halfH - barH, barWidth, barH * 2);
     }
+
+    drawBeatGrid();
   };
 
   // Always call the latest draw closure — the rAF loop below is set up once
