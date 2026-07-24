@@ -123,7 +123,11 @@ const LoudnessMeter = ({ audioRef, track }) => {
       highshelf.gain.value = 4;
 
       const analyser = context.createAnalyser();
-      analyser.fftSize = 16_384;
+      // Kept small deliberately — this only feeds a coarse live VISUAL meter,
+      // not a certified measurement, and summing this buffer every update
+      // competes with the waveform's own per-frame work on the main thread.
+      // 2048 samples (~43ms at 48kHz) is still a fine window for a moving bar.
+      analyser.fftSize = 2_048;
       analyser.smoothingTimeConstant = 0;
 
       // Loudness-normalisation gain sits in the actual playback path (not
@@ -214,7 +218,18 @@ const LoudnessMeter = ({ audioRef, track }) => {
 
   useEffect(() => {
     let frameId;
-    const loop = () => {
+    let lastUpdate = 0;
+    const loop = (now) => {
+      frameId = requestAnimationFrame(loop);
+
+      // A loudness bar doesn't need true 60fps precision like the waveform's
+      // scrub position does — updating it ~15x/sec still looks smooth to the
+      // eye, and skipping the other ~45 frames/sec frees up main-thread time
+      // that was competing with the waveform's own rAF loop for the same
+      // 16ms frame budget (that contention was making the waveform stutter).
+      if (now - lastUpdate < 65) return;
+      lastUpdate = now;
+
       const analyser = analyserRef.current;
       const buffer = bufferRef.current;
       if (analyser && buffer && fillRef.current) {
@@ -241,8 +256,6 @@ const LoudnessMeter = ({ audioRef, track }) => {
               ? '#ffb84d'
               : 'var(--art-accent, #4d9fff)';
       }
-
-      frameId = requestAnimationFrame(loop);
     };
 
     frameId = requestAnimationFrame(loop);
