@@ -48,6 +48,10 @@ import { emitPrivateMessage } from '../lib/chatEvents';
 import * as eventsAPI from '../lib/events';
 import { createApplicationHubConnection } from '../lib/hubFactory';
 import * as networkAPI from '../lib/network';
+import {
+  formatNotification,
+  loadNotificationSettings,
+} from '../lib/notificationTypes';
 import * as prefs from '../lib/prefs';
 import * as roomsAPI from '../lib/rooms';
 import { connect, disconnect } from '../lib/server';
@@ -56,7 +60,7 @@ import { playMessageReceived } from '../lib/sound';
 import { getSessionId, isAdmin, isPassthroughEnabled } from '../lib/token';
 import { emitTransferComplete } from '../lib/transferEvents';
 import * as transfersAPI from '../lib/transfers';
-import { getFileName, parseUtcDate } from '../lib/util';
+import { parseUtcDate } from '../lib/util';
 import * as ytdlpAPI from '../lib/ytdlp';
 import AppContext from './AppContext';
 import Browse from './Browse/Browse';
@@ -146,25 +150,6 @@ const ALL_THEME_CLASSES = ['amoled', 'dark', 'dim'];
 
 const INIT_MAX_ATTEMPTS = 30;
 
-const DEFAULT_NOTIFICATION_SETTINGS = {
-  privateMessage: true,
-  browsed: true,
-  roomMention: true,
-  // Ban-evasion auto-blocks are rare and security-relevant, so on by default.
-  userBlocked: true,
-  // Transfer-completion toasts can be frequent on a busy server, so both are
-  // opt-in to avoid a flood of notifications.
-  downloadComplete: false,
-  uploadComplete: false,
-};
-
-const loadNotificationSettings = () => {
-  const saved = prefs.get('resonance-notification-settings', null);
-  if (saved && typeof saved === 'object')
-    return { ...DEFAULT_NOTIFICATION_SETTINGS, ...saved };
-  return { ...DEFAULT_NOTIFICATION_SETTINGS };
-};
-
 const parseEventData = (raw) => {
   try {
     return JSON.parse(raw || '{}');
@@ -173,50 +158,17 @@ const parseEventData = (raw) => {
   }
 };
 
-const formatEventNotification = (record, lastReadAt) => {
-  const d = parseEventData(record.data);
-  let message;
-  let type;
-  switch (record.type) {
-    case 'PrivateMessageReceived': {
-      const text = d.message?.message || '';
-      const preview = text.length > 60 ? `${text.slice(0, 60)}…` : text;
-      type = 'privateMessage';
-      message = `Private message from ${d.message?.username || '?'}: ${preview}`;
-      break;
-    }
-
-    case 'Browsed':
-      type = 'browsed';
-      message = `${d.username || '?'} browsed your files`;
-      break;
-    case 'UploadFileComplete':
-      type = 'uploadComplete';
-      message = `${d.transfer?.username || '?'} finished downloading ${getFileName(d.remoteFilename || '') || 'a file'}`;
-      break;
-    case 'DownloadDirectoryComplete':
-      type = 'downloadComplete';
-      message = `Finished downloading ${d.remoteDirectoryName || 'a folder'}${d.username ? ` from ${d.username}` : ''}`;
-      break;
-    case 'RoomMention': {
-      const text = d.message || '';
-      const preview = text.length > 60 ? `${text.slice(0, 60)}…` : text;
-      type = 'roomMention';
-      message = `${d.username || '?'} mentioned you in ${d.roomName || '?'}: ${preview}`;
-      break;
-    }
-
-    default:
-      return null;
-  }
-
+// Persisted event-log record → notification. Formatting itself (icon, text,
+// link) lives in lib/notificationTypes so it stays in sync with the live
+// hub-pushed notifications built by addNotification below.
+const notificationFromEventRecord = (record, lastReadAt) => {
   const isRead = lastReadAt
     ? parseUtcDate(record.timestamp) <= parseUtcDate(lastReadAt)
     : false;
   return {
     id: record.id,
-    type,
-    message,
+    type: record.type,
+    data: parseEventData(record.data),
     timestamp: record.timestamp,
     read: isRead,
   };
@@ -355,10 +307,13 @@ const App = () => {
   notifSettingsRef.current = notificationSettings;
 
   // ── addNotification (stable ref pattern) ────────────────────────────────────
+  // Every live notification — hub pushes, blocked-user alerts — flows through
+  // here and is formatted by the same lib/notificationTypes table used for
+  // the persisted event log, so the bell panel and toasts never drift from it.
   const addNotification = useCallback(
     (
       type,
-      message,
+      data,
       {
         skipToast = false,
         sound = false,
@@ -370,13 +325,16 @@ const App = () => {
       const notification = {
         id: `${Date.now()}-${Math.random()}`,
         type,
-        message,
+        data,
         timestamp: new Date(),
         read: false,
       };
       setNotifications((previous) => [notification, ...previous].slice(0, 100));
       if (sound) playMessageReceived();
-      if (!skipToast) toast[toastType](message, toastOptions);
+      if (!skipToast) {
+        const { sub, text } = formatNotification(type, data);
+        toast[toastType](sub ? `${text}: ${sub}` : text, toastOptions);
+      }
     },
     [],
   );
@@ -556,8 +514,8 @@ const App = () => {
     hub.on('BLOCKED_USERS', applyBlockedUsers);
     hub.on('BLOCKED_USER_ALERT', ({ ip, username }) => {
       addNotificationRef.current(
-        'userBlocked',
-        `${username} was auto-blocked — same IP (${ip}) as a blocked user`,
+        'UserBlocked',
+        { ip, username },
         { toastOptions: { autoClose: false }, toastType: 'warn' },
       );
     });
@@ -580,42 +538,38 @@ const App = () => {
 
     hub.on('PRIVATE_MESSAGE', ({ message, username }) => {
       emitPrivateMessage({ message, username });
-      const preview =
-        message.length > 60 ? `${message.slice(0, 60)}…` : message;
       addNotificationRef.current(
-        'privateMessage',
-        `Private message from ${username}: ${preview}`,
+        'PrivateMessageReceived',
+        { message: { message, username } },
         { sound: true },
       );
     });
 
     hub.on('BROWSED', (username) => {
-      addNotificationRef.current('browsed', `${username} browsed your files`);
+      addNotificationRef.current('Browsed', { username });
     });
 
     // A completed transfer is the moment a peer appears in / updates the
     // telemetry user list; re-broadcast so live views can refresh instantly.
     hub.on('UPLOAD_FILE_COMPLETE', ({ filename, username }) => {
       emitTransferComplete({ direction: 'upload', username });
-      addNotificationRef.current(
-        'uploadComplete',
-        `${username} finished downloading ${filename || 'a file'}`,
-      );
+      addNotificationRef.current('UploadFileComplete', {
+        remoteFilename: filename,
+        transfer: { username },
+      });
     });
     hub.on('DOWNLOAD_DIRECTORY_COMPLETE', ({ directoryName, username }) => {
       emitTransferComplete({ direction: 'download', username });
-      addNotificationRef.current(
-        'downloadComplete',
-        `Finished downloading ${directoryName || 'a folder'}${username ? ` from ${username}` : ''}`,
-      );
+      addNotificationRef.current('DownloadDirectoryComplete', {
+        remoteDirectoryName: directoryName,
+        username,
+      });
     });
 
     hub.on('ROOM_MENTION', ({ message, roomName, username }) => {
-      const preview =
-        message.length > 60 ? `${message.slice(0, 60)}…` : message;
       addNotificationRef.current(
-        'roomMention',
-        `${username} mentioned you in ${roomName}: ${preview}`,
+        'RoomMention',
+        { message, roomName, username },
         { sound: true },
       );
     });
@@ -706,7 +660,7 @@ const App = () => {
         });
         if (!cancelled) {
           const loaded = events
-            .map((e) => formatEventNotification(e, lastReadAt))
+            .map((e) => notificationFromEventRecord(e, lastReadAt))
             .filter((n) => n && notifSettingsRef.current[n.type] !== false);
           setNotifications(loaded);
         }

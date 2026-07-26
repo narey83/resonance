@@ -28,70 +28,15 @@
 // </copyright>
 
 import './NotificationCentre.css';
-import { parseUtcDate } from '../../lib/util';
 import {
-  Bell,
-  Download,
-  FolderOpen,
-  MessageCircle,
-  MessageSquare,
-  ShieldAlert,
-  Trash2,
-  Upload,
-  X,
-} from 'lucide-react';
+  formatNotification,
+  iconFor,
+  NOTIFICATION_TYPES,
+  relativeTime,
+} from '../../lib/notificationTypes';
+import { Bell, Trash2, X } from 'lucide-react';
 import React, { useState } from 'react';
-
-const NOTIFICATION_TYPES = [
-  {
-    key: 'privateMessage',
-    label: 'Private messages',
-    description: 'Incoming private messages',
-    Icon: MessageCircle,
-  },
-  {
-    key: 'browsed',
-    label: 'File browse',
-    description: 'When someone browses your shared files',
-    Icon: FolderOpen,
-  },
-  {
-    key: 'roomMention',
-    label: 'Room mentions',
-    description: 'When someone mentions you in a chat room',
-    Icon: MessageSquare,
-  },
-  {
-    key: 'downloadComplete',
-    label: 'Download complete',
-    description: 'When one of your downloads finishes',
-    Icon: Download,
-  },
-  {
-    key: 'uploadComplete',
-    label: 'Upload complete',
-    description: 'When someone finishes downloading a file from you',
-    Icon: Upload,
-  },
-  {
-    key: 'userBlocked',
-    label: 'Blocked-user alerts',
-    description: 'When a user is auto-blocked for ban evasion (same IP)',
-    Icon: ShieldAlert,
-  },
-];
-
-const TYPE_ICON = Object.fromEntries(
-  NOTIFICATION_TYPES.map(({ Icon, key }) => [key, Icon]),
-);
-
-const relativeTime = (date) => {
-  const s = Math.floor((Date.now() - parseUtcDate(date)) / 1_000);
-  if (s < 60) return 'just now';
-  if (s < 3_600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86_400) return `${Math.floor(s / 3_600)}h ago`;
-  return `${Math.floor(s / 86_400)}d ago`;
-};
+import { Link } from 'react-router-dom';
 
 const NotificationCentre = ({
   notifications,
@@ -149,7 +94,20 @@ const NotificationCentre = ({
               <>
                 <div className="nc-list">
                   {notifications.map((n) => {
-                    const Icon = TYPE_ICON[n.type] ?? Bell;
+                    const Icon = iconFor(n.type) ?? Bell;
+                    const { link, sub, text } = formatNotification(
+                      n.type,
+                      n.data,
+                    );
+                    const body = (
+                      <div className="nc-item-body">
+                        <span className="nc-item-message">{text}</span>
+                        {sub && <span className="nc-item-sub">{sub}</span>}
+                        <span className="nc-item-time">
+                          {relativeTime(n.timestamp)}
+                        </span>
+                      </div>
+                    );
                     return (
                       <div
                         className={`nc-item${n.read ? '' : ' unread'}`}
@@ -158,12 +116,17 @@ const NotificationCentre = ({
                         <span className="nc-item-icon">
                           <Icon size={13} />
                         </span>
-                        <div className="nc-item-body">
-                          <span className="nc-item-message">{n.message}</span>
-                          <span className="nc-item-time">
-                            {relativeTime(n.timestamp)}
-                          </span>
-                        </div>
+                        {link ? (
+                          <Link
+                            className="nc-item-link"
+                            onClick={onClose}
+                            to={link}
+                          >
+                            {body}
+                          </Link>
+                        ) : (
+                          body
+                        )}
                         {!n.read && <span className="nc-dot" />}
                       </div>
                     );

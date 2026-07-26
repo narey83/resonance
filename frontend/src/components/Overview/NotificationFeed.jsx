@@ -27,70 +27,30 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import { urlBase } from '../../config';
-import { getFileName, parseUtcDate } from '../../lib/util';
 import {
-  ArrowDown,
-  ArrowUp,
-  Bell,
-  MessageCircle,
-  Zap,
-  ZapOff,
-} from 'lucide-react';
+  categoryOf,
+  formatNotification,
+  iconFor,
+  loadNotificationSettings,
+  relativeTime,
+  toneOf,
+} from '../../lib/notificationTypes';
+import { Bell } from 'lucide-react';
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 
 const FILTERS = ['All', 'Transfers', 'Messages', 'System'];
-
-const isTransfer = (type) =>
-  type?.includes('Download') || type?.includes('Upload');
-const isMessage = (type) => type?.includes('Message');
-const isSystem = (type) => type?.includes('Client');
+const FILTER_CATEGORY = {
+  Messages: 'message',
+  System: 'system',
+  Transfers: 'transfer',
+};
 
 const EventIcon = ({ type }) => {
-  if (type === 'DownloadFileComplete' || type === 'DownloadDirectoryComplete')
-    return (
-      <ArrowDown
-        className="event-icon download"
-        size={13}
-        strokeWidth={1.75}
-      />
-    );
-  if (type === 'UploadFileComplete')
-    return (
-      <ArrowUp
-        className="event-icon upload"
-        size={13}
-        strokeWidth={1.75}
-      />
-    );
-  if (type === 'PrivateMessageReceived' || type === 'RoomMessageReceived')
-    return (
-      <MessageCircle
-        className="event-icon message"
-        size={13}
-        strokeWidth={1.75}
-      />
-    );
-  if (type === 'SoulseekClientConnected')
-    return (
-      <Zap
-        className="event-icon system connected"
-        size={13}
-        strokeWidth={1.75}
-      />
-    );
-  if (type === 'SoulseekClientDisconnected')
-    return (
-      <ZapOff
-        className="event-icon system disconnected"
-        size={13}
-        strokeWidth={1.75}
-      />
-    );
+  const Icon = iconFor(type) ?? Bell;
   return (
-    <Bell
-      className="event-icon"
+    <Icon
+      className={`event-icon ${toneOf(type) ?? ''}`}
       size={13}
       strokeWidth={1.75}
     />
@@ -105,69 +65,21 @@ const parseData = (raw) => {
   }
 };
 
-const EVENT_FORMATTERS = {
-  DownloadDirectoryComplete: (data) => ({
-    link: null,
-    sub: `from ${data.username ?? ''}`,
-    text: data.remoteDirectoryName ?? 'Directory complete',
-  }),
-  DownloadFileComplete: (data) => ({
-    link: null,
-    sub: `from ${data.transfer?.username ?? ''}`,
-    text: getFileName(data.remoteFilename ?? ''),
-  }),
-  PrivateMessageReceived: (data) => ({
-    link: `${urlBase}/chat`,
-    sub: String(data.message?.message ?? '').slice(0, 60),
-    text: data.message?.username ?? 'Message',
-  }),
-  RoomMessageReceived: (data) => ({
-    link: `${urlBase}/rooms`,
-    sub: String(data.message?.message ?? '').slice(0, 60),
-    text: `${data.message?.username ?? ''} in ${data.message?.roomName ?? ''}`,
-  }),
-  SoulseekClientConnected: () => ({
-    link: null,
-    sub: '',
-    text: 'Connected to Soulseek',
-  }),
-  SoulseekClientDisconnected: (data) => ({
-    link: null,
-    sub: String(data.message ?? '').slice(0, 60),
-    text: 'Disconnected from Soulseek',
-  }),
-  UploadFileComplete: (data) => ({
-    link: null,
-    sub: `to ${data.transfer?.username ?? ''}`,
-    text: getFileName(data.remoteFilename ?? ''),
-  }),
-};
-
-const formatEvent = (event) => {
-  const data = parseData(event.data);
-  const formatter = EVENT_FORMATTERS[event.type];
-  return formatter
-    ? formatter(data)
-    : { link: null, sub: '', text: event.type ?? 'Event' };
-};
-
-const formatTime = (ts) =>
-  parseUtcDate(ts).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+const formatEvent = (event) =>
+  formatNotification(event.type, parseData(event.data));
 
 const NotificationFeed = ({ events }) => {
   const [filter, setFilter] = useState('All');
   const [dismissed, setDismissed] = useState(new Set());
+  const settings = loadNotificationSettings();
 
   const list = Array.isArray(events) ? events : [];
 
   const visible = list.filter((item) => {
     if (dismissed.has(item.id)) return false;
-    if (filter === 'Transfers') return isTransfer(item.type);
-    if (filter === 'Messages') return isMessage(item.type);
-    if (filter === 'System') return isSystem(item.type);
+    if (settings[item.type] === false) return false;
+    const category = FILTER_CATEGORY[filter];
+    if (category) return categoryOf(item.type) === category;
     return true;
   });
 
@@ -222,7 +134,9 @@ const NotificationFeed = ({ events }) => {
                   )}
                   {sub && <div className="notif-sub">{sub}</div>}
                 </div>
-                <div className="notif-time">{formatTime(event.timestamp)}</div>
+                <div className="notif-time">
+                  {relativeTime(event.timestamp)}
+                </div>
                 <button
                   className="notif-dismiss"
                   onClick={() => dismiss(event.id)}

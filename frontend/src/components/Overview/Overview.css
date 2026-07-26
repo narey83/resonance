@@ -1552,8 +1552,8 @@ html.amoled {
 .event-icon.download { color: var(--accent); }
 .event-icon.upload { color: var(--success); }
 .event-icon.message { color: var(--queued); }
-.event-icon.system.connected { color: var(--success); }
-.event-icon.system.disconnected { color: var(--danger); }
+.event-icon.connected { color: var(--success); }
+.event-icon.disconnected { color: var(--danger); }
 
 .notif-body {
   flex: 1;
