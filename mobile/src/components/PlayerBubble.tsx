@@ -51,7 +51,7 @@ import { haptics } from '../lib/haptics';
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 const SIZE          = 80;   // bubble diameter
-const RING_STROKE   = 3.5;  // progress-ring thickness
+const RING_STROKE   = 7;    // progress-ring thickness
 const MARGIN        = 12;   // gap from the screen edge
 const TAB_RESERVE   = 96;   // keep the bubble clear of the floating tab bar
 const TAP_SLOP      = 8;    // movement (px) under which a gesture counts as a tap
