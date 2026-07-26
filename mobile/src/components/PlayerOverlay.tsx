@@ -160,7 +160,7 @@ const ProgressBar = ({
   return (
     <View style={{ marginBottom: Spacing.lg }}>
       <View
-        style={{ height: 44, justifyContent: 'center' }}
+        style={{ height: 52, justifyContent: 'center' }}
         onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
         {...pan.panHandlers}
       >
@@ -174,13 +174,13 @@ const ProgressBar = ({
             <Text style={{ color: '#fff', fontSize: Typography.xs, fontVariant: ['tabular-nums'] }}>{fmt(labelSec)}</Text>
           </View>
         )}
-        <View style={{ height: 3, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 2 }} />
-        <View style={{ position: 'absolute', height: 3, backgroundColor: '#fff', borderRadius: 2, width: `${progress * 100}%` }} />
+        <View style={{ height: 5, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 3 }} />
+        <View style={{ position: 'absolute', height: 5, backgroundColor: '#fff', borderRadius: 3, width: `${progress * 100}%` }} />
         <View style={{
           position: 'absolute',
-          width: dragging ? 18 : 14, height: dragging ? 18 : 14, borderRadius: 9,
+          width: dragging ? 28 : 22, height: dragging ? 28 : 22, borderRadius: 14,
           backgroundColor: '#fff', top: '50%',
-          marginTop: dragging ? -9 : -7, marginLeft: dragging ? -9 : -7,
+          marginTop: dragging ? -14 : -11, marginLeft: dragging ? -14 : -11,
           left: `${progress * 100}%` as any,
         }} />
       </View>

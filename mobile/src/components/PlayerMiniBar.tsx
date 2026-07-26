@@ -161,6 +161,6 @@ const styles = StyleSheet.create({
   btn:        { padding: Spacing.sm },
   btnDisabled:{ opacity: 0.3 },
 
-  progressTrack: { height: 2, backgroundColor: 'rgba(255,255,255,0.15)' },
-  progressFill:  { height: 2, backgroundColor: 'rgba(255,255,255,0.8)' },
+  progressTrack: { height: 4, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 2 },
+  progressFill:  { height: 4, backgroundColor: 'rgba(255,255,255,0.8)', borderRadius: 2 },
 });
