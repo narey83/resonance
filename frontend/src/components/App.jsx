@@ -317,6 +317,7 @@ const App = () => {
       {
         skipToast = false,
         sound = false,
+        toastId,
         toastOptions = {},
         toastType = 'info',
       } = {},
@@ -333,7 +334,15 @@ const App = () => {
       if (sound) playMessageReceived();
       if (!skipToast) {
         const { sub, text } = formatNotification(type, data);
-        toast[toastType](sub ? `${text}: ${sub}` : text, toastOptions);
+        const message = sub ? `${text}: ${sub}` : text;
+        // A stable toastId collapses a burst of the same alert into one
+        // updating toast instead of stacking a new one per event — every
+        // event is still recorded in full in the bell panel regardless.
+        if (toastId && toast.isActive(toastId)) {
+          toast.update(toastId, { render: message });
+        } else {
+          toast[toastType](message, { toastId, ...toastOptions });
+        }
       }
     },
     [],
@@ -516,7 +525,7 @@ const App = () => {
       addNotificationRef.current(
         'UserBlocked',
         { ip, username },
-        { toastOptions: { autoClose: false }, toastType: 'warn' },
+        { toastId: 'blocked-user-alert', toastType: 'warn' },
       );
     });
 
