@@ -214,6 +214,33 @@ namespace resonance
         }
 
         /// <summary>
+        ///     Returns the last segment of the given <paramref name="path"/>'s directory, regardless of separator format.
+        /// </summary>
+        /// <param name="path">The path.</param>
+        /// <returns>The name of the immediate parent folder, or an empty string if the path has no directory.</returns>
+        public static string ParentFolderName(this string path)
+        {
+            var separator = path.GuessDirectorySeparator();
+            return path.GetDirectoryName(separator).Split(separator).LastOrDefault(s => !string.IsNullOrEmpty(s)) ?? string.Empty;
+        }
+
+        /// <summary>
+        ///     Lowercases the given <paramref name="text"/> and strips everything but letters and digits, for loose,
+        ///     punctuation/spacing-insensitive comparisons (e.g. matching a remote folder name against a tagged album name).
+        /// </summary>
+        /// <param name="text">The text to normalize.</param>
+        /// <returns>The normalized text.</returns>
+        public static string ToFuzzyMatchKey(this string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return string.Empty;
+            }
+
+            return new string(text.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+        }
+
+        /// <summary>
         ///     Safely disposes this object without throwing if it is already exposed.
         /// </summary>
         /// <param name="obj">The object.</param>

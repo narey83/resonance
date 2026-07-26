@@ -67,16 +67,19 @@ namespace resonance.Transfers.API
         /// <param name="userService"></param>
         /// <param name="transferService"></param>
         /// <param name="blockedUsersService"></param>
+        /// <param name="musicLibraryService"></param>
         public TransfersController(
             ITransferService transferService,
             IUserService userService,
             IOptionsSnapshot<Options> optionsSnapshot,
-            resonance.Users.Blocking.BlockedUsersService blockedUsersService)
+            resonance.Users.Blocking.BlockedUsersService blockedUsersService,
+            resonance.MusicLibrary.IMusicLibraryService musicLibraryService)
         {
             Transfers = transferService;
             Users = userService;
             OptionsSnapshot = optionsSnapshot;
             Blocked = blockedUsersService;
+            MusicLibrary = musicLibraryService;
         }
 
         private static SemaphoreSlim DownloadRequestLimiter { get; } = new SemaphoreSlim(2, 2);
@@ -84,6 +87,7 @@ namespace resonance.Transfers.API
         private IUserService Users { get; }
         private IOptionsSnapshot<Options> OptionsSnapshot { get; }
         private resonance.Users.Blocking.BlockedUsersService Blocked { get; }
+        private resonance.MusicLibrary.IMusicLibraryService MusicLibrary { get; }
         private ILogger Log { get; set; } = Serilog.Log.ForContext("SourceContext", Logs.Transfers.Downloads);
 
         /// <summary>
@@ -280,9 +284,18 @@ namespace resonance.Transfers.API
                 }
 
                 var destinationFolder = requests.FirstOrDefault()?.DestinationFolder;
+                var possibleDuplicate = FindPossibleDuplicateAlbum(requests);
+
+                if (possibleDuplicate is not null)
+                {
+                    Log.Warning(
+                        "Downloading {Count} file(s) from {Username} whose remote folder name resembles an album already in the library: {Artist} - {Album}",
+                        requests.Count(), username, possibleDuplicate.Artist, possibleDuplicate.Album);
+                }
+
                 var (enqueued, failed) = await Transfers.Downloads.EnqueueAsync(username, requests.Select(r => (r.Filename, r.Size)), destinationFolder);
 
-                return StatusCode(201, new { Enqueued = enqueued, Failed = failed });
+                return StatusCode(201, new { Enqueued = enqueued, Failed = failed, PossibleDuplicateOfAlbum = possibleDuplicate });
             }
             catch (InsufficientDiskSpaceException ex)
             {
@@ -638,6 +651,33 @@ namespace resonance.Transfers.API
                 Log.Error(ex, "Failed to create folder {Path}: {Message}", request.Path, ex.Message);
                 return StatusCode(500, ex.Message);
             }
+        }
+
+        /// <summary>
+        ///     Checks whether the remote folder these files are coming from resembles an album already present in
+        ///     the library, so the caller can warn the user before they end up with a second copy.
+        /// </summary>
+        /// <remarks>
+        ///     This is a heuristic, not an exact match (remote folder naming isn't standardized), so it only warns;
+        ///     it never blocks the download.
+        /// </remarks>
+        private resonance.MusicLibrary.MusicAlbum FindPossibleDuplicateAlbum(IEnumerable<QueueDownloadRequest> requests)
+        {
+            var folderName = requests.FirstOrDefault()?.Filename?.ParentFolderName().ToFuzzyMatchKey();
+
+            if (string.IsNullOrEmpty(folderName))
+            {
+                return null;
+            }
+
+            return MusicLibrary.GetAlbums().FirstOrDefault(album =>
+            {
+                var artistKey = album.Artist.ToFuzzyMatchKey();
+                var albumKey = album.Album.ToFuzzyMatchKey();
+
+                return !string.IsNullOrEmpty(albumKey) && folderName.Contains(albumKey)
+                    && !string.IsNullOrEmpty(artistKey) && folderName.Contains(artistKey);
+            });
         }
     }
 }
