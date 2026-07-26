@@ -19,8 +19,11 @@ fi
 docker restart resonance-backend >/dev/null
 
 for i in $(seq 1 20); do
-  # via the inner caddy; the backend container doesn't publish 5030 to the host
-  code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8930/api/v0/application || true)
+  # Via the inner caddy; the backend container doesn't publish 5030 to the
+  # host. Must be the LAN address, not localhost: the port is published to
+  # 192.168.0.254:8930 only, so localhost always failed and this loop reported
+  # a healthy backend as dead.
+  code=$(curl -s -o /dev/null -w '%{http_code}' http://192.168.0.254:8930/api/v0/application || true)
   if [ "$code" = "200" ] || [ "$code" = "401" ]; then
     echo "backend up ($code) after ~$((i * 6))s"
     exit 0
