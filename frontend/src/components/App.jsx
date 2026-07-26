@@ -497,6 +497,15 @@ const App = () => {
     let pendingState = null;
     let pendingOptions = null;
     let flushTimeout = null;
+    let lastStateJson = null;
+
+    // The backend debounces STATE broadcasts at 100ms, so a busy server pushes
+    // ~10 a second — and applying one re-renders the whole app tree (~50ms of
+    // main thread each, which is what the "setTimeout handler took 53ms"
+    // violations were). Coalesce into at most one render per window, and drop
+    // pushes whose payload is identical to the last one applied, which costs a
+    // stringify of a few KB against a render three orders of magnitude dearer.
+    const FLUSH_MS = 250;
     const flushPending = () => {
       flushTimeout = null;
       unstable_batchedUpdates(() => {
@@ -512,13 +521,20 @@ const App = () => {
       });
     };
 
+    const scheduleFlush = () => {
+      if (!flushTimeout) flushTimeout = setTimeout(flushPending, FLUSH_MS);
+    };
+
     hub.on('STATE', (state) => {
+      const json = JSON.stringify(state);
+      if (json === lastStateJson) return;
+      lastStateJson = json;
       pendingState = state;
-      if (!flushTimeout) flushTimeout = setTimeout(flushPending, 0);
+      scheduleFlush();
     });
     hub.on('OPTIONS', (options) => {
       pendingOptions = options;
-      if (!flushTimeout) flushTimeout = setTimeout(flushPending, 0);
+      scheduleFlush();
     });
     hub.on('BLOCKED_USERS', applyBlockedUsers);
     hub.on('BLOCKED_USER_ALERT', ({ ip, username }) => {

@@ -1657,4 +1657,8 @@ const MediaPlayer = () => {
   );
 };
 
-export default MediaPlayer;
+// Rendered by App with no props and no context, but App re-renders on every
+// SignalR STATE push — without this the player (and the waveform's canvas
+// component with it) re-rendered several times a second for state it doesn't
+// even read.
+export default React.memo(MediaPlayer);
