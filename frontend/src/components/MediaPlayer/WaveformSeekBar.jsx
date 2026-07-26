@@ -127,6 +127,28 @@ const WaveformSeekBar = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track?.path]);
 
+  // Reading CSS custom properties forces a style recalc, and these only change
+  // on a theme switch or an art-accent crossfade — doing it 60 times a second
+  // inside the redraw loop was spending frame budget on a constant. A few
+  // reads a second is still fast enough for a crossfade to look continuous.
+  const coloursRef = useRef({ at: 0 });
+  const getColours = (canvas) => {
+    const now = performance.now();
+    if (now - coloursRef.current.at < 100) return coloursRef.current;
+    const style = getComputedStyle(canvas);
+    coloursRef.current = {
+      accent:
+        style.getPropertyValue('--art-accent').trim() ||
+        style.getPropertyValue('--player-fill').trim() ||
+        '#4d9fff',
+      at: now,
+      dim:
+        style.getPropertyValue('--player-text-dim').trim() ||
+        'rgba(128,128,128,0.3)',
+    };
+    return coloursRef.current;
+  };
+
   const draw = () => {
     const canvas = canvasRef.current;
     const peaks = peaksRef.current;
@@ -282,14 +304,6 @@ const WaveformSeekBar = ({
       context.clip();
     };
 
-    // Theme-aware muted colour for the unplayed portion of the mono bars —
-    // matches whichever theme (light/AMOLED) is active rather than a fixed
-    // white that washes out on light backgrounds.
-    const rootStyle = getComputedStyle(canvas);
-    const dimColour =
-      rootStyle.getPropertyValue('--player-text-dim').trim() ||
-      'rgba(128,128,128,0.3)';
-
     // Beat grid: a line every beat (60/bpm seconds), anchored at track start —
     // there's no detected downbeat/phase offset stored per track, only a
     // single averaged BPM, so this assumes beat 1 lands at 0:00. Correct BPM
@@ -376,10 +390,10 @@ const WaveformSeekBar = ({
       return;
     }
 
-    const accent =
-      rootStyle.getPropertyValue('--art-accent').trim() ||
-      rootStyle.getPropertyValue('--player-fill').trim() ||
-      '#4d9fff';
+    // Theme-aware muted colour for the unplayed bars — matches whichever theme
+    // (light/AMOLED) is active rather than a fixed white that washes out on
+    // light backgrounds.
+    const { accent, dim: dimColour } = getColours(canvas);
 
     const drawMonoBars = (colour) => {
       context.fillStyle = colour;
