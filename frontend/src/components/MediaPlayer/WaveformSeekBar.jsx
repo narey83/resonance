@@ -163,29 +163,30 @@ const WaveformSeekBar = ({
         ? getCurrentTime()
         : (progressPct / 100) * duration;
 
-    // Pre-resample the whole track once, at a fixed grid fine enough to cover
-    // every zoom level (numberSlots * max zoom), and cache it. Re-aggregating
-    // the shape straight from raw peaks every frame (60x/sec) as a following
-    // window shifts by fractions of a bin causes visible jitter —
-    // quantisation boundaries land slightly differently frame to frame even
-    // though nothing audible changed. Re-aggregating from this fixed,
-    // already-quantised grid instead is far more stable (same underlying
-    // "atoms" every frame, just grouped differently) and cheaper (a much
-    // smaller array to scan than the raw peaks).
-    const MAX_ZOOM = 32;
+    // Pre-resample the whole track once, at exactly one grid "atom" per drawn
+    // bar at the current zoom, and cache it. Re-aggregating the shape straight
+    // from raw peaks every frame (60x/sec) as a following window shifts by
+    // fractions of a bin causes visible jitter — quantisation boundaries land
+    // slightly differently frame to frame even though nothing audible changed.
+    // Against this grid the visible window is a straight 1:1 slice instead, so
+    // the shape is rock stable and the per-frame scan is one pass over what's
+    // actually drawn. (Sizing the grid for the deepest zoom instead meant
+    // every frame at zoom 1 re-scanned an array 100x larger than it drew,
+    // which is where the frame budget was going.)
     let resampled = resampledRef.current;
     if (
       !resampled ||
       resampled.source !== peaks ||
+      resampled.zoom !== zoom ||
       // Tolerate small width fluctuations (e.g. the elapsed-time label's text
       // width changing by a pixel or two each second, nudging the flex
       // layout) rather than rebuilding this fairly expensive fine grid every
       // time — that was causing a visible once-a-second stutter. A real
-      // resize (window resize, height/zoom change) will still be well past
+      // resize (window resize, height change) will still be well past
       // this tolerance.
       Math.abs(resampled.numberSlots - numberSlots) > 20
     ) {
-      const fullSlots = numberSlots * MAX_ZOOM;
+      const fullSlots = numberSlots * zoom;
       const overallFull = resamplePeaks(peaks.overall, fullSlots);
       const lowFull = resamplePeaks(peaks.low, fullSlots);
       const midFull = resamplePeaks(peaks.mid, fullSlots);
@@ -205,6 +206,7 @@ const WaveformSeekBar = ({
         source: peaks,
         numberSlots,
         fullSlots,
+        zoom,
         // Fixed, whole-track reference so bar heights stay stable as the
         // window scrolls — recomputing this from only what's currently
         // visible would make the whole waveform rescale ("breathe") as loud
@@ -238,32 +240,47 @@ const WaveformSeekBar = ({
     }
 
     windowRef.current = { end: windowEnd, start: windowStart };
-    const startFrac = duration ? windowStart / duration : 0;
-    const endFrac = duration ? windowEnd / duration : 1;
-    // Resample the window from the cached fine grid (fullSlots), not the raw
-    // peaks — at zoom=8 this is a direct 1:1 slice, but at lower zoom levels
-    // (including zoom=1, the whole track) it's still a max-hold aggregation,
-    // just over an already-quantised, per-frame-stable set of "atoms" rather
-    // than raw high-resolution samples, which is what actually kills the
-    // frame-to-frame jitter.
-    const overall = resamplePeaks(
-      resampled.overall,
-      numberSlots,
-      startFrac,
-      endFrac,
-    );
-    const low = resamplePeaks(resampled.low, numberSlots, startFrac, endFrac);
-    const mid = resamplePeaks(resampled.mid, numberSlots, startFrac, endFrac);
-    const high = resamplePeaks(resampled.high, numberSlots, startFrac, endFrac);
+
+    // Bars can only be sampled on whole-slot boundaries, but the window slides
+    // continuously — so snap the sampled window down to the nearest slot and
+    // carry the leftover as a sub-pixel canvas translation. Without this the
+    // scroll only moves when it has accumulated a whole bar, which at zoom 2
+    // is one 2px jerk every few hundred ms: the stutter. One extra slot is
+    // sampled to cover what the shift pulls in from the right.
+    const windowDuration = windowEnd - windowStart || 1;
+    const slotSeconds = windowDuration / numberSlots;
+    const slotStart = windowStart / slotSeconds;
+    const snappedSlot = Math.floor(slotStart);
+    const offsetPx = (slotStart - snappedSlot) * (barWidth + gap);
+    const slots = numberSlots + 1;
+    const drawStart = snappedSlot * slotSeconds;
+    const drawEnd = drawStart + slots * slotSeconds;
+    const startFrac = duration ? drawStart / duration : 0;
+    const endFrac = duration ? drawEnd / duration : 1;
+    // Resample the window from the cached grid (fullSlots), not the raw peaks
+    // — this is a direct 1:1 slice of an already-quantised, per-frame-stable
+    // set of "atoms" rather than a fresh aggregation of raw high-resolution
+    // samples, which is what kills the frame-to-frame jitter.
+    const overall = resamplePeaks(resampled.overall, slots, startFrac, endFrac);
+    const low = resamplePeaks(resampled.low, slots, startFrac, endFrac);
+    const mid = resamplePeaks(resampled.mid, slots, startFrac, endFrac);
+    const high = resamplePeaks(resampled.high, slots, startFrac, endFrac);
 
     const context = canvas.getContext('2d');
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.clearRect(0, 0, pixelWidth, pixelHeight);
+    context.translate(-offsetPx, 0);
     const halfH = pixelHeight / 2;
-    const windowDuration = windowEnd - windowStart || 1;
-    const playedSlots = Math.round(
-      ((liveTime - windowStart) / windowDuration) * numberSlots,
-    );
+    const pixelsPerSecond = (barWidth + gap) / slotSeconds;
+    // Exact fractional playhead position. Colouring whole bars played/unplayed
+    // instead (what this used to do) quantises the boundary to a bar, i.e. to
+    // ~half a second of audio at zoom 1 — the played edge visibly hopped.
+    const playedX = Math.max(0, (liveTime - drawStart) * pixelsPerSecond);
+    const clipToPlayed = () => {
+      context.beginPath();
+      context.rect(0, 0, playedX, pixelHeight);
+      context.clip();
+    };
 
     // Theme-aware muted colour for the unplayed portion of the mono bars —
     // matches whichever theme (light/AMOLED) is active rather than a fixed
@@ -283,14 +300,16 @@ const WaveformSeekBar = ({
       const bpm = track?.bpm;
       if (!bpm) return;
       const secondsPerBeat = 60 / bpm;
-      const pixelsPerSecond = pixelWidth / windowDuration;
-      const firstBeat =
-        Math.ceil(windowStart / secondsPerBeat) * secondsPerBeat;
+      const firstBeat = Math.ceil(drawStart / secondsPerBeat) * secondsPerBeat;
       context.save();
       context.strokeStyle = 'rgba(128,128,128,0.4)';
       context.lineWidth = 1;
-      for (let time = firstBeat; time < windowEnd; time += secondsPerBeat) {
-        const x = Math.round((time - windowStart) * pixelsPerSecond) + 0.5;
+      for (let time = firstBeat; time < drawEnd; time += secondsPerBeat) {
+        // Whole-pixel snapping only where the view is static — under a
+        // scrolling sub-pixel offset it would make the grid jitter against
+        // the bars it is supposed to line up with.
+        const rawX = (time - drawStart) * pixelsPerSecond;
+        const x = offsetPx ? rawX : Math.round(rawX) + 0.5;
         context.beginPath();
         context.moveTo(x, 0);
         context.lineTo(x, pixelHeight);
@@ -308,38 +327,48 @@ const WaveformSeekBar = ({
       // makes overlapping bands brighten into vivid combined colour instead
       // of muddying together, without needing to darken anything else.
       context.globalCompositeOperation = 'lighter';
-      for (let slot = 0; slot < numberSlots; slot++) {
-        const totalH = Math.max(2, (overall[slot] / max) * halfH);
-        const x = slot * (barWidth + gap);
-        const played = slot < playedSlots;
-        const playedAlpha = played ? 1 : 0.35;
+      const drawBandBars = (playedAlpha) => {
+        for (let slot = 0; slot < slots; slot++) {
+          const totalH = Math.max(2, (overall[slot] / max) * halfH);
+          const x = slot * (barWidth + gap);
 
-        // Opacity per frequency band, not a fixed-height stacked slice — each
-        // band's alpha is how present it is RIGHT NOW relative to its own
-        // dynamic range, so a kick-heavy instant reads as solid blue, a
-        // hi-hat-heavy instant as solid white, and a full mix blends toward
-        // grey as the three semi-transparent layers overlap. The 1.4/0.9
-        // weights keep bass/highs perceptually balanced against mids (DJ-style).
-        const lowAlpha = Math.min(1, (low[slot] / lowMax) * 1.4);
-        const midAlpha = Math.min(1, mid[slot] / midMax);
-        const highAlpha = Math.min(1, (high[slot] / highMax) * 0.9);
+          // Opacity per frequency band, not a fixed-height stacked slice — each
+          // band's alpha is how present it is RIGHT NOW relative to its own
+          // dynamic range, so a kick-heavy instant reads as solid blue, a
+          // hi-hat-heavy instant as solid white, and a full mix blends toward
+          // grey as the three semi-transparent layers overlap. The 1.4/0.9
+          // weights keep bass/highs perceptually balanced against mids (DJ-style).
+          const lowAlpha = Math.min(1, (low[slot] / lowMax) * 1.4);
+          const midAlpha = Math.min(1, mid[slot] / midMax);
+          const highAlpha = Math.min(1, (high[slot] / highMax) * 0.9);
 
-        // The bands variant always sits on its own fixed dark background
-        // (see .mp-waveform-seeker--bands), so alpha-blending the real band
-        // colours straight onto it is safe here — unlike the mono variant,
-        // there's no arbitrary/light theme surface behind it to wash out against.
-        context.globalAlpha = playedAlpha * lowAlpha;
-        context.fillStyle = BAND_COLOURS.low;
-        context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
+          // The bands variant always sits on its own fixed dark background
+          // (see .mp-waveform-seeker--bands), so alpha-blending the real band
+          // colours straight onto it is safe here — unlike the mono variant,
+          // there's no arbitrary/light theme surface behind it to wash out against.
+          context.globalAlpha = playedAlpha * lowAlpha;
+          context.fillStyle = BAND_COLOURS.low;
+          context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
 
-        context.globalAlpha = playedAlpha * midAlpha;
-        context.fillStyle = BAND_COLOURS.mid;
-        context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
+          context.globalAlpha = playedAlpha * midAlpha;
+          context.fillStyle = BAND_COLOURS.mid;
+          context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
 
-        context.globalAlpha = playedAlpha * highAlpha;
-        context.fillStyle = BAND_COLOURS.high;
-        context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
-      }
+          context.globalAlpha = playedAlpha * highAlpha;
+          context.fillStyle = BAND_COLOURS.high;
+          context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
+        }
+      };
+
+      // Unplayed pass over everything, then the played region on top, clipped
+      // at the exact playhead pixel. Additive blending means the two passes
+      // sum, so the top-up is the remainder (0.35 + 0.65 = the full-strength
+      // played bar).
+      drawBandBars(0.35);
+      context.save();
+      clipToPlayed();
+      drawBandBars(0.65);
+      context.restore();
 
       context.globalAlpha = 1;
       context.globalCompositeOperation = 'source-over';
@@ -352,12 +381,24 @@ const WaveformSeekBar = ({
       rootStyle.getPropertyValue('--player-fill').trim() ||
       '#4d9fff';
 
-    for (let slot = 0; slot < numberSlots; slot++) {
-      const barH = Math.max(2, (overall[slot] / max) * halfH);
-      const x = slot * (barWidth + gap);
-      context.fillStyle = slot < playedSlots ? accent : dimColour;
-      context.fillRect(x, halfH - barH, barWidth, barH * 2);
-    }
+    const drawMonoBars = (colour) => {
+      context.fillStyle = colour;
+      for (let slot = 0; slot < slots; slot++) {
+        const barH = Math.max(2, (overall[slot] / max) * halfH);
+        context.fillRect(
+          slot * (barWidth + gap),
+          halfH - barH,
+          barWidth,
+          barH * 2,
+        );
+      }
+    };
+
+    drawMonoBars(dimColour);
+    context.save();
+    clipToPlayed();
+    drawMonoBars(accent);
+    context.restore();
 
     drawBeatGrid();
   };
