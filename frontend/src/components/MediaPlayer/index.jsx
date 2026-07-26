@@ -360,6 +360,22 @@ const MediaPlayer = () => {
       : audioRef.current?.currentTime ?? 0;
   }, []);
 
+  // play() returns a promise that REJECTS if anything pauses the element, sets
+  // a new src, or calls load() before playback actually starts — grabbing the
+  // waveform again mid-resume, skipping tracks quickly, closing the player. The
+  // browser logs an unhandled rejection for each one ("The play() request was
+  // interrupted by..."), so every play in here goes through this instead of
+  // being fired and forgotten. Genuine failures (missing file, decode error)
+  // still surface via the element's own "error" event.
+  const playAudio = async () => {
+    try {
+      await audioRef.current?.play();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   // Real scratch playback (reverse / variable speed) needs sample-level
   // control the <audio> element can't offer at all, so this hands off to a
   // separate Web Audio engine for the duration of the drag gesture only —
@@ -389,7 +405,7 @@ const MediaPlayer = () => {
     const audio = audioRef.current;
     if (audio) {
       audio.currentTime = time;
-      if (wasPlayingBeforeScratchRef.current) void audio.play();
+      if (wasPlayingBeforeScratchRef.current) void playAudio();
     }
   };
 
@@ -537,16 +553,8 @@ const MediaPlayer = () => {
         })();
       }
     } else if (!googleCast.connected && wasCastingRef.current) {
-      const resume = async () => {
-        try {
-          await audio.play();
-          setPlaying(true);
-        } catch {
-          // ignore — user may have no track loaded
-        }
-      };
-
-      void resume();
+      // may fail if no track is loaded — playAudio swallows it
+      void playAudio().then((started) => started && setPlaying(true));
     }
 
     wasCastingRef.current = googleCast.connected;
@@ -610,7 +618,7 @@ const MediaPlayer = () => {
     const onEnded = () => {
       if (repeatRef.current) {
         audio.currentTime = 0;
-        void audio.play();
+        void playAudio();
         return;
       }
 
@@ -700,14 +708,14 @@ const MediaPlayer = () => {
         pendingResumeRef.current = null;
       }
 
-      try {
-        await audio.play();
-        setPlaying(true);
-      } catch {
-        setPlaying(false);
-      } finally {
-        setLoading(false);
-      }
+      const started = await playAudio();
+      // A newer track switched in while play() was pending: its own effect owns
+      // the playing/loading state now. Reporting this one's outcome would show
+      // the player as paused (and clear the new track's loading state) while
+      // the new track is in fact playing.
+      if (cancelled) return;
+      setPlaying(started);
+      setLoading(false);
     };
 
     triggerPlayRef.current = startPlayback;
@@ -743,13 +751,8 @@ const MediaPlayer = () => {
       setPlaying(false);
     } else if (!audio.src) {
       void triggerPlayRef.current?.();
-    } else {
-      try {
-        await audio.play();
-        setPlaying(true);
-      } catch {
-        // error state handled by error event
-      }
+    } else if (await playAudio()) {
+      setPlaying(true);
     }
   };
 
