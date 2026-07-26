@@ -162,6 +162,12 @@ export const sleep = (milliseconds) => {
   });
 };
 
+// Keep the previous state reference when a poll returns identical data, so
+// pages that poll on a timer don't re-render (and re-render their memoized
+// children) for a payload that hasn't changed.
+export const keepIfEqual = (previous, next) =>
+  JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
+
 /* https://www.npmjs.com/package/js-file-download
  *
  * Copyright 2017 Kenneth Jiang

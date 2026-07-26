@@ -41,6 +41,7 @@ import * as prefs from '../../lib/prefs';
 import * as reportsAPI from '../../lib/reports';
 import * as sharesAPI from '../../lib/shares';
 import * as transfersAPI from '../../lib/transfers';
+import { keepIfEqual } from '../../lib/util';
 import AppContext from '../AppContext';
 import ActivityChart from './ActivityChart';
 import ActivityHeatmap from './ActivityHeatmap';
@@ -171,6 +172,9 @@ const AdminOverview = () => {
     let cancelled = false;
 
     const fetch = async () => {
+      // Nothing to update behind a hidden tab, and this dashboard is expensive
+      // enough to render that polling it in the background is pure waste.
+      if (document.hidden) return;
       try {
         const [d, u] = await Promise.all([
           transfersAPI
@@ -180,10 +184,12 @@ const AdminOverview = () => {
             .getAll({ activeOnly: true, direction: 'upload' })
             .catch(() => null),
         ]);
-        if (!cancelled) {
-          setDownloads(d ?? []);
-          setUploads(u ?? []);
-        }
+        if (cancelled) return;
+        // An idle server returns the same (usually empty) payload every
+        // second, and fresh array literals would re-render this whole
+        // dashboard for it.
+        setDownloads((previous) => keepIfEqual(previous, d ?? []));
+        setUploads((previous) => keepIfEqual(previous, u ?? []));
       } catch {
         // silently ignore
       }

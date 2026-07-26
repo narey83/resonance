@@ -119,10 +119,18 @@ api.interceptors.response.use(
       }
     }
 
+    // A 401 on an authenticated route means this tab is showing signed-in UI
+    // it has no session for, so send it back to the login screen. Note there
+    // is deliberately no `getToken()` condition: when the token is already
+    // gone (cleared in another tab, expired and dropped) there is nothing left
+    // to clear, and requiring one left those tabs stuck — pollers like the
+    // Overview's 1s transfers fetch just kept firing 401s forever with nothing
+    // to break the cycle. Passthrough is exempt: there a 401 means the proxy
+    // isn't injecting identity, and reloading would only loop.
     if (
       status === 401 &&
       !['/session', '/server', '/application'].includes(config?.url) &&
-      getToken()
+      !isPassthroughEnabled()
     ) {
       console.debug('received 401 from api route, logging out');
       clearToken();

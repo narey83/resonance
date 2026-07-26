@@ -40,3 +40,22 @@ describe('formatBytesAsUnit', () => {
     expect(utils.formatBytesAsUnit(1_234_567, 'MB', 2)).toBe(1.18);
   });
 });
+
+describe('keepIfEqual', () => {
+  // The whole point is reference identity: an equal-but-new value must come
+  // back as the OLD reference, or the re-render it exists to prevent happens
+  // anyway.
+  it('returns the previous reference when the data is unchanged', () => {
+    const previous = [{ filename: 'a.mp3', percent: 50 }];
+    expect(
+      utils.keepIfEqual(previous, [{ filename: 'a.mp3', percent: 50 }]),
+    ).toBe(previous);
+  });
+
+  it('returns the next value when the data differs', () => {
+    const next = [{ filename: 'a.mp3', percent: 51 }];
+    expect(utils.keepIfEqual([{ filename: 'a.mp3', percent: 50 }], next)).toBe(
+      next,
+    );
+  });
+});

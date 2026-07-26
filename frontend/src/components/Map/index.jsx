@@ -40,6 +40,7 @@ import * as optionsAPI from '../../lib/options';
 import * as prefs from '../../lib/prefs';
 import * as reportsAPI from '../../lib/reports';
 import * as transfersAPI from '../../lib/transfers';
+import { keepIfEqual } from '../../lib/util';
 import WorldMap from '../Overview/WorldMap';
 import React, { useEffect, useMemo, useState } from 'react';
 
@@ -61,11 +62,6 @@ const DIRECTIONS = [
 ];
 
 const pad2 = (n) => String(n).padStart(2, '0');
-
-// Keep the previous state reference when a poll returns identical data, so
-// the map (and its memoized marker layers) doesn't re-render every 5s.
-const keepIfEqual = (previous, next) =>
-  JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
 
 // <input type="datetime-local"> wants local time with no timezone suffix.
 const toDatetimeLocal = (isoOrDate) => {
