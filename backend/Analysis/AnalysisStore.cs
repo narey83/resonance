@@ -120,7 +120,7 @@ namespace resonance.Analysis
             long fileSize;
             try
             {
-                fileSize = new FileInfo(originalFilename).Length;
+                fileSize = new FileInfo(MusicPath.ToAbsolute(originalFilename)).Length;
             }
             catch
             {
@@ -220,7 +220,7 @@ namespace resonance.Analysis
             long fileSize;
             try
             {
-                fileSize = new FileInfo(originalFilename).Length;
+                fileSize = new FileInfo(MusicPath.ToAbsolute(originalFilename)).Length;
             }
             catch
             {

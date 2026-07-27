@@ -386,11 +386,15 @@ namespace resonance.Analysis
                         Interlocked.Increment(ref inFlight);
                         try
                         {
-                            var result = await Analyzer.AnalyseAsync(
-                                track.OriginalFilename, ffmpegPath, metrics, options, ct);
+                            // The share repository hands back paths in their stored form, which is
+                            // relative to the music root; ffmpeg needs the real one.
+                            var path = MusicPath.ToAbsolute(track.OriginalFilename);
+
+                            var result = await Analyzer.AnalyseAsync(path, ffmpegPath, metrics, options, ct);
 
                             if (result == null)
                             {
+                                Log.Warning("Analysis produced nothing for '{File}' — could not decode it.", path);
                                 Interlocked.Increment(ref failed);
                                 continue;
                             }
@@ -407,7 +411,7 @@ namespace resonance.Analysis
 
                             if (result.Waveform != null || result.Loudness != null)
                             {
-                                Store.Save(track.MaskedFilename, track.OriginalFilename, result);
+                                Store.Save(track.MaskedFilename, path, result);
                             }
 
                             var produced = result.Bpm.HasValue || result.Key != null

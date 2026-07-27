@@ -54,4 +54,30 @@ public class AudioAnalyzerTests
     {
         Assert.Equal(bpm, AudioAnalyzer.FoldOctave(bpm, Min, Max));
     }
+
+    // The chunked hand-off to Essentia must be byte-identical to the samples it replaces;
+    // a slicing bug here would silently corrupt every BPM and key result rather than fail.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(16_383)]   // just under one chunk (64KB / 4 bytes)
+    [InlineData(16_384)]   // exactly one chunk
+    [InlineData(16_385)]   // one chunk plus a remainder
+    [InlineData(100_000)]  // several chunks
+    public async Task Writes_Pcm_Byte_Identically_In_Chunks(int sampleCount)
+    {
+        var pcm = new float[sampleCount + 5_000]; // trailing samples must not be written
+        for (var i = 0; i < pcm.Length; i++)
+        {
+            pcm[i] = (float)Math.Sin(i * 0.01);
+        }
+
+        using var stream = new MemoryStream();
+        await AudioAnalyzer.WritePcmAsync(stream, pcm, sampleCount);
+
+        var expected = new byte[sampleCount * 4];
+        Buffer.BlockCopy(pcm, 0, expected, 0, expected.Length);
+
+        Assert.Equal(expected, stream.ToArray());
+    }
 }

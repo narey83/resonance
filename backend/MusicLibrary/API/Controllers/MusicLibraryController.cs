@@ -462,9 +462,6 @@ namespace resonance.MusicLibrary.API
             }
         }
 
-        private static AnalysisMetrics MetricsFor(bool key, bool bpm) =>
-            (key ? AnalysisMetrics.Key : AnalysisMetrics.None) | (bpm ? AnalysisMetrics.Bpm : AnalysisMetrics.None);
-
         /// <summary>Triggers key and/or BPM analysis for a specific track.</summary>
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         [HttpPost("tracks/analyze")]
@@ -940,6 +937,9 @@ namespace resonance.MusicLibrary.API
         // would then change the ETag every refill and defeat conditional GETs (every client would
         // re-download in full). Instead XOR each row's hash (commutative → order doesn't matter) and
         // fold in the row count, so the ETag is stable as long as the underlying data is.
+        private static AnalysisMetrics MetricsFor(bool key, bool bpm) =>
+            (key ? AnalysisMetrics.Key : AnalysisMetrics.None) | (bpm ? AnalysisMetrics.Bpm : AnalysisMetrics.None);
+
         private static string ComputeListETag<T>(System.Collections.Generic.IReadOnlyList<T> list)
         {
             var acc = new byte[20];
@@ -1277,7 +1277,6 @@ namespace resonance.MusicLibrary.API
             }
         }
 
-        // ── Helpers ───────────────────────────────────────────────────────────
         private string ResolveOneMaskedFilename(string originalPath)
         {
             var tagged = Shares.GetTaggedFiles()

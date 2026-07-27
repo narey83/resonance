@@ -147,6 +147,31 @@ namespace resonance.Analysis
         }
 
         /// <summary>
+        ///     Writes the first <paramref name="sampleCount"/> samples of <paramref name="pcm"/> to
+        ///     <paramref name="destination"/> as little-endian f32, in chunks.
+        /// </summary>
+        /// <remarks>
+        ///     Chunked rather than one array because AnalysisSeconds can be configured up to an
+        ///     hour, which would otherwise mean a ~600MB contiguous allocation per worker just to
+        ///     hand the samples over. Exposed for testing.
+        /// </remarks>
+        /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
+        public static async Task WritePcmAsync(
+            Stream destination, float[] pcm, int sampleCount, CancellationToken ct = default)
+        {
+            var chunk = new byte[64 * 1024];
+            for (var offset = 0; offset < sampleCount;)
+            {
+                var samples = Math.Min(chunk.Length / 4, sampleCount - offset);
+                Buffer.BlockCopy(pcm, offset * 4, chunk, 0, samples * 4);
+                await destination.WriteAsync(chunk.AsMemory(0, samples * 4), ct);
+                offset += samples;
+            }
+
+            await destination.FlushAsync(ct);
+        }
+
+        /// <summary>
         ///     Runs every requested metric over a single decode of <paramref name="filePath"/>.
         /// </summary>
         /// <returns>The metrics that could be produced, or null if the file could not be decoded.</returns>
@@ -472,10 +497,7 @@ namespace resonance.Analysis
 
             try
             {
-                var buffer = new byte[limit * 4];
-                Buffer.BlockCopy(pcm, 0, buffer, 0, buffer.Length);
-                await proc.StandardInput.BaseStream.WriteAsync(buffer, linked.Token);
-                await proc.StandardInput.BaseStream.FlushAsync(linked.Token);
+                await WritePcmAsync(proc.StandardInput.BaseStream, pcm, limit, linked.Token);
                 proc.StandardInput.Close();
 
                 var stdout = await stdoutTask;

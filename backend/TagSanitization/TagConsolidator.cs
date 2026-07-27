@@ -33,8 +33,8 @@ namespace resonance.TagSanitization
     using System.Collections.Generic;
     using System.IO;
     using System.Linq;
-    using resonance.Common;
     using resonance.Analysis;
+    using resonance.Common;
 
     /// <summary>
     ///     Consolidates all ID3 tag versions in a single audio file into one clean
