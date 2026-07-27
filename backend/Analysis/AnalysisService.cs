@@ -213,28 +213,54 @@ namespace resonance.Analysis
             return result.Loudness;
         }
 
-        public void SetBpm(string maskedFilename, uint bpm) =>
-            UpdateTags(maskedFilename, t => t with { Bpm = bpm }, () => new FileTags(null, null, null, null, 0, 0, null, null, bpm));
+        public void SetBpm(string maskedFilename, uint bpm) => Apply(maskedFilename, bpm, null);
 
-        public void SetKey(string maskedFilename, string key) =>
-            UpdateTags(maskedFilename, t => t with { Key = key }, () => new FileTags(null, null, null, null, 0, 0, key));
+        public void SetKey(string maskedFilename, string key) => Apply(maskedFilename, null, key);
 
-        public void ClearBpm(string maskedFilename) =>
-            UpdateTags(maskedFilename, t => t with { Bpm = 0 }, null);
-
-        public void ClearKey(string maskedFilename) =>
-            UpdateTags(maskedFilename, t => t with { Key = null }, null);
-
-        // ── Scan loop ─────────────────────────────────────────────────────────
-        private void UpdateTags(string maskedFilename, Func<FileTags, FileTags> update, Func<FileTags> create)
+        /// <summary>
+        ///     Writes any detected BPM and key to the file's tags in a single pass.
+        /// </summary>
+        /// <remarks>
+        ///     One write, not one per metric: WriteFileTags rewrites the whole tag block through
+        ///     TagLib, so writing BPM and key separately rewrote every scanned file twice.
+        /// </remarks>
+        public void Apply(string maskedFilename, uint? bpm, string key)
         {
-            var existing = ShareService.GetAllTags().TryGetValue(maskedFilename, out var t) ? t : null;
-            if (existing == null && create == null)
+            var hasBpm = bpm.HasValue && bpm.Value != 0;
+            var hasKey = !string.IsNullOrEmpty(key);
+            if (!hasBpm && !hasKey)
             {
                 return;
             }
 
-            ShareService.WriteFileTags(maskedFilename, existing != null ? update(existing) : create());
+            var updated = ShareService.GetTags(maskedFilename) ?? new FileTags(null, null, null, null, 0, 0, null);
+            if (hasBpm)
+            {
+                updated = updated with { Bpm = bpm.Value };
+            }
+
+            if (hasKey)
+            {
+                updated = updated with { Key = key };
+            }
+
+            ShareService.WriteFileTags(maskedFilename, updated);
+        }
+
+        public void ClearBpm(string maskedFilename) => UpdateTags(maskedFilename, t => t with { Bpm = 0 });
+
+        public void ClearKey(string maskedFilename) => UpdateTags(maskedFilename, t => t with { Key = null });
+
+        // ── Scan loop ─────────────────────────────────────────────────────────
+        private void UpdateTags(string maskedFilename, Func<FileTags, FileTags> update)
+        {
+            var existing = ShareService.GetTags(maskedFilename);
+            if (existing == null)
+            {
+                return;
+            }
+
+            ShareService.WriteFileTags(maskedFilename, update(existing));
         }
 
         private async Task<AnalysisResult> AnalyseOneAsync(
@@ -397,15 +423,7 @@ namespace resonance.Analysis
                                 continue;
                             }
 
-                            if (result.Bpm.HasValue && result.Bpm.Value != 0)
-                            {
-                                SetBpm(track.MaskedFilename, result.Bpm.Value);
-                            }
-
-                            if (!string.IsNullOrEmpty(result.Key))
-                            {
-                                SetKey(track.MaskedFilename, result.Key);
-                            }
+                            Apply(track.MaskedFilename, result.Bpm, result.Key);
 
                             if (result.Waveform != null || result.Loudness != null)
                             {

@@ -310,6 +310,18 @@ namespace resonance.Shares
             txn.Commit();
         }
 
+        public FileTags FindTags(string maskedFilename)
+        {
+            using var conn = GetConnection();
+            using var cmd = new NpgsqlCommand(
+                "SELECT tags_json FROM shares.files WHERE host = @host AND masked_filename = @masked AND tags_json IS NOT NULL;", conn);
+            cmd.Parameters.AddWithValue("host", Host);
+            cmd.Parameters.AddWithValue("masked", maskedFilename);
+
+            using var reader = cmd.ExecuteReader();
+            return reader.Read() ? reader.GetString(0).FromJson<FileTags>() : null;
+        }
+
         public IEnumerable<(string MaskedFilename, FileTags Tags)> ListTags()
         {
             var results = new List<(string, FileTags)>();

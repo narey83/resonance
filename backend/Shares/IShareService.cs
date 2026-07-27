@@ -120,6 +120,12 @@ namespace resonance.Shares
         ///     Returns tag metadata for all files that have ID3/tag data.
         /// </summary>
         /// <returns>A dictionary mapping masked filename to tag metadata.</returns>
+        /// <summary>
+        ///     Returns the tags for a single file, or null if it has none.
+        /// </summary>
+        /// <returns>The file's tags, or null.</returns>
+        FileTags GetTags(string maskedFilename);
+
         IReadOnlyDictionary<string, FileTags> GetAllTags();
 
         /// <summary>

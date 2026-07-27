@@ -110,12 +110,15 @@ namespace resonance.Analysis.API
                 return BadRequest("path is required");
             }
 
-            if (!System.IO.File.Exists(path))
+            // Accepts either an absolute path (the player has one) or the stored root-relative
+            // form (library rows carry that), since both name the same track.
+            var full = resonance.Common.MusicPath.ToAbsolute(path);
+            if (!System.IO.File.Exists(full))
             {
                 return NotFound();
             }
 
-            var data = await Analysis.GetWaveformAsync(path, ct);
+            var data = await Analysis.GetWaveformAsync(full, ct);
             if (data == null)
             {
                 return NotFound();
@@ -139,12 +142,13 @@ namespace resonance.Analysis.API
                 return BadRequest("path is required");
             }
 
-            if (!System.IO.File.Exists(path))
+            var full = resonance.Common.MusicPath.ToAbsolute(path);
+            if (!System.IO.File.Exists(full))
             {
                 return NotFound();
             }
 
-            var data = await Analysis.GetLoudnessAsync(path, ct);
+            var data = await Analysis.GetLoudnessAsync(full, ct);
             if (data == null)
             {
                 return NotFound();

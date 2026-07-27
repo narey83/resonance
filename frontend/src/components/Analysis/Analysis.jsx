@@ -41,6 +41,7 @@ import {
 import { useKeyFormat } from '../../lib/useKeyFormat';
 import KeyFormatToggle from '../Shared/KeyFormatToggle';
 import PageInfo from '../Shared/PageInfo';
+import RowWaveform from './RowWaveform';
 import {
   Activity,
   AlertCircle,
@@ -286,6 +287,7 @@ const TrackRow = ({
   track,
 }) => {
   const [editing, setEditing] = useState(false);
+  const [showWave, setShowWave] = useState(false);
   const [editingBpm, setEditingBpm] = useState(false);
   const [bpmInput, setBpmInput] = useState(track.bpm?.toString() ?? '');
   const [keyInput, setKeyInput] = useState(track.key ?? '');
@@ -328,166 +330,177 @@ const TrackRow = ({
   };
 
   return (
-    <div
-      className={`ka-track${selected ? ' ka-track--selected' : ''}${wasUpdated ? ' ka-track--updated' : ''}`}
-    >
-      <div className="ka-track-check">
-        <input
-          checked={selected}
-          className="ka-checkbox"
-          disabled={globalScanning}
-          onChange={() => onToggleSelect(track.maskedFilename)}
-          type="checkbox"
-        />
-      </div>
-      <div className="ka-track-key">
-        {editing ? (
-          <div className="ka-key-edit">
-            <select
-              autoFocus
-              className="ka-key-input ka-key-select"
-              onChange={({ target }) => setKeyInput(target.value)}
-              onKeyDown={({ key }) => {
-                if (key === 'Enter') submit();
-                if (key === 'Escape') setEditing(false);
-              }}
-              value={keyInput}
-            >
-              <option value="">— none —</option>
-              {CAMELOT_KEYS.map(({ camelot, standard }) => (
-                <option
-                  key={standard}
-                  value={standard}
-                >
-                  {camelot} — {standard}
-                </option>
-              ))}
-            </select>
-            <div className="ka-key-edit-actions">
-              <button
-                className="ka-icon-btn ka-icon-btn--ok"
-                onClick={submit}
-                title="Save"
-                type="button"
-              >
-                <CheckCircle2 size={13} />
-              </button>
-              <button
-                className="ka-icon-btn"
-                onClick={() => setEditing(false)}
-                title="Cancel"
-                type="button"
-              >
-                <XCircle size={13} />
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            className="ka-key-btn"
-            onClick={() => {
-              setKeyInput(track.key ?? '');
-              setEditing(true);
-            }}
-            title="Click to edit key"
-            type="button"
-          >
-            <KeyBadge
-              compatible={compatible}
-              fmtKey={fmtKey}
-              keyValue={track.key}
-            />
-          </button>
-        )}
-      </div>
-      <div className="ka-track-bpm">
-        {editingBpm ? (
+    <>
+      <div
+        className={`ka-track${selected ? ' ka-track--selected' : ''}${wasUpdated ? ' ka-track--updated' : ''}`}
+      >
+        <div className="ka-track-check">
           <input
-            autoFocus
-            className="ka-key-input ka-bpm-input"
-            onBlur={submitBpm}
-            onChange={({ target }) => setBpmInput(target.value)}
-            onKeyDown={({ key }) => {
-              if (key === 'Enter') submitBpm();
-              if (key === 'Escape') setEditingBpm(false);
-            }}
-            type="number"
-            value={bpmInput}
+            checked={selected}
+            className="ka-checkbox"
+            disabled={globalScanning}
+            onChange={() => onToggleSelect(track.maskedFilename)}
+            type="checkbox"
           />
-        ) : (
-          <button
-            className="ka-key-btn"
-            onClick={() => {
-              setBpmInput(track.bpm?.toString() ?? '');
-              setEditingBpm(true);
-            }}
-            title="Click to edit BPM"
-            type="button"
-          >
-            <BpmBadge bpm={track.bpm} />
-          </button>
-        )}
-      </div>
-      <div className="ka-track-cache">
-        <CacheDots track={track} />
-      </div>
-      <div className="ka-track-info">
-        <span
-          className="ka-track-title"
-          title={track.title || track.filename}
-        >
-          {track.title || track.filename}
-        </span>
-        {track.artist && (
-          <span className="ka-track-artist">{track.artist}</span>
-        )}
-        {track.album && track.album !== track.artist && (
-          <span className="ka-track-album">{track.album}</span>
-        )}
-      </div>
-      <div className="ka-track-actions">
-        <button
-          className={`ka-icon-btn${isPlaying ? ' ka-icon-btn--playing' : ''}`}
-          onClick={handlePlay}
-          title={isPlaying ? 'Now playing' : 'Play track'}
-          type="button"
-        >
-          <Play size={13} />
-        </button>
-        <button
-          className="ka-icon-btn"
-          disabled={anyScanRunning}
-          onClick={() => onScan(track.maskedFilename)}
-          title={
-            scanning
-              ? 'Scanning…'
-              : anyScanRunning
-                ? 'Scan in progress'
-                : 'Analyse track'
-          }
-          type="button"
-        >
-          {scanning ? (
-            <Loader2
-              className="ka-spin-icon"
-              size={13}
+        </div>
+        <div className="ka-track-key">
+          {editing ? (
+            <div className="ka-key-edit">
+              <select
+                autoFocus
+                className="ka-key-input ka-key-select"
+                onChange={({ target }) => setKeyInput(target.value)}
+                onKeyDown={({ key }) => {
+                  if (key === 'Enter') submit();
+                  if (key === 'Escape') setEditing(false);
+                }}
+                value={keyInput}
+              >
+                <option value="">— none —</option>
+                {CAMELOT_KEYS.map(({ camelot, standard }) => (
+                  <option
+                    key={standard}
+                    value={standard}
+                  >
+                    {camelot} — {standard}
+                  </option>
+                ))}
+              </select>
+              <div className="ka-key-edit-actions">
+                <button
+                  className="ka-icon-btn ka-icon-btn--ok"
+                  onClick={submit}
+                  title="Save"
+                  type="button"
+                >
+                  <CheckCircle2 size={13} />
+                </button>
+                <button
+                  className="ka-icon-btn"
+                  onClick={() => setEditing(false)}
+                  title="Cancel"
+                  type="button"
+                >
+                  <XCircle size={13} />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              className="ka-key-btn"
+              onClick={() => {
+                setKeyInput(track.key ?? '');
+                setEditing(true);
+              }}
+              title="Click to edit key"
+              type="button"
+            >
+              <KeyBadge
+                compatible={compatible}
+                fmtKey={fmtKey}
+                keyValue={track.key}
+              />
+            </button>
+          )}
+        </div>
+        <div className="ka-track-bpm">
+          {editingBpm ? (
+            <input
+              autoFocus
+              className="ka-key-input ka-bpm-input"
+              onBlur={submitBpm}
+              onChange={({ target }) => setBpmInput(target.value)}
+              onKeyDown={({ key }) => {
+                if (key === 'Enter') submitBpm();
+                if (key === 'Escape') setEditingBpm(false);
+              }}
+              type="number"
+              value={bpmInput}
             />
           ) : (
-            <ScanLine size={13} />
+            <button
+              className="ka-key-btn"
+              onClick={() => {
+                setBpmInput(track.bpm?.toString() ?? '');
+                setEditingBpm(true);
+              }}
+              title="Click to edit BPM"
+              type="button"
+            >
+              <BpmBadge bpm={track.bpm} />
+            </button>
           )}
-        </button>
-        {track.key && !scanning && (
+        </div>
+        <div className="ka-track-cache">
+          <CacheDots track={track} />
+        </div>
+        <div className="ka-track-info">
+          <span
+            className="ka-track-title"
+            title={track.title || track.filename}
+          >
+            {track.title || track.filename}
+          </span>
+          {track.artist && (
+            <span className="ka-track-artist">{track.artist}</span>
+          )}
+          {track.album && track.album !== track.artist && (
+            <span className="ka-track-album">{track.album}</span>
+          )}
+        </div>
+        <div className="ka-track-actions">
           <button
-            className="ka-icon-btn ka-icon-btn--danger"
-            onClick={() => onClearKey(track.maskedFilename)}
-            title="Clear key"
+            className={`ka-icon-btn${isPlaying ? ' ka-icon-btn--playing' : ''}`}
+            onClick={handlePlay}
+            title={isPlaying ? 'Now playing' : 'Play track'}
             type="button"
           >
-            <RotateCcw size={13} />
+            <Play size={13} />
           </button>
-        )}
+          <button
+            className="ka-icon-btn"
+            disabled={anyScanRunning}
+            onClick={() => onScan(track.maskedFilename)}
+            title={
+              scanning
+                ? 'Scanning…'
+                : anyScanRunning
+                  ? 'Scan in progress'
+                  : 'Analyse track'
+            }
+            type="button"
+          >
+            {scanning ? (
+              <Loader2
+                className="ka-spin-icon"
+                size={13}
+              />
+            ) : (
+              <ScanLine size={13} />
+            )}
+          </button>
+          <button
+            className={`ka-icon-btn${showWave ? ' ka-icon-btn--playing' : ''}`}
+            onClick={() => setShowWave((v) => !v)}
+            title={showWave ? 'Hide waveform' : 'Show waveform'}
+            type="button"
+          >
+            <AudioWaveform size={13} />
+          </button>
+          {track.key && !scanning && (
+            <button
+              className="ka-icon-btn ka-icon-btn--danger"
+              onClick={() => onClearKey(track.maskedFilename)}
+              title="Clear key"
+              type="button"
+            >
+              <RotateCcw size={13} />
+            </button>
+          )}
+        </div>
       </div>
-    </div>
+      {showWave && <RowWaveform track={track} />}
+    </>
   );
 };
 

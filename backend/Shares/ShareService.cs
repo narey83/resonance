@@ -231,6 +231,19 @@ namespace resonance.Shares
         ///     Returns tag metadata for all files that have ID3/tag data.
         /// </summary>
         /// <returns></returns>
+        /// <summary>
+        ///     Returns the tags for a single file, or null if it has none. Preferred over
+        ///     <see cref="GetAllTags"/> when only one file is wanted — that builds a dictionary of
+        ///     every tagged file in the share, which is ruinous inside a per-track loop.
+        /// </summary>
+        /// <returns>The file's tags, or null.</returns>
+        public FileTags GetTags(string maskedFilename)
+        {
+            return AllRepositories
+                .Select(r => r.FindTags(maskedFilename))
+                .FirstOrDefault(t => t != null);
+        }
+
         public IReadOnlyDictionary<string, FileTags> GetAllTags()
         {
             return AllRepositories

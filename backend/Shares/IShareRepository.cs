@@ -148,6 +148,12 @@ namespace resonance.Shares
         IEnumerable<(string MaskedFilename, FileTags Tags)> ListTags();
 
         /// <summary>
+        ///     Returns the tags for a single file, or null if it has none.
+        /// </summary>
+        /// <returns>The file's tags, or null.</returns>
+        FileTags FindTags(string maskedFilename);
+
+        /// <summary>
         ///     Lists files that have tag data.
         /// </summary>
         /// <returns>Tuples of (maskedFilename, originalFilename, tags) for files with tags.</returns>

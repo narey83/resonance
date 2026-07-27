@@ -868,3 +868,48 @@
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
+
+/* ── Per-row waveform viewer ──────────────────────────────────────────────── */
+
+.ka-rowwave {
+  background: #0e0f13;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 16px 10px;
+}
+
+.ka-rowwave--msg {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-muted);
+  min-height: 40px;
+}
+
+.ka-rowwave-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.ka-rowwave-zoom {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 26px;
+  text-align: center;
+}
+
+/* The canvas is drawn wider than the viewport at zoom > 1, so it scrolls
+   here rather than pushing the page sideways. */
+.ka-rowwave-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-radius: 4px;
+}
+
+.ka-rowwave-scroll canvas {
+  display: block;
+}
