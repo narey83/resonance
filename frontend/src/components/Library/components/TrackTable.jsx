@@ -29,6 +29,7 @@
 
 import { useLibraryActivity } from '../../../context/LibraryActivityContext';
 import { usePlayer } from '../../../context/PlayerContext';
+import * as prefs from '../../../lib/prefs';
 import {
   formatAttributes,
   formatIndexedAt,
@@ -72,6 +73,27 @@ const alphaKey = (s) => {
 };
 
 const ROW_HEIGHT = 36;
+
+const WIDTHS_PREF = 'library-column-widths';
+
+// Column order and default track sizes. Flexible defaults stay flexible until the
+// user drags one, at which point that column is pinned to the pixel width it had.
+// num and love are icon slots and are not resizable.
+const COLUMNS = [
+  { def: '28px', fixed: true, id: 'num', min: 24 },
+  { def: '220px', id: 'wave', min: 60 },
+  { def: 'minmax(0, 2.2fr)', id: 'title', min: 80 },
+  { def: 'minmax(0, 1.4fr)', id: 'artist', min: 60 },
+  { def: 'minmax(0, 1.4fr)', id: 'album', min: 60 },
+  { def: '44px', id: 'key', min: 32 },
+  { def: '44px', id: 'bpm', min: 32 },
+  { def: '42px', id: 'ext', min: 32 },
+  { def: '72px', id: 'quality', min: 40 },
+  { def: '52px', id: 'duration', min: 40 },
+  { def: '36px', id: 'plays', min: 30 },
+  { def: '160px', id: 'added', min: 60, onlyWhenAdded: true },
+  { def: '28px', fixed: true, id: 'love', min: 24 },
+];
 
 const TrackTable = ({
   alphaHandlerRef,
@@ -289,6 +311,86 @@ const TrackTable = ({
   );
 
   // Plain render functions — not components — so React doesn't remount on every render
+  const [colWidths, setColWidths] = useState(
+    () => prefs.get(WIDTHS_PREF, {}) ?? {},
+  );
+  const headRef = useRef(null);
+  const dragRef = useRef(null);
+
+  const activeColumns = useMemo(
+    () => COLUMNS.filter((c) => !c.onlyWhenAdded || showAdded),
+    [showAdded],
+  );
+
+  const gridTemplate = useMemo(
+    () =>
+      activeColumns
+        .map((c) => (colWidths[c.id] ? `${colWidths[c.id]}px` : c.def))
+        .join(' '),
+    [activeColumns, colWidths],
+  );
+
+  // Dragging a flexible column needs a pixel value to start from, so its rendered
+  // width is measured at grab time; from then on it is a fixed column.
+  const startResize = (event, col) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const cell = event.currentTarget.parentElement;
+    const meta = COLUMNS.find((c) => c.id === col);
+    dragRef.current = {
+      col,
+      min: meta?.min ?? 40,
+      startWidth: cell?.getBoundingClientRect().width ?? 100,
+      startX: event.clientX,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const moveResize = (event) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const next = Math.max(
+      drag.min,
+      Math.round(drag.startWidth + (event.clientX - drag.startX)),
+    );
+    setColWidths((previous) => ({ ...previous, [drag.col]: next }));
+  };
+
+  const endResize = () => {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    // Persisted once per gesture rather than per mouse-move; prefs debounces the
+    // PATCH anyway, but there is no reason to queue a write for every pixel.
+    setColWidths((previous) => {
+      prefs.set(WIDTHS_PREF, previous);
+      return previous;
+    });
+  };
+
+  // Double-click a handle to give that column its default width back.
+  const resetColumn = (col) =>
+    setColWidths((previous) => {
+      const next = { ...previous };
+      delete next[col];
+      prefs.set(WIDTHS_PREF, next);
+      return next;
+    });
+
+  // Plain markup, not a nested component: a component declared in here gets a new
+  // identity on every render, so the re-render each drag step causes would remount
+  // the handle, drop its pointer capture and strand the drag after one move.
+  const resizeHandle = (col) => (
+    <span
+      className="jb-col-resize"
+      onDoubleClick={() => resetColumn(col)}
+      onPointerDown={(e) => startResize(e, col)}
+      onPointerMove={moveResize}
+      onPointerUp={endResize}
+      role="presentation"
+      title="Drag to resize, double-click to reset"
+    />
+  );
+
   const colHeader = (col, label, className) => {
     const isActive = activeCol === col;
     const value = filters[col];
@@ -297,6 +399,7 @@ const TrackTable = ({
     if (isActive) {
       return (
         <div className={`${className} jb-col-filter-wrap`}>
+          {resizeHandle(col)}
           <input
             autoFocus
             className="jb-col-filter-input"
@@ -327,6 +430,7 @@ const TrackTable = ({
 
     return (
       <div className={`${className} jb-col-hdr-wrap`}>
+        {resizeHandle(col)}
         <button
           className={`jb-col-hdr-btn${isSortActive ? ' jb-col-hdr-btn--sort-active' : ''}${value ? ' jb-col-hdr-btn--active' : ''}`}
           onClick={() => handleSort(col)}
@@ -371,6 +475,7 @@ const TrackTable = ({
     const active = sortCol === col;
     return (
       <div className={className}>
+        {resizeHandle(col)}
         <button
           className={`jb-col-hdr-btn${active ? ' jb-col-hdr-btn--sort-active' : ''}`}
           onClick={() => handleSort(col)}
@@ -387,6 +492,10 @@ const TrackTable = ({
       </div>
     );
   };
+
+  // The preview is drawn at the column's width, so resizing the column reveals
+  // more of the waveform rather than stretching the same picture.
+  const waveWidth = Math.max(40, (colWidths.wave ?? 220) - 10);
 
   const virtualItems = virtualizer.getVirtualItems();
 
@@ -411,7 +520,11 @@ const TrackTable = ({
         className={`jb-track-table${showAdded ? ' jb-track-table--with-added' : ''}`}
         ref={scrollContainerRef ? undefined : containerRef}
       >
-        <div className="jb-track-table-head">
+        <div
+          className="jb-track-table-head"
+          ref={headRef}
+          style={{ gridTemplateColumns: gridTemplate }}
+        >
           <div className="jb-tt-num">
             {selectMode ? (
               <input
@@ -429,12 +542,15 @@ const TrackTable = ({
               '#'
             )}
           </div>
+          <div className="jb-tt-wave">
+            {resizeHandle('wave')}
+            Wave
+          </div>
           {colHeader('title', 'Title', 'jb-tt-title')}
           {colHeader('artist', 'Artist', 'jb-tt-artist')}
           {colHeader('album', 'Album', 'jb-tt-album')}
           {plainSortHeader('key', 'Key', 'jb-tt-key')}
           {plainSortHeader('bpm', 'BPM', 'jb-tt-bpm')}
-          <div className="jb-tt-wave">Wave</div>
           {plainSortHeader('ext', 'Ext', 'jb-tt-ext')}
           {plainSortHeader('quality', 'Quality', 'jb-tt-quality')}
           {plainSortHeader('duration', 'Time', 'jb-tt-dur')}
@@ -525,6 +641,7 @@ const TrackTable = ({
                             e.dataTransfer.effectAllowed = 'copy';
                           }
                     }
+                    style={{ gridTemplateColumns: gridTemplate }}
                   >
                     <div className="jb-track-num">
                       {selectMode ? (
@@ -556,19 +673,19 @@ const TrackTable = ({
                         </>
                       )}
                     </div>
+                    <div className="jb-tt-wave">
+                      <WaveformPreview
+                        height={24}
+                        path={track.path}
+                        width={waveWidth}
+                      />
+                    </div>
                     <div className="jb-tt-title">
                       {track.title || track.filename}
                     </div>
                     <div className="jb-tt-artist">{track.artist || '–'}</div>
                     <div className="jb-tt-album">{track.album || '–'}</div>
                     <div className="jb-tt-key">{track.key || '–'}</div>
-                    <div className="jb-tt-wave">
-                      <WaveformPreview
-                        height={22}
-                        path={track.path}
-                        width={132}
-                      />
-                    </div>
                     <div className="jb-tt-ext">
                       {track.extension?.toUpperCase() || '–'}
                     </div>

@@ -1969,7 +1969,7 @@
 .jb-track-table-head,
 .jb-track-table .jb-track-row {
   display: grid;
-  grid-template-columns: 28px minmax(0, 2.2fr) minmax(0, 1.4fr) minmax(0, 1.4fr) 44px 44px 140px 42px 72px 52px 36px 28px;
+  grid-template-columns: 28px 220px minmax(0, 2.2fr) minmax(0, 1.4fr) minmax(0, 1.4fr) 44px 44px 42px 72px 52px 36px 28px;
   align-items: center;
   gap: 10px;
   padding: 4px 24px;
@@ -2043,7 +2043,7 @@
 
 .jb-track-table--with-added .jb-track-table-head,
 .jb-track-table--with-added .jb-track-row {
-  grid-template-columns: 28px minmax(0, 2.2fr) minmax(0, 1.4fr) minmax(0, 1.4fr) 44px 44px 140px 42px 72px 52px 36px 160px 28px;
+  grid-template-columns: 28px 220px minmax(0, 2.2fr) minmax(0, 1.4fr) minmax(0, 1.4fr) 44px 44px 42px 72px 52px 36px 160px 28px;
 }
 
 .jb-tt-title {
@@ -3303,3 +3303,39 @@
   border-radius: 1px;
   opacity: 0.5;
 }
+
+/* ── Column resizing ──────────────────────────────────────────────────────── */
+
+/* Handles are absolutely positioned inside each header cell. */
+.jb-track-table-head > div {
+  position: relative;
+}
+
+.jb-col-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -6px;
+  width: 11px;
+  cursor: col-resize;
+  z-index: 2;
+  touch-action: none;
+}
+
+/* The grab area is deliberately wider than the visible line. */
+.jb-col-resize::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 0.12s;
+}
+
+.jb-track-table-head:hover .jb-col-resize::after { background: var(--border); }
+.jb-col-resize:hover::after { background: var(--accent); }
+
+.jb-tt-wave { min-width: 0; }

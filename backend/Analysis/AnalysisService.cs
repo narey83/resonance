@@ -418,6 +418,9 @@ namespace resonance.Analysis
 
                             if (result == null)
                             {
+                                // A cancelled scan aborts every in-flight decode at once; that is
+                                // the operator stopping it, not a library full of broken files.
+                                ct.ThrowIfCancellationRequested();
                                 Log.Warning("Analysis produced nothing for '{File}' — could not decode it.", path);
                                 Interlocked.Increment(ref failed);
                                 continue;
