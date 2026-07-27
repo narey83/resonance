@@ -31,7 +31,46 @@
 // the player's seek bar all draw a track the same way.
 export const BAND_COLOURS = { high: '#f5f5f5', low: '#2f6fed', mid: '#ff8a3d' };
 
-const peakOf = (array) => {
+// A drawn bar spanning more than a handful of stored bars is an overview, and
+// there peak is the wrong summary: taking the maximum of ~1000 stored peaks lands
+// near the track's loudest moment nearly every time, so every bar draws full
+// height and the whole thing reads as a solid block. RMS over the span tracks how
+// much energy is actually there, which is what makes an intro, a breakdown and a
+// drop distinguishable. Peak still wins once a bar covers only a few milliseconds,
+// where an individual transient is the thing worth seeing.
+const RMS_ABOVE = 4;
+
+const aggregate = (data, slots, perSlot) => {
+  const out = new Float32Array(slots);
+  const useRms = perSlot >= RMS_ABOVE;
+
+  for (let slot = 0; slot < slots; slot++) {
+    const start = Math.floor(slot * perSlot);
+    const end = Math.min(
+      data.length,
+      Math.max(start + 1, Math.floor((slot + 1) * perSlot)),
+    );
+    if (end <= start) continue;
+
+    if (useRms) {
+      let sum = 0;
+      for (let i = start; i < end; i++) sum += data[i] * data[i];
+      out[slot] = Math.sqrt(sum / (end - start));
+    } else {
+      let peak = 0;
+      for (let i = start; i < end; i++) if (data[i] > peak) peak = data[i];
+      out[slot] = peak;
+    }
+  }
+
+  return out;
+};
+
+// Normalising against the raw global peak leaves every RMS bar tiny, and against a
+// track's loudest instant leaves a limited master flat. Each band is scaled by the
+// largest value actually being drawn, so the picture uses its full height whatever
+// the source material.
+const maxOf = (array) => {
   let max = 0;
   for (const v of array) if (v > max) max = v;
   return max || 1;
@@ -85,28 +124,18 @@ export const drawWaveform = (canvas, peaks, options) => {
   const slots = Math.max(1, Math.floor(width / (barWidth + gap)));
   const perSlot = overall.length / slots;
 
-  const max = peakOf(overall);
-  const lowMax = peakOf(low);
-  const midMax = peakOf(mid);
-  const highMax = peakOf(high);
+  const o = aggregate(overall, slots, perSlot);
+  const l = aggregate(low, slots, perSlot);
+  const m = aggregate(mid, slots, perSlot);
+  const h = aggregate(high, slots, perSlot);
 
-  // Each slot takes the loudest sample in its span rather than the mean —
-  // averaging buries the transients that make a waveform readable at a glance.
+  const max = maxOf(o);
+  const lowMax = maxOf(l);
+  const midMax = maxOf(m);
+  const highMax = maxOf(h);
+
   for (let slot = 0; slot < slots; slot++) {
-    const start = Math.floor(slot * perSlot);
-    const end = Math.max(start + 1, Math.floor((slot + 1) * perSlot));
-    let o = 0;
-    let l = 0;
-    let m = 0;
-    let h = 0;
-    for (let i = start; i < end && i < overall.length; i++) {
-      if (overall[i] > o) o = overall[i];
-      if (low[i] > l) l = low[i];
-      if (mid[i] > m) m = mid[i];
-      if (high[i] > h) h = high[i];
-    }
-
-    const totalH = Math.max(1, (o / max) * halfH);
+    const totalH = Math.max(1, (o[slot] / max) * halfH);
     const x = slot * (barWidth + gap);
 
     if (mono) {
@@ -118,15 +147,15 @@ export const drawWaveform = (canvas, peaks, options) => {
     // Alpha per band rather than stacked slices: a kick-heavy instant reads
     // solid blue, a hat-heavy one white, a full mix blends toward grey. The
     // 1.4/0.9 weights keep bass and highs perceptually level against mids.
-    context.globalAlpha = Math.min(1, (l / lowMax) * 1.4);
+    context.globalAlpha = Math.min(1, (l[slot] / lowMax) * 1.4);
     context.fillStyle = BAND_COLOURS.low;
     context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
 
-    context.globalAlpha = Math.min(1, m / midMax);
+    context.globalAlpha = Math.min(1, m[slot] / midMax);
     context.fillStyle = BAND_COLOURS.mid;
     context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
 
-    context.globalAlpha = Math.min(1, (h / highMax) * 0.9);
+    context.globalAlpha = Math.min(1, (h[slot] / highMax) * 0.9);
     context.fillStyle = BAND_COLOURS.high;
     context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
   }
