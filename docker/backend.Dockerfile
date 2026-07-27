@@ -8,12 +8,12 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0
 # ffmpeg       — Resonance shells out to it for audio analysis / conversion.
 # procps       — `ps`/diagnostics inside the container.
 # curl         — health checks / debugging.
-# python3+venv — host for Essentia (musical-key detection).
+# python3+venv — host for Essentia (BPM and musical-key detection).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg curl procps python3 python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-# Essentia provides the key-detection engine (KeyAnalysis.Engine=essentia, 'edma' profile),
+# Essentia provides BPM and key detection (Analysis.EssentiaProfile='edma' by default),
 # invoked by the backend as a subprocess via /opt/keyenv/bin/python. Isolated in its own venv
 # so it never touches the system Python.
 RUN python3 -m venv /opt/keyenv \

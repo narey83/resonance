@@ -55,9 +55,11 @@ Resonance is a Soulseek file-sharing client with an integrated music library, me
 ## Music library
 
 - Central Postgres-backed catalog: stats, sync/re-sync (cancellable), track/genre/year/folder/album/artist listings, recently-added, and "keyed" (analyzed) listings.
-- **BPM analysis** — ffmpeg-based background scan with octave-folding to a preferred range to correct half/double-time errors, optional tag write-back, manual override.
-- **Key analysis** — Queen Mary/Krumhansl detector or an Essentia-based engine (EDM-tuned profile plus krumhansl/temperley/bgate), displayed/sorted using Camelot wheel notation for harmonic mixing.
-- **Waveform analysis** — pre-computed or on-demand waveform generation, background scan-all job, visual seek bar in the player.
+- **Track analysis** — one background scan produces BPM, musical key, waveform peaks and EBU R128 loudness from a *single* decode per file, with per-metric selection, worker count, resume and cancel.
+  - **BPM** — Essentia beat tracking with octave-folding to a preferred range to correct half/double-time errors, tag write-back, manual override.
+  - **Key** — Essentia key detection (EDM-tuned `edma` profile plus krumhansl/temperley/bgate), displayed/sorted using Camelot wheel notation for harmonic mixing.
+  - **Waveform** — per-band peak data cached for the player's seek bar, plus a single-track waveform inspector with zoom and draw modes.
+  - **Loudness** — integrated LUFS, true peak and loudness range, surfaced by the player's loudness meter.
 - **Auto-Mix** — builds a harmonically-compatible (Camelot-neighbour) play queue from a seed track's key/BPM within a configurable BPM tolerance.
 - **Playback** — in-app media player with persistent "Up Next" queue, play history, loved/favorite tracks, browsing by album/artist/genre/year/folder.
 - **Ambient theming** — dominant colour extracted from now-playing album art tints the UI chrome.

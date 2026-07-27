@@ -38,7 +38,7 @@ namespace resonance.MusicLibrary
     using System.Threading.Tasks;
     using Microsoft.AspNetCore.SignalR;
     using resonance.Events;
-    using resonance.KeyAnalysis;
+    using resonance.Analysis;
     using resonance.MusicLibrary.Activity;
     using resonance.MusicLibrary.API;
     using resonance.Shares;

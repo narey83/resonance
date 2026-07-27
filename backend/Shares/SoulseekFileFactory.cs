@@ -143,7 +143,7 @@ namespace resonance.Shares
                     string key = null;
                     if (file.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3v2)
                     {
-                        key = resonance.KeyAnalysis.KeyTagHelper.ReadKey(id3v2);
+                        key = resonance.Analysis.KeyTagHelper.ReadKey(id3v2);
                     }
                     else if (file.GetTag(TagLib.TagTypes.Xiph) is TagLib.Ogg.XiphComment xiph)
                     {

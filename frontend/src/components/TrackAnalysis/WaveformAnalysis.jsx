@@ -37,17 +37,13 @@ import {
   Activity,
   AudioWaveform,
   BarChart2,
-  CheckCircle,
   Download,
   Grid3x3,
-  Loader2,
   Mountain,
   Music,
-  ScanLine,
   Search,
   Tag,
   X,
-  XCircle,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
@@ -534,48 +530,6 @@ const WaveformAnalysis = () => {
   const [audioDuration, setAudioDuration] = useState(0);
   const [zoom, setZoom] = useState(1);
 
-  const [scanState, setScanState] = useState(null);
-  const scanPollRef = useRef(null);
-
-  const fetchScanState = useCallback(async () => {
-    try {
-      const res = await api.get('/waveform/scan');
-      setScanState(res.data);
-      if (!res.data.scanning) {
-        clearInterval(scanPollRef.current);
-        scanPollRef.current = null;
-      }
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  const handleStartScan = useCallback(async () => {
-    try {
-      await api.post('/waveform/scan', { skipAnalysed: true });
-      await fetchScanState();
-      scanPollRef.current = setInterval(fetchScanState, 1_500);
-    } catch {
-      /* ignore */
-    }
-  }, [fetchScanState]);
-
-  const handleCancelScan = useCallback(async () => {
-    try {
-      await api.delete('/waveform/scan');
-      clearInterval(scanPollRef.current);
-      scanPollRef.current = null;
-      await fetchScanState();
-    } catch {
-      /* ignore */
-    }
-  }, [fetchScanState]);
-
-  useEffect(() => {
-    fetchScanState();
-    return () => clearInterval(scanPollRef.current);
-  }, [fetchScanState]);
-
   const waveformContainerRef = useRef(null);
   const canvasRef = useRef(null);
   const displayRef = useRef(null);
@@ -767,7 +721,7 @@ const WaveformAnalysis = () => {
           let bands = null;
           let duration = null;
           try {
-            const res = await api.get('/waveform', {
+            const res = await api.get('/analysis/waveform', {
               params: { path: selectedTrack.path },
               signal: abortController.signal,
             });
@@ -915,72 +869,6 @@ const WaveformAnalysis = () => {
         onSelect={setSelectedTrack}
         selectedTrack={selectedTrack}
       />
-
-      <div className="wa-scan-bar">
-        {scanState?.scanning ? (
-          <>
-            <Loader2
-              className="wa-scan-spinner"
-              size={13}
-            />
-            <span className="wa-scan-label">
-              Scanning {scanState.analysed + scanState.failed}/{scanState.total}{' '}
-              tracks
-            </span>
-            <div className="wa-scan-progress">
-              <div
-                className="wa-scan-progress-fill"
-                style={{ width: `${Math.round(scanState.progress * 100)}%` }}
-              />
-            </div>
-            <span className="wa-scan-pct">
-              {Math.round(scanState.progress * 100)}%
-            </span>
-            <button
-              className="wa-scan-cancel hover-fx"
-              onClick={handleCancelScan}
-              title="Cancel scan"
-              type="button"
-            >
-              <XCircle size={13} />
-            </button>
-          </>
-        ) : scanState?.completed ? (
-          <>
-            <CheckCircle
-              size={13}
-              style={{ color: 'var(--success, #3fb950)' }}
-            />
-            <span className="wa-scan-label">
-              {scanState.analysed} tracks cached
-            </span>
-            <button
-              className="wa-scan-btn hover-fx"
-              onClick={handleStartScan}
-              type="button"
-            >
-              <ScanLine size={12} />
-              Rescan
-            </button>
-          </>
-        ) : (
-          <>
-            <span className="wa-scan-label wa-scan-label--muted">
-              {scanState?.analysed
-                ? `${scanState.analysed} cached`
-                : 'No waveforms cached'}
-            </span>
-            <button
-              className="wa-scan-btn hover-fx"
-              onClick={handleStartScan}
-              type="button"
-            >
-              <ScanLine size={12} />
-              Scan library
-            </button>
-          </>
-        )}
-      </div>
 
       {selectedTrack && (
         <>

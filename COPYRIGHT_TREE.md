@@ -8,20 +8,22 @@ Per-file copyright attribution for every source file in the project, generated f
 
 ## Totals
 - 300 files: JP Dillingham + John Narey
-- 334 files: John Narey only
+- 324 files: John Narey only
 - 2 files: vendored third-party code
 
 ## Tree
 - **backend/**
-  - **BpmAnalysis/**
+  - **Analysis/**
     - **API/**
       - **Controllers/**
-        - BpmAnalysisController.cs — John Narey
+        - AnalysisController.cs — John Narey
     - **Types/**
-      - BpmAnalysisTypes.cs — John Narey
-    - BpmAnalysisService.cs — John Narey
-    - BpmDetector.cs — John Narey
-    - IBpmAnalysisService.cs — John Narey
+      - AnalysisTypes.cs — John Narey
+    - AnalysisService.cs — John Narey
+    - AnalysisStore.cs — John Narey
+    - AudioAnalyzer.cs — John Narey
+    - IAnalysisService.cs — John Narey
+    - KeyTagHelper.cs — John Narey
   - **Cast/**
     - **API/**
       - **Controllers/**
@@ -241,16 +243,6 @@ Per-file copyright attribution for every source file in the project, generated f
       - YtDlpMetadataParser.cs — John Narey
       - YtDlpService.cs — John Narey
       - YtDlpTagWriter.cs — John Narey
-  - **KeyAnalysis/**
-    - **API/**
-      - **Controllers/**
-        - KeyAnalysisController.cs — John Narey
-    - **Types/**
-      - KeyAnalysisTypes.cs — John Narey
-    - IKeyAnalysisService.cs — John Narey
-    - KeyAnalysisService.cs — John Narey
-    - KeyDetector.cs — John Narey
-    - KeyTagHelper.cs — John Narey
   - **Messaging/**
     - **API/**
       - **Controllers/**
@@ -448,14 +440,6 @@ Per-file copyright attribution for every source file in the project, generated f
     - IBrowseTracker.cs — JP Dillingham + John Narey
     - IUserService.cs — JP Dillingham + John Narey
     - UserService.cs — JP Dillingham + John Narey
-  - **WaveformAnalysis/**
-    - **API/**
-      - **Controllers/**
-        - WaveformController.cs — John Narey
-    - **Types/**
-      - WaveformTypes.cs — John Narey
-    - IWaveformService.cs — John Narey
-    - WaveformService.cs — John Narey
   - Application.cs — JP Dillingham + John Narey
   - Program.cs — JP Dillingham + John Narey
 - **extension/**
@@ -465,8 +449,9 @@ Per-file copyright attribution for every source file in the project, generated f
 - **frontend/**
   - **src/**
     - **components/**
-      - **BpmAnalysis/**
-        - BpmAnalysis.jsx — John Narey
+      - **Analysis/**
+        - Analysis.css — John Narey
+        - Analysis.jsx — John Narey
       - **Browse/**
         - Browse.css — JP Dillingham + John Narey
         - Browse.jsx — JP Dillingham + John Narey
@@ -484,9 +469,6 @@ Per-file copyright attribution for every source file in the project, generated f
       - **Duplicates/**
         - Duplicates.css — John Narey
         - Duplicates.jsx — John Narey
-      - **KeyAnalysis/**
-        - KeyAnalysis.css — John Narey
-        - KeyAnalysis.jsx — John Narey
       - **Library/**
         - **components/**
           - AlbumArt.jsx — John Narey
@@ -679,7 +661,7 @@ Per-file copyright attribution for every source file in the project, generated f
       - appUsers.js — John Narey
       - application.js — JP Dillingham + John Narey
       - autoMix.js — John Narey
-      - bpmAnalysis.js — John Narey
+      - analysis.js — John Narey
       - camelot.js — John Narey
       - cast.js — John Narey
       - chartTheme.js — John Narey
@@ -697,7 +679,6 @@ Per-file copyright attribution for every source file in the project, generated f
       - folderDedup.js — John Narey
       - fuzzy.js — John Narey
       - hubFactory.js — JP Dillingham + John Narey
-      - keyAnalysis.js — John Narey
       - libraryActivity.js — John Narey
       - logs.js — John Narey
       - metadataLookup.js — John Narey

@@ -27,7 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-namespace resonance.KeyAnalysis
+namespace resonance.Analysis
 {
     using System;
     using System.Collections.Generic;

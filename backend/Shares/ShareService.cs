@@ -323,7 +323,7 @@ namespace resonance.Shares
                 {
                     if (tagFile.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3v2Write)
                     {
-                        KeyAnalysis.KeyTagHelper.WriteKey(id3v2Write, tags.Key);
+                        resonance.Analysis.KeyTagHelper.WriteKey(id3v2Write, tags.Key);
                     }
                     else if (tagFile.GetTag(TagLib.TagTypes.Xiph, true) is TagLib.Ogg.XiphComment xiphWrite)
                     {
@@ -334,7 +334,7 @@ namespace resonance.Shares
                 {
                     if (tagFile.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3v2Clear)
                     {
-                        KeyAnalysis.KeyTagHelper.ClearKey(id3v2Clear);
+                        resonance.Analysis.KeyTagHelper.ClearKey(id3v2Clear);
                     }
                     else if (tagFile.GetTag(TagLib.TagTypes.Xiph) is TagLib.Ogg.XiphComment xiphClear)
                     {

@@ -1,4 +1,4 @@
-// <copyright file="KeyAnalysis.jsx" company="John Narey">
+// <copyright file="Analysis.jsx" company="John Narey">
 //    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
 //   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
@@ -27,8 +27,10 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import './KeyAnalysis.css';
+import './Analysis.css';
 import { usePlayer } from '../../context/PlayerContext';
+import * as analysisApi from '../../lib/analysis';
+import { METRICS } from '../../lib/analysis';
 import {
   CAMELOT_KEYS,
   camelotColour,
@@ -36,17 +38,20 @@ import {
   harmonicNeighbours,
   toCamelot,
 } from '../../lib/camelot';
-import * as keyApi from '../../lib/keyAnalysis';
 import { useKeyFormat } from '../../lib/useKeyFormat';
 import KeyFormatToggle from '../Shared/KeyFormatToggle';
 import PageInfo from '../Shared/PageInfo';
 import {
+  Activity,
   AlertCircle,
+  AudioWaveform,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   ChevronUp,
   Folder,
+  Gauge,
+  KeyRound,
   Loader2,
   Music,
   Play,
@@ -67,13 +72,33 @@ import React, {
 } from 'react';
 import { toast } from 'react-toastify';
 
+// A track is "complete" only when every metric is present; the four are gathered in
+// one pass, so a partial track means that pass never ran or partly failed.
+const isComplete = (t) =>
+  t.hasKey && t.hasBpm && t.hasWaveform && t.hasLoudness;
+
+const METRIC_META = {
+  Bpm: { Icon: Activity, label: 'BPM' },
+  Key: { Icon: KeyRound, label: 'Key' },
+  Loudness: { Icon: Gauge, label: 'Loudness' },
+  Waveform: { Icon: AudioWaveform, label: 'Waveform' },
+};
+
 // ── Scan settings panel ───────────────────────────────────────────────────────
 
 const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
   const [skipTagged, setSkipTagged] = useState(true);
   const [resetAll, setResetAll] = useState(false);
-  const [algorithm, setAlgorithm] = useState('audioAnalysis');
+  const [metrics, setMetrics] = useState(() => new Set(METRICS));
   const [workers, setWorkers] = useState(2);
+
+  const toggleMetric = (m) =>
+    setMetrics((previous) => {
+      const next = new Set(previous);
+      if (next.has(m)) next.delete(m);
+      else next.add(m);
+      return next;
+    });
 
   return (
     <div className="ka-panel">
@@ -89,22 +114,29 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
       </div>
 
       <div className="ka-panel-body">
-        <label className="ka-field">
-          <span className="ka-field-label">Algorithm</span>
-          <select
-            className="ka-select"
-            onChange={({ target }) => setAlgorithm(target.value)}
-            value={algorithm}
-          >
-            <option value="audioAnalysis">Audio Analysis (recommended)</option>
-            <option value="tagOnly">Tag Only (fast, no audio analysis)</option>
-          </select>
+        <div className="ka-field">
+          <span className="ka-field-label">Metrics</span>
+          <div className="ka-metric-picker">
+            {METRICS.map((m) => {
+              const { Icon, label } = METRIC_META[m];
+              return (
+                <button
+                  className={`ka-metric-chip hover-fx${metrics.has(m) ? ' on' : ''}`}
+                  key={m}
+                  onClick={() => toggleMetric(m)}
+                  type="button"
+                >
+                  <Icon size={13} />
+                  {label}
+                </button>
+              );
+            })}
+          </div>
           <span className="ka-field-hint">
-            {algorithm === 'audioAnalysis'
-              ? 'Reads TKEY tag first; falls back to chromagram analysis via ffmpeg.'
-              : 'Only reads the TKEY / INITIALKEY tag. Fast but only works if tracks are already tagged.'}
+            All selected metrics come from a single decode per track, so
+            scanning for four costs barely more than scanning for one.
           </span>
-        </label>
+        </div>
 
         <label className="ka-field">
           <span className="ka-field-label">Workers</span>
@@ -123,7 +155,7 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
 
         {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
         <label className="ka-toggle-row">
-          <span className="ka-field-label">Skip already-keyed tracks</span>
+          <span className="ka-field-label">Skip already-analysed tracks</span>
           <button
             className={`ka-toggle hover-fx${skipTagged ? ' on' : ''}`}
             onClick={() => {
@@ -152,8 +184,8 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
         </label>
         {resetAll && (
           <p className="ka-warn">
-            <AlertCircle size={13} /> This will clear all existing keys and
-            re-detect them.
+            <AlertCircle size={13} /> This will clear the selected metrics on
+            every matching track and re-detect them.
           </p>
         )}
       </div>
@@ -168,8 +200,15 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
         </button>
         <button
           className="ka-btn ka-btn--primary hover-fx"
-          disabled={scanning}
-          onClick={() => onStart({ skipTagged, resetAll, algorithm, workers })}
+          disabled={scanning || metrics.size === 0}
+          onClick={() =>
+            onStart({
+              metrics: METRICS.filter((m) => metrics.has(m)).join(', '),
+              skipAnalysed: skipTagged,
+              resetAll,
+              workers,
+            })
+          }
           type="button"
         >
           <ScanLine size={13} />
@@ -180,7 +219,35 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
   );
 };
 
-// ── Key badge ─────────────────────────────────────────────────────────────────
+// ── Badges ────────────────────────────────────────────────────────────────────
+
+const BpmBadge = ({ bpm }) => {
+  if (!bpm) return <span className="ka-badge ka-badge--empty">—</span>;
+  return <span className="ka-badge ka-badge--bpm">{bpm}</span>;
+};
+
+// Waveform and loudness are cached blobs rather than values worth showing inline,
+// so they read as presence dots instead of badges.
+const CacheDots = ({ track }) => (
+  <span className="ka-dots">
+    <span
+      className={`ka-dot${track.hasWaveform ? ' on' : ''}`}
+      title={track.hasWaveform ? 'Waveform analysed' : 'No waveform'}
+    >
+      <AudioWaveform size={11} />
+    </span>
+    <span
+      className={`ka-dot${track.hasLoudness ? ' on' : ''}`}
+      title={
+        track.hasLoudness
+          ? `${track.lufs.toFixed(1)} LUFS`
+          : 'No loudness measurement'
+      }
+    >
+      <Gauge size={11} />
+    </span>
+  </span>
+);
 
 const KeyBadge = ({ compatible, fmtKey, keyValue }) => {
   if (!keyValue) return <span className="ka-badge ka-badge--empty">—</span>;
@@ -207,8 +274,10 @@ const TrackRow = ({
   fmtKey,
   focusKey,
   globalScanning,
-  onClear,
+  onClearBpm,
+  onClearKey,
   onScan,
+  onSetBpm,
   onSetKey,
   onToggleSelect,
   recentlyUpdated,
@@ -217,6 +286,8 @@ const TrackRow = ({
   track,
 }) => {
   const [editing, setEditing] = useState(false);
+  const [editingBpm, setEditingBpm] = useState(false);
+  const [bpmInput, setBpmInput] = useState(track.bpm?.toString() ?? '');
   const [keyInput, setKeyInput] = useState(track.key ?? '');
   const compatible = focusKey
     ? harmonicNeighbours(focusKey).has(track.key) || track.key === focusKey
@@ -245,8 +316,15 @@ const TrackRow = ({
   const submit = () => {
     const k = keyInput.trim();
     if (k) onSetKey(track.maskedFilename, fmtKey ? fmtKey(k) : k);
-    else if (track.key) onClear(track.maskedFilename);
+    else if (track.key) onClearKey(track.maskedFilename);
     setEditing(false);
+  };
+
+  const submitBpm = () => {
+    const v = Number.parseInt(bpmInput, 10);
+    if (v > 0) onSetBpm(track.maskedFilename, v);
+    else if (track.bpm) onClearBpm(track.maskedFilename);
+    setEditingBpm(false);
   };
 
   return (
@@ -322,6 +400,37 @@ const TrackRow = ({
           </button>
         )}
       </div>
+      <div className="ka-track-bpm">
+        {editingBpm ? (
+          <input
+            autoFocus
+            className="ka-key-input ka-bpm-input"
+            onBlur={submitBpm}
+            onChange={({ target }) => setBpmInput(target.value)}
+            onKeyDown={({ key }) => {
+              if (key === 'Enter') submitBpm();
+              if (key === 'Escape') setEditingBpm(false);
+            }}
+            type="number"
+            value={bpmInput}
+          />
+        ) : (
+          <button
+            className="ka-key-btn"
+            onClick={() => {
+              setBpmInput(track.bpm?.toString() ?? '');
+              setEditingBpm(true);
+            }}
+            title="Click to edit BPM"
+            type="button"
+          >
+            <BpmBadge bpm={track.bpm} />
+          </button>
+        )}
+      </div>
+      <div className="ka-track-cache">
+        <CacheDots track={track} />
+      </div>
       <div className="ka-track-info">
         <span
           className="ka-track-title"
@@ -354,7 +463,7 @@ const TrackRow = ({
               ? 'Scanning…'
               : anyScanRunning
                 ? 'Scan in progress'
-                : 'Scan key'
+                : 'Analyse track'
           }
           type="button"
         >
@@ -370,7 +479,7 @@ const TrackRow = ({
         {track.key && !scanning && (
           <button
             className="ka-icon-btn ka-icon-btn--danger"
-            onClick={() => onClear(track.maskedFilename)}
+            onClick={() => onClearKey(track.maskedFilename)}
             title="Clear key"
             type="button"
           >
@@ -391,10 +500,12 @@ const FolderGroup = ({
   focusKey,
   globalScanning,
   name,
-  onClear,
+  onClearBpm,
+  onClearKey,
   onScan,
   onScanFolder,
   onSelectFolder,
+  onSetBpm,
   onSetKey,
   onToggle,
   onToggleSelect,
@@ -450,7 +561,7 @@ const FolderGroup = ({
           title={
             anyScanRunning
               ? 'Scan in progress'
-              : 'Scan unkeyed tracks in this folder'
+              : 'Analyse unanalysed tracks in this folder'
           }
           type="button"
         >
@@ -464,8 +575,10 @@ const FolderGroup = ({
             focusKey={focusKey}
             globalScanning={globalScanning}
             key={t.maskedFilename}
-            onClear={onClear}
+            onClearBpm={onClearBpm}
+            onClearKey={onClearKey}
             onScan={onScan}
+            onSetBpm={onSetBpm}
             onSetKey={onSetKey}
             onToggleSelect={onToggleSelect}
             recentlyUpdated={recentlyUpdated}
@@ -483,7 +596,7 @@ const FolderGroup = ({
 const FOLDERS_PER_PAGE = 20;
 
 // eslint-disable-next-line complexity
-const KeyAnalysis = () => {
+const Analysis = () => {
   const [tracks, setTracks] = useState([]);
   const [scanState, setScanState] = useState(null);
   const { fmtKey, format, setFormat } = useKeyFormat();
@@ -520,20 +633,23 @@ const KeyAnalysis = () => {
     setError(null);
     try {
       const [data, state] = await Promise.all([
-        keyApi.getAll(),
-        keyApi.getScanState().catch(() => null),
+        analysisApi.getAll(),
+        analysisApi.getScanState().catch(() => null),
       ]);
       if (!mountedRef.current) return;
       setTracks(data ?? []);
       setScanState(state);
       if (state?.scanning) {
         keySnapshotRef.current = new Map(
-          (data ?? []).map((t) => [t.maskedFilename, t.key]),
+          (data ?? []).map((t) => [
+            t.maskedFilename,
+            `${t.key ?? ''}|${t.bpm ?? ''}`,
+          ]),
         );
         finalizingRef.current = false;
       }
     } catch {
-      if (mountedRef.current) setError('Failed to load key analysis data.');
+      if (mountedRef.current) setError('Failed to load analysis data.');
     } finally {
       if (mountedRef.current) setLoading(false);
     }
@@ -546,16 +662,17 @@ const KeyAnalysis = () => {
   // finalize scan: diff against snapshot, update tracks, clear spinners, toast result
   const finalizeScan = useCallback(async () => {
     try {
-      const data = await keyApi.getAll();
+      const data = await analysisApi.getAll();
       if (!mountedRef.current) return;
       const snapshot = keySnapshotRef.current;
       const updated = new Map();
       for (const t of data ?? []) {
-        const oldKey = snapshot.get(t.maskedFilename);
-        if (t.key !== oldKey) {
+        const before = snapshot.get(t.maskedFilename);
+        const after = `${t.key ?? ''}|${t.bpm ?? ''}`;
+        if (before !== undefined && before !== after) {
           updated.set(t.maskedFilename, {
-            oldKey: oldKey ?? null,
-            newKey: t.key,
+            before,
+            after,
             title: t.title ?? t.filename,
           });
         }
@@ -607,7 +724,7 @@ const KeyAnalysis = () => {
     if (scanState?.scanning) {
       pollRef.current = setInterval(async () => {
         try {
-          const state = await keyApi.getScanState();
+          const state = await analysisApi.getScanState();
           if (!mountedRef.current) {
             clearInterval(pollRef.current);
             return;
@@ -628,15 +745,18 @@ const KeyAnalysis = () => {
 
   const startScan = async (request, filenames) => {
     keySnapshotRef.current = new Map(
-      tracks.map((t) => [t.maskedFilename, t.key]),
+      tracks.map((t) => [t.maskedFilename, `${t.key ?? ''}|${t.bpm ?? ''}`]),
     );
     finalizingRef.current = false;
     setRecentlyUpdated(new Map());
     setScanningFiles(filenames ? new Set(filenames) : new Set());
     setScanState(null);
     try {
-      await keyApi.startScan({ ...request, onlyFilenames: filenames ?? null });
-      const state = await keyApi.getScanState();
+      await analysisApi.startScan({
+        ...request,
+        onlyFilenames: filenames ?? null,
+      });
+      const state = await analysisApi.getScanState();
       if (!mountedRef.current) return;
       setScanState(state);
       // completion effect fires finalizeScan after this state update renders
@@ -665,9 +785,9 @@ const KeyAnalysis = () => {
         : [maskedFilename];
     await startScan(
       {
-        skipTagged: false,
+        metrics: METRICS.join(', '),
+        skipAnalysed: false,
         resetAll: false,
-        algorithm: 'audioAnalysis',
         workers: 2,
       },
       filenames,
@@ -676,7 +796,7 @@ const KeyAnalysis = () => {
 
   const handleCancelScan = async () => {
     try {
-      await keyApi.cancelScan();
+      await analysisApi.cancelScan();
     } catch (caughtError) {
       if (caughtError?.response?.status !== 404) {
         toast.error('Failed to cancel scan.');
@@ -684,16 +804,44 @@ const KeyAnalysis = () => {
     }
 
     try {
-      const state = await keyApi.getScanState();
+      const state = await analysisApi.getScanState();
       if (mountedRef.current) setScanState(state);
     } catch {
       /* ignore */
     }
   };
 
+  const handleSetBpm = async (maskedFilename, bpm) => {
+    try {
+      await analysisApi.setBpm(maskedFilename, bpm);
+      setTracks((previous) =>
+        previous.map((t) =>
+          t.maskedFilename === maskedFilename ? { ...t, bpm, hasBpm: true } : t,
+        ),
+      );
+    } catch {
+      toast.error('Failed to set BPM.');
+    }
+  };
+
+  const handleClearBpm = async (maskedFilename) => {
+    try {
+      await analysisApi.clearBpm(maskedFilename);
+      setTracks((previous) =>
+        previous.map((t) =>
+          t.maskedFilename === maskedFilename
+            ? { ...t, bpm: null, hasBpm: false }
+            : t,
+        ),
+      );
+    } catch {
+      toast.error('Failed to clear BPM.');
+    }
+  };
+
   const handleSetKey = async (maskedFilename, key) => {
     try {
-      await keyApi.setKey(maskedFilename, key);
+      await analysisApi.setKey(maskedFilename, key);
       setTracks((previous) =>
         previous.map((t) =>
           t.maskedFilename === maskedFilename ? { ...t, key, hasKey: true } : t,
@@ -706,7 +854,7 @@ const KeyAnalysis = () => {
 
   const handleClearKey = async (maskedFilename) => {
     try {
-      await keyApi.clearKey(maskedFilename);
+      await analysisApi.clearKey(maskedFilename);
       setTracks((previous) =>
         previous.map((t) =>
           t.maskedFilename === maskedFilename
@@ -737,8 +885,8 @@ const KeyAnalysis = () => {
 
   const filtered = useMemo(() => {
     let list = tracks;
-    if (filter === 'keyed') list = list.filter((t) => t.hasKey);
-    else if (filter === 'unkeyed') list = list.filter((t) => !t.hasKey);
+    if (filter === 'complete') list = list.filter((t) => isComplete(t));
+    else if (filter === 'incomplete') list = list.filter((t) => !isComplete(t));
     else if (filter === 'updated')
       list = list.filter((t) => recentlyUpdated.has(t.maskedFilename));
     if (keyFilter) list = list.filter((t) => t.key === keyFilter);
@@ -751,6 +899,7 @@ const KeyAnalysis = () => {
           (t.artist ?? '').toLowerCase().includes(q) ||
           (t.album ?? '').toLowerCase().includes(q) ||
           (t.key ?? '').toLowerCase().includes(q) ||
+          (t.bpm ? String(t.bpm) : '').includes(q) ||
           camelot.includes(q)
         );
       });
@@ -760,6 +909,8 @@ const KeyAnalysis = () => {
       let cmp;
       if (sortKey === 'key') {
         cmp = camelotSortWeight(a.key) - camelotSortWeight(b.key);
+      } else if (sortKey === 'bpm') {
+        cmp = (a.bpm ?? 0) - (b.bpm ?? 0);
       } else if (sortKey === 'artist') {
         cmp = (a.artist ?? '').localeCompare(b.artist ?? '');
       } else {
@@ -780,9 +931,17 @@ const KeyAnalysis = () => {
 
   const stats = useMemo(() => {
     const total = tracks.length;
-    const keyed = tracks.filter((t) => t.hasKey).length;
-    const pct = total > 0 ? Math.round((keyed / total) * 100) : 0;
-    return { total, keyed, unkeyed: total - keyed, pct };
+    const complete = tracks.filter((t) => isComplete(t)).length;
+    return {
+      total,
+      complete,
+      incomplete: total - complete,
+      keyed: tracks.filter((t) => t.hasKey).length,
+      bpmed: tracks.filter((t) => t.hasBpm).length,
+      waved: tracks.filter((t) => t.hasWaveform).length,
+      loud: tracks.filter((t) => t.hasLoudness).length,
+      pct: total > 0 ? Math.round((complete / total) * 100) : 0,
+    };
   }, [tracks]);
 
   useEffect(() => {
@@ -880,9 +1039,9 @@ const KeyAnalysis = () => {
 
     await startScan(
       {
-        skipTagged: true,
+        metrics: METRICS.join(', '),
+        skipAnalysed: true,
         resetAll: false,
-        algorithm: 'audioAnalysis',
         workers: 2,
       },
       allDirectoryIds,
@@ -920,7 +1079,7 @@ const KeyAnalysis = () => {
     return (
       <div className="ka-state-center">
         <div className="ka-spinner" />
-        <span>Loading key analysis...</span>
+        <span>Loading analysis...</span>
       </div>
     );
   }
@@ -951,20 +1110,26 @@ const KeyAnalysis = () => {
 
   return (
     <div className="ka-root">
-      <PageInfo storageKey="keyanalysis">
+      <PageInfo storageKey="analysis">
         <p>
-          Detects and stores the musical key for every track in your library.
-          Two modes are available:
+          Detects and stores every per-track audio metric in one place. A track
+          is decoded <strong>once</strong> and all four measurements are taken
+          from that single pass, so scanning for everything costs barely more
+          than scanning for one thing:
         </p>
         <ul>
           <li>
-            <strong>Tag Only</strong> — reads the <code>TKEY</code> frame
-            instantly. Fast, but skips files with no existing key tag.
+            <strong>Key</strong> and <strong>BPM</strong> — detected with
+            Essentia and written back to the file's tags, so they travel with
+            the file.
           </li>
           <li>
-            <strong>Audio Analysis</strong> — analyses the audio waveform using
-            the Krumhansl–Schmuckler algorithm to detect the key, even on
-            completely untagged files. Slower but thorough.
+            <strong>Waveform</strong> — per-band peak data backing the player's
+            seek bar and the waveform inspector.
+          </li>
+          <li>
+            <strong>Loudness</strong> — EBU R128 integrated loudness, true peak
+            and loudness range.
           </li>
         </ul>
         <p>
@@ -983,11 +1148,23 @@ const KeyAnalysis = () => {
         </div>
         <div className="ka-stat ka-stat--keyed">
           <span className="ka-stat-value">{stats.keyed}</span>
-          <span className="ka-stat-label">Keyed</span>
+          <span className="ka-stat-label">Key</span>
+        </div>
+        <div className="ka-stat ka-stat--keyed">
+          <span className="ka-stat-value">{stats.bpmed}</span>
+          <span className="ka-stat-label">BPM</span>
+        </div>
+        <div className="ka-stat ka-stat--keyed">
+          <span className="ka-stat-value">{stats.waved}</span>
+          <span className="ka-stat-label">Waveform</span>
+        </div>
+        <div className="ka-stat ka-stat--keyed">
+          <span className="ka-stat-value">{stats.loud}</span>
+          <span className="ka-stat-label">Loudness</span>
         </div>
         <div className="ka-stat ka-stat--unkeyed">
-          <span className="ka-stat-value">{stats.unkeyed}</span>
-          <span className="ka-stat-label">No Key</span>
+          <span className="ka-stat-value">{stats.incomplete}</span>
+          <span className="ka-stat-label">Incomplete</span>
         </div>
         <div className="ka-stat-bar-wrap">
           <div className="ka-stat-bar">
@@ -1101,14 +1278,18 @@ const KeyAnalysis = () => {
         </div>
 
         <div className="ka-filter-group">
-          {['all', 'keyed', 'unkeyed'].map((f) => (
+          {['all', 'complete', 'incomplete'].map((f) => (
             <button
               className={`ka-filter-btn hover-fx${filter === f ? ' active' : ''}`}
               key={f}
               onClick={() => setFilter(f)}
               type="button"
             >
-              {f === 'all' ? 'All' : f === 'keyed' ? 'Has Key' : 'No Key'}
+              {f === 'all'
+                ? 'All'
+                : f === 'complete'
+                  ? 'Fully analysed'
+                  : 'Incomplete'}
             </button>
           ))}
           {recentlyUpdated.size > 0 && (
@@ -1207,6 +1388,16 @@ const KeyAnalysis = () => {
             Key <SortIcon col="key" />
           </button>
         </div>
+        <div className="ka-col-bpm">
+          <button
+            className="ka-sort-btn hover-fx"
+            onClick={() => toggleSort('bpm')}
+            type="button"
+          >
+            BPM <SortIcon col="bpm" />
+          </button>
+        </div>
+        <div className="ka-col-cache">Cached</div>
         <div className="ka-col-info">
           <button
             className="ka-sort-btn hover-fx"
@@ -1251,10 +1442,12 @@ const KeyAnalysis = () => {
               globalScanning={scanning}
               key={g.dir}
               name={g.name}
-              onClear={handleClearKey}
+              onClearBpm={handleClearBpm}
+              onClearKey={handleClearKey}
               onScan={handleScanTrack}
               onScanFolder={handleScanFolder}
               onSelectFolder={handleSelectFolder}
+              onSetBpm={handleSetBpm}
               onSetKey={handleSetKey}
               onToggle={toggleFolder}
               onToggleSelect={toggleSelect}
@@ -1315,4 +1508,4 @@ const KeyAnalysis = () => {
   );
 };
 
-export default KeyAnalysis;
+export default Analysis;

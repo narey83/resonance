@@ -28,26 +28,24 @@
 // </copyright>
 
 import './TrackAnalysis.css';
-import BpmAnalysis from '../BpmAnalysis/BpmAnalysis';
-import KeyAnalysis from '../KeyAnalysis/KeyAnalysis';
+import Analysis from '../Analysis/Analysis';
 import WaveformAnalysis from './WaveformAnalysis';
-import { Activity, AudioWaveform, KeyRound } from 'lucide-react';
+import { AudioWaveform, SlidersHorizontal } from 'lucide-react';
 import React, { useState } from 'react';
 
+// Key, BPM, waveform and loudness are one scan over one queue, so they are one
+// page. The waveform tab is a different job — inspecting a single track — not a
+// fourth copy of the same table.
 const TABS = [
-  { icon: KeyRound, id: 'key', label: 'Key Analysis' },
-  { icon: Activity, id: 'bpm', label: 'BPM Analysis' },
-  { icon: AudioWaveform, id: 'waveform', label: 'Waveform' },
+  { icon: SlidersHorizontal, id: 'analysis', label: 'Track Analysis' },
+  { icon: AudioWaveform, id: 'waveform', label: 'Waveform Inspector' },
 ];
 
 const TrackAnalysis = () => {
-  const [activeTab, setActiveTab] = useState('key');
+  const [activeTab, setActiveTab] = useState('analysis');
 
-  const renderPanel = () => {
-    if (activeTab === 'key') return <KeyAnalysis />;
-    if (activeTab === 'bpm') return <BpmAnalysis />;
-    return <WaveformAnalysis />;
-  };
+  const renderPanel = () =>
+    activeTab === 'analysis' ? <Analysis /> : <WaveformAnalysis />;
 
   return (
     <div className="ta-root">

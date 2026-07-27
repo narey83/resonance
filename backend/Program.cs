@@ -911,12 +911,10 @@ namespace resonance
             services.AddSingleton<resonance.Common.Ffmpeg.IFfmpegService, resonance.Common.Ffmpeg.FfmpegService>();
             services.AddHostedService(sp => sp.GetRequiredService<resonance.Common.Ffmpeg.IFfmpegService>());
 
-            services.AddSingleton<resonance.KeyAnalysis.KeyAnalysisService>();
-            services.AddSingleton<resonance.KeyAnalysis.IKeyAnalysisService>(sp => sp.GetRequiredService<resonance.KeyAnalysis.KeyAnalysisService>());
-            services.AddHostedService(sp => sp.GetRequiredService<resonance.KeyAnalysis.KeyAnalysisService>());
-            services.AddSingleton<resonance.BpmAnalysis.BpmAnalysisService>();
-            services.AddSingleton<resonance.BpmAnalysis.IBpmAnalysisService>(sp => sp.GetRequiredService<resonance.BpmAnalysis.BpmAnalysisService>());
-            services.AddHostedService(sp => sp.GetRequiredService<resonance.BpmAnalysis.BpmAnalysisService>());
+            services.AddSingleton(sp => new resonance.Analysis.AnalysisStore(connectionStringDictionary[Database.Analysis]));
+            services.AddSingleton<resonance.Analysis.AnalysisService>();
+            services.AddSingleton<resonance.Analysis.IAnalysisService>(sp => sp.GetRequiredService<resonance.Analysis.AnalysisService>());
+            services.AddHostedService(sp => sp.GetRequiredService<resonance.Analysis.AnalysisService>());
             services.AddSingleton<resonance.MetadataLookup.MusicBrainzClient>();
             services.AddSingleton<resonance.MetadataLookup.DiscogsClient>();
             services.AddSingleton<resonance.MetadataLookup.LastfmClient>();
@@ -924,19 +922,6 @@ namespace resonance
             services.AddSingleton<resonance.MetadataLookup.MetadataLookupService>();
             services.AddSingleton<resonance.MetadataLookup.IMetadataLookupService>(sp => sp.GetRequiredService<resonance.MetadataLookup.MetadataLookupService>());
             services.AddHostedService(sp => sp.GetRequiredService<resonance.MetadataLookup.MetadataLookupService>());
-            services.AddSingleton<resonance.WaveformAnalysis.WaveformService>(sp =>
-                new resonance.WaveformAnalysis.WaveformService(
-                    sp.GetRequiredService<IShareService>(),
-                    sp.GetRequiredService<resonance.Common.Ffmpeg.IFfmpegService>(),
-                    connectionStringDictionary[Database.Waveform],
-                    usePostgres));
-            services.AddSingleton<resonance.WaveformAnalysis.IWaveformService>(sp => sp.GetRequiredService<resonance.WaveformAnalysis.WaveformService>());
-            services.AddHostedService(sp => sp.GetRequiredService<resonance.WaveformAnalysis.WaveformService>());
-            services.AddSingleton<resonance.LoudnessAnalysis.ILoudnessService>(sp =>
-                new resonance.LoudnessAnalysis.LoudnessService(
-                    sp.GetRequiredService<resonance.Common.Ffmpeg.IFfmpegService>(),
-                    connectionStringDictionary[Database.Loudness],
-                    usePostgres));
             services.AddSingleton<resonance.Cast.ICastService, resonance.Cast.CastService>();
             services.AddSingleton<resonance.TagSanitization.ITagSanitizationService, resonance.TagSanitization.TagSanitizationService>();
             services.AddTransient<IShareRepositoryFactory, ShareRepositoryFactory>();

@@ -1,4 +1,4 @@
-// <copyright file="IKeyAnalysisService.cs" company="John Narey">
+// <copyright file="IAnalysisService.cs" company="John Narey">
 //    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
 //   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
@@ -27,35 +27,51 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-namespace resonance.KeyAnalysis
+namespace resonance.Analysis
 {
     using System.Collections.Generic;
+    using System.Threading;
     using System.Threading.Tasks;
 
     /// <summary>
-    ///     Manages detection and storage of musical keys for shared audio files.
+    ///     Detection and storage of every per-track audio metric: BPM, musical key, waveform
+    ///     band peaks and EBU R128 loudness.
     /// </summary>
-    public interface IKeyAnalysisService
+    public interface IAnalysisService
     {
-        /// <summary>Gets the current scan state.</summary>
-        KeyScanState ScanState { get; }
+        /// <summary>Gets the state of the current or most recent scan.</summary>
+        AnalysisScanState ScanState { get; }
 
-        /// <summary>Returns key status for all local audio files.</summary>
-        /// <returns></returns>
-        IEnumerable<TrackKeyInfo> GetAllTracksWithKeyStatus();
+        /// <summary>Returns the analysis status of every audio file in the library.</summary>
+        /// <returns>One record per track.</returns>
+        IEnumerable<TrackAnalysisInfo> GetAllTracks();
 
-        /// <summary>Starts a background key analysis scan.</summary>
+        /// <summary>Starts a background scan. Throws if one is already running.</summary>
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
-        Task StartScanAsync(KeyScanRequest request);
+        Task StartScanAsync(AnalysisScanRequest request);
 
-        /// <summary>Cancels any running scan.</summary>
-        /// <returns></returns>
+        /// <summary>Cancels the running scan.</summary>
+        /// <returns>True if a scan was cancelled, false if none was running.</returns>
         bool CancelScan();
 
-        /// <summary>Sets the key for a specific track, writing to both the physical file and the database.</summary>
+        /// <summary>Returns cached waveform peaks, analysing the file if not yet cached.</summary>
+        /// <returns>The peaks, or null if the file could not be decoded.</returns>
+        Task<WaveformData> GetWaveformAsync(string maskedFilename, string originalFilename, CancellationToken ct);
+
+        /// <summary>Returns cached loudness, analysing the file if not yet cached.</summary>
+        /// <returns>The measurements, or null if the file could not be decoded.</returns>
+        Task<LoudnessData> GetLoudnessAsync(string maskedFilename, string originalFilename, CancellationToken ct);
+
+        /// <summary>Sets a track's BPM, writing it to the file's tags.</summary>
+        void SetBpm(string maskedFilename, uint bpm);
+
+        /// <summary>Sets a track's musical key, writing it to the file's tags.</summary>
         void SetKey(string maskedFilename, string key);
 
-        /// <summary>Clears the key for a specific track, removing it from both the physical file and the database.</summary>
+        /// <summary>Clears a track's BPM tag.</summary>
+        void ClearBpm(string maskedFilename);
+
+        /// <summary>Clears a track's key tag.</summary>
         void ClearKey(string maskedFilename);
     }
 }

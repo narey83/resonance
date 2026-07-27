@@ -9,7 +9,7 @@ RUN dotnet publish backend/resonance.csproj -c Release -o /app
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 # Same runtime deps as the dev image: ffmpeg for audio analysis/conversion,
-# python venv hosting Essentia for key detection.
+# python venv hosting Essentia for BPM and key detection.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg curl python3 python3-venv \
     && rm -rf /var/lib/apt/lists/* \

@@ -1,4 +1,4 @@
-// <copyright file="LoudnessController.cs" company="John Narey">
+// <copyright file="keyAnalysis.js" company="John Narey">
 //    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
 //   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
@@ -27,56 +27,38 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-namespace resonance.LoudnessAnalysis.API
-{
-    using System.Threading;
-    using System.Threading.Tasks;
-    using Asp.Versioning;
-    using Microsoft.AspNetCore.Authorization;
-    using Microsoft.AspNetCore.Mvc;
+import api from './api';
 
-    public record LoudnessResponse(double IntegratedLufs, double TruePeak, double LoudnessRange);
+// Every metric comes from one backend service and one decode per file; the API mirrors
+// that with a single set of endpoints rather than one per metric.
+export const METRICS = ['Bpm', 'Key', 'Waveform', 'Loudness'];
 
-    [ApiController]
-    [ApiVersion("0")]
-    [Produces("application/json")]
-    [Consumes("application/json")]
-    [Route("api/v{version:apiVersion}/[controller]")]
-    public class LoudnessController : ControllerBase
-    {
-        public LoudnessController(ILoudnessService loudnessService)
-        {
-            Loudness = loudnessService;
-        }
+export const getAll = async () => (await api.get('/analysis')).data;
 
-        private ILoudnessService Loudness { get; }
+export const getScanState = async () => (await api.get('/analysis/scan')).data;
 
-        /// <summary>Returns pre-computed (or on-demand computed) integrated loudness for a local file path.</summary>
-        /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
-        [HttpGet]
-        [Authorize(Policy = AuthPolicy.Any)]
-        [ProducesResponseType(typeof(LoudnessResponse), 200)]
-        [ProducesResponseType(400)]
-        [ProducesResponseType(404)]
-        public async Task<IActionResult> GetLoudness([FromQuery] string path, CancellationToken ct)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                return BadRequest("path is required");
-            }
+// metrics is a comma-separated flags string, e.g. 'Bpm, Key'.
+export const startScan = async (request) => api.post('/analysis/scan', request);
 
-            if (!System.IO.File.Exists(path))
-            {
-                return NotFound();
-            }
+export const cancelScan = async () => api.delete('/analysis/scan');
 
-            var data = await Loudness.GetOrAnalyzeAsync(path, path, ct);
-            if (data == null)
-            {
-                return NotFound();
-            }
+export const setAnalysis = async (maskedFilename, values) =>
+  api.put(`/analysis/${encodeURIComponent(maskedFilename)}`, values);
 
-            return Ok(new LoudnessResponse(data.IntegratedLufs, data.TruePeak, data.LoudnessRange));
-        }
-    }
-}
+export const setKey = async (maskedFilename, key) =>
+  setAnalysis(maskedFilename, { key });
+
+export const setBpm = async (maskedFilename, bpm) =>
+  setAnalysis(maskedFilename, { bpm });
+
+export const clearKey = async (maskedFilename) =>
+  api.delete(`/analysis/${encodeURIComponent(maskedFilename)}/key`);
+
+export const clearBpm = async (maskedFilename) =>
+  api.delete(`/analysis/${encodeURIComponent(maskedFilename)}/bpm`);
+
+export const getWaveform = async (path) =>
+  (await api.get('/analysis/waveform', { params: { path } })).data;
+
+export const getLoudness = async (path) =>
+  (await api.get('/analysis/loudness', { params: { path } })).data;

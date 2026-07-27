@@ -52,10 +52,9 @@ public class Database
     public static Database YtDlp { get; } = new Database { Name = "ytdlp" };
     public static Database AppLogs { get; } = new Database { Name = "logs" };
     public static Database Music { get; } = new Database { Name = "music" };
-    public static Database Waveform { get; } = new Database { Name = "waveform" };
-    public static Database Loudness { get; } = new Database { Name = "loudness" };
+    public static Database Analysis { get; } = new Database { Name = "analysis" };
     public static Database Mixtapes { get; } = new Database { Name = "mixtapes" };
-    public static Database[] List { get; } = [Search, Transfers, Messaging, Events, Users, LibraryActivity, Preferences, Settings, YtDlp, AppLogs, Music, Waveform, Loudness, Mixtapes];
+    public static Database[] List { get; } = [Search, Transfers, Messaging, Events, Users, LibraryActivity, Preferences, Settings, YtDlp, AppLogs, Music, Analysis, Mixtapes];
 
     public required string Name { get; init; }
 

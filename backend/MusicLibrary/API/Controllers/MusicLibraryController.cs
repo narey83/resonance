@@ -42,8 +42,7 @@ namespace resonance.MusicLibrary.API
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.Extensions.Caching.Memory;
     using Microsoft.Extensions.Options;
-    using resonance.BpmAnalysis;
-    using resonance.KeyAnalysis;
+    using resonance.Analysis;
     using resonance.Mixtapes;
     using resonance.Shares;
     using SixLabors.ImageSharp;
@@ -77,8 +76,7 @@ namespace resonance.MusicLibrary.API
     {
         public MusicLibraryController(
             IMusicLibraryService service,
-            IKeyAnalysisService keyAnalysis,
-            IBpmAnalysisService bpmAnalysis,
+            IAnalysisService analysis,
             IShareService shares,
             IMixtapeService mixtapes,
             IOptionsSnapshot<AppOptions> options,
@@ -87,8 +85,7 @@ namespace resonance.MusicLibrary.API
             resonance.Common.Ffmpeg.IFfmpegService ffmpeg)
         {
             Service = service;
-            KeyAnalysis = keyAnalysis;
-            BpmAnalysis = bpmAnalysis;
+            Analysis = analysis;
             Shares = shares;
             Mixtapes = mixtapes;
             Options = options;
@@ -98,8 +95,8 @@ namespace resonance.MusicLibrary.API
         }
 
         private IMusicLibraryService Service { get; }
-        private IKeyAnalysisService KeyAnalysis { get; }
-        private IBpmAnalysisService BpmAnalysis { get; }
+
+        private IAnalysisService Analysis { get; }
         private IShareService Shares { get; }
         private IMixtapeService Mixtapes { get; }
         private IOptionsSnapshot<AppOptions> Options { get; }
@@ -465,6 +462,9 @@ namespace resonance.MusicLibrary.API
             }
         }
 
+        private static AnalysisMetrics MetricsFor(bool key, bool bpm) =>
+            (key ? AnalysisMetrics.Key : AnalysisMetrics.None) | (bpm ? AnalysisMetrics.Bpm : AnalysisMetrics.None);
+
         /// <summary>Triggers key and/or BPM analysis for a specific track.</summary>
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         [HttpPost("tracks/analyze")]
@@ -493,15 +493,10 @@ namespace resonance.MusicLibrary.API
 
             try
             {
-                if (request.AnalyzeKey)
-                {
-                    await KeyAnalysis.StartScanAsync(new KeyScanRequest(SkipTagged: false, OnlyFilenames: new[] { masked }));
-                }
-
-                if (request.AnalyzeBpm)
-                {
-                    await BpmAnalysis.StartScanAsync(new BpmScanRequest(SkipTagged: false, OnlyFilenames: new[] { masked }));
-                }
+                await Analysis.StartScanAsync(new AnalysisScanRequest(
+                    Metrics: MetricsFor(request.AnalyzeKey, request.AnalyzeBpm),
+                    SkipAnalysed: false,
+                    OnlyFilenames: new[] { masked }));
             }
             catch (InvalidOperationException ex)
             {
@@ -550,15 +545,10 @@ namespace resonance.MusicLibrary.API
 
             try
             {
-                if (request.AnalyzeKey)
-                {
-                    await KeyAnalysis.StartScanAsync(new KeyScanRequest(SkipTagged: false, OnlyFilenames: maskedFilenames));
-                }
-
-                if (request.AnalyzeBpm)
-                {
-                    await BpmAnalysis.StartScanAsync(new BpmScanRequest(SkipTagged: false, OnlyFilenames: maskedFilenames));
-                }
+                await Analysis.StartScanAsync(new AnalysisScanRequest(
+                    Metrics: MetricsFor(request.AnalyzeKey, request.AnalyzeBpm),
+                    SkipAnalysed: false,
+                    OnlyFilenames: maskedFilenames));
             }
             catch (InvalidOperationException ex)
             {

@@ -105,7 +105,7 @@ const WaveformSeekBar = ({
 
     let cancelled = false;
     api
-      .get('/waveform', { params: { path: track.path } })
+      .get('/analysis/waveform', { params: { path: track.path } })
       .then(({ data }) => {
         if (cancelled || !data?.overallPeaks?.length) return;
         peaksRef.current = {

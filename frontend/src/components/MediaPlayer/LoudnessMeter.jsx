@@ -83,7 +83,7 @@ const LoudnessMeter = ({ audioRef, track }) => {
 
     let cancelled = false;
     api
-      .get('/loudness', { params: { path: track.path } })
+      .get('/analysis/loudness', { params: { path: track.path } })
       .then(({ data }) => {
         if (!cancelled) setStaticLufs(data.integratedLufs);
       })

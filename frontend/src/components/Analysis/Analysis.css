@@ -378,7 +378,7 @@
 
 .ka-header-row {
   display: grid;
-  grid-template-columns: 32px 88px 1fr 60px;
+  grid-template-columns: 32px 88px 62px 52px 1fr 60px;
   gap: 8px;
   padding: 5px 16px;
   font-size: 11px;
@@ -417,7 +417,7 @@
 
 .ka-track {
   display: grid;
-  grid-template-columns: 32px 88px 1fr 60px;
+  grid-template-columns: 32px 88px 62px 52px 1fr 60px;
   gap: 8px;
   align-items: center;
   padding: 6px 16px;
@@ -443,7 +443,9 @@
   accent-color: var(--accent);
 }
 
-.ka-track-key {
+.ka-track-key,
+.ka-track-bpm,
+.ka-track-cache {
   display: flex;
   align-items: center;
 }
@@ -807,3 +809,62 @@
 }
 
 @keyframes ka-spin { to { transform: rotate(360deg); } }
+
+/* ── BPM badge, cache dots and the metric picker ──────────────────────────── */
+
+.ka-badge--bpm {
+  border-color: var(--border);
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  font-variant-numeric: tabular-nums;
+}
+
+.ka-bpm-input {
+  width: 100%;
+  max-width: 56px;
+}
+
+.ka-dots {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.ka-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  opacity: 0.28;
+}
+
+.ka-dot.on {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.ka-metric-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ka-metric-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ka-metric-chip.on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}

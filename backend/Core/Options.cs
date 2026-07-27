@@ -354,16 +354,10 @@ namespace resonance
         public FfmpegOptions Ffmpeg { get; init; } = new FfmpegOptions();
 
         /// <summary>
-        ///     Gets key analysis options.
+        ///     Gets audio analysis (BPM, key, waveform, loudness) options.
         /// </summary>
         [Validate]
-        public KeyAnalysisOptions KeyAnalysis { get; init; } = new KeyAnalysisOptions();
-
-        /// <summary>
-        ///     Gets BPM analysis options.
-        /// </summary>
-        [Validate]
-        public BpmAnalysisOptions BpmAnalysis { get; init; } = new BpmAnalysisOptions();
+        public AnalysisOptions Analysis { get; init; } = new AnalysisOptions();
 
         /// <summary>
         ///     Gets online metadata lookup (MusicBrainz) options.
@@ -1414,39 +1408,37 @@ namespace resonance
             public int UpdateIntervalDays { get; init; } = 7;
         }
 
-        public class KeyAnalysisOptions
+        /// <summary>
+        ///     Audio analysis options, covering BPM, key, waveform and loudness. These share one
+        ///     decode per file, so they share one set of options rather than a block each.
+        /// </summary>
+        public class AnalysisOptions
         {
             /// <summary>
-            ///     Gets the algorithm to use for key detection: 'tagOnly' or 'audioAnalysis'.
-            /// </summary>
-            public string Algorithm { get; init; } = "audioAnalysis";
-
-            /// <summary>
-            ///     Gets the number of concurrent workers for audio analysis.
+            ///     Gets the number of concurrent workers. Each worker runs one ffmpeg and one
+            ///     Essentia process at a time, so this is roughly the CPU core count it will use.
             /// </summary>
             [Range(1, 16)]
             public int Workers { get; init; } = 2;
 
             /// <summary>
-            ///     Gets a value indicating whether to write detected keys back to file tags.
+            ///     Gets a value indicating whether detected BPM and key are written back to file tags.
             /// </summary>
             public bool WriteToTags { get; init; } = true;
 
             /// <summary>
-            ///     Gets an optional custom path to the ffmpeg binary. Defaults to 'ffmpeg' on PATH.
+            ///     Gets the leading portion of each track, in seconds, that BPM and key detection
+            ///     examine. Waveform and loudness always cover the whole file. Long tracks rarely
+            ///     change key or tempo after the first couple of minutes, and the cost of both
+            ///     detectors scales with the length analysed.
             /// </summary>
-            public string FfmpegPath { get; init; } = "ffmpeg";
+            [Range(15, 3600)]
+            public double AnalysisSeconds { get; init; } = 120;
 
             /// <summary>
-            ///     Gets the key-detection engine: 'essentia' (Essentia's profile-based detector via a
-            ///     Python subprocess — roughly 2x the accuracy on electronic music) or 'builtin' (the
-            ///     in-house Queen Mary / Krumhansl detector).
-            /// </summary>
-            public string Engine { get; init; } = "essentia";
-
-            /// <summary>
-            ///     Gets the path to the Python interpreter (a venv with Essentia installed) used by the
-            ///     'essentia' engine. The Docker image provisions this at /opt/keyenv.
+            ///     Gets the path to the Python interpreter (a venv with Essentia installed) used for
+            ///     BPM and key detection. The Docker image provisions this at /opt/keyenv. If it is
+            ///     missing, waveform and loudness still work and BPM and key are skipped.
             /// </summary>
             public string EssentiaPython { get; init; } = "/opt/keyenv/bin/python";
 
@@ -1455,28 +1447,12 @@ namespace resonance
             ///     'krumhansl', 'temperley', or 'bgate'.
             /// </summary>
             public string EssentiaProfile { get; init; } = "edma";
-        }
-
-        /// <summary>
-        ///     BPM analysis options.
-        /// </summary>
-        public class BpmAnalysisOptions
-        {
-            /// <summary>
-            ///     Gets the algorithm to use for BPM detection: 'tagOnly' or 'audioAnalysis'.
-            /// </summary>
-            public string Algorithm { get; init; } = "audioAnalysis";
 
             /// <summary>
-            ///     Gets the number of concurrent workers for audio analysis.
+            ///     Gets the Essentia beat-tracking method: 'multifeature' (slower, more accurate) or
+            ///     'degara' (roughly 4x faster, less reliable on sparse intros).
             /// </summary>
-            [Range(1, 16)]
-            public int Workers { get; init; } = 2;
-
-            /// <summary>
-            ///     Gets a value indicating whether to write detected BPM values back to file tags.
-            /// </summary>
-            public bool WriteToTags { get; init; } = true;
+            public string BpmMethod { get; init; } = "multifeature";
 
             /// <summary>
             ///     Gets the lower bound (inclusive) of the preferred BPM range used for octave folding.
@@ -1493,11 +1469,6 @@ namespace resonance
             /// </summary>
             [Range(0, 800)]
             public double MaxBpm { get; init; } = 176;
-
-            /// <summary>
-            ///     Gets an optional custom path to the ffmpeg binary. Defaults to 'ffmpeg' on PATH.
-            /// </summary>
-            public string FfmpegPath { get; init; } = "ffmpeg";
         }
 
         /// <summary>
