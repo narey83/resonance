@@ -103,7 +103,8 @@ namespace resonance.Analysis.API
         [ProducesResponseType(typeof(WaveformResponse), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(404)]
-        public async Task<IActionResult> GetWaveform([FromQuery] string path, CancellationToken ct)
+        public async Task<IActionResult> GetWaveform(
+            [FromQuery] string path, CancellationToken ct, [FromQuery] bool cachedOnly = false)
         {
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -118,7 +119,7 @@ namespace resonance.Analysis.API
                 return NotFound();
             }
 
-            var data = await Analysis.GetWaveformAsync(full, ct);
+            var data = await Analysis.GetWaveformAsync(full, ct, cachedOnly);
             if (data == null)
             {
                 return NotFound();

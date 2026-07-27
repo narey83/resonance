@@ -34,6 +34,7 @@ import {
   formatIndexedAt,
   formatSeconds,
 } from '../../../lib/util';
+import WaveformPreview from '../../Shared/WaveformPreview';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ChevronDown,
@@ -433,6 +434,7 @@ const TrackTable = ({
           {colHeader('album', 'Album', 'jb-tt-album')}
           {plainSortHeader('key', 'Key', 'jb-tt-key')}
           {plainSortHeader('bpm', 'BPM', 'jb-tt-bpm')}
+          <div className="jb-tt-wave">Wave</div>
           {plainSortHeader('ext', 'Ext', 'jb-tt-ext')}
           {plainSortHeader('quality', 'Quality', 'jb-tt-quality')}
           {plainSortHeader('duration', 'Time', 'jb-tt-dur')}
@@ -560,7 +562,13 @@ const TrackTable = ({
                     <div className="jb-tt-artist">{track.artist || '–'}</div>
                     <div className="jb-tt-album">{track.album || '–'}</div>
                     <div className="jb-tt-key">{track.key || '–'}</div>
-                    <div className="jb-tt-bpm">{track.bpm ?? '–'}</div>
+                    <div className="jb-tt-wave">
+                      <WaveformPreview
+                        height={22}
+                        path={track.path}
+                        width={132}
+                      />
+                    </div>
                     <div className="jb-tt-ext">
                       {track.extension?.toUpperCase() || '–'}
                     </div>

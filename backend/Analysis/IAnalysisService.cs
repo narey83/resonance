@@ -54,9 +54,17 @@ namespace resonance.Analysis
         /// <returns>True if a scan was cancelled, false if none was running.</returns>
         bool CancelScan();
 
-        /// <summary>Returns cached waveform peaks, analysing the file if not yet cached.</summary>
-        /// <returns>The peaks, or null if the file could not be decoded.</returns>
-        Task<WaveformData> GetWaveformAsync(string path, CancellationToken ct);
+        /// <summary>
+        ///     Returns cached waveform peaks, analysing the file if not yet cached — unless
+        ///     <paramref name="cachedOnly"/>, in which case an uncached track simply returns null.
+        /// </summary>
+        /// <remarks>
+        ///     Callers rendering a list must pass <paramref name="cachedOnly"/>. Analysing on
+        ///     demand is fine for the one track a player is on, but a virtualised library scrolling
+        ///     past thousands of rows would otherwise queue a full decode for every one of them.
+        /// </remarks>
+        /// <returns>The peaks, or null if not cached (or undecodable).</returns>
+        Task<WaveformData> GetWaveformAsync(string path, CancellationToken ct, bool cachedOnly = false);
 
         /// <summary>Returns cached loudness, analysing the file if not yet cached.</summary>
         /// <returns>The measurements, or null if the file could not be decoded.</returns>

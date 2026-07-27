@@ -174,10 +174,10 @@ namespace resonance.Analysis
             return true;
         }
 
-        public async Task<WaveformData> GetWaveformAsync(string path, CancellationToken ct)
+        public async Task<WaveformData> GetWaveformAsync(string path, CancellationToken ct, bool cachedOnly = false)
         {
             var cached = Store.GetWaveform(path);
-            if (cached != null)
+            if (cached != null || cachedOnly)
             {
                 return cached;
             }

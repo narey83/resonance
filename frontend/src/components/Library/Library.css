@@ -1969,7 +1969,7 @@
 .jb-track-table-head,
 .jb-track-table .jb-track-row {
   display: grid;
-  grid-template-columns: 28px minmax(0, 2.2fr) minmax(0, 1.4fr) minmax(0, 1.4fr) 44px 44px 42px 72px 52px 36px 28px;
+  grid-template-columns: 28px minmax(0, 2.2fr) minmax(0, 1.4fr) minmax(0, 1.4fr) 44px 44px 140px 42px 72px 52px 36px 28px;
   align-items: center;
   gap: 10px;
   padding: 4px 24px;
@@ -2043,7 +2043,7 @@
 
 .jb-track-table--with-added .jb-track-table-head,
 .jb-track-table--with-added .jb-track-row {
-  grid-template-columns: 28px minmax(0, 2.2fr) minmax(0, 1.4fr) minmax(0, 1.4fr) 44px 44px 42px 72px 52px 36px 160px 28px;
+  grid-template-columns: 28px minmax(0, 2.2fr) minmax(0, 1.4fr) minmax(0, 1.4fr) 44px 44px 140px 42px 72px 52px 36px 160px 28px;
 }
 
 .jb-tt-title {
@@ -3274,4 +3274,32 @@
 .jb-issues-hint {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* ── Inline waveform preview ──────────────────────────────────────────────── */
+
+.jb-tt-wave {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.jb-wave-preview {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.jb-wave-preview canvas { display: block; }
+
+/* Placeholder for a track with no analysis yet — keeps the column from
+   jumping as rows scroll in and out. */
+.jb-wave-empty {
+  display: block;
+  width: 100%;
+  height: 2px;
+  align-self: center;
+  background: var(--border);
+  border-radius: 1px;
+  opacity: 0.5;
 }
