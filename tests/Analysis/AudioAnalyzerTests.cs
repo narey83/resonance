@@ -80,4 +80,43 @@ public class AudioAnalyzerTests
 
         Assert.Equal(expected, stream.ToArray());
     }
+
+    // ebur128's summary repeats "LRA" on three lines and "Threshold" on two; the parser has to
+    // pick the right ones or loudness silently lands on a threshold value.
+    [Fact]
+    public void Parses_The_Ebur128_Summary()
+    {
+        const string Summary = """
+            [Parsed_ebur128_1 @ 0x708568001b80] Summary:
+
+              Integrated loudness:
+                I:          -6.9 LUFS
+                Threshold: -16.9 LUFS
+
+              Loudness range:
+                LRA:         1.4 LU
+                Threshold: -26.9 LUFS
+                LRA low:    -7.4 LUFS
+                LRA high:   -6.0 LUFS
+
+              True peak:
+                Peak:        2.0 dBFS
+            """;
+
+        var result = AudioAnalyzer.ParseLoudness(Summary);
+
+        Assert.NotNull(result);
+        Assert.Equal(-6.9, result.IntegratedLufs, 3);
+        Assert.Equal(1.4, result.LoudnessRange, 3);
+        Assert.Equal(2.0, result.TruePeak, 3);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    [InlineData("ffmpeg version 7.0\nno summary here")]
+    public void Returns_Null_When_The_Summary_Is_Missing(string stderr)
+    {
+        Assert.Null(AudioAnalyzer.ParseLoudness(stderr));
+    }
 }

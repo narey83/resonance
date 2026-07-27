@@ -112,14 +112,14 @@ namespace resonance.Analysis
         {
             var status = Store.GetStatusMap();
 
-            (bool HasWaveform, double? Lufs) Cached(string masked) =>
-                status.TryGetValue(MusicPath.ToRelative(masked), out var s) ? s : (false, null);
+            (bool HasWaveform, double? Lufs) Cached(string original) =>
+                status.TryGetValue(MusicPath.ToRelative(original), out var s) ? s : (false, null);
 
             var tagged = ShareService.GetTaggedFiles()
                 .Where(f => AudioExtensions.Contains(f.Extension))
                 .Select(f =>
                 {
-                    var (hasWaveform, lufs) = Cached(f.MaskedFilename);
+                    var (hasWaveform, lufs) = Cached(f.OriginalFilename);
                     return new TrackAnalysisInfo(
                         f.MaskedFilename, f.OriginalFilename, f.Directory, f.Filename, f.Extension,
                         f.Tags.Bpm == 0 ? null : f.Tags.Bpm,
@@ -133,7 +133,7 @@ namespace resonance.Analysis
                 .Where(f => AudioExtensions.Contains(f.Extension))
                 .Select(f =>
                 {
-                    var (hasWaveform, lufs) = Cached(f.MaskedFilename);
+                    var (hasWaveform, lufs) = Cached(f.OriginalFilename);
                     return new TrackAnalysisInfo(
                         f.MaskedFilename, f.OriginalFilename, f.Directory, f.Filename, f.Extension,
                         null, null, hasWaveform, lufs, null, null, null);
@@ -174,10 +174,9 @@ namespace resonance.Analysis
             return true;
         }
 
-        public async Task<WaveformData> GetWaveformAsync(
-            string maskedFilename, string originalFilename, CancellationToken ct)
+        public async Task<WaveformData> GetWaveformAsync(string path, CancellationToken ct)
         {
-            var cached = Store.GetWaveform(maskedFilename, originalFilename);
+            var cached = Store.GetWaveform(path);
             if (cached != null)
             {
                 return cached;
@@ -186,32 +185,31 @@ namespace resonance.Analysis
             // A single-track miss also measures loudness, since the decode is already paid for
             // and the player asks for both.
             var result = await AnalyseOneAsync(
-                originalFilename, AnalysisMetrics.Waveform | AnalysisMetrics.Loudness, ct);
+                path, AnalysisMetrics.Waveform | AnalysisMetrics.Loudness, ct);
             if (result?.Waveform == null)
             {
                 return null;
             }
 
-            Store.Save(maskedFilename, originalFilename, result);
+            Store.Save(path, result);
             return result.Waveform;
         }
 
-        public async Task<LoudnessData> GetLoudnessAsync(
-            string maskedFilename, string originalFilename, CancellationToken ct)
+        public async Task<LoudnessData> GetLoudnessAsync(string path, CancellationToken ct)
         {
-            var cached = Store.GetLoudness(maskedFilename, originalFilename);
+            var cached = Store.GetLoudness(path);
             if (cached != null)
             {
                 return cached;
             }
 
-            var result = await AnalyseOneAsync(originalFilename, AnalysisMetrics.Loudness, ct);
+            var result = await AnalyseOneAsync(path, AnalysisMetrics.Loudness, ct);
             if (result?.Loudness == null)
             {
                 return null;
             }
 
-            Store.Save(maskedFilename, originalFilename, result);
+            Store.Save(path, result);
             return result.Loudness;
         }
 
@@ -310,7 +308,7 @@ namespace resonance.Analysis
                         }
                         else
                         {
-                            Store.Remove(tracks.Select(t => t.MaskedFilename));
+                            Store.Remove(tracks.Select(t => t.OriginalFilename));
                         }
                     }
 
@@ -411,7 +409,7 @@ namespace resonance.Analysis
 
                             if (result.Waveform != null || result.Loudness != null)
                             {
-                                Store.Save(track.MaskedFilename, path, result);
+                                Store.Save(path, result);
                             }
 
                             var produced = result.Bpm.HasValue || result.Key != null

@@ -56,11 +56,11 @@ namespace resonance.Analysis
 
         /// <summary>Returns cached waveform peaks, analysing the file if not yet cached.</summary>
         /// <returns>The peaks, or null if the file could not be decoded.</returns>
-        Task<WaveformData> GetWaveformAsync(string maskedFilename, string originalFilename, CancellationToken ct);
+        Task<WaveformData> GetWaveformAsync(string path, CancellationToken ct);
 
         /// <summary>Returns cached loudness, analysing the file if not yet cached.</summary>
         /// <returns>The measurements, or null if the file could not be decoded.</returns>
-        Task<LoudnessData> GetLoudnessAsync(string maskedFilename, string originalFilename, CancellationToken ct);
+        Task<LoudnessData> GetLoudnessAsync(string path, CancellationToken ct);
 
         /// <summary>Sets a track's BPM, writing it to the file's tags.</summary>
         void SetBpm(string maskedFilename, uint bpm);

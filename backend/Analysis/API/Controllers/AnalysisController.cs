@@ -115,7 +115,7 @@ namespace resonance.Analysis.API
                 return NotFound();
             }
 
-            var data = await Analysis.GetWaveformAsync(path, path, ct);
+            var data = await Analysis.GetWaveformAsync(path, ct);
             if (data == null)
             {
                 return NotFound();
@@ -144,7 +144,7 @@ namespace resonance.Analysis.API
                 return NotFound();
             }
 
-            var data = await Analysis.GetLoudnessAsync(path, path, ct);
+            var data = await Analysis.GetLoudnessAsync(path, ct);
             if (data == null)
             {
                 return NotFound();

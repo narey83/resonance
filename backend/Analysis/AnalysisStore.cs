@@ -59,10 +59,9 @@ namespace resonance.Analysis
         private string ConnectionString { get; }
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Analysis);
 
-        public WaveformData GetWaveform(string maskedFilename, string originalFilename)
+        public WaveformData GetWaveform(string path)
         {
-            var row = Read(maskedFilename, originalFilename,
-                "num_bars, overall_peaks, low_peaks, mid_peaks, high_peaks");
+            var row = Read(path, "num_bars, overall_peaks, low_peaks, mid_peaks, high_peaks");
             if (row == null || row[0] is DBNull || row[1] is DBNull)
             {
                 return null;
@@ -76,9 +75,9 @@ namespace resonance.Analysis
                 NumBars: Convert.ToInt32(row[0]));
         }
 
-        public LoudnessData GetLoudness(string maskedFilename, string originalFilename)
+        public LoudnessData GetLoudness(string path)
         {
-            var row = Read(maskedFilename, originalFilename, "lufs, true_peak, lra");
+            var row = Read(path, "lufs, true_peak, lra");
             if (row == null || row[0] is DBNull)
             {
                 return null;
@@ -115,12 +114,12 @@ namespace resonance.Analysis
         ///     Upserts whichever metrics this pass produced, leaving the others untouched so a
         ///     waveform-only scan does not wipe a previously measured loudness.
         /// </summary>
-        public void Save(string maskedFilename, string originalFilename, AnalysisResult result)
+        public void Save(string path, AnalysisResult result)
         {
             long fileSize;
             try
             {
-                fileSize = new FileInfo(MusicPath.ToAbsolute(originalFilename)).Length;
+                fileSize = new FileInfo(MusicPath.ToAbsolute(path)).Length;
             }
             catch
             {
@@ -148,7 +147,7 @@ namespace resonance.Analysis
 
             var w = result.Waveform;
             var l = result.Loudness;
-            AddParam(cmd, "@m", MusicPath.ToRelative(maskedFilename));
+            AddParam(cmd, "@m", Key(path));
             AddParam(cmd, "@s", fileSize);
             AddParam(cmd, "@n", (object)w?.NumBars ?? DBNull.Value);
             AddParam(cmd, "@op", (object)(w == null ? null : FloatsToBlob(w.OverallPeaks)) ?? DBNull.Value);
@@ -171,9 +170,9 @@ namespace resonance.Analysis
         }
 
         /// <summary>Drops the cached rows for just these tracks.</summary>
-        public void Remove(IEnumerable<string> maskedFilenames)
+        public void Remove(IEnumerable<string> paths)
         {
-            var keys = maskedFilenames.Select(MusicPath.ToRelative).ToArray();
+            var keys = paths.Select(Key).ToArray();
             if (keys.Length == 0)
             {
                 return;
@@ -185,6 +184,19 @@ namespace resonance.Analysis
             AddParam(cmd, "@m", keys);
             cmd.ExecuteNonQuery();
         }
+
+        /// <summary>
+        ///     The canonical cache key: a path relative to the music root.
+        /// </summary>
+        /// <remarks>
+        ///     Callers arrive holding one of two different things — the scan has an absolute
+        ///     filesystem path, the share layer has a masked name like <c>downloads\Foo\bar.mp3</c>.
+        ///     Keying on whichever one turned up wrote the same track under two keys, so a scanned
+        ///     waveform was never the one the player looked up. Everything is reduced to the stored
+        ///     relative form here instead.
+        /// </remarks>
+        /// <returns>The root-relative path.</returns>
+        private static string Key(string path) => MusicPath.ToRelative(path);
 
         private static byte[] FloatsToBlob(float[] arr)
         {
@@ -215,12 +227,12 @@ namespace resonance.Analysis
             return conn;
         }
 
-        private object[] Read(string maskedFilename, string originalFilename, string columns)
+        private object[] Read(string path, string columns)
         {
             long fileSize;
             try
             {
-                fileSize = new FileInfo(MusicPath.ToAbsolute(originalFilename)).Length;
+                fileSize = new FileInfo(MusicPath.ToAbsolute(path)).Length;
             }
             catch
             {
@@ -233,7 +245,7 @@ namespace resonance.Analysis
             // file_size guards against a file being replaced in place: a different size means the
             // cached peaks describe audio that is no longer there.
             cmd.CommandText = $"SELECT {columns} FROM analysis.track_analysis WHERE masked_filename = @m AND file_size = @s";
-            AddParam(cmd, "@m", MusicPath.ToRelative(maskedFilename));
+            AddParam(cmd, "@m", Key(path));
             AddParam(cmd, "@s", fileSize);
 
             using var reader = cmd.ExecuteReader();

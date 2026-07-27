@@ -113,9 +113,16 @@ namespace resonance.Analysis
             sys.stdout.write('RESONANCE_JSON:' + json.dumps(out) + '\n')
             """;
 
-        private static readonly Regex InputIRegex = new(@"""input_i""\s*:\s*""(-?[\d.]+)""", RegexOptions.Compiled);
-        private static readonly Regex InputTpRegex = new(@"""input_tp""\s*:\s*""(-?[\d.]+)""", RegexOptions.Compiled);
-        private static readonly Regex InputLraRegex = new(@"""input_lra""\s*:\s*""(-?[\d.]+)""", RegexOptions.Compiled);
+        // The ebur128 summary block, e.g. "    I:          -6.9 LUFS". Anchored per line so
+        // "LRA low:" / "LRA high:" / "Threshold:" cannot be mistaken for the wanted values.
+        private static readonly Regex IntegratedRegex =
+            new(@"^\s*I:\s*(-?[\d.]+)\s*LUFS", RegexOptions.Compiled | RegexOptions.Multiline);
+
+        private static readonly Regex TruePeakRegex =
+            new(@"^\s*Peak:\s*(-?[\d.]+)\s*dBFS", RegexOptions.Compiled | RegexOptions.Multiline);
+
+        private static readonly Regex LraRegex =
+            new(@"^\s*LRA:\s*(-?[\d.]+)\s*LU", RegexOptions.Compiled | RegexOptions.Multiline);
 
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Analysis);
 
@@ -171,6 +178,32 @@ namespace resonance.Analysis
             await destination.FlushAsync(ct);
         }
 
+        // ── Loudness ──────────────────────────────────────────────────────────
+
+        /// <summary>Reads the three R128 values out of an ebur128 summary. Exposed for testing.</summary>
+        /// <returns>The measurements, or null if the summary is absent or incomplete.</returns>
+        public static LoudnessData ParseLoudness(string stderr)
+        {
+            if (string.IsNullOrEmpty(stderr))
+            {
+                return null;
+            }
+
+            var i = IntegratedRegex.Match(stderr);
+            var tp = TruePeakRegex.Match(stderr);
+            var lra = LraRegex.Match(stderr);
+
+            if (!i.Success || !tp.Success || !lra.Success)
+            {
+                return null;
+            }
+
+            return new LoudnessData(
+                double.Parse(i.Groups[1].Value, CultureInfo.InvariantCulture),
+                double.Parse(tp.Groups[1].Value, CultureInfo.InvariantCulture),
+                double.Parse(lra.Groups[1].Value, CultureInfo.InvariantCulture));
+        }
+
         /// <summary>
         ///     Runs every requested metric over a single decode of <paramref name="filePath"/>.
         /// </summary>
@@ -192,7 +225,11 @@ namespace resonance.Analysis
                 return new AnalysisResult();
             }
 
-            var (pcm, stderr) = await DecodeAsync(filePath, ffmpegPath, wantPcm, wantLoudness, ct);
+            // A full decode is only required by waveform and loudness; a BPM/key-only pass can
+            // stop at the window those two actually examine.
+            var decodeSeconds = metrics.HasFlag(AnalysisMetrics.Waveform) ? 0 : options.AnalysisSeconds;
+
+            var (pcm, stderr) = await DecodeAsync(filePath, ffmpegPath, wantPcm, wantLoudness, decodeSeconds, ct);
 
             if (wantPcm && pcm == null)
             {
@@ -239,32 +276,41 @@ namespace resonance.Analysis
         }
 
         // ── Decode ────────────────────────────────────────────────────────────
-        private static string BuildArguments(string filePath, bool wantPcm, bool wantLoudness)
+
+        // ebur128 rather than loudnorm: both report the same three R128 numbers, but loudnorm
+        // measured a 6-minute track in ~64s against ebur128's ~9s (the rest of an 80s pass being
+        // the decode itself). loudnorm is a normalisation filter whose measurement pass does far
+        // more work than the meter actually wanted here.
+        private static string BuildArguments(string filePath, bool wantPcm, bool wantLoudness, double seconds)
         {
-            // loudnorm reports on stderr, so its branches must not run at -loglevel quiet.
+            // ebur128 reports on stderr, so it must not run at -loglevel quiet.
             if (wantPcm && wantLoudness)
             {
                 return $"-hide_banner -nostats -i \"{filePath}\" -vn " +
-                    "-filter_complex \"[0:a]asplit=2[w][l];[l]loudnorm=print_format=json[lo]\" " +
+                    "-filter_complex \"[0:a]asplit=2[w][l];[l]ebur128=peak=true[lo]\" " +
                     $"-map \"[w]\" -c:a pcm_f32le -ar {SampleRate} -ac 1 -f f32le pipe:1 " +
                     "-map \"[lo]\" -f null -";
             }
 
             if (wantPcm)
             {
-                return $"-loglevel quiet -i \"{filePath}\" -vn -c:a pcm_f32le -ar {SampleRate} -ac 1 -f f32le pipe:1";
+                // Only BPM and key were asked for, and they read at most AnalysisSeconds — so
+                // decode that much rather than the whole file. Waveform and loudness are the
+                // only metrics that need every sample, and both took the branch above.
+                var limit = seconds > 0 ? $"-t {seconds.ToString(CultureInfo.InvariantCulture)} " : string.Empty;
+                return $"-loglevel quiet -i \"{filePath}\" -vn -c:a pcm_f32le -ar {SampleRate} -ac 1 {limit}-f f32le pipe:1";
             }
 
-            return $"-hide_banner -nostats -i \"{filePath}\" -af loudnorm=print_format=json -f null -";
+            return $"-hide_banner -nostats -i \"{filePath}\" -af ebur128=peak=true -f null -";
         }
 
         private static async Task<(float[] Pcm, string Stderr)> DecodeAsync(
-            string filePath, string ffmpegBinary, bool wantPcm, bool wantLoudness, CancellationToken ct)
+            string filePath, string ffmpegBinary, bool wantPcm, bool wantLoudness, double seconds, CancellationToken ct)
         {
             var psi = new ProcessStartInfo
             {
                 FileName = ffmpegBinary,
-                Arguments = BuildArguments(filePath, wantPcm, wantLoudness),
+                Arguments = BuildArguments(filePath, wantPcm, wantLoudness, seconds),
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -317,29 +363,6 @@ namespace resonance.Analysis
             var samples = new float[bytes.Length / 4];
             Buffer.BlockCopy(bytes, 0, samples, 0, bytes.Length);
             return (samples, stderr);
-        }
-
-        // ── Loudness ──────────────────────────────────────────────────────────
-        private static LoudnessData ParseLoudness(string stderr)
-        {
-            if (string.IsNullOrEmpty(stderr))
-            {
-                return null;
-            }
-
-            var i = InputIRegex.Match(stderr);
-            var tp = InputTpRegex.Match(stderr);
-            var lra = InputLraRegex.Match(stderr);
-
-            if (!i.Success || !tp.Success || !lra.Success)
-            {
-                return null;
-            }
-
-            return new LoudnessData(
-                double.Parse(i.Groups[1].Value, CultureInfo.InvariantCulture),
-                double.Parse(tp.Groups[1].Value, CultureInfo.InvariantCulture),
-                double.Parse(lra.Groups[1].Value, CultureInfo.InvariantCulture));
         }
 
         // ── Waveform bands ────────────────────────────────────────────────────
