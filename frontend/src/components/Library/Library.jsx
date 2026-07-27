@@ -36,6 +36,7 @@ import useResizablePanel from '../../hooks/useResizablePanel';
 import { createMixtapesHubConnection } from '../../lib/hubFactory';
 import * as mixtapesAPI from '../../lib/mixtapes';
 import {
+  ALL_METRICS,
   analyzeFolder,
   analyzeTrack,
   cancelSync,
@@ -53,6 +54,7 @@ import {
   getYears,
   renameFolder,
   renameTrack,
+  TAG_METRICS,
   triggerSync,
 } from '../../lib/musicLibrary';
 import * as prefs from '../../lib/prefs';
@@ -76,6 +78,7 @@ import YearView from './components/YearView';
 import {
   Activity,
   AlertTriangle,
+  AudioWaveform,
   Calendar,
   Check,
   ChevronRight,
@@ -305,35 +308,24 @@ const ContextMenu = ({
       <button
         className="jb-context-item"
         onClick={() => {
-          onAnalyze(track, { key: true, bpm: false });
+          onAnalyze(track, { metrics: ALL_METRICS });
+          onClose();
+        }}
+        type="button"
+      >
+        <AudioWaveform size={13} />
+        Analyse everything
+      </button>
+      <button
+        className="jb-context-item"
+        onClick={() => {
+          onAnalyze(track, { metrics: TAG_METRICS });
           onClose();
         }}
         type="button"
       >
         <KeyRound size={13} />
-        Analyse Key
-      </button>
-      <button
-        className="jb-context-item"
-        onClick={() => {
-          onAnalyze(track, { key: false, bpm: true });
-          onClose();
-        }}
-        type="button"
-      >
-        <Activity size={13} />
-        Analyse BPM
-      </button>
-      <button
-        className="jb-context-item"
-        onClick={() => {
-          onAnalyze(track, { key: true, bpm: true });
-          onClose();
-        }}
-        type="button"
-      >
-        <KeyRound size={13} />
-        Analyse Key &amp; BPM
+        Key &amp; BPM only
       </button>
 
       <div className="jb-context-sep" />
@@ -598,35 +590,24 @@ const FolderContextMenu = ({
       <button
         className="jb-context-item"
         onClick={() => {
-          onAnalyzeFolder(folder, { key: true, bpm: true });
+          onAnalyzeFolder(folder, { metrics: ALL_METRICS });
+          onClose();
+        }}
+        type="button"
+      >
+        <AudioWaveform size={13} />
+        Analyse all tracks
+      </button>
+      <button
+        className="jb-context-item"
+        onClick={() => {
+          onAnalyzeFolder(folder, { metrics: TAG_METRICS });
           onClose();
         }}
         type="button"
       >
         <KeyRound size={13} />
-        Analyse all tracks (Key &amp; BPM)
-      </button>
-      <button
-        className="jb-context-item"
-        onClick={() => {
-          onAnalyzeFolder(folder, { key: true, bpm: false });
-          onClose();
-        }}
-        type="button"
-      >
-        <KeyRound size={13} />
-        Analyse all tracks (Key only)
-      </button>
-      <button
-        className="jb-context-item"
-        onClick={() => {
-          onAnalyzeFolder(folder, { key: false, bpm: true });
-          onClose();
-        }}
-        type="button"
-      >
-        <Activity size={13} />
-        Analyse all tracks (BPM only)
+        Key &amp; BPM only
       </button>
 
       <div className="jb-context-sep" />
@@ -857,35 +838,24 @@ const AlbumContextMenu = ({
       <button
         className="jb-context-item"
         onClick={() => {
-          onAnalyze(album, { key: true, bpm: false });
+          onAnalyze(album, { metrics: ALL_METRICS });
+          onClose();
+        }}
+        type="button"
+      >
+        <AudioWaveform size={13} />
+        Analyse everything
+      </button>
+      <button
+        className="jb-context-item"
+        onClick={() => {
+          onAnalyze(album, { metrics: TAG_METRICS });
           onClose();
         }}
         type="button"
       >
         <KeyRound size={13} />
-        Analyse Key
-      </button>
-      <button
-        className="jb-context-item"
-        onClick={() => {
-          onAnalyze(album, { key: false, bpm: true });
-          onClose();
-        }}
-        type="button"
-      >
-        <Activity size={13} />
-        Analyse BPM
-      </button>
-      <button
-        className="jb-context-item"
-        onClick={() => {
-          onAnalyze(album, { key: true, bpm: true });
-          onClose();
-        }}
-        type="button"
-      >
-        <KeyRound size={13} />
-        Analyse Key &amp; BPM
+        Key &amp; BPM only
       </button>
 
       <div className="jb-context-sep" />
@@ -3359,18 +3329,24 @@ const Library = () => {
     }
   }, []);
 
-  const handleAnalyzeAlbum = useCallback(async (album, { bpm, key }) => {
+  const handleAnalyzeAlbum = useCallback(async (album, { metrics }) => {
     try {
       const { getTracks } = await import('../../lib/musicLibrary');
       const result = await getTracks({
         ...albumTrackParams(album),
         limit: 500_000,
       });
-      await Promise.allSettled(
-        (result.tracks ?? []).map((t) => analyzeTrack(t.path, { key, bpm })),
+      const paths = (result.tracks ?? []).map((t) => t.path);
+      if (paths.length === 0) {
+        toast.info('No tracks to analyse in this album.');
+        return;
+      }
+
+      // One request for the whole album — one scan, one queue.
+      await analyzeTrack(paths, { metrics });
+      toast.success(
+        `Analysis started for ${paths.length} track${paths.length === 1 ? '' : 's'} in "${album.album || 'album'}"`,
       );
-      const what = [key && 'Key', bpm && 'BPM'].filter(Boolean).join(' & ');
-      toast.success(`${what} analysis started for "${album.album || 'album'}"`);
     } catch (error) {
       const message =
         error?.response?.data || error?.message || 'Analysis failed';
@@ -3475,13 +3451,10 @@ const Library = () => {
     history.push('/searches');
   };
 
-  const handleAnalyzeTrack = useCallback(async (track, { bpm, key }) => {
+  const handleAnalyzeTrack = useCallback(async (track, { metrics }) => {
     try {
-      await analyzeTrack(track.path, { key, bpm });
-      const what = [key && 'Key', bpm && 'BPM'].filter(Boolean).join(' & ');
-      toast.success(
-        `${what} analysis started for "${track.title || track.filename}"`,
-      );
+      await analyzeTrack(track.path, { metrics });
+      toast.success(`Analysis started for "${track.title || track.filename}"`);
     } catch (error) {
       const message =
         error?.response?.data || error?.message || 'Analysis failed';
@@ -3489,11 +3462,10 @@ const Library = () => {
     }
   }, []);
 
-  const handleAnalyzeFolder = useCallback(async (folder, { bpm, key }) => {
+  const handleAnalyzeFolder = useCallback(async (folder, { metrics }) => {
     try {
-      await analyzeFolder(folder.path, { key, bpm });
-      const what = [key && 'Key', bpm && 'BPM'].filter(Boolean).join(' & ');
-      toast.success(`${what} analysis started for "${folder.name}"`);
+      await analyzeFolder(folder.path, { metrics });
+      toast.success(`Analysis started for "${folder.name}"`);
     } catch (error) {
       const message =
         error?.response?.data || error?.message || 'Analysis failed';

@@ -107,19 +107,20 @@ export const getFolders = async () => {
   return data;
 };
 
-export const analyzeTrack = async (path, { key = true, bpm = true } = {}) =>
+// Every metric comes from one decode, so these take a metrics flags string rather
+// than per-metric booleans. Pass an array of paths to analyse a batch as ONE scan:
+// a request per track would be rejected after the first, since there is one queue.
+export const ALL_METRICS = 'Bpm, Key, Waveform, Loudness';
+export const TAG_METRICS = 'Bpm, Key';
+
+export const analyzeTrack = async (paths, { metrics = ALL_METRICS } = {}) =>
   api.post('/musiclibrary/tracks/analyze', {
-    path,
-    analyzeKey: key,
-    analyzeBpm: bpm,
+    metrics,
+    paths: Array.isArray(paths) ? paths : [paths],
   });
 
-export const analyzeFolder = async (path, { key = true, bpm = true } = {}) =>
-  api.post('/musiclibrary/folders/analyze', {
-    path,
-    analyzeKey: key,
-    analyzeBpm: bpm,
-  });
+export const analyzeFolder = async (path, { metrics = ALL_METRICS } = {}) =>
+  api.post('/musiclibrary/folders/analyze', { metrics, path });
 
 export const deleteTrack = async (path) =>
   api.delete('/musiclibrary/tracks', { params: { path: pathToBase64(path) } });

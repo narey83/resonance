@@ -30,6 +30,7 @@
 namespace resonance.MusicLibrary.API
 {
     using System;
+    using System.Collections.Generic;
     using System.Diagnostics;
     using System.IO;
     using System.Linq;
@@ -43,6 +44,7 @@ namespace resonance.MusicLibrary.API
     using Microsoft.Extensions.Caching.Memory;
     using Microsoft.Extensions.Options;
     using resonance.Analysis;
+    using resonance.Common;
     using resonance.Mixtapes;
     using resonance.Shares;
     using SixLabors.ImageSharp;
@@ -50,9 +52,27 @@ namespace resonance.MusicLibrary.API
     using SixLabors.ImageSharp.Processing;
     using AppOptions = resonance.Options;
 
-    public record AnalyzeTrackRequest(string Path, bool AnalyzeKey = true, bool AnalyzeBpm = true);
+    /// <summary>
+    ///     Request to analyse one or more tracks. Supply <see cref="Path"/> for a single track or
+    ///     <see cref="Paths"/> for a batch — a batch is one scan, not one per track.
+    /// </summary>
+    /// <remarks>
+    ///     <see cref="Metrics"/> is a comma-separated AnalysisMetrics flags string ("Bpm, Key,
+    ///     Waveform, Loudness"). The older AnalyzeKey/AnalyzeBpm booleans still work and are used
+    ///     when it is omitted.
+    /// </remarks>
+    public record AnalyzeTrackRequest(
+        string Path = null,
+        string[] Paths = null,
+        bool AnalyzeKey = true,
+        bool AnalyzeBpm = true,
+        string Metrics = null);
 
-    public record AnalyzeFolderRequest(string Path, bool AnalyzeKey = true, bool AnalyzeBpm = true);
+    public record AnalyzeFolderRequest(
+        string Path,
+        bool AnalyzeKey = true,
+        bool AnalyzeBpm = true,
+        string Metrics = null);
 
     public record DeleteTrackBatchRequest(string[] MaskedPaths);
 
@@ -472,18 +492,28 @@ namespace resonance.MusicLibrary.API
         [ProducesResponseType(409)]
         public async Task<IActionResult> AnalyzeTrackAsync([FromBody] AnalyzeTrackRequest request)
         {
-            if (string.IsNullOrWhiteSpace(request?.Path))
+            var paths = (request?.Paths ?? [])
+                .Concat(string.IsNullOrWhiteSpace(request?.Path) ? [] : new[] { request.Path })
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .ToArray();
+
+            if (paths.Length == 0)
             {
-                return BadRequest("Path is required.");
+                return BadRequest("Path or Paths is required.");
             }
 
-            if (!request.AnalyzeKey && !request.AnalyzeBpm)
+            var metrics = MetricsFrom(request);
+            if (metrics == AnalysisMetrics.None)
             {
-                return BadRequest("At least one of AnalyzeKey or AnalyzeBpm must be true.");
+                return BadRequest("At least one metric must be requested.");
             }
 
-            var masked = ResolveOneMaskedFilename(request.Path);
-            if (masked == null)
+            // One scan for the whole batch. A request per track would start a scan per track, and
+            // since there is a single analysis queue every one after the first is rejected as
+            // already-running — which is how analysing an album used to do only its first track.
+            var masked = ResolveMaskedFilenames(paths);
+
+            if (masked.Length == 0)
             {
                 return NotFound("Track not found in library.");
             }
@@ -491,9 +521,9 @@ namespace resonance.MusicLibrary.API
             try
             {
                 await Analysis.StartScanAsync(new AnalysisScanRequest(
-                    Metrics: MetricsFor(request.AnalyzeKey, request.AnalyzeBpm),
+                    Metrics: metrics,
                     SkipAnalysed: false,
-                    OnlyFilenames: new[] { masked }));
+                    OnlyFilenames: masked));
             }
             catch (InvalidOperationException ex)
             {
@@ -518,9 +548,10 @@ namespace resonance.MusicLibrary.API
                 return BadRequest("Path is required.");
             }
 
-            if (!request.AnalyzeKey && !request.AnalyzeBpm)
+            var metrics = MetricsFrom(request);
+            if (metrics == AnalysisMetrics.None)
             {
-                return BadRequest("At least one of AnalyzeKey or AnalyzeBpm must be true.");
+                return BadRequest("At least one metric must be requested.");
             }
 
             var result = Service.QueryTracks(null, null, null, null, null, request.Path, false, false, false, false, false, 10_000, 0);
@@ -529,11 +560,7 @@ namespace resonance.MusicLibrary.API
                 return NotFound("No tracks found in folder.");
             }
 
-            var maskedFilenames = result.Tracks
-                .Select(t => ResolveOneMaskedFilename(t.Path))
-                .Where(m => m != null)
-                .Distinct()
-                .ToArray();
+            var maskedFilenames = ResolveMaskedFilenames(result.Tracks.Select(t => t.Path));
 
             if (maskedFilenames.Length == 0)
             {
@@ -543,7 +570,7 @@ namespace resonance.MusicLibrary.API
             try
             {
                 await Analysis.StartScanAsync(new AnalysisScanRequest(
-                    Metrics: MetricsFor(request.AnalyzeKey, request.AnalyzeBpm),
+                    Metrics: metrics,
                     SkipAnalysed: false,
                     OnlyFilenames: maskedFilenames));
             }
@@ -937,8 +964,24 @@ namespace resonance.MusicLibrary.API
         // would then change the ETag every refill and defeat conditional GETs (every client would
         // re-download in full). Instead XOR each row's hash (commutative → order doesn't matter) and
         // fold in the row count, so the ETag is stable as long as the underlying data is.
-        private static AnalysisMetrics MetricsFor(bool key, bool bpm) =>
-            (key ? AnalysisMetrics.Key : AnalysisMetrics.None) | (bpm ? AnalysisMetrics.Bpm : AnalysisMetrics.None);
+        // An explicit Metrics string wins; otherwise fall back to the older key/bpm booleans.
+        private static AnalysisMetrics MetricsFrom(string metrics, bool key, bool bpm)
+        {
+            if (!string.IsNullOrWhiteSpace(metrics)
+                && Enum.TryParse<AnalysisMetrics>(metrics, ignoreCase: true, out var parsed))
+            {
+                return parsed;
+            }
+
+            return (key ? AnalysisMetrics.Key : AnalysisMetrics.None)
+                | (bpm ? AnalysisMetrics.Bpm : AnalysisMetrics.None);
+        }
+
+        private static AnalysisMetrics MetricsFrom(AnalyzeTrackRequest r) =>
+            MetricsFrom(r.Metrics, r.AnalyzeKey, r.AnalyzeBpm);
+
+        private static AnalysisMetrics MetricsFrom(AnalyzeFolderRequest r) =>
+            MetricsFrom(r.Metrics, r.AnalyzeKey, r.AnalyzeBpm);
 
         private static string ComputeListETag<T>(System.Collections.Generic.IReadOnlyList<T> list)
         {
@@ -1277,18 +1320,40 @@ namespace resonance.MusicLibrary.API
             }
         }
 
-        private string ResolveOneMaskedFilename(string originalPath)
+        private string ResolveOneMaskedFilename(string originalPath) =>
+            ResolveMaskedFilenames([originalPath]).FirstOrDefault();
+
+        /// <summary>
+        ///     Maps library paths to their masked names in a single pass over the share.
+        /// </summary>
+        /// <remarks>
+        ///     Both sides are reduced to the stored root-relative form first: the share holds paths
+        ///     that way while clients send the absolute path the library API gave them, so a direct
+        ///     comparison never matched and every analyse request answered "not found".
+        ///     Resolving the whole batch at once also avoids re-walking tens of thousands of shared
+        ///     files once per requested track.
+        /// </remarks>
+        /// <returns>The masked filenames that resolved; unresolvable paths are dropped.</returns>
+        private string[] ResolveMaskedFilenames(IEnumerable<string> originalPaths)
         {
-            var tagged = Shares.GetTaggedFiles()
-                .FirstOrDefault(f => string.Equals(f.OriginalFilename, originalPath, StringComparison.OrdinalIgnoreCase));
-            if (tagged != null)
+            var wanted = new HashSet<string>(
+                originalPaths.Where(p => !string.IsNullOrWhiteSpace(p)).Select(MusicPath.ToRelative),
+                StringComparer.OrdinalIgnoreCase);
+
+            if (wanted.Count == 0)
             {
-                return tagged.MaskedFilename;
+                return [];
             }
 
-            var untagged = Shares.GetUntaggedFiles()
-                .FirstOrDefault(f => string.Equals(f.OriginalFilename, originalPath, StringComparison.OrdinalIgnoreCase));
-            return untagged?.MaskedFilename;
+            var resolved = Shares.GetTaggedFiles()
+                .Select(f => (f.MaskedFilename, f.OriginalFilename))
+                .Concat(Shares.GetUntaggedFiles().Select(f => (f.MaskedFilename, f.OriginalFilename)))
+                .Where(f => wanted.Contains(MusicPath.ToRelative(f.OriginalFilename)))
+                .Select(f => f.MaskedFilename)
+                .Distinct()
+                .ToArray();
+
+            return resolved;
         }
 
         private bool IsWithinShareDirectory(string fullPath)
