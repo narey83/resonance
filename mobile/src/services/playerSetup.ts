@@ -87,7 +87,12 @@ export function buildPlayerOptions(isLoved: boolean) {
     ],
     likeOptions: { isActive: isLoved, title: isLoved ? 'Unlove' : 'Love' },
     android: {
-      appKilledPlaybackBehavior: AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
+      // Keep playing when the app leaves the foreground or is swiped out of recents. RNTP's
+      // StopPlaybackAndRemoveNotification tears the service down in onTaskRemoved and ends with
+      // exitProcess(0) — it kills the whole process, taking playback and the floating bubble with
+      // it. This has nothing to do with the notification controls (those come from the
+      // capabilities above), so it must stay ContinuePlayback.
+      appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
     },
   };
 }
