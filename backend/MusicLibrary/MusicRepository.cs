@@ -463,6 +463,12 @@ namespace resonance.MusicLibrary
                 // Group tracks of the same musical key together (tracks with no detected key sort last).
                 "key" => $"CASE WHEN key_sig IS NULL OR key_sig = '' THEN 1 ELSE 0 END, {OrdBy("key_sig", dir)}, {OrdBy("title")}",
                 "added" => $"indexed_at {dir}, {OrdBy("title")}",
+
+                // Shuffle: let the database pick the sample. Clients queue a bounded window
+                // (a few hundred tracks), so without this a shuffle over a 25k-track folder
+                // would either drag the whole folder over the wire or only ever draw from
+                // the alphabetical head of it.
+                "random" => "RANDOM()",
                 _ => $"{OrdBy("artist", dir)}, {OrdBy("album")}, disc_number, track_number, {OrdBy("title")}",
             };
 

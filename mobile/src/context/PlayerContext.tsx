@@ -138,8 +138,8 @@ const fromRntpTrack = (t: Track | undefined | null): MusicTrack | null =>
 // ponytail: hard queue cap. "Play All" over a 46k-track library used to hand every track to
 // TrackPlayer.setQueue in one bridge call (plus a 46k-path sign request) and froze the app.
 // 500 tracks is ~33h of playback; raise it if that ever feels short.
-const MAX_QUEUE = 500;
-const LEAD_IN = 50; // kept before the tapped track so Previous still has somewhere to go
+export const MAX_QUEUE = 500;
+export const LEAD_IN = 50; // kept before the tapped track so Previous still has somewhere to go
 
 // Window a too-long track list around the tapped index. Returns [tracks, index].
 const windowQueue = (tracks: MusicTrack[], startIndex: number): [MusicTrack[], number] => {

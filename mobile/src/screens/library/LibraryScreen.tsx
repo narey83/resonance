@@ -79,7 +79,7 @@ import { exportTrackToUsb, exportTracksToUsb } from '../../services/usbExport';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { getArtworkCacheKey, ARTWORK_THUMB_SIZE, PLAYER_ART_SIZE } from '../../services/artworkCache';
-import { usePlayer } from '../../context/PlayerContext';
+import { LEAD_IN, MAX_QUEUE, usePlayer } from '../../context/PlayerContext';
 import { useMixtapeStore } from '../../store/mixtapeStore';
 import { useLibraryActivityStore } from '../../store/libraryActivityStore';
 import { getPlayHistory, type PlayRecord } from '../../api/libraryActivity';
@@ -106,6 +106,19 @@ const Stack = createNativeStackNavigator<LibraryStackParamList>();
 type LibraryNav = NativeStackNavigationProp<LibraryStackParamList>;
 
 const TRACKS_PER_PAGE = 50;
+
+// Fetches that feed the player are bounded to what the queue will actually keep. Folders here
+// run to tens of thousands of tracks (HATE is ~25k), and asking for one in a single response
+// parsed ~10 MB of JSON on the JS thread — that, not the queue length, is what hung the app.
+// `index` centres the window on a tapped row; `random` asks the DB for the sample so shuffle
+// still draws from the whole set rather than its alphabetical head.
+type QueueFetch = { index?: number; random?: boolean };
+
+const queueWindow = (opts?: QueueFetch) => ({
+  limit: MAX_QUEUE,
+  offset: opts?.index == null ? 0 : Math.max(0, opts.index - LEAD_IN),
+  ...(opts?.random ? { sort: 'random' } : {}),
+});
 
 const mixtapeTrackToMusicTrack = (t: MixtapeTrack): MusicTrack => ({
   path: t.filePath,
@@ -1676,16 +1689,17 @@ function TracksTab() {
       return;
     }
     try {
+      const window = queueWindow({ index: fallbackIndex });
       const result = await getTracks({
         search: searchRef.current,
-        limit: Math.max(totalRef.current, displayRef.current.length, TRACKS_PER_PAGE),
-        offset: 0,
+        ...window,
         sort: sortRef.current.sortBy ?? 'artist',
         descending: String(sortRef.current.sortDir === 'desc'),
       });
       const full = result.tracks?.length ? result.tracks : displayRef.current;
       const idx = full.findIndex((x) => x.path === tapped.path);
-      playQueue(full, idx >= 0 ? idx : fallbackIndex);
+      // Index within the fetched window, not the full list — the window starts at `offset`.
+      playQueue(full, idx >= 0 ? idx : Math.max(0, fallbackIndex - window.offset));
     } catch {
       playQueue(displayRef.current, fallbackIndex);
     }
@@ -2703,10 +2717,12 @@ function ArtistDetail({ route }: ArtistProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, scanning]);
 
-  const fetchAllTracks = useCallback(async (): Promise<MusicTrack[]> => {
-    if (totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return tracksRef.current;
+  const fetchAllTracks = useCallback(async (opts?: QueueFetch): Promise<MusicTrack[]> => {
+    if (!opts?.random && totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return tracksRef.current;
     try {
-      const result = await getTracks({ artist: artistRef.current, search: searchRef.current, limit: totalRef.current || 9999, offset: 0 });
+      const result = await getTracks({
+        artist: artistRef.current, search: searchRef.current, ...queueWindow(opts),
+      });
       return result.tracks;
     } catch { return tracksRef.current; }
   }, []);
@@ -2718,7 +2734,9 @@ function ArtistDetail({ route }: ArtistProps) {
   }, [fetchAllTracks, playQueue]);
 
   const handleShuffle = useCallback(async () => {
-    const all = await fetchAllTracks();
+    // Ask the DB for the random sample; the local shuffle then just orders that window
+    // (and still applies if the backend is too old to know the `random` sort).
+    const all = await fetchAllTracks({ random: true });
     if (!all.length) return;
     playQueue([...all].sort(() => Math.random() - 0.5), 0);
   }, [fetchAllTracks, playQueue]);
@@ -2726,10 +2744,10 @@ function ArtistDetail({ route }: ArtistProps) {
   const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => (
     <Pressable
       onPress={() => {
-        fetchAllTracks().then((all) => {
+        fetchAllTracks({ index }).then((all) => {
           const list = all.length ? all : tracksRef.current;
           const i = list.findIndex((x) => x.path === item.path);
-          playQueue(list, i >= 0 ? i : index);
+          playQueue(list, i >= 0 ? i : Math.max(0, index - queueWindow({ index }).offset));
         });
       }}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
@@ -2806,7 +2824,9 @@ function ArtistDetail({ route }: ArtistProps) {
           fetchAllTracks().then((all) => {
             const list = all.length ? all : tracksRef.current;
             const idx = list.findIndex((x) => x.path === t.path);
-            playQueue(list, idx >= 0 ? idx : 0);
+            // Action sheets carry no row index, so the queue window may not contain this
+            // track. Play it on its own rather than starting the queue at the wrong row.
+            if (idx >= 0) playQueue(list, idx); else playQueue([t], 0);
           });
           setActionTrack(null);
         }}
@@ -2960,7 +2980,9 @@ function AlbumDetail({ route }: AlbumProps) {
           fetchAllTracks().then((all) => {
             const list = all.length ? all : tracksRef.current;
             const idx = list.findIndex((x) => x.path === t.path);
-            playQueue(list, idx >= 0 ? idx : 0);
+            // Action sheets carry no row index, so the queue window may not contain this
+            // track. Play it on its own rather than starting the queue at the wrong row.
+            if (idx >= 0) playQueue(list, idx); else playQueue([t], 0);
           });
           setActionTrack(null);
         }}
@@ -3034,10 +3056,10 @@ function GenreDetail({ route }: GenreDetailProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, scanning]);
 
-  const fetchAllTracks = useCallback(async (): Promise<MusicTrack[]> => {
-    if (totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return tracksRef.current;
+  const fetchAllTracks = useCallback(async (opts?: QueueFetch): Promise<MusicTrack[]> => {
+    if (!opts?.random && totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return tracksRef.current;
     try {
-      const result = await getTracks({ genre: genreRef.current, search: searchRef.current, limit: totalRef.current || 9999, offset: 0 });
+      const result = await getTracks({ genre: genreRef.current, search: searchRef.current, ...queueWindow(opts) });
       return result.tracks;
     } catch { return tracksRef.current; }
   }, []);
@@ -3049,7 +3071,9 @@ function GenreDetail({ route }: GenreDetailProps) {
   }, [fetchAllTracks, playQueue]);
 
   const handleShuffle = useCallback(async () => {
-    const all = await fetchAllTracks();
+    // Ask the DB for the random sample; the local shuffle then just orders that window
+    // (and still applies if the backend is too old to know the `random` sort).
+    const all = await fetchAllTracks({ random: true });
     if (!all.length) return;
     playQueue([...all].sort(() => Math.random() - 0.5), 0);
   }, [fetchAllTracks, playQueue]);
@@ -3057,10 +3081,10 @@ function GenreDetail({ route }: GenreDetailProps) {
   const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => (
     <Pressable
       onPress={() => {
-        fetchAllTracks().then((all) => {
+        fetchAllTracks({ index }).then((all) => {
           const list = all.length ? all : tracksRef.current;
           const i = list.findIndex((x) => x.path === item.path);
-          playQueue(list, i >= 0 ? i : index);
+          playQueue(list, i >= 0 ? i : Math.max(0, index - queueWindow({ index }).offset));
         });
       }}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
@@ -3122,7 +3146,9 @@ function GenreDetail({ route }: GenreDetailProps) {
           fetchAllTracks().then((all) => {
             const list = all.length ? all : tracksRef.current;
             const idx = list.findIndex((x) => x.path === t.path);
-            playQueue(list, idx >= 0 ? idx : 0);
+            // Action sheets carry no row index, so the queue window may not contain this
+            // track. Play it on its own rather than starting the queue at the wrong row.
+            if (idx >= 0) playQueue(list, idx); else playQueue([t], 0);
           });
           setActionTrack(null);
         }}
@@ -3249,10 +3275,10 @@ function YearDetail({ route }: YearDetailProps) {
 
   useEffect(() => { if (!scanning) loadPage(true); }, [loadPage, scanning]);
 
-  const fetchAllTracks = useCallback(async (): Promise<MusicTrack[]> => {
-    if (totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return tracksRef.current;
+  const fetchAllTracks = useCallback(async (opts?: QueueFetch): Promise<MusicTrack[]> => {
+    if (!opts?.random && totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return tracksRef.current;
     try {
-      const result = await getTracks({ year, limit: totalRef.current || 9999, offset: 0 });
+      const result = await getTracks({ year, ...queueWindow(opts) });
       return result.tracks;
     } catch { return tracksRef.current; }
   }, [year]);
@@ -3264,7 +3290,9 @@ function YearDetail({ route }: YearDetailProps) {
   }, [fetchAllTracks, playQueue]);
 
   const handleShuffle = useCallback(async () => {
-    const all = await fetchAllTracks();
+    // Ask the DB for the random sample; the local shuffle then just orders that window
+    // (and still applies if the backend is too old to know the `random` sort).
+    const all = await fetchAllTracks({ random: true });
     if (!all.length) return;
     playQueue([...all].sort(() => Math.random() - 0.5), 0);
   }, [fetchAllTracks, playQueue]);
@@ -3272,10 +3300,10 @@ function YearDetail({ route }: YearDetailProps) {
   const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => (
     <Pressable
       onPress={() => {
-        fetchAllTracks().then((all) => {
+        fetchAllTracks({ index }).then((all) => {
           const list = all.length ? all : tracksRef.current;
           const i = list.findIndex((x) => x.path === item.path);
-          playQueue(list, i >= 0 ? i : index);
+          playQueue(list, i >= 0 ? i : Math.max(0, index - queueWindow({ index }).offset));
         });
       }}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
@@ -3325,7 +3353,9 @@ function YearDetail({ route }: YearDetailProps) {
           fetchAllTracks().then((all) => {
             const list = all.length ? all : tracksRef.current;
             const idx = list.findIndex((x) => x.path === t.path);
-            playQueue(list, idx >= 0 ? idx : 0);
+            // Action sheets carry no row index, so the queue window may not contain this
+            // track. Play it on its own rather than starting the queue at the wrong row.
+            if (idx >= 0) playQueue(list, idx); else playQueue([t], 0);
           });
           setActionTrack(null);
         }}
@@ -3428,17 +3458,19 @@ function FolderDetail({ route }: FolderDetailProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, isLocal, scanning, sortBy, sortDir]);
 
-  const fetchAllTracks = useCallback(async (): Promise<MusicTrack[]> => {
+  const fetchAllTracks = useCallback(async (opts?: QueueFetch): Promise<MusicTrack[]> => {
     const sort = sortRef.current;
     if (isLocal) {
       return sortList(allLocalTracks, sort.sortBy, sort.sortDir, (t, f) =>
         f === 'title' ? getTrackTitle(t) : t[f as keyof MusicTrack]);
     }
-    if (totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return tracksRef.current;
+    if (!opts?.random && totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return tracksRef.current;
     try {
       const result = await getTracks({
-        folder: folderRef.current, search: searchRef.current, limit: totalRef.current || 9999, offset: 0,
+        folder: folderRef.current, search: searchRef.current,
+        // A chosen sort still applies to Play All / tapping a row; only shuffle overrides it.
         ...(sort.sortBy ? { sort: sort.sortBy, descending: String(sort.sortDir === 'desc') } : {}),
+        ...queueWindow(opts),
       });
       return result.tracks;
     } catch { return tracksRef.current; }
@@ -3451,17 +3483,20 @@ function FolderDetail({ route }: FolderDetailProps) {
   }, [fetchAllTracks, playQueue]);
 
   const handleShuffle = useCallback(async () => {
-    const all = await fetchAllTracks();
+    // Ask the DB for the random sample; the local shuffle then just orders that window
+    // (and still applies if the backend is too old to know the `random` sort).
+    const all = await fetchAllTracks({ random: true });
     if (!all.length) return;
     playQueue([...all].sort(() => Math.random() - 0.5), 0);
   }, [fetchAllTracks, playQueue]);
 
-  // Queue the whole folder (not just the loaded pages) when a single track is tapped.
+  // Queue a window of the folder around the tapped track — not the whole folder, which for
+  // the big ones is tens of thousands of rows and hangs the JS thread before playback starts.
   const playFromList = useCallback(async (tapped: MusicTrack, fallbackIndex: number) => {
-    const all = await fetchAllTracks();
+    const all = await fetchAllTracks({ index: fallbackIndex });
     const list = all.length ? all : displayRef.current;
     const idx = list.findIndex((x) => x.path === tapped.path);
-    playQueue(list, idx >= 0 ? idx : fallbackIndex);
+    playQueue(list, idx >= 0 ? idx : Math.max(0, fallbackIndex - queueWindow({ index: fallbackIndex }).offset));
   }, [fetchAllTracks, playQueue]);
 
   const displayTracks = isLocal ? localFiltered : tracks;
