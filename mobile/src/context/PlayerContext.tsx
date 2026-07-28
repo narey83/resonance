@@ -135,6 +135,20 @@ const toRntpTrack = (track: MusicTrack): RntpTrack => {
 const fromRntpTrack = (t: Track | undefined | null): MusicTrack | null =>
   t ? ((t as RntpTrack)._source ?? null) : null;
 
+// ponytail: hard queue cap. "Play All" over a 46k-track library used to hand every track to
+// TrackPlayer.setQueue in one bridge call (plus a 46k-path sign request) and froze the app.
+// 500 tracks is ~33h of playback; raise it if that ever feels short.
+const MAX_QUEUE = 500;
+const LEAD_IN = 50; // kept before the tapped track so Previous still has somewhere to go
+
+// Window a too-long track list around the tapped index. Returns [tracks, index].
+const windowQueue = (tracks: MusicTrack[], startIndex: number): [MusicTrack[], number] => {
+  const start = Math.max(0, Math.min(startIndex, tracks.length - 1));
+  if (tracks.length <= MAX_QUEUE) return [tracks, start];
+  const from = Math.max(0, Math.min(start - LEAD_IN, tracks.length - MAX_QUEUE));
+  return [tracks.slice(from, from + MAX_QUEUE), start - from];
+};
+
 const buildShuffleOrder = (length: number, startIndex: number): number[] => {
   const indices = Array.from({ length }, (_, i) => i).filter((i) => i !== startIndex);
   for (let i = indices.length - 1; i > 0; i--) {
@@ -486,8 +500,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   // signed in the background so a large queue doesn't delay the first track.
   const HEAD_SIGN_COUNT = 2;
 
-  const playQueue = useCallback(async (tracks: MusicTrack[], startIndex = 0) => {
-    const idx = Math.max(0, Math.min(startIndex, tracks.length - 1));
+  const playQueue = useCallback(async (allTracks: MusicTrack[], startIndex = 0) => {
+    const [tracks, idx] = windowQueue(allTracks, startIndex);
     setQueue(tracks);
     setQueueIndex(idx);
     if (shuffleRef.current) setShuffleOrder(buildShuffleOrder(tracks.length, idx));
@@ -553,7 +567,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     playQueue([track], 0);
   }, [playQueue]);
 
-  const addToQueue = useCallback(async (tracks: MusicTrack[]) => {
+  const addToQueue = useCallback(async (incoming: MusicTrack[]) => {
+    const tracks = incoming.slice(0, MAX_QUEUE - queueRef.current.length);
+    if (!tracks.length) return;
     setQueue((prev) => [...prev, ...tracks]);
     await ensureSigned(tracks.map((t) => t.path));
     await TrackPlayer.add(tracks.map(toRntpTrack));
@@ -570,8 +586,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setShuffleOrder([]);
   }, []);
 
-  const playNext = useCallback(async (tracks: MusicTrack[]) => {
+  const playNext = useCallback(async (incoming: MusicTrack[]) => {
     const idx = queueIndexRef.current;
+    const tracks = incoming.slice(0, MAX_QUEUE - queueRef.current.length);
+    if (!tracks.length) return;
     setQueue((prev) => [...prev.slice(0, idx + 1), ...tracks, ...prev.slice(idx + 1)]);
     await ensureSigned(tracks.map((t) => t.path));
     await TrackPlayer.add(tracks.map(toRntpTrack), idx + 1);

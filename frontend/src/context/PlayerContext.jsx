@@ -70,6 +70,23 @@ const clearSession = () => {
   }
 };
 
+// ponytail: hard queue cap. "Play All" over a 46k-track library used to stringify ~20MB into
+// sessionStorage (5MB quota) every save and sign every path in one POST — the tab locked up.
+// 500 tracks is ~33h of playback; raise it if that ever feels short.
+const MAX_QUEUE = 500;
+const LEAD_IN = 50; // kept before the tapped track so Previous still has somewhere to go
+
+// Window a too-long track list around the tapped index. Returns [tracks, index].
+const windowQueue = (tracks, startIndex) => {
+  const start = Math.max(0, Math.min(startIndex, tracks.length - 1));
+  if (tracks.length <= MAX_QUEUE) return [tracks, start];
+  const from = Math.max(
+    0,
+    Math.min(start - LEAD_IN, tracks.length - MAX_QUEUE),
+  );
+  return [tracks.slice(from, from + MAX_QUEUE), start - from];
+};
+
 const buildShuffleOrder = (length, startIndex) => {
   const indices = Array.from({ length }, (_, position) => position).filter(
     (position) => position !== startIndex,
@@ -206,14 +223,15 @@ export const PlayerProvider = ({ children }) => {
     setShuffleOrder([0]);
   }, []);
 
-  const playQueue = useCallback((tracks, startIndex = 0) => {
-    if (!tracks?.length) return;
+  const playQueue = useCallback((allTracks, startIndex = 0) => {
+    if (!allTracks?.length) return;
+    const [tracks, index] = windowQueue(allTracks, startIndex);
     setRestoredFromSession(false);
     setQueue(tracks);
-    setQueueIndex(startIndex);
-    setTrack(tracks[startIndex]);
+    setQueueIndex(index);
+    setTrack(tracks[index]);
     if (shuffleRef.current) {
-      const order = buildShuffleOrder(tracks.length, startIndex);
+      const order = buildShuffleOrder(tracks.length, index);
       setShuffleOrder(order);
     } else {
       setShuffleOrder([]);
