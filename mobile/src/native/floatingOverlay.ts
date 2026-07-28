@@ -76,9 +76,11 @@ export const floatingOverlay = {
     native?.update(state);
   },
 
-  // Position ring, 0..1.
+  // Position ring, 0..1. Optional-called: during development Metro serves this JS to
+  // whatever APK is installed, so a build predating setProgress must degrade to "no ring"
+  // rather than throw a TypeError out of the render effect and blank the whole app.
   setProgress(progress: number): void {
-    native?.setProgress(progress);
+    native?.setProgress?.(progress);
   },
 
   setVisible(visible: boolean): void {
