@@ -13,7 +13,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import * as LegacyFS from 'expo-file-system/legacy';
-import { usePlaybackStatus, usePlayer } from '../context/PlayerContext';
+import { usePlaybackPosition, usePlaybackStatus, usePlayer } from '../context/PlayerContext';
 import { usePlayerUI } from '../store/playerUIStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { MusicTrack, getArtworkUrl, getTrackTitle } from '../api/musicLibrary';
@@ -44,6 +44,22 @@ async function artToBase64(track: MusicTrack): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+// Feeds the native bubble's position ring. Mirrors BubbleRing in PlayerBubble.tsx: its own
+// leaf so the per-tick position updates re-render this and nothing else — the navigator
+// (which calls useFloatingOverlay) must not re-render on every tick. Render it only while
+// the overlay is active. Pushes on whole-percent changes, so a bridge call per 1% of the
+// track rather than one per tick.
+export function OverlayProgressRing(): null {
+  const { positionSec, durationSec } = usePlaybackPosition();
+  const percent = durationSec > 0 ? Math.round(Math.min(positionSec / durationSec, 1) * 100) : 0;
+
+  useEffect(() => {
+    floatingOverlay.setProgress(percent / 100);
+  }, [percent]);
+
+  return null;
 }
 
 export function useFloatingOverlay(): { overlayActive: boolean } {

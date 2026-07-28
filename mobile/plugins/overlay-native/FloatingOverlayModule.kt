@@ -17,9 +17,12 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Outline
+import android.graphics.Paint
 import android.graphics.PixelFormat
+import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
@@ -33,6 +36,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -54,6 +58,7 @@ class FloatingOverlayModule(private val reactContext: ReactApplicationContext) :
   private var windowManager: WindowManager? = null
   private var overlayView: LinearLayout? = null
   private var artView: ImageView? = null
+  private var ringView: RingView? = null
   private var controlsContainer: LinearLayout? = null
   private var playPauseButton: ImageButton? = null
   private var layoutParams: WindowManager.LayoutParams? = null
@@ -108,6 +113,13 @@ class FloatingOverlayModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
+  // Position ring, 0..1. Separate from update() because it ticks with playback, so it
+  // carries no metadata and does no bitmap work.
+  @ReactMethod
+  fun setProgress(progress: Double) {
+    runOnUi { ringView?.progress = progress.toFloat() }
+  }
+
   @ReactMethod
   fun update(state: ReadableMap) {
     if (overlayView == null) return
@@ -128,6 +140,7 @@ class FloatingOverlayModule(private val reactContext: ReactApplicationContext) :
       overlayView?.let { v -> runCatching { windowManager?.removeView(v) } }
       overlayView = null
       artView = null
+      ringView = null
       controlsContainer = null
       playPauseButton = null
       layoutParams = null
@@ -164,9 +177,20 @@ class FloatingOverlayModule(private val reactContext: ReactApplicationContext) :
       }
       setBackgroundColor(Color.parseColor("#333338"))
     }
-    attachDrag(art)
     artView = art
-    root.addView(art)
+
+    // Ring sits in its own view stacked over the art: the art clips itself to an oval
+    // outline, which would shave the outer half of a stroke drawn inside it.
+    val ring = RingView(reactContext, dp(7).toFloat())
+    ringView = ring
+
+    val artWrap = FrameLayout(reactContext).apply {
+      layoutParams = LinearLayout.LayoutParams(bubble, bubble)
+      addView(art, FrameLayout.LayoutParams(bubble, bubble))
+      addView(ring, FrameLayout.LayoutParams(bubble, bubble))
+    }
+    attachDrag(artWrap)
+    root.addView(artWrap)
 
     // Controls, hidden until the bubble is tapped.
     val controls = LinearLayout(reactContext).apply {
@@ -336,5 +360,39 @@ class FloatingOverlayModule(private val reactContext: ReactApplicationContext) :
   override fun invalidate() {
     hide()
     super.invalidate()
+  }
+}
+
+// Track-position ring around the bubble, mirroring the in-app one (BubbleRing in
+// PlayerBubble.tsx): a translucent full circle with the elapsed fraction swept over it
+// in white, starting at 12 o'clock and going clockwise.
+private class RingView(context: Context, private val stroke: Float) : View(context) {
+  var progress: Float = 0f
+    set(value) {
+      val next = value.coerceIn(0f, 1f)
+      if (next != field) { field = next; invalidate() }
+    }
+
+  private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    style = Paint.Style.STROKE
+    strokeWidth = stroke
+    color = Color.argb(89, 0, 0, 0) // rgba(0,0,0,0.35)
+  }
+
+  private val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    style = Paint.Style.STROKE
+    strokeWidth = stroke
+    strokeCap = Paint.Cap.ROUND
+    color = Color.WHITE
+  }
+
+  private val oval = RectF()
+
+  override fun onDraw(canvas: Canvas) {
+    // Inset by half the stroke so the ring's outer edge lands on the bubble's edge.
+    val half = stroke / 2f
+    oval.set(half, half, width - half, height - half)
+    canvas.drawArc(oval, 0f, 360f, false, trackPaint)
+    if (progress > 0f) canvas.drawArc(oval, -90f, 360f * progress, false, barPaint)
   }
 }

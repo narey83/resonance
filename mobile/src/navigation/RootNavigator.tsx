@@ -40,7 +40,7 @@ import { enableRemoteLogging, disableRemoteLogging } from '../api/remoteLogger';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { initNotifications, useNotificationHub } from '../services/notificationService';
 import { useConnectionMonitor } from '../services/connectionMonitor';
-import { useFloatingOverlay } from '../hooks/useFloatingOverlay';
+import { OverlayProgressRing, useFloatingOverlay } from '../hooks/useFloatingOverlay';
 import PlayerOverlay from '../components/PlayerOverlay';
 import { PlayerBubble } from '../components/PlayerBubble';
 import ConnectionBanner from '../components/ConnectionBanner';
@@ -61,6 +61,7 @@ function AuthenticatedApp() {
     <>
       <MainTabs />
       {playerMode === 'bubble' && !overlayActive && <PlayerBubble />}
+      {overlayActive && <OverlayProgressRing />}
       <PlayerOverlay />
       <ConnectionBanner />
     </>

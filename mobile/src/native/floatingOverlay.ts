@@ -33,6 +33,7 @@ interface FloatingOverlayNative {
   requestPermission(): void;
   show(state: OverlayState): void;
   update(state: OverlayState): void;
+  setProgress(progress: number): void;
   setVisible(visible: boolean): void;
   hide(): void;
 }
@@ -73,6 +74,11 @@ export const floatingOverlay = {
 
   update(state: OverlayState): void {
     native?.update(state);
+  },
+
+  // Position ring, 0..1.
+  setProgress(progress: number): void {
+    native?.setProgress(progress);
   },
 
   setVisible(visible: boolean): void {
