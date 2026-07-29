@@ -682,6 +682,11 @@ export default function PlayerOverlay() {
   useEffect(() => { loadMixtapes(); }, []);
 
   if (!mounted) return null;
+  // Nothing to show. The overlay normally unmounts from its collapse animation's completion
+  // callback, but stopPlayer() clears the track immediately — the animation never finishes and
+  // the sheet was left covering the app, opaque and empty. Casting has no track of its own, so
+  // it stays exempt.
+  if (!track && !isGoogleCasting) return null;
 
   // While the overlay is visible the background is always dark, so force white status bar text
   // regardless of the app's light/dark theme.
