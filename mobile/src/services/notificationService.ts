@@ -36,13 +36,15 @@
  */
 
 import { useEffect } from 'react';
-import { AppState, NativeModules } from 'react-native';
+import { AppState } from 'react-native';
+import { requireOptionalNativeModule } from 'expo';
 import { HubConnectionState } from '@microsoft/signalr';
 import { useAppSettings } from '../store/appSettingsStore';
 import { useAuthStore } from '../store/auth';
 import { createApplicationHubConnection } from '../api/applicationHub';
 import { attachHubLogging, remoteLog } from '../api/remoteLogger';
 import { useConversationStore } from '../store/conversationStore';
+import { useRoomStore } from '../store/roomStore';
 import { useBlockedUsersStore } from '../store/blockedUsersStore';
 import type { BlockedUsersPayload } from '../api/blockedUsers';
 
@@ -50,9 +52,13 @@ let notificationsModule: typeof import('expo-notifications') | null = null;
 
 async function getModule() {
   if (notificationsModule) return notificationsModule;
-  // expo-notifications accesses native modules at load time — only import
-  // if the native module is present (requires a custom dev build).
-  if (!NativeModules.ExpoPushTokenManager) return null;
+  // expo-notifications accesses native modules at load time — only import if
+  // the native side is actually present (requires a custom dev build).
+  // Probe via requireOptionalNativeModule, not RN's `NativeModules`: Expo
+  // modules register on globalThis.expo.modules and never appear on the legacy
+  // bridge registry, so a NativeModules lookup is always undefined and silently
+  // disables every notification.
+  if (!requireOptionalNativeModule('ExpoNotificationScheduler')) return null;
   try {
     notificationsModule = await import('expo-notifications');
     return notificationsModule;
@@ -222,12 +228,22 @@ export const useNotificationHub = () => {
       notifyUserBlocked(username, ip);
     });
     hub.on('ROOM_MENTION', ({ roomName, username, message }: { roomName: string; username: string; message: string }) => {
+      useRoomStore.getState().noteMention(roomName);
+      // Keep an open room thread current — rooms have no per-message hub push,
+      // so a mention is the one chance to refresh without waiting for a poll.
+      if (roomName in useRoomStore.getState().messages) {
+        useRoomStore.getState().loadMessages(roomName).catch(() => {});
+      }
       notifyRoomMention(roomName, username, message);
     });
 
     hub.onreconnected(() => {
       notifyServerReady();
     });
+
+    // Messages that arrived while the app was closed only reach the tab badge
+    // via a fetch — the hub replays nothing on connect.
+    useConversationStore.getState().loadConversations();
 
     const startPromise = hub.start().catch((err: unknown) => {
       remoteLog('error', `[hub:application] start failed — ${err instanceof Error ? err.message : String(err)}`);

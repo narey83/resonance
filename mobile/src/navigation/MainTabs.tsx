@@ -40,6 +40,7 @@ import { makeScreenOptions } from '../theme';
 import { PlayerMiniBar } from '../components/PlayerMiniBar';
 import { FloatingTabBar } from '../components/FloatingTabBar';
 import { useConversationStore } from '../store/conversationStore';
+import { totalMentions, useRoomStore } from '../store/roomStore';
 import { useAppSettings } from '../store/appSettingsStore';
 
 // Screens
@@ -179,7 +180,8 @@ function TabBarWithPlayer(props: BottomTabBarProps) {
 
 export default function MainTabs() {
   const { colors } = useTheme();
-  const totalUnread = useConversationStore((s) => s.totalUnread);
+  const totalUnread  = useConversationStore((s) => s.totalUnread);
+  const roomMentions = useRoomStore(totalMentions);
 
   return (
     <Tab.Navigator
@@ -214,7 +216,11 @@ export default function MainTabs() {
       <Tab.Screen
         component={RoomsStack}
         name="RoomsTab"
-        options={{ title: 'Rooms', headerShown: false }}
+        options={{
+          title: 'Rooms',
+          headerShown: false,
+          tabBarBadge: roomMentions > 0 ? (roomMentions > 99 ? '99+' : roomMentions) : undefined,
+        }}
       />
       <Tab.Screen
         component={ChatStack}

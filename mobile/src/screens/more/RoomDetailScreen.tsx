@@ -77,7 +77,7 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
-  const { joined, messages, loadMessages, sendMessage } = useRoomStore();
+  const { joined, messages, loadMessages, sendMessage, clearMentions } = useRoomStore();
   const room = joined.find((r) => r.name === roomName);
   const thread = useMemo(() => messages[roomName] ?? [], [messages, roomName]);
 
@@ -148,7 +148,8 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
   useFocusEffect(
     useCallback(() => {
       loadMessages(roomName);
-    }, [roomName, loadMessages])
+      clearMentions(roomName);
+    }, [roomName, loadMessages, clearMentions])
   );
 
   React.useEffect(() => {

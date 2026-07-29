@@ -70,10 +70,11 @@ const EmptyRow = React.memo(function EmptyRow({ s }: { s: ReturnType<typeof make
 interface JoinedRowProps extends RowShared {
   room:       Room;
   colors:     ThemeColors;
+  mentions:   number;
   onNavigate: (roomName: string) => void;
   onLeave:    (room: Room) => void;
 }
-const JoinedRow = React.memo(function JoinedRow({ room, isFirst, isLast, s, colors, onNavigate, onLeave }: JoinedRowProps) {
+const JoinedRow = React.memo(function JoinedRow({ room, isFirst, isLast, s, colors, mentions, onNavigate, onLeave }: JoinedRowProps) {
   return (
     <Pressable
       onPress={() => onNavigate(room.name)}
@@ -86,6 +87,11 @@ const JoinedRow = React.memo(function JoinedRow({ room, isFirst, isLast, s, colo
         <Text style={s.rowLabel}>{room.name}</Text>
         <Text style={s.rowSub}>{room.users.length} user{room.users.length !== 1 ? 's' : ''}</Text>
       </View>
+      {mentions > 0 && (
+        <View style={s.mentionBadge}>
+          <Text style={s.mentionBadgeText}>{mentions > 99 ? '99+' : mentions}</Text>
+        </View>
+      )}
       <Pressable hitSlop={8} onPress={() => onLeave(room)} style={s.leaveBtn}>
         <Text style={s.leaveBtnText}>Leave</Text>
       </Pressable>
@@ -139,7 +145,7 @@ export default function RoomsScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
-  const { joined, available, isLoadingJoined, isLoadingAvailable, loadJoined, loadAvailable, join, leave } = useRoomStore();
+  const { joined, available, mentions, isLoadingJoined, isLoadingAvailable, loadJoined, loadAvailable, join, leave } = useRoomStore();
   const [joining, setJoining]      = useState<string | null>(null);
   const [customRoom, setCustomRoom] = useState('');
   const [showCustom, setShowCustom] = useState(false);
@@ -226,6 +232,7 @@ export default function RoomsScreen({ navigation }: Props) {
           isLast={isLast}
           s={s}
           colors={colors}
+          mentions={mentions[item.room.name] ?? 0}
           onNavigate={handleNavigate}
           onLeave={handleLeave}
         />
@@ -243,7 +250,7 @@ export default function RoomsScreen({ navigation }: Props) {
         onJoin={handleJoin}
       />
     );
-  }, [s, colors, handleNavigate, handleLeave, handleJoin, joinedNames, joining]);
+  }, [s, colors, mentions, handleNavigate, handleLeave, handleJoin, joinedNames, joining]);
 
   const keyExtractor = useCallback((item: AnyItem, index: number) =>
     item._type === 'joined'    ? item.room.name :
@@ -360,6 +367,18 @@ function makeStyles(c: ThemeColors) {
 
     joinedPill:     { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.sm, backgroundColor: c.bgElevated },
     joinedPillText: { fontSize: Typography.xs, color: c.textMuted },
+
+    mentionBadge: {
+      minWidth: 18,
+      height: 18,
+      borderRadius: 9,
+      paddingHorizontal: 5,
+      backgroundColor: c.danger,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: Spacing.sm,
+    },
+    mentionBadgeText: { fontSize: 10, fontWeight: '700', color: '#fff' },
 
     sheet: {
       backgroundColor: c.bgSurface,

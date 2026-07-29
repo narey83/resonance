@@ -58,6 +58,12 @@ interface RoomStore {
   joined: Room[];
   available: RoomInfo[];
   messages: Record<string, RoomMessage[]>;
+  // Unread count per room. The only live room signal the backend pushes is
+  // ROOM_MENTION (see Application.Client_RoomMessageReceived) — there is no
+  // per-message room hub — so this counts mentions, matching what actually
+  // raises a notification.
+  // ponytail: mentions only; count every room message once a room hub exists.
+  mentions: Record<string, number>;
   isLoadingJoined: boolean;
   isLoadingAvailable: boolean;
 
@@ -67,12 +73,18 @@ interface RoomStore {
   join: (roomName: string) => Promise<void>;
   leave: (roomName: string) => Promise<void>;
   sendMessage: (roomName: string, text: string) => Promise<void>;
+  noteMention: (roomName: string) => void;
+  clearMentions: (roomName: string) => void;
 }
+
+export const totalMentions = (s: RoomStore) =>
+  Object.values(s.mentions).reduce((n, v) => n + v, 0);
 
 export const useRoomStore = create<RoomStore>((set, get) => ({
   joined: [],
   available: [],
   messages: {},
+  mentions: {},
   isLoadingJoined: false,
   isLoadingAvailable: false,
 
@@ -116,6 +128,9 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
       messages: Object.fromEntries(
         Object.entries(s.messages).filter(([k]) => k !== roomName)
       ),
+      mentions: Object.fromEntries(
+        Object.entries(s.mentions).filter(([k]) => k !== roomName)
+      ),
     }));
   },
 
@@ -123,4 +138,10 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
     await roomsAPI.sendMessage(roomName, text);
     await get().loadMessages(roomName);
   },
+
+  noteMention: (roomName) =>
+    set((s) => ({ mentions: { ...s.mentions, [roomName]: (s.mentions[roomName] ?? 0) + 1 } })),
+
+  clearMentions: (roomName) =>
+    set((s) => (s.mentions[roomName] ? { mentions: { ...s.mentions, [roomName]: 0 } } : s)),
 }));
