@@ -449,7 +449,6 @@ export default function PlayerOverlay() {
   // the swipe glide instead of re-compositing the blurred image + gradients per frame.
   // (We must NOT rasterize during the morph, whose children animate every frame.)
   const [dragging, setDragging]                       = useState(false);
-  const rafRef                                        = useRef<number | null>(null);
   const [queueShowing, setQueueShowing]               = useState(false);
 
   const slideY          = useRef(new Animated.Value(SCREEN_H)).current;
@@ -548,58 +547,27 @@ export default function PlayerOverlay() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
+  // Open and close instantly — no morph, no slide, no fade.
+  //
+  // The morph grew a hero image out of the floating bubble, deferred behind a
+  // requestAnimationFrame. But the bubble opens the player *before* bringing the activity
+  // forward (see openApp), and rAF doesn't fire while the app isn't drawing: the callback
+  // arrived late or never, stranding the sheet half-open — opaque background, no controls,
+  // covering the app. The close path had the mirror-image fault, unmounting from an animation
+  // completion callback that a track change could prevent from ever running.
+  //
+  // Snapping straight to the end state removes the failure mode rather than guarding it.
   useEffect(() => {
-    // Read fresh so the close branch still sees the rect the bubble opened with.
-    const morph = usePlayerUI.getState().morphFrom != null;
-    if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     if (expanded) {
       setMounted(true);
       setVisible(true);
-      if (morph) {
-        // Grow the hero from the bubble; the overlay itself doesn't slide.
-        slideY.setValue(0);
-        overlayOpacity.setValue(1);
-        expandP.setValue(0);
-        expandPr.setValue(0);
-        // Defer the entrance one frame: the tree may have just been revealed
-        // (display:none → flex), so let it paint + settle its layout before the
-        // morph runs, otherwise the first frames race that work and stutter.
-        rafRef.current = requestAnimationFrame(() => {
-          rafRef.current = null;
-          Animated.parallel([
-            Animated.timing(expandP,  { toValue: 1, duration: 460, easing: Easing.bezier(0.16, 1, 0.3, 1), useNativeDriver: true }),
-            Animated.timing(expandPr, { toValue: 1, duration: 460, easing: Easing.bezier(0.16, 1, 0.3, 1), useNativeDriver: false }),
-          ]).start();
-        });
-      } else {
-        // Classic mini-bar entrance: slide up, fully-formed.
-        expandP.setValue(1);
-        expandPr.setValue(1);
-        overlayOpacity.setValue(0);
-        slideY.setValue(SCREEN_H);
-        rafRef.current = requestAnimationFrame(() => {
-          rafRef.current = null;
-          Animated.parallel([
-            Animated.timing(slideY, { toValue: 0, duration: 420, easing: Easing.bezier(0.16, 1, 0.3, 1), useNativeDriver: true }),
-            Animated.timing(overlayOpacity, { toValue: 1, duration: 260, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-          ]).start();
-        });
-      }
+      slideY.setValue(0);
+      overlayOpacity.setValue(1);
+      expandP.setValue(1);
+      expandPr.setValue(1);
     } else if (mounted) {
-      if (morph) {
-        slideY.setValue(0);
-        Animated.parallel([
-          Animated.timing(expandP,  { toValue: 0, duration: 340, easing: Easing.bezier(0.4, 0, 1, 1), useNativeDriver: true }),
-          Animated.timing(expandPr, { toValue: 0, duration: 340, easing: Easing.bezier(0.4, 0, 1, 1), useNativeDriver: false }),
-        ]).start(({ finished }) => { if (finished) setVisible(false); });
-      } else {
-        Animated.parallel([
-          Animated.timing(slideY, { toValue: SCREEN_H, duration: 320, easing: Easing.bezier(0.4, 0, 1, 1), useNativeDriver: true }),
-          Animated.timing(overlayOpacity, { toValue: 0, duration: 220, easing: Easing.in(Easing.ease), useNativeDriver: true }),
-        ]).start(({ finished }) => { if (finished) setVisible(false); });
-      }
+      setVisible(false);
     }
-    return () => { if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; } };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded]);
 
