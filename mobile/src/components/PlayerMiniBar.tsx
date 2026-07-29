@@ -34,9 +34,22 @@ import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import { getArtworkUrl, getTrackTitle } from '../api/musicLibrary';
 import { useCast } from '../context/CastContext';
 import { usePlaybackPosition, usePlaybackStatus, usePlayer } from '../context/PlayerContext';
+import { useAppSettings } from '../store/appSettingsStore';
 import { usePlayerUI } from '../store/playerUIStore';
 import { getArtworkCacheKey, ARTWORK_THUMB_SIZE } from '../services/artworkCache';
 import { Radius, Spacing, Typography } from '../theme';
+
+// 44px artwork + Spacing.sm above and below it + the 4px progress strip.
+export const MINI_BAR_HEIGHT = 64;
+
+// How much room the mini bar takes above the keyboard once it's lifted there —
+// 0 when it isn't showing. Screens with their own bottom input bar (chat, rooms)
+// use this to keep that bar clear of it.
+export function useMiniBarHeight() {
+  const { track } = usePlayer();
+  const playerMode = useAppSettings((s) => s.playerMode);
+  return track && playerMode === 'bar' ? MINI_BAR_HEIGHT : 0;
+}
 
 // Isolated per-tick consumer: only this 2px strip re-renders on each useProgress(250)
 // tick, keeping the always-mounted mini-bar body stable while music plays.
@@ -138,7 +151,7 @@ export function PlayerMiniBar() {
 }
 
 const styles = StyleSheet.create({
-  container:   { overflow: 'hidden' },
+  container:   { height: MINI_BAR_HEIGHT, overflow: 'hidden' },
   fallbackBg:  { backgroundColor: '#111' },
   scrim:       { backgroundColor: 'rgba(0,0,0,0.52)' },
 

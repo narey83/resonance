@@ -50,6 +50,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import type { MoreStackParamList } from '../../navigation/MainTabs';
 import UserActionSheet from '../../components/UserActionSheet';
+import { useMiniBarHeight } from '../../components/PlayerMiniBar';
 import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'RoomDetail'>;
@@ -105,6 +106,10 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
   const [sending, setSending] = useState(false);
   const [showUsers, setShowUsers] = useState(false);
   const [actionUser, setActionUser] = useState<string | null>(null);
+
+  // The mini bar lifts itself onto the keyboard, so reserve its height on top of
+  // the keyboard's or it lands over the input bar.
+  const miniBarHeight = useMiniBarHeight();
 
   // Close the user-list modal before opening the action sheet — stacked
   // visible Modals are unreliable on iOS.
@@ -297,6 +302,7 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
     <KeyboardAvoidingView
       automaticOffset
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={miniBarHeight}
       style={s.container}
     >
       <FlatList

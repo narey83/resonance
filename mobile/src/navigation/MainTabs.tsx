@@ -28,10 +28,13 @@
 // </copyright>
 
 import React from 'react';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { BottomTabBarHeightCallbackContext, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import { View } from 'react-native';
+import type { LayoutChangeEvent } from 'react-native';
+import { KeyboardStickyView } from 'react-native-keyboard-controller';
 import { useTheme } from '../context/ThemeContext';
 import { makeScreenOptions } from '../theme';
 import { PlayerMiniBar } from '../components/PlayerMiniBar';
@@ -114,20 +117,48 @@ function MoreStack() {
   );
 }
 
+function TabBarWithPlayer(props: BottomTabBarProps) {
+  const playerMode = useAppSettings((s) => s.playerMode);
+  const reportHeight = React.useContext(BottomTabBarHeightCallbackContext);
+  const [barHeight, setBarHeight] = React.useState(0);
+
+  // The mini bar rides up to sit on top of the keyboard rather than being buried
+  // behind it. A KeyboardStickyView lifts by the full keyboard height measured
+  // from the screen bottom, which overshoots by however much sits below the mini
+  // bar — the tab bar itself — so `offset.opened` pulls it back down flush.
+  //
+  // That same number is what a screen with its own bottom input bar needs to
+  // clear, so it's also what we report as the navigator's tab bar height:
+  // react-navigation never measures a custom `tabBar`, it just keeps the guess
+  // it made for a stock one.
+  const onBarLayout = (e: LayoutChangeEvent) => {
+    const h = e.nativeEvent.layout.height;
+    setBarHeight(h);
+    reportHeight?.(h);
+  };
+
+  return (
+    <View>
+      {playerMode === 'bar' && (
+        <KeyboardStickyView offset={{ opened: barHeight }}>
+          <PlayerMiniBar />
+        </KeyboardStickyView>
+      )}
+      <View onLayout={onBarLayout}>
+        <FloatingTabBar {...props} />
+      </View>
+    </View>
+  );
+}
+
 export default function MainTabs() {
   const { colors } = useTheme();
   const totalUnread = useConversationStore((s) => s.totalUnread);
-  const playerMode = useAppSettings((s) => s.playerMode);
 
   return (
     <Tab.Navigator
       initialRouteName="LibraryTab"
-      tabBar={(props) => (
-        <View>
-          {playerMode === 'bar' && <PlayerMiniBar />}
-          <FloatingTabBar {...props} />
-        </View>
-      )}
+      tabBar={(props) => <TabBarWithPlayer {...props} />}
       screenOptions={{
         ...makeScreenOptions(colors),
         headerStyle:      { backgroundColor: colors.header },

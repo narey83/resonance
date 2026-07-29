@@ -126,6 +126,11 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
   // by the full keyboard height measured from that bottom, which would overshoot
   // and leave a gap the size of the tab bar between the input and the keyboard;
   // `offset.opened` pulls it back down flush against the keyboard.
+  //
+  // `tabBarHeight` is the tab bar alone, mini bar excluded (MainTabs reports it —
+  // react-navigation never measures a custom tabBar). So when the mini bar is
+  // showing, the input bar's resting position is that much higher and this lift
+  // lands it exactly on top of the mini bar, which rides the keyboard too.
   const tabBarHeight = useBottomTabBarHeight();
 
   React.useLayoutEffect(() => {
