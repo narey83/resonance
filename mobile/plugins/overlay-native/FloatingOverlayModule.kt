@@ -49,6 +49,7 @@ import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import kotlin.math.abs
+import kotlin.math.sqrt
 
 class FloatingOverlayModule(private val reactContext: ReactApplicationContext) :
   ReactContextBaseJavaModule(reactContext) {
@@ -59,6 +60,7 @@ class FloatingOverlayModule(private val reactContext: ReactApplicationContext) :
   private var overlayView: LinearLayout? = null
   private var artView: ImageView? = null
   private var ringView: RingView? = null
+  private var dismissView: View? = null
   private var controlsContainer: LinearLayout? = null
   private var playPauseButton: ImageButton? = null
   private var layoutParams: WindowManager.LayoutParams? = null
@@ -141,6 +143,7 @@ class FloatingOverlayModule(private val reactContext: ReactApplicationContext) :
   @ReactMethod
   fun hide() {
     runOnUi {
+      hideDismissTarget()
       longPress?.let { handler.removeCallbacks(it) }
       overlayView?.let { v -> runCatching { windowManager?.removeView(v) } }
       overlayView = null
@@ -262,24 +265,34 @@ class FloatingOverlayModule(private val reactContext: ReactApplicationContext) :
         }
         MotionEvent.ACTION_MOVE -> {
           val moved = abs(event.rawX - touchX) + abs(event.rawY - touchY)
-          if (moved > dp(10)) longPress?.let { handler.removeCallbacks(it) }
+          if (moved > dp(10)) {
+            longPress?.let { handler.removeCallbacks(it) }
+            showDismissTarget() // only while actually dragging, not on a tap
+          }
           params.x = startX + (event.rawX - touchX).toInt()
           params.y = startY + (event.rawY - touchY).toInt()
           runCatching { windowManager?.updateViewLayout(overlayView, params) }
+          // Grow the target as the bubble closes in, so the drop zone reads as live.
+          dismissView?.scaleX = if (overDismiss(params)) 1.25f else 1f
+          dismissView?.scaleY = dismissView?.scaleX ?: 1f
           true
         }
         MotionEvent.ACTION_UP -> {
           longPress?.let { handler.removeCallbacks(it) }
           val moved = abs(event.rawX - touchX) + abs(event.rawY - touchY)
+          val dropped = overDismiss(params)
+          hideDismissTarget()
           when {
             longFired      -> Unit                 // long-press already revealed controls
             moved < dp(10) -> openApp()             // tap → open the app / full player
+            dropped        -> { emit("close"); hide() } // dropped on the X → stop and tear down
             else           -> snapToEdge(params)    // drag → snap to nearest edge
           }
           true
         }
         MotionEvent.ACTION_CANCEL -> {
           longPress?.let { handler.removeCallbacks(it) }
+          hideDismissTarget()
           true
         }
         else -> false
@@ -307,6 +320,66 @@ class FloatingOverlayModule(private val reactContext: ReactApplicationContext) :
   private fun pillBackground() = GradientDrawable().apply {
     cornerRadius = dp(34).toFloat()
     setColor(Color.parseColor("#EE161618"))
+  }
+
+  // ── Drag-to-dismiss target ──────────────────────────────────────────────────
+  // A close target near the bottom of the screen, shown only while the bubble is being
+  // dragged. Dropping the bubble on it emits "close", which stops playback and tears the
+  // overlay down — the bubble's only exit, since it deliberately outlives the app.
+
+  private fun dismissTargetSize() = dp(64)
+
+  private fun dismissCenter(): Pair<Int, Int> {
+    val metrics = reactContext.resources.displayMetrics
+    return Pair(metrics.widthPixels / 2, metrics.heightPixels - dp(140))
+  }
+
+  private fun showDismissTarget() {
+    if (dismissView != null) return
+    val size = dismissTargetSize()
+    val icon = ImageView(reactContext).apply {
+      setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
+      setColorFilter(Color.WHITE)
+      scaleType = ImageView.ScaleType.CENTER_INSIDE
+      setPadding(dp(16), dp(16), dp(16), dp(16))
+      background = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(Color.parseColor("#CC1C1C20"))
+      }
+    }
+    val (cx, cy) = dismissCenter()
+    val params = WindowManager.LayoutParams(
+      size,
+      size,
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+      else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
+      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+      PixelFormat.TRANSLUCENT,
+    ).apply {
+      gravity = Gravity.TOP or Gravity.START
+      x = cx - size / 2
+      y = cy - size / 2
+    }
+    dismissView = icon
+    runCatching { windowManager?.addView(icon, params) }
+  }
+
+  private fun hideDismissTarget() {
+    dismissView?.let { v -> runCatching { windowManager?.removeView(v) } }
+    dismissView = null
+  }
+
+  // True when the dragged bubble's centre is close enough to the target to drop on it.
+  private fun overDismiss(params: WindowManager.LayoutParams): Boolean {
+    val view = overlayView ?: return false
+    val (cx, cy) = dismissCenter()
+    val bubbleX = params.x + view.width / 2
+    val bubbleY = params.y + view.height / 2
+    val dx = (bubbleX - cx).toFloat()
+    val dy = (bubbleY - cy).toFloat()
+    return sqrt(dx * dx + dy * dy) < dismissTargetSize()
   }
 
   private fun openApp() {

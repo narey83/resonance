@@ -9,7 +9,8 @@
 
 import { DeviceEventEmitter, NativeModules, Platform, TurboModuleRegistry } from 'react-native';
 
-export type OverlayAction = 'play' | 'pause' | 'next' | 'prev' | 'open';
+// 'close' is emitted when the bubble is dragged onto the on-screen dismiss target.
+export type OverlayAction = 'play' | 'pause' | 'next' | 'prev' | 'open' | 'close';
 
 // For 'open', the native bubble also sends its on-screen rect (dp) so the JS
 // full player can morph out of it.

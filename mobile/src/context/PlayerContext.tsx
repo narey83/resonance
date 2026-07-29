@@ -80,6 +80,7 @@ interface PlayerContextValue {
   playQueue: (tracks: MusicTrack[], startIndex?: number) => void;
   addToQueue: (tracks: MusicTrack[]) => void;
   clearQueue: () => void;
+  stopPlayer: () => Promise<void>;
   playNext: (tracks: MusicTrack[]) => void;
   skipToIndex: (idx: number) => Promise<void>;
   pause: () => void;
@@ -594,6 +595,17 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setShuffleOrder([]);
   }, []);
 
+  // Full stop: empties the queue and tears the media service (and its notification) down.
+  // Since appKilledPlaybackBehavior is ContinuePlayback, the player deliberately outlives the
+  // app — and the shade offers no way out, because media3 renders only prev/play/next and marks
+  // the notification NO_CLEAR. This is that missing exit.
+  const stopPlayer = useCallback(async () => {
+    setQueue([]);
+    setQueueIndex(0);
+    setShuffleOrder([]);
+    await TrackPlayer.reset();
+  }, []);
+
   const playNext = useCallback(async (incoming: MusicTrack[]) => {
     const idx = queueIndexRef.current;
     const tracks = incoming.slice(0, MAX_QUEUE - queueRef.current.length);
@@ -698,12 +710,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const playerValue = useMemo<PlayerContextValue>(() => ({
     track: currentTrack, queue, queueIndex, shuffle, repeatMode, cycleRepeat,
-    playTrack, playQueue, addToQueue, clearQueue, playNext, skipToIndex,
+    playTrack, playQueue, addToQueue, clearQueue, stopPlayer, playNext, skipToIndex,
     pause, togglePlayPause, next, prev, seekTo, toggleShuffle,
     setSuppressLocalPlay, restoreTrack,
   }), [
     currentTrack, queue, queueIndex, shuffle, repeatMode, cycleRepeat,
-    playTrack, playQueue, addToQueue, clearQueue, playNext, skipToIndex,
+    playTrack, playQueue, addToQueue, clearQueue, stopPlayer, playNext, skipToIndex,
     pause, togglePlayPause, next, prev, seekTo, toggleShuffle,
     setSuppressLocalPlay, restoreTrack,
   ]);

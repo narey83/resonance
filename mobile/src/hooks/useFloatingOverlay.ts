@@ -72,7 +72,7 @@ export function OverlayProgressRing(): null {
 }
 
 export function useFloatingOverlay(): { overlayActive: boolean } {
-  const { track, togglePlayPause, next, prev } = usePlayer();
+  const { track, togglePlayPause, next, prev, stopPlayer } = usePlayer();
   const { isPlaying } = usePlaybackStatus();
   const playerMode = useAppSettings((s) => s.playerMode);
   const expanded = usePlayerUI((s) => s.expanded);
@@ -82,8 +82,8 @@ export function useFloatingOverlay(): { overlayActive: boolean } {
   const overlayActive = supported && playerMode === 'bubble' && granted;
 
   // Keep transport handlers fresh without resubscribing the native listener.
-  const actionsRef = useRef({ togglePlayPause, next, prev });
-  actionsRef.current = { togglePlayPause, next, prev };
+  const actionsRef = useRef({ togglePlayPause, next, prev, stopPlayer });
+  actionsRef.current = { togglePlayPause, next, prev, stopPlayer };
 
   // Track the current play state for the async art callback.
   const playingRef = useRef(isPlaying);
@@ -112,6 +112,8 @@ export function useFloatingOverlay(): { overlayActive: boolean } {
       if (e.action === 'play' || e.action === 'pause') a.togglePlayPause();
       else if (e.action === 'next') a.next();
       else if (e.action === 'prev') a.prev();
+      // Dragged onto the dismiss target — stop playback outright, not just hide the bubble.
+      else if (e.action === 'close') a.stopPlayer();
       else if (e.action === 'open') {
         // Morph the full player out of the native bubble's rect when provided.
         const from = e.x != null && e.y != null && e.size != null

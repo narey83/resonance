@@ -77,6 +77,11 @@ export function buildPlayerOptions(isLoved: boolean) {
       Capability.SkipToPrevious,
       Capability.SeekTo,
       Capability.SetRating,
+      // Shade/lock-screen "close": RemoteStop is handled in playback-service.ts with reset(),
+      // which stops playback, clears the queue and takes the notification and the media
+      // foreground service down with it. Since appKilledPlaybackBehavior is ContinuePlayback,
+      // this is the only way to shut the player down without force-stopping the app.
+      Capability.Stop,
     ],
     notificationCapabilities: [
       Capability.Play,
@@ -84,6 +89,7 @@ export function buildPlayerOptions(isLoved: boolean) {
       Capability.SkipToNext,
       Capability.SkipToPrevious,
       Capability.SetRating,
+      Capability.Stop,
     ],
     likeOptions: { isActive: isLoved, title: isLoved ? 'Unlove' : 'Love' },
     android: {

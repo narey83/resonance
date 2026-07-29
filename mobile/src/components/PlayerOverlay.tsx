@@ -412,7 +412,7 @@ export default function PlayerOverlay() {
   const s = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
 
-  const { track, shuffle, queue, queueIndex, repeatMode, cycleRepeat, togglePlayPause, next, prev, seekTo, toggleShuffle, skipToIndex } = usePlayer();
+  const { track, shuffle, queue, queueIndex, repeatMode, cycleRepeat, togglePlayPause, next, prev, seekTo, toggleShuffle, skipToIndex, stopPlayer } = usePlayer();
   const { isPlaying, isBuffering } = usePlaybackStatus();
   const {
     isCasting, isGoogleCasting, googleCastDeviceName, googleCastTitle,
@@ -932,6 +932,15 @@ export default function PlayerOverlay() {
                     <Ionicons color={inMixtape ? colors.accent : 'rgba(255,255,255,0.6)'} name={inMixtape ? 'radio' : 'radio-outline'} size={24} />
                   </Pressable>
                   <CastButton style={{ width: 24, height: 24, tintColor: isCasting ? colors.accent : 'rgba(255,255,255,0.6)' }} />
+                  {/* Close the player outright — stops playback, empties the queue and drops the
+                      notification. The shade can't do this (see stopPlayer). */}
+                  <Pressable
+                    hitSlop={12}
+                    onPress={() => { haptics.light(); collapse(); stopPlayer(); }}
+                    style={({ pressed }) => [s.iconBtn, pressed && { opacity: 0.5 }]}
+                  >
+                    <Ionicons color="rgba(255,255,255,0.6)" name="power" size={24} />
+                  </Pressable>
                 </View>
               </View>
 
