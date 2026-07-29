@@ -153,7 +153,7 @@ namespace resonance.Users.API
             {
                 return NotFound(ex.Message);
             }
-            catch (SoulseekClientException ex)
+            catch (Exception ex) when (ex is SoulseekClientException or TimeoutException)
             {
                 // the user is online but unreachable (e.g. a direct/indirect connection couldn't be established).
                 // this is expected in a P2P network; log quietly and return a clean status instead of a 500.
@@ -215,7 +215,7 @@ namespace resonance.Users.API
             {
                 return NotFound(ex.Message);
             }
-            catch (SoulseekClientException ex)
+            catch (Exception ex) when (ex is SoulseekClientException or TimeoutException)
             {
                 Log.Information("Failed to browse user {User}: {Message}", username, ex.Message);
                 return StatusCode(StatusCodes.Status504GatewayTimeout, ex.Message);
@@ -291,7 +291,7 @@ namespace resonance.Users.API
             {
                 return NotFound(ex.Message);
             }
-            catch (SoulseekClientException ex)
+            catch (Exception ex) when (ex is SoulseekClientException or TimeoutException)
             {
                 Log.Information("Failed to retrieve directory contents from user {User}: {Message}", username, ex.Message);
                 return StatusCode(StatusCodes.Status504GatewayTimeout, ex.Message);
@@ -334,7 +334,7 @@ namespace resonance.Users.API
             {
                 return NotFound(ex.Message);
             }
-            catch (SoulseekClientException ex)
+            catch (Exception ex) when (ex is SoulseekClientException or TimeoutException)
             {
                 Log.Information("Failed to retrieve info for user {User}: {Message}", username, ex.Message);
                 return StatusCode(StatusCodes.Status504GatewayTimeout, ex.Message);
@@ -409,6 +409,11 @@ namespace resonance.Users.API
             catch (UserOfflineException ex)
             {
                 return NotFound(ex.Message);
+            }
+            catch (Exception ex) when (ex is SoulseekClientException or TimeoutException)
+            {
+                Log.Information("Failed to retrieve status for user {User}: {Message}", username, ex.Message);
+                return StatusCode(StatusCodes.Status504GatewayTimeout, ex.Message);
             }
         }
     }
