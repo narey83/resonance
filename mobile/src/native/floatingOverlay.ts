@@ -33,7 +33,7 @@ interface FloatingOverlayNative {
   requestPermission(): void;
   show(state: OverlayState): void;
   update(state: OverlayState): void;
-  setProgress(progress: number): void;
+  setProgress(progress: number, color: string): void;
   setVisible(visible: boolean): void;
   hide(): void;
 }
@@ -79,8 +79,8 @@ export const floatingOverlay = {
   // Position ring, 0..1. Optional-called: during development Metro serves this JS to
   // whatever APK is installed, so a build predating setProgress must degrade to "no ring"
   // rather than throw a TypeError out of the render effect and blank the whole app.
-  setProgress(progress: number): void {
-    native?.setProgress?.(progress);
+  setProgress(progress: number, color: string): void {
+    native?.setProgress?.(progress, color);
   },
 
   setVisible(visible: boolean): void {

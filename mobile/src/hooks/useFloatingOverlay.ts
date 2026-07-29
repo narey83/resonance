@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import * as LegacyFS from 'expo-file-system/legacy';
 import { usePlaybackPosition, usePlaybackStatus, usePlayer } from '../context/PlayerContext';
+import { useTheme } from '../context/ThemeContext';
 import { usePlayerUI } from '../store/playerUIStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { MusicTrack, getArtworkUrl, getTrackTitle } from '../api/musicLibrary';
@@ -39,9 +40,15 @@ async function artToBase64(track: MusicTrack): Promise<string | null> {
     if (!url) return null;
     const tmp = `${LegacyFS.cacheDirectory}overlay-art.jpg`;
     const res = await LegacyFS.downloadAsync(url, tmp);
-    if (res.status !== 200) return null;
+    if (res.status !== 200) {
+      console.warn(`[overlay] artwork download HTTP ${res.status} for ${track.path}`);
+      return null;
+    }
     return await LegacyFS.readAsStringAsync(tmp, { encoding: LegacyFS.EncodingType.Base64 });
-  } catch {
+  } catch (err: unknown) {
+    // Silent failure here shows up as a permanently blank bubble disc, which is very hard to
+    // tell apart from a track that genuinely has no cover — so say something.
+    console.warn(`[overlay] artwork load failed for ${track.path} — ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }
@@ -53,11 +60,13 @@ async function artToBase64(track: MusicTrack): Promise<string | null> {
 // track rather than one per tick.
 export function OverlayProgressRing(): null {
   const { positionSec, durationSec } = usePlaybackPosition();
+  const { colors } = useTheme();
   const percent = durationSec > 0 ? Math.round(Math.min(positionSec / durationSec, 1) * 100) : 0;
 
   useEffect(() => {
-    floatingOverlay.setProgress(percent / 100);
-  }, [percent]);
+    // Same accent the in-app bubble's ring uses, so the two look like one component.
+    floatingOverlay.setProgress(percent / 100, colors.accent);
+  }, [percent, colors.accent]);
 
   return null;
 }

@@ -113,11 +113,16 @@ class FloatingOverlayModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
-  // Position ring, 0..1. Separate from update() because it ticks with playback, so it
-  // carries no metadata and does no bitmap work.
+  // Position ring, 0..1, in the app's current accent colour. Separate from update() because it
+  // ticks with playback, so it carries no metadata and does no bitmap work.
   @ReactMethod
-  fun setProgress(progress: Double) {
-    runOnUi { ringView?.progress = progress.toFloat() }
+  fun setProgress(progress: Double, color: String?) {
+    runOnUi {
+      ringView?.let { ring ->
+        color?.let { ring.setBarColor(it) }
+        ring.progress = progress.toFloat()
+      }
+    }
   }
 
   @ReactMethod
@@ -384,6 +389,12 @@ private class RingView(context: Context, private val stroke: Float) : View(conte
     strokeWidth = stroke
     strokeCap = Paint.Cap.ROUND
     color = Color.WHITE
+  }
+
+  // Themed accent, to match the in-app bubble. Ignores anything Color can't parse.
+  fun setBarColor(hex: String) {
+    val parsed = runCatching { Color.parseColor(hex) }.getOrNull() ?: return
+    if (parsed != barPaint.color) { barPaint.color = parsed; invalidate() }
   }
 
   private val oval = RectF()
