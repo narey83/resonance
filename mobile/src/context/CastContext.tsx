@@ -45,6 +45,21 @@ import { ensureSigned, signedQuery } from '../api/streamSignatures';
 // True only when the Google Cast native module is present (not available in Expo Go)
 const CAST_AVAILABLE = !!(NativeModules as any).RNGCCastContext;
 
+// The receiver chooses its playback pipeline from the contentType in the load request, so a
+// .flac announced as audio/mpeg is rejected. Same map the stream endpoint serves.
+const CONTENT_TYPES: Record<string, string> = {
+  mp3:  'audio/mpeg',
+  flac: 'audio/flac',
+  ogg:  'audio/ogg',
+  opus: 'audio/ogg',
+  wav:  'audio/wav',
+  m4a:  'audio/mp4',
+  aac:  'audio/aac',
+};
+
+const contentTypeFor = (path: string): string =>
+  CONTENT_TYPES[path.split('.').pop()?.toLowerCase() ?? ''] ?? 'audio/mpeg';
+
 interface CastContextValue {
   // Google Cast
   googleCastState: CastState | null;
@@ -213,9 +228,10 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
     const { serverUrl } = useAuthStore.getState();
     const streamUrl = `${serverUrl}/api/v0/musiclibrary/stream?path=${encodeURIComponent(trackToLoad.path)}${signedQuery(trackToLoad.path)}`;
     await client.loadMedia({
+      autoplay:    true,
       mediaInfo: {
         contentUrl:  streamUrl,
-        contentType: 'audio/mpeg',
+        contentType: contentTypeFor(trackToLoad.path),
         metadata: {
           type:     'musicTrack',
           title:    trackToLoad.title ?? trackToLoad.filename,
@@ -226,22 +242,29 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
     });
   }, []);
 
+  // Wait for a real session: isGoogleCasting is already true while CONNECTING, and a loadMedia
+  // sent then is rejected with "No session" — the receiver app takes a few seconds to launch.
+  // Remember the path only once the load succeeds, so a rejected load is retried rather than
+  // leaving the device connected and silent forever.
   useEffect(() => {
-    if (!isGoogleCasting || !track) return;
+    if (!castSession || !track) return;
     if (track.path === prevCastTrackPath.current) return;
-    prevCastTrackPath.current = track.path;
-    loadTrack(nativeClient.current, track).catch(() => {});
-  }, [track, isGoogleCasting, loadTrack]);
+    loadTrack(nativeClient.current, track)
+      .then(() => { prevCastTrackPath.current = track.path; })
+      .catch(() => {});
+  }, [track, castSession, loadTrack]);
 
+  // These reject when the receiver has no media loaded; nothing can be done about it here, and
+  // an unhandled rejection puts a redbox over the player.
   const castTogglePlayPause = useCallback(() => {
     if (!nativeClient.current) return;
-    if (castIsPlaying) nativeClient.current.pause();
-    else nativeClient.current.play();
+    const c = nativeClient.current;
+    (castIsPlaying ? c.pause() : c.play()).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nativeClient.current, castIsPlaying]);
 
   const castSeek = useCallback((seconds: number) => {
-    nativeClient.current?.seek({ position: seconds });
+    nativeClient.current?.seek({ position: seconds }).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nativeClient.current]);
 
