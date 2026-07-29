@@ -29,6 +29,7 @@
 
 namespace resonance.Mixtapes.API
 {
+    using System;
     using System.IO;
     using System.IO.Compression;
     using System.Linq;
@@ -88,7 +89,9 @@ namespace resonance.Mixtapes.API
             }
 
             var baseUrl = $"{Request.Scheme}://{Request.Host}/api/v0/public/mixtapes/{token}/tracks";
-            var content = Service.BuildM3uContent(m.Tracks ?? [], baseUrl);
+            var content = Service.BuildM3uContent(
+                m.Tracks ?? [],
+                t => $"{baseUrl}/{Uri.EscapeDataString(t.Id)}/download");
             var fileName = $"{SanitizeName(m.Name)}.m3u";
             return File(Encoding.UTF8.GetBytes(content), "audio/x-mpegurl", fileName);
         }
@@ -179,7 +182,8 @@ namespace resonance.Mixtapes.API
                 _ => "application/octet-stream",
             };
 
-            return PhysicalFile(track.FilePath, contentType, Path.GetFileName(track.FilePath));
+            // Range processing on: players seek, and AVPlayer (iOS/Safari) refuses a stream without it.
+            return PhysicalFile(track.FilePath, contentType, Path.GetFileName(track.FilePath), enableRangeProcessing: true);
         }
 
         private static string SanitizeName(string name)

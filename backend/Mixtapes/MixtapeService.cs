@@ -398,11 +398,10 @@ namespace resonance.Mixtapes
         }
 
         /// <summary>
-        /// Builds M3U playlist content for the given tracks.
-        /// When baseDownloadUrl is provided each entry uses an HTTP URL instead of a local file path.
+        /// Builds M3U playlist content for the given tracks, rendering each entry with <paramref name="uriFor"/>.
         /// </summary>
         /// <returns></returns>
-        public string BuildM3uContent(IReadOnlyList<MixtapeTrack> tracks, string? baseDownloadUrl = null)
+        public string BuildM3uContent(IReadOnlyList<MixtapeTrack> tracks, Func<MixtapeTrack, string> uriFor)
         {
             var sb = new StringBuilder();
             sb.AppendLine("#EXTM3U");
@@ -412,53 +411,14 @@ namespace resonance.Mixtapes
                 var artist = track.Artist ?? string.Empty;
                 var title = track.Title ?? Path.GetFileNameWithoutExtension(track.FilePath);
                 var display = string.IsNullOrEmpty(artist) ? title : $"{artist} - {title}";
-                var uri = baseDownloadUrl != null
-                    ? $"{baseDownloadUrl}/{Uri.EscapeDataString(track.Id)}/download"
-                    : track.FilePath;
                 sb.AppendLine($"#EXTINF:{duration},{display}");
-                sb.AppendLine(uri);
+                sb.AppendLine(uriFor(track));
             }
 
             return sb.ToString();
         }
 
         private static string MixtapeFolderName(Mixtape m) => SafeFileName(m.Name);
-
-        private static void WriteM3U(string dir, string name, IReadOnlyList<MixtapeTrack> tracks)
-        {
-            Directory.CreateDirectory(dir);
-
-            foreach (var old in Directory.GetFiles(dir, "*.m3u"))
-            {
-                try
-                {
-                    File.Delete(old);
-                }
-                catch
-                { /* non-fatal */
-                }
-            }
-
-            if (tracks.Count == 0)
-            {
-                return;
-            }
-
-            var m3uPath = Path.Combine(dir, $"{SafeFileName(name)}.m3u");
-            var sb = new StringBuilder();
-            sb.AppendLine("#EXTM3U");
-            foreach (var track in tracks)
-            {
-                var duration = (int)(track.Duration ?? 0);
-                var artist = track.Artist ?? string.Empty;
-                var title = track.Title ?? Path.GetFileNameWithoutExtension(track.FilePath);
-                var display = string.IsNullOrEmpty(artist) ? title : $"{artist} - {title}";
-                sb.AppendLine($"#EXTINF:{duration},{display}");
-                sb.AppendLine(track.FilePath);
-            }
-
-            File.WriteAllText(m3uPath, sb.ToString(), Encoding.UTF8);
-        }
 
         private static void RemoveMixtapeFolder(string dir)
         {
@@ -492,6 +452,36 @@ namespace resonance.Mixtapes
             var invalid = Path.GetInvalidFileNameChars();
             var safe = string.Concat(name.Select(c => invalid.Contains(c) ? '_' : c)).Trim();
             return string.IsNullOrEmpty(safe) ? "mixtape" : safe;
+        }
+
+        private void WriteM3U(string dir, string name, IReadOnlyList<MixtapeTrack> tracks)
+        {
+            Directory.CreateDirectory(dir);
+
+            foreach (var old in Directory.GetFiles(dir, "*.m3u"))
+            {
+                try
+                {
+                    File.Delete(old);
+                }
+                catch
+                { /* non-fatal */
+                }
+            }
+
+            if (tracks.Count == 0)
+            {
+                return;
+            }
+
+            // This playlist is only ever read off the server (a peer downloads the shared mixtape folder),
+            // so entries are the sibling file names that peer sees — MaskedLeafName is exactly what the
+            // virtual share publishes next to it. Server-local paths would be unplayable everywhere else.
+            var m3uPath = Path.Combine(dir, $"{SafeFileName(name)}.m3u");
+            var content = BuildM3uContent(tracks, MaskedLeafName);
+
+            // No BOM: strict M3U parsers don't recognise a "﻿#EXTM3U" header.
+            File.WriteAllText(m3uPath, content, new UTF8Encoding(false));
         }
 
         private string MixtapeDir(Mixtape m) => Path.Combine(MixtapesBaseDir, MixtapeFolderName(m));

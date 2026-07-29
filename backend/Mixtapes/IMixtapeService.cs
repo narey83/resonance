@@ -29,6 +29,7 @@
 
 namespace resonance.Mixtapes
 {
+    using System;
     using System.Collections.Generic;
 
     public interface IMixtapeService
@@ -58,7 +59,13 @@ namespace resonance.Mixtapes
         System.Threading.Tasks.Task SaveArtworkAsync(string id, System.IO.Stream data, string contentType);
         void DeleteArtwork(string id);
 
-        string BuildM3uContent(IReadOnlyList<MixtapeTrack> tracks, string? baseDownloadUrl = null);
+        /// <summary>
+        /// Builds M3U playlist content, using <paramref name="uriFor"/> to render each track's entry.
+        /// Playlists always leave the server, so the caller must supply a URL the client can fetch —
+        /// a server-local file path is never playable elsewhere.
+        /// </summary>
+        /// <returns>The playlist content.</returns>
+        string BuildM3uContent(IReadOnlyList<MixtapeTrack> tracks, Func<MixtapeTrack, string> uriFor);
 
         /// <summary>
         /// Rewrites all mixtape track paths that begin with <paramref name="oldPrefix"/> to begin

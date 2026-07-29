@@ -269,8 +269,18 @@ namespace resonance.Mixtapes.API
                 return NotFound();
             }
 
-            var content = Service.BuildM3uContent(m.Tracks ?? Array.Empty<MixtapeTrack>());
+            // Signed stream URLs, not file paths: the playlist is played off-server by an external
+            // player that has no JWT. Signatures are good for Jwt.StreamUrlTtl (24h by default).
+            var baseUrl = $"{Request.Scheme}://{Request.Host}/api/v0/musiclibrary/stream";
+            var content = Service.BuildM3uContent(m.Tracks ?? Array.Empty<MixtapeTrack>(), StreamUrl);
             var fileName = $"{SanitizeName(m.Name)}.m3u";
+
+            string StreamUrl(MixtapeTrack t)
+            {
+                var (exp, sig) = UrlSigner.Sign(t.FilePath);
+                return $"{baseUrl}?path={Uri.EscapeDataString(t.FilePath)}&exp={exp}&sig={Uri.EscapeDataString(sig)}";
+            }
+
             return File(Encoding.UTF8.GetBytes(content), "audio/x-mpegurl", fileName);
         }
 
