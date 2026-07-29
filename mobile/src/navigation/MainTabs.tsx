@@ -68,6 +68,7 @@ export type MainTabParamList = {
   LibraryTab:   undefined;
   SearchTab:    undefined;
   TransfersTab: undefined;
+  BrowseTab:    NavigatorScreenParams<BrowseStackParamList> | undefined;
   RoomsTab:     NavigatorScreenParams<RoomsStackParamList> | undefined;
   ChatTab:      NavigatorScreenParams<ChatStackParamList> | undefined;
   MoreTab:      NavigatorScreenParams<MoreStackParamList> | undefined;
@@ -77,8 +78,6 @@ export type MoreStackParamList = {
   More:             undefined;
   Overview:         undefined;
   Connection:       undefined;
-  Browse:           undefined;
-  BrowseUser:       { username: string };
   Tags:             undefined;
   Analysis:         undefined;
   Logs:             undefined;
@@ -86,6 +85,11 @@ export type MoreStackParamList = {
   BlockedUsers:     undefined;
   Settings:         undefined;
   NetworkLog:       undefined;
+};
+
+export type BrowseStackParamList = {
+  Browse:     undefined;
+  BrowseUser: { username: string };
 };
 
 export type RoomsStackParamList = {
@@ -98,10 +102,11 @@ export type ChatStackParamList = {
   ChatConversation: { username: string };
 };
 
-const Tab   = createBottomTabNavigator<MainTabParamList>();
-const More  = createNativeStackNavigator<MoreStackParamList>();
-const Rooms = createNativeStackNavigator<RoomsStackParamList>();
-const Chat  = createNativeStackNavigator<ChatStackParamList>();
+const Tab    = createBottomTabNavigator<MainTabParamList>();
+const More   = createNativeStackNavigator<MoreStackParamList>();
+const Browse = createNativeStackNavigator<BrowseStackParamList>();
+const Rooms  = createNativeStackNavigator<RoomsStackParamList>();
+const Chat   = createNativeStackNavigator<ChatStackParamList>();
 
 function MoreStack() {
   const { colors } = useTheme();
@@ -111,8 +116,6 @@ function MoreStack() {
       <More.Screen name="More"             component={MoreScreen}             options={{ title: 'More' }} />
       <More.Screen name="Overview"         component={OverviewScreen}         options={{ title: 'Overview' }} />
       <More.Screen name="Connection"       component={ConnectionScreen}       options={{ title: 'Connection' }} />
-      <More.Screen name="Browse"           component={BrowseScreen}           options={{ title: 'Browse' }} />
-      <More.Screen name="BrowseUser"       component={BrowseUserScreen}       options={{ title: '' }} />
       <More.Screen name="Tags"             component={TagsScreen}             options={{ title: 'Tags' }} />
       <More.Screen name="Analysis"         component={AnalysisScreen}         options={{ title: 'Analysis' }} />
       <More.Screen name="Logs"             component={LogsScreen}             options={{ title: 'Server Logs' }} />
@@ -121,6 +124,16 @@ function MoreStack() {
       <More.Screen name="Settings"         component={SettingsScreen}         options={{ title: 'Settings' }} />
       <More.Screen name="NetworkLog"       component={NetworkLogScreen}       options={{ title: 'Network Log' }} />
     </More.Navigator>
+  );
+}
+
+function BrowseStack() {
+  const { colors } = useTheme();
+  return (
+    <Browse.Navigator screenOptions={makeScreenOptions(colors)}>
+      <Browse.Screen name="Browse"     component={BrowseScreen}     options={{ title: 'Browse' }} />
+      <Browse.Screen name="BrowseUser" component={BrowseUserScreen} options={{ title: '' }} />
+    </Browse.Navigator>
   );
 }
 
@@ -212,6 +225,11 @@ export default function MainTabs() {
         component={TransfersScreen}
         name="TransfersTab"
         options={{ title: 'Transfers' }}
+      />
+      <Tab.Screen
+        component={BrowseStack}
+        name="BrowseTab"
+        options={{ title: 'Browse', headerShown: false }}
       />
       <Tab.Screen
         component={RoomsStack}

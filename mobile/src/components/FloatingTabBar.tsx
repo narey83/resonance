@@ -44,6 +44,7 @@ const TAB_ICONS: Record<string, { active: IoniconName; inactive: IoniconName }> 
   LibraryTab:   { active: 'musical-notes', inactive: 'musical-notes-outline' },
   SearchTab:    { active: 'search',        inactive: 'search-outline' },
   TransfersTab: { active: 'arrow-down',    inactive: 'arrow-down-outline' },
+  BrowseTab:    { active: 'folder',        inactive: 'folder-outline' },
   RoomsTab:     { active: 'chatbubbles',   inactive: 'chatbubbles-outline' },
   ChatTab:      { active: 'chatbubble',    inactive: 'chatbubble-outline' },
   MoreTab:      { active: 'grid',          inactive: 'grid-outline' },
@@ -84,7 +85,9 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
                   </View>
                 )}
               </View>
-              <Text style={[s.label, { color: focused ? colors.accent : colors.textMuted }]}>{label}</Text>
+              {/* 7 tabs leaves ~45dp each — clip rather than wrap, which would
+                  make one tab taller than the rest and jog the whole bar. */}
+              <Text numberOfLines={1} style={[s.label, { color: focused ? colors.accent : colors.textMuted }]}>{label}</Text>
             </Pressable>
           );
         })}

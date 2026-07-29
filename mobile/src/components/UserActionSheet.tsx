@@ -120,7 +120,7 @@ export default function UserActionSheet({
   const openBrowse = () => {
     if (!username) return;
     onClose();
-    navigation.navigate('MoreTab', {
+    navigation.navigate('BrowseTab', {
       screen: 'BrowseUser',
       params: { username },
       initial: false,

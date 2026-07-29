@@ -46,11 +46,11 @@ import { BROWSE_HISTORY, createBrowseHubConnection } from '../../api/browseHub';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, Typography } from '../../theme';
 import type { ThemeColors } from '../../theme';
-import type { MoreStackParamList } from '../../navigation/MainTabs';
+import type { BrowseStackParamList } from '../../navigation/MainTabs';
 import UserActionSheet from '../../components/UserActionSheet';
 import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
-type Props = NativeStackScreenProps<MoreStackParamList, 'Browse'>;
+type Props = NativeStackScreenProps<BrowseStackParamList, 'Browse'>;
 
 export default function BrowseScreen({ navigation }: Props) {
   const { colors } = useTheme();

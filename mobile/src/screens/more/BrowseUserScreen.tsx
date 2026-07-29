@@ -49,9 +49,9 @@ import { Radius, Spacing, Typography } from '../../theme';
 import type { ThemeColors } from '../../theme';
 import DownloadModal, { DownloadTarget } from '../../components/DownloadModal';
 import UserActionSheet from '../../components/UserActionSheet';
-import type { MoreStackParamList } from '../../navigation/MainTabs';
+import type { BrowseStackParamList } from '../../navigation/MainTabs';
 
-type Props = NativeStackScreenProps<MoreStackParamList, 'BrowseUser'>;
+type Props = NativeStackScreenProps<BrowseStackParamList, 'BrowseUser'>;
 
 const FOLDER_ROW_HEIGHT = 48;
 const FILE_ROW_HEIGHT = 52;

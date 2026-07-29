@@ -64,12 +64,6 @@ interface MenuSection {
 
 const MENU_SECTIONS: MenuSection[] = [
   {
-    title: 'Soulseek',
-    items: [
-      { label: 'Browse', icon: 'folder-outline',      screen: 'Browse', subtitle: 'Browse user shares' },
-    ],
-  },
-  {
     title: 'Library',
     items: [
       { label: 'Tags',     icon: 'pricetag-outline', screen: 'Tags',     subtitle: 'Edit ID3 tags' },
