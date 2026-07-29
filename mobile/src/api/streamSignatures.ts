@@ -58,6 +58,9 @@ const needsSigning = (path: string, nowSec: number): boolean => {
   return !existing || existing.exp - nowSec < REFRESH_SKEW_SEC;
 };
 
+/** True when this path already has a usable signature — nothing to fetch or re-bake for it. */
+export const isSigned = (path: string): boolean => !needsSigning(path, Math.floor(Date.now() / 1000));
+
 /**
  * Ensure every given server library path has a fresh signature cached. Fetches only the paths
  * that are missing or near expiry. Never throws — on failure the URLs simply stay unsigned and

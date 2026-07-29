@@ -89,6 +89,9 @@ export function useFloatingOverlay(): { overlayActive: boolean } {
   const playingRef = useRef(isPlaying);
   playingRef.current = isPlaying;
 
+  // Last cover we resolved, so it can be re-applied to a recreated native view.
+  const artRef = useRef<{ path: string; art: string } | null>(null);
+
   // Re-check the overlay permission on mount and whenever we return to foreground
   // (the user may have just granted it in system settings).
   useEffect(() => {
@@ -123,7 +126,15 @@ export function useFloatingOverlay(): { overlayActive: boolean } {
   // here (the native side preserves the existing bitmap); it's loaded separately.
   useEffect(() => {
     if (!overlayActive || !track) { floatingOverlay.hide(); return; }
-    floatingOverlay.show({ title: getTrackTitle(track), artist: track.artist ?? '', isPlaying });
+    const base = { title: getTrackTitle(track), artist: track.artist ?? '', isPlaying };
+    floatingOverlay.show(base);
+    // hide() destroys the native view, so a recreated overlay comes back with a blank disc.
+    // The fetch below only runs on a track change, so without re-applying the cached cover
+    // here the bubble stays artless until the next track.
+    const cached = artRef.current;
+    if (cached && cached.path === track.path) {
+      floatingOverlay.update({ ...base, artBase64: cached.art });
+    }
   }, [overlayActive, track, isPlaying]);
 
   // Load artwork only when the track changes (base64 is comparatively expensive).
@@ -132,6 +143,7 @@ export function useFloatingOverlay(): { overlayActive: boolean } {
     let cancelled = false;
     artToBase64(track).then((artBase64) => {
       if (cancelled) return;
+      if (artBase64) artRef.current = { path: track.path, art: artBase64 };
       const state: OverlayState = {
         title: getTrackTitle(track),
         artist: track.artist ?? '',

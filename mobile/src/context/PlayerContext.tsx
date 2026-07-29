@@ -54,7 +54,7 @@ import { useLibraryActivityStore } from '../store/libraryActivityStore';
 import { usePlayerUI } from '../store/playerUIStore';
 import { useConnectionStore } from '../services/connectionMonitor';
 import { useAuthStore } from '../store/auth';
-import { ensureSigned, getSignature, invalidateSignatures } from '../api/streamSignatures';
+import { ensureSigned, getSignature, invalidateSignatures, isSigned } from '../api/streamSignatures';
 import { remoteLog } from '../api/remoteLogger';
 import { recordMediaLoad } from '../store/networkLogStore';
 import {
@@ -517,8 +517,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     // Background: sign the remaining tracks, then re-bake the not-yet-played tail in place — the
     // currently playing track is left untouched, so there's no re-buffer, and auto-advance lands
     // on signed URLs instead of 401-ing into the stale-URL recovery path.
-    const tailNeedsSigning =
-      tracks.length > idx + HEAD_SIGN_COUNT && tracks.slice(idx + 1).some((t) => !isLocalPath(t.path));
+    // Only re-bake the tail if something in it is actually unsigned. Library rows now arrive with
+    // their signatures embedded (seedSignatures), so this is usually false — and skipping it
+    // avoids removing and re-adding hundreds of native queue items while the first track is still
+    // being prepared, which is what made a shuffle of a big folder slow to start.
+    const tailNeedsSigning = tracks
+      .slice(idx + 1)
+      .some((t) => !isLocalPath(t.path) && !isSigned(t.path));
     if (tailNeedsSigning) {
       void (async () => {
         await ensureSigned(tracks.map((t) => t.path));
