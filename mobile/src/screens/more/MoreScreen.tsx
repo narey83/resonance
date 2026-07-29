@@ -67,8 +67,6 @@ const MENU_SECTIONS: MenuSection[] = [
     title: 'Soulseek',
     items: [
       { label: 'Browse', icon: 'folder-outline',      screen: 'Browse', subtitle: 'Browse user shares' },
-      { label: 'Rooms',  icon: 'chatbubbles-outline', screen: 'Rooms',  subtitle: 'Soulseek chat rooms' },
-      { label: 'Chat',   icon: 'chatbubble-outline',  screen: 'Chat',   subtitle: 'Private messages' },
     ],
   },
   {

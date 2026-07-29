@@ -44,10 +44,10 @@ import { useRoomStore } from '../../store/roomStore';
 import type { Room, RoomInfo } from '../../api/rooms';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
-import type { MoreStackParamList } from '../../navigation/MainTabs';
+import type { RoomsStackParamList } from '../../navigation/MainTabs';
 import BottomSheet from '../../components/BottomSheet';
 
-type Props = NativeStackScreenProps<MoreStackParamList, 'Rooms'>;
+type Props = NativeStackScreenProps<RoomsStackParamList, 'Rooms'>;
 
 type JoinedItem   = { _type: 'joined';   room: Room }
 type EmptyItem    = { _type: 'empty' }

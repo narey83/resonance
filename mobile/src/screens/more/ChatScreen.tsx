@@ -43,12 +43,12 @@ import { useConversationStore } from '../../store/conversationStore';
 import type { Conversation } from '../../api/chat';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
-import type { MoreStackParamList } from '../../navigation/MainTabs';
+import type { ChatStackParamList } from '../../navigation/MainTabs';
 import BottomSheet from '../../components/BottomSheet';
 import UserActionSheet from '../../components/UserActionSheet';
 import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
-type Props = NativeStackScreenProps<MoreStackParamList, 'Chat'>;
+type Props = NativeStackScreenProps<ChatStackParamList, 'Chat'>;
 
 export default function ChatScreen({ navigation }: Props) {
   const { colors } = useTheme();

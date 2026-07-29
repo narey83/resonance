@@ -44,6 +44,8 @@ const TAB_ICONS: Record<string, { active: IoniconName; inactive: IoniconName }> 
   LibraryTab:   { active: 'musical-notes', inactive: 'musical-notes-outline' },
   SearchTab:    { active: 'search',        inactive: 'search-outline' },
   TransfersTab: { active: 'arrow-down',    inactive: 'arrow-down-outline' },
+  RoomsTab:     { active: 'chatbubbles',   inactive: 'chatbubbles-outline' },
+  ChatTab:      { active: 'chatbubble',    inactive: 'chatbubble-outline' },
   MoreTab:      { active: 'grid',          inactive: 'grid-outline' },
 };
 

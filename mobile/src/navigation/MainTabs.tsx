@@ -67,6 +67,8 @@ export type MainTabParamList = {
   LibraryTab:   undefined;
   SearchTab:    undefined;
   TransfersTab: undefined;
+  RoomsTab:     NavigatorScreenParams<RoomsStackParamList> | undefined;
+  ChatTab:      NavigatorScreenParams<ChatStackParamList> | undefined;
   MoreTab:      NavigatorScreenParams<MoreStackParamList> | undefined;
 };
 
@@ -76,10 +78,6 @@ export type MoreStackParamList = {
   Connection:       undefined;
   Browse:           undefined;
   BrowseUser:       { username: string };
-  Rooms:            undefined;
-  RoomDetail:       { roomName: string };
-  Chat:             undefined;
-  ChatConversation: { username: string };
   Tags:             undefined;
   Analysis:         undefined;
   Logs:             undefined;
@@ -89,8 +87,20 @@ export type MoreStackParamList = {
   NetworkLog:       undefined;
 };
 
-const Tab  = createBottomTabNavigator<MainTabParamList>();
-const More = createNativeStackNavigator<MoreStackParamList>();
+export type RoomsStackParamList = {
+  Rooms:      undefined;
+  RoomDetail: { roomName: string };
+};
+
+export type ChatStackParamList = {
+  Chat:             undefined;
+  ChatConversation: { username: string };
+};
+
+const Tab   = createBottomTabNavigator<MainTabParamList>();
+const More  = createNativeStackNavigator<MoreStackParamList>();
+const Rooms = createNativeStackNavigator<RoomsStackParamList>();
+const Chat  = createNativeStackNavigator<ChatStackParamList>();
 
 function MoreStack() {
   const { colors } = useTheme();
@@ -102,10 +112,6 @@ function MoreStack() {
       <More.Screen name="Connection"       component={ConnectionScreen}       options={{ title: 'Connection' }} />
       <More.Screen name="Browse"           component={BrowseScreen}           options={{ title: 'Browse' }} />
       <More.Screen name="BrowseUser"       component={BrowseUserScreen}       options={{ title: '' }} />
-      <More.Screen name="Rooms"            component={RoomsScreen}            options={{ title: 'Rooms' }} />
-      <More.Screen name="RoomDetail"       component={RoomDetailScreen}       options={{ title: '' }} />
-      <More.Screen name="Chat"             component={ChatScreen}             options={{ title: 'Chat' }} />
-      <More.Screen name="ChatConversation" component={ChatConversationScreen} options={{ title: '' }} />
       <More.Screen name="Tags"             component={TagsScreen}             options={{ title: 'Tags' }} />
       <More.Screen name="Analysis"         component={AnalysisScreen}         options={{ title: 'Analysis' }} />
       <More.Screen name="Logs"             component={LogsScreen}             options={{ title: 'Server Logs' }} />
@@ -114,6 +120,26 @@ function MoreStack() {
       <More.Screen name="Settings"         component={SettingsScreen}         options={{ title: 'Settings' }} />
       <More.Screen name="NetworkLog"       component={NetworkLogScreen}       options={{ title: 'Network Log' }} />
     </More.Navigator>
+  );
+}
+
+function RoomsStack() {
+  const { colors } = useTheme();
+  return (
+    <Rooms.Navigator screenOptions={makeScreenOptions(colors)}>
+      <Rooms.Screen name="Rooms"      component={RoomsScreen}      options={{ title: 'Rooms' }} />
+      <Rooms.Screen name="RoomDetail" component={RoomDetailScreen} options={{ title: '' }} />
+    </Rooms.Navigator>
+  );
+}
+
+function ChatStack() {
+  const { colors } = useTheme();
+  return (
+    <Chat.Navigator screenOptions={makeScreenOptions(colors)}>
+      <Chat.Screen name="Chat"             component={ChatScreen}             options={{ title: 'Chat' }} />
+      <Chat.Screen name="ChatConversation" component={ChatConversationScreen} options={{ title: '' }} />
+    </Chat.Navigator>
   );
 }
 
@@ -186,13 +212,23 @@ export default function MainTabs() {
         options={{ title: 'Transfers' }}
       />
       <Tab.Screen
-        component={MoreStack}
-        name="MoreTab"
+        component={RoomsStack}
+        name="RoomsTab"
+        options={{ title: 'Rooms', headerShown: false }}
+      />
+      <Tab.Screen
+        component={ChatStack}
+        name="ChatTab"
         options={{
-          title: 'More',
+          title: 'Chat',
           headerShown: false,
           tabBarBadge: totalUnread > 0 ? (totalUnread > 99 ? '99+' : totalUnread) : undefined,
         }}
+      />
+      <Tab.Screen
+        component={MoreStack}
+        name="MoreTab"
+        options={{ title: 'More', headerShown: false }}
       />
     </Tab.Navigator>
   );

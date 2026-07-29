@@ -46,7 +46,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { MoreStackParamList } from '../../navigation/MainTabs';
+import type { NavigationProp } from '@react-navigation/native';
+import type { MainTabParamList, MoreStackParamList } from '../../navigation/MainTabs';
 import { useAfterInteractions } from '../../hooks/useDeferredEffect';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
@@ -492,7 +493,11 @@ export default function OverviewScreen({ navigation }: Props) {
         onClose={() => setSelectedUser(null)}
         onOpenChat={(username) => {
           setSelectedUser(null);
-          navigation.navigate('ChatConversation', { username });
+          navigation.getParent<NavigationProp<MainTabParamList>>()?.navigate('ChatTab', {
+            screen: 'ChatConversation',
+            params: { username },
+            initial: false,
+          });
         }}
       />
     </>

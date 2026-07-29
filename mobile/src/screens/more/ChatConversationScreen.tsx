@@ -48,10 +48,10 @@ import { languageName } from '../../api/translation';
 import type { PrivateMessage } from '../../api/chat';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
-import type { MoreStackParamList } from '../../navigation/MainTabs';
+import type { ChatStackParamList } from '../../navigation/MainTabs';
 import UserActionSheet from '../../components/UserActionSheet';
 
-type Props = NativeStackScreenProps<MoreStackParamList, 'ChatConversation'>;
+type Props = NativeStackScreenProps<ChatStackParamList, 'ChatConversation'>;
 
 const dayKey = (iso: string) => iso.slice(0, 10);
 

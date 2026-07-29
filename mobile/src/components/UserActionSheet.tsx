@@ -110,7 +110,7 @@ export default function UserActionSheet({
   const openChat = () => {
     if (!username) return;
     onClose();
-    navigation.navigate('MoreTab', {
+    navigation.navigate('ChatTab', {
       screen: 'ChatConversation',
       params: { username },
       initial: false,
