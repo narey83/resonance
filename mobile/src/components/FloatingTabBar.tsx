@@ -85,8 +85,8 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
                   </View>
                 )}
               </View>
-              {/* 7 tabs leaves ~45dp each — clip rather than wrap, which would
-                  make one tab taller than the rest and jog the whole bar. */}
+              {/* Backstop for a long label at a large font scale: clip rather
+                  than wrap, which would make one tab taller and jog the bar. */}
               <Text numberOfLines={1} style={[s.label, { color: focused ? colors.accent : colors.textMuted }]}>{label}</Text>
             </Pressable>
           );
@@ -99,7 +99,9 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
 function makeStyles(c: ThemeColors) {
   return StyleSheet.create({
     wrapper: {
-      paddingHorizontal: Spacing.md,
+      // Seven tabs: every dp of width is a dp the longest label ("Transfers")
+      // needs. sm over md keeps it un-clipped down to a 320dp screen.
+      paddingHorizontal: Spacing.sm,
       paddingTop: Spacing.xs,
       backgroundColor: c.bgPrimary,
     },
@@ -146,7 +148,7 @@ function makeStyles(c: ThemeColors) {
       fontWeight: '700',
     },
     label: {
-      fontSize: 10,
+      fontSize: 9,
     },
   });
 }
