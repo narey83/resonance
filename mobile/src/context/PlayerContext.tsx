@@ -502,14 +502,17 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const playQueue = useCallback(async (allTracks: MusicTrack[], startIndex = 0) => {
     const [tracks, idx] = windowQueue(allTracks, startIndex);
+
+    // Sign the tapped track (plus a small look-ahead) BEFORE publishing it to the UI. The player
+    // builds its artwork URL the instant the track appears, so signing afterwards raced it: the
+    // cover went out unsigned, 401'd, and the panel stayed black for the whole song. Only the head
+    // is signed here — the rest of the queue is handled below so a long queue can't delay playback.
+    // Usually a no-op: list rows arrive with their signatures already seeded.
+    await ensureSigned(tracks.slice(idx, idx + HEAD_SIGN_COUNT).map((t) => t.path));
+
     setQueue(tracks);
     setQueueIndex(idx);
     if (shuffleRef.current) setShuffleOrder(buildShuffleOrder(tracks.length, idx));
-
-    // Sign only the tapped track (plus a small look-ahead) so playback starts without waiting on
-    // signing the entire queue. The native queue is still built from all tracks; the unsigned tail
-    // is signed + re-baked in the background below.
-    await ensureSigned(tracks.slice(idx, idx + HEAD_SIGN_COUNT).map((t) => t.path));
     await TrackPlayer.setQueue(tracks.map(toRntpTrack));
     if (idx > 0) await TrackPlayer.skip(idx);
     if (!suppressLocalPlayRef.current) await TrackPlayer.play();

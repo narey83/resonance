@@ -54,6 +54,7 @@ import { usePlaybackPosition, usePlaybackStatus, usePlayer } from '../context/Pl
 import { useCast } from '../context/CastContext';
 import { useTheme } from '../context/ThemeContext';
 import { MusicTrack, getArtworkUrl, getTrackTitle } from '../api/musicLibrary';
+import { isSigned } from '../api/streamSignatures';
 import { getArtworkCacheKey, PLAYER_ART_SIZE } from '../services/artworkCache';
 import { useMixtapeStore } from '../store/mixtapeStore';
 import { useLibraryActivityStore } from '../store/libraryActivityStore';
@@ -686,7 +687,12 @@ export default function PlayerOverlay() {
   // regardless of the app's light/dark theme.
 
   const isLocalTrack    = track?.path.startsWith('file://') || track?.path.startsWith('content://');
-  const artworkUrl      = track?.hasArtwork ? (isLocalTrack ? track.coverPath : getArtworkUrl(track.path, PLAYER_ART_SIZE)) : null;
+  // Wait for the signature before asking for the cover. Signatures live in a module-level cache
+  // that a JS reload wipes, and a rehydrated track never had one — building the URL then sends an
+  // unsigned request, which 401s and latches artworkError until the *next* track, leaving the
+  // panel black for the whole song. artSigned re-renders this once the signature lands.
+  const artIsSigned     = !track || isLocalTrack || isSigned(track.path);
+  const artworkUrl      = track?.hasArtwork && artIsSigned ? (isLocalTrack ? track.coverPath : getArtworkUrl(track.path, PLAYER_ART_SIZE)) : null;
   const artworkCacheKey = track?.hasArtwork && !isLocalTrack ? getArtworkCacheKey(track.path, PLAYER_ART_SIZE) : undefined;
   const hasArt          = !!(artworkUrl && !artworkError);
   const title      = track ? getTrackTitle(track) : '';
@@ -813,7 +819,10 @@ export default function PlayerOverlay() {
                       <Animated.View style={{ transform: [{ scale: artScale }] }}>
                         <FeatheredArt
                           cacheKey={artworkCacheKey}
-                          onError={() => setArtworkError(true)}
+                          onError={() => {
+                            console.warn(`[player-art] cover failed to load — signed=${artworkUrl?.includes('sig=')} ${track?.path}`);
+                            setArtworkError(true);
+                          }}
                           style={s.artwork}
                           uri={artworkUrl!}
                         />
