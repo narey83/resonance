@@ -80,7 +80,7 @@ public class BlockedUsersService
     private ConnectionStringDictionary ConnectionStrings { get; }
     private bool UsePostgres { get; }
     private resonance.Network.GeoService Geo { get; }
-    private ILogger Log { get; } = Serilog.Log.ForContext<BlockedUsersService>();
+    private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", resonance.Logs.Users);
     private object SyncRoot { get; } = new();
 
     private string UsersTable => UsePostgres ? "blocked.\"Users\"" : "BlockedUsers";

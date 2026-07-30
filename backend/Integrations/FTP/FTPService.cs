@@ -43,7 +43,6 @@ namespace resonance.Integrations.FTP
     using System.Threading.Tasks;
     using FluentFTP;
     using FluentFTP.Exceptions;
-    using Microsoft.Extensions.Logging;
     using static resonance.Options.IntegrationsOptions;
 
     /// <summary>
@@ -56,20 +55,17 @@ namespace resonance.Integrations.FTP
         /// </summary>
         /// <param name="ftpClientFactory">The FTP client factory to use.</param>
         /// <param name="optionsMonitor">The options monitor used to derive application options.</param>
-        /// <param name="log">The logger.</param>
         public FTPService(
             IFTPClientFactory ftpClientFactory,
-            IOptionsMonitor<Options> optionsMonitor,
-            ILogger<FTPService> log)
+            IOptionsMonitor<Options> optionsMonitor)
         {
             Factory = ftpClientFactory;
             OptionsMonitor = optionsMonitor;
-            Log = log;
         }
 
         private IFTPClientFactory Factory { get; set; }
         private FtpOptions FtpOptions => OptionsMonitor.CurrentValue.Integrations.Ftp;
-        private ILogger<FTPService> Log { get; set; }
+        private Serilog.ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", resonance.Logs.Integrations.FTP);
         private IOptionsMonitor<Options> OptionsMonitor { get; }
 
         /// <summary>
@@ -81,7 +77,7 @@ namespace resonance.Integrations.FTP
         {
             if (!FtpOptions.Enabled)
             {
-                Log.LogDebug("Skipping FTP upload of {filename}; FTP integration is disabled", filename);
+                Log.Debug("Skipping FTP upload of {filename}; FTP integration is disabled", filename);
                 return;
             }
 
@@ -92,19 +88,19 @@ namespace resonance.Integrations.FTP
                 await Retry.Do(
                     task: () => AttemptUploadAsync(filename),
                     isRetryable: (attempts, ex) => true,
-                    onFailure: (attempts, ex) => Log.LogInformation("Failed attempt #{Attempts} to upload {Filename} to FTP: {Message}", attempts, fileAndParentDirectory, ex.Message),
+                    onFailure: (attempts, ex) => Log.Information("Failed attempt #{Attempts} to upload {Filename} to FTP: {Message}", attempts, fileAndParentDirectory, ex.Message),
                     maxAttempts: FtpOptions.RetryAttempts,
                     baseDelayInMilliseconds: 1000,
                     maxDelayInMilliseconds: 30000);
             }
             catch (RetryException ex)
             {
-                Log.LogError(ex, "Fatal error retrying upload of {Filename} to FTP: {Message}", fileAndParentDirectory, ex.Message);
+                Log.Error(ex, "Fatal error retrying upload of {Filename} to FTP: {Message}", fileAndParentDirectory, ex.Message);
                 throw;
             }
             catch (Exception ex)
             {
-                Log.LogWarning("Failed to upload {Filename} to FTP after {Attempts} attempts: {Message}", fileAndParentDirectory, FtpOptions.RetryAttempts, ex.Message);
+                Log.Warning("Failed to upload {Filename} to FTP after {Attempts} attempts: {Message}", fileAndParentDirectory, FtpOptions.RetryAttempts, ex.Message);
                 throw;
             }
         }
@@ -124,7 +120,7 @@ namespace resonance.Integrations.FTP
             using var timeoutCancellationTokenRegistration =
                 timeoutCancellationTokenSource.Token.Register(() => timeoutTaskCompletionSource.TrySetResult(true));
 
-            Log.LogDebug("Connecting to FTP at {Address}:{Port} using encryption mode {EncryptionMode}", client.Host, client.Port, client.Config.EncryptionMode);
+            Log.Debug("Connecting to FTP at {Address}:{Port} using encryption mode {EncryptionMode}", client.Host, client.Port, client.Config.EncryptionMode);
 
             var connectTask = client.Connect();
             var completedTask = await Task.WhenAny(connectTask, timeoutTaskCompletionSource.Task);
@@ -139,7 +135,7 @@ namespace resonance.Integrations.FTP
                 throw connectTask.Exception;
             }
 
-            Log.LogInformation("Uploading {Filename} to FTP {Address}:{Port} as {RemoteFilename}", fileAndParentDirectory, FtpOptions.Address, FtpOptions.Port, remoteFilename);
+            Log.Information("Uploading {Filename} to FTP {Address}:{Port} as {RemoteFilename}", fileAndParentDirectory, FtpOptions.Address, FtpOptions.Port, remoteFilename);
             var status = await client.UploadFile(filename, remoteFilename, existsMode, createRemoteDir: true);
 
             if (status == FtpStatus.Failed)
@@ -147,7 +143,7 @@ namespace resonance.Integrations.FTP
                 throw new FtpException("FTP client reported a failed transfer");
             }
 
-            Log.LogInformation("FTP upload of {Filename} to {Address}:{Port} complete", fileAndParentDirectory, FtpOptions.Address, FtpOptions.Port);
+            Log.Information("FTP upload of {Filename} to {Address}:{Port} complete", fileAndParentDirectory, FtpOptions.Address, FtpOptions.Port);
         }
 
         private string GetFileAndParentDirectoryFromFilename(string filename)

@@ -63,7 +63,7 @@ public class TransferErrorNotificationService : ITransferErrorNotificationServic
 
     private IConversationService Conversations { get; }
     private IOptionsMonitor<resonance.Options> OptionsMonitor { get; }
-    private ILogger Log { get; } = Serilog.Log.ForContext<TransferErrorNotificationService>();
+    private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", resonance.Logs.Transfers.Notifications);
     private ConcurrentFixedSizeQueue<TransferErrorNotification> History { get; } = new(size: 50);
     private ConcurrentDictionary<string, DateTime> LastNotified { get; } = new(StringComparer.OrdinalIgnoreCase);
 

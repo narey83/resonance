@@ -165,6 +165,16 @@ namespace resonance
         public static event EventHandler<LogRecord> LogEmitted;
 
         /// <summary>
+        ///     Gets the switch controlling the global minimum log level.
+        /// </summary>
+        /// <remarks>
+        ///     Adjustable at runtime via the logs API, so Debug output can be turned on without a
+        ///     restart.  Without this, Debug-level events are compiled out of every sink in a normal
+        ///     (non-debugger) run and the UI's DBG filter has nothing to show.
+        /// </remarks>
+        public static Serilog.Core.LoggingLevelSwitch LevelSwitch { get; } = new(LogEventLevel.Information);
+
+        /// <summary>
         ///     Gets the semantic application version.
         /// </summary>
         public static string SemanticVersion { get; } = InformationalVersion.Split('+').First();
@@ -258,7 +268,7 @@ namespace resonance
         /// <summary>
         ///     Gets a buffer containing the last few log events.
         /// </summary>
-        public static ConcurrentFixedSizeQueue<LogRecord> LogBuffer { get; } = new ConcurrentFixedSizeQueue<LogRecord>(size: 100);
+        public static ConcurrentFixedSizeQueue<LogRecord> LogBuffer { get; } = new ConcurrentFixedSizeQueue<LogRecord>(size: 500);
 
         /// <summary>
         ///     Gets a buffer containing the last few HTTP requests, captured for HAR export.
@@ -1523,7 +1533,10 @@ namespace resonance
 
             const string outputTemplate = "{UtcTimestamp} {Level:u3} [{SourceContext}] {Message:lj}{NewLine}{Exception}";
 
-            Serilog.Log.Logger = (OptionsAtStartup.Debug ? new LoggerConfiguration().MinimumLevel.Debug() : new LoggerConfiguration().MinimumLevel.Information())
+            LevelSwitch.MinimumLevel = OptionsAtStartup.Debug ? LogEventLevel.Debug : LogEventLevel.Information;
+
+            Serilog.Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.ControlledBy(LevelSwitch)
                 .MinimumLevel.Override("Microsoft", LogEventLevel.Error)
                 .MinimumLevel.Override("System.Net.Http.HttpClient", OptionsAtStartup.Debug ? LogEventLevel.Warning : LogEventLevel.Fatal)
                 .MinimumLevel.Override("resonance.Authentication.PassthroughAuthenticationHandler", LogEventLevel.Warning)

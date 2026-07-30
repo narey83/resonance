@@ -43,7 +43,7 @@ namespace resonance
             Port = (ushort)options.Value.Web.Port;
         }
 
-        private ILogger Log { get; } = Serilog.Log.ForContext<DiscoveryService>();
+        private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", resonance.Logs.Network);
         private MulticastService Mdns { get; set; }
         private ServiceDiscovery ServiceDiscovery { get; set; }
         private ushort Port { get; }

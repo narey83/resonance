@@ -63,7 +63,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     // rather than all at job end, so staging doesn't accumulate a whole large job's files.
     private const int BatchMoveSize = 100;
 
-    private static readonly ILogger Log = Serilog.Log.ForContext<YtDlpService>();
+    private static readonly ILogger Log = Serilog.Log.ForContext("SourceContext", resonance.Logs.Integrations.YtDlp);
 
     // Coalesce post-publish library/share rescans: touched folders accumulate and are scanned at
     // most once per interval, so a steady stream of batch moves doesn't fire a scan every minute.

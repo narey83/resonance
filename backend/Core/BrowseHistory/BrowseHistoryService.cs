@@ -56,7 +56,7 @@ public class BrowseHistoryService
 
     private ConnectionStringDictionary ConnectionStrings { get; }
     private bool UsePostgres { get; }
-    private ILogger Log { get; } = Serilog.Log.ForContext<BrowseHistoryService>();
+    private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", resonance.Logs.Browse);
 
     private string T => UsePostgres ? "browse.\"History\"" : "BrowseHistory";
 

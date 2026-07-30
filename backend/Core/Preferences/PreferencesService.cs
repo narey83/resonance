@@ -48,7 +48,7 @@ public class PreferencesService
 
     private ConnectionStringDictionary ConnectionStrings { get; }
     private bool UsePostgres { get; }
-    private ILogger Log { get; } = Serilog.Log.ForContext<PreferencesService>();
+    private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", resonance.Logs.Settings);
 
     private string T => UsePostgres ? "preferences.\"Preferences\"" : "Preferences";
 

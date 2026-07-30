@@ -47,7 +47,7 @@ namespace resonance.Mixtapes
     {
         private const string MixtapesShareAlias = "Mixtapes";
 
-        private static readonly ILogger Log = Serilog.Log.ForContext<MixtapeService>();
+        private static readonly ILogger Log = Serilog.Log.ForContext("SourceContext", resonance.Logs.Music.Mixtapes);
 
         /// <summary>
         /// Initializes a new instance of the <see cref="MixtapeService"/> class.

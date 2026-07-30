@@ -44,7 +44,7 @@ using Serilog;
 
 public sealed class FfmpegService : IFfmpegService, IDisposable
 {
-    private static readonly ILogger Log = Serilog.Log.ForContext<FfmpegService>();
+    private static readonly ILogger Log = Serilog.Log.ForContext("SourceContext", resonance.Logs.Music.Ffmpeg);
     private static readonly bool IsWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
     private readonly IOptionsMonitor<resonance.Options> options;

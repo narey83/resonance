@@ -75,7 +75,7 @@ namespace resonance.Core.API
             [FromQuery] int offset = 0,
             [FromQuery] int limit = 100,
             [FromQuery] string[] level = null,
-            [FromQuery] string context = null,
+            [FromQuery] string[] context = null,
             [FromQuery] string search = null,
             [FromQuery] DateTime? from = null,
             [FromQuery] DateTime? to = null)
@@ -100,9 +100,9 @@ namespace resonance.Core.API
                     query = query.Where(e => level.Contains(e.Level));
                 }
 
-                if (!string.IsNullOrWhiteSpace(context))
+                if (context?.Length > 0)
                 {
-                    query = query.Where(e => e.Context.Contains(context));
+                    query = query.Where(e => context.Contains(e.Context));
                 }
 
                 if (!string.IsNullOrWhiteSpace(search))
@@ -149,6 +149,41 @@ namespace resonance.Core.API
         }
 
         /// <summary>
+        ///     Gets every log context the application can emit under.
+        /// </summary>
+        /// <returns></returns>
+        [HttpGet("contexts")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        public IActionResult GetContexts() => Ok(resonance.Logs.All);
+
+        /// <summary>
+        ///     Gets the global minimum log level.
+        /// </summary>
+        /// <returns></returns>
+        [HttpGet("level")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        public IActionResult GetLevel() => Ok(new { level = Program.LevelSwitch.MinimumLevel.ToString() });
+
+        /// <summary>
+        ///     Sets the global minimum log level, taking effect immediately and without a restart.
+        /// </summary>
+        /// <returns></returns>
+        [HttpPut("level")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        public IActionResult PutLevel([FromBody] LogLevelRequest request)
+        {
+            if (!Enum.TryParse<Serilog.Events.LogEventLevel>(request?.Level, ignoreCase: true, out var level))
+            {
+                return BadRequest("Level must be one of: Verbose, Debug, Information, Warning, Error, Fatal");
+            }
+
+            Program.LevelSwitch.MinimumLevel = level;
+            Log.Information("Minimum log level set to {Level}", level);
+
+            return Ok(new { level = level.ToString() });
+        }
+
+        /// <summary>
         ///     Accepts a browser console log entry and injects it into the application log stream.
         /// </summary>
         /// <returns></returns>
@@ -192,6 +227,11 @@ namespace resonance.Core.API
 
             return Ok();
         }
+    }
+
+    public record LogLevelRequest
+    {
+        public string Level { get; init; }
     }
 
     public record BrowserLogEntry

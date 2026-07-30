@@ -46,7 +46,7 @@ public class BrowseRateLimiter
 
     private IOptionsMonitor<resonance.Options> Options { get; }
     private ISoulseekClient Client { get; }
-    private ILogger Log { get; } = Serilog.Log.ForContext<BrowseRateLimiter>();
+    private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", resonance.Logs.Browse);
 
     // username → (request count, window start)
     private ConcurrentDictionary<string, (int Count, DateTime WindowStart)> Counters { get; } = new();

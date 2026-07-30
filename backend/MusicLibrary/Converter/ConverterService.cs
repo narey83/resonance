@@ -54,7 +54,7 @@ public sealed class ConverterService : IConverterService
         "mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "wma", "aiff", "aif", "alac", "ape", "wv", "mpc",
     };
 
-    private static readonly ILogger Log = Serilog.Log.ForContext<ConverterService>();
+    private static readonly ILogger Log = Serilog.Log.ForContext("SourceContext", resonance.Logs.Music.Converter);
 
     private readonly IOptionsMonitor<resonance.Options> options;
     private readonly IShareService shares;

@@ -93,101 +93,6 @@
     overflow: auto hidden;
 }
 
-.logs-table, .events-table {
-  font-size: smaller;
-}
-
-.logs-table-body, .events-table-body {
-  font-family: monospace;
-}
-
-.logs-table-timestamp {
-  white-space: nowrap;
-  width: 0px;
-}
-
-.logs-table-context {
-  white-space: nowrap;
-  width: 0px;
-  opacity: 0.6;
-}
-
-.logs-table-message {
-  word-break: break-all;
-}
-
-/* ─── Virtualized log rows ───────────────────────────────────────────────── */
-
-.logs-col-head {
-  background: var(--bg-elevated);
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 600;
-  gap: 8px;
-  padding: 3px 8px;
-}
-
-.logs-row {
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  font-family: monospace;
-  font-size: 11px;
-  gap: 8px;
-  padding: 2px 8px;
-}
-
-.logs-row--error   { background: rgba(219, 40, 40, 0.07); }
-.logs-row--warning { background: rgba(251, 189, 8, 0.07); }
-.logs-row--debug   { opacity: 0.55; }
-
-.logs-row-ts {
-  color: var(--text-muted);
-  flex-shrink: 0;
-  min-width: 162px;
-  white-space: nowrap;
-}
-
-.logs-row-lvl {
-  flex-shrink: 0;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  width: 28px;
-}
-
-.logs-row--error   .logs-row-lvl { color: #db2828; }
-.logs-row--warning .logs-row-lvl { color: #f0a500; }
-
-.logs-row-ctx {
-  color: var(--text-muted);
-  flex-shrink: 0;
-  max-width: 140px;
-  min-width: 60px;
-  opacity: 0.7;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.logs-row-msg {
-  flex: 1;
-  min-width: 0;
-  word-break: break-all;
-}
-
-.events-list-id {
-  width: 0px; /* shrink to fit */
-}
-
-.events-list-timestamp {
-  width: 0px; /* shrink to fit */
-}
-
-.events-list-type {
-  width: 0px; /* shrink to fit */
-}
-
 /* ─── Log viewer ─────────────────────────────────────────────────────────── */
 
 .logs {
@@ -195,7 +100,20 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+
+  /* Severity ramp. INF is the overwhelming majority, so it stays calm and only
+     WRN/ERR are allowed to pull the eye. */
+  --log-debug: var(--text-muted);
+  --log-information: color-mix(in srgb, var(--accent) 70%, var(--text-muted));
+  --log-warning: var(--warning);
+  --log-error: var(--danger);
+
+  --log-ts-width: 74px;
+  --log-lvl-width: 34px;
+  --log-ctx-width: 178px;
 }
+
+/* ─── Toolbar ────────────────────────────────────────────────────────────── */
 
 .logs-toolbar {
   background: var(--bg-elevated);
@@ -204,79 +122,319 @@
   flex-direction: column;
   flex-shrink: 0;
   gap: 6px;
-  padding: 8px 10px;
+  padding: 7px 10px;
 }
 
 .logs-toolbar-row {
   align-items: center;
   display: flex;
-  gap: 4px;
   flex-wrap: wrap;
+  gap: 6px;
 }
 
-.logs-context-row {
-  flex-wrap: nowrap;
-  overflow-x: auto;
+.logs-toolbar-divider {
+  background: var(--border);
+  height: 18px;
+  margin: 0 2px;
+  width: 1px;
 }
 
-.logs-chip-group {
-  display: flex;
-  gap: 2px;
-}
-
-.logs-chip {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-primary);
-  cursor: pointer;
+.logs-count {
+  color: var(--text-muted);
   font-size: 11px;
-  padding: 2px 7px;
-  transition: border-color 0.12s, color 0.12s, opacity 0.12s;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.logs-chip:hover {
+.logs-count strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.logs-count-sep {
+  margin: 0 3px;
+  opacity: 0.5;
+}
+
+/* ─── Level filter pills ─────────────────────────────────────────────────── */
+
+.logs-level-group {
+  display: flex;
+  gap: 3px;
+}
+
+.logs-level-pill {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: 700;
+  gap: 5px;
+  letter-spacing: 0.04em;
+  padding: 3px 7px;
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    opacity var(--dur-fast) var(--ease-standard);
+}
+
+.logs-level-pill:hover {
+  border-color: currentcolor;
+}
+
+/* Off state reads as "switched off", not "greyed out and broken". */
+.logs-level-pill:not(.logs-level-pill--on) {
+  opacity: 0.45;
+}
+
+.logs-level-pill:not(.logs-level-pill--on) .logs-level-pill-label {
+  text-decoration: line-through;
+}
+
+.logs-level-pill--on.logs-level-pill--debug {
+  border-color: color-mix(in srgb, var(--log-debug) 45%, transparent);
+  color: var(--log-debug);
+}
+
+.logs-level-pill--on.logs-level-pill--information {
+  background: color-mix(in srgb, var(--log-information) 10%, transparent);
+  border-color: color-mix(in srgb, var(--log-information) 45%, transparent);
+  color: var(--log-information);
+}
+
+.logs-level-pill--on.logs-level-pill--warning {
+  background: color-mix(in srgb, var(--log-warning) 12%, transparent);
+  border-color: color-mix(in srgb, var(--log-warning) 50%, transparent);
+  color: var(--log-warning);
+}
+
+.logs-level-pill--on.logs-level-pill--error {
+  background: color-mix(in srgb, var(--log-error) 12%, transparent);
+  border-color: color-mix(in srgb, var(--log-error) 50%, transparent);
+  color: var(--log-error);
+}
+
+.logs-level-pill-count {
+  background: color-mix(in srgb, currentcolor 16%, transparent);
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 600;
+  min-width: 15px;
+  padding: 0 4px;
+  text-align: center;
+}
+
+/* A level the server is not emitting at all — filtering it does nothing. */
+.logs-level-pill--suppressed {
+  border-style: dashed;
+  cursor: help;
+  opacity: 0.35;
+}
+
+/* ─── Context picker ─────────────────────────────────────────────────────── */
+
+.logs-ctx-picker {
+  position: relative;
+}
+
+.logs-ctx-trigger {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  font-size: 11px;
+  font-weight: 600;
+  gap: 5px;
+  padding: 4px 8px;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+  white-space: nowrap;
+}
+
+.logs-ctx-trigger:hover,
+.logs-ctx-trigger--active {
   border-color: var(--accent);
   color: var(--accent);
 }
 
-.logs-chip--mono {
-  font-family: monospace;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-}
-
-.logs-chip--off {
-  opacity: 0.3;
-}
-
-.logs-chip--active {
+.logs-ctx-trigger-badge {
   background: var(--accent);
-  border-color: var(--accent);
+  border-radius: 8px;
   color: #fff;
+  font-size: 9px;
+  min-width: 15px;
+  padding: 0 4px;
+  text-align: center;
 }
 
-.logs-scroll {
-  flex: 1;
-  overflow-y: auto;
+.logs-ctx-trigger-caret {
+  font-size: 9px;
+  opacity: 0.7;
 }
+
+.logs-ctx-menu {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 28%);
+  display: flex;
+  flex-direction: column;
+  left: 0;
+  max-height: 380px;
+  min-width: 262px;
+  position: absolute;
+  top: calc(100% + 5px);
+  z-index: 30;
+}
+
+.logs-ctx-menu-head {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 6px;
+  padding: 7px 8px;
+}
+
+.logs-ctx-search {
+  flex: 1;
+  font-size: 11px !important;
+  max-width: none !important;
+  padding: 3px 7px !important;
+  width: auto !important;
+}
+
+.logs-ctx-clear {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+}
+
+.logs-ctx-clear:hover {
+  color: var(--accent);
+}
+
+.logs-ctx-menu-body {
+  overflow-y: auto;
+  padding: 4px 0 6px;
+}
+
+.logs-ctx-group-head {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  padding: 7px 10px 3px;
+  text-transform: uppercase;
+}
+
+.logs-ctx-item {
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  font-size: 12px;
+  gap: 7px;
+  padding: 3px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.logs-ctx-item:hover {
+  background: var(--surface-hover);
+}
+
+.logs-ctx-item--on {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.logs-ctx-item-check {
+  color: var(--accent);
+  flex-shrink: 0;
+  font-size: 10px;
+  width: 10px;
+}
+
+.logs-ctx-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logs-ctx-item-count {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.logs-ctx-empty {
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 12px 10px;
+  text-align: center;
+}
+
+/* ─── Search ─────────────────────────────────────────────────────────────── */
 
 .logs-search-wrap {
+  align-items: center;
   display: flex;
   flex: 1;
   gap: 4px;
+  min-width: 180px;
+  position: relative;
+}
+
+.logs-search-icon {
+  color: var(--text-muted);
+  font-size: 13px;
+  left: 8px;
+  pointer-events: none;
+  position: absolute;
 }
 
 .logs-search-input {
   flex: 1;
   font-family: monospace;
+  font-size: 11px !important;
   max-width: none !important;
+  padding-left: 22px !important;
   width: auto !important;
 }
 
+.logs-search-clear {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px;
+  position: absolute;
+  right: 40px;
+}
+
+.logs-search-clear:hover {
+  color: var(--text-primary);
+}
+
 .logs-regex-btn {
-  background: var(--bg-elevated);
+  background: transparent;
   border: 1px solid var(--border);
   border-radius: 5px;
   color: var(--text-muted);
@@ -284,8 +442,10 @@
   font-family: monospace;
   font-size: 12px;
   font-weight: 600;
-  padding: 3px 9px;
-  transition: border-color 0.12s, color 0.12s;
+  padding: 3px 8px;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
   white-space: nowrap;
 }
 
@@ -295,45 +455,300 @@
   color: var(--accent);
 }
 
-.logs-jump-btn {
-  animation: logs-pulse 1.8s ease-in-out infinite;
-  background: var(--accent);
-  border: none;
-  border-radius: 5px;
-  color: #fff;
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 3px 10px;
-  white-space: nowrap;
-}
+/* ─── Toolbar buttons ────────────────────────────────────────────────────── */
 
-@keyframes logs-pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.65; }
-}
-
+.logs-ghost-btn,
+.logs-primary-btn,
 .logs-pause-btn {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
   border-radius: 5px;
-  color: var(--text-muted);
   cursor: pointer;
   font-size: 11px;
   font-weight: 600;
-  padding: 3px 10px;
-  transition: border-color 0.12s, color 0.12s;
+  padding: 4px 10px;
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
   white-space: nowrap;
 }
 
+.logs-ghost-btn,
+.logs-pause-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.logs-ghost-btn:hover,
 .logs-pause-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
 
 .logs-pause-btn--paused {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.logs-primary-btn {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #fff;
+}
+
+.logs-primary-btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.logs-live-dot {
+  background: var(--success);
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 60%, transparent);
+  flex-shrink: 0;
+  height: 7px;
+  width: 7px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .logs-live-dot {
+    animation: logs-live-pulse 2s var(--ease-standard) infinite;
+  }
+}
+
+.logs-live-dot--paused {
+  animation: none;
+  background: var(--text-muted);
+  box-shadow: none;
+}
+
+@keyframes logs-live-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 55%, transparent);
+  }
+
+  70% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+/* ─── Server minimum-level notice ────────────────────────────────────────── */
+
+.logs-server-level {
+  align-items: center;
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 32%, transparent);
+  border-radius: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 5px 9px;
+}
+
+.logs-server-level-text {
+  color: var(--text-muted);
+  flex: 1;
+  font-size: 11px;
+  min-width: 200px;
+}
+
+.logs-server-level-text b {
+  color: var(--text-primary);
+}
+
+.logs-server-level-picker {
+  display: flex;
+  gap: 3px;
+}
+
+.logs-server-level-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+}
+
+.logs-server-level-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.logs-server-level-btn--on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* ─── Rows ───────────────────────────────────────────────────────────────── */
+
+.logs-col-head {
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  display: flex;
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  gap: 10px;
+  letter-spacing: 0.09em;
+  padding: 5px 10px 5px 13px;
+  text-transform: uppercase;
+}
+
+.logs-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.logs-row {
+  align-items: baseline;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  border-left: 3px solid transparent;
+  display: flex;
+  font-family: monospace;
+  font-size: 11px;
+  gap: 10px;
+  line-height: 1.5;
+  padding: 2px 10px;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+
+.logs-row:hover {
+  background: var(--surface-hover);
+}
+
+.logs-row--debug {
+  border-left-color: color-mix(in srgb, var(--log-debug) 40%, transparent);
+  color: var(--text-muted);
+}
+
+.logs-row--information {
+  border-left-color: color-mix(in srgb, var(--log-information) 32%, transparent);
+}
+
+.logs-row--warning {
+  background: color-mix(in srgb, var(--log-warning) 9%, transparent);
+  border-left-color: var(--log-warning);
+}
+
+.logs-row--error {
+  background: color-mix(in srgb, var(--log-error) 11%, transparent);
+  border-left-color: var(--log-error);
+}
+
+.logs-row--warning:hover {
+  background: color-mix(in srgb, var(--log-warning) 15%, transparent);
+}
+
+.logs-row--error:hover {
+  background: color-mix(in srgb, var(--log-error) 17%, transparent);
+}
+
+.logs-row-ts {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  width: var(--log-ts-width);
+}
+
+.logs-row-lvl {
+  flex-shrink: 0;
+  width: var(--log-lvl-width);
+}
+
+.logs-row-ctx {
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: var(--log-ctx-width);
+}
+
+.logs-row-msg {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ─── Level tag ──────────────────────────────────────────────────────────── */
+
+.logs-level-tag {
+  border-radius: 3px;
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  padding: 0 3px;
+  text-align: center;
+  width: 100%;
+}
+
+.logs-level-tag--debug {
+  color: var(--log-debug);
+  opacity: 0.75;
+}
+
+.logs-level-tag--information {
+  color: var(--log-information);
+}
+
+.logs-level-tag--warning {
+  background: color-mix(in srgb, var(--log-warning) 22%, transparent);
+  color: var(--log-warning);
+}
+
+.logs-level-tag--error {
+  background: var(--log-error);
+  color: #fff;
+}
+
+/* ─── Context label ──────────────────────────────────────────────────────── */
+
+.logs-ctx-group {
+  color: var(--text-muted);
+  opacity: 0.55;
+}
+
+.logs-ctx-leaf {
+  color: var(--text-muted);
+}
+
+.logs-row:hover .logs-ctx-leaf,
+.logs-card:hover .logs-ctx-leaf {
+  color: var(--text-primary);
+}
+
+/* ─── Date separator ─────────────────────────────────────────────────────── */
+
+.logs-date-sep {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 10px;
+  font-weight: 700;
+  gap: 8px;
+  letter-spacing: 0.08em;
+  padding: 4px 10px;
+  text-transform: uppercase;
+}
+
+.logs-date-sep::after {
+  background: var(--border);
+  content: '';
+  flex: 1;
+  height: 1px;
 }
 
 /* ─── Mobile log cards ───────────────────────────────────────────────────── */
@@ -354,72 +769,81 @@
     overflow-y: auto;
     padding: 4px 0;
   }
+
+  .logs-search-wrap {
+    order: 3;
+    width: 100%;
+  }
 }
 
 .logs-card {
   border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
   font-family: monospace;
   font-size: 11px;
   padding: 6px 10px;
 }
 
-.logs-card--error {
-  background: rgba(219, 40, 40, 0.08);
+.logs-card--debug {
+  border-left-color: color-mix(in srgb, var(--log-debug) 40%, transparent);
+  color: var(--text-muted);
+}
+
+.logs-card--information {
+  border-left-color: color-mix(in srgb, var(--log-information) 32%, transparent);
 }
 
 .logs-card--warning {
-  background: rgba(251, 189, 8, 0.08);
+  background: color-mix(in srgb, var(--log-warning) 10%, transparent);
+  border-left-color: var(--log-warning);
 }
 
-.logs-card--debug {
-  opacity: 0.55;
+.logs-card--error {
+  background: color-mix(in srgb, var(--log-error) 12%, transparent);
+  border-left-color: var(--log-error);
 }
 
 .logs-card-meta {
   align-items: center;
   display: flex;
   gap: 6px;
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
 
-.logs-card-level {
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  min-width: 28px;
+.logs-card-meta .logs-level-tag {
+  flex-shrink: 0;
+  width: auto;
 }
-
-.logs-card--error   .logs-card-level { color: #db2828; }
-.logs-card--warning .logs-card-level { color: #f0a500; }
 
 .logs-card-ts {
   color: var(--text-muted);
   flex: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .logs-card-ctx {
-  color: var(--text-muted);
-  opacity: 0.7;
+  max-width: 45%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 40%;
 }
 
 .logs-card-msg {
   color: var(--text-primary);
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .logs-highlight {
-  background: rgba(210, 153, 34, 0.35);
+  background: color-mix(in srgb, var(--warning) 45%, transparent);
   border-radius: 2px;
   color: inherit;
   padding: 0 1px;
 }
 
-/* ─── Log viewer tabs ────────────────────────────────────────────────────────── */
+/* ─── Tabs ───────────────────────────────────────────────────────────────── */
 
 .logs-tabs {
+  align-items: center;
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
   display: flex;
@@ -438,7 +862,9 @@
   font-weight: 600;
   letter-spacing: 0.03em;
   padding: 7px 12px 5px;
-  transition: color 0.12s, border-color 0.12s;
+  transition:
+    color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
 }
 
 .logs-tab:hover {
@@ -450,7 +876,7 @@
   color: var(--accent);
 }
 
-/* ─── Exception expand ───────────────────────────────────────────────────────── */
+/* ─── Copy / exception ───────────────────────────────────────────────────── */
 
 .logs-copy-btn {
   background: none;
@@ -461,12 +887,18 @@
   font-size: 11px;
   opacity: 0;
   padding: 0 2px;
-  transition: color 0.1s, opacity 0.1s;
+  transition:
+    color var(--dur-fast) var(--ease-standard),
+    opacity var(--dur-fast) var(--ease-standard);
 }
 
 .logs-row:hover .logs-copy-btn,
 .logs-card:hover .logs-copy-btn {
   opacity: 0.6;
+}
+
+.logs-copy-btn:focus-visible {
+  opacity: 1;
 }
 
 .logs-copy-btn:hover {
@@ -475,42 +907,44 @@
 }
 
 .logs-copy-btn--copied {
-  color: #21ba45;
+  color: var(--success);
   opacity: 1 !important;
 }
 
 .logs-exception-toggle {
-  background: none;
+  background: color-mix(in srgb, var(--log-error) 14%, transparent);
   border: none;
-  color: var(--text-muted);
+  border-radius: 3px;
+  color: var(--log-error);
   cursor: pointer;
   font-family: monospace;
   font-size: 10px;
-  margin-left: 6px;
-  opacity: 0.7;
-  padding: 0 2px;
-  transition: opacity 0.1s;
+  margin-left: 8px;
+  padding: 0 5px;
+  transition: background var(--dur-fast) var(--ease-standard);
   vertical-align: middle;
 }
 
-.logs-exception-toggle:hover {
-  opacity: 1;
+.logs-exception-toggle:hover,
+.logs-exception-toggle--open {
+  background: color-mix(in srgb, var(--log-error) 24%, transparent);
 }
 
 .logs-exception-detail {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
+  border-left: 2px solid var(--log-error);
   border-radius: 4px;
   color: var(--text-muted);
   font-size: 10px;
-  margin: 4px 0 2px;
-  overflow-x: auto;
-  padding: 6px 8px;
-  white-space: pre-wrap;
-  word-break: break-all;
+  margin: 5px 0 3px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 7px 9px;
+  white-space: pre;
 }
 
-/* ─── History tab ────────────────────────────────────────────────────────────── */
+/* ─── History tab ────────────────────────────────────────────────────────── */
 
 .logs-date-range {
   align-items: center;
@@ -520,8 +954,13 @@
 
 .logs-date-input {
   font-size: 11px !important;
-  padding: 2px 6px !important;
-  width: 120px !important;
+  padding: 3px 6px !important;
+  width: 124px !important;
+}
+
+.logs-date-sep-text {
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .logs-history-body {
@@ -546,7 +985,7 @@
 .logs-history-empty {
   color: var(--text-muted);
   font-size: 12px;
-  padding: 24px 12px;
+  padding: 28px 12px;
   text-align: center;
 }
 
@@ -564,7 +1003,30 @@
 .logs-pagination-count {
   color: var(--text-muted);
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
   margin-right: auto;
+}
+
+/* ─── Events list (shares the System tab chrome) ─────────────────────────── */
+
+.events-table {
+  font-size: smaller;
+}
+
+.events-table-body {
+  font-family: monospace;
+}
+
+.events-list-id {
+  width: 0px; /* shrink to fit */
+}
+
+.events-list-timestamp {
+  width: 0px; /* shrink to fit */
+}
+
+.events-list-type {
+  width: 0px; /* shrink to fit */
 }
 
 .no-grow {

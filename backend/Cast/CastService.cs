@@ -40,7 +40,6 @@ namespace resonance.Cast
     using System.Threading;
     using System.Threading.Tasks;
     using System.Xml;
-    using Microsoft.Extensions.Logging;
     using resonance.Cast.Types;
 
     public class CastService : ICastService
@@ -57,17 +56,16 @@ namespace resonance.Cast
 
         private volatile CastState state;
 
-        public CastService(IHttpClientFactory httpClientFactory, ILogger<CastService> logger)
+        public CastService(IHttpClientFactory httpClientFactory)
         {
             Http = httpClientFactory;
-            Log = logger;
         }
 
         public IReadOnlyList<DlnaDevice> Devices => DeviceMap.Values.ToList();
         public CastState State => state;
 
         private IHttpClientFactory Http { get; }
-        private ILogger Log { get; }
+        private Serilog.ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", resonance.Logs.Cast);
 
         private ConcurrentDictionary<string, DlnaDevice> DeviceMap { get; } = new();
 
@@ -88,7 +86,7 @@ namespace resonance.Cast
             }
             catch (Exception ex)
             {
-                Log.LogWarning(ex, "DLNA: failed to send M-SEARCH");
+                Log.Warning(ex, "DLNA: failed to send M-SEARCH");
                 return Devices;
             }
 
@@ -118,7 +116,7 @@ namespace resonance.Cast
                                  .Select(loc => FetchDeviceAsync(loc, cancellationToken));
             await Task.WhenAll(tasks);
 
-            Log.LogInformation("DLNA: discovery complete, {Count} renderer(s) found", DeviceMap.Count);
+            Log.Information("DLNA: discovery complete, {Count} renderer(s) found", DeviceMap.Count);
             return Devices;
         }
 
@@ -166,7 +164,7 @@ namespace resonance.Cast
                 }
                 catch (Exception ex)
                 {
-                    Log.LogWarning(ex, "DLNA: Stop command failed");
+                    Log.Warning(ex, "DLNA: Stop command failed");
                 }
             }
 
@@ -278,11 +276,11 @@ namespace resonance.Cast
                 }
 
                 DeviceMap[udn] = new DlnaDevice(udn, name, location, controlUrl);
-                Log.LogDebug("DLNA: found renderer '{Name}' at {Location}", name, location);
+                Log.Debug("DLNA: found renderer '{Name}' at {Location}", name, location);
             }
             catch (Exception ex)
             {
-                Log.LogDebug(ex, "DLNA: failed to fetch device description from {Location}", location);
+                Log.Debug(ex, "DLNA: failed to fetch device description from {Location}", location);
             }
         }
 

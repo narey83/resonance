@@ -63,7 +63,10 @@ export const getLogs = async ({
     for (const l of level) params.append('level', l);
   }
 
-  if (context) params.append('context', context);
+  if (context?.length) {
+    for (const c of context) params.append('context', c);
+  }
+
   if (search) params.append('search', search);
   if (from) params.append('from', from);
   if (to) params.append('to', to);
@@ -75,6 +78,19 @@ export const getLogs = async ({
     totalCount: Number(response.headers['x-total-count'] ?? 0),
   };
 };
+
+// Every context the backend can log under, so the filter list is complete on first paint rather
+// than growing as messages happen to arrive.
+export const getLogContexts = async () =>
+  (await api.get('/logs/contexts')).data;
+
+// The server-side minimum level. Debug events are dropped before they ever reach a sink, so the
+// DBG filter is inert unless this is lowered.
+export const getLogLevel = async () =>
+  (await api.get('/logs/level')).data.level;
+
+export const setLogLevel = async (level) =>
+  (await api.put('/logs/level', { level })).data.level;
 
 // Downloads the backend's recently-captured HTTP traffic as a HAR 1.2 file — the server-side
 // counterpart to the mobile app's network log export, for side-by-side latency comparison.

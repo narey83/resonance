@@ -43,7 +43,6 @@ namespace resonance.Integrations.Pushbullet
     using System.Text.Json;
     using System.Threading.Tasks;
     using Microsoft.Extensions.Caching.Memory;
-    using Microsoft.Extensions.Logging;
     using static resonance.Options.IntegrationsOptions;
 
     /// <summary>
@@ -58,22 +57,19 @@ namespace resonance.Integrations.Pushbullet
         /// </summary>
         /// <param name="httpClientFactory">The HttpClientFactory to use.</param>
         /// <param name="optionsMonitor">The options monitor used to derive application options.</param>
-        /// <param name="log">The logger.</param>
         public PushbulletService(
             IHttpClientFactory httpClientFactory,
-            IOptionsMonitor<Options> optionsMonitor,
-            ILogger<PushbulletService> log)
+            IOptionsMonitor<Options> optionsMonitor)
         {
             HttpClientFactory = httpClientFactory;
             OptionsMonitor = optionsMonitor;
-            Log = log;
 
             RecentlySent = new MemoryCache(new MemoryCacheOptions());
         }
 
         private bool Disposed { get; set; }
         private IHttpClientFactory HttpClientFactory { get; }
-        private ILogger<PushbulletService> Log { get; }
+        private Serilog.ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", resonance.Logs.Integrations.Pushbullet);
         private IOptionsMonitor<Options> OptionsMonitor { get; }
         private PushbulletOptions PushbulletOptions => OptionsMonitor.CurrentValue.Integrations.Pushbullet;
         private IMemoryCache RecentlySent { get; }
@@ -160,7 +156,7 @@ namespace resonance.Integrations.Pushbullet
 
                 http.DefaultRequestHeaders.UserAgent.TryParseAdd($"{Program.AppName} v{Program.FullVersion}");
 
-                Log.LogDebug("Sending Pushbullet notification {Title} {Body}", title, body);
+                Log.Debug("Sending Pushbullet notification {Title} {Body}", title, body);
 
                 await Retry.Do(
                     task: async () =>
@@ -169,20 +165,20 @@ namespace resonance.Integrations.Pushbullet
                         response.EnsureSuccessStatusCode();
                     },
                     isRetryable: (attempts, ex) => true,
-                    onFailure: (attempts, ex) => Log.LogWarning("Failed attempt #{Attempts} to send Pushbullet notification {Title} {Body}: {Message}", attempts, title, body, ex.Message),
+                    onFailure: (attempts, ex) => Log.Warning("Failed attempt #{Attempts} to send Pushbullet notification {Title} {Body}: {Message}", attempts, title, body, ex.Message),
                     maxAttempts: PushbulletOptions.RetryAttempts,
                     baseDelayInMilliseconds: 1000,
                     maxDelayInMilliseconds: 30000);
 
-                Log.LogInformation("Sent Pushbullet notification {Title} {Body}", title, body);
+                Log.Information("Sent Pushbullet notification {Title} {Body}", title, body);
             }
             catch (RetryException ex)
             {
-                Log.LogError(ex, "Fatal error retrying send of Pushbullet notification {Title} {Body}: {Message}", title, body, ex.Message);
+                Log.Error(ex, "Fatal error retrying send of Pushbullet notification {Title} {Body}: {Message}", title, body, ex.Message);
             }
             catch (Exception ex)
             {
-                Log.LogWarning("Failed to send Pushbullet notification {Title} {Body} after {Attempts} attempts: {Message}", title, body, PushbulletOptions.RetryAttempts, ex.Message);
+                Log.Warning("Failed to send Pushbullet notification {Title} {Body} after {Attempts} attempts: {Message}", title, body, PushbulletOptions.RetryAttempts, ex.Message);
             }
         }
     }

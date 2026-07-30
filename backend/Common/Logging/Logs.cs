@@ -29,11 +29,17 @@
 
 namespace resonance
 {
+    using System;
+    using System.Collections.Generic;
+    using System.Linq;
+    using System.Reflection;
+
     public static class Logs
     {
         public const string Application = "Application";
         public const string Connection = "Connection";
         public const string Blacklist = "Blacklist";
+        public const string Browse = "Browse";
         public const string Search = "Search";
         public const string Relay = "Relay";
         public const string Cast = "Cast";
@@ -41,11 +47,43 @@ namespace resonance
         public const string Files = "Files";
         public const string Users = "Users";
         public const string Network = "Network";
+        public const string Settings = "Settings";
         public const string Telemetry = "Telemetry";
         public const string Database = "Database";
         public const string Browser = "Browser";
         public const string Mobile = "Mobile";
         public const string Dlna = "DLNA";
+
+        /// <summary>
+        ///     Gets every context defined in this registry, sorted.
+        /// </summary>
+        /// <remarks>
+        ///     Lets the UI offer the full set of filterable contexts up front, instead of only the
+        ///     handful that happen to be sitting in the live buffer.
+        /// </remarks>
+        public static IReadOnlyList<string> All { get; } = Collect(typeof(Logs))
+            .Distinct()
+            .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        private static IEnumerable<string> Collect(Type type)
+        {
+            foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy))
+            {
+                if (field.IsLiteral && field.FieldType == typeof(string))
+                {
+                    yield return (string)field.GetRawConstantValue();
+                }
+            }
+
+            foreach (var nested in type.GetNestedTypes(BindingFlags.Public))
+            {
+                foreach (var context in Collect(nested))
+                {
+                    yield return context;
+                }
+            }
+        }
 
         public static class Sessions
         {
@@ -56,6 +94,7 @@ namespace resonance
         {
             public const string Downloads = "Transfers / Downloads";
             public const string Uploads = "Transfers / Uploads";
+            public const string Notifications = "Transfers / Notifications";
         }
 
         public static class Shares
@@ -77,6 +116,10 @@ namespace resonance
             public const string Tags = "Music / Tags";
             public const string Library = "Music / Library";
             public const string Metadata = "Music / Metadata";
+            public const string Activity = "Music / Activity";
+            public const string Converter = "Music / Converter";
+            public const string Ffmpeg = "Music / FFmpeg";
+            public const string Mixtapes = "Music / Mixtapes";
         }
 
         public static class Integrations
@@ -87,6 +130,7 @@ namespace resonance
             public const string Scripts = "Integrations / Scripts";
             public const string FTP = "Integrations / FTP";
             public const string Pushbullet = "Integrations / Pushbullet";
+            public const string YtDlp = "Integrations / yt-dlp";
         }
     }
 }

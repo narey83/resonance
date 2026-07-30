@@ -55,7 +55,7 @@ public class SettingsService
     private static string T => "settings.\"Setting\"";
 
     private string ConnectionString { get; }
-    private ILogger Log { get; } = Serilog.Log.ForContext<SettingsService>();
+    private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", resonance.Logs.Settings);
 
     /// <summary>
     ///     Returns every stored setting as a flattened key/value map.

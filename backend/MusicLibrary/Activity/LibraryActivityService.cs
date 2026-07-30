@@ -54,7 +54,7 @@ public class LibraryActivityService : ILibraryActivityService
     private IDbContextFactory<LibraryActivityDbContext> ContextFactory { get; }
     private IHubContext<LibraryActivityHub> Hub { get; }
     private MusicRepository MusicRepo { get; }
-    private ILogger Log { get; } = Serilog.Log.ForContext<LibraryActivityService>();
+    private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", resonance.Logs.Music.Activity);
 
     public string[] GetLovedPaths(string username)
     {
