@@ -98,6 +98,14 @@ namespace resonance.Transfers.Uploads
         Task<Transfer> UploadAsync(Transfer transfer);
 
         /// <summary>
+        ///     Restarts any uploads to the specified <paramref name="username"/> that were parked because the user was
+        ///     offline when the upload was last attempted.
+        /// </summary>
+        /// <param name="username">The username of the user.</param>
+        /// <returns>The number of uploads for which a restart was scheduled.</returns>
+        int ResumeParkedUploads(string username);
+
+        /// <summary>
         ///     Finds a single upload matching the specified <paramref name="expression"/>.
         /// </summary>
         /// <param name="expression">The expression to use to match uploads.</param>
@@ -194,9 +202,6 @@ namespace resonance.Transfers.Uploads
     /// </summary>
     public class UploadService : IUploadService
     {
-        // how long a user stays in the offline cooldown after a failed upload; see OfflineCooldowns.
-        private static readonly TimeSpan OfflineCooldownDuration = TimeSpan.FromSeconds(60);
-
         public UploadService(
             FileService fileService,
             IUserService userService,
@@ -245,13 +250,6 @@ namespace resonance.Transfers.Uploads
         private ITransferErrorNotificationService ErrorNotifications { get; }
         private ConcurrentDictionary<string, bool> Locks { get; } = new();
         private ConcurrentDictionary<string, string> PeerAddresses { get; } = new();
-
-        // when an upload fails because the remote user is offline, we stamp the username here. subsequent enqueue
-        // requests for that user are cheaply rejected until the cooldown expires, instead of resolving files, hitting
-        // the database, watching the user, and attempting a doomed upload. a misbehaving remote client that re-requests
-        // a large queue thousands of times per minute while unreachable would otherwise trigger all of that work per
-        // request. the user's own client will re-request once it is actually reachable again, after the cooldown.
-        private ConcurrentDictionary<string, DateTime> OfflineCooldowns { get; } = new();
 
         /// <summary>
         ///     Gets the last known IP address for the specified <paramref name="username"/>.
@@ -320,6 +318,12 @@ namespace resonance.Transfers.Uploads
 
                 failure to do so means records will get "stuck" in the database/on the UI
 
+                the one deliberate exception is the "parked" exit below, for a peer that has gone offline: the record is
+                left in Queued | Locally on purpose so the upload survives until they return. that exit is only safe
+                because two things can un-park it (ResumeParkedUploads when the server reports the peer online, and
+                EnqueueAsync when the peer re-requests the file), and because startup cleanup dispositions anything
+                still parked if the application restarts
+
                 additionally, any acquired locks/semaphores must be released, including (and most importantly) the queue slot
             */
             try
@@ -365,13 +369,23 @@ namespace resonance.Transfers.Uploads
                     Log.Warning(ex, "Failed to watch user {Username}", transfer.Username);
                 }
 
-                // now that the user is watched, if their last known presence is offline, don't hand a doomed transfer
-                // to Soulseek.NET (which would hold a slot and wait on a long connection timeout before failing).
-                // fail fast; the throw is handled by the catch below, which records the offline cooldown. the user
-                // requested this file but has since gone offline; their client re-requests when it reconnects.
+                /*
+                    now that the user is watched, if their last known presence is offline, don't hand a doomed transfer
+                    to Soulseek.NET (which would hold a slot and wait on a long connection timeout before failing).
+
+                    park the transfer rather than failing it: leave the record in Queued | Locally and return without an
+                    in-flight task. a queued upload is meant to survive the peer going offline -- that's what the peer's
+                    place-in-queue polling is for -- so completing it as Errored here means a single dropped connection
+                    terminates every file the peer still had queued. their client reacts by re-requesting the whole
+                    folder, which is exactly the request storm this check was added to avoid.
+
+                    parking keeps the resource win of not holding a slot or a task per waiting file, without throwing
+                    the queue away. see the comment above for what un-parks it.
+                */
                 if (Users.TryGetCachedPresence(transfer.Username, out var presence) && presence == UserPresence.Offline)
                 {
-                    throw new UserOfflineException($"User {transfer.Username} appears to be offline");
+                    Log.Debug("Parked upload of {Filename} to {Username}; user is offline", transfer.Filename, transfer.Username);
+                    return null;
                 }
 
                 Log.Information("Initializing upload of {Filename} to {Username}", transfer.Filename, transfer.Username);
@@ -509,9 +523,6 @@ namespace resonance.Transfers.Uploads
                     Transfer = transfer,
                 });
 
-                // a successful upload proves the user is reachable; lift any lingering offline cooldown immediately
-                OfflineCooldowns.TryRemove(transfer.Username, out _);
-
                 return transfer;
             }
             catch (NotFoundException ex)
@@ -539,14 +550,14 @@ namespace resonance.Transfers.Uploads
                     Log.Error(ex, "Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
                 }
 
-                // if the user is offline, start a cooldown so we stop attempting (and re-resolving/re-watching) on
-                // every subsequent request until they are actually reachable again.
-                if (IsUserOffline(ex))
-                {
-                    OfflineCooldowns[transfer.Username] = DateTime.UtcNow;
-                    Log.Debug("Started offline cooldown for {Username}", transfer.Username);
-                }
-
+                /*
+                    ponytail: a UserOfflineException raised by Soulseek.NET itself (our cached presence said online, but
+                    the connection attempt found otherwise) still completes the transfer as failed rather than parking
+                    it, because by this point the transfer may have partially progressed and no longer holds the
+                    Queued | Locally starting state a resume needs. that path accounted for a negligible share of
+                    offline failures; if it starts to matter, park here too by snapping the record back to
+                    Queued | Locally before returning.
+                */
                 TryFail(transfer.Id, exception: ex);
                 _ = ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, ex.Message);
 
@@ -606,24 +617,19 @@ namespace resonance.Transfers.Uploads
                 throw new ArgumentNullException(nameof(filename), "Filename is required");
             }
 
-            // if we recently failed to upload to this user because they were offline, don't do any work; a reachable
-            // client re-requests on its own once it reconnects, so retrying on their behalf just churns resources.
-            if (IsInOfflineCooldown(username))
-            {
-                Log.Debug("Skipping upload enqueue of {Filename} to {Username}; user is in offline cooldown", filename, username);
-                return null;
-            }
+            /*
+                note: there is deliberately no "is this user offline?" gate here any more.
 
-            // if the user's last known presence (from watching them) is offline, don't bother enqueueing. this gates
-            // the bulk of a re-request storm from a user who queued a large batch and then went offline: their client
-            // keeps asking, but we already know they're unreachable. the presence cache flips back to online (via an
-            // unsolicited server status event) the moment they return, so online users are never blocked.
-            if (Users.TryGetCachedPresence(username, out var presence) && presence == UserPresence.Offline)
-            {
-                Log.Debug("Skipping upload enqueue of {Filename} to {Username}; user is offline", filename, username);
-                return null;
-            }
+                returning null from this method reports success to the requesting peer (the EnqueueDownload delegate
+                signals rejection by throwing), so skipping the enqueue told the peer their file was queued while
+                recording nothing -- the file could then never arrive. that was tolerable only while an offline peer
+                was assumed not to be asking, but a peer sending us a request is by definition reachable, so the gate
+                mostly fired on a stale presence cache.
 
+                storm protection is instead the existing duplicate check below, which is per-file rather than per-user:
+                the first request for a file does the resolve/insert work, every repeat is a cheap indexed lookup that
+                returns here. an offline peer's transfers are parked by UploadAsync rather than attempted.
+            */
             var lockName = $"{nameof(EnqueueAsync)}:{username}:{filename}";
 
             if (!Locks.TryAdd(lockName, true))
@@ -663,6 +669,24 @@ namespace resonance.Transfers.Uploads
                 if (existingInProgressRecords.Count != 0)
                 {
                     Log.Information("Upload of {Filename} to {Username} is already queued or is in progress (ids: {Ids})", filename, username, string.Join(", ", existingInProgressRecords.Select(t => t.Id)));
+
+                    /*
+                        the peer asking for a file they already have queued is proof they're reachable, so this is also
+                        the cue to restart it if it was parked while they were offline.
+
+                        a parked record can't be told apart from a live one by state alone (both sit in Queued | Locally
+                        until Soulseek.NET reports otherwise), so just start them all: UploadAsync holds a lock per
+                        username/filename for as long as it runs, so this is a no-op for anything already in flight.
+
+                        this is the safety net that makes parking safe. without it, a status event we never receive
+                        (a missed notification, a peer we stopped watching) would leave the record queued forever, and
+                        this very duplicate check would block the peer from ever re-requesting it.
+                    */
+                    foreach (var record in existingInProgressRecords.Where(t => t.State == (TransferStates.Queued | TransferStates.Locally)))
+                    {
+                        StartUploadTask(record);
+                    }
+
                     return null;
                 }
 
@@ -741,42 +765,8 @@ namespace resonance.Transfers.Uploads
                     Log.Warning(ex, "Failed to watch user {Username}", username);
                 }
 
-                /*
-                    schedule the upload immediately
-
-                    Task.Run can fail due to thread pool exhaustion or OOM, and this *SHOULD* throw up the chain and
-                    fail the enqueue request
-                */
-                _ = Task.Run(() => UploadAsync(transfer)).ContinueWith(task =>
-                {
-                    if (task.IsCompletedSuccessfully)
-                    {
-                        Log.Information("Task for upload of {Filename} to {Username} completed successfully", filename, username);
-                        return;
-                    }
-
-                    /*
-                        things that can cause us to arrive here:
-
-                        * file not found (moved, deleted somehow)
-                        * transfer record deleted somehow
-                        * transfer record updated so that it's no longer in Queued | Locally
-                        * Soulseek.NET already tracking an identical upload (slskd <> Soulseek.NET desync)
-                    */
-                    if (IsExpectedPeerFailure(task.Exception))
-                    {
-                        Log.Warning("Task for upload of {Filename} to {Username} did not complete successfully: {Error}", filename, username, task.Exception.Message);
-                    }
-                    else
-                    {
-                        Log.Error(task.Exception, "Task for upload of {Filename} to {Username} did not complete successfully: {Error}", filename, username, task.Exception.Message);
-                    }
-
-                    if (!TryFail(id, task.Exception))
-                    {
-                        Log.Error(task.Exception, "Failed to clean up transfer {Id} after failed execution: {Message}", id, task.Exception.Message);
-                    }
-                });
+                // schedule the upload immediately
+                StartUploadTask(transfer);
 
                 return transfer;
             }
@@ -799,6 +789,40 @@ namespace resonance.Transfers.Uploads
                     Log.Debug("Released lock {LockName}", lockName);
                 }
             }
+        }
+
+        /// <summary>
+        ///     Restarts any uploads to the specified <paramref name="username"/> that were parked because the user was
+        ///     offline when the upload was last attempted.
+        /// </summary>
+        /// <param name="username">The username of the user.</param>
+        /// <returns>The number of uploads for which a restart was scheduled.</returns>
+        public int ResumeParkedUploads(string username)
+        {
+            if (string.IsNullOrEmpty(username))
+            {
+                return 0;
+            }
+
+            // as in EnqueueAsync, a parked transfer is indistinguishable from a live one by state alone, so restart
+            // every queued record and let UploadAsync's per-file lock discard the redundant ones
+            var parked = List(
+                t => t.Username == username && t.EndedAt == null && t.State == (TransferStates.Queued | TransferStates.Locally),
+                includeRemoved: false);
+
+            if (parked.Count == 0)
+            {
+                return 0;
+            }
+
+            Log.Information("Resuming {Count} parked upload(s) to {Username}", parked.Count, username);
+
+            foreach (var transfer in parked)
+            {
+                StartUploadTask(transfer);
+            }
+
+            return parked.Count;
         }
 
         /// <summary>
@@ -1108,48 +1132,61 @@ namespace resonance.Transfers.Uploads
         }
 
         /// <summary>
-        ///     Determines whether the given <paramref name="exception"/> indicates that the remote user is offline.
+        ///     Starts the upload of the specified <paramref name="transfer"/> on a background task, ensuring the transfer
+        ///     record is dispositioned if the task itself faults.
         /// </summary>
-        /// <param name="exception">The exception to classify.</param>
-        /// <returns>A value indicating whether the failure was caused by the user being offline.</returns>
-        private static bool IsUserOffline(Exception exception)
+        /// <remarks>
+        ///     Safe to call for a transfer that is already in flight; <see cref="UploadAsync(Transfer)"/> holds a lock per
+        ///     username/filename and returns immediately if it is already held.
+        /// </remarks>
+        /// <param name="transfer">The transfer to upload.</param>
+        private void StartUploadTask(Transfer transfer)
         {
-            for (var ex = exception; ex is not null; ex = ex.InnerException)
+            var id = transfer.Id;
+            var username = transfer.Username;
+            var filename = transfer.Filename;
+
+            /*
+                Task.Run can fail due to thread pool exhaustion or OOM, and this *SHOULD* throw up the chain and
+                fail the enqueue request
+            */
+            _ = Task.Run(() => UploadAsync(transfer)).ContinueWith(task =>
             {
-                if (ex is UserOfflineException)
+                if (task.IsCompletedSuccessfully)
                 {
-                    return true;
+                    // UploadAsync returns null when it declined to do the work (the transfer was parked because the
+                    // user is offline, or an identical upload already holds the lock); neither is a completed upload,
+                    // and logging them as such would be both wrong and very noisy during a re-request storm
+                    if (task.Result is not null)
+                    {
+                        Log.Information("Task for upload of {Filename} to {Username} completed successfully", filename, username);
+                    }
+
+                    return;
                 }
 
-                if (ex is AggregateException aggregate)
+                /*
+                    things that can cause us to arrive here:
+
+                    * file not found (moved, deleted somehow)
+                    * transfer record deleted somehow
+                    * transfer record updated so that it's no longer in Queued | Locally
+                    * Soulseek.NET already tracking an identical upload (slskd <> Soulseek.NET desync)
+                */
+                if (IsExpectedPeerFailure(task.Exception))
                 {
-                    return aggregate.Flatten().InnerExceptions.Any(IsUserOffline);
+                    Log.Warning("Task for upload of {Filename} to {Username} did not complete successfully: {Error}", filename, username, task.Exception.Message);
                 }
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        ///     Determines whether the specified <paramref name="username"/> is within the offline cooldown window
-        ///     following a recent failed upload. Expired entries are removed as a side effect.
-        /// </summary>
-        /// <param name="username">The username to check.</param>
-        /// <returns>A value indicating whether the user is currently in an offline cooldown.</returns>
-        private bool IsInOfflineCooldown(string username)
-        {
-            if (OfflineCooldowns.TryGetValue(username, out var lastOfflineAt))
-            {
-                if (DateTime.UtcNow - lastOfflineAt < OfflineCooldownDuration)
+                else
                 {
-                    return true;
+                    Log.Error(task.Exception, "Task for upload of {Filename} to {Username} did not complete successfully: {Error}", filename, username, task.Exception.Message);
                 }
 
-                // cooldown expired; clean up so the dictionary doesn't grow unbounded
-                OfflineCooldowns.TryRemove(username, out _);
-            }
-
-            return false;
+                if (!TryFail(id, task.Exception))
+                {
+                    Log.Error(task.Exception, "Failed to clean up transfer {Id} after failed execution: {Message}", id, task.Exception.Message);
+                }
+            });
         }
 
         private bool TryFail(Guid id, string exception, TransferStates state)
@@ -1159,6 +1196,14 @@ namespace resonance.Transfers.Uploads
             if (t is null)
             {
                 return false;
+            }
+
+            // never re-disposition a transfer that already succeeded. a redundant restart that raced a completion
+            // (see StartUploadTask) arrives here with an InvalidOperationException about the starting state, and
+            // without this the message would be stamped onto a transfer that actually finished fine.
+            if (t.State.HasFlag(TransferStates.Succeeded))
+            {
+                return true;
             }
 
             t.EndedAt ??= DateTime.UtcNow;

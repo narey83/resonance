@@ -1751,7 +1751,22 @@ namespace resonance
 
         private void Client_UserStatusChanged(object sender, UserStatus args)
         {
-            // todo: react to watched user status changes
+            // a peer returning is the cue to restart the uploads that were parked while they were away. uploads to an
+            // offline peer are left queued rather than failed (see UploadService.UploadAsync), so without this their
+            // queue would sit idle until they happened to re-request a file.
+            if (args.Presence == UserPresence.Offline)
+            {
+                return;
+            }
+
+            try
+            {
+                Transfers.Uploads.ResumeParkedUploads(args.Username);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Failed to resume parked uploads to {Username}: {Message}", args.Username, ex.Message);
+            }
         }
 
         private async Task UpdateTransferNetworkInfoAsync(string username, string filename = null, TransferDirection direction = default)
