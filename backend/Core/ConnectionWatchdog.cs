@@ -57,6 +57,23 @@ namespace resonance
         private static readonly int ReconnectMaxDelayMilliseconds = 300000; // 5 minutes
 
         /// <summary>
+        ///     The minimum delay before retrying after a connection attempt timed out. A timeout means the server took
+        ///     our login but never answered; it may still be processing it, and connecting again before it finishes
+        ///     registers as a second client and gets us kicked.
+        /// </summary>
+        /// <remarks>
+        ///     ponytail: a heuristic, not a handshake. the protocol gives us no way to know whether the server finished
+        ///     with the login we abandoned, so we wait longer than it should plausibly take.
+        /// </remarks>
+        private static readonly int LingeringLoginDelayMilliseconds = 30000;
+
+        /// <summary>
+        ///     The window after a connection attempt within which a kick from the server is more likely one of our own
+        ///     overlapping logins than a genuine second client.
+        /// </summary>
+        private static readonly TimeSpan RecentConnectionAttemptWindow = TimeSpan.FromSeconds(60);
+
+        /// <summary>
         ///     Initializes a new instance of the <see cref="ConnectionWatchdog"/> class.
         /// </summary>
         /// <param name="soulseekClient"></param>
@@ -106,6 +123,12 @@ namespace resonance
         /// </summary>
         public bool IsAwaitingVpn { get; private set; }
 
+        /// <summary>
+        ///     Gets a value indicating whether a connection was attempted recently enough that a kick from the server is
+        ///     most likely a duplicate login caused by our own reconnect logic, and not another client.
+        /// </summary>
+        public virtual bool AttemptedConnectionRecently => DateTime.UtcNow - LastConnectionAttemptAt < RecentConnectionAttemptWindow;
+
         private ISoulseekClient Client { get; }
         private VPNService VPN { get; }
         private bool Disposed { get; set; }
@@ -117,6 +140,7 @@ namespace resonance
         private object StateLock { get; } = new object();
         private System.Timers.Timer WatchdogTimer { get; }
         private CancellationTokenSource CancellationTokenSource { get; set; }
+        private DateTime LastConnectionAttemptAt { get; set; } = DateTime.MinValue;
 
         /// <summary>
         ///     Disposes this instance.
@@ -258,6 +282,7 @@ namespace resonance
                         - a successful connection OR the server becomes connected another way
                     */
                     int attempts = 0;
+                    bool lingeringLogin = false;
 
                     while (IsEnabled)
                     {
@@ -285,6 +310,13 @@ namespace resonance
                                 baseDelayInMilliseconds: 1000,
                                 maxDelayInMilliseconds: ReconnectMaxDelayMilliseconds);
 
+                            // give the server time to finish the login we just gave up on, so that this attempt isn't
+                            // treated as a second client logging in
+                            if (lingeringLogin)
+                            {
+                                delay = Math.Max(delay, LingeringLoginDelayMilliseconds);
+                            }
+
                             var approximateDelay = (int)Math.Ceiling((double)(delay + jitter) / 1000);
                             Log.Information($"Waiting about {(approximateDelay == 1 ? "a second" : $"{approximateDelay} seconds")} before attempting to reconnect");
 
@@ -307,6 +339,8 @@ namespace resonance
                             // the changes will take effect now.
                             var opt = OptionsMonitor.CurrentValue.Soulseek;
 
+                            LastConnectionAttemptAt = DateTime.UtcNow;
+
                             // note: cancelling the CTS before the connect logic is fully complete (e.g. reacting to the connect event)
                             // will cause the client to connect, then disconnect immediately
                             await Client.ConnectAsync(
@@ -327,6 +361,11 @@ namespace resonance
                         catch (Exception ex)
                         {
                             attempts++;
+
+                            // ConnectAsync throws TimeoutException when the server accepted the connection but didn't
+                            // answer the login in time; the server may yet finish it, leaving a session behind us
+                            lingeringLogin = ex is TimeoutException;
+
                             Log.Error("Failed to reconnect: {Message}", ex.Message);
                         }
                     }

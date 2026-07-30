@@ -108,6 +108,13 @@ namespace resonance
 
         private static readonly string ApplicationShutdownTransferExceptionMessage = "Application shut down";
 
+        /// <summary>
+        ///     The minimum time between recoveries from a duplicate-login kick. If we're wrong about a kick being
+        ///     self-inflicted, this bounds the login fight with the other client to one exchange per interval instead
+        ///     of an endless loop.
+        /// </summary>
+        private static readonly TimeSpan KickRecoveryCooldown = TimeSpan.FromMinutes(5);
+
 #pragma warning disable SA1306 // Field names should begin with lower-case letter
         private static int EnqueueQueueDepth = 0;
         private static double CurrentEnqueueLatency = 0;
@@ -301,6 +308,7 @@ namespace resonance
         private Options PreviousOptions { get; set; }
         private IPushbulletService Pushbullet { get; }
         private DateTime SharesRefreshStarted { get; set; }
+        private DateTime LastKickRecoveryAt { get; set; } = DateTime.MinValue;
         private IManagedState<State> State { get; }
         private ITransferService Transfers { get; init; }
         private IHubContext<ApplicationHub> ApplicationHub { get; set; }
@@ -1175,7 +1183,23 @@ namespace resonance
             }
             else if (args.Exception is KickedFromServerException)
             {
-                Log.Error("Disconnected from the Soulseek server: another client logged in using the same username");
+                // the server kicks the existing session when a second one logs in with the same username. if we
+                // attempted a connection moments ago then that second session is almost certainly one of our own
+                // overlapping logins landing late: a slow server makes ConnectAsync give up client-side while the
+                // login it started completes anyway. recover from that like any other unexpected disconnect,
+                // otherwise we sit offline until someone notices. a genuine second client is left alone, because
+                // reconnecting would just take turns kicking each other forever.
+                if (ConnectionWatchdog.AttemptedConnectionRecently
+                    && DateTime.UtcNow - LastKickRecoveryAt > KickRecoveryCooldown)
+                {
+                    LastKickRecoveryAt = DateTime.UtcNow;
+                    Log.Error("Disconnected from the Soulseek server: a duplicate login was detected, most likely one of our own reconnect attempts; reconnecting");
+                    ConnectionWatchdog.Start();
+                }
+                else
+                {
+                    Log.Error("Disconnected from the Soulseek server: another client logged in using the same username");
+                }
             }
             else if (args.Exception is VPNClientException)
             {
