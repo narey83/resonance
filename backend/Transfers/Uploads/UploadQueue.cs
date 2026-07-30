@@ -304,8 +304,75 @@ namespace resonance.Transfers
         /// <exception cref="NotFoundException">Thrown if the specified filename is not enqueued.</exception>
         public int EstimatePosition(string username, string filename)
         {
+            /*
+                the per-user Upload lists are mutated under SyncRoot by Enqueue() and Complete(); this method orders and
+                flattens them, and LINQ buffers the source by reading Count and then copying, so an unsynchronized read
+                races with a concurrent Add/Remove and throws (typically "Destination array was not long enough").
+
+                peers poll place-in-queue continuously while a large queue churns, so the race is hit often enough to
+                leave them without an answer about whether their queued files are still alive.
+            */
+            SyncRoot.Wait();
+
+            try
+            {
+                return EstimatePositionInternal(username, filename);
+            }
+            finally
+            {
+                SyncRoot.Release();
+            }
+        }
+
+        /// <summary>
+        ///     Computes the estimated queue position of the specified <paramref name="username"/> if they were to enqueue a file,
+        ///     or zero if the transfer could start immediately.
+        /// </summary>
+        /// <param name="username">The username for which to estimate.</param>
+        /// <returns>
+        ///     The estimated queue position if the user were to enqueue a file, or zero if the transfer could start immediately.
+        /// </returns>
+        public int ForecastPosition(string username)
+        {
             var groupName = Users.GetGroup(username);
-            var groupRecord = Groups.GetValueOrDefault(groupName);
+
+            // GetGroup() can name a group that isn't in the dictionary (a user-defined group removed from the config while
+            // a user is still assigned to it, or a reconfiguration swapping Groups mid-call), so fall back to the default
+            // group rather than dereferencing null.
+            var groupRecord = Groups.GetValueOrDefault(groupName) ?? Groups[Application.DefaultGroup];
+
+            // if there's a slot available, the user will enter the queue at position 0 (will start immediately)
+            if (groupRecord.SlotAvailable)
+            {
+                return 0;
+            }
+
+            // the Uploads dictionary is keyed by username; gather all of the users that belong to the same group as the requested user
+            var uploadsForGroup = Uploads.Where(kvp => Users.GetGroup(kvp.Key) == groupName);
+
+            // assuming that the queue will be processed in a true round-robin fashion and that the user will be the last in the
+            // rotation (worst case), the user's start position will be equal to the number of users downloading or waiting, + 1.
+            if (groupRecord.Strategy == QueueStrategy.RoundRobin)
+            {
+                return uploadsForGroup.Count() + 1;
+            }
+
+            // for FIFO queues, the user will enter the queue at the very back. return the total number of uploads in progress and
+            // enqueued, + 1.
+            //
+            // sum each list's Count rather than flattening the lists. this is the same total, but it reads one int per user
+            // instead of walking entries that Enqueue()/Complete() may be mutating concurrently -- which is what lets this
+            // method stay off SyncRoot, and it runs on the incoming search path so that matters. SelectMany().Count() also
+            // happens to avoid enumerating today, but only via a LINQ implementation detail, and this doesn't rely on it.
+            return uploadsForGroup.Sum(group => group.Value.Count) + 1;
+        }
+
+        private int EstimatePositionInternal(string username, string filename)
+        {
+            var groupName = Users.GetGroup(username);
+
+            // see ForecastPosition for why this falls back instead of dereferencing the lookup directly
+            var groupRecord = Groups.GetValueOrDefault(groupName) ?? Groups[Application.DefaultGroup];
 
             // the Uploads dictionary is keyed by username; gather all of the users that belong to the same group as the requested user
             var uploadsForGroup = Uploads.Where(kvp => Users.GetGroup(kvp.Key) == groupName);
@@ -375,41 +442,6 @@ namespace resonance.Transfers
             }
 
             return globalPosition;
-        }
-
-        /// <summary>
-        ///     Computes the estimated queue position of the specified <paramref name="username"/> if they were to enqueue a file,
-        ///     or zero if the transfer could start immediately.
-        /// </summary>
-        /// <param name="username">The username for which to estimate.</param>
-        /// <returns>
-        ///     The estimated queue position if the user were to enqueue a file, or zero if the transfer could start immediately.
-        /// </returns>
-        public int ForecastPosition(string username)
-        {
-            var groupName = Users.GetGroup(username);
-
-            // if there's a slot available, the user will enter the queue at position 0 (will start immediately)
-            if (Groups.TryGetValue(groupName, out var groupRecord) && groupRecord.SlotAvailable)
-            {
-                return 0;
-            }
-
-            // the Uploads dictionary is keyed by username; gather all of the users that belong to the same group as the requested user
-            var uploadsForGroup = Uploads.Where(kvp => Users.GetGroup(kvp.Key) == groupName);
-
-            // assuming that the queue will be processed in a true round-robin fashion and that the user will be the last in the
-            // rotation (worst case), the user's start position will be equal to the number of users downloading or waiting, + 1.
-            if (groupRecord.Strategy == QueueStrategy.RoundRobin)
-            {
-                return uploadsForGroup.Count() + 1;
-            }
-
-            // for FIFO queues, the user will enter the queue at the very back. return the total number of uploads in progress and
-            // enqueued, + 1.
-            return uploadsForGroup
-                .SelectMany(group => group.Value)
-                .Count() + 1;
         }
 
         private void Configure(Options options)
