@@ -84,13 +84,14 @@ export const getLogs = async ({
 export const getLogContexts = async () =>
   (await api.get('/logs/contexts')).data;
 
-// The server-side minimum level. Debug events are dropped before they ever reach a sink, so the
-// DBG filter is inert unless this is lowered.
-export const getLogLevel = async () =>
-  (await api.get('/logs/level')).data.level;
+// The server-side minimum levels, as { level, framework }. Events below these are dropped before
+// they ever reach a sink, so the matching filters are inert unless the floor is lowered.
+// `framework` covers Microsoft.* (ASP.NET, EF Core, SignalR) and is held higher on purpose.
+export const getLogLevel = async () => (await api.get('/logs/level')).data;
 
-export const setLogLevel = async (level) =>
-  (await api.put('/logs/level', { level })).data.level;
+// Accepts a partial patch — { level }, { framework }, or both. Omitted fields are left alone.
+export const setLogLevel = async (patch) =>
+  (await api.put('/logs/level', patch)).data;
 
 // Downloads the backend's recently-captured HTTP traffic as a HAR 1.2 file — the server-side
 // counterpart to the mobile app's network log export, for side-by-side latency comparison.

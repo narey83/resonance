@@ -37,7 +37,9 @@ import React, {
 import {
   ActivityIndicator,
   FlatList,
+  Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -48,7 +50,13 @@ import type { HubConnection } from '@microsoft/signalr';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import { createLogsHubConnection } from '../../api/logsHub';
-import { getLogs, LogRecord } from '../../api/logs';
+import {
+  getLogContexts,
+  getLogLevel,
+  getLogs,
+  LogRecord,
+  setLogLevel,
+} from '../../api/logs';
 import { useAfterInteractions } from '../../hooks/useDeferredEffect';
 import { useAppSettings } from '../../store/appSettingsStore';
 import { LIST_PERF_PROPS } from '../../lib/listPerf';
@@ -56,7 +64,9 @@ import { LIST_PERF_PROPS } from '../../lib/listPerf';
 const MAX_LIVE = 500;
 const PAGE_SIZE = 50;
 
-// Backend Serilog levels ↔ short labels shown on the level filter chips.
+// Backend Serilog levels ↔ short labels shown on the level filter chips. Ordered loosest →
+// strictest, so the index doubles as the severity ramp used to work out which levels the server
+// discards before they ever reach a sink.
 const LEVELS = [
   { key: 'Debug',       label: 'DBG' },
   { key: 'Information', label: 'INF' },
@@ -65,6 +75,11 @@ const LEVELS = [
 ] as const;
 
 const ALL_LEVELS = LEVELS.map((l) => l.key);
+
+// Rows in the same list item type, so FlatList can render date separators inline.
+type Row =
+  | { type: 'date'; day: string }
+  | { type: 'log'; log: LogRecord; key: string };
 
 function levelLabel(level: string): string {
   return LEVELS.find((l) => l.key === level)?.label ?? level.slice(0, 3).toUpperCase();
@@ -86,6 +101,68 @@ function formatTime(iso: string): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+function dayOf(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function formatDay(day: string): string {
+  const today = dayOf(new Date().toISOString());
+  if (day === today) return 'Today';
+  const d = new Date(`${day}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return day;
+  return d.toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+// Build the flat date-separated row list the lists actually render.
+function toRows(logs: LogRecord[]): Row[] {
+  const out: Row[] = [];
+  let lastDay: string | null = null;
+  logs.forEach((log, i) => {
+    const day = dayOf(log.timestamp);
+    if (day !== lastDay) {
+      out.push({ type: 'date', day });
+      lastDay = day;
+    }
+    out.push({ type: 'log', log, key: `${log.timestamp}-${log.context}-${log.level}-${i}` });
+  });
+  return out;
+}
+
+// Contexts read as "Group / Leaf". Dimming the group lets the eye scan the part that differs.
+function ContextLabel({
+  context,
+  styles,
+}: {
+  context: string;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  const split = context.lastIndexOf(' / ');
+  if (split === -1) return <Text numberOfLines={1} style={styles.contextLeaf}>{context}</Text>;
+  return (
+    <Text numberOfLines={1} style={styles.contextLeaf}>
+      <Text style={styles.contextGroup}>{context.slice(0, split + 3)}</Text>
+      {context.slice(split + 3)}
+    </Text>
+  );
+}
+
+function DateSeparator({ day, styles }: { day: string; styles: ReturnType<typeof makeStyles> }) {
+  return (
+    <View style={styles.dateSep}>
+      <Text style={styles.dateSepText}>{formatDay(day)}</Text>
+      <View style={styles.dateSepLine} />
+    </View>
+  );
+}
+
 // A single log line; tapping expands its stack trace when one is attached.
 function LogItem({
   log,
@@ -100,23 +177,32 @@ function LogItem({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const tint = levelColor(colors, log.level);
   return (
     <Pressable
       disabled={!log.exception}
       onPress={onToggle}
-      style={({ pressed }) => [styles.row, pressed && log.exception ? styles.rowPressed : null]}
+      style={({ pressed }) => [
+        styles.row,
+        { borderLeftColor: tint },
+        log.level === 'Error' ? styles.rowError : null,
+        log.level === 'Warning' ? styles.rowWarning : null,
+        pressed && log.exception ? styles.rowPressed : null,
+      ]}
     >
       <View style={styles.rowTop}>
+        <Text style={[styles.levelTag, { color: tint }]}>{levelLabel(log.level)}</Text>
         <Text style={styles.time}>{formatTime(log.timestamp)}</Text>
-        <Text style={[styles.level, { color: levelColor(colors, log.level) }]}>{levelLabel(log.level)}</Text>
         {log.context ? (
-          <Text numberOfLines={1} style={styles.context}>{log.context}</Text>
+          <View style={styles.contextWrap}>
+            <ContextLabel context={log.context} styles={styles} />
+          </View>
         ) : null}
       </View>
       <Text selectable style={styles.message}>
         {log.message}
         {log.exception ? (
-          <Text style={styles.exceptionToggle}>{expanded ? '  ▾ hide' : '  ▸ exception'}</Text>
+          <Text style={styles.exceptionToggle}>{expanded ? '  ▾ hide trace' : '  ▸ stack trace'}</Text>
         ) : null}
       </Text>
       {expanded && log.exception ? (
@@ -126,26 +212,223 @@ function LogItem({
   );
 }
 
+// Level filter pills carrying severity colour plus a count of what each would reveal. A level the
+// server is not emitting at all is drawn dashed — filtering it would do nothing.
 function LevelChips({
   active,
+  counts,
   onToggle,
   styles,
+  colors,
+  suppressedBelow,
 }: {
   active: Record<string, boolean>;
+  counts?: Record<string, number>;
   onToggle: (key: string) => void;
   styles: ReturnType<typeof makeStyles>;
+  colors: ThemeColors;
+  suppressedBelow?: number;
 }) {
   return (
     <View style={styles.chipRow}>
-      {LEVELS.map((l) => (
-        <Pressable
-          key={l.key}
-          onPress={() => onToggle(l.key)}
-          style={[styles.chip, active[l.key] ? styles.chipOn : styles.chipOff]}
-        >
-          <Text style={[styles.chipText, active[l.key] ? styles.chipTextOn : styles.chipTextOff]}>{l.label}</Text>
-        </Pressable>
-      ))}
+      {LEVELS.map((l, i) => {
+        const on = active[l.key];
+        const tint = levelColor(colors, l.key);
+        const suppressed = suppressedBelow !== undefined && i < suppressedBelow;
+        return (
+          <Pressable
+            key={l.key}
+            onPress={() => onToggle(l.key)}
+            style={[
+              styles.chip,
+              on ? { borderColor: tint, backgroundColor: colors.bgElevated } : styles.chipOff,
+              suppressed ? styles.chipSuppressed : null,
+            ]}
+          >
+            <Text style={[styles.chipText, { color: on ? tint : colors.textMuted }]}>{l.label}</Text>
+            {counts?.[l.key] ? (
+              <Text style={[styles.chipCount, { color: on ? tint : colors.textMuted }]}>
+                {counts[l.key]}
+              </Text>
+            ) : null}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+// Full-screen sheet listing every context the backend can emit, grouped and searchable — the
+// mobile counterpart to the web dropdown. Beats a chip strip that only shows what happened to
+// arrive and scrolls off the edge on a phone.
+function ContextPicker({
+  all,
+  active,
+  counts,
+  onChange,
+  styles,
+  colors,
+}: {
+  all: string[];
+  active: string[];
+  counts?: Record<string, number>;
+  onChange: (next: string[]) => void;
+  styles: ReturnType<typeof makeStyles>;
+  colors: ThemeColors;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+
+  const groups = useMemo(() => {
+    const matching = query
+      ? all.filter((c) => c.toLowerCase().includes(query.toLowerCase()))
+      : all;
+    const map = new Map<string, string[]>();
+    for (const context of matching) {
+      const split = context.lastIndexOf(' / ');
+      const group = split === -1 ? 'General' : context.slice(0, split);
+      if (!map.has(group)) map.set(group, []);
+      map.get(group)!.push(context);
+    }
+    return [...map.entries()].sort(([a], [b]) => {
+      if (a === 'General') return -1;
+      if (b === 'General') return 1;
+      return a.localeCompare(b);
+    });
+  }, [all, query]);
+
+  const toggle = (context: string) =>
+    onChange(
+      active.includes(context)
+        ? active.filter((c) => c !== context)
+        : [...active, context],
+    );
+
+  return (
+    <>
+      <Pressable
+        onPress={() => setOpen(true)}
+        style={({ pressed }) => [
+          styles.btn,
+          active.length > 0 ? { borderColor: colors.accent } : null,
+          pressed && styles.btnPressed,
+        ]}
+      >
+        <Ionicons color={active.length > 0 ? colors.accent : colors.textPrimary} name="funnel-outline" size={14} />
+        <Text style={[styles.btnText, active.length > 0 ? { color: colors.accent } : null]}>
+          {active.length > 0 ? `Contexts (${active.length})` : 'Contexts'}
+        </Text>
+      </Pressable>
+
+      <Modal animationType="slide" onRequestClose={() => setOpen(false)} transparent visible={open}>
+        <View style={styles.sheetBackdrop}>
+          <Pressable onPress={() => setOpen(false)} style={{ flex: 1 }} />
+          <View style={styles.sheet}>
+            <View style={styles.sheetHead}>
+              <Text style={styles.sheetTitle}>Filter by context</Text>
+              {active.length > 0 ? (
+                <Pressable onPress={() => onChange([])}>
+                  <Text style={styles.sheetClear}>Clear</Text>
+                </Pressable>
+              ) : null}
+              <Pressable onPress={() => setOpen(false)}>
+                <Ionicons color={colors.textMuted} name="close" size={22} />
+              </Pressable>
+            </View>
+
+            <TextInput
+              autoCapitalize="none"
+              autoCorrect={false}
+              onChangeText={setQuery}
+              placeholder="Filter contexts…"
+              placeholderTextColor={colors.textMuted}
+              style={styles.sheetSearch}
+              value={query}
+            />
+
+            <ScrollView keyboardShouldPersistTaps="handled" style={styles.sheetBody}>
+              {groups.length === 0 ? (
+                <Text style={styles.empty}>No matching contexts</Text>
+              ) : null}
+              {groups.map(([group, contexts]) => (
+                <View key={group}>
+                  <Text style={styles.sheetGroup}>{group}</Text>
+                  {contexts.map((context) => {
+                    const split = context.lastIndexOf(' / ');
+                    const on = active.includes(context);
+                    return (
+                      <Pressable
+                        key={context}
+                        onPress={() => toggle(context)}
+                        style={({ pressed }) => [styles.sheetItem, pressed && styles.rowPressed]}
+                      >
+                        <Ionicons
+                          color={on ? colors.accent : colors.textDim}
+                          name={on ? 'checkbox' : 'square-outline'}
+                          size={18}
+                        />
+                        <Text style={[styles.sheetItemText, on ? { color: colors.accent } : null]}>
+                          {split === -1 ? context : context.slice(split + 3)}
+                        </Text>
+                        {counts?.[context] ? (
+                          <Text style={styles.sheetItemCount}>{counts[context]}</Text>
+                        ) : null}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+// Shown only when a level is switched on that the server never emits, so it stays actionable
+// rather than becoming permanent wallpaper.
+function ServerLevelNotice({
+  suppressed,
+  serverLevel,
+  onChange,
+  styles,
+  colors,
+}: {
+  suppressed: string[];
+  serverLevel: string;
+  onChange: (level: string) => void;
+  styles: ReturnType<typeof makeStyles>;
+  colors: ThemeColors;
+}) {
+  return (
+    <View style={styles.notice}>
+      <Text style={styles.noticeText}>
+        No <Text style={styles.noticeStrong}>{suppressed.map(levelLabel).join(' or ')}</Text> entries
+        will appear — the server discards everything below{' '}
+        <Text style={styles.noticeStrong}>{serverLevel}</Text> before it is recorded.
+      </Text>
+      <View style={styles.chipRow}>
+        {LEVELS.map((l) => (
+          <Pressable
+            key={l.key}
+            onPress={() => onChange(l.key)}
+            style={[
+              styles.levelBtn,
+              serverLevel === l.key ? { backgroundColor: colors.accent, borderColor: colors.accent } : null,
+            ]}
+          >
+            <Text
+              style={[
+                styles.levelBtnText,
+                serverLevel === l.key ? { color: '#fff' } : null,
+              ]}
+            >
+              {l.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
     </View>
   );
 }
@@ -162,9 +445,18 @@ function LiveTab({ colors, styles }: { colors: ThemeColors; styles: ReturnType<t
   );
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [knownContexts, setKnownContexts] = useState<string[]>([]);
+  const [seenContexts, setSeenContexts] = useState<string[]>([]);
+  const [activeContexts, setActiveContexts] = useState<string[]>([]);
+  const [serverLevel, setServerLevel] = useState<string | null>(null);
 
   const pausedRef = useRef(false);
   useEffect(() => { pausedRef.current = paused; }, [paused]);
+
+  useEffect(() => {
+    getLogContexts().then(setKnownContexts).catch(() => {});
+    getLogLevel().then(setServerLevel).catch(() => {});
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -174,12 +466,17 @@ function LiveTab({ colors, styles }: { colors: ThemeColors; styles: ReturnType<t
     hub.on('BUFFER', (buffer: LogRecord[]) => {
       if (cancelled) return;
       setConnected(true);
-      setLogs([...buffer].reverse().slice(0, MAX_LIVE));
+      const next = [...buffer].reverse().slice(0, MAX_LIVE);
+      setLogs(next);
+      setSeenContexts([...new Set(next.map((l) => l.context).filter(Boolean) as string[])]);
     });
 
     hub.on('LOG', (log: LogRecord) => {
       if (cancelled) return;
       setConnected(true);
+      if (log.context) {
+        setSeenContexts((prev) => (prev.includes(log.context!) ? prev : [...prev, log.context!]));
+      }
       if (pausedRef.current) {
         setPending((prev) => [log, ...prev].slice(0, MAX_LIVE));
         return;
@@ -206,18 +503,60 @@ function LiveTab({ colors, styles }: { colors: ThemeColors; styles: ReturnType<t
     setPaused(false);
   }, [pending]);
 
-  const filtered = useMemo(() => {
+  // Matching is split from level/context selection so each pill can show how many entries it
+  // *would* reveal, rather than leaving the user guessing what a disabled filter is hiding.
+  const matched = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return logs.filter((l) => {
-      if (!levels[l.level]) return false;
-      if (q && !(l.message ?? '').toLowerCase().includes(q) && !(l.context ?? '').toLowerCase().includes(q)) {
-        return false;
-      }
-      return true;
-    });
-  }, [logs, levels, search]);
+    if (!q) return logs;
+    return logs.filter(
+      (l) =>
+        (l.message ?? '').toLowerCase().includes(q) ||
+        (l.context ?? '').toLowerCase().includes(q),
+    );
+  }, [logs, search]);
 
-  const keyFor = (l: LogRecord, i: number) => `${l.timestamp}-${l.context}-${l.level}-${i}`;
+  const levelCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const l of matched) {
+      if (activeContexts.length > 0 && !activeContexts.includes(l.context ?? '')) continue;
+      counts[l.level] = (counts[l.level] ?? 0) + 1;
+    }
+    return counts;
+  }, [matched, activeContexts]);
+
+  const contextCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const l of matched) {
+      if (!levels[l.level] || !l.context) continue;
+      counts[l.context] = (counts[l.context] ?? 0) + 1;
+    }
+    return counts;
+  }, [matched, levels]);
+
+  const filtered = useMemo(
+    () =>
+      matched.filter(
+        (l) =>
+          levels[l.level] &&
+          (activeContexts.length === 0 || activeContexts.includes(l.context ?? '')),
+      ),
+    [matched, levels, activeContexts],
+  );
+
+  const rows = useMemo(() => toRows(filtered), [filtered]);
+
+  const allContexts = useMemo(
+    () => [...new Set([...knownContexts, ...seenContexts])].sort((a, b) => a.localeCompare(b)),
+    [knownContexts, seenContexts],
+  );
+
+  const serverFloor = serverLevel ? ALL_LEVELS.indexOf(serverLevel as typeof ALL_LEVELS[number]) : 0;
+  const suppressed = ALL_LEVELS.filter((l, i) => levels[l] && i < serverFloor);
+
+  const changeServerLevel = (level: string) => {
+    setServerLevel(level);
+    setLogLevel(level).catch(() => { getLogLevel().then(setServerLevel).catch(() => {}); });
+  };
 
   return (
     <View style={styles.tabBody}>
@@ -237,32 +576,60 @@ function LiveTab({ colors, styles }: { colors: ThemeColors; styles: ReturnType<t
             </Text>
           </Pressable>
         </View>
-        <LevelChips active={levels} onToggle={toggleLevel} styles={styles} />
+        <View style={styles.toolbarRow}>
+          <LevelChips
+            active={levels}
+            colors={colors}
+            counts={levelCounts}
+            onToggle={toggleLevel}
+            styles={styles}
+            suppressedBelow={serverLevel ? serverFloor : undefined}
+          />
+          <View style={{ flex: 1 }} />
+          <ContextPicker
+            active={activeContexts}
+            all={allContexts}
+            colors={colors}
+            counts={contextCounts}
+            onChange={setActiveContexts}
+            styles={styles}
+          />
+        </View>
         <SearchBox value={search} onChange={setSearch} styles={styles} colors={colors} />
+        {suppressed.length > 0 && serverLevel ? (
+          <ServerLevelNotice
+            colors={colors}
+            onChange={changeServerLevel}
+            serverLevel={serverLevel}
+            styles={styles}
+            suppressed={[...suppressed]}
+          />
+        ) : null}
       </View>
 
       <FlatList
         {...LIST_PERF_PROPS}
-        data={filtered}
-        keyExtractor={keyFor}
+        data={rows}
+        keyExtractor={(row) => (row.type === 'date' ? `date-${row.day}` : row.key)}
         extraData={expanded}
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
           <Text style={styles.empty}>{connected ? 'No log entries match the current filters.' : 'Waiting for the server…'}</Text>
         }
-        renderItem={({ item, index }) => {
-          const k = keyFor(item, index);
-          return (
+        renderItem={({ item }) =>
+          item.type === 'date' ? (
+            <DateSeparator day={item.day} styles={styles} />
+          ) : (
             <LogItem
-              log={item}
+              log={item.log}
               styles={styles}
               colors={colors}
-              expanded={expanded === k}
-              onToggle={() => setExpanded((cur) => (cur === k ? null : k))}
+              expanded={expanded === item.key}
+              onToggle={() => setExpanded((cur) => (cur === item.key ? null : item.key))}
             />
-          );
-        }}
+          )
+        }
       />
     </View>
   );
@@ -279,19 +646,22 @@ function HistoryTab({ colors, styles }: { colors: ThemeColors; styles: ReturnTyp
   );
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [knownContexts, setKnownContexts] = useState<string[]>([]);
+  const [activeContexts, setActiveContexts] = useState<string[]>([]);
 
   // Snapshot of the filters last submitted, so "load more" pages the same query.
-  const submitted = useRef({ levels, search });
+  const submitted = useRef({ levels, search, activeContexts });
 
   const load = useCallback(async (offset: number) => {
     setLoading(true);
-    const { levels: lvl, search: q } = submitted.current;
+    const { levels: lvl, search: q, activeContexts: ctx } = submitted.current;
     const active = ALL_LEVELS.filter((l) => lvl[l]);
     try {
       const { items, total: t } = await getLogs({
         offset,
         limit: PAGE_SIZE,
         level: active.length === ALL_LEVELS.length ? undefined : active,
+        context: ctx.length > 0 ? ctx : undefined,
         search: q.trim() || undefined,
       });
       setTotal(t);
@@ -306,20 +676,34 @@ function HistoryTab({ colors, styles }: { colors: ThemeColors; styles: ReturnTyp
   // Initial fetch, deferred until screen-transition interactions settle.
   useAfterInteractions(() => { load(0); }, []);
 
+  useEffect(() => {
+    getLogContexts().then(setKnownContexts).catch(() => {});
+  }, []);
+
   const runSearch = () => {
-    submitted.current = { levels, search };
+    submitted.current = { levels, search, activeContexts };
     setExpanded(null);
     load(0);
   };
 
   const toggleLevel = (key: string) => setLevels((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  const keyFor = (l: LogRecord, i: number) => `${l.timestamp}-${l.context}-${l.level}-${i}`;
+  const rows = useMemo(() => toRows(logs), [logs]);
 
   return (
     <View style={styles.tabBody}>
       <View style={styles.toolbar}>
-        <LevelChips active={levels} onToggle={toggleLevel} styles={styles} />
+        <View style={styles.toolbarRow}>
+          <LevelChips active={levels} colors={colors} onToggle={toggleLevel} styles={styles} />
+          <View style={{ flex: 1 }} />
+          <ContextPicker
+            active={activeContexts}
+            all={knownContexts}
+            colors={colors}
+            onChange={setActiveContexts}
+            styles={styles}
+          />
+        </View>
         <View style={styles.toolbarRow}>
           <SearchBox value={search} onChange={setSearch} onSubmit={runSearch} styles={styles} colors={colors} />
           <Pressable onPress={runSearch} style={({ pressed }) => [styles.btn, pressed && styles.btnPressed]}>
@@ -331,8 +715,8 @@ function HistoryTab({ colors, styles }: { colors: ThemeColors; styles: ReturnTyp
 
       <FlatList
         {...LIST_PERF_PROPS}
-        data={logs}
-        keyExtractor={keyFor}
+        data={rows}
+        keyExtractor={(row) => (row.type === 'date' ? `date-${row.day}` : row.key)}
         extraData={expanded}
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
@@ -360,18 +744,19 @@ function HistoryTab({ colors, styles }: { colors: ThemeColors; styles: ReturnTyp
             </View>
           ) : null
         }
-        renderItem={({ item, index }) => {
-          const k = keyFor(item, index);
-          return (
+        renderItem={({ item }) =>
+          item.type === 'date' ? (
+            <DateSeparator day={item.day} styles={styles} />
+          ) : (
             <LogItem
-              log={item}
+              log={item.log}
               styles={styles}
               colors={colors}
-              expanded={expanded === k}
-              onToggle={() => setExpanded((cur) => (cur === k ? null : k))}
+              expanded={expanded === item.key}
+              onToggle={() => setExpanded((cur) => (cur === item.key ? null : item.key))}
             />
-          );
-        }}
+          )
+        }
       />
     </View>
   );
@@ -522,18 +907,103 @@ function makeStyles(c: ThemeColors) {
     statusText: { fontSize: Typography.sm, fontWeight: '600', color: c.textPrimary },
     countText:  { fontSize: Typography.xs, color: c.textMuted, marginLeft: Spacing.sm },
 
-    chipRow: { flexDirection: 'row', gap: Spacing.xs },
+    chipRow: { flexDirection: 'row', gap: Spacing.xs, alignItems: 'center' },
     chip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
       paddingVertical: 4,
       paddingHorizontal: Spacing.sm,
       borderRadius: Radius.sm,
       borderWidth: 1,
     },
-    chipOn:       { borderColor: c.accent, backgroundColor: c.bgElevated },
-    chipOff:      { borderColor: c.border, backgroundColor: 'transparent' },
-    chipText:     { fontSize: Typography.xs, fontWeight: '700', fontFamily: Typography.mono },
-    chipTextOn:   { color: c.textPrimary },
-    chipTextOff:  { color: c.textMuted },
+    chipOff:        { borderColor: c.border, backgroundColor: 'transparent', opacity: 0.5 },
+    chipSuppressed: { borderStyle: 'dashed', opacity: 0.4 },
+    chipText:       { fontSize: Typography.xs, fontWeight: '700', fontFamily: Typography.mono },
+    chipCount:      { fontSize: 9, fontWeight: '600' },
+
+    levelBtn: {
+      paddingVertical: 3,
+      paddingHorizontal: Spacing.sm,
+      borderRadius: Radius.sm,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    levelBtnText: {
+      fontSize: Typography.xs,
+      fontWeight: '700',
+      fontFamily: Typography.mono,
+      color: c.textMuted,
+    },
+
+    notice: {
+      gap: Spacing.sm,
+      padding: Spacing.md,
+      borderRadius: Radius.sm,
+      borderWidth: 1,
+      borderColor: c.warning,
+      backgroundColor: c.bgSurface,
+    },
+    noticeText:   { fontSize: Typography.xs, color: c.textMuted, lineHeight: 17 },
+    noticeStrong: { color: c.textPrimary, fontWeight: '700' },
+
+    sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
+    sheet: {
+      maxHeight: '75%',
+      backgroundColor: c.bgPrimary,
+      borderTopLeftRadius: Radius.md,
+      borderTopRightRadius: Radius.md,
+      padding: Spacing.lg,
+      gap: Spacing.md,
+    },
+    sheetHead:  { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+    sheetTitle: { flex: 1, fontSize: Typography.base, fontWeight: '700', color: c.textPrimary },
+    sheetClear: { fontSize: Typography.sm, fontWeight: '600', color: c.accent },
+    sheetSearch: {
+      fontSize: Typography.sm,
+      color: c.textPrimary,
+      backgroundColor: c.bgSurface,
+      borderWidth: 1,
+      borderColor: c.border,
+      borderRadius: Radius.sm,
+      paddingVertical: Spacing.sm,
+      paddingHorizontal: Spacing.md,
+    },
+    sheetBody: { flexGrow: 0 },
+    sheetGroup: {
+      fontSize: 10,
+      fontWeight: '700',
+      letterSpacing: 1,
+      color: c.textMuted,
+      textTransform: 'uppercase',
+      paddingTop: Spacing.md,
+      paddingBottom: Spacing.xs,
+    },
+    sheetItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing.sm,
+      paddingVertical: Spacing.sm,
+      borderRadius: Radius.sm,
+    },
+    sheetItemText:  { flex: 1, fontSize: Typography.sm, color: c.textPrimary },
+    sheetItemCount: { fontSize: Typography.xs, color: c.textMuted, fontFamily: Typography.mono },
+
+    dateSep: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing.sm,
+      paddingTop: Spacing.md,
+      paddingBottom: Spacing.xs,
+    },
+    dateSepText: {
+      fontSize: 10,
+      fontWeight: '700',
+      letterSpacing: 1,
+      color: c.textMuted,
+      textTransform: 'uppercase',
+    },
+    dateSepLine: { flex: 1, height: 1, backgroundColor: c.border },
 
     search: {
       flex: 1,
@@ -568,15 +1038,20 @@ function makeStyles(c: ThemeColors) {
       borderRadius: Radius.md,
       borderWidth: 1,
       borderColor: c.border,
+      borderLeftWidth: 3,
       paddingHorizontal: Spacing.md,
       paddingVertical: Spacing.sm,
       gap: 2,
     },
     rowPressed: { backgroundColor: c.bgElevated },
+    rowWarning: { backgroundColor: c.bgElevated },
+    rowError:   { backgroundColor: c.bgElevated, borderColor: c.danger },
     rowTop:     { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-    time:    { fontSize: Typography.xs, color: c.textMuted, fontFamily: Typography.mono },
-    level:   { fontSize: Typography.xs, fontWeight: '700', fontFamily: Typography.mono, minWidth: 30 },
-    context: { flex: 1, fontSize: Typography.xs, color: c.textDim, fontFamily: Typography.mono, textAlign: 'right' },
+    time:     { fontSize: Typography.xs, color: c.textMuted, fontFamily: Typography.mono },
+    levelTag: { fontSize: Typography.xs, fontWeight: '700', fontFamily: Typography.mono, minWidth: 30 },
+    contextWrap:  { flex: 1, alignItems: 'flex-end' },
+    contextLeaf:  { fontSize: Typography.xs, color: c.textMuted, fontFamily: Typography.mono },
+    contextGroup: { color: c.textDim },
     message: { fontSize: Typography.sm, color: c.textPrimary },
     exceptionToggle: { fontSize: Typography.xs, color: c.accent, fontWeight: '600' },
     exception: {

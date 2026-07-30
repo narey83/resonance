@@ -470,6 +470,94 @@ const SearchBox = ({
   </div>
 );
 
+// Persistent home for the server-side level controls. The in-toolbar notice only appears when a
+// filter is being suppressed, so these need somewhere permanent to live.
+const ServerLevelMenu = ({ framework, level, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const onDocumentClick = (e) => {
+      if (!rootRef.current?.contains(e.target)) setOpen(false);
+    };
+
+    const onKey = (e) => e.key === 'Escape' && setOpen(false);
+
+    document.addEventListener('mousedown', onDocumentClick);
+    document.addEventListener('keydown', onKey);
+
+    return () => {
+      document.removeEventListener('mousedown', onDocumentClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  if (!level) return null;
+
+  return (
+    <div
+      className="logs-ctx-picker"
+      ref={rootRef}
+    >
+      <button
+        className="logs-tab hover-fx"
+        onClick={() => setOpen((prev) => !prev)}
+        title="Minimum level the server records at"
+        type="button"
+      >
+        ⚙ Server: {LEVEL_LABELS[level] ?? level}
+      </button>
+
+      {open && (
+        <div className="logs-ctx-menu logs-ctx-menu--right">
+          <div className="logs-level-menu-section">
+            <div className="logs-ctx-group-head">Application level</div>
+            <div className="logs-server-level-picker">
+              {LEVEL_ORDER.map((option) => (
+                <button
+                  className={`logs-server-level-btn${level === option ? ' logs-server-level-btn--on' : ''}`}
+                  key={option}
+                  onClick={() => onChange({ level: option })}
+                  type="button"
+                >
+                  {LEVEL_LABELS[option]}
+                </button>
+              ))}
+            </div>
+            <p className="logs-level-menu-hint">
+              Anything below this is discarded before it reaches the log, so no
+              filter can bring it back.
+            </p>
+          </div>
+
+          <div className="logs-level-menu-section">
+            <div className="logs-ctx-group-head">Framework level</div>
+            <div className="logs-server-level-picker">
+              {LEVEL_ORDER.map((option) => (
+                <button
+                  className={`logs-server-level-btn${framework === option ? ' logs-server-level-btn--on' : ''}`}
+                  key={option}
+                  onClick={() => onChange({ framework: option })}
+                  type="button"
+                >
+                  {LEVEL_LABELS[option]}
+                </button>
+              ))}
+            </div>
+            <p className="logs-level-menu-hint">
+              ASP.NET, EF Core and SignalR internals. Held at ERR by default —
+              they are extremely chatty and will bury the application&apos;s own
+              output.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const ColumnHead = () => (
   <div className="logs-col-head logs-col-head--desktop">
     <div className="logs-row-ts">Time</div>
@@ -481,7 +569,7 @@ const ColumnHead = () => (
 
 // ─── Live tab ─────────────────────────────────────────────────────────────────
 
-const LiveTab = () => {
+const LiveTab = ({ onChangeServerLevel, serverLevel }) => {
   const [connected, setConnected] = useState(false);
   const [logs, setLogs] = useState([]);
   const [levels, setLevels] = useState({
@@ -493,7 +581,6 @@ const LiveTab = () => {
   const [seenContexts, setSeenContexts] = useState([]);
   const [knownContexts, setKnownContexts] = useState([]);
   const [activeContexts, setActiveContexts] = useState([]);
-  const [serverLevel, setServerLevel] = useState(null);
   const [messageFilter, setMessageFilter] = useState('');
   const [regexMode, setRegexMode] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -513,9 +600,6 @@ const LiveTab = () => {
   useEffect(() => {
     getLogContexts()
       .then(setKnownContexts)
-      .catch(() => {});
-    getLogLevel()
-      .then(setServerLevel)
       .catch(() => {});
   }, []);
 
@@ -738,11 +822,6 @@ const LiveTab = () => {
     setMessageFilter('');
   };
 
-  const changeServerLevel = (level) => {
-    setServerLevel(level);
-    setLogLevel(level).catch(() => getLogLevel().then(setServerLevel));
-  };
-
   const hasFilters =
     activeContexts.length > 0 ||
     messageFilter ||
@@ -840,7 +919,7 @@ const LiveTab = () => {
                 <button
                   className={`logs-server-level-btn${serverLevel === level ? ' logs-server-level-btn--on' : ''}`}
                   key={level}
-                  onClick={() => changeServerLevel(level)}
+                  onClick={() => onChangeServerLevel({ level })}
                   type="button"
                 >
                   {LEVEL_LABELS[level]}
@@ -1252,6 +1331,25 @@ const openPopout = () =>
 const Logs = () => {
   const [mode, setMode] = useState('live');
   const [exporting, setExporting] = useState(false);
+  const [levels, setLevels] = useState({ framework: null, level: null });
+
+  useEffect(() => {
+    getLogLevel()
+      .then(setLevels)
+      .catch(() => {});
+  }, []);
+
+  // Optimistic, then reconciled with whatever the server actually applied.
+  const changeServerLevel = (patch) => {
+    setLevels((prev) => ({ ...prev, ...patch }));
+    setLogLevel(patch)
+      .then(setLevels)
+      .catch(() =>
+        getLogLevel()
+          .then(setLevels)
+          .catch(() => {}),
+      );
+  };
 
   const exportHar = async () => {
     setExporting(true);
@@ -1287,6 +1385,11 @@ const Logs = () => {
           History
         </button>
         <span style={{ flex: 1 }} />
+        <ServerLevelMenu
+          framework={levels.framework}
+          level={levels.level}
+          onChange={changeServerLevel}
+        />
         {!isPopout() && (
           <button
             className="logs-tab hover-fx"
@@ -1308,7 +1411,12 @@ const Logs = () => {
         </button>
       </div>
 
-      {mode === 'live' && <LiveTab />}
+      {mode === 'live' && (
+        <LiveTab
+          onChangeServerLevel={changeServerLevel}
+          serverLevel={levels.level}
+        />
+      )}
       {mode === 'history' && <HistoryTab />}
     </div>
   );

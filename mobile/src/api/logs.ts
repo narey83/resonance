@@ -43,7 +43,7 @@ export interface LogQuery {
   offset?: number;
   limit?:  number;
   level?:  string[];
-  context?: string;
+  context?: string[];
   search?: string;
   from?:   string;
   to?:     string;
@@ -71,7 +71,7 @@ export const getLogs = ({
   params.set('offset', String(offset));
   params.set('limit', String(limit));
   if (level?.length) for (const l of level) params.append('level', l);
-  if (context) params.set('context', context);
+  if (context?.length) for (const c of context) params.append('context', c);
   if (search) params.set('search', search);
   if (from) params.set('from', from);
   if (to) params.set('to', to);
@@ -80,3 +80,16 @@ export const getLogs = ({
     .get<LogRecord[]>(`/logs?${params.toString()}`)
     .then(r => ({ items: r.data, total: totalCount(r.headers as Record<string, unknown>) }));
 };
+
+// Every context the backend can log under, so the filter list is complete up front rather than
+// growing as messages happen to arrive.
+export const getLogContexts = (): Promise<string[]> =>
+  apiClient.get<string[]>('/logs/contexts').then(r => r.data);
+
+// The server-side minimum level. Debug events are dropped before they reach a sink, so the DBG
+// filter is inert unless this is lowered.
+export const getLogLevel = (): Promise<string> =>
+  apiClient.get<{ level: string }>('/logs/level').then(r => r.data.level);
+
+export const setLogLevel = (level: string): Promise<string> =>
+  apiClient.put<{ level: string }>('/logs/level', { level }).then(r => r.data.level);

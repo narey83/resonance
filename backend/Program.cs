@@ -175,6 +175,16 @@ namespace resonance
         public static Serilog.Core.LoggingLevelSwitch LevelSwitch { get; } = new(LogEventLevel.Information);
 
         /// <summary>
+        ///     Gets the switch controlling the minimum log level for framework (Microsoft.*) events.
+        /// </summary>
+        /// <remarks>
+        ///     Held at Error by default: ASP.NET, EF Core and SignalR are enormously chatty and would
+        ///     bury the application's own output. Separate from <see cref="LevelSwitch"/> so lowering
+        ///     the app level doesn't drag the framework floor down with it.
+        /// </remarks>
+        public static Serilog.Core.LoggingLevelSwitch FrameworkLevelSwitch { get; } = new(LogEventLevel.Error);
+
+        /// <summary>
         ///     Gets the semantic application version.
         /// </summary>
         public static string SemanticVersion { get; } = InformationalVersion.Split('+').First();
@@ -1537,7 +1547,7 @@ namespace resonance
 
             Serilog.Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.ControlledBy(LevelSwitch)
-                .MinimumLevel.Override("Microsoft", LogEventLevel.Error)
+                .MinimumLevel.Override("Microsoft", FrameworkLevelSwitch)
                 .MinimumLevel.Override("System.Net.Http.HttpClient", OptionsAtStartup.Debug ? LogEventLevel.Warning : LogEventLevel.Fatal)
                 .MinimumLevel.Override("resonance.Authentication.PassthroughAuthenticationHandler", LogEventLevel.Warning)
                 .MinimumLevel.Override("resonance.Authentication.ApiKeyAuthenticationHandler", LogEventLevel.Warning)

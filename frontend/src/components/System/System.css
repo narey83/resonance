@@ -297,6 +297,33 @@
   z-index: 30;
 }
 
+/* Anchored to the right edge for triggers that sit at the end of the tab bar. */
+.logs-ctx-menu--right {
+  left: auto;
+  right: 0;
+}
+
+.logs-level-menu-section {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 12px 10px;
+}
+
+.logs-level-menu-section:last-child {
+  border-bottom: none;
+}
+
+.logs-level-menu-section .logs-ctx-group-head {
+  padding: 0 0 5px;
+}
+
+.logs-level-menu-hint {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+  margin: 6px 0 0;
+  max-width: 260px;
+}
+
 .logs-ctx-menu-head {
   align-items: center;
   border-bottom: 1px solid var(--border);

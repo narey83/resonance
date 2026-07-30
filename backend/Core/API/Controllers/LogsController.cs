@@ -157,30 +157,52 @@ namespace resonance.Core.API
         public IActionResult GetContexts() => Ok(resonance.Logs.All);
 
         /// <summary>
-        ///     Gets the global minimum log level.
+        ///     Gets the global and framework minimum log levels.
         /// </summary>
         /// <returns></returns>
         [HttpGet("level")]
         [Authorize(Policy = AuthPolicy.Any)]
-        public IActionResult GetLevel() => Ok(new { level = Program.LevelSwitch.MinimumLevel.ToString() });
+        public IActionResult GetLevel() => Ok(new
+        {
+            level = Program.LevelSwitch.MinimumLevel.ToString(),
+            framework = Program.FrameworkLevelSwitch.MinimumLevel.ToString(),
+        });
 
         /// <summary>
-        ///     Sets the global minimum log level, taking effect immediately and without a restart.
+        ///     Sets the minimum log levels, taking effect immediately and without a restart.
         /// </summary>
         /// <returns></returns>
         [HttpPut("level")]
         [Authorize(Policy = AuthPolicy.Any)]
         public IActionResult PutLevel([FromBody] LogLevelRequest request)
         {
-            if (!Enum.TryParse<Serilog.Events.LogEventLevel>(request?.Level, ignoreCase: true, out var level))
+            if (request?.Level is not null)
             {
-                return BadRequest("Level must be one of: Verbose, Debug, Information, Warning, Error, Fatal");
+                if (!Enum.TryParse<Serilog.Events.LogEventLevel>(request.Level, ignoreCase: true, out var level))
+                {
+                    return BadRequest("Level must be one of: Verbose, Debug, Information, Warning, Error, Fatal");
+                }
+
+                Program.LevelSwitch.MinimumLevel = level;
+                Log.Information("Minimum log level set to {Level}", level);
             }
 
-            Program.LevelSwitch.MinimumLevel = level;
-            Log.Information("Minimum log level set to {Level}", level);
+            if (request?.Framework is not null)
+            {
+                if (!Enum.TryParse<Serilog.Events.LogEventLevel>(request.Framework, ignoreCase: true, out var framework))
+                {
+                    return BadRequest("Framework level must be one of: Verbose, Debug, Information, Warning, Error, Fatal");
+                }
 
-            return Ok(new { level = level.ToString() });
+                Program.FrameworkLevelSwitch.MinimumLevel = framework;
+                Log.Information("Framework (Microsoft.*) minimum log level set to {Level}", framework);
+            }
+
+            return Ok(new
+            {
+                level = Program.LevelSwitch.MinimumLevel.ToString(),
+                framework = Program.FrameworkLevelSwitch.MinimumLevel.ToString(),
+            });
         }
 
         /// <summary>
@@ -232,6 +254,12 @@ namespace resonance.Core.API
     public record LogLevelRequest
     {
         public string Level { get; init; }
+
+        /// <summary>
+        ///     Minimum level for Microsoft.* (ASP.NET, EF Core, SignalR) events. Optional; omitting
+        ///     it leaves the framework floor untouched.
+        /// </summary>
+        public string Framework { get; init; }
     }
 
     public record BrowserLogEntry
