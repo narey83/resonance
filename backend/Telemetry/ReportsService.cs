@@ -650,22 +650,24 @@ public class ReportsService
             string sql;
             if (UsePostgres)
             {
+                // Group per (directory, user) first: COUNT(DISTINCT ...) forces a sort that spills to
+                // disk at this row count, while the nested form can hash-aggregate. The regex is also
+                // ~4x cheaper per row than the portable RTRIM/REPLACE trick used by the SQLite dialect.
                 sql = $@"
-                    WITH directories AS (
+                    SELECT Directory, SUM(Count) AS Count, COUNT(*) AS DistinctUsers
+                    FROM (
                         SELECT
-                            RTRIM(
-                                RTRIM(""Filename"", REPLACE(REPLACE(""Filename"", '/', ''), '\', '')), '/\'
-                            ) AS Directory,
-                            ""Username""
+                            COALESCE(SUBSTRING(""Filename"" FROM '^(.*)[/\\]'), '') AS Directory,
+                            ""Username"",
+                            COUNT(*) AS Count
                         FROM transfers.""Transfers""
                         WHERE ""Direction"" = 'Upload'
                         AND ""State"" = 48
                         AND ""EndedAt"" IS NOT NULL
                         AND ""EndedAt"" BETWEEN @Start AND @End
                         {(username is not null ? "AND \"Username\" = @Username" : string.Empty)}
-                    )
-                    SELECT Directory, COUNT(*) AS Count, COUNT(DISTINCT ""Username"") AS DistinctUsers
-                    FROM directories
+                        GROUP BY 1, 2
+                    ) directories
                     GROUP BY Directory
                     ORDER BY DistinctUsers DESC, Count DESC
                     LIMIT @Limit
@@ -732,20 +734,22 @@ public class ReportsService
             string sql;
             if (UsePostgres)
             {
+                // Grouped per (file, user) first, for the same reasons as GetTopDirectories above.
                 sql = @"
-                    WITH files AS (
+                    SELECT Filename, SUM(Count) AS Count, COUNT(*) AS DistinctUsers, SUM(TotalBytes) AS TotalBytes
+                    FROM (
                         SELECT
-                            SUBSTR(""Filename"", LENGTH(RTRIM(""Filename"", REPLACE(REPLACE(""Filename"", '/', ''), '\', ''))) + 1) AS Filename,
+                            SUBSTRING(""Filename"" FROM '[^/\\]*$') AS Filename,
                             ""Username"",
-                            ""Size""
+                            COUNT(*) AS Count,
+                            SUM(""Size"") AS TotalBytes
                         FROM transfers.""Transfers""
                         WHERE ""Direction"" = 'Upload'
                         AND ""State"" = 48
                         AND ""EndedAt"" IS NOT NULL
                         AND ""EndedAt"" BETWEEN @Start AND @End
-                    )
-                    SELECT Filename, COUNT(*) AS Count, COUNT(DISTINCT ""Username"") AS DistinctUsers, SUM(""Size"") AS TotalBytes
-                    FROM files
+                        GROUP BY 1, 2
+                    ) files
                     GROUP BY Filename
                     ORDER BY DistinctUsers DESC, Count DESC
                     LIMIT @Limit OFFSET @Offset
