@@ -63,6 +63,19 @@ export const cancel = ({ direction, username, id, remove = false }) => {
   );
 };
 
+// Kill switch: cancels every incomplete transfer for a user, or just one of their folders.
+export const cancelAll = ({
+  direction,
+  username,
+  directory,
+  remove = false,
+}) => {
+  return api.delete(
+    `/transfers/${direction}s/${encodeURIComponent(username)}`,
+    { params: { directory, remove } },
+  );
+};
+
 export const clearCompleted = ({ direction }) => {
   return api.delete(`/transfers/${direction}s/all/completed`);
 };

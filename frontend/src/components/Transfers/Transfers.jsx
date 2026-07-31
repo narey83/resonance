@@ -82,35 +82,96 @@ const retryBatch = async (files) => {
   }
 };
 
+const deleteLocalFolder = async (directory) => {
+  const localDir = directory.split(/[/\\]/).filter(Boolean).at(-1);
+  if (!localDir) return;
+  await Promise.all([
+    filesLibrary
+      .deleteDirectory({ root: 'downloads', path: localDir })
+      .catch(() => {}),
+    filesLibrary
+      .deleteDirectory({ root: 'incomplete', path: localDir })
+      .catch(() => {}),
+  ]);
+};
+
+const isActive = (f) => !f.state?.startsWith('Completed');
+
 const cancelDirectory = async ({ directory, files, username }) => {
-  const activeCount = files.filter(
-    (f) => !f.state?.startsWith('Completed'),
-  ).length;
+  const activeCount = files.filter(isActive).length;
   const message =
     activeCount > 0
       ? `Cancel ${activeCount} queued/active download${activeCount === 1 ? '' : 's'} and delete this folder? This cannot be undone.`
       : 'Delete this folder and all its files? This cannot be undone.';
   if (!window.confirm(message)) return;
 
+  await transfersLibrary
+    .cancelAll({ direction: 'download', directory, remove: true, username })
+    .catch(() => {});
+
+  // completed files were left alone by the cancel above; drop their records too
   await Promise.all(
-    files.map((f) =>
-      transfersLibrary
-        .cancel({ direction: 'download', id: f.id, remove: true, username })
-        .catch(() => {}),
-    ),
+    files
+      .filter((f) => !isActive(f))
+      .map((f) =>
+        transfersLibrary
+          .cancel({ direction: 'download', id: f.id, remove: true, username })
+          .catch(() => {}),
+      ),
   );
 
-  const localDir = directory.split(/[/\\]/).filter(Boolean).at(-1);
-  if (localDir) {
-    await Promise.all([
-      filesLibrary
-        .deleteDirectory({ root: 'downloads', path: localDir })
-        .catch(() => {}),
-      filesLibrary
-        .deleteDirectory({ root: 'incomplete', path: localDir })
-        .catch(() => {}),
-    ]);
-  }
+  await deleteLocalFolder(directory);
+};
+
+// Kill switch: everything in flight from/to one user, in one request.
+const cancelUserDownloads = async ({ directories, username }) => {
+  const active = directories.filter((d) => d.files.some(isActive));
+  const count = active.reduce((n, d) => n + d.files.filter(isActive).length, 0);
+  if (count === 0) return;
+  if (
+    !window.confirm(
+      `Cancel all ${count} queued/active download${count === 1 ? '' : 's'} from ${username} and delete ${active.length} unfinished folder${active.length === 1 ? '' : 's'}? This cannot be undone.`,
+    )
+  )
+    return;
+
+  await transfersLibrary
+    .cancelAll({ direction: 'download', remove: true, username })
+    .catch(() => {});
+  await Promise.all(active.map((d) => deleteLocalFolder(d.directory)));
+};
+
+const cancelUploadDirectory = async ({ directory, files, username }) => {
+  const count = files.filter(isActive).length;
+  if (count === 0) return;
+  if (
+    !window.confirm(
+      `Cancel ${count} queued/active upload${count === 1 ? '' : 's'} of this folder to ${username}? They can request it again later.`,
+    )
+  )
+    return;
+
+  await transfersLibrary
+    .cancelAll({ direction: 'upload', directory, username })
+    .catch(() => {});
+};
+
+const cancelUserUploads = async ({ directories, username }) => {
+  const count = directories.reduce(
+    (n, d) => n + d.files.filter(isActive).length,
+    0,
+  );
+  if (count === 0) return;
+  if (
+    !window.confirm(
+      `Cancel all ${count} queued/active upload${count === 1 ? '' : 's'} to ${username}? They can request them again later.`,
+    )
+  )
+    return;
+
+  await transfersLibrary
+    .cancelAll({ direction: 'upload', username })
+    .catch(() => {});
 };
 
 const Transfers = ({ direction }) => {
@@ -256,6 +317,8 @@ const Transfers = ({ direction }) => {
     return (
       <UploadsTable
         onCancel={cancel}
+        onCancelDirectory={cancelUploadDirectory}
+        onCancelUser={cancelUserUploads}
         onClearCompleted={clearCompleted}
         onRemove={remove}
         transfers={transfers}
@@ -277,6 +340,7 @@ const Transfers = ({ direction }) => {
       <DownloadsTable
         onCancel={cancel}
         onCancelDirectory={cancelDirectory}
+        onCancelUser={cancelUserDownloads}
         onClearCompleted={clearCompleted}
         onFindAlternate={handleFindAlternate}
         onRemove={remove}

@@ -1024,6 +1024,25 @@ namespace resonance.Transfers.Uploads
                 return true;
             }
 
+            /*
+                no token means either the upload already ended, or the record is 'stuck': parked while the peer was
+                offline, or orphaned by a restart. a stuck record is never Completed, and EnqueueAsync refuses to
+                enqueue a file that already has a non-completed record -- so leaving it as-is would mean the peer
+                could never request that file again. disposition it here, the same way DownloadService does.
+            */
+            var t = Find(t => t.Id == id);
+
+            if (t is not null && !t.State.HasFlag(TransferStates.Completed))
+            {
+                t.EndedAt = DateTime.UtcNow;
+                t.State = TransferStates.Completed | TransferStates.Cancelled;
+                t.Exception = new OperationCanceledException().Message;
+                Update(t);
+
+                Queue.TryComplete(username: t.Username, filename: t.Filename);
+                return true;
+            }
+
             return false;
         }
 

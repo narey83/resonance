@@ -38,6 +38,7 @@ import { formatBytes, formatSeconds, getFileName } from '../../lib/util';
 import { UsernameLink } from '../Shared';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
+  Ban,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -534,6 +535,7 @@ const UserGroup = ({
   cacheKey,
   onCancel,
   onCancelDirectory,
+  onCancelUser,
   onFindAlternate,
   onRemove,
   onRetry,
@@ -563,6 +565,9 @@ const UserGroup = ({
     .filter((f) => f.state === 'InProgress')
     .reduce((s, f) => s + (f.averageSpeed ?? 0), 0);
   const retryableFiles = allFiles.filter((f) => isStateRetryable(f.state));
+  const activeCount = allFiles.filter(
+    (f) => !f.state?.startsWith('Completed'),
+  ).length;
 
   useEffect(() => {
     const ip = user.peerAddress;
@@ -695,6 +700,25 @@ const UserGroup = ({
           >
             <RotateCcw
               size={13}
+              strokeWidth={2}
+            />
+          </button>
+        )}
+        {activeCount > 0 && (
+          <button
+            className="dl-action-btn dl-action-btn--cancel"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCancelUser({
+                directories: user.directories,
+                username: user.username,
+              });
+            }}
+            title={`Cancel all ${activeCount} download${activeCount === 1 ? '' : 's'} from this user and delete their unfinished folders`}
+            type="button"
+          >
+            <Ban
+              size={14}
               strokeWidth={2}
             />
           </button>
@@ -887,6 +911,7 @@ const SectionHeader = ({ children }) => (
 const DownloadsTable = ({
   onCancel,
   onCancelDirectory,
+  onCancelUser,
   onClearCompleted,
   onFindAlternate,
   onRemove,
@@ -1152,6 +1177,7 @@ const DownloadsTable = ({
             cacheKey={row.user.username}
             onCancel={onCancel}
             onCancelDirectory={onCancelDirectory}
+            onCancelUser={onCancelUser}
             onFindAlternate={onFindAlternate}
             onRemove={onRemove}
             onRetry={onRetry}

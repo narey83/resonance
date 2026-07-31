@@ -34,6 +34,7 @@ import { formatBytes, getFileName } from '../../lib/util';
 import { UsernameLink } from '../Shared';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
+  Ban,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -285,7 +286,14 @@ const FileRow = ({ file, onCancel, onRemove }) => {
   );
 };
 
-const DirectoryGroup = ({ cacheKey, directory, onCancel, onRemove }) => {
+const DirectoryGroup = ({
+  cacheKey,
+  directory,
+  onCancel,
+  onCancelDirectory,
+  onRemove,
+  username,
+}) => {
   const collapseKey = `${cacheKey}|${directory.directory}`;
   const [collapsed, setCollapsed] = useState(
     directoryCollapsedCache[collapseKey] ?? true,
@@ -371,7 +379,27 @@ const DirectoryGroup = ({ cacheKey, directory, onCancel, onRemove }) => {
         <td className="dl-cell dl-cell--speed">
           {totalSpeed > 0 ? `${formatBytes(totalSpeed)}/s` : '—'}
         </td>
-        <td className="dl-cell dl-cell--actions" />
+        <td className="dl-cell dl-cell--actions">
+          {!allCompleted && (
+            <button
+              className="dl-action-btn dl-action-btn--cancel"
+              onClick={() =>
+                onCancelDirectory({
+                  directory: directory.directory,
+                  files,
+                  username,
+                })
+              }
+              title="Cancel this folder"
+              type="button"
+            >
+              <X
+                size={13}
+                strokeWidth={2}
+              />
+            </button>
+          )}
+        </td>
       </tr>
       {!collapsed &&
         files.slice(0, visibleCount).map((file) => (
@@ -404,6 +432,8 @@ const UserGroup = ({
   cacheKey,
   defaultCollapsed = false,
   onCancel,
+  onCancelDirectory,
+  onCancelUser,
   onRemove,
   user,
 }) => {
@@ -431,6 +461,9 @@ const UserGroup = ({
   const totalSpeed = allFiles
     .filter((f) => f.state === 'InProgress')
     .reduce((sum, file) => sum + (file.averageSpeed ?? 0), 0);
+  const activeCount = allFiles.filter((file) =>
+    isActiveState(file.state),
+  ).length;
 
   useEffect(() => {
     const ip = user.peerAddress;
@@ -560,6 +593,25 @@ const UserGroup = ({
             {allFiles.length} file{allFiles.length === 1 ? '' : 's'}
           </span>
         </div>
+        {activeCount > 0 && (
+          <button
+            className="dl-action-btn dl-action-btn--cancel"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCancelUser({
+                directories: user.directories,
+                username: user.username,
+              });
+            }}
+            title={`Cancel all ${activeCount} upload${activeCount === 1 ? '' : 's'} to this user`}
+            type="button"
+          >
+            <Ban
+              size={14}
+              strokeWidth={2}
+            />
+          </button>
+        )}
       </div>
 
       {!collapsed && (
@@ -581,7 +633,9 @@ const UserGroup = ({
                 directory={directory}
                 key={directory.directory}
                 onCancel={onCancel}
+                onCancelDirectory={onCancelDirectory}
                 onRemove={onRemove}
+                username={user.username}
               />
             ))}
           </table>
@@ -669,7 +723,14 @@ const SectionHeader = ({ children }) => (
   <div className="transfer-section-header">{children}</div>
 );
 
-const UploadsTable = ({ onCancel, onClearCompleted, onRemove, transfers }) => {
+const UploadsTable = ({
+  onCancel,
+  onCancelDirectory,
+  onCancelUser,
+  onClearCompleted,
+  onRemove,
+  transfers,
+}) => {
   const [completedPage, setCompletedPage] = useState(0);
   const [pageSize, setPageSize] = useState(15);
 
@@ -842,6 +903,8 @@ const UploadsTable = ({ onCancel, onClearCompleted, onRemove, transfers }) => {
             cacheKey={row.key}
             defaultCollapsed={row.defaultCollapsed}
             onCancel={onCancel}
+            onCancelDirectory={onCancelDirectory}
+            onCancelUser={onCancelUser}
             onRemove={onRemove}
             user={row.user}
           />

@@ -133,6 +133,43 @@ namespace resonance.Transfers.API
         }
 
         /// <summary>
+        ///     Cancels all incomplete downloads from the specified user, optionally limited to a single directory.
+        /// </summary>
+        /// <param name="username">The username of the download source.</param>
+        /// <param name="directory">The remote directory to limit the cancellation to; all directories if omitted.</param>
+        /// <param name="remove">A value indicating whether the tracked downloads should be removed after cancellation.</param>
+        /// <returns>The number of downloads cancelled.</returns>
+        /// <response code="200">The downloads were cancelled successfully.</response>
+        [HttpDelete("downloads/{username}")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(typeof(int), 200)]
+        public IActionResult CancelDownloads([FromRoute, UrlEncoded, Required] string username, [FromQuery] string directory = null, [FromQuery] bool remove = false)
+        {
+            if (Program.IsRelayAgent)
+            {
+                return Forbid();
+            }
+
+            var matches = Transfers.Downloads.List(t => t.Username == username)
+                .Where(t => !TransferStateCategories.Completed.Contains(t.State))
+                .Where(t => directory is null || t.Filename.DirectoryName() == directory)
+                .ToList();
+
+            foreach (var transfer in matches)
+            {
+                Transfers.Downloads.TryCancel(transfer.Id);
+
+                if (remove)
+                {
+                    Transfers.Downloads.Remove(transfer.Id);
+                }
+            }
+
+            Log.Information("Cancelled {Count} downloads from {Username}{Directory}", matches.Count, username, directory is null ? string.Empty : $" in {directory}");
+            return Ok(matches.Count);
+        }
+
+        /// <summary>
         ///     Removes all completed downloads, regardless of whether they failed or succeeded.
         /// </summary>
         /// <returns></returns>
@@ -199,6 +236,46 @@ namespace resonance.Transfers.API
             {
                 return NotFound();
             }
+        }
+
+        /// <summary>
+        ///     Cancels all incomplete uploads to the specified user, optionally limited to a single directory.
+        /// </summary>
+        /// <remarks>
+        ///     Cancelled uploads are dispositioned as completed, so the peer is free to request the same files again.
+        /// </remarks>
+        /// <param name="username">The username of the upload destination.</param>
+        /// <param name="directory">The remote directory to limit the cancellation to; all directories if omitted.</param>
+        /// <param name="remove">A value indicating whether the tracked uploads should be removed after cancellation.</param>
+        /// <returns>The number of uploads cancelled.</returns>
+        /// <response code="200">The uploads were cancelled successfully.</response>
+        [HttpDelete("uploads/{username}")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(typeof(int), 200)]
+        public IActionResult CancelUploads([FromRoute, UrlEncoded, Required] string username, [FromQuery] string directory = null, [FromQuery] bool remove = false)
+        {
+            if (Program.IsRelayAgent)
+            {
+                return Forbid();
+            }
+
+            var matches = Transfers.Uploads.List(t => t.Username == username, includeRemoved: false)
+                .Where(t => !TransferStateCategories.Completed.Contains(t.State))
+                .Where(t => directory is null || t.Filename.DirectoryName() == directory)
+                .ToList();
+
+            foreach (var transfer in matches)
+            {
+                Transfers.Uploads.TryCancel(transfer.Id);
+
+                if (remove)
+                {
+                    Transfers.Uploads.Remove(transfer.Id);
+                }
+            }
+
+            Log.Information("Cancelled {Count} uploads to {Username}{Directory}", matches.Count, username, directory is null ? string.Empty : $" in {directory}");
+            return Ok(matches.Count);
         }
 
         /// <summary>
