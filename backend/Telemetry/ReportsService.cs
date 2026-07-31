@@ -54,6 +54,7 @@ using Soulseek;
 public class ReportsService
 {
     private static readonly ConcurrentDictionary<string, byte> RefreshesInFlight = new();
+    private static readonly ConcurrentDictionary<string, object> ColdMissGates = new();
 
     /// <summary>
     ///     Initializes a new instance of the <see cref="ReportsService"/> class.
@@ -102,20 +103,34 @@ public class ReportsService
             string sql;
             if (UsePostgres)
             {
+                // Grouped per user first so both levels can hash-aggregate: COUNT(DISTINCT ...)
+                // forces a sort of every row in the window, which is the slowest thing this
+                // report does. The averages are re-derived from sums and counts to match.
                 sql = $@"
                     SELECT ""Direction"", ""StateDescription"",
-                        SUM(""Size"") AS TotalBytes,
-                        COUNT(*) AS Count,
-                        COUNT(DISTINCT ""Username"") AS DistinctUsers,
-                        AVG(""AverageSpeed"") AS AverageSpeed,
-                        AVG(EXTRACT(EPOCH FROM (""StartedAt"" - ""EnqueuedAt""))) AS AverageWait,
-                        AVG(EXTRACT(EPOCH FROM (""EndedAt"" - ""StartedAt""))) AS AverageDuration
-                    FROM transfers.""Transfers""
-                    WHERE ""EndedAt"" IS NOT NULL
-                        AND ""EndedAt"" BETWEEN @Start AND @End
-                        AND ""State"" IN ({stateList})
-                        {(direction is not null ? "AND \"Direction\" = @Direction" : string.Empty)}
-                        {(username is not null ? "AND \"Username\" = @Username" : string.Empty)}
+                        SUM(TotalBytes) AS TotalBytes,
+                        SUM(Count) AS Count,
+                        COUNT(*) AS DistinctUsers,
+                        SUM(SpeedSum) / NULLIF(SUM(Count), 0) AS AverageSpeed,
+                        SUM(WaitSum) / NULLIF(SUM(WaitCount), 0) AS AverageWait,
+                        SUM(DurationSum) / NULLIF(SUM(DurationCount), 0) AS AverageDuration
+                    FROM (
+                        SELECT ""Direction"", ""StateDescription"", ""Username"",
+                            SUM(""Size"") AS TotalBytes,
+                            COUNT(*) AS Count,
+                            SUM(""AverageSpeed"") AS SpeedSum,
+                            SUM(EXTRACT(EPOCH FROM (""StartedAt"" - ""EnqueuedAt""))) AS WaitSum,
+                            COUNT(EXTRACT(EPOCH FROM (""StartedAt"" - ""EnqueuedAt""))) AS WaitCount,
+                            SUM(EXTRACT(EPOCH FROM (""EndedAt"" - ""StartedAt""))) AS DurationSum,
+                            COUNT(EXTRACT(EPOCH FROM (""EndedAt"" - ""StartedAt""))) AS DurationCount
+                        FROM transfers.""Transfers""
+                        WHERE ""EndedAt"" IS NOT NULL
+                            AND ""EndedAt"" BETWEEN @Start AND @End
+                            AND ""State"" IN ({stateList})
+                            {(direction is not null ? "AND \"Direction\" = @Direction" : string.Empty)}
+                            {(username is not null ? "AND \"Username\" = @Username" : string.Empty)}
+                        GROUP BY 1, 2, 3
+                    ) summary
                     GROUP BY ""Direction"", ""StateDescription""
                 ";
             }
@@ -545,8 +560,10 @@ public class ReportsService
             string sql;
             if (UsePostgres)
             {
+                // Grouped per user first, for the same reason as GetTransferSummary above.
                 sql = $@"
-                    WITH categorized AS (
+                    SELECT Exception, SUM(Count) AS Count, COUNT(*) AS DistinctUsers
+                    FROM (
                         SELECT
                             CASE
                                 WHEN STRPOS(""Exception"", ' (') > 0 AND RIGHT(TRIM(""Exception""), 1) = ')'
@@ -555,15 +572,15 @@ public class ReportsService
                                 THEN TRIM(SUBSTR(""Exception"", STRPOS(""Exception"", ': ') + 2))
                                 ELSE COALESCE(TRIM(""Exception""), 'Unknown')
                             END AS Exception,
-                            ""Username""
+                            ""Username"",
+                            COUNT(*) AS Count
                         FROM transfers.""Transfers""
                         WHERE ""State"" & ~48 != 0
                             AND ""Direction"" = @Direction
                             AND ""EndedAt"" BETWEEN @Start AND @End
                             {(username is not null ? "AND \"Username\" = @Username" : string.Empty)}
-                    )
-                    SELECT Exception, COUNT(*) AS Count, COUNT(DISTINCT ""Username"") AS DistinctUsers
-                    FROM categorized
+                        GROUP BY 1, 2
+                    ) categorized
                     GROUP BY Exception
                     ORDER BY Count DESC
                     LIMIT @Limit
@@ -1826,9 +1843,29 @@ public class ReportsService
             return (T)cached.Value;
         }
 
-        var value = factory();
-        Cache.Set(cacheKey, new StaleWhileRevalidateEntry(value, DateTime.UtcNow + ttl), ttl * 6);
-        return value;
+        // Single-flight the cold miss. A dashboard load fires every report at once, often asking for
+        // the same window twice, and each of these queries reads the whole transfer table; without
+        // this the duplicates run concurrently and race each other into the command timeout.
+        var gate = ColdMissGates.GetOrAdd(cacheKey, _ => new object());
+
+        try
+        {
+            lock (gate)
+            {
+                if (Cache.TryGetValue<StaleWhileRevalidateEntry>(cacheKey, out var filled))
+                {
+                    return (T)filled.Value;
+                }
+
+                var value = factory();
+                Cache.Set(cacheKey, new StaleWhileRevalidateEntry(value, DateTime.UtcNow + ttl), ttl * 6);
+                return value;
+            }
+        }
+        finally
+        {
+            ColdMissGates.TryRemove(cacheKey, out _);
+        }
     }
 
     private DbConnection OpenConnection(Database database)
