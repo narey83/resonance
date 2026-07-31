@@ -153,30 +153,16 @@ namespace resonance.MusicLibrary
                 CREATE INDEX IF NOT EXISTS idx_tracks_album     ON {T}(album  COLLATE NOCASE);";
             cmd.ExecuteNonQuery();
 
-            // Migration: add tag_types column if it doesn't exist yet
-            try
-            {
-                using var alter = conn.CreateCommand();
-                alter.CommandText = $"ALTER TABLE {T} ADD COLUMN tag_types TEXT";
-                alter.ExecuteNonQuery();
-            }
-            catch (Exception)
-            { /* column already exists */
-            }
-
-            // Migration: add bit_rate/sample_rate/bit_depth columns if they don't exist yet
-            foreach (var column in new[] { "bit_rate", "sample_rate", "bit_depth" })
-            {
-                try
-                {
-                    using var alter = conn.CreateCommand();
-                    alter.CommandText = $"ALTER TABLE {T} ADD COLUMN {column} INTEGER";
-                    alter.ExecuteNonQuery();
-                }
-                catch (Exception)
-                { /* column already exists */
-                }
-            }
+            // Migrations. IF NOT EXISTS rather than catching the failure: a failed statement is
+            // logged as an ERROR by the server whether or not we swallow it, and four of them on
+            // every startup buried the errors worth reading.
+            using var alter = conn.CreateCommand();
+            alter.CommandText = $@"
+                ALTER TABLE {T} ADD COLUMN IF NOT EXISTS tag_types   TEXT;
+                ALTER TABLE {T} ADD COLUMN IF NOT EXISTS bit_rate    INTEGER;
+                ALTER TABLE {T} ADD COLUMN IF NOT EXISTS sample_rate INTEGER;
+                ALTER TABLE {T} ADD COLUMN IF NOT EXISTS bit_depth   INTEGER;";
+            alter.ExecuteNonQuery();
         }
 
         public void Upsert(MusicTrack t)

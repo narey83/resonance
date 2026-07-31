@@ -95,16 +95,11 @@ namespace resonance.Mixtapes
                 CREATE INDEX IF NOT EXISTS idx_mixtape_tracks_mixtape ON {MT}(mixtape_id);";
             cmd.ExecuteNonQuery();
 
-            // Migration: add is_soulseek_shared if not present
-            try
-            {
-                using var alter = conn.CreateCommand();
-                alter.CommandText = $"ALTER TABLE {M} ADD COLUMN is_soulseek_shared INTEGER NOT NULL DEFAULT 0";
-                alter.ExecuteNonQuery();
-            }
-            catch (Exception)
-            { /* column already exists */
-            }
+            // Migration: add is_soulseek_shared if not present. IF NOT EXISTS rather than catching
+            // the failure, which the server logs as an ERROR on every startup either way.
+            using var alter = conn.CreateCommand();
+            alter.CommandText = $"ALTER TABLE {M} ADD COLUMN IF NOT EXISTS is_soulseek_shared INTEGER NOT NULL DEFAULT 0";
+            alter.ExecuteNonQuery();
         }
 
         // ── Mixtape CRUD ──────────────────────────────────────────────────────
