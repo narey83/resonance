@@ -106,6 +106,13 @@ public class ReportsService
                 // Grouped per user first so both levels can hash-aggregate: COUNT(DISTINCT ...)
                 // forces a sort of every row in the window, which is the slowest thing this
                 // report does. The averages are re-derived from sums and counts to match.
+                //
+                // TotalBytes is bytes actually moved, not Size. Size counts the whole file for
+                // transfers that only moved part of it, and counts it again every time a peer
+                // re-requests a file it already holds in full -- those resume from the end of the
+                // file, move nothing, and still complete as succeeded. BytesTransferred is
+                // inclusive of StartOffset, so the offset comes back off. Every byte-sum in this
+                // file does the same thing.
                 sql = $@"
                     SELECT ""Direction"", ""StateDescription"",
                         SUM(TotalBytes) AS TotalBytes,
@@ -116,7 +123,7 @@ public class ReportsService
                         SUM(DurationSum) / NULLIF(SUM(DurationCount), 0) AS AverageDuration
                     FROM (
                         SELECT ""Direction"", ""StateDescription"", ""Username"",
-                            SUM(""Size"") AS TotalBytes,
+                            SUM(GREATEST(""BytesTransferred"" - ""StartOffset"", 0)) AS TotalBytes,
                             COUNT(*) AS Count,
                             SUM(""AverageSpeed"") AS SpeedSum,
                             SUM(EXTRACT(EPOCH FROM (""StartedAt"" - ""EnqueuedAt""))) AS WaitSum,
@@ -235,7 +242,7 @@ public class ReportsService
                         TO_TIMESTAMP(EXTRACT(EPOCH FROM ""EndedAt"")::BIGINT / @Interval * @Interval) AS ""Interval"",
                         ""Direction"",
                         ""StateDescription"",
-                        SUM(""Size"") AS TotalBytes,
+                        SUM(GREATEST(""BytesTransferred"" - ""StartOffset"", 0)) AS TotalBytes,
                         COUNT(*) AS Count,
                         COUNT(DISTINCT ""Username"") AS Users,
                         AVG(""AverageSpeed"") AS AverageSpeed,
@@ -352,7 +359,7 @@ public class ReportsService
                     SELECT
                         ""Username"",
                         ""Direction"",
-                        SUM(""Size"") AS TotalBytes,
+                        SUM(GREATEST(""BytesTransferred"" - ""StartOffset"", 0)) AS TotalBytes,
                         COUNT(*) AS Count,
                         AVG(""AverageSpeed"") AS AverageSpeed,
                         AVG(EXTRACT(EPOCH FROM (""StartedAt"" - ""EnqueuedAt""))) AS AverageWait,
@@ -759,7 +766,7 @@ public class ReportsService
                             SUBSTRING(""Filename"" FROM '[^/\\]*$') AS Filename,
                             ""Username"",
                             COUNT(*) AS Count,
-                            SUM(""Size"") AS TotalBytes
+                            SUM(GREATEST(""BytesTransferred"" - ""StartOffset"", 0)) AS TotalBytes
                         FROM transfers.""Transfers""
                         WHERE ""Direction"" = 'Upload'
                         AND ""State"" = 48
@@ -1283,7 +1290,7 @@ public class ReportsService
                     SELECT
                         EXTRACT(DOW FROM ""EndedAt"")::int AS Dow,
                         EXTRACT(HOUR FROM ""EndedAt"")::int AS Hour,
-                        SUM(""Size"") AS Bytes,
+                        SUM(GREATEST(""BytesTransferred"" - ""StartOffset"", 0)) AS Bytes,
                         COUNT(*) AS Count
                     FROM transfers.""Transfers""
                     WHERE ""State"" = 48

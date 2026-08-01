@@ -1,0 +1,119 @@
+diff --git a/src/SoulseekClient.cs b/src/SoulseekClient.cs
+index 63e451d..322f33f 100644
+--- a/src/SoulseekClient.cs
++++ b/src/SoulseekClient.cs
+@@ -4522,15 +4522,40 @@ namespace Soulseek
+ 
+                     while (!cancellationToken.IsCancellationRequested)
+                     {
+-                        if (lingerStartTime.AddMilliseconds(options.MaximumLingerTime) <= DateTime.UtcNow)
++                        var remainingLingerTime = options.MaximumLingerTime - (int)(DateTime.UtcNow - lingerStartTime).TotalMilliseconds;
++
++                        /*
++                            the read below doesn't return until the receiver sends something or the connection dies, so
++                            the linger deadline can only be evaluated between reads. a receiver that goes silent without
++                            disconnecting holds the connection -- and the caller's upload slot -- until the connection
++                            inactivity timeout fires instead, which is orders of magnitude longer than the linger time
++                            and defeats the purpose of having one.
++
++                            the case that reaches this reliably is a peer re-requesting a file it already holds in full:
++                            the start offset equals the size, the write above is skipped, and neither side has anything
++                            left to send or any reason to hang up.
++
++                            race the read against the time remaining so the deadline is actually enforceable.
++                        */
++                        if (remainingLingerTime > 0)
+                         {
+-                            upload.Connection.Disconnect("Transfer complete, maximum linger time exceeded");
+-                            Diagnostic.Warning($"Transfer connection for upload of {Path.GetFileName(upload.Filename)} to {username} forcibly closed after exceeding maximum linger time of {options.MaximumLingerTime}ms.");
+-                            break;
++                            var readTask = upload.Connection.ReadAsync(1, cancellationToken);
++
++                            if (await Task.WhenAny(readTask, Task.Delay(remainingLingerTime, cancellationToken)).ConfigureAwait(false) == readTask)
++                            {
++                                await readTask.ConfigureAwait(false);
++                                await Task.Delay(100, cancellationToken).ConfigureAwait(false);
++                                continue;
++                            }
++
++                            // the disconnect below faults the abandoned read; observe it so it doesn't surface as an
++                            // unobserved task exception
++                            readTask.Forget();
+                         }
+ 
+-                        await upload.Connection.ReadAsync(1, cancellationToken).ConfigureAwait(false);
+-                        await Task.Delay(100, cancellationToken).ConfigureAwait(false);
++                        upload.Connection.Disconnect("Transfer complete, maximum linger time exceeded");
++                        Diagnostic.Warning($"Transfer connection for upload of {Path.GetFileName(upload.Filename)} to {username} forcibly closed after exceeding maximum linger time of {options.MaximumLingerTime}ms.");
++                        break;
+                     }
+                 }
+                 catch (ConnectionReadException)
+diff --git a/tests/Soulseek.Tests.Unit/Client/UploadAsyncTests.cs b/tests/Soulseek.Tests.Unit/Client/UploadAsyncTests.cs
+index e0be3dc..e947bfa 100644
+--- a/tests/Soulseek.Tests.Unit/Client/UploadAsyncTests.cs
++++ b/tests/Soulseek.Tests.Unit/Client/UploadAsyncTests.cs
+@@ -1197,6 +1197,63 @@ namespace Soulseek.Tests.Unit.Client
+             }
+         }
+ 
++        [Trait("Category", "UploadFromFileAsync")]
++        [Theory(DisplayName = "UploadFromFileAsync disconnects at MaximumLingerTime when the receiver goes silent"), AutoData]
++        public async Task UploadFromFileAsync_Disconnects_At_MaximumLingerTime_When_The_Receiver_Goes_Silent(string username, IPEndPoint endpoint, string filename, byte[] data, int token, int size)
++        {
++            using (var testFile = new TestFile(data))
++            {
++                var options = new SoulseekClientOptions(messageTimeout: 5);
++
++                var response = new TransferResponse(token, size);
++                var responseWaitKey = new WaitKey(MessageCode.Peer.TransferResponse, username, token);
++
++                var waiter = new Mock<IWaiter>();
++                waiter.Setup(m => m.Wait<TransferResponse>(It.Is<WaitKey>(w => w.Equals(responseWaitKey)), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
++                    .Returns(Task.FromResult(response));
++                waiter.Setup(m => m.Wait<UserAddressResponse>(It.IsAny<WaitKey>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
++                    .Returns(Task.FromResult(new UserAddressResponse(username, endpoint.Address, endpoint.Port)));
++
++                var conn = new Mock<IMessageConnection>();
++                conn.Setup(m => m.State)
++                    .Returns(ConnectionState.Connected);
++
++                var transferConn = new Mock<IConnection>();
++                transferConn.Setup(m => m.ReadAsync(It.Is<long>(l => l == 8), It.IsAny<CancellationToken?>()))
++                    .Returns(Task.FromResult(BitConverter.GetBytes(0L)));
++
++                // the receiver never sends anything and never hangs up, so this read never returns. a peer
++                // re-requesting a file it already holds in full behaves exactly like this: the start offset equals
++                // the size, so neither side has anything left to send. the linger deadline has to be enforceable
++                // against it, otherwise the connection is held until the inactivity timeout fires instead.
++                transferConn.Setup(m => m.ReadAsync(It.Is<long>(l => l == 1), It.IsAny<CancellationToken?>()))
++                    .Returns(new TaskCompletionSource<byte[]>().Task);
++
++                var connManager = new Mock<IPeerConnectionManager>();
++                connManager.Setup(m => m.GetOrAddMessageConnectionAsync(username, endpoint, It.IsAny<CancellationToken>()))
++                    .Returns(Task.FromResult(conn.Object));
++                connManager.Setup(m => m.GetTransferConnectionAsync(username, endpoint, token, It.IsAny<CancellationToken>()))
++                    .Returns(Task.FromResult(transferConn.Object));
++
++                var diagnostic = new Mock<IDiagnosticFactory>();
++
++                var txOptions = new TransferOptions(maximumLingerTime: 200);
++
++                using (var s = new SoulseekClient(minorVersion: 9999, options: options, diagnosticFactory: diagnostic.Object, waiter: waiter.Object, serverConnection: conn.Object, peerConnectionManager: connManager.Object))
++                {
++                    s.SetProperty("State", SoulseekClientStates.Connected | SoulseekClientStates.LoggedIn);
++
++                    var upload = Record.ExceptionAsync(() => s.InvokeMethod<Task>("UploadFromFileAsync", username, filename, testFile.Path, token, txOptions, null));
++
++                    Assert.Same(upload, await Task.WhenAny(upload, Task.Delay(10000)));
++                    Assert.Null(await upload);
++                }
++
++                transferConn.Verify(m => m.Disconnect(It.Is<string>(s => s.ContainsInsensitive("maximum linger time")), null), Times.Once);
++                diagnostic.Verify(m => m.Warning(It.Is<string>(s => s.ContainsInsensitive("maximum linger time")), null), Times.Once);
++            }
++        }
++
+         [Trait("Category", "UploadFromStreamAsync")]
+         [Theory(DisplayName = "UploadFromStreamAsync throws DuplicateTransferException when failing to insert UniqueKeyDictionary"), AutoData]
+         public async Task UploadFromStreamAsync_Throws_DuplicateTransferException_If_Unique_Key_Add_Fails(string username, string filename, int token)
