@@ -42,6 +42,7 @@ import { FloatingTabBar } from '../components/FloatingTabBar';
 import { useConversationStore } from '../store/conversationStore';
 import { totalMentions, useRoomStore } from '../store/roomStore';
 import { useAppSettings } from '../store/appSettingsStore';
+import { PerfProfiler } from '../lib/perfProbe';
 
 // Screens
 import SearchScreen              from '../screens/search/SearchScreen';
@@ -191,6 +192,27 @@ function TabBarWithPlayer(props: BottomTabBarProps) {
   );
 }
 
+// One Profiler id per tab screen plus one for the bar. A single "tabs" id around the whole
+// navigator proved too coarse: it showed repeated ~630ms commits and bursts of 300+ commits per
+// window without saying which screen was producing them. Defined at module scope so the wrapper
+// keeps a stable component identity — building them inside render would remount every screen on
+// each pass.
+function perfScreen<P extends object>(id: string, Screen: React.ComponentType<P>) {
+  const Wrapped = (props: P) => (
+    <PerfProfiler id={id}><Screen {...props} /></PerfProfiler>
+  );
+  Wrapped.displayName = `Perf(${id})`;
+  return Wrapped;
+}
+
+const PerfLibrary   = perfScreen('s:library', LibraryScreen);
+const PerfSearch    = perfScreen('s:search', SearchScreen);
+const PerfTransfers = perfScreen('s:transfers', TransfersScreen);
+const PerfBrowse    = perfScreen('s:browse', BrowseStack);
+const PerfRooms     = perfScreen('s:rooms', RoomsStack);
+const PerfChat      = perfScreen('s:chat', ChatStack);
+const PerfMore      = perfScreen('s:more', MoreStack);
+
 export default function MainTabs() {
   const { colors } = useTheme();
   const totalUnread  = useConversationStore((s) => s.totalUnread);
@@ -199,7 +221,7 @@ export default function MainTabs() {
   return (
     <Tab.Navigator
       initialRouteName="LibraryTab"
-      tabBar={(props) => <TabBarWithPlayer {...props} />}
+      tabBar={(props) => <PerfProfiler id="tabbar"><TabBarWithPlayer {...props} /></PerfProfiler>}
       screenOptions={{
         ...makeScreenOptions(colors),
         headerStyle:      { backgroundColor: colors.header },
@@ -212,27 +234,27 @@ export default function MainTabs() {
       }}
     >
       <Tab.Screen
-        component={LibraryScreen}
+        component={PerfLibrary}
         name="LibraryTab"
         options={{ title: 'Library', headerShown: false }}
       />
       <Tab.Screen
-        component={SearchScreen}
+        component={PerfSearch}
         name="SearchTab"
         options={{ title: 'Search', headerShown: false }}
       />
       <Tab.Screen
-        component={TransfersScreen}
+        component={PerfTransfers}
         name="TransfersTab"
         options={{ title: 'Transfers' }}
       />
       <Tab.Screen
-        component={BrowseStack}
+        component={PerfBrowse}
         name="BrowseTab"
         options={{ title: 'Browse', headerShown: false }}
       />
       <Tab.Screen
-        component={RoomsStack}
+        component={PerfRooms}
         name="RoomsTab"
         options={{
           title: 'Rooms',
@@ -241,7 +263,7 @@ export default function MainTabs() {
         }}
       />
       <Tab.Screen
-        component={ChatStack}
+        component={PerfChat}
         name="ChatTab"
         options={{
           title: 'Chat',
@@ -250,7 +272,7 @@ export default function MainTabs() {
         }}
       />
       <Tab.Screen
-        component={MoreStack}
+        component={PerfMore}
         name="MoreTab"
         options={{ title: 'More', headerShown: false }}
       />
