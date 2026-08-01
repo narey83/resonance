@@ -27,7 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import React, { Profiler, useEffect, useRef } from 'react';
+import React, { Profiler, useEffect } from 'react';
 import { AppState } from 'react-native';
 import type { AxiosError } from 'axios';
 import { apiClient } from '../api/client';
@@ -253,20 +253,16 @@ export function usePerfProbe(): void {
 /**
  * Wraps a subtree so its commits are attributed to `id` in the summary.
  *
- * Falls back to a bare passthrough when the probe is off: React still does timing work for a
- * mounted Profiler even if onRender does nothing, and permanently taxing every frame to diagnose
- * a jank complaint would be self-defeating. The subscription is to one boolean that changes only
- * when the toggle is flipped, and `children` keeps its identity across that re-render.
+ * Always renders the Profiler, and gates inside onRender instead. Two earlier attempts to skip it
+ * when the setting is off were both wrong: subscribing swapped this element's type between Fragment
+ * and Profiler, which remounts the subtree React-side (losing navigation state), and reading the
+ * setting once at mount races the async SecureStore load, so the probe silently never armed —
+ * `react:commits=0` in every summary.
  *
- * Note React's Profiler is a no-op in bundles built without profiling (release). The stall and
- * HTTP counters still work there; only the react: section of the summary goes quiet.
+ * Keeping the type constant costs some profiling bookkeeping per commit in dev, and nothing at all
+ * in release, where React compiles Profiler out to a passthrough. (That also means the react:
+ * section of the summary is only ever populated in a dev build; stalls and HTTP still work.)
  */
-export const PerfProfiler = ({ id, children }: { id: string; children: React.ReactNode }) => {
-  // Read ONCE and pin it for the life of the mount. Subscribing to the setting instead would swap
-  // this element's type between Fragment and Profiler the moment the toggle flips, and React tears
-  // down and rebuilds a subtree whose type changed — remounting MainTabs and PlayerOverlay, losing
-  // navigation state, mid-session. The cost of that is a probe you have to restart the app to arm.
-  const on = useRef(useAppSettings.getState().perfProbe).current;
-  if (!on) return <>{children}</>;
-  return <Profiler id={id} onRender={noteCommit}>{children}</Profiler>;
-};
+export const PerfProfiler = ({ id, children }: { id: string; children: React.ReactNode }) => (
+  <Profiler id={id} onRender={noteCommit}>{children}</Profiler>
+);
