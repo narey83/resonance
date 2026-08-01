@@ -141,7 +141,11 @@ export async function readListCache<T>(key: string): Promise<T | undefined> {
 /** Write through both layers. SQLite persist is best-effort and never throws to the caller. */
 export async function writeListCache<T>(key: string, data: T, etag?: string): Promise<void> {
   mem.set(key, data);
+  // Synchronous, and re-serialising a list axios only just parsed — so a changed list costs a
+  // multi-megabyte parse AND a multi-megabyte stringify back to back on the JS thread.
+  const tStringify = Date.now();
   const json = JSON.stringify(data);
+  notePerfBlock(`stringify:${key}`, tStringify);
   memBytes.set(key, json.length);
   if (etag) memEtag.set(key, etag);
   try {

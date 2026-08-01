@@ -32,6 +32,7 @@ import { apiClient, getValidToken } from '../api/client';
 import { writeListCache, readListCache, hasListCache, getListCacheETag } from '../services/libraryCache';
 import { seedCoverSignatures, seedTrackSignatures } from '../api/musicLibrary';
 import { dbg as rawDbg } from '../api/debugLog';
+import { notePerfBlock } from '../lib/perfProbe';
 
 // Hard upper bound per list request. axios's own timeout didn't reliably fire during the observed
 // 80s stalls (requests queued in the native HTTP dispatcher), so we race each request against this
@@ -189,12 +190,29 @@ export const useLibrarySync = create<LibrarySyncState>((set, get) => ({
           headers: etag ? { 'If-None-Match': etag } : undefined,
           timeout: REQUEST_CAP_MS,
           validateStatus: (s) => s === 200 || s === 304, // 304 = unchanged, not an error
+          // Same parse axios would do by default, but timed. These bodies are megabytes for a large
+          // library and JSON.parse is synchronous, so this runs on the JS thread with every queued
+          // touch behind it — and being inside axios, it was invisible to both the probe and the
+          // netMs figure it hid inside.
+          transformResponse: [(raw: unknown) => {
+            if (typeof raw !== 'string' || raw.length === 0) return raw;
+            const tParse = Date.now();
+            try {
+              const parsed = JSON.parse(raw);
+              notePerfBlock(`parse:net:${ep.key}`, tParse);
+              return parsed;
+            } catch {
+              return raw;
+            }
+          }],
         }), ep.label);
         netMs = Date.now() - tn;
         status = res.status;
         if (res.status !== 304) {
           const tp = Date.now();
+          const tSeed = Date.now();
           const stored = ep.toStore(res.data);
+          notePerfBlock(`seed:${ep.key}`, tSeed);
           await writeListCache(ep.key, stored, res.headers?.etag ?? res.headers?.ETag);
           procMs = Date.now() - tp;
           changed = true;
