@@ -41,6 +41,7 @@ import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { initNotifications, useNotificationHub } from '../services/notificationService';
 import { useConnectionMonitor } from '../services/connectionMonitor';
 import { OverlayProgressRing, useFloatingOverlay } from '../hooks/useFloatingOverlay';
+import { PerfProfiler, usePerfProbe } from '../lib/perfProbe';
 import PlayerOverlay from '../components/PlayerOverlay';
 import { PlayerBubble } from '../components/PlayerBubble';
 import ConnectionBanner from '../components/ConnectionBanner';
@@ -52,18 +53,21 @@ function AuthenticatedApp() {
   useLibraryActivityHub();
   useNotificationHub();
   useConnectionMonitor();
+  usePerfProbe();
   const playerMode = useAppSettings((s) => s.playerMode);
   // The native overlay (draws over other apps + home screen) takes over as the
   // controller when it's available and permitted; otherwise fall back to the
   // in-app JS bubble. Never show both.
   const { overlayActive } = useFloatingOverlay();
+  // Each always-mounted piece is profiled separately so a perf summary names the subtree that's
+  // actually committing, instead of attributing every frame to "the app".
   return (
     <>
-      <MainTabs />
-      {playerMode === 'bubble' && !overlayActive && <PlayerBubble />}
+      <PerfProfiler id="tabs"><MainTabs /></PerfProfiler>
+      {playerMode === 'bubble' && !overlayActive && <PerfProfiler id="bubble"><PlayerBubble /></PerfProfiler>}
       {overlayActive && <OverlayProgressRing />}
-      <PlayerOverlay />
-      <ConnectionBanner />
+      <PerfProfiler id="overlay"><PlayerOverlay /></PerfProfiler>
+      <PerfProfiler id="banner"><ConnectionBanner /></PerfProfiler>
     </>
   );
 }

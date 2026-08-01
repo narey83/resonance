@@ -83,6 +83,7 @@ export default function SettingsScreen({ navigation }: Props) {
     theme, setTheme,
     remoteLogging, loaded, setRemoteLogging,
     librarySyncDebug, setLibrarySyncDebug,
+    perfProbe, setPerfProbe,
     backendLogs, setBackendLogs,
     streamQuality, setStreamQuality,
     playerMode, setPlayerMode,
@@ -296,6 +297,19 @@ export default function SettingsScreen({ navigation }: Props) {
             thumbColor={colors.textPrimary}
             trackColor={{ false: colors.bgElevated, true: colors.accent }}
             value={librarySyncDebug}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Performance probe"
+          subtitle="Log JS stalls, render cost and request queueing every 10s"
+          colors={colors}
+        >
+          <Switch
+            disabled={!loaded}
+            onValueChange={setPerfProbe}
+            thumbColor={colors.textPrimary}
+            trackColor={{ false: colors.bgElevated, true: colors.accent }}
+            value={perfProbe}
           />
         </SettingRow>
         <SettingRow

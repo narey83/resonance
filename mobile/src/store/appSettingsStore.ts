@@ -56,6 +56,7 @@ interface AppSettingsStore {
   theme:             ThemeName;
   remoteLogging:     boolean;
   librarySyncDebug:  boolean;
+  perfProbe:         boolean;
   backendLogs:       boolean;
   artworkBackground: boolean;
   streamQuality:     StreamQuality;
@@ -67,6 +68,7 @@ interface AppSettingsStore {
   setTheme:              (theme: ThemeName) => Promise<void>;
   setRemoteLogging:      (enabled: boolean) => Promise<void>;
   setLibrarySyncDebug:   (enabled: boolean) => Promise<void>;
+  setPerfProbe:          (enabled: boolean) => Promise<void>;
   setBackendLogs:        (enabled: boolean) => Promise<void>;
   setArtworkBackground:  (enabled: boolean) => Promise<void>;
   setStreamQuality:      (quality: StreamQuality) => Promise<void>;
@@ -88,6 +90,7 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
   theme:             'system',
   remoteLogging:     false,
   librarySyncDebug:  false,
+  perfProbe:         false,
   backendLogs:       false,
   artworkBackground: true,
   streamQuality:     'auto',
@@ -103,6 +106,7 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
         theme:             parsed.theme             ?? 'system',
         remoteLogging:     parsed.remoteLogging     ?? false,
         librarySyncDebug:  parsed.librarySyncDebug  ?? false,
+        perfProbe:         parsed.perfProbe         ?? false,
         backendLogs:       parsed.backendLogs       ?? false,
         artworkBackground: parsed.artworkBackground ?? true,
         streamQuality:     parsed.streamQuality     ?? 'auto',
@@ -127,6 +131,11 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
 
   setLibrarySyncDebug: async (enabled) => {
     set({ librarySyncDebug: enabled });
+    await persist(get());
+  },
+
+  setPerfProbe: async (enabled) => {
+    set({ perfProbe: enabled });
     await persist(get());
   },
 
@@ -157,7 +166,7 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
   },
 }));
 
-async function persist(state: Pick<AppSettingsStore, 'theme' | 'remoteLogging' | 'librarySyncDebug' | 'backendLogs' | 'artworkBackground' | 'streamQuality' | 'playerMode' | 'notifications'>) {
+async function persist(state: Pick<AppSettingsStore, 'theme' | 'remoteLogging' | 'librarySyncDebug' | 'perfProbe' | 'backendLogs' | 'artworkBackground' | 'streamQuality' | 'playerMode' | 'notifications'>) {
   try {
     await SecureStore.setItemAsync(
       STORE_KEY,
@@ -165,6 +174,7 @@ async function persist(state: Pick<AppSettingsStore, 'theme' | 'remoteLogging' |
         theme:             state.theme,
         remoteLogging:     state.remoteLogging,
         librarySyncDebug:  state.librarySyncDebug,
+        perfProbe:         state.perfProbe,
         backendLogs:       state.backendLogs,
         artworkBackground: state.artworkBackground,
         streamQuality:     state.streamQuality,
