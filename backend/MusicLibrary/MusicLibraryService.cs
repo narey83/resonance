@@ -892,7 +892,12 @@ namespace resonance.MusicLibrary
         /// </summary>
         private void TriggerWatcherSync()
         {
-            var remaining = MinWatcherSyncInterval - (DateTime.UtcNow - lastSyncCompletedUtc);
+            // Measure from now while a scan is in flight, not from the previous completion. Files
+            // keep landing during a scan, and by the time one starts the previous completion is
+            // already a full interval old — so those triggers saw a satisfied floor and queued
+            // another scan one DebounceDelay later, trailing every scan with a near-duplicate.
+            var reference = CurrentState.Running ? DateTime.UtcNow : lastSyncCompletedUtc;
+            var remaining = MinWatcherSyncInterval - (DateTime.UtcNow - reference);
             DebounceSync(remaining > DebounceDelay ? remaining : DebounceDelay);
         }
 
