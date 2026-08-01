@@ -74,6 +74,19 @@ let httpInflight = 0;
 let httpPeakInflight = 0;
 let worstHttpMs = 0;
 
+// Tap-to-paint. The complaint is "I hear the keypress but the screen takes five seconds", which is
+// a touch that reached native while JS was too busy to render the result — so measure exactly that:
+// from the press handler running to the next commit that paints something.
+let pendingInteraction: { label: string; at: number } | null = null;
+let worstInteractionMs = 0;
+let worstInteractionLabel = '';
+
+// Synchronous work outside React, labelled at the call site. The headline stall (4051ms) was far
+// bigger than the worst commit (709ms), so something was blocking the thread that wasn't rendering
+// at all; without a label there is no way to tell which of the suspects it was.
+let worstBlockMs = 0;
+let worstBlockLabel = '';
+
 // Set when the app last came back to the foreground, so the first summaries after a resume are
 // labelled — that's the window the complaint is actually about.
 let resumedAt: number | null = null;
@@ -85,6 +98,25 @@ function resetWindow() {
   byTree.clear();
   stalls = 0; stalledMs = 0; worstStallMs = 0;
   httpDone = 0; httpPeakInflight = httpInflight; worstHttpMs = 0;
+  worstInteractionMs = 0; worstInteractionLabel = '';
+  worstBlockMs = 0; worstBlockLabel = '';
+  pendingInteraction = null;
+}
+
+/**
+ * Mark the start of a user interaction. The next commit closes it, giving the latency the user
+ * actually feels. Safe to call unconditionally — it's a no-op when the probe is off.
+ */
+export function notePerfInteraction(label: string): void {
+  if (!enabled()) return;
+  pendingInteraction = { label, at: Date.now() };
+}
+
+/** Record a synchronous non-React block, timed by the caller from `startedAt`. */
+export function notePerfBlock(label: string, startedAt: number): void {
+  if (!enabled()) return;
+  const took = Date.now() - startedAt;
+  if (took > worstBlockMs) { worstBlockMs = took; worstBlockLabel = label; }
 }
 
 // ── Entry points ────────────────────────────────────────────────────────────
@@ -92,6 +124,15 @@ function resetWindow() {
 /** Called by the <PerfProfiler> wrappers for every React commit in their subtree. */
 function noteCommit(id: string, _phase: string, actualDuration: number) {
   if (!enabled()) return;
+  // First commit after an interaction closes it — that's when the user sees the result.
+  if (pendingInteraction) {
+    const waited = Date.now() - pendingInteraction.at;
+    if (waited > worstInteractionMs) {
+      worstInteractionMs = waited;
+      worstInteractionLabel = pendingInteraction.label;
+    }
+    pendingInteraction = null;
+  }
   commits += 1;
   commitMs += actualDuration;
   if (actualDuration >= SLOW_COMMIT_MS) slowCommits += 1;
@@ -159,7 +200,9 @@ function summary(): string {
     : '';
 
   return `[perf]${since}` +
-    ` js:stalls=${stalls} worst=${ms(worstStallMs)} blocked=${ms(stalledMs)}` +
+    ` tap:worst=${ms(worstInteractionMs)}(${worstInteractionLabel || '-'})` +
+    ` | block:worst=${ms(worstBlockMs)}(${worstBlockLabel || '-'})` +
+    ` | js:stalls=${stalls} worst=${ms(worstStallMs)} blocked=${ms(stalledMs)}` +
     ` | react:commits=${commits} slow=${slowCommits} total=${ms(commitMs)}` +
     ` worst=${ms(worstCommitMs)}(${worstCommitId || '-'}) [${trees || 'none'}]` +
     ` | http:done=${httpDone} inflight=${httpInflight} peak=${httpPeakInflight} slowest=${ms(worstHttpMs)}`;
@@ -168,7 +211,8 @@ function summary(): string {
 function report() {
   // Silence is the useful default: a window with no stalls, no slow commits and no slow request
   // says nothing worth a round-trip. Only windows with something in them are shipped.
-  const interesting = stalls > 0 || slowCommits > 0 || worstHttpMs > 1_000 || resumedAt !== null;
+  const interesting = stalls > 0 || slowCommits > 0 || worstHttpMs > 1_000
+    || worstInteractionMs > 0 || worstBlockMs > 0 || resumedAt !== null;
   if (interesting) {
     apiClient
       .post('/logs', { level: 'info', message: summary(), context: 'Mobile/Perf' })

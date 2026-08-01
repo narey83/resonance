@@ -28,6 +28,7 @@
 // </copyright>
 
 import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
+import { notePerfBlock } from '../lib/perfProbe';
 
 // Persistent stale-while-revalidate cache for the server library list endpoints (artists,
 // albums, tracks, folders, genres, years, loved). These lists are large (artists/albums are
@@ -123,7 +124,11 @@ export async function readListCache<T>(key: string): Promise<T | undefined> {
       return undefined;
     }
 
+    // These blobs are megabytes for a large library and JSON.parse is synchronous, so this single
+    // call can hold the JS thread — and therefore every queued touch — for seconds.
+    const tParse = Date.now();
     const parsed = JSON.parse(row.data) as T;
+    notePerfBlock(`parse:${key}`, tParse);
     mem.set(key, parsed);
     memBytes.set(key, row.data.length);
     if (row.etag) memEtag.set(key, row.etag);

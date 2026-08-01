@@ -36,6 +36,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useTheme } from '../context/ThemeContext';
+import { notePerfInteraction } from '../lib/perfProbe';
 import { Radius, Spacing, ThemeColors } from '../theme';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -65,6 +66,9 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
           const badge = options.tabBarBadge;
 
           const onPress = () => {
+            // Start the tap-to-paint measurement here — this is the moment the user has already
+            // heard the touch feedback and is waiting for the screen to change.
+            notePerfInteraction(`tab:${route.name}`);
             const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
             if (!focused && !event.defaultPrevented) {
               navigation.navigate(route.name);

@@ -88,6 +88,7 @@ import { create as createSearch, stripRemixInfo } from '../../api/searches';
 import { MixtapeTrack, getMixtapeArtworkUrl } from '../../api/mixtapes';
 import { useLibrarySettings, ALL_TABS, LibraryTab } from '../../store/librarySettingsStore';
 import { useAuthStore } from '../../store/auth';
+import { notePerfBlock } from '../../lib/perfProbe';
 import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
 // ── Navigation types ──────────────────────────────────────────────────────────
@@ -366,6 +367,7 @@ function sortList<T>(
   get: (item: T, field: string) => unknown,
 ): T[] {
   if (!sortBy) return list;
+  const tSort = Date.now();
   const dir = sortDir === 'asc' ? 1 : -1;
   const keyed = list.map((item) => {
     const v = get(item, sortBy);
@@ -389,6 +391,7 @@ function sortList<T>(
     }
     return cmp * dir;
   });
+  notePerfBlock(`sort:${sortBy}(${list.length})`, tSort);
   return keyed.map((k) => k.item);
 }
 
