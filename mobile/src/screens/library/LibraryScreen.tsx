@@ -2521,20 +2521,28 @@ function LibraryHome({ navigation }: HomeProps) {
   // SYNC_STATE — on connect and on every lifecycle transition — so we read it straight from the store
   // to drive a "scanning" banner. The list keeps rendering cached data underneath; this only surfaces
   // that a server-side (re)scan is in flight.
-  const serverScan = useLibraryActivityStore((s) => s.syncState);
+  // Select the two fields the banner actually uses, not the syncState object. applySyncState stores
+  // a fresh object on every SYNC_STATE push, so subscribing to it re-rendered this screen — and the
+  // whole active tab under it — on every progress tick of a server-side scan.
+  const serverScanning = useLibraryActivityStore((s) => s.syncState?.running ?? false);
+  const serverScanProgress = useLibraryActivityStore((s) => s.syncState?.progress ?? 0);
   const applyServerSyncState = useLibraryActivityStore((s) => s.applySyncState);
   const serverScanPercent =
-    serverScan?.running && serverScan.progress > 0
-      ? Math.round(serverScan.progress * 100)
+    serverScanning && serverScanProgress > 0
+      ? Math.round(serverScanProgress * 100)
       : null;
 
   // Sync the on-device cache from the backend when the library changes — BUT hold off while the
   // backend is mid-rescan. During a full rescan the server fires LIBRARY_UPDATED repeatedly, bumping
   // libraryRevision on every batch; re-running the whole 7-list sync each time just thrashes the
-  // network and leaves the lists flickering empty ("stuck retrying"). So while serverScan.running we
-  // skip syncing entirely (tabs keep showing the last cached data), and once the scan finishes we do
-  // one authoritative forced sync to pull the freshly-built DB.
-  const serverScanning = serverScan?.running ?? false;
+  // network and leaves the lists flickering empty ("stuck retrying"). So while a scan is running we
+  // skip syncing entirely and the tabs keep showing cached data.
+  //
+  // The post-scan sync is deliberately NOT forced any more. Forcing skipped the /musiclibrary/version
+  // gate, so every completed scan cost the full 7-endpoint fetch — and with downloads landing, scans
+  // complete about once a minute. Unforced, an unchanged library costs one small request, and a
+  // changed one still reconciles because the version gate sees the new version. The rate limit in
+  // the store then coalesces a burst of scans into a single sync.
   const wasScanningRef = useRef(false);
   useEffect(() => {
     if (serverScanning) {
@@ -2544,8 +2552,8 @@ function LibraryHome({ navigation }: HomeProps) {
     }
     const justFinished = wasScanningRef.current;
     wasScanningRef.current = false;
-    if (justFinished) dbg('[home] backend rescan finished — forcing one cache sync');
-    sync(libraryRevision, justFinished);
+    if (justFinished) dbg('[home] backend rescan finished — requesting cache sync');
+    sync(libraryRevision);
   }, [sync, libraryRevision, serverScanning]);
 
   // DEBUG (opt-in via "Library sync debug" setting): heartbeat that detects a frozen JS thread. A 1s
@@ -2616,7 +2624,7 @@ function LibraryHome({ navigation }: HomeProps) {
   return (
     <View style={s.flex}>
       <TabBar tabs={visibleTabs} active={tab} onSelect={(t) => setTab(t as LibraryTab)} />
-      {serverScan?.running && (
+      {serverScanning && (
         <View style={{
           flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
           gap: 8, paddingVertical: 5, backgroundColor: c.bgElevated,
@@ -2629,8 +2637,10 @@ function LibraryHome({ navigation }: HomeProps) {
           <Pressable
             onPress={() => {
               cancelSync().catch(() => {});
-              // optimistic: hide the banner now; the hub will push the confirmed running=false state
-              if (serverScan) applyServerSyncState({ ...serverScan, running: false });
+              // optimistic: hide the banner now; the hub will push the confirmed running=false state.
+              // Read the object off the store rather than subscribing to it — see the selectors above.
+              const current = useLibraryActivityStore.getState().syncState;
+              if (current) applyServerSyncState({ ...current, running: false });
             }}
             hitSlop={8}
           >

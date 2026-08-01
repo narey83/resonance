@@ -187,6 +187,9 @@ let appStateSub: { remove: () => void } | null = null;
 // Module scope, not a closure in startPerfProbe: the resume handler has to reset it, otherwise the
 // first beat back counts the whole suspension as one enormous stall.
 let lastBeat = Date.now();
+// When the reporting window last ran, so a window that comes back overdue can be recognised as a
+// resume even if the AppState event never arrived.
+let lastWindowAt = Date.now();
 
 /**
  * Starts the probe. Mount once from the authenticated app; safe to call when the setting is off
@@ -197,6 +200,7 @@ export function startPerfProbe(): void {
   attachHttpCounters();
 
   lastBeat = Date.now();
+  lastWindowAt = Date.now();
   heartbeat = setInterval(() => {
     const now = Date.now();
     const gap = now - lastBeat - 1_000;
@@ -214,6 +218,20 @@ export function startPerfProbe(): void {
   windowTimer = setInterval(() => {
     if (!enabled()) return;
     if (AppState.currentState !== 'active') return;
+    // A window timer that fires far later than its interval means the app was suspended in
+    // between, whether or not the AppState listener told us. Treating that as a resume is what
+    // makes the label trustworthy — relying on the event alone produced "resume+4390s(was away
+    // 359s)", a stale label from an earlier trip, because the listener didn't fire on that return.
+    const now = Date.now();
+    const overdueBy = now - lastWindowAt - WINDOW_MS;
+    lastWindowAt = now;
+    if (overdueBy > WINDOW_MS) {
+      lastBackgroundMs = overdueBy + WINDOW_MS;
+      resumedAt = now;
+      lastBeat = now;
+      resetWindow();
+      return;
+    }
     report();
   }, WINDOW_MS);
 
@@ -226,6 +244,7 @@ export function startPerfProbe(): void {
       // entire time away as a stall, which is the one false positive that would send us chasing
       // the wrong thing.
       lastBeat = Date.now();
+      lastWindowAt = Date.now();
       resetWindow();
     } else {
       // Any non-active state ('inactive' then 'background' on the way out) — the last one before

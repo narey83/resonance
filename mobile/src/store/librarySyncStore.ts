@@ -42,6 +42,11 @@ const REQUEST_CAP_MS = 20_000;
 // libraryCache key holding the backend library version we last fully synced (see GET /version).
 const VERSION_KEY = '__sync_version__';
 
+// Floor between automatic (hub-driven) syncs — see the rate-limit note in sync(). Session-scoped
+// rather than persisted: a fresh app start should always sync immediately.
+const MIN_AUTO_SYNC_INTERVAL_MS = 3 * 60_000;
+let lastAutoSyncAt = 0;
+
 const withCap = <T>(p: Promise<T>, label: string): Promise<T> =>
   Promise.race([
     p,
@@ -121,6 +126,17 @@ export const useLibrarySync = create<LibrarySyncState>((set, get) => ({
       dbg(`skip — already fresh in-session for rev=${revision}`);
       return;
     }
+    // Rate limit. The backend re-scans the whole library whenever files land on disk, so a run of
+    // downloads produced a completed scan (and a revision bump) roughly once a minute — measured at
+    // 48 in one hour against a baseline of 4. Every one of those that finds a changed list
+    // re-downloads it, JSON.parses it and re-renders thousands of rows on the JS thread; the probe
+    // caught 6.9s of a 10s window blocked, with a single 4s parse stall. Being a couple of minutes
+    // behind on a library this size is worth far more than a tab that locks up whenever a download
+    // finishes. `force` (an explicit user refresh) still bypasses this.
+    if (!force && lastAutoSyncAt && Date.now() - lastAutoSyncAt < MIN_AUTO_SYNC_INTERVAL_MS) {
+      dbg(`skip — rate limited (${Math.round((Date.now() - lastAutoSyncAt) / 1000)}s since last sync)`);
+      return;
+    }
 
     // Cheap gate: fetch the backend library version and skip the whole 7-endpoint sync when it
     // matches what we last synced (and we have a cache). So a cold start where nothing changed on
@@ -141,6 +157,9 @@ export const useLibrarySync = create<LibrarySyncState>((set, get) => ({
     }
 
     const t0 = Date.now();
+    // Stamped here, not at the version-gate skip above: a skip costs one tiny request and no
+    // rendering, so it must not start the clock on the expensive path.
+    lastAutoSyncAt = t0;
     dbg(`START build=${SYNC_BUILD} rev=${revision} force=${force} endpoints=${ENDPOINTS.length}`);
     set({ status: 'syncing', completed: 0, currentLabel: 'Library', error: null, percent: 0 });
 
