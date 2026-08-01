@@ -350,10 +350,15 @@ namespace resonance.Messaging
 
             context.SaveChanges();
 
-            EventBus.Raise(new PrivateMessageReceivedEvent
+            // only raise for messages we haven't seen before; a replay is the same message arriving again, and counting
+            // it a second time inflates the private message stats in the social report
+            if (existing == null)
             {
-                Message = message,
-            });
+                EventBus.Raise(new PrivateMessageReceivedEvent
+                {
+                    Message = message,
+                });
+            }
 
             return Task.CompletedTask;
         }

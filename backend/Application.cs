@@ -1315,8 +1315,8 @@ namespace resonance
 
             if (!args.Replayed)
             {
+                // note: HandleMessageAsync above raises PrivateMessageReceivedEvent; don't raise it again here
                 _ = ApplicationHub.BroadcastPrivateMessageAsync(args.Username, args.Message);
-                EventBus.Raise(new PrivateMessageReceivedEvent { Message = PrivateMessage.FromEventArgs(args) });
 
                 if (Options.Integrations.Pushbullet.Enabled)
                 {
