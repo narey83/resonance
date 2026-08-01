@@ -61,6 +61,12 @@ namespace resonance.Transfers.API
     public class TransfersController : ControllerBase
     {
         /// <summary>
+        ///     How many finished transfers the list endpoints will return, newest first. In-flight
+        ///     transfers are always returned in full — see CapCompleted.
+        /// </summary>
+        private const int MaxCompletedInList = 500;
+
+        /// <summary>
         ///     Initializes a new instance of the <see cref="TransfersController"/> class.
         /// </summary>
         /// <param name="optionsSnapshot"></param>
@@ -412,6 +418,8 @@ namespace resonance.Transfers.API
                 downloads = downloads.Where(t => !TransferStateCategories.Completed.Contains(t.State)).ToList();
             }
 
+            downloads = CapCompleted(downloads);
+
             var response = downloads.GroupBy(t => t.Username).Select(grouping => new UserResponse()
             {
                 Username = grouping.Key,
@@ -555,6 +563,8 @@ namespace resonance.Transfers.API
                     ? (t => !TransferStateCategories.Completed.Contains(t.State))
                     : (t => true),
                 includeRemoved: includeRemoved);
+
+            uploads = CapCompleted(uploads);
 
             var response = uploads.GroupBy(t => t.Username).Select(grouping => new UserResponse()
             {
@@ -728,6 +738,47 @@ namespace resonance.Transfers.API
                 Log.Error(ex, "Failed to create folder {Path}: {Message}", request.Path, ex.Message);
                 return StatusCode(500, ex.Message);
             }
+        }
+
+        /// <summary>
+        ///     Returns every in-flight transfer plus only the most recently finished
+        ///     <see cref="MaxCompletedInList"/> completed ones.
+        /// </summary>
+        /// <remarks>
+        ///     These endpoints returned the entire transfer history. On a long-lived instance that is
+        ///     1.5 million rows and a 13 MB response taking four and a half seconds to build — polled
+        ///     every two seconds by the mobile transfers screen, so responses overlapped and piled up
+        ///     until the connection pool was full and the client spent seconds parsing each one. No
+        ///     client can display that many rows, and none tries to: they all filter client-side.
+        ///     In-flight transfers are never dropped, however many there are.
+        /// </remarks>
+        private static List<resonance.Transfers.Transfer> CapCompleted(IEnumerable<resonance.Transfers.Transfer> transfers)
+        {
+            var completed = new List<resonance.Transfers.Transfer>();
+            var live = new List<resonance.Transfers.Transfer>();
+
+            foreach (var t in transfers)
+            {
+                if (TransferStateCategories.Completed.Contains(t.State))
+                {
+                    completed.Add(t);
+                }
+                else
+                {
+                    live.Add(t);
+                }
+            }
+
+            if (completed.Count > MaxCompletedInList)
+            {
+                completed = completed
+                    .OrderByDescending(t => t.EndedAt ?? t.RequestedAt)
+                    .Take(MaxCompletedInList)
+                    .ToList();
+            }
+
+            live.AddRange(completed);
+            return live;
         }
 
         /// <summary>

@@ -63,6 +63,12 @@ function reconcile(prev: Transfer[], next: Transfer[]): Transfer[] {
   return changed ? result : prev;
 }
 
+// One request per direction at a time. The screen polls every 2s, but a response that takes longer
+// than that used to start another poll on top — measured at ten concurrent requests in flight, each
+// carrying the full list, which saturates the connection pool and buries every other request in the
+// app behind it. A tick that arrives while the previous is outstanding is simply dropped.
+const inFlight: Record<TransferDir, boolean> = { download: false, upload: false };
+
 export const useTransferStore = create<TransferStore>((set, get) => ({
   downloads: [],
   uploads: [],
@@ -70,23 +76,35 @@ export const useTransferStore = create<TransferStore>((set, get) => ({
   uploadsLoaded: false,
 
   loadDownloads: async () => {
+    if (inFlight.download) return;
+    inFlight.download = true;
     try {
       const fresh = await api.getAll('download');
       const prev = get();
       const downloads = reconcile(prev.downloads, fresh);
       if (downloads === prev.downloads && prev.downloadsLoaded) return;
       set({ downloads, downloadsLoaded: true });
-    } catch {}
+    } catch {
+      /* keep the last good list; the next tick retries */
+    } finally {
+      inFlight.download = false;
+    }
   },
 
   loadUploads: async () => {
+    if (inFlight.upload) return;
+    inFlight.upload = true;
     try {
       const fresh = await api.getAll('upload');
       const prev = get();
       const uploads = reconcile(prev.uploads, fresh);
       if (uploads === prev.uploads && prev.uploadsLoaded) return;
       set({ uploads, uploadsLoaded: true });
-    } catch {}
+    } catch {
+      /* keep the last good list; the next tick retries */
+    } finally {
+      inFlight.upload = false;
+    }
   },
 
   cancel: async (dir, username, id, remove = false) => {
