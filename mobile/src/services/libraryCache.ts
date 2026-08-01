@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { InteractionManager } from 'react-native';
 import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 import { notePerfBlock } from '../lib/perfProbe';
 
@@ -66,6 +67,9 @@ function db(): Promise<SQLiteDatabase> {
 }
 
 const mem = new Map<string, unknown>();
+// Bumped by clearListCache. Deferred disk writes check it before landing, so a sync in flight
+// during a logout or server change can't resurrect the previous account's library afterwards.
+let generation = 0;
 // Decompressed JSON byte length of the last payload per key. Used as the "expected total" for a
 // download progress %, since gzipped responses are chunked (no Content-Length to measure against).
 const memBytes = new Map<string, number>();
@@ -138,33 +142,55 @@ export async function readListCache<T>(key: string): Promise<T | undefined> {
   }
 }
 
-/** Write through both layers. SQLite persist is best-effort and never throws to the caller. */
-export async function writeListCache<T>(key: string, data: T, etag?: string): Promise<void> {
+/**
+ * Write through both layers. SQLite persist is best-effort and never throws to the caller.
+ *
+ * Pass `rawJson` when the caller already holds the exact serialisation of `data` — a response body
+ * straight off the wire. Re-stringifying a multi-megabyte list that axios only just parsed is a
+ * second synchronous pass over the whole thing, for a string we were already handed.
+ *
+ * The disk write is deliberately NOT awaited by the in-memory path: readers are served from `mem`,
+ * which is populated synchronously here, so persistence is pure catch-up for the next cold start.
+ * Deferring it past any in-flight touch handling keeps a library sync off the interaction path —
+ * this runs on resume, exactly when taps are queued up waiting.
+ */
+export async function writeListCache<T>(key: string, data: T, etag?: string, rawJson?: string): Promise<void> {
   mem.set(key, data);
-  // Synchronous, and re-serialising a list axios only just parsed — so a changed list costs a
-  // multi-megabyte parse AND a multi-megabyte stringify back to back on the JS thread.
-  const tStringify = Date.now();
-  const json = JSON.stringify(data);
-  notePerfBlock(`stringify:${key}`, tStringify);
-  memBytes.set(key, json.length);
-  if (etag) memEtag.set(key, etag);
-  try {
-    const d = await db();
-    await d.runAsync(
-      'INSERT INTO list_cache (key, data, etag, updated_at) VALUES (?, ?, ?, ?) ' +
-        'ON CONFLICT(key) DO UPDATE SET data = excluded.data, etag = excluded.etag, updated_at = excluded.updated_at',
-      key,
-      json,
-      etag ?? null,
-      Date.now(),
-    );
-  } catch {
-    /* best-effort */
+  let json = rawJson;
+  if (json === undefined) {
+    const tStringify = Date.now();
+    json = JSON.stringify(data);
+    notePerfBlock(`stringify:${key}`, tStringify);
   }
+  const body = json;
+  memBytes.set(key, body.length);
+  if (etag) memEtag.set(key, etag);
+
+  const writtenAtGeneration = generation;
+  InteractionManager.runAfterInteractions(() => {
+    void (async () => {
+      if (writtenAtGeneration !== generation) return; // cleared while we waited
+      try {
+        const d = await db();
+        if (writtenAtGeneration !== generation) return;
+        await d.runAsync(
+          'INSERT INTO list_cache (key, data, etag, updated_at) VALUES (?, ?, ?, ?) ' +
+            'ON CONFLICT(key) DO UPDATE SET data = excluded.data, etag = excluded.etag, updated_at = excluded.updated_at',
+          key,
+          body,
+          etag ?? null,
+          Date.now(),
+        );
+      } catch {
+        /* best-effort — the ETag revalidates it next sync */
+      }
+    })();
+  });
 }
 
 /** Drop everything (e.g. on logout / server change). */
 export async function clearListCache(): Promise<void> {
+  generation += 1;
   mem.clear();
   memBytes.clear();
   memEtag.clear();

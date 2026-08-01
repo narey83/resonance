@@ -182,6 +182,10 @@ export const useLibrarySync = create<LibrarySyncState>((set, get) => ({
       let procMs = 0;
       let note = '';
       let changed = false;
+      // The exact bytes the server sent, captured during parsing. When toStore is the identity (all
+      // but Tracks) this IS the serialisation of what we cache, so the write can reuse it instead of
+      // stringifying the whole list a second time.
+      let rawBody: string | null = null;
       try {
         const etag = await getListCacheETag(ep.key);
         const tn = Date.now();
@@ -196,6 +200,7 @@ export const useLibrarySync = create<LibrarySyncState>((set, get) => ({
           // netMs figure it hid inside.
           transformResponse: [(raw: unknown) => {
             if (typeof raw !== 'string' || raw.length === 0) return raw;
+            rawBody = raw;
             const tParse = Date.now();
             try {
               const parsed = JSON.parse(raw);
@@ -213,7 +218,10 @@ export const useLibrarySync = create<LibrarySyncState>((set, get) => ({
           const tSeed = Date.now();
           const stored = ep.toStore(res.data);
           notePerfBlock(`seed:${ep.key}`, tSeed);
-          await writeListCache(ep.key, stored, res.headers?.etag ?? res.headers?.ETag);
+          // Identity transform ⇒ rawBody is already this value's JSON; anything else has to be
+          // serialised (only Tracks, and only its first 50 rows).
+          const raw = stored === res.data ? rawBody ?? undefined : undefined;
+          await writeListCache(ep.key, stored, res.headers?.etag ?? res.headers?.ETag, raw);
           procMs = Date.now() - tp;
           changed = true;
         }

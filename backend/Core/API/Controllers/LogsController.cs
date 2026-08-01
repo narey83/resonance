@@ -227,18 +227,11 @@ namespace resonance.Core.API
 
             var context = string.IsNullOrWhiteSpace(entry.Context) ? resonance.Logs.Browser : entry.Context;
 
-            var record = new LogRecord()
-            {
-                Timestamp = DateTime.UtcNow,
-                Context = context,
-                Level = level,
-                Message = entry.Message,
-            };
-
-            Program.LogBuffer.Enqueue(record);
-            Program.RaiseLogEmitted(record);
-            _ = LogHub.EmitLogAsync(record);
-
+            // Log through Serilog ONLY. The delegating sink in Program.cs already builds a LogRecord
+            // from every event, enqueues it on LogBuffer and raises LogEmitted — so doing that here
+            // as well wrote two identical rows for every entry a client sent. Confirmed against the
+            // database: consecutive ids, identical timestamps to the millisecond, on every remote
+            // log line the mobile app and the browser produced.
             var remoteLog = Log.ForContext("SourceContext", context);
             switch (level)
             {
