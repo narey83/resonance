@@ -1153,6 +1153,17 @@ namespace resonance
                 level = LogEventLevel.Debug;
             }
 
+            // Same category: we finished writing an upload and closed the connection because the
+            // receiver hadn't hung up within the linger time. Plenty of clients are simply slow to
+            // hang up, and nothing is lost when we close first -- SO_LINGER is off, so the kernel
+            // has already drained the send buffer. A transfer that genuinely fell short shows up as
+            // BytesTransferred < Size on the record, which is the signal worth watching.
+            if (level == LogEventLevel.Warning
+                && args.Message.Contains("maximum linger time"))
+            {
+                level = LogEventLevel.Debug;
+            }
+
             if (args.IncludesException && OptionsAtStartup.Debug)
             {
                 logger.Write(level, exception: args.Exception, "{@Message}", args.Message);
