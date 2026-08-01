@@ -87,14 +87,16 @@ async function flush() {
   flushTimer = null;
   if (queue.length === 0) return;
   const entries = queue.splice(0, queue.length);
-  try {
-    await Promise.all(
-      entries.map((e) =>
-        apiClient.post('/logs', { level: e.level, message: e.message, context: logContext }),
-      ),
-    );
-  } catch {
-    // Fire-and-forget: drop on network error to avoid feedback loops.
+  // Sequentially, NOT Promise.all. /logs takes one entry per request, so a full queue used to fire
+  // up to MAX_QUEUE_SIZE requests at once — and OkHttp only runs 5 per host, so every real API call
+  // and artwork fetch queued behind them in the native dispatcher. That is worst right after a
+  // resume, when a backlog built up while the app was away flushes in one burst.
+  for (const e of entries) {
+    try {
+      await apiClient.post('/logs', { level: e.level, message: e.message, context: logContext });
+    } catch {
+      // Fire-and-forget: drop on network error to avoid feedback loops.
+    }
   }
 }
 

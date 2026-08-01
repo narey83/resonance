@@ -69,8 +69,14 @@ function AuthenticatedApp() {
 }
 
 function AppContent() {
-  const { isReady, accessToken, serverUrl, hydrate } = useAuthStore();
-  const { load, remoteLogging } = useAppSettings();
+  // Selectors: this is the root of the tree, so a whole-store read here re-rendered everything
+  // below it (NavigationContainer included) on any unrelated auth or settings write.
+  const isReady     = useAuthStore((s) => s.isReady);
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const serverUrl   = useAuthStore((s) => s.serverUrl);
+  const hydrate     = useAuthStore((s) => s.hydrate);
+  const load          = useAppSettings((s) => s.load);
+  const remoteLogging = useAppSettings((s) => s.remoteLogging);
   const { colors, isDark } = useTheme();
 
   useEffect(() => {

@@ -430,8 +430,14 @@ export default function PlayerOverlay() {
   const activeTogglePlay  = isGoogleCasting ? castTogglePlayPause : togglePlayPause;
   const activeSeek        = isGoogleCasting ? castSeek        : seekTo;
 
-  const { mixtapes, load: loadMixtapes, addTrack } = useMixtapeStore();
-  const { lovedPaths, toggleLove } = useLibraryActivityStore();
+  // Selectors, not whole-store reads: this component never unmounts once opened, so subscribing to
+  // every field made an unrelated store write (a recorded play, a sync-state tick) re-render the
+  // full sheet — blurred art, gradients, masked views and the queue list.
+  const mixtapes     = useMixtapeStore((st) => st.mixtapes);
+  const loadMixtapes = useMixtapeStore((st) => st.load);
+  const addTrack     = useMixtapeStore((st) => st.addTrack);
+  const lovedPaths   = useLibraryActivityStore((st) => st.lovedPaths);
+  const toggleLove   = useLibraryActivityStore((st) => st.toggleLove);
   const isLoved = track ? lovedPaths.has(track.path) : false;
   const inMixtape = track ? mixtapes.some((pl) => pl.tracks.some((t) => t.filePath === track.path)) : false;
 

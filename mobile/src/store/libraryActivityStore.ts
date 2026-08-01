@@ -173,9 +173,12 @@ export const useLibraryActivityStore = create<LibraryActivityState>((set, get) =
 }));
 
 export const useLibraryActivityHub = () => {
-  const store = useLibraryActivityStore();
-
   useEffect(() => {
+    // getState(), not the hook: this runs in AuthenticatedApp, so subscribing to the whole store
+    // re-rendered the entire app shell (tabs, overlay, bubble, banner) on every hub event —
+    // every play, love, sync-state tick and library-revision bump. The actions are static.
+    const store = useLibraryActivityStore.getState();
+
     const hub = createLibraryActivityHubConnection();
     if (!hub) return;
 
@@ -205,6 +208,5 @@ export const useLibraryActivityHub = () => {
       appStateSub.remove();
       startPromise.then(() => hub.stop().catch(() => {}));
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 };

@@ -27,12 +27,13 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import { CastContext as GoogleCastContext, CastState, MediaPlayerState, RemoteMediaClient, SessionManager, useCastDevice, useCastSession, useCastState, useDevices } from 'react-native-google-cast';
+import { CastContext as GoogleCastContext, CastState, MediaPlayerState, RemoteMediaClient, SessionManager, useCastDevice, useCastSession, useCastState } from 'react-native-google-cast';
 import React, {
   createContext,
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -63,7 +64,6 @@ const contentTypeFor = (path: string): string =>
 interface CastContextValue {
   // Google Cast
   googleCastState: CastState | null;
-  googleDevices: any[];
   googleCastTitle: string | null;
   googleCastDeviceName: string | null;
   isGoogleCasting: boolean;
@@ -89,9 +89,12 @@ export const useCast = (): CastContextValue => {
 
 // ── Google Cast state types ───────────────────────────────────────────────────
 
+// Every field here must stay a PRIMITIVE. This object is rebuilt (and pushed into the provider
+// value) whenever the reporting effect fires, so a field with fresh identity on every native
+// callback — as `useDevices()`'s array was — re-renders every useCast() consumer, including the
+// permanently-mounted PlayerOverlay, for the whole time Cast discovery is scanning.
 interface GCState {
   googleCastState: CastState | null;
-  googleDevices: any[];
   googleCastTitle: string | null;
   googleCastDeviceName: string | null;
   isGoogleCasting: boolean;
@@ -110,7 +113,6 @@ interface GCActions {
 
 const GC_DEFAULT_STATE: GCState = {
   googleCastState:      null,
-  googleDevices:        [],
   googleCastTitle:      null,
   googleCastDeviceName: null,
   isGoogleCasting:      false,
@@ -134,7 +136,6 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
   const googleCastState = useCastState();
   const castSession     = useCastSession();
   const castDevice      = useCastDevice();
-  const googleDevices   = useDevices();
 
   const isGoogleCasting =
     googleCastState === CastState.CONNECTED ||
@@ -296,7 +297,6 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
   useEffect(() => {
     onState({
       googleCastState: googleCastState ?? null,
-      googleDevices,
       googleCastTitle,
       googleCastDeviceName,
       isGoogleCasting,
@@ -305,7 +305,7 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
       castDurationSec,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [googleCastState, googleDevices, googleCastTitle, googleCastDeviceName,
+  }, [googleCastState, googleCastTitle, googleCastDeviceName,
       isGoogleCasting, castIsPlaying, castPositionSec, castDurationSec]);
 
   // Keep actions ref current
@@ -337,12 +337,17 @@ export const CastProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const showGoogleCastPicker = useCallback(() => gcActionsRef.current.showGoogleCastPicker(), []);
   const stopGoogleCast       = useCallback(() => gcActionsRef.current.stopGoogleCast(), []);
 
+  // An inline object literal here gave the context a new identity on every render of this
+  // provider, so consumers (PlayerOverlay, mini bar, bubble) re-rendered even when nothing they
+  // read had changed. gcState is replaced wholesale on each report, so keying on it is enough.
+  const value = useMemo<CastContextValue>(() => ({
+    ...gcState,
+    castTogglePlayPause, castSeek, connectAndPlayGoogle, showGoogleCastPicker, stopGoogleCast,
+    isCasting: gcState.isGoogleCasting,
+  }), [gcState, castTogglePlayPause, castSeek, connectAndPlayGoogle, showGoogleCastPicker, stopGoogleCast]);
+
   return (
-    <CastContext.Provider value={{
-      ...gcState,
-      castTogglePlayPause, castSeek, connectAndPlayGoogle, showGoogleCastPicker, stopGoogleCast,
-      isCasting: gcState.isGoogleCasting,
-    }}>
+    <CastContext.Provider value={value}>
       {CAST_AVAILABLE && (
         <GoogleCastLayer onState={setGcState} actionsRef={gcActionsRef} />
       )}
