@@ -301,7 +301,7 @@ export default function SettingsScreen({ navigation }: Props) {
         </SettingRow>
         <SettingRow
           label="Performance probe"
-          subtitle="Log JS stalls, render cost and request queueing every 10s"
+          subtitle="Log JS stalls, render cost and request queueing every 10s (restart the app to arm)"
           colors={colors}
         >
           <Switch
