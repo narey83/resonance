@@ -55,7 +55,7 @@ import { useCast } from '../context/CastContext';
 import { useTheme } from '../context/ThemeContext';
 import { MusicTrack, getArtworkUrl, getTrackTitle } from '../api/musicLibrary';
 import { isSigned } from '../api/streamSignatures';
-import { getArtworkCacheKey, PLAYER_ART_SIZE } from '../services/artworkCache';
+import { ARTWORK_THUMB_SIZE, getArtworkCacheKey, PLAYER_ART_SIZE } from '../services/artworkCache';
 import { useMixtapeStore } from '../store/mixtapeStore';
 import { useLibraryActivityStore } from '../store/libraryActivityStore';
 import { usePlayerUI } from '../store/playerUIStore';
@@ -277,8 +277,9 @@ function MarqueeText({ text, style }: { text: string; style: any }) {
 
 const ART_FEATHER = 0.015; // fraction of each edge that fades to transparent
 
-function FeatheredArt({ uri, cacheKey, style, onError }: {
-  uri: string; cacheKey?: string; style: any; onError: () => void;
+function FeatheredArt({ uri, cacheKey, placeholderUri, placeholderCacheKey, style, onError }: {
+  uri: string; cacheKey?: string; placeholderUri?: string | null; placeholderCacheKey?: string;
+  style: any; onError: () => void;
 }) {
   const mask = (horizontal: boolean) => (
     <LinearGradient
@@ -292,7 +293,17 @@ function FeatheredArt({ uri, cacheKey, style, onError }: {
   return (
     <MaskedView maskElement={mask(false)} style={style}>
       <MaskedView maskElement={mask(true)} style={style}>
-        <Image cachePolicy="memory-disk" contentFit="cover" onError={onError} source={{ uri, cacheKey }} style={style} />
+        {/* The list's thumbnail stands in until the full-size render arrives, so the hero is
+            never blank — it just sharpens. */}
+        <Image
+          cachePolicy="memory-disk"
+          contentFit="cover"
+          onError={onError}
+          placeholder={placeholderUri ? { uri: placeholderUri, cacheKey: placeholderCacheKey } : undefined}
+          placeholderContentFit="cover"
+          source={{ uri, cacheKey }}
+          style={style}
+        />
       </MaskedView>
     </MaskedView>
   );
@@ -673,6 +684,12 @@ export default function PlayerOverlay() {
   const artIsSigned     = !track || isLocalTrack || isSigned(track.path);
   const artworkUrl      = track?.hasArtwork && artIsSigned ? (isLocalTrack ? track.coverPath : getArtworkUrl(track.path, PLAYER_ART_SIZE)) : null;
   const artworkCacheKey = track?.hasArtwork && !isLocalTrack ? getArtworkCacheKey(track.path, PLAYER_ART_SIZE) : undefined;
+
+  // The thumbnail the track list already cached. The player asks the server for a much larger
+  // render under a different cache key, so opening the player from a list meant a cold fetch even
+  // though a perfectly good cover was sitting on disk. This is that cover, reused two ways below.
+  const thumbUrl      = track?.hasArtwork && artIsSigned ? (isLocalTrack ? track.coverPath : getArtworkUrl(track.path, ARTWORK_THUMB_SIZE)) : null;
+  const thumbCacheKey = track?.hasArtwork && !isLocalTrack ? getArtworkCacheKey(track.path, ARTWORK_THUMB_SIZE) : undefined;
   const hasArt          = !!(artworkUrl && !artworkError);
   const title      = track ? getTrackTitle(track) : '';
   const artist     = track?.artist ?? '';
@@ -731,7 +748,10 @@ export default function PlayerOverlay() {
               blurRadius={28}
               cachePolicy="memory-disk"
               contentFit="cover"
-              source={{ uri: artworkUrl!, cacheKey: artworkCacheKey }}
+              // Deliberately the thumbnail, not the full-size render: at blur radius 28 the extra
+              // resolution is destroyed anyway, and this one is already on disk, so the background
+              // paints immediately instead of waiting on a fresh server render.
+              source={{ uri: (thumbUrl ?? artworkUrl)!, cacheKey: thumbCacheKey ?? artworkCacheKey }}
               style={[StyleSheet.absoluteFill, { transform: [{ scale: 1.3 }] }]}
             />
           )}
@@ -802,6 +822,8 @@ export default function PlayerOverlay() {
                             console.warn(`[player-art] cover failed to load — signed=${artworkUrl?.includes('sig=')} ${track?.path}`);
                             setArtworkError(true);
                           }}
+                          placeholderCacheKey={thumbCacheKey}
+                          placeholderUri={thumbUrl}
                           style={s.artwork}
                           uri={artworkUrl!}
                         />
