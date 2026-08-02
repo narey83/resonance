@@ -38,6 +38,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import { login } from '../../api/session';
@@ -134,6 +135,18 @@ export default function LoginScreen({ navigation }: Props) {
             }
           </Pressable>
 
+          {/* Also here, not just on Connect. With a server address already stored, signing out
+              lands straight on this screen and Connect is never shown — so putting the scanner
+              only there made it unreachable for exactly the people who'd already set the app up. */}
+          <Pressable
+            disabled={loading}
+            onPress={() => navigation.navigate('Scan')}
+            style={({ pressed }) => [s.scanBtn, pressed && s.btnPressed]}
+          >
+            <Ionicons color={colors.accent} name="qr-code-outline" size={17} />
+            <Text style={s.scanBtnText}>Scan QR from Resonance</Text>
+          </Pressable>
+
           <Pressable onPress={() => { clearAll(); navigation.replace('Connect'); }}>
             <Text style={s.link}>Change server</Text>
           </Pressable>
@@ -165,6 +178,18 @@ function makeStyles(c: ThemeColors) {
     error:      { fontSize: Typography.sm, color: c.danger, marginTop: -Spacing.xs },
     btn:        { backgroundColor: c.accent, borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.xs },
     btnPressed: { opacity: 0.8 },
+    scanBtn: {
+      alignItems: 'center',
+      borderColor: c.border,
+      borderRadius: Radius.sm,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: Spacing.sm,
+      justifyContent: 'center',
+      marginTop: Spacing.md,
+      paddingVertical: Spacing.md,
+    },
+    scanBtnText: { color: c.accent, fontSize: Typography.base, fontWeight: '600' },
     btnText:    { color: '#fff', fontSize: Typography.base, fontWeight: '600' },
     link:       { fontSize: Typography.sm, color: c.accent, textAlign: 'center', marginTop: Spacing.xs },
   });
