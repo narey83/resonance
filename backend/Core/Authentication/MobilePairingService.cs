@@ -39,12 +39,14 @@ namespace resonance.Authentication
     /// </summary>
     /// <remarks>
     ///     The code stands in for a login, so it is treated like one: it carries no credentials, it
-    ///     is bound to the user who generated it, it expires, and redeeming it destroys it. A QR
-    ///     containing a username and password would instead hand over the account permanently to
+    ///     is bound to the user who generated it, it expires, and it can be redeemed exactly once. A
+    ///     QR containing a username and password would instead hand over the account permanently to
     ///     anyone who photographed the screen.
     ///
     ///     Codes live in memory only. They are worthless after a few minutes, so surviving a restart
-    ///     buys nothing, and keeping them out of the database means a backup can't leak one.
+    ///     buys nothing, and keeping them out of the database means a backup can't leak one. A
+    ///     redeemed code is kept (marked, not deleted) until it expires, purely so the page that
+    ///     issued it can report which device picked it up; it cannot be redeemed twice.
     /// </remarks>
     public class MobilePairingService
     {
@@ -54,8 +56,6 @@ namespace resonance.Authentication
         public static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(10);
 
         private readonly ConcurrentDictionary<string, Pairing> pairings = new(StringComparer.Ordinal);
-
-        private record Pairing(string Username, DateTime ExpiresAtUtc);
 
         /// <summary>
         ///     Creates a code that will grant a session for <paramref name="username"/>.
@@ -86,22 +86,44 @@ namespace resonance.Authentication
         ///     Redeems a code, returning the username it was issued for. A code works exactly once.
         /// </summary>
         /// <param name="code">The code to redeem.</param>
+        /// <param name="deviceName">The name of the device redeeming it, reported back to the issuer.</param>
         /// <returns>The username, or null when the code is unknown, already used or expired.</returns>
-        public string Redeem(string code)
+        public string Redeem(string code, string deviceName = null)
         {
-            if (string.IsNullOrWhiteSpace(code))
+            if (string.IsNullOrWhiteSpace(code) || !pairings.TryGetValue(code, out var pairing))
             {
                 return null;
             }
 
-            // Remove first: a concurrent second redemption of the same code must find nothing,
-            // rather than both reading it and both succeeding.
-            if (!pairings.TryRemove(code, out var pairing))
+            var now = DateTime.UtcNow;
+
+            if (pairing.RedeemedAtUtc is not null || pairing.ExpiresAtUtc <= now)
             {
                 return null;
             }
 
-            return pairing.ExpiresAtUtc > DateTime.UtcNow ? pairing.Username : null;
+            // Compare-and-swap rather than remove: the entry has to survive redemption so the page
+            // showing the QR can see that it succeeded and say which device it was. Single use is
+            // preserved by the RedeemedAtUtc check plus this swap — two concurrent redemptions of
+            // the same code cannot both win it, since only one can match `pairing` by reference.
+            var redeemed = pairing with { RedeemedAtUtc = now, DeviceName = deviceName };
+
+            return pairings.TryUpdate(code, redeemed, pairing) ? pairing.Username : null;
+        }
+
+        /// <summary>
+        ///     Reports whether a code has been redeemed, and by what.
+        /// </summary>
+        /// <param name="code">The code to look up.</param>
+        /// <returns>The status, or null when the code is unknown or has aged out.</returns>
+        public PairingStatus Status(string code)
+        {
+            if (string.IsNullOrWhiteSpace(code) || !pairings.TryGetValue(code, out var pairing))
+            {
+                return null;
+            }
+
+            return new PairingStatus(pairing.RedeemedAtUtc is not null, pairing.DeviceName, pairing.RedeemedAtUtc);
         }
 
         /// <summary>
@@ -130,6 +152,18 @@ namespace resonance.Authentication
                     pairings.TryRemove(entry.Key, out _);
                 }
             }
+        }
+
+        /// <summary>
+        ///     What has become of a code, for the page that is showing its QR.
+        /// </summary>
+        public record PairingStatus(bool Redeemed, string DeviceName, DateTime? RedeemedAtUtc);
+
+        private record Pairing(string Username, DateTime ExpiresAtUtc)
+        {
+            public DateTime? RedeemedAtUtc { get; init; }
+
+            public string DeviceName { get; init; }
         }
     }
 }

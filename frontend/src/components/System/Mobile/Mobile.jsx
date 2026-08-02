@@ -29,7 +29,7 @@
 
 import './Mobile.css';
 import { getYaml, updateYaml } from '../../../lib/options';
-import { createPairingCode } from '../../../lib/session';
+import { createPairingCode, getPairingStatus } from '../../../lib/session';
 import QRCode from 'qrcode';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -59,6 +59,7 @@ const Mobile = () => {
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [qr, setQr] = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [paired, setPaired] = useState(null); // { deviceName, redeemedAtUtc }
 
   useEffect(() => {
     (async () => {
@@ -94,6 +95,7 @@ const Mobile = () => {
       if (!next) {
         setPairing(null);
         setQr(null);
+        setPaired(null);
       }
     } catch (saveError) {
       setError(
@@ -112,6 +114,7 @@ const Mobile = () => {
 
     try {
       const result = await createPairingCode();
+      setPaired(null);
       setPairing(result);
       setSecondsLeft(result.expiresIn);
 
@@ -143,6 +146,33 @@ const Mobile = () => {
       setGenerating(false);
     }
   }, [serverUrl]);
+
+  // Watch for the phone picking the code up. There is no push channel for this, and a code is
+  // only live for a few minutes, so a slow poll is enough and costs nothing when idle.
+  useEffect(() => {
+    if (!pairing) return undefined;
+
+    const poll = setInterval(async () => {
+      try {
+        const status = await getPairingStatus(pairing.code);
+
+        if (status?.redeemed) {
+          setPaired({
+            deviceName: status.deviceName,
+            redeemedAtUtc: status.redeemedAtUtc,
+          });
+          // Retire the QR the moment it is spent — leaving a used code on screen invites a
+          // second scan that can only fail.
+          setPairing(null);
+          setQr(null);
+        }
+      } catch {
+        // Transient; the next tick tries again.
+      }
+    }, 2_000);
+
+    return () => clearInterval(poll);
+  }, [pairing]);
 
   // Count the code down and drop it when it dies, so a stale QR is never left on screen looking
   // usable. The server would reject it anyway; this just avoids a confusing scan.
@@ -226,6 +256,17 @@ const Mobile = () => {
             <Icon name="qrcode" />
             {pairing ? 'New code' : 'Show pairing code'}
           </Button>
+
+          {paired ? (
+            <Message
+              positive
+              size="small"
+            >
+              <Icon name="check circle" />
+              Paired with <strong>{paired.deviceName || 'a device'}</strong>. It
+              is signed in and will appear in your sessions list.
+            </Message>
+          ) : null}
 
           {qr ? (
             <div className="mobile-qr">

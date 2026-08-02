@@ -153,6 +153,19 @@ export const createPairingCode = async () => {
   return (await api.post('/session/pair')).data;
 };
 
+/**
+ * Polls what became of a pairing code. Returns null once the server has forgotten it (expired),
+ * which the caller treats the same as "gone".
+ */
+export const getPairingStatus = async (code) => {
+  try {
+    return (await api.get('/session/pair/status', { params: { code } })).data;
+  } catch (error) {
+    if (error?.response?.status === 404) return null;
+    throw error;
+  }
+};
+
 export const getSessions = async () => {
   return (await api.get('/session/sessions')).data;
 };

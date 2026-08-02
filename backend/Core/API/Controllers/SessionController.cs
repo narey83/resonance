@@ -232,6 +232,25 @@ namespace resonance.Core.API
         }
 
         /// <summary>
+        ///     Reports whether a pairing code has been redeemed, so the page showing its QR can stop
+        ///     showing it and say which device picked it up.
+        /// </summary>
+        /// <returns></returns>
+        /// <response code="200">The status was returned.</response>
+        /// <response code="404">The code is unknown or has aged out.</response>
+        [HttpGet]
+        [Route("pair/status")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(typeof(MobilePairingService.PairingStatus), 200)]
+        [ProducesResponseType(404)]
+        public IActionResult GetPairingStatus([FromQuery] string code)
+        {
+            var status = Pairing.Status(code);
+
+            return status is null ? NotFound() : Ok(status);
+        }
+
+        /// <summary>
         ///     Redeems a pairing code for a session.
         /// </summary>
         /// <returns></returns>
@@ -262,7 +281,7 @@ namespace resonance.Core.API
                 return StatusCode(429, "Too many failed attempts; try again later");
             }
 
-            var username = Pairing.Redeem(request?.Code);
+            var username = Pairing.Redeem(request?.Code, request?.DeviceName);
 
             if (username is null)
             {
