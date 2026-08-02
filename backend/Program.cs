@@ -933,6 +933,7 @@ namespace resonance
             services.AddHostedService(sp => sp.GetRequiredService<resonance.Common.Ffmpeg.IFfmpegService>());
 
             services.AddSingleton(sp => new resonance.Analysis.AnalysisStore(connectionStringDictionary[Database.Analysis]));
+            services.AddSingleton(sp => new resonance.MusicLibrary.ArtworkStore(connectionStringDictionary[Database.Music]));
             services.AddSingleton<resonance.Analysis.AnalysisService>();
             services.AddSingleton<resonance.Analysis.IAnalysisService>(sp => sp.GetRequiredService<resonance.Analysis.AnalysisService>());
             services.AddHostedService(sp => sp.GetRequiredService<resonance.Analysis.AnalysisService>());

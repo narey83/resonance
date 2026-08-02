@@ -102,6 +102,7 @@ namespace resonance.MusicLibrary.API
             IMixtapeService mixtapes,
             IOptionsSnapshot<AppOptions> options,
             IMemoryCache cache,
+            ArtworkStore artwork,
             StreamUrlSigner urlSigner,
             resonance.Common.Ffmpeg.IFfmpegService ffmpeg)
         {
@@ -111,6 +112,7 @@ namespace resonance.MusicLibrary.API
             Mixtapes = mixtapes;
             Options = options;
             Cache = cache;
+            Artwork = artwork;
             UrlSigner = urlSigner;
             Ffmpeg = ffmpeg;
         }
@@ -122,6 +124,7 @@ namespace resonance.MusicLibrary.API
         private IMixtapeService Mixtapes { get; }
         private IOptionsSnapshot<AppOptions> Options { get; }
         private IMemoryCache Cache { get; }
+        private ArtworkStore Artwork { get; }
         private StreamUrlSigner UrlSigner { get; }
         private resonance.Common.Ffmpeg.IFfmpegService Ffmpeg { get; }
 
@@ -436,6 +439,29 @@ namespace resonance.MusicLibrary.API
                 return File(cached.Bytes, cached.Mime);
             }
 
+            // Second chance from the persistent cache before doing the expensive thing. The memory
+            // cache is empty after every restart; this one isn't, so a cover is only ever decoded
+            // and resized once rather than once per restart.
+            var normalisedSize = size.HasValue && size.Value > 0 ? Math.Clamp(size.Value, 32, 2048) : 0;
+            long fileSize;
+
+            try
+            {
+                fileSize = new System.IO.FileInfo(path).Length;
+            }
+            catch
+            {
+                return NotFound();
+            }
+
+            var stored = Artwork.Get(path, normalisedSize, fileSize);
+
+            if (stored is not null)
+            {
+                Cache.Set(cacheKey, new ArtworkCacheEntry(stored.Value.Bytes, stored.Value.Mime), TimeSpan.FromHours(4));
+                return File(stored.Value.Bytes, stored.Value.Mime);
+            }
+
             try
             {
                 using var tf = TagLib.File.Create(path, TagLib.ReadStyle.Average);
@@ -475,6 +501,7 @@ namespace resonance.MusicLibrary.API
                 }
 
                 Cache.Set(cacheKey, new ArtworkCacheEntry(bytes, mime), TimeSpan.FromHours(4));
+                Artwork.Set(path, normalisedSize, fileSize, bytes, mime);
                 return File(bytes, mime);
             }
             catch

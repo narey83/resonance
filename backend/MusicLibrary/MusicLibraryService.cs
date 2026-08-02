@@ -142,8 +142,9 @@ namespace resonance.MusicLibrary
 
         private DateTime? syncDeferredSinceUtc;
 
-        public MusicLibraryService(OptionsAtStartup options, MusicRepository repository, EventBus eventBus, IHubContext<LibraryActivityHub> hub, ILibraryActivityService activity)
+        public MusicLibraryService(OptionsAtStartup options, MusicRepository repository, EventBus eventBus, IHubContext<LibraryActivityHub> hub, ILibraryActivityService activity, ArtworkStore artwork = null)
         {
+            Artwork = artwork;
             Options = options;
             Repository = repository;
             Events = eventBus;
@@ -158,6 +159,7 @@ namespace resonance.MusicLibrary
         private EventBus Events { get; }
         private IHubContext<LibraryActivityHub> Hub { get; }
         private ILibraryActivityService Activity { get; }
+        private ArtworkStore Artwork { get; }
 
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Library);
 
@@ -797,6 +799,10 @@ namespace resonance.MusicLibrary
                 if (stale.Count > 0)
                 {
                     Repository.DeletePaths(stale);
+
+                    // Drop their cached covers too, or the artwork table grows without bound as
+                    // tracks come and go and keeps rows no path will ever ask for again.
+                    Artwork?.Evict(stale);
                 }
 
                 removed = stale.Count;
