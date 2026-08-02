@@ -166,6 +166,18 @@ namespace resonance.Shares
         IEnumerable<(string MaskedFilename, string OriginalFilename)> ListUntaggedFiles();
 
         /// <summary>
+        ///     Returns the masked filenames of the files stored under the specified original filenames.
+        /// </summary>
+        /// <remarks>
+        ///     The indexed reverse of <see cref="FindFileInfo"/>. Resolving a handful of paths by
+        ///     listing every file in the share and filtering in memory costs minutes on a large
+        ///     library; this is one query.
+        /// </remarks>
+        /// <param name="originalFilenames">The original filenames, in their stored form.</param>
+        /// <returns>The masked filenames of those that are in the share.</returns>
+        IEnumerable<string> FindMaskedFilenames(IEnumerable<string> originalFilenames);
+
+        /// <summary>
         ///     Updates tag metadata, size and mtime for the file with the specified <paramref name="maskedFilename"/>.
         /// </summary>
         /// <param name="maskedFilename">The masked filename of the file to update.</param>

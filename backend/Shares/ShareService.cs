@@ -294,6 +294,14 @@ namespace resonance.Shares
         }
 
         /// <summary>
+        ///     Returns the masked filenames for the specified original filenames.
+        /// </summary>
+        /// <param name="originalFilenames">The original filenames, in their stored (root-relative) form.</param>
+        /// <returns>The masked filenames of those that are in the share.</returns>
+        public IEnumerable<string> FindMaskedFilenames(IEnumerable<string> originalFilenames)
+            => Local.Repository.FindMaskedFilenames(originalFilenames);
+
+        /// <summary>
         ///     Writes tag data to the specified file on disk and updates the share cache.
         /// </summary>
         public void WriteFileTags(string maskedFilename, FileTags tags)

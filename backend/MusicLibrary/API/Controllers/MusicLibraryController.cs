@@ -1385,15 +1385,10 @@ namespace resonance.MusicLibrary.API
                 return [];
             }
 
-            var resolved = Shares.GetTaggedFiles()
-                .Select(f => (f.MaskedFilename, f.OriginalFilename))
-                .Concat(Shares.GetUntaggedFiles().Select(f => (f.MaskedFilename, f.OriginalFilename)))
-                .Where(f => wanted.Contains(MusicPath.ToRelative(f.OriginalFilename)))
-                .Select(f => f.MaskedFilename)
-                .Distinct()
-                .ToArray();
-
-            return resolved;
+            // Indexed lookup, not a walk of the whole share: listing every tagged and untagged file
+            // to resolve one path took minutes on a 48k-file library, long enough that the analyse
+            // button looked like it had done nothing at all.
+            return Shares.FindMaskedFilenames(wanted).Distinct().ToArray();
         }
 
         private bool IsWithinShareDirectory(string fullPath)

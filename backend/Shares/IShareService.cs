@@ -148,6 +148,13 @@ namespace resonance.Shares
         IEnumerable<TaggedFile> GetIncompleteFiles();
 
         /// <summary>
+        ///     Returns the masked filenames for the specified original filenames.
+        /// </summary>
+        /// <param name="originalFilenames">The original filenames, in their stored (root-relative) form.</param>
+        /// <returns>The masked filenames of those that are in the share.</returns>
+        IEnumerable<string> FindMaskedFilenames(IEnumerable<string> originalFilenames);
+
+        /// <summary>
         ///     Writes tag data to the specified file and updates the share cache.
         /// </summary>
         /// <param name="maskedFilename">The masked filename identifying the file.</param>

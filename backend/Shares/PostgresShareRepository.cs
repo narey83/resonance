@@ -383,6 +383,38 @@ namespace resonance.Shares
             return results;
         }
 
+        public IEnumerable<string> FindMaskedFilenames(IEnumerable<string> originalFilenames)
+        {
+            var wanted = originalFilenames?
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray() ?? [];
+
+            if (wanted.Length == 0)
+            {
+                return [];
+            }
+
+            var results = new List<string>();
+            using var conn = GetConnection();
+
+            // lower() on both sides to keep the case-insensitive matching the in-memory version had;
+            // the row count this walks is the share, but only once per request rather than per path.
+            using var cmd = new NpgsqlCommand(
+                "SELECT masked_filename FROM shares.files "
+                + "WHERE host = @host AND lower(original_filename) = ANY(@paths);", conn);
+            cmd.Parameters.AddWithValue("host", Host);
+            cmd.Parameters.AddWithValue("paths", wanted.Select(p => p.ToLowerInvariant()).ToArray());
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                results.Add(reader.GetString(0));
+            }
+
+            return results;
+        }
+
         public void UpdateFileTags(string maskedFilename, FileTags tags, long size, DateTime touchedAt)
         {
             using var conn = GetConnection();
