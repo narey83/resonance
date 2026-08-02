@@ -3308,24 +3308,29 @@
 
 .jb-wave-analyse:disabled { cursor: default; }
 
+/* Ghost bars rather than a flat line: an unanalysed row should read as "no
+   waveform yet", which a 2px rule at half opacity does not. */
 .jb-wave-empty {
   display: block;
   width: 100%;
-  height: 2px;
-  background: var(--border);
-  border-radius: 1px;
-  opacity: 0.5;
-  transition: opacity 0.12s, height 0.12s, background 0.12s;
+  height: 60%;
+  background: repeating-linear-gradient(
+    90deg,
+    currentColor 0 2px,
+    transparent 2px 5px
+  );
+  color: var(--text-muted);
+  opacity: 0.3;
+  transition: opacity 0.12s, color 0.12s;
 }
 
-/* Hover promotes the flat line into something that reads as "click me". */
+/* Hover makes the bars the accent colour — "click me". */
 .jb-wave-analyse:hover .jb-wave-empty {
-  height: 6px;
-  opacity: 1;
-  background: var(--accent);
+  color: var(--accent);
+  opacity: 0.9;
 }
 
-.jb-wave-empty--failed { background: var(--danger); opacity: 0.8; }
+.jb-wave-empty--failed { color: var(--danger); opacity: 0.6; }
 
 /* ── Column resizing ──────────────────────────────────────────────────────── */
 
