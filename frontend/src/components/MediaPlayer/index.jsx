@@ -978,6 +978,14 @@ const MediaPlayer = () => {
   const artistMeta = [displayArtist, attributes].filter(Boolean).join(' · ');
   const upNext = queueIndex == null ? [] : queue.slice(queueIndex + 1);
 
+  // One URL for the mini thumbnail, the expanded hero and the blurred backdrop.
+  // Every distinct size is a separate cold decode+resize on the server, so asking
+  // for three of them meant expanding the player waited on two fresh renders
+  // (and showed the page through a still-transparent backdrop meanwhile). Sharing
+  // the largest size we'd render anyway means expanding is a browser cache hit.
+  // 512 is AlbumArt's own ceiling; under a 64px blur the backdrop can't tell.
+  const artUrl = track.path ? getArtworkUrl(track.path, 512) : null;
+
   return (
     <div
       className="media-player"
@@ -1012,9 +1020,7 @@ const MediaPlayer = () => {
               }
               style={
                 track.hasArtwork
-                  ? {
-                      backgroundImage: `url(${getArtworkUrl(track.path, 800)})`,
-                    }
+                  ? { backgroundImage: `url(${artUrl})` }
                   : undefined
               }
             />
@@ -1043,6 +1049,7 @@ const MediaPlayer = () => {
                   path={track.path}
                   radius={16}
                   size={480}
+                  src={artUrl}
                 />
               </div>
 
@@ -1436,6 +1443,7 @@ const MediaPlayer = () => {
               path={track.path}
               radius={5}
               size={64}
+              src={artUrl}
             />
             <span className="media-player-art-expand">
               <Maximize2 size={16} />

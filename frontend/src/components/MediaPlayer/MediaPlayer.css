@@ -853,11 +853,14 @@
   animation: mp-expand-in 0.4s var(--ease-emphasized, cubic-bezier(0.22, 1, 0.36, 1));
 }
 
-/* Full-bleed blurred artwork backdrop. */
+/* Full-bleed blurred artwork backdrop. The solid base matters: the artwork is an
+   inline background-image, and without it the overlay is see-through until that
+   image decodes — the page underneath showed through for the first frames. */
 .mp-expanded-backdrop {
   position: absolute;
   inset: -12%;
   z-index: 0;
+  background-color: #0b0d12;
   background-size: cover;
   background-position: center;
   filter: blur(64px) saturate(1.6) brightness(0.62);
