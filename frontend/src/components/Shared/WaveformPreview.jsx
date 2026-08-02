@@ -28,6 +28,7 @@
 // </copyright>
 
 import * as analysisApi from '../../lib/analysis';
+import { ALL_METRICS, analyzeTrack } from '../../lib/musicLibrary';
 import { drawWaveform, toPeaks } from '../../lib/waveform';
 import { Loader2 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
@@ -39,15 +40,42 @@ import React, { useEffect, useRef, useState } from 'react';
 const cache = new Map();
 const inFlight = new Map();
 
-const fetchPeaks = (path, { cachedOnly = true } = {}) => {
-  if (cachedOnly && cache.has(path)) return Promise.resolve(cache.get(path));
+// Analysis is queued, not synchronous, so a click watches the cached-only
+// endpoint until the peaks appear. ponytail: a fixed poll — worth replacing if
+// the analysis service ever pushes per-track progress over the hub.
+const POLL_INTERVAL_MS = 2_000;
+const POLL_ATTEMPTS = 90;
+
+const waitForPeaks = async (path) => {
+  for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => {
+      setTimeout(resolve, POLL_INTERVAL_MS);
+    });
+
+    // eslint-disable-next-line no-await-in-loop
+    const data = await analysisApi
+      .getWaveform(path, { cachedOnly: true })
+      .catch(() => null);
+
+    if (data) {
+      const peaks = toPeaks(data);
+      cache.set(path, peaks);
+      return peaks;
+    }
+  }
+
+  return null;
+};
+
+const fetchPeaks = (path) => {
+  if (cache.has(path)) return Promise.resolve(cache.get(path));
   if (inFlight.has(path)) return inFlight.get(path);
 
   // cachedOnly: never triggers an analysis. A library scrolling past thousands
-  // of rows must not be able to queue a decode per row — only an explicit click
-  // on an empty slot passes false, which decodes the file and returns the peaks.
+  // of rows must not be able to queue a decode per row.
   const request = analysisApi
-    .getWaveform(path, { cachedOnly })
+    .getWaveform(path, { cachedOnly: true })
     .then((data) => {
       const peaks = toPeaks(data);
       cache.set(path, peaks);
@@ -68,7 +96,7 @@ const WaveformPreview = ({ height = 22, mono = false, path, width = 132 }) => {
   const holderRef = useRef(null);
   const [peaks, setPeaks] = useState(() => cache.get(path) ?? null);
   const [analysing, setAnalysing] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [error, setError] = useState(null);
 
   // Only fetch once the row is actually on screen; the virtualiser mounts a
   // little beyond the viewport, and offscreen rows need not cost a request.
@@ -103,16 +131,31 @@ const WaveformPreview = ({ height = 22, mono = false, path, width = 132 }) => {
     if (peaks) drawWaveform(canvasRef.current, peaks, { height, mono, width });
   }, [height, mono, peaks, width]);
 
-  // The GET analyses on the spot and returns the peaks, so there is no scan to
-  // start and nothing to poll. ponytail: one decode per click, no client-side
-  // queue — add one if people start clicking faster than the server decodes.
+  // One decode yields all four metrics, so the click runs the library's analyse
+  // service rather than the waveform-only endpoint, asking for everything with
+  // skipAnalysed so a track that already has its key and BPM only gets the parts
+  // it is missing. Writing the tags at the end pushes LIBRARY_UPDATED, which is
+  // what refreshes the Key and BPM cells in the row.
   const analyse = async (event) => {
     event.stopPropagation();
     setAnalysing(true);
-    setFailed(false);
-    const result = await fetchPeaks(path, { cachedOnly: false });
+    setError(null);
+
+    try {
+      await analyzeTrack([path], { metrics: ALL_METRICS, skipAnalysed: true });
+    } catch (requestError) {
+      setError(
+        requestError?.response?.status === 409
+          ? 'An analysis scan is already running — try again once it finishes'
+          : 'Could not start the analysis — click to retry',
+      );
+      setAnalysing(false);
+      return;
+    }
+
+    const result = await waitForPeaks(path);
     setPeaks(result);
-    setFailed(!result);
+    setError(result ? null : 'Analysis did not finish — click to retry');
     setAnalysing(false);
   };
 
@@ -127,10 +170,8 @@ const WaveformPreview = ({ height = 22, mono = false, path, width = 132 }) => {
         style={{ height, width }}
         title={
           analysing
-            ? 'Analysing…'
-            : failed
-              ? 'Analysis failed — click to retry'
-              : 'No waveform yet — click to analyse'
+            ? 'Analysing — key, BPM, waveform and loudness…'
+            : error ?? 'Not analysed yet — click to analyse'
         }
         type="button"
       >
@@ -141,7 +182,7 @@ const WaveformPreview = ({ height = 22, mono = false, path, width = 132 }) => {
           />
         ) : (
           <span
-            className={`jb-wave-empty${failed ? ' jb-wave-empty--failed' : ''}`}
+            className={`jb-wave-empty${error ? ' jb-wave-empty--failed' : ''}`}
           />
         )}
       </button>

@@ -113,10 +113,16 @@ export const getFolders = async () => {
 export const ALL_METRICS = 'Bpm, Key, Waveform, Loudness';
 export const TAG_METRICS = 'Bpm, Key';
 
-export const analyzeTrack = async (paths, { metrics = ALL_METRICS } = {}) =>
+// skipAnalysed: ask for every metric and let the backend decode only the ones the
+// track is still missing, rather than redoing key/BPM it already has.
+export const analyzeTrack = async (
+  paths,
+  { metrics = ALL_METRICS, skipAnalysed = false } = {},
+) =>
   api.post('/musiclibrary/tracks/analyze', {
     metrics,
     paths: Array.isArray(paths) ? paths : [paths],
+    skipAnalysed,
   });
 
 export const analyzeFolder = async (path, { metrics = ALL_METRICS } = {}) =>

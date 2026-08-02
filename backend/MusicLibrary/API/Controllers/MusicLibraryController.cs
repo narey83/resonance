@@ -66,7 +66,8 @@ namespace resonance.MusicLibrary.API
         string[] Paths = null,
         bool AnalyzeKey = true,
         bool AnalyzeBpm = true,
-        string Metrics = null);
+        string Metrics = null,
+        bool SkipAnalysed = false);
 
     public record AnalyzeFolderRequest(
         string Path,
@@ -520,9 +521,11 @@ namespace resonance.MusicLibrary.API
 
             try
             {
+                // SkipAnalysed lets a caller ask for everything and get only what the track is
+                // actually missing — one decode, no redoing the metrics it already has.
                 await Analysis.StartScanAsync(new AnalysisScanRequest(
                     Metrics: metrics,
-                    SkipAnalysed: false,
+                    SkipAnalysed: request.SkipAnalysed,
                     OnlyFilenames: masked));
             }
             catch (InvalidOperationException ex)
