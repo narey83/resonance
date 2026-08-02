@@ -48,6 +48,7 @@ namespace resonance.MusicLibrary.API
     using resonance.Mixtapes;
     using resonance.Shares;
     using SixLabors.ImageSharp;
+    using SixLabors.ImageSharp.Formats;
     using SixLabors.ImageSharp.Formats.Jpeg;
     using SixLabors.ImageSharp.Processing;
     using AppOptions = resonance.Options;
@@ -486,8 +487,13 @@ namespace resonance.MusicLibrary.API
 
                 if (size.HasValue && size.Value > 0)
                 {
-                    using var img = Image.Load(rawBytes);
                     var s = Math.Clamp(size.Value, 32, 2048);
+
+                    // Decode straight to roughly the size we want. Album art is routinely far
+                    // larger than the thumbnail asked for, and decoding it at full resolution only
+                    // to shrink it afterwards was the bulk of what remained of a cold render — one
+                    // cover measured 12.6s. JPEG can scale during decode, so this skips most of it.
+                    using var img = Image.Load(new DecoderOptions { TargetSize = new Size(s, s) }, rawBytes);
                     img.Mutate(x => x.Resize(new ResizeOptions
                     {
                         Size = new Size(s, s),
