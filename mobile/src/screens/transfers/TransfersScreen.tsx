@@ -123,8 +123,7 @@ function getDirectory(path: string | null | undefined): string {
 
 function getFolderLabel(dirPath: string): string {
   const parts = dirPath.replace(/\\/g, '/').split('/').filter(Boolean);
-  if (parts.length === 0) return dirPath;
-  return parts.length >= 2 ? `${parts[parts.length - 2]} / ${parts[parts.length - 1]}` : parts[parts.length - 1];
+  return parts.at(-1) ?? dirPath;
 }
 
 function stateLabel(t: Transfer, dir: TransferDir): string {
