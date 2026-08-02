@@ -28,6 +28,7 @@
       "./plugins/withAndroidAuto",
       "./plugins/withFloatingOverlay",
       "./plugins/withGradleWrapperVersion",
+      "./plugins/withReleaseSideBySide",
       [
         "react-native-google-cast",
         {
