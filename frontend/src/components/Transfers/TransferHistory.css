@@ -1,0 +1,184 @@
+/* Transfer history report. Uses the app's existing surface/text custom properties so it tracks
+   the active theme rather than hardcoding a palette. */
+
+.transfer-history {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  padding: 16px;
+}
+
+.th-header {
+  align-items: baseline;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.th-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.th-summary {
+  color: var(--text-muted, #8b949e);
+  font-size: 0.875rem;
+}
+
+.th-filters {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.th-search {
+  background: var(--bg-elevated, #161b22);
+  border: 1px solid var(--border, #30363d);
+  border-radius: 6px;
+  color: inherit;
+  flex: 1 1 260px;
+  font-size: 0.875rem;
+  min-width: 200px;
+  padding: 7px 10px;
+}
+
+.th-chips {
+  display: flex;
+  gap: 4px;
+}
+
+.th-chip {
+  background: var(--bg-elevated, #161b22);
+  border: 1px solid var(--border, #30363d);
+  border-radius: 999px;
+  color: var(--text-muted, #8b949e);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  padding: 5px 12px;
+}
+
+.th-chip:hover {
+  color: inherit;
+}
+
+.th-chip-on {
+  background: var(--accent, #2f81f7);
+  border-color: var(--accent, #2f81f7);
+  color: #fff;
+}
+
+/* The table scrolls inside its own box so the page itself never scrolls horizontally
+   and the pager stays put. */
+.th-table-wrap {
+  border: 1px solid var(--border, #30363d);
+  border-radius: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.th-table {
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  width: 100%;
+}
+
+.th-table th {
+  background: var(--bg-elevated, #161b22);
+  border-bottom: 1px solid var(--border, #30363d);
+  font-weight: 600;
+  padding: 8px 10px;
+  position: sticky;
+  text-align: left;
+  top: 0;
+  z-index: 1;
+}
+
+.th-table td {
+  border-bottom: 1px solid var(--border-subtle, #21262d);
+  padding: 7px 10px;
+  vertical-align: top;
+}
+
+.th-table tbody tr:hover {
+  background: var(--bg-elevated, #161b22);
+}
+
+.th-right {
+  text-align: right;
+}
+
+.th-nowrap {
+  white-space: nowrap;
+}
+
+/* The filename is the one column allowed to consume slack, and to truncate. */
+.th-file {
+  max-width: 460px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.th-state-ok {
+  color: var(--success, #3fb950);
+}
+
+.th-state-error {
+  color: var(--danger, #f85149);
+}
+
+.th-state-cancelled {
+  color: var(--text-muted, #8b949e);
+}
+
+.th-exception {
+  color: var(--text-muted, #8b949e);
+  display: block;
+  font-size: 0.75rem;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.th-empty,
+.th-error {
+  color: var(--text-muted, #8b949e);
+  padding: 24px;
+  text-align: center;
+}
+
+.th-error {
+  color: var(--danger, #f85149);
+}
+
+.th-pager {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.th-pager button {
+  background: var(--bg-elevated, #161b22);
+  border: 1px solid var(--border, #30363d);
+  border-radius: 6px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  padding: 5px 12px;
+}
+
+.th-pager button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.th-pager-info {
+  color: var(--text-muted, #8b949e);
+  font-size: 0.8125rem;
+}

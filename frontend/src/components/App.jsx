@@ -87,6 +87,7 @@ import Logs from './System/Logs';
 import System from './System/System';
 import Tags from './Tags/Tags';
 import TrackAnalysis from './TrackAnalysis/TrackAnalysis';
+import TransferHistory from './Transfers/TransferHistory';
 import Transfers from './Transfers/Transfers';
 import Users from './Users/Users';
 import YtDlp from './YtDlp/YtDlp';
@@ -97,6 +98,7 @@ import {
   Copy,
   Download,
   FolderOpen,
+  History,
   KeyRound,
   LayoutDashboard,
   Library as LibraryIcon,
@@ -1179,6 +1181,13 @@ const App = () => {
                         to={`${urlBase}/uploads`}
                       />
 
+                      <NavItem
+                        active={page === 'history'}
+                        icon={History}
+                        label="History"
+                        to={`${urlBase}/history`}
+                      />
+
                       <div className="app-nav-label">Community</div>
                       <NavItem
                         active={page === 'rooms'}
@@ -1408,6 +1417,14 @@ const App = () => {
                                 direction="download"
                                 server={applicationState.server}
                               />
+                            </div>
+                          )}
+                        />
+                        <Route
+                          path={`${urlBase}/history`}
+                          render={() => (
+                            <div className="view">
+                              <TransferHistory />
                             </div>
                           )}
                         />

@@ -173,6 +173,39 @@ export const getUserTransfers = async ({
   };
 };
 
+/**
+ * Every finished transfer across all peers, newest first. The transfers list endpoint only carries
+ * in-flight transfers plus the most recent completions, so this is the only route to the rest of
+ * the history. Returns the count and byte volume matching the filter alongside the page.
+ */
+export const getTransferHistory = async ({
+  direction,
+  state,
+  start,
+  end,
+  sortOrder = 'DESC',
+  search,
+  limit = 50,
+  offset = 0,
+} = {}) => {
+  const q = buildParameters({
+    direction,
+    state,
+    start,
+    end,
+    sortOrder,
+    search,
+    limit,
+    offset,
+  });
+  const res = await api.get(`/telemetry/reports/transfers/history?${q}`);
+  return {
+    items: res.data,
+    total: Number.parseInt(res.headers['x-total-count'] ?? '0', 10),
+    totalBytes: Number.parseInt(res.headers['x-total-bytes'] ?? '0', 10),
+  };
+};
+
 export const getUserEventCounts = async ({ usernames, start } = {}) => {
   const q = start ? `?start=${encodeURIComponent(start)}` : '';
   return (
