@@ -77,5 +77,9 @@ export const cancelTransfer = (dir: TransferDir, username: string, id: string, r
     `/transfers/${dir}s/${encodeURIComponent(username)}/${encodeURIComponent(id)}?remove=${remove}`,
   );
 
+// Bulk soft-delete over every completed transfer — tens of thousands of rows on a busy instance,
+// which comfortably outruns the client's default 15s timeout. Aborting the request doesn't stop the
+// server finishing the work, so the old behaviour was to do the deletion and then report a network
+// error, leaving the list looking untouched.
 export const clearCompleted = (dir: TransferDir) =>
-  apiClient.delete(`/transfers/${dir}s/all/completed`);
+  apiClient.delete(`/transfers/${dir}s/all/completed`, { timeout: 120_000 });
