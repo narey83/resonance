@@ -1834,8 +1834,22 @@ function LovedTab() {
 
   // Fetch only the loved tracks (resolved server-side) rather than the whole 20k+ library.
   // We still filter by the reactive lovedPaths below so unloving updates the list live.
-  const { data: allTracks, loading, refreshing } =
+  const { data: cachedTracks, loading, refreshing } =
     useServerCachedList<MusicTrack>('loved', getLovedTracks, true, seedTrackSignatures);
+
+  // The bulk sync only re-downloads that cached list when the LIBRARY changes, so a track loved
+  // here or on the web never showed up until the next scan. The loved list is tiny — refetch it
+  // whenever the loved set moves (lovedPaths is a fresh Set on every love/unlove).
+  const [fresh, setFresh] = useState<MusicTrack[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getLovedTracks()
+      .then((t) => { if (!cancelled) { seedTrackSignatures(t); setFresh(t); } })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [lovedPaths]);
+
+  const allTracks = fresh ?? cachedTracks;
 
   const lovedTracks = useMemo(() => {
     const list = allTracks.filter((t) => lovedPaths.has(t.path));

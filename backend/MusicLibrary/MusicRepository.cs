@@ -858,8 +858,10 @@ namespace resonance.MusicLibrary
                 using var r = cmd.ExecuteReader();
                 while (r.Read())
                 {
+                    // ReadRow hands back an absolute Path; the lookup below is by relative, so key it
+                    // that way — keying by row.Path made every lookup miss and the result always empty.
                     var row = ReadRow(r);
-                    byPath[row.Path] = row;
+                    byPath[MusicPath.ToRelative(row.Path)] = row;
                 }
             }
 
