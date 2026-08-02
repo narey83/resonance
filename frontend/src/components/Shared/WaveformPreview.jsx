@@ -49,12 +49,37 @@ const inFlight = new Map();
 const POLL_INTERVAL_MS = 2_000;
 const POLL_ATTEMPTS = 300;
 
+const delay = (ms) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+// There is one analysis queue for the whole application, so clicking a second
+// track while the first is decoding is rejected outright with a 409. Wait for
+// the queue instead of making the user come back and click again.
+const startAnalysis = async (path) => {
+  for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await analyzeTrack([path], { metrics: ALL_METRICS, skipAnalysed: true });
+      return null;
+    } catch (error) {
+      if (error?.response?.status !== 409) {
+        return 'Could not start the analysis — click to retry';
+      }
+
+      // eslint-disable-next-line no-await-in-loop
+      await delay(POLL_INTERVAL_MS);
+    }
+  }
+
+  return 'The analysis queue stayed busy — click to retry';
+};
+
 const waitForPeaks = async (path) => {
   for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
     // eslint-disable-next-line no-await-in-loop
-    await new Promise((resolve) => {
-      setTimeout(resolve, POLL_INTERVAL_MS);
-    });
+    await delay(POLL_INTERVAL_MS);
 
     // eslint-disable-next-line no-await-in-loop
     const data = await analysisApi
@@ -69,6 +94,34 @@ const waitForPeaks = async (path) => {
   }
 
   return null;
+};
+
+// An analysis outlives the row that started it: the list is virtualised, so
+// scrolling the row out of view — or a library refresh re-rendering the list —
+// unmounts it mid-run. Keyed by path so the row that comes back rejoins the run
+// instead of sitting there empty until something else happens to refetch.
+const running = new Map();
+
+const analyseTrack = (path) => {
+  if (running.has(path)) return running.get(path);
+
+  // A click means "look again", so the miss cached on the way in must not
+  // outlive it and leave a remounted row reading a stale null.
+  cache.delete(path);
+
+  const run = (async () => {
+    const startError = await startAnalysis(path);
+    if (startError) return { error: startError, peaks: null };
+
+    const peaks = await waitForPeaks(path);
+    return {
+      error: peaks ? null : 'Analysis did not finish — click to retry',
+      peaks,
+    };
+  })().finally(() => running.delete(path));
+
+  running.set(path, run);
+  return run;
 };
 
 const fetchPeaks = (path) => {
@@ -106,12 +159,30 @@ const WaveformPreview = ({ height = 22, mono = false, path, width = 132 }) => {
   useEffect(() => {
     const holder = holderRef.current;
     if (!holder || !path) return undefined;
+
+    let cancelled = false;
+
+    // Rejoin an analysis this row started before it was unmounted, so the spinner
+    // and the result survive scrolling and library refreshes.
+    if (running.has(path)) {
+      setAnalysing(true);
+      running.get(path).then(({ error: runError, peaks: result }) => {
+        if (cancelled) return;
+        setPeaks(result);
+        setError(runError);
+        setAnalysing(false);
+      });
+
+      return () => {
+        cancelled = true;
+      };
+    }
+
     if (cache.has(path)) {
       setPeaks(cache.get(path));
       return undefined;
     }
 
-    let cancelled = false;
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries.some((e) => e.isIntersecting)) return;
@@ -144,21 +215,9 @@ const WaveformPreview = ({ height = 22, mono = false, path, width = 132 }) => {
     setAnalysing(true);
     setError(null);
 
-    try {
-      await analyzeTrack([path], { metrics: ALL_METRICS, skipAnalysed: true });
-    } catch (requestError) {
-      setError(
-        requestError?.response?.status === 409
-          ? 'An analysis scan is already running — try again once it finishes'
-          : 'Could not start the analysis — click to retry',
-      );
-      setAnalysing(false);
-      return;
-    }
-
-    const result = await waitForPeaks(path);
+    const { error: runError, peaks: result } = await analyseTrack(path);
     setPeaks(result);
-    setError(result ? null : 'Analysis did not finish — click to retry');
+    setError(runError);
     setAnalysing(false);
   };
 
