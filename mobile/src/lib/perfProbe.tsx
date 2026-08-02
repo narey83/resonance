@@ -87,6 +87,32 @@ let worstInteractionLabel = '';
 let worstBlockMs = 0;
 let worstBlockLabel = '';
 
+// Garbage collection. A 12.4s stall arrived with 237ms of rendering and no labelled block against
+// it, on an app measuring ~400MB of JS heap — and only ever on resume, which is exactly when
+// Android has finished trimming and compacting memory underneath us. A major GC over a heap that
+// size runs on this thread and is invisible to every timer above, so ask the engine directly.
+interface HermesStats { numGCs: number; gcTimeMs: number; heapMb: number }
+
+const hermesStats = (): HermesStats | null => {
+  const internal = (globalThis as { HermesInternal?: { getInstrumentedStats?: () => Record<string, number> } })
+    .HermesInternal;
+  const raw = internal?.getInstrumentedStats?.();
+  if (!raw) return null;
+  // Key names have shifted between Hermes releases, so accept the known spellings rather than
+  // silently reporting zeroes on a version that renamed one.
+  const pick = (...names: string[]) => {
+    for (const n of names) if (typeof raw[n] === 'number') return raw[n];
+    return 0;
+  };
+  return {
+    gcTimeMs: pick('js_gcTime', 'js_gcCPUTime') * 1000,
+    heapMb: pick('js_heapSize', 'js_allocatedBytes') / (1024 * 1024),
+    numGCs: pick('js_numGCs'),
+  };
+};
+
+let gcAtWindowStart: HermesStats | null = null;
+
 // Set when the app last came back to the foreground, so the first summaries after a resume are
 // labelled — that's the window the complaint is actually about.
 let resumedAt: number | null = null;
@@ -101,6 +127,7 @@ function resetWindow() {
   worstInteractionMs = 0; worstInteractionLabel = '';
   worstBlockMs = 0; worstBlockLabel = '';
   pendingInteraction = null;
+  gcAtWindowStart = hermesStats();
 }
 
 /**
@@ -199,8 +226,14 @@ function summary(): string {
     ? ` resume+${Math.round((Date.now() - resumedAt) / 1000)}s(was away ${Math.round(lastBackgroundMs / 1000)}s)`
     : '';
 
+  const now = hermesStats();
+  const gc = now && gcAtWindowStart
+    ? ` gc:n=${now.numGCs - gcAtWindowStart.numGCs} time=${ms(now.gcTimeMs - gcAtWindowStart.gcTimeMs)} heap=${now.heapMb.toFixed(0)}MB`
+    : ' gc:unavailable';
+
   return `[perf]${since}` +
-    ` tap:worst=${ms(worstInteractionMs)}(${worstInteractionLabel || '-'})` +
+    gc +
+    ` | tap:worst=${ms(worstInteractionMs)}(${worstInteractionLabel || '-'})` +
     ` | block:worst=${ms(worstBlockMs)}(${worstBlockLabel || '-'})` +
     ` | js:stalls=${stalls} worst=${ms(worstStallMs)} blocked=${ms(stalledMs)}` +
     ` | react:commits=${commits} slow=${slowCommits} total=${ms(commitMs)}` +

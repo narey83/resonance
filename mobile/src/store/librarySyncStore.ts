@@ -48,6 +48,10 @@ const VERSION_KEY = '__sync_version__';
 const MIN_AUTO_SYNC_INTERVAL_MS = 3 * 60_000;
 let lastAutoSyncAt = 0;
 
+// Which lists we've actually pulled this session. A tab the user just un-hid has no cached data, so
+// it must fetch immediately rather than wait out the rate limit or be skipped by the version gate.
+const fetchedKeys = new Set<string>();
+
 const withCap = <T>(p: Promise<T>, label: string): Promise<T> =>
   Promise.race([
     p,
@@ -71,6 +75,7 @@ type Status = 'idle' | 'syncing' | 'ready' | 'error';
 interface Endpoint {
   label: string;
   key: string;                       // libraryCache key the slice readers use
+  tab: string;                       // the library tab this list backs; skipped when that tab is hidden
   path: string;
   params?: Record<string, string | number>;
   // Transform a 200 body into the value to cache (and seed its signatures). Identity for most.
@@ -78,19 +83,19 @@ interface Endpoint {
 }
 
 const ENDPOINTS: Endpoint[] = [
-  { label: 'Artists', key: 'artists', path: '/musiclibrary/artists',
+  { label: 'Artists', key: 'artists', tab: 'Artists', path: '/musiclibrary/artists',
     toStore: (d) => { seedCoverSignatures(d); return d; } },
-  { label: 'Albums', key: 'albums', path: '/musiclibrary/albums',
+  { label: 'Albums', key: 'albums', tab: 'Albums', path: '/musiclibrary/albums',
     toStore: (d) => { seedCoverSignatures(d); return d; } },
-  { label: 'Folders', key: 'folders', path: '/musiclibrary/folders',
+  { label: 'Folders', key: 'folders', tab: 'Folders', path: '/musiclibrary/folders',
     toStore: (d) => { seedCoverSignatures(d); return d; } },
-  { label: 'Genres', key: 'genres', path: '/musiclibrary/genres',
+  { label: 'Genres', key: 'genres', tab: 'Genres', path: '/musiclibrary/genres',
     toStore: (d) => d },
-  { label: 'Years', key: 'years', path: '/musiclibrary/years',
+  { label: 'Years', key: 'years', tab: 'Years', path: '/musiclibrary/years',
     toStore: (d) => d },
-  { label: 'Loved', key: 'loved', path: '/musiclibrary/loved/tracks',
+  { label: 'Loved', key: 'loved', tab: 'Loved', path: '/musiclibrary/loved/tracks',
     toStore: (d) => { seedTrackSignatures(d); return d; } },
-  { label: 'Tracks', key: 'tracks:first:artist:asc', path: '/musiclibrary/tracks',
+  { label: 'Tracks', key: 'tracks:first:artist:asc', tab: 'Tracks', path: '/musiclibrary/tracks',
     params: { limit: 50, offset: 0, sort: 'artist', descending: 'false' },
     toStore: (d) => { const r = { tracks: d.tracks, total: d.total }; seedTrackSignatures(r.tracks); return r; } },
 ];
@@ -106,7 +111,8 @@ interface LibrarySyncState {
   cacheVersion: number;     // bumps after each endpoint is written, so slice readers re-read
   error: string | null;
   percent: number;          // 0-100 overall
-  sync: (revision: number, force?: boolean) => Promise<void>;
+  /** `tabs` limits the fetch to the lists actually on screen; omit to sync everything. */
+  sync: (revision: number, force?: boolean, tabs?: string[]) => Promise<void>;
 }
 
 export const useLibrarySync = create<LibrarySyncState>((set, get) => ({
@@ -120,10 +126,21 @@ export const useLibrarySync = create<LibrarySyncState>((set, get) => ({
   error: null,
   percent: 0,
 
-  sync: async (revision, force = false) => {
+  sync: async (revision, force = false, tabs) => {
     const st = get();
     if (st.status === 'syncing') { dbg('skip — already syncing'); return; }
-    if (!force && st.hasSyncedOnce && st.syncedRevision === revision) {
+
+    // Only the lists behind visible tabs. Hiding a tab used to save nothing: the list was still
+    // downloaded, parsed and then held in memory for the life of the session. On a 47k-track
+    // library that is most of a 400MB JS heap spent on screens the user can't reach — and a heap
+    // that size is what makes a GC on resume stall the thread for seconds.
+    const endpoints = tabs?.length ? ENDPOINTS.filter((e) => tabs.includes(e.tab)) : ENDPOINTS;
+    if (endpoints.length === 0) { dbg('skip — no visible tabs need a server list'); return; }
+
+    // A list we've never fetched can't be served from cache, so it overrides both gates below.
+    const needsFirstFetch = endpoints.some((e) => !fetchedKeys.has(e.key));
+
+    if (!force && !needsFirstFetch && st.hasSyncedOnce && st.syncedRevision === revision) {
       dbg(`skip — already fresh in-session for rev=${revision}`);
       return;
     }
@@ -134,7 +151,7 @@ export const useLibrarySync = create<LibrarySyncState>((set, get) => ({
     // caught 6.9s of a 10s window blocked, with a single 4s parse stall. Being a couple of minutes
     // behind on a library this size is worth far more than a tab that locks up whenever a download
     // finishes. `force` (an explicit user refresh) still bypasses this.
-    if (!force && lastAutoSyncAt && Date.now() - lastAutoSyncAt < MIN_AUTO_SYNC_INTERVAL_MS) {
+    if (!force && !needsFirstFetch && lastAutoSyncAt && Date.now() - lastAutoSyncAt < MIN_AUTO_SYNC_INTERVAL_MS) {
       dbg(`skip — rate limited (${Math.round((Date.now() - lastAutoSyncAt) / 1000)}s since last sync)`);
       return;
     }
@@ -147,7 +164,7 @@ export const useLibrarySync = create<LibrarySyncState>((set, get) => ({
       version = (await apiClient.get('/musiclibrary/version')).data?.version;
     } catch { /* offline / error — fall through to the normal (cache + ETag) sync */ }
 
-    if (!force && version) {
+    if (!force && !needsFirstFetch && version) {
       const storedVersion = await readListCache<string>(VERSION_KEY);
       if (storedVersion === version && (await hasListCache('artists'))) {
         dbg(`skip — backend version unchanged (${version})`);
@@ -161,7 +178,7 @@ export const useLibrarySync = create<LibrarySyncState>((set, get) => ({
     // Stamped here, not at the version-gate skip above: a skip costs one tiny request and no
     // rendering, so it must not start the clock on the expensive path.
     lastAutoSyncAt = t0;
-    dbg(`START build=${SYNC_BUILD} rev=${revision} force=${force} endpoints=${ENDPOINTS.length}`);
+    dbg(`START build=${SYNC_BUILD} rev=${revision} force=${force} endpoints=${endpoints.length}/${ENDPOINTS.length}`);
     set({ status: 'syncing', completed: 0, currentLabel: 'Library', error: null, percent: 0 });
 
     // Refresh the token ONCE up front so the parallel burst doesn't have 7 requests each hit 401 and
@@ -170,12 +187,12 @@ export const useLibrarySync = create<LibrarySyncState>((set, get) => ({
     try { await getValidToken(); } catch { /* ignore — requests will still try */ }
     dbg(`token ready in ${Date.now() - tTok}ms`);
 
-    const total = ENDPOINTS.length;
+    const total = endpoints.length;
     let completed = 0;
     let failures = 0;
 
     // Fetch all lists in PARALLEL, each hard-capped so one network stall can't hang the whole sync.
-    await Promise.all(ENDPOINTS.map(async (ep) => {
+    await Promise.all(endpoints.map(async (ep) => {
       const te = Date.now();
       let status = 0;
       let netMs = 0;
@@ -233,6 +250,7 @@ export const useLibrarySync = create<LibrarySyncState>((set, get) => ({
       }
       dbg(`${ep.label} status=${status} net=${netMs}ms proc=${procMs}ms total=${Date.now() - te}ms${note}`);
 
+      if (status === 200 || status === 304) fetchedKeys.add(ep.key);
       completed += 1;
       // Only bump cacheVersion when the list actually changed (200) — a 304 leaves the cache
       // untouched, so re-reading/re-rendering the visible tab for it is pure waste.
@@ -246,7 +264,7 @@ export const useLibrarySync = create<LibrarySyncState>((set, get) => ({
     dbg(`DONE in ${Date.now() - t0}ms ok=${total - failures} failed=${failures}`);
     // Record the version we just synced so the next startup can skip the sync if it's unchanged.
     // Only on full success — a partial sync must re-check next time.
-    if (!failures && version) {
+    if (!failures && version && endpoints.length === ENDPOINTS.length) {
       await writeListCache(VERSION_KEY, version);
     }
 

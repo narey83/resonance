@@ -2559,8 +2559,10 @@ function LibraryHome({ navigation }: HomeProps) {
     const justFinished = wasScanningRef.current;
     wasScanningRef.current = false;
     if (justFinished) dbg('[home] backend rescan finished — requesting cache sync');
-    sync(libraryRevision);
-  }, [sync, libraryRevision, serverScanning]);
+    sync(libraryRevision, false, visibleTabs);
+    // visibleTabs is a dependency: un-hiding a tab has to fetch the list behind it, which the
+    // store treats as a first fetch and so lets past the rate limit and the version gate.
+  }, [sync, libraryRevision, serverScanning, visibleTabs]);
 
   // DEBUG (opt-in via "Library sync debug" setting): heartbeat that detects a frozen JS thread. A 1s
   // timer firing late means the JS engine stalled — either the OS suspended a backgrounded app, or
