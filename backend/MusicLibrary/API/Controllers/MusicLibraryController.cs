@@ -464,7 +464,11 @@ namespace resonance.MusicLibrary.API
 
             try
             {
-                using var tf = TagLib.File.Create(path, TagLib.ReadStyle.Average);
+                // ReadStyle.None, not Average: Average makes TagLib scan the audio stream to work
+                // out duration and bitrate, none of which this endpoint wants — it only needs the
+                // embedded picture out of the tag. Measured cold renders were running 0.7s to 10s
+                // per cover, most of it spent reading audio nobody asked about.
+                using var tf = TagLib.File.Create(path, TagLib.ReadStyle.None);
                 var pic = tf.Tag.Pictures?.FirstOrDefault();
                 if (pic == null || pic.Data.Count == 0)
                 {
