@@ -29,6 +29,7 @@
 
 import * as analysisApi from '../../lib/analysis';
 import { drawWaveform, toPeaks } from '../../lib/waveform';
+import { Loader2 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 
 // Waveforms are immutable per file and a virtualised list mounts the same row
@@ -38,14 +39,15 @@ import React, { useEffect, useRef, useState } from 'react';
 const cache = new Map();
 const inFlight = new Map();
 
-const fetchPeaks = (path) => {
-  if (cache.has(path)) return Promise.resolve(cache.get(path));
+const fetchPeaks = (path, { cachedOnly = true } = {}) => {
+  if (cachedOnly && cache.has(path)) return Promise.resolve(cache.get(path));
   if (inFlight.has(path)) return inFlight.get(path);
 
   // cachedOnly: never triggers an analysis. A library scrolling past thousands
-  // of rows must not be able to queue a decode per row.
+  // of rows must not be able to queue a decode per row — only an explicit click
+  // on an empty slot passes false, which decodes the file and returns the peaks.
   const request = analysisApi
-    .getWaveform(path, { cachedOnly: true })
+    .getWaveform(path, { cachedOnly })
     .then((data) => {
       const peaks = toPeaks(data);
       cache.set(path, peaks);
@@ -65,6 +67,8 @@ const WaveformPreview = ({ height = 22, mono = false, path, width = 132 }) => {
   const canvasRef = useRef(null);
   const holderRef = useRef(null);
   const [peaks, setPeaks] = useState(() => cache.get(path) ?? null);
+  const [analysing, setAnalysing] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   // Only fetch once the row is actually on screen; the virtualiser mounts a
   // little beyond the viewport, and offscreen rows need not cost a request.
@@ -99,14 +103,58 @@ const WaveformPreview = ({ height = 22, mono = false, path, width = 132 }) => {
     if (peaks) drawWaveform(canvasRef.current, peaks, { height, mono, width });
   }, [height, mono, peaks, width]);
 
+  // The GET analyses on the spot and returns the peaks, so there is no scan to
+  // start and nothing to poll. ponytail: one decode per click, no client-side
+  // queue — add one if people start clicking faster than the server decodes.
+  const analyse = async (event) => {
+    event.stopPropagation();
+    setAnalysing(true);
+    setFailed(false);
+    const result = await fetchPeaks(path, { cachedOnly: false });
+    setPeaks(result);
+    setFailed(!result);
+    setAnalysing(false);
+  };
+
+  if (!peaks) {
+    return (
+      <button
+        className="jb-wave-analyse"
+        disabled={analysing}
+        onClick={analyse}
+        onDoubleClick={(event) => event.stopPropagation()}
+        ref={holderRef}
+        style={{ height, width }}
+        title={
+          analysing
+            ? 'Analysing…'
+            : failed
+              ? 'Analysis failed — click to retry'
+              : 'No waveform yet — click to analyse'
+        }
+        type="button"
+      >
+        {analysing ? (
+          <Loader2
+            className="jb-spin"
+            size={12}
+          />
+        ) : (
+          <span
+            className={`jb-wave-empty${failed ? ' jb-wave-empty--failed' : ''}`}
+          />
+        )}
+      </button>
+    );
+  }
+
   return (
     <span
       className="jb-wave-preview"
       ref={holderRef}
       style={{ height, width }}
-      title={peaks ? undefined : 'No waveform analysed yet'}
     >
-      {peaks ? <canvas ref={canvasRef} /> : <span className="jb-wave-empty" />}
+      <canvas ref={canvasRef} />
     </span>
   );
 };

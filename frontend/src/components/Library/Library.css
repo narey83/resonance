@@ -3292,17 +3292,40 @@
 
 .jb-wave-preview canvas { display: block; }
 
-/* Placeholder for a track with no analysis yet — keeps the column from
-   jumping as rows scroll in and out. */
+/* Slot for a track with no analysis yet — same size as a drawn waveform so the
+   column doesn't jump as rows scroll in and out, and clickable to analyse it. */
+.jb-wave-analyse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.jb-wave-analyse:disabled { cursor: default; }
+
 .jb-wave-empty {
   display: block;
   width: 100%;
   height: 2px;
-  align-self: center;
   background: var(--border);
   border-radius: 1px;
   opacity: 0.5;
+  transition: opacity 0.12s, height 0.12s, background 0.12s;
 }
+
+/* Hover promotes the flat line into something that reads as "click me". */
+.jb-wave-analyse:hover .jb-wave-empty {
+  height: 6px;
+  opacity: 1;
+  background: var(--accent);
+}
+
+.jb-wave-empty--failed { background: var(--danger); opacity: 0.8; }
 
 /* ── Column resizing ──────────────────────────────────────────────────────── */
 
