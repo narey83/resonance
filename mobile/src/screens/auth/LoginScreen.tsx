@@ -85,7 +85,7 @@ export default function LoginScreen({ navigation }: Props) {
     // KeyboardAwareScrollView, not KeyboardAvoidingView: the latter was passing behavior=undefined
     // on Android, which makes it inert, so the keyboard simply covered the Sign in button.
     <KeyboardAwareScrollView
-      bottomOffset={Spacing.xl}
+      bottomOffset={120}
       contentContainerStyle={s.inner}
       keyboardShouldPersistTaps="handled"
       style={s.container}
@@ -168,7 +168,7 @@ export default function LoginScreen({ navigation }: Props) {
 function makeStyles(c: ThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: c.bgPrimary },
-    inner: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: Spacing.xl, paddingVertical: Spacing.xxl },
+    inner: { flexGrow: 1, paddingBottom: Spacing.xxl, paddingHorizontal: Spacing.xl, paddingTop: Spacing.xxl * 2 },
     header:  { alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.xxl },
     logo:    { color: c.textPrimary, fontSize: Typography.xxl, fontWeight: '700', letterSpacing: -0.5 },
     title: { fontSize: Typography.xxl, fontWeight: '700', color: c.textPrimary, marginBottom: Spacing.xs },

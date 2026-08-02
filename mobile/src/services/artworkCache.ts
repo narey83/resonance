@@ -76,8 +76,15 @@ export function getArtworkCacheKey(trackPath: string, size: number): string {
   return `artwork_${djb2(trackPath)}_${size}`;
 }
 
-// Pixel sizes covering 1x–3.5x pixel ratios for layout sizes 36, 42, 48, 96, 512.
-const EVICT_SIZES = [36, 42, 48, 72, 84, 96, 105, 108, 120, 126, 144, 147, 168, 288, 512];
+// Every size a cover might be cached under. The two canonical sizes are what's actually written
+// today; the rest are legacy, from before small cells were collapsed onto one size, and stay here
+// so entries cached by an older build still get cleaned up.
+//
+// Note ARTWORK_THUMB_SIZE and PLAYER_ART_SIZE were both missing from this list, which meant
+// eviction quietly deleted nothing that was actually in use — a removed track kept its cover on
+// disk indefinitely. Derived from the constants now, so they can't drift apart again.
+const LEGACY_EVICT_SIZES = [36, 42, 48, 72, 84, 96, 105, 108, 120, 126, 144, 147, 168, 288, 512];
+const EVICT_SIZES = [...new Set([ARTWORK_THUMB_SIZE, PLAYER_ART_SIZE, ...LEGACY_EVICT_SIZES])];
 
 export async function evictArtwork(trackPaths: string[]): Promise<void> {
   if (trackPaths.length === 0) return;
