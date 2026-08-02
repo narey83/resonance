@@ -59,14 +59,10 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     // Per-track auto-retry rounds, in memory (resets on restart, which also grants a fresh budget).
     private const int MaxAutoRetryRounds = 10;
 
-    // Completed tracks are published from staging to the music folder in batches of this size,
-    // rather than all at job end, so staging doesn't accumulate a whole large job's files.
-    private const int BatchMoveSize = 100;
-
     private static readonly ILogger Log = Serilog.Log.ForContext("SourceContext", resonance.Logs.Integrations.YtDlp);
 
     // Coalesce post-publish library/share rescans: touched folders accumulate and are scanned at
-    // most once per interval, so a steady stream of batch moves doesn't fire a scan every minute.
+    // most once per interval, so a run of jobs finishing together doesn't fire a scan apiece.
     private static readonly TimeSpan RescanMinInterval = TimeSpan.FromMinutes(5);
 
     // Formats the tag writer (and AudioConverter) know how to handle — checked in order when a
@@ -93,7 +89,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
     private readonly ConcurrentDictionary<Guid, int> autoRetryCounts = new();
 
-    private readonly SemaphoreSlim batchMoveLock = new(1, 1);
+    private readonly SemaphoreSlim publishLock = new(1, 1);
 
     private readonly object rescanGate = new();
     private readonly HashSet<string> pendingRescanDirs = new(StringComparer.Ordinal);
@@ -232,7 +228,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         _ = Task.Run(() => RunSubscriptionPollLoopAsync(cts.Token), CancellationToken.None);
         _ = Task.Run(() => RunAutoRetryLoopAsync(cts.Token), CancellationToken.None);
-        _ = Task.Run(() => RunBatchMoveLoopAsync(cts.Token), CancellationToken.None);
+        _ = Task.Run(() => RunRescanFlushLoopAsync(cts.Token), CancellationToken.None);
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
@@ -990,7 +986,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         cts.Dispose();
         workerSlots?.Dispose();
         subscriptionCheckLock.Dispose();
-        batchMoveLock.Dispose();
+        publishLock.Dispose();
     }
 
     private static string? FindTrackFileUnderKnownExtensions(string filePath)
@@ -2281,13 +2277,14 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             dbJob.TagFailedTracks = tagFailedCount;
         }
 
-        // Move any tracks still in staging (the final partial batch — most are already published
-        // by the running batch moves) and then clear the job's staging directory entirely.
+        // Publishing happens here and nowhere else: a job's tracks stay in (excluded) staging
+        // until the whole job has finished, so the share and library never expose a half-finished
+        // album. Everything staged moves out in one go, then the staging directory is cleared.
         var stagingDir = GetStagingDirectory(job.Id);
         var touched = new HashSet<string>(StringComparer.Ordinal);
         if (Directory.Exists(stagingDir))
         {
-            await batchMoveLock.WaitAsync(cancellationToken);
+            await publishLock.WaitAsync(cancellationToken);
             try
             {
                 var staged = await db.Tracks
@@ -2309,7 +2306,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             }
             finally
             {
-                batchMoveLock.Release();
+                publishLock.Release();
             }
 
             try
@@ -2323,8 +2320,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         await db.SaveChangesAsync(cancellationToken);
 
-        // Refresh indexes for the final batch's folders (already-published files were rescanned
-        // by the running batch moves).
         await RescanOutputAsync(touched);
 
         var verb = job.State == YtDlpJobState.Cancelled ? "Stopped" : "Done";
@@ -2333,40 +2328,15 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             job);
     }
 
-    // Periodically drains completed tracks out of staging into the music folder, in batches of
-    // BatchMoveSize, for every active job — including any backlog that built up before a restart.
-    private async Task RunBatchMoveLoopAsync(CancellationToken cancellationToken)
+    // Retries the folder rescans a throttled (or busy) publish left pending, so a job that
+    // finishes just after another one still lands in the share and library.
+    private async Task RunRescanFlushLoopAsync(CancellationToken cancellationToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
         try
         {
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
-                foreach (var job in jobs.Values)
-                {
-                    if (job.State != YtDlpJobState.Active)
-                    {
-                        continue;
-                    }
-
-                    // Drain accumulated completed tracks in batches, then rescan only the folders
-                    // that actually received files (a full-root scan every sweep locks the SQLite
-                    // shares cache for minutes and breaks concurrent searches).
-                    var touched = new HashSet<string>(StringComparer.Ordinal);
-                    int batchMoved;
-                    do
-                    {
-                        batchMoved = await MoveCompletedBatchAsync(job.Id, touched);
-                    }
-                    while (batchMoved == BatchMoveSize && !cancellationToken.IsCancellationRequested);
-
-                    if (touched.Count > 0)
-                    {
-                        await RescanOutputAsync(touched);
-                    }
-                }
-
-                // Flush any folders still pending from a throttled earlier tick.
                 await FlushPendingRescanAsync();
             }
         }
@@ -2375,67 +2345,12 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "YtDlp: batch-move loop terminated unexpectedly");
-        }
-    }
-
-    // Publishes up to BatchMoveSize completed tracks still sitting in staging out to the music
-    // folder. Returns the number actually moved.
-    private async Task<int> MoveCompletedBatchAsync(Guid jobId, ISet<string> touchedDirs)
-    {
-        await batchMoveLock.WaitAsync(cts.Token);
-        try
-        {
-            if (!jobs.TryGetValue(jobId, out var job))
-            {
-                return 0;
-            }
-
-            var stagingDir = GetStagingDirectory(jobId);
-
-            await using var db = await dbFactory.CreateDbContextAsync(cts.Token);
-            var staged = await db.Tracks
-                .Where(t => t.JobId == jobId && t.State == YtDlpTrackState.Completed
-                    && t.FilePath != null && t.FilePath.StartsWith(stagingDir))
-                .OrderBy(t => t.CompletedAt)
-                .Take(BatchMoveSize)
-                .ToListAsync(cts.Token);
-
-            if (staged.Count == 0)
-            {
-                return 0;
-            }
-
-            var convertFormat = (job.ConvertOnCompletionFormatOverride
-                ?? options.CurrentValue.Integrations.YtDlp.ConvertOnCompletionFormat)?.Trim();
-
-            var moved = await MoveStagedTracksAsync(job, db, staged, convertFormat, touchedDirs, cts.Token);
-            await db.SaveChangesAsync(cts.Token);
-
-            if (moved > 0)
-            {
-                await EmitEventAsync(jobId, "info", $"Published {moved} completed track(s) to the music folder", job);
-            }
-
-            return moved;
-        }
-        catch (OperationCanceledException)
-        {
-            return 0;
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "YtDlp: batch move failed for job {JobId}", jobId);
-            return 0;
-        }
-        finally
-        {
-            batchMoveLock.Release();
+            Log.Error(ex, "YtDlp: rescan-flush loop terminated unexpectedly");
         }
     }
 
     // Optionally converts, verifies artwork, then moves each staged track to the output directory,
-    // updating its FilePath and removing the track's staging leftovers. Caller holds batchMoveLock.
+    // updating its FilePath and removing the track's staging leftovers. Caller holds publishLock.
     // Returns the number of tracks actually moved.
     private async Task<int> MoveStagedTracksAsync(YtDlpJob job, YtDlpDbContext db, System.Collections.Generic.List<YtDlpTrack> tracks, string? convertFormat, ISet<string> touchedDirs, CancellationToken cancellationToken)
     {
@@ -2494,8 +2409,8 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     }
 
     // Queues freshly-published folders for a rescan. The actual library/share scan is coalesced
-    // and rate-limited (see FlushPendingRescanAsync) so a steady stream of batch moves can't fire
-    // a scan every minute — which would otherwise hammer the SQLite shares cache and stall searches.
+    // and rate-limited (see FlushPendingRescanAsync) so a run of jobs finishing together can't fire
+    // a scan apiece — which would otherwise hammer the shares cache and stall searches.
     private Task RescanOutputAsync(IReadOnlyCollection<string> directories)
     {
         if (directories.Count > 0)
@@ -2538,11 +2453,25 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         }
         catch (resonance.ShareScanInProgressException)
         {
-            // A scan is already running — it will pick up the new files.
+            // A scan is already running — put the folders back so the flush loop retries them;
+            // a running *targeted* scan of other folders would otherwise leave these unindexed.
+            Requeue(toScan);
         }
         catch (Exception ex)
         {
             Log.Warning("YtDlp: targeted share rescan failed: {Error}", ex.Message);
+            Requeue(toScan);
+        }
+
+        void Requeue(string[] dirs)
+        {
+            lock (rescanGate)
+            {
+                foreach (var d in dirs)
+                {
+                    pendingRescanDirs.Add(d);
+                }
+            }
         }
     }
 
