@@ -38,6 +38,17 @@ using Microsoft.EntityFrameworkCore;
 
 public class AppUserService
 {
+    // OWASP guidance for PBKDF2-HMAC-SHA256 is >= 600k iterations. Legacy hashes were produced at 100k
+    // and don't record their cost, so they're recognised by the older "salt:hash" format and verified at
+    // the legacy count, then rehashed to the current parameters on the next successful login.
+    private const int CurrentIterations = 600_000;
+    private const int LegacyIterations = 100_000;
+    private const string HashPrefix = "pbkdf2-sha256";
+
+    // A pre-computed hash of a throwaway password, used only to spend equivalent PBKDF2 time on the
+    // unknown-user path so authentication is constant-time regardless of whether the account exists.
+    private static readonly string DummyHash = HashPassword("resonance-dummy-password-for-constant-time");
+
     public AppUserService(IDbContextFactory<UsersDbContext> contextFactory)
     {
         ContextFactory = contextFactory;
@@ -185,17 +196,6 @@ public class AppUserService
         db.Users.Remove(user);
         db.SaveChanges();
     }
-
-    // OWASP guidance for PBKDF2-HMAC-SHA256 is >= 600k iterations. Legacy hashes were produced at 100k
-    // and don't record their cost, so they're recognised by the older "salt:hash" format and verified at
-    // the legacy count, then rehashed to the current parameters on the next successful login.
-    private const int CurrentIterations = 600_000;
-    private const int LegacyIterations = 100_000;
-    private const string HashPrefix = "pbkdf2-sha256";
-
-    // A pre-computed hash of a throwaway password, used only to spend equivalent PBKDF2 time on the
-    // unknown-user path so authentication is constant-time regardless of whether the account exists.
-    private static readonly string DummyHash = HashPassword("resonance-dummy-password-for-constant-time");
 
     private static string HashPassword(string password)
     {

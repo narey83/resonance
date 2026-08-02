@@ -39,7 +39,7 @@ using System.Threading;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 
-public class SessionService : IDisposable
+public sealed class SessionService : IDisposable
 {
     private static readonly TimeSpan RotationGracePeriod = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan CleanupInterval = TimeSpan.FromMinutes(30);
@@ -327,20 +327,6 @@ public class SessionService : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    // Timer callback wrapper: cleanup runs on a background thread, so swallow and log any failure
-    // rather than letting it escape onto the thread pool and crash the process.
-    private void SafeCleanup()
-    {
-        try
-        {
-            CleanupExpiredSessions();
-        }
-        catch (Exception ex)
-        {
-            Log.Warning("Periodic session cleanup failed: {Message}", ex.Message);
-        }
-    }
-
     private static IEnumerable<Guid> RevokeAllSessions(string username, UsersDbContext db)
     {
         var sessions = db.Sessions.Where(s => s.Username == username && !s.IsRevoked).ToList();
@@ -358,6 +344,20 @@ public class SessionService : IDisposable
 
     private static string HashToken(string token)
         => Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+
+    // Timer callback wrapper: cleanup runs on a background thread, so swallow and log any failure
+    // rather than letting it escape onto the thread pool and crash the process.
+    private void SafeCleanup()
+    {
+        try
+        {
+            CleanupExpiredSessions();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("Periodic session cleanup failed: {Message}", ex.Message);
+        }
+    }
 
     private void CacheRevocation(Guid sessionId) => RevokedSessionCache[sessionId] = DateTime.UtcNow;
 

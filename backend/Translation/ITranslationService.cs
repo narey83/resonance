@@ -34,13 +34,6 @@ namespace resonance.Translation
     using System.Threading.Tasks;
 
     /// <summary>
-    ///     The outcome of translating a single piece of text.
-    /// </summary>
-    /// <param name="Text">The translated text.</param>
-    /// <param name="DetectedSourceLanguage">The language DeepL detected the source text to be, as an uppercase code (e.g. DE).</param>
-    public record TranslationResult(string Text, string DetectedSourceLanguage);
-
-    /// <summary>
     ///     Translates chat and chatroom messages via an external provider.
     /// </summary>
     public interface ITranslationService
@@ -64,4 +57,11 @@ namespace resonance.Translation
         /// <returns>The translations, one per input text, in the same order.</returns>
         Task<IReadOnlyList<TranslationResult>> TranslateAsync(IReadOnlyList<string> texts, string targetLanguage, CancellationToken cancellationToken = default);
     }
+
+    /// <summary>
+    ///     The outcome of translating a single piece of text.
+    /// </summary>
+    /// <param name="Text">The translated text.</param>
+    /// <param name="DetectedSourceLanguage">The language DeepL detected the source text to be, as an uppercase code (e.g. DE).</param>
+    public record TranslationResult(string Text, string DetectedSourceLanguage);
 }

@@ -54,11 +54,11 @@ namespace resonance
     using Asp.Versioning.ApiExplorer;
     using Microsoft.AspNetCore.Authentication.JwtBearer;
     using Microsoft.AspNetCore.Builder;
-    using Microsoft.AspNetCore.HttpOverrides;
     using Microsoft.AspNetCore.DataProtection;
     using Microsoft.AspNetCore.Diagnostics;
     using Microsoft.AspNetCore.Hosting;
     using Microsoft.AspNetCore.Http;
+    using Microsoft.AspNetCore.HttpOverrides;
     using Microsoft.AspNetCore.Server.Kestrel.Core;
     using Microsoft.EntityFrameworkCore;
     using Microsoft.Extensions.Configuration;
@@ -295,6 +295,11 @@ namespace resonance
         /// </remarks>
         public static CancellationTokenSource MasterCancellationTokenSource { get; } = new CancellationTokenSource();
 
+        /// <summary>
+        ///     Gets the settings store used to persist configuration to the database.
+        /// </summary>
+        public static resonance.Core.Settings.SettingsService SettingsStore { get; private set; }
+
         private static IConfigurationRoot Configuration { get; set; }
         private static OptionsAtStartup OptionsAtStartup { get; } = new OptionsAtStartup();
         private static string StableJwtKey { get; set; }
@@ -312,11 +317,6 @@ namespace resonance
         ///     root so that <see cref="ReloadSettings"/> propagates a change notification to all of them.
         /// </remarks>
         private static DbConfigurationSource DbConfigurationSource { get; set; }
-
-        /// <summary>
-        ///     Gets the settings store used to persist configuration to the database.
-        /// </summary>
-        public static resonance.Core.Settings.SettingsService SettingsStore { get; private set; }
 
         [Argument('g', "generate-cert", "generate X509 certificate and password for HTTPs")]
         private static bool GenerateCertificate { get; set; }

@@ -63,6 +63,12 @@ namespace resonance.Core.API
     [Consumes("application/json")]
     public class ServerController : ControllerBase
     {
+        /// <summary>
+        ///     The maximum size of an uploaded profile picture, before downscaling. Generous enough for any
+        ///     full-resolution photo, but bounded to avoid unbounded uploads.
+        /// </summary>
+        private const long MaxPictureUploadBytes = 64L * 1024 * 1024;
+
         public ServerController(
             ISoulseekClient soulseekClient,
             ConnectionWatchdog connectionWatchdog,
@@ -78,6 +84,11 @@ namespace resonance.Core.API
             StateSnapshot = stateSnapshot;
             StateMutator = stateMutator;
         }
+
+        /// <summary>
+        ///     The fixed on-disk path of the profile picture managed by the web UI.
+        /// </summary>
+        private static string ManagedPicturePath => Program.ProfilePicturePath;
 
         private ISoulseekClient Client { get; }
         private ConnectionWatchdog ConnectionWatchdog { get; }
@@ -331,25 +342,6 @@ namespace resonance.Core.API
         }
 
         /// <summary>
-        ///     The maximum size of an uploaded profile picture, before downscaling. Generous enough for any
-        ///     full-resolution photo, but bounded to avoid unbounded uploads.
-        /// </summary>
-        private const long MaxPictureUploadBytes = 64L * 1024 * 1024;
-
-        /// <summary>
-        ///     The fixed on-disk path of the profile picture managed by the web UI.
-        /// </summary>
-        private static string ManagedPicturePath => Program.ProfilePicturePath;
-
-        private static void PatchSoulseekConfig(string key, string value)
-        {
-            Program.PersistSettings(new Dictionary<string, string>
-            {
-                [$"{Program.AppName}:soulseek:{key}"] = value,
-            });
-        }
-
-        /// <summary>
         ///     Checks whether the configured listening port is reachable from the internet, using the
         ///     Soulseek network's public port test service (slsknet.org).
         /// </summary>
@@ -396,6 +388,14 @@ namespace resonance.Core.API
             {
                 return StatusCode(StatusCodes.Status502BadGateway, new { error = $"Failed to reach the port test service: {ex.Message}" });
             }
+        }
+
+        private static void PatchSoulseekConfig(string key, string value)
+        {
+            Program.PersistSettings(new Dictionary<string, string>
+            {
+                [$"{Program.AppName}:soulseek:{key}"] = value,
+            });
         }
 
         public record SetStatusRequest
