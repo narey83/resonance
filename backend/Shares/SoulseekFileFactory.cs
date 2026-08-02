@@ -61,7 +61,7 @@ namespace resonance.Shares
     /// <summary>
     ///     ID3/tag metadata read from a file during share scanning.
     /// </summary>
-    public record FileTags(string Artist, string AlbumArtist, string Album, string Title, uint TrackNumber, uint Year, string Key = null, string Genre = null, uint Bpm = 0, string Comment = null, uint DiscNumber = 0);
+    public record FileTags(string Artist, string? AlbumArtist, string? Album, string Title, uint TrackNumber, uint Year, string? Key = null, string? Genre = null, uint Bpm = 0, string? Comment = null, uint DiscNumber = 0);
 
     /// <summary>
     ///     Represents a shared file that has no tag metadata.

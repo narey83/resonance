@@ -182,7 +182,7 @@ namespace resonance.Analysis
 
         /// <summary>Reads the three R128 values out of an ebur128 summary. Exposed for testing.</summary>
         /// <returns>The measurements, or null if the summary is absent or incomplete.</returns>
-        public static LoudnessData ParseLoudness(string stderr)
+        public static LoudnessData ParseLoudness(string? stderr)
         {
             if (string.IsNullOrEmpty(stderr))
             {

@@ -79,7 +79,7 @@ namespace resonance.MusicLibrary
         ///     is malformed, expired, or does not match (constant-time comparison).
         /// </summary>
         /// <returns>A value indicating whether the signature is valid and unexpired.</returns>
-        public bool Validate(string path, long exp, string sig)
+        public bool Validate(string path, long exp, string? sig)
         {
             if (string.IsNullOrEmpty(sig) || path is null)
             {

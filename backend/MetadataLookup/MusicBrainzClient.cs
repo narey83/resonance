@@ -77,7 +77,7 @@ namespace resonance.MetadataLookup
         ///     testing the projection logic without making a network request.
         /// </summary>
         /// <returns>The candidate matches, best first.</returns>
-        public static IReadOnlyList<MetadataMatch> ParseSearchResponse(string json, string preferredAlbum)
+        public static IReadOnlyList<MetadataMatch> ParseSearchResponse(string json, string? preferredAlbum)
         {
             using var doc = JsonDocument.Parse(json);
             return ParseRecordings(doc.RootElement, preferredAlbum);

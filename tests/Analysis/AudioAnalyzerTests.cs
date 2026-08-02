@@ -115,7 +115,7 @@ public class AudioAnalyzerTests
     [InlineData("")]
     [InlineData(null)]
     [InlineData("ffmpeg version 7.0\nno summary here")]
-    public void Returns_Null_When_The_Summary_Is_Missing(string stderr)
+    public void Returns_Null_When_The_Summary_Is_Missing(string? stderr)
     {
         Assert.Null(AudioAnalyzer.ParseLoudness(stderr));
     }

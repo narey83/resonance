@@ -35,6 +35,8 @@ public class SystemStatsTests
     {
         var stats = SystemStats.ComputeContainerStats(StatsJson());
 
+        Assert.NotNull(stats);
+
         // 300M of the 1000M consumed across all cores = 30% of the whole host
         Assert.Equal(30d, stats.Value.CpuPercent, precision: 5);
     }
@@ -43,6 +45,8 @@ public class SystemStatsTests
     public void Subtracts_Inactive_File_From_Memory_Usage()
     {
         var stats = SystemStats.ComputeContainerStats(StatsJson());
+
+        Assert.NotNull(stats);
 
         Assert.Equal(400_000_000, stats.Value.MemoryUsageBytes);
         Assert.Equal(3_000_000_000, stats.Value.MemoryLimitBytes);
@@ -53,6 +57,8 @@ public class SystemStatsTests
     {
         var stats = SystemStats.ComputeContainerStats(StatsJson(memStats: @"""total_inactive_file"": 200000000"));
 
+        Assert.NotNull(stats);
+
         Assert.Equal(300_000_000, stats.Value.MemoryUsageBytes);
     }
 
@@ -61,6 +67,8 @@ public class SystemStatsTests
     {
         var stats = SystemStats.ComputeContainerStats(StatsJson(systemTotal: 1_000_000_000, precpuSystem: 1_000_000_000));
 
+        Assert.NotNull(stats);
+
         Assert.Equal(0d, stats.Value.CpuPercent);
     }
 
@@ -68,6 +76,8 @@ public class SystemStatsTests
     public void Memory_Usage_Never_Negative()
     {
         var stats = SystemStats.ComputeContainerStats(StatsJson(memUsage: 50, memStats: @"""inactive_file"": 100"));
+
+        Assert.NotNull(stats);
 
         Assert.Equal(0, stats.Value.MemoryUsageBytes);
     }

@@ -17,7 +17,7 @@ public class CommonExtensionsTests
     [InlineData("Artist - Album (2020) [FLAC]", "artistalbum2020flac")]
     [InlineData("", "")]
     [InlineData(null, "")]
-    public void ToFuzzyMatchKey_Strips_Punctuation_And_Lowercases(string text, string expected)
+    public void ToFuzzyMatchKey_Strips_Punctuation_And_Lowercases(string? text, string expected)
     {
         Assert.Equal(expected, text.ToFuzzyMatchKey());
     }

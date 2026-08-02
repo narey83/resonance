@@ -13,7 +13,7 @@ public class MetadataMergeTests
         uint year = 1999,
         uint track = 7,
         uint disc = 1,
-        string genre = "Jazz")
+        string? genre = "Jazz")
         => new(title, artist, album, albumArtist, year, track, disc, genre, Score: 100, RecordingMbid: "mbid");
 
     [Fact]

@@ -30,7 +30,7 @@ public class LogsRegistryTests
             .GetNestedTypes()
             .SelectMany(t => t.GetFields())
             .Where(f => f.IsLiteral && f.FieldType == typeof(string))
-            .Select(f => (string)f.GetRawConstantValue());
+            .Select(f => (string)f.GetRawConstantValue()!);
 
         Assert.All(declared, context => Assert.Contains(context, Logs.All));
     }

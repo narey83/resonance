@@ -171,7 +171,7 @@ namespace resonance.MetadataLookup
         ///     testing.
         /// </summary>
         /// <returns>The merged tags to write.</returns>
-        public static FileTags MergeTags(FileTags existing, MetadataMatch match)
+        public static FileTags MergeTags(FileTags? existing, MetadataMatch match)
         {
             var baseTags = existing ?? new FileTags(null, null, null, null, 0, 0);
 

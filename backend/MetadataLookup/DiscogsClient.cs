@@ -69,7 +69,7 @@ namespace resonance.MetadataLookup
         ///     projection logic without a network request.
         /// </summary>
         /// <returns>The candidate matches, best first.</returns>
-        public static IReadOnlyList<MetadataMatch> ParseSearchResponse(string json, string queryArtist, string queryTitle, string queryAlbum)
+        public static IReadOnlyList<MetadataMatch> ParseSearchResponse(string json, string queryArtist, string queryTitle, string? queryAlbum)
         {
             using var doc = JsonDocument.Parse(json);
             return ParseSearchResponse(doc.RootElement, queryArtist, queryTitle, queryAlbum);
@@ -109,7 +109,7 @@ namespace resonance.MetadataLookup
             return doc == null ? Array.Empty<MetadataMatch>() : ParseSearchResponse(doc.RootElement, artist, title, album);
         }
 
-        private static IReadOnlyList<MetadataMatch> ParseSearchResponse(JsonElement root, string queryArtist, string queryTitle, string queryAlbum)
+        private static IReadOnlyList<MetadataMatch> ParseSearchResponse(JsonElement root, string queryArtist, string queryTitle, string? queryAlbum)
         {
             if (!root.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
             {

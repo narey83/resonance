@@ -73,7 +73,7 @@ public class StreamUrlSignerTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("not-a-real-signature")]
-    public void Rejects_Missing_Or_Garbage_Signatures(string sig)
+    public void Rejects_Missing_Or_Garbage_Signatures(string? sig)
     {
         var signer = new StreamUrlSigner(Key, OneHourMs);
         var futureExp = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 3600;

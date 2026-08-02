@@ -56,17 +56,17 @@ namespace resonance.MetadataLookup
     ///     A candidate metadata match returned from the online provider.
     /// </summary>
     public record MetadataMatch(
-        string Title,
-        string Artist,
+        string? Title,
+        string? Artist,
         string Album,
-        string AlbumArtist,
+        string? AlbumArtist,
         uint Year,
         uint TrackNumber,
         uint DiscNumber,
-        string Genre,
+        string? Genre,
         int Score,
-        string RecordingMbid,
-        string Source = null);
+        string? RecordingMbid,
+        string? Source = null);
 
     /// <summary>
     ///     A single track's status within the current or most recent enrichment pass.

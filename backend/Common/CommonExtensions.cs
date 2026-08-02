@@ -230,7 +230,7 @@ namespace resonance
         /// </summary>
         /// <param name="text">The text to normalize.</param>
         /// <returns>The normalized text.</returns>
-        public static string ToFuzzyMatchKey(this string text)
+        public static string ToFuzzyMatchKey(this string? text)
         {
             if (string.IsNullOrEmpty(text))
             {
