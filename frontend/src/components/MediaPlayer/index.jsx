@@ -1452,11 +1452,21 @@ const MediaPlayer = () => {
               </div>
             </div>
             {artistMeta && (
-              <div className="media-player-meta">{artistMeta}</div>
+              <div
+                className="media-player-meta"
+                title={artistMeta}
+              >
+                {artistMeta}
+              </div>
             )}
             {localFolder && (
               <div className="media-player-links">
-                <span className="media-player-link">{localFolder.name}</span>
+                <span
+                  className="media-player-link"
+                  title={localFolder.name}
+                >
+                  {localFolder.name}
+                </span>
               </div>
             )}
             {displayDuration > 0 && (
