@@ -90,6 +90,11 @@ namespace resonance.MusicLibrary
         // freshness regardless.
         private static readonly TimeSpan MinWatcherSyncInterval = TimeSpan.FromMinutes(5);
 
+        // A scan runs this often even with no detected change. FileSystemWatcher drops events under
+        // load and emits nothing at all for some network mounts, so gating purely on detection risks
+        // a library that silently stops reflecting the disk. This is the backstop for that.
+        private static readonly TimeSpan FullScanSafetyNet = TimeSpan.FromHours(6);
+
         // Long-running queues (e.g. a metadata enrichment pass over the whole library) can hold
         // their registration for days; without a cap they'd starve the sync entirely and the
         // library would stop reflecting the filesystem. After this long, sync runs anyway — the
@@ -117,6 +122,20 @@ namespace resonance.MusicLibrary
 
         // When the last scan finished, so watcher-driven triggers can honour MinWatcherSyncInterval.
         private DateTime lastSyncCompletedUtc = DateTime.MinValue;
+
+        // Set by the filesystem watchers when something under a scanned root actually changed, and
+        // cleared when a scan starts. A scan reads the whole tree, so running one with this false
+        // can only ever report "nothing changed" — which is exactly what was happening: six scans
+        // of 48k tracks in forty minutes, every one of them added=0 updated=0 removed=0.
+        private volatile bool pendingFsChange;
+
+        // The path that set the flag, purely so the log can say what woke it.
+        private string pendingFsChangePath;
+
+        // Set by explicit requests — the rescan endpoint, a rename, a convert, un-excluding a
+        // directory. Those know something changed that the watcher may not have seen, so they scan
+        // regardless of the flag above.
+        private volatile bool forceNextScan;
 
         // cancels only the in-flight scan (not the whole background loop); see CancelSync.
         private CancellationTokenSource currentRunCts;
@@ -244,10 +263,16 @@ namespace resonance.MusicLibrary
             }
         }
 
-        public void TriggerSync() => DebounceSync(DebounceDelay);
+        public void TriggerSync()
+        {
+            forceNextScan = true;
+            DebounceSync(DebounceDelay);
+        }
 
         public void TriggerImmediateSync()
         {
+            forceNextScan = true;
+
             lock (debounceLock)
             {
                 DebounceCts?.Cancel();
@@ -609,7 +634,28 @@ namespace resonance.MusicLibrary
                 return;
             }
 
-            Log.Information("Music library sync starting");
+            // Only scan when something was actually detected. The periodic pass and any redundant
+            // debounce that slips through the watcher floor both land here and go no further unless
+            // the disk really changed.
+            var forced = forceNextScan;
+            var detected = pendingFsChange;
+            var sinceLastScan = DateTime.UtcNow - lastSyncCompletedUtc;
+
+            if (!forced && !detected && lastSyncCompletedUtc != DateTime.MinValue && sinceLastScan < FullScanSafetyNet)
+            {
+                Log.Debug(
+                    "Music library sync skipped — no filesystem changes detected ({Minutes:F0} minutes since the last scan)",
+                    sinceLastScan.TotalMinutes);
+                return;
+            }
+
+            var trigger = forced ? "requested" : detected ? $"detected \"{pendingFsChangePath}\"" : "periodic safety net";
+
+            forceNextScan = false;
+            pendingFsChange = false;
+            pendingFsChangePath = null;
+
+            Log.Information("Music library sync starting ({Trigger})", trigger);
             SetState(CurrentState with { Running = true, Completed = false, Progress = 0 });
 
             // a per-run token so CancelSync() can abort just this scan without stopping the background loop
@@ -890,6 +936,12 @@ namespace resonance.MusicLibrary
         ///     but never fires sooner than <see cref="MinWatcherSyncInterval"/> after the previous scan
         ///     finished, so a steady stream of arriving files can't rescan the whole library on repeat.
         /// </summary>
+        private void NoteFsChange(string path)
+        {
+            pendingFsChangePath ??= path;
+            pendingFsChange = true;
+        }
+
         private void TriggerWatcherSync()
         {
             // Measure from now while a scan is in flight, not from the previous completion. Files
@@ -928,6 +980,7 @@ namespace resonance.MusicLibrary
         {
             if (ShouldReactTo(e.FullPath))
             {
+                NoteFsChange(e.FullPath);
                 TriggerWatcherSync();
             }
         }
@@ -938,6 +991,7 @@ namespace resonance.MusicLibrary
             // only becomes interesting via the new name, so check both ends.
             if (ShouldReactTo(e.FullPath) || ShouldReactTo(e.OldFullPath))
             {
+                NoteFsChange(e.FullPath);
                 TriggerWatcherSync();
             }
         }
