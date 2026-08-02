@@ -30,7 +30,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Animated,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -40,9 +39,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Network from 'expo-network';
-import Svg, { Circle, Path } from 'react-native-svg';
+import { ResonanceLogo } from '../../components/ResonanceLogo';
 import axios from 'axios';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
@@ -56,52 +54,7 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Connect'>;
 
 const PROBE_PORT    = 5030;
 const PROBE_TIMEOUT = 800;
-const LOGO_SIZE     = 72;
 
-// ── Animated logo ─────────────────────────────────────────────────────────────
-
-function ResonanceLogo() {
-  const scale   = useRef(new Animated.Value(0.4)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.spring(scale, { toValue: 1, tension: 60, friction: 7, useNativeDriver: true }),
-      Animated.timing(opacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-    ]).start();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <Animated.View style={{ transform: [{ scale }], opacity }}>
-      <LinearGradient
-        colors={['#4f46e5', '#06b6d4']}
-        end={{ x: 1, y: 1 }}
-        start={{ x: 0, y: 0 }}
-        style={logoGradientStyle}
-      >
-        <Svg fill="none" height={LOGO_SIZE * 0.6} viewBox="0 0 24 24" width={LOGO_SIZE * 0.6}>
-          <Circle cx="12" cy="12" r="8" stroke="white" strokeOpacity={0.95} strokeWidth="1.8" />
-          <Path
-            d="M4 12 C6 6.5 10 6.5 12 12 C14 17.5 18 17.5 20 12"
-            stroke="white"
-            strokeLinecap="round"
-            strokeOpacity={0.95}
-            strokeWidth="1.8"
-          />
-        </Svg>
-      </LinearGradient>
-    </Animated.View>
-  );
-}
-
-const logoGradientStyle = {
-  width: LOGO_SIZE,
-  height: LOGO_SIZE,
-  borderRadius: LOGO_SIZE * 0.22,
-  alignItems: 'center' as const,
-  justifyContent: 'center' as const,
-};
 
 // ── Network scan ──────────────────────────────────────────────────────────────
 

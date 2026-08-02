@@ -30,14 +30,14 @@
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
+import { ResonanceLogo } from '../../components/ResonanceLogo';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
@@ -82,11 +82,20 @@ export default function LoginScreen({ navigation }: Props) {
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    // KeyboardAwareScrollView, not KeyboardAvoidingView: the latter was passing behavior=undefined
+    // on Android, which makes it inert, so the keyboard simply covered the Sign in button.
+    <KeyboardAwareScrollView
+      bottomOffset={Spacing.xl}
+      contentContainerStyle={s.inner}
+      keyboardShouldPersistTaps="handled"
       style={s.container}
     >
-      <View style={s.inner}>
+      <View style={s.header}>
+        <ResonanceLogo />
+        <Text style={s.logo}>Resonance</Text>
+      </View>
+
+      <View>
         <Text style={s.title}>Sign in</Text>
         <Text style={s.sub}>{serverUrl}</Text>
 
@@ -152,14 +161,16 @@ export default function LoginScreen({ navigation }: Props) {
           </Pressable>
         </View>
       </View>
-    </KeyboardAvoidingView>
+    </KeyboardAwareScrollView>
   );
 }
 
 function makeStyles(c: ThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: c.bgPrimary },
-    inner: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing.xl },
+    inner: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: Spacing.xl, paddingVertical: Spacing.xxl },
+    header:  { alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.xxl },
+    logo:    { color: c.textPrimary, fontSize: Typography.xxl, fontWeight: '700', letterSpacing: -0.5 },
     title: { fontSize: Typography.xxl, fontWeight: '700', color: c.textPrimary, marginBottom: Spacing.xs },
     sub:   { fontSize: Typography.sm, color: c.textMuted, marginBottom: Spacing.xxl },
     form:  { gap: Spacing.md },

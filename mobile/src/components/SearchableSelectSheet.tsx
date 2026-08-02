@@ -36,6 +36,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Ionicons } from '@expo/vector-icons';
 import BottomSheet from './BottomSheet';
 import { useTheme } from '../context/ThemeContext';
@@ -95,7 +96,9 @@ export default function SearchableSelectSheet({
 
   return (
     <BottomSheet visible={visible} onClose={close}>
-      <View style={s.sheet}>
+      {/* Same reason as DownloadModal: the search field sits at the bottom of the screen. */}
+      <KeyboardAvoidingView behavior="padding">
+        <View style={s.sheet}>
         <View style={s.header}>
           <Text style={s.title}>{title}</Text>
           <Pressable onPress={close} hitSlop={8}>
@@ -138,7 +141,8 @@ export default function SearchableSelectSheet({
             </Pressable>
           )}
         />
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </BottomSheet>
   );
 }

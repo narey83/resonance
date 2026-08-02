@@ -37,6 +37,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useTheme } from '../context/ThemeContext';
 import { Radius, Spacing, Typography } from '../theme';
 import type { ThemeColors } from '../theme';
@@ -63,7 +64,9 @@ export default function DownloadModal({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <Pressable style={s.overlay} onPress={onCancel} />
-      <View style={s.container}>
+      {/* Bottom sheet with a text field: without this the keyboard covers the input and the
+          confirm button outright. RN's own KeyboardAvoidingView is inert on Android. */}
+      <KeyboardAvoidingView behavior="padding" style={s.container}>
         <View style={s.sheet}>
           <View style={s.handle} />
           <Text style={s.title}>Download</Text>
@@ -114,7 +117,7 @@ export default function DownloadModal({
             </Pressable>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
