@@ -87,9 +87,10 @@ export function PlayerMiniBar() {
 
   return (
     <View {...swipePan.panHandlers} style={styles.container}>
-      {/* Blurred artwork background */}
+      {/* Blurred artwork background. recyclingKey, or the bar keeps the previous track's cover
+          on screen until the next one has decoded. */}
       {artUrl ? (
-        <Image blurRadius={18} cachePolicy="memory-disk" contentFit="cover" source={{ uri: artUrl, cacheKey: artCacheKey }} style={StyleSheet.absoluteFill} />
+        <Image blurRadius={18} cachePolicy="memory-disk" contentFit="cover" recyclingKey={artCacheKey ?? artUrl} source={{ uri: artUrl, cacheKey: artCacheKey }} style={StyleSheet.absoluteFill} />
       ) : (
         <View style={[StyleSheet.absoluteFill, styles.fallbackBg]} />
       )}
@@ -100,7 +101,7 @@ export function PlayerMiniBar() {
       <Pressable onPress={() => expand()} style={styles.row}>
         {/* Artwork thumbnail */}
         {artUrl ? (
-          <Image cachePolicy="memory-disk" source={{ uri: artUrl, cacheKey: artCacheKey }} style={styles.art} />
+          <Image cachePolicy="memory-disk" recyclingKey={artCacheKey ?? artUrl} source={{ uri: artUrl, cacheKey: artCacheKey }} style={styles.art} />
         ) : (
           <View style={[styles.art, styles.artFallback]}>
             <Ionicons color="rgba(255,255,255,0.4)" name="musical-note" size={18} />

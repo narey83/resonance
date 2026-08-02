@@ -301,6 +301,10 @@ function FeatheredArt({ uri, cacheKey, placeholderUri, placeholderCacheKey, styl
           onError={onError}
           placeholder={placeholderUri ? { uri: placeholderUri, cacheKey: placeholderCacheKey } : undefined}
           placeholderContentFit="cover"
+          // Without this the view keeps painting the PREVIOUS track's cover until the new one has
+          // decoded — the half-second of stale artwork on every track change. Changing the key
+          // clears the view instead, so the placeholder shows through immediately.
+          recyclingKey={cacheKey ?? uri}
           source={{ uri, cacheKey }}
           style={style}
         />
@@ -751,6 +755,7 @@ export default function PlayerOverlay() {
               // Deliberately the thumbnail, not the full-size render: at blur radius 28 the extra
               // resolution is destroyed anyway, and this one is already on disk, so the background
               // paints immediately instead of waiting on a fresh server render.
+              recyclingKey={thumbCacheKey ?? artworkCacheKey ?? thumbUrl ?? artworkUrl ?? undefined}
               source={{ uri: (thumbUrl ?? artworkUrl)!, cacheKey: thumbCacheKey ?? artworkCacheKey }}
               style={[StyleSheet.absoluteFill, { transform: [{ scale: 1.3 }] }]}
             />
@@ -1016,6 +1021,7 @@ export default function PlayerOverlay() {
                 <Image
                   cachePolicy="memory-disk"
                   contentFit="cover"
+                  recyclingKey={artworkCacheKey ?? artworkUrl ?? undefined}
                   source={{ uri: artworkUrl!, cacheKey: artworkCacheKey }}
                   style={{ width: '100%', height: '100%' }}
                 />
