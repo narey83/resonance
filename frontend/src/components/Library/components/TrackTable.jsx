@@ -686,6 +686,7 @@ const TrackTable = ({
                     <div className="jb-tt-artist">{track.artist || '–'}</div>
                     <div className="jb-tt-album">{track.album || '–'}</div>
                     <div className="jb-tt-key">{track.key || '–'}</div>
+                    <div className="jb-tt-bpm">{track.bpm || '–'}</div>
                     <div className="jb-tt-ext">
                       {track.extension?.toUpperCase() || '–'}
                     </div>

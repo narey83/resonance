@@ -3295,6 +3295,7 @@
 /* Slot for a track with no analysis yet — same size as a drawn waveform so the
    column doesn't jump as rows scroll in and out, and clickable to analyse it. */
 .jb-wave-analyse {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3308,29 +3309,39 @@
 
 .jb-wave-analyse:disabled { cursor: default; }
 
-/* Ghost bars rather than a flat line: an unanalysed row should read as "no
-   waveform yet", which a 2px rule at half opacity does not. */
+/* A dashed baseline, not ghost bars: bars read as a real (if quiet) waveform,
+   so an unanalysed row has to look like something a waveform never does. */
 .jb-wave-empty {
   display: block;
   width: 100%;
-  height: 60%;
+  height: 2px;
   background: repeating-linear-gradient(
     90deg,
-    currentColor 0 2px,
-    transparent 2px 5px
+    currentColor 0 4px,
+    transparent 4px 9px
   );
   color: var(--text-muted);
-  opacity: 0.3;
-  transition: opacity 0.12s, color 0.12s;
+  opacity: 0.6;
+  transition: opacity 0.12s;
 }
 
-/* Hover makes the bars the accent colour — "click me". */
-.jb-wave-analyse:hover .jb-wave-empty {
+/* Hover swaps the dashes for the word, which is the only unambiguous label. */
+.jb-wave-analyse:hover:not(:disabled) .jb-wave-empty { opacity: 0; }
+
+.jb-wave-analyse:hover:not(:disabled)::after {
+  content: 'Analyse';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--accent);
-  opacity: 0.9;
 }
 
-.jb-wave-empty--failed { color: var(--danger); opacity: 0.6; }
+.jb-wave-empty--failed { color: var(--danger); opacity: 0.9; }
 
 /* ── Column resizing ──────────────────────────────────────────────────────── */
 
