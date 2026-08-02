@@ -415,6 +415,36 @@ namespace resonance.Shares
             return results;
         }
 
+        public IEnumerable<(string MaskedFilename, string OriginalFilename, FileTags Tags)> FindFiles(IEnumerable<string> maskedFilenames)
+        {
+            var wanted = maskedFilenames?
+                .Where(f => !string.IsNullOrWhiteSpace(f))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray() ?? [];
+
+            if (wanted.Length == 0)
+            {
+                return [];
+            }
+
+            var results = new List<(string, string, FileTags)>();
+            using var conn = GetConnection();
+            using var cmd = new NpgsqlCommand(
+                "SELECT masked_filename, original_filename, tags_json FROM shares.files "
+                + "WHERE host = @host AND masked_filename = ANY(@masked);", conn);
+            cmd.Parameters.AddWithValue("host", Host);
+            cmd.Parameters.AddWithValue("masked", wanted);
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                var tags = reader.IsDBNull(2) ? null : reader.GetString(2).FromJson<FileTags>();
+                results.Add((reader.GetString(0), reader.GetString(1), tags));
+            }
+
+            return results;
+        }
+
         public void UpdateFileTags(string maskedFilename, FileTags tags, long size, DateTime touchedAt)
         {
             using var conn = GetConnection();

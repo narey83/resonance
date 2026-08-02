@@ -155,6 +155,13 @@ namespace resonance.Shares
         IEnumerable<string> FindMaskedFilenames(IEnumerable<string> originalFilenames);
 
         /// <summary>
+        ///     Returns the named files, tagged or not, without listing the rest of the share.
+        /// </summary>
+        /// <param name="maskedFilenames">The masked filenames to look up.</param>
+        /// <returns>The files; <see cref="TaggedFile.Tags"/> is null for a file with no tag data.</returns>
+        IEnumerable<TaggedFile> FindFiles(IEnumerable<string> maskedFilenames);
+
+        /// <summary>
         ///     Writes tag data to the specified file and updates the share cache.
         /// </summary>
         /// <param name="maskedFilename">The masked filename identifying the file.</param>

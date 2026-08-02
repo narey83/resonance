@@ -178,6 +178,17 @@ namespace resonance.Shares
         IEnumerable<string> FindMaskedFilenames(IEnumerable<string> originalFilenames);
 
         /// <summary>
+        ///     Lists the named files, tagged or not.
+        /// </summary>
+        /// <remarks>
+        ///     The targeted form of <see cref="ListTaggedFiles"/> and <see cref="ListUntaggedFiles"/>,
+        ///     for work scoped to a known set of files rather than the whole share.
+        /// </remarks>
+        /// <param name="maskedFilenames">The masked filenames to look up.</param>
+        /// <returns>Tuples of (maskedFilename, originalFilename, tags); tags is null for untagged files.</returns>
+        IEnumerable<(string MaskedFilename, string OriginalFilename, FileTags Tags)> FindFiles(IEnumerable<string> maskedFilenames);
+
+        /// <summary>
         ///     Updates tag metadata, size and mtime for the file with the specified <paramref name="maskedFilename"/>.
         /// </summary>
         /// <param name="maskedFilename">The masked filename of the file to update.</param>

@@ -43,8 +43,11 @@ const inFlight = new Map();
 // Analysis is queued, not synchronous, so a click watches the cached-only
 // endpoint until the peaks appear. ponytail: a fixed poll — worth replacing if
 // the analysis service ever pushes per-track progress over the hub.
+// Long enough to outlast a queue that is already busy with someone else's scan:
+// one track's own decode is seconds, but it waits its turn behind whatever is
+// ahead of it.
 const POLL_INTERVAL_MS = 2_000;
-const POLL_ATTEMPTS = 90;
+const POLL_ATTEMPTS = 300;
 
 const waitForPeaks = async (path) => {
   for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {

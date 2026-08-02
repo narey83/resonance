@@ -108,6 +108,41 @@ namespace resonance.Analysis
         }
 
         // ── Public API ────────────────────────────────────────────────────────
+
+        /// <summary>
+        ///     Returns analysis info for the named tracks only.
+        /// </summary>
+        /// <remarks>
+        ///     Analysing a chosen track used to go through <see cref="GetAllTracks"/> and filter, so
+        ///     the decode of one file waited on the tags of ~48,000 being read and sorted first —
+        ///     minutes of nothing happening after the click.
+        /// </remarks>
+        /// <param name="maskedFilenames">The masked filenames to describe.</param>
+        /// <returns>The analysis info for those of them that are in the share.</returns>
+        public IEnumerable<TrackAnalysisInfo> GetTracks(IEnumerable<string> maskedFilenames)
+        {
+            var status = Store.GetStatusMap();
+
+            return ShareService.FindFiles(maskedFilenames)
+                .Where(f => AudioExtensions.Contains(f.Extension))
+                .Select(f =>
+                {
+                    var (hasWaveform, lufs) = status.TryGetValue(MusicPath.ToRelative(f.OriginalFilename), out var s)
+                        ? s
+                        : (false, (double?)null);
+
+                    return new TrackAnalysisInfo(
+                        f.MaskedFilename, f.OriginalFilename, f.Directory, f.Filename, f.Extension,
+                        f.Tags == null || f.Tags.Bpm == 0 ? null : f.Tags.Bpm,
+                        f.Tags?.Key,
+                        hasWaveform,
+                        lufs,
+                        f.Tags?.Artist, f.Tags?.Title, f.Tags?.Album);
+                })
+                .DistinctBy(t => t.MaskedFilename)
+                .ToList();
+        }
+
         public IEnumerable<TrackAnalysisInfo> GetAllTracks()
         {
             var status = Store.GetStatusMap();
@@ -306,8 +341,6 @@ namespace resonance.Analysis
             MusicLibrary?.RegisterQueue("analysis");
             try
             {
-                var tracks = GetAllTracks().ToList();
-
                 // null  → scan all files
                 // []    → scan nothing (explicit empty selection)
                 // [...] → restrict to the named files
@@ -315,10 +348,8 @@ namespace resonance.Analysis
                     ? null
                     : new HashSet<string>(request.OnlyFilenames, StringComparer.OrdinalIgnoreCase);
 
-                if (only != null)
-                {
-                    tracks = tracks.Where(t => only.Contains(t.MaskedFilename)).ToList();
-                }
+                // Fetch the selection directly rather than listing the share and discarding it.
+                var tracks = (only == null ? GetAllTracks() : GetTracks(only)).ToList();
 
                 if (request.ResetAll)
                 {
@@ -352,9 +383,7 @@ namespace resonance.Analysis
                     }
 
                     // Re-read so the queue sees the cleared state rather than the pre-reset one.
-                    tracks = GetAllTracks()
-                        .Where(t => only == null || only.Contains(t.MaskedFilename))
-                        .ToList();
+                    tracks = (only == null ? GetAllTracks() : GetTracks(only)).ToList();
                 }
 
                 // Each track carries the subset of metrics it still needs; a track needing none

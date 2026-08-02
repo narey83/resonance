@@ -302,6 +302,23 @@ namespace resonance.Shares
             => Local.Repository.FindMaskedFilenames(originalFilenames);
 
         /// <summary>
+        ///     Returns the named files, tagged or not, without listing the rest of the share.
+        /// </summary>
+        /// <param name="maskedFilenames">The masked filenames to look up.</param>
+        /// <returns>The files; <see cref="TaggedFile.Tags"/> is null for a file with no tag data.</returns>
+        public IEnumerable<TaggedFile> FindFiles(IEnumerable<string> maskedFilenames)
+        {
+            return Local.Repository.FindFiles(maskedFilenames).Select(f =>
+            {
+                var sep = f.MaskedFilename.LastIndexOf('\\');
+                var dir = sep >= 0 ? f.MaskedFilename[..sep] : string.Empty;
+                var filename = sep >= 0 ? f.MaskedFilename[(sep + 1)..] : f.MaskedFilename;
+                var ext = System.IO.Path.GetExtension(filename).TrimStart('.').ToLowerInvariant();
+                return new TaggedFile(f.MaskedFilename, f.OriginalFilename, dir, filename, ext, f.Tags);
+            });
+        }
+
+        /// <summary>
         ///     Writes tag data to the specified file on disk and updates the share cache.
         /// </summary>
         public void WriteFileTags(string maskedFilename, FileTags tags)
