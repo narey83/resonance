@@ -693,7 +693,7 @@ const TrackTable = ({
                     <div className="jb-tt-quality">
                       {formatAttributes(track) || '–'}
                     </div>
-                    <div className="jb-track-duration">
+                    <div className="jb-tt-dur">
                       {track.duration ? formatSeconds(track.duration) : '–'}
                     </div>
                     <div className="jb-tt-plays">{stat?.playCount ?? '–'}</div>

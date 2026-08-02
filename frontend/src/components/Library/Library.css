@@ -2014,13 +2014,15 @@
 .jb-tt-link:hover { color: var(--accent); text-decoration: underline; }
 
 .jb-tt-num   { display: flex; align-items: center; justify-content: center; }
-.jb-tt-dur   { text-align: right; }
+/* Left, like every other column: the sort-button headers are flex and always
+   left-align their label, so right-aligned values sat off their own header. */
+.jb-tt-dur   { font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .jb-tt-key   { font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .jb-tt-bpm   { font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .jb-tt-ext   { font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .jb-tt-quality { font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .jb-tt-added { font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.jb-tt-plays { font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; text-align: right; }
+.jb-tt-plays { font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .jb-tt-love  { display: flex; align-items: center; justify-content: center; }
 
 .jb-love-btn {
