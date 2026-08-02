@@ -898,6 +898,7 @@ namespace resonance
             services.AddSingleton<AppUserService>();
             services.AddSingleton<SessionService>();
             services.AddSingleton<LoginRateLimiter>();
+            services.AddSingleton<MobilePairingService>();
             services.AddSingleton<PermissionService>();
             services.AddSingleton<resonance.Core.BrowseRateLimiter>();
 

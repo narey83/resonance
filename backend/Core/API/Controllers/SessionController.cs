@@ -46,6 +46,7 @@ namespace resonance.Core.API
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.AspNetCore.SignalR;
+    using Microsoft.Extensions.Options;
     using resonance.Authentication;
     using Serilog;
 
@@ -64,12 +65,16 @@ namespace resonance.Core.API
             AppUserService userService,
             SessionService sessionService,
             LoginRateLimiter loginRateLimiter,
+            MobilePairingService mobilePairingService,
+            IOptionsSnapshot<resonance.Options> optionsSnapshot,
             IHubContext<ApplicationHub> hub)
         {
             Security = securityService;
             Users = userService;
             Sessions = sessionService;
             LoginAttempts = loginRateLimiter;
+            Pairing = mobilePairingService;
+            OptionsSnapshot = optionsSnapshot;
             Hub = hub;
         }
 
@@ -77,6 +82,8 @@ namespace resonance.Core.API
         private AppUserService Users { get; }
         private SessionService Sessions { get; }
         private LoginRateLimiter LoginAttempts { get; }
+        private MobilePairingService Pairing { get; }
+        private IOptionsSnapshot<resonance.Options> OptionsSnapshot { get; }
         private IHubContext<ApplicationHub> Hub { get; }
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Sessions.Auth);
 
@@ -186,6 +193,104 @@ namespace resonance.Core.API
                 ExpiresIn = token.Expires - DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 RefreshToken = token.RefreshToken,
             });
+        }
+
+        /// <summary>
+        ///     Issues a short-lived, single-use code that a phone can redeem for a session by
+        ///     scanning the QR code the web UI renders from it.
+        /// </summary>
+        /// <returns></returns>
+        /// <response code="200">The code was issued.</response>
+        /// <response code="403">Mobile pairing is disabled.</response>
+        [HttpPost]
+        [Route("pair")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(typeof(PairingResponse), 200)]
+        [ProducesResponseType(403)]
+        public IActionResult CreatePairing()
+        {
+            if (!OptionsSnapshot.Value.Web.MobilePairing)
+            {
+                return Forbid();
+            }
+
+            var username = HttpContext.User.Identity?.Name;
+
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                return Unauthorized();
+            }
+
+            // One live code per user: showing a new QR should retire the previous one, so a stale
+            // screenshot or a still-open browser tab can't be redeemed later.
+            Pairing.RevokeFor(username);
+
+            var (code, expiresAt) = Pairing.Create(username);
+
+            Log.Information("Issued a mobile pairing code for {Username} from {IP}", username, GetCallerIp());
+            return Ok(new PairingResponse(code, expiresAt, (int)MobilePairingService.Lifetime.TotalSeconds));
+        }
+
+        /// <summary>
+        ///     Redeems a pairing code for a session.
+        /// </summary>
+        /// <returns></returns>
+        /// <response code="200">The code was redeemed and a session issued.</response>
+        /// <response code="401">The code is unknown, already used or expired.</response>
+        /// <response code="403">Mobile pairing is disabled.</response>
+        [HttpPost]
+        [Route("pair/redeem")]
+        [AllowAnonymous]
+        [ProducesResponseType(typeof(TokenResponse), 200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(403)]
+        [ProducesResponseType(429)]
+        public IActionResult RedeemPairing([FromBody] RedeemPairingRequest request)
+        {
+            if (!OptionsSnapshot.Value.Web.MobilePairing)
+            {
+                return Forbid();
+            }
+
+            var callerIp = GetCallerIp();
+
+            // Redemption is anonymous by necessity, so it is rate limited exactly like a login;
+            // otherwise it is an unauthenticated endpoint that hands out sessions to whoever
+            // guesses hardest.
+            if (LoginAttempts.IsBlocked(callerIp))
+            {
+                return StatusCode(429, "Too many failed attempts; try again later");
+            }
+
+            var username = Pairing.Redeem(request?.Code);
+
+            if (username is null)
+            {
+                LoginAttempts.RecordFailure(callerIp);
+                Log.Warning("Mobile pairing redemption failed from {IP}", callerIp);
+                return Unauthorized();
+            }
+
+            var user = Users.Get(username);
+
+            if (user is null)
+            {
+                Log.Warning("Mobile pairing code redeemed for unknown user {Username}", username);
+                return Unauthorized();
+            }
+
+            LoginAttempts.RecordSuccess(callerIp);
+
+            var (refreshToken, sessionId) = Sessions.CreateSession(
+                user.Username,
+                string.IsNullOrWhiteSpace(request.DeviceName) ? "Mobile (paired)" : request.DeviceName,
+                callerIp,
+                existingSessionId: null);
+
+            var jwt = Security.GenerateJwt(user.Username, user.Role, sessionId: sessionId);
+
+            Log.Information("Mobile pairing completed for {Username} from {IP}", user.Username, callerIp);
+            return Ok(new TokenResponse(jwt, refreshToken, sessionId));
         }
 
         /// <summary>
@@ -364,6 +469,17 @@ namespace resonance.Core.API
     }
 
     public record RefreshRequest(string RefreshToken);
+
+    /// <summary>
+    ///     A freshly issued mobile pairing code. `expiresIn` lets the UI count down without
+    ///     depending on the browser clock agreeing with the server's.
+    /// </summary>
+    public record PairingResponse(string Code, DateTime ExpiresAtUtc, int ExpiresIn);
+
+    /// <summary>
+    ///     A request to exchange a pairing code for a session.
+    /// </summary>
+    public record RedeemPairingRequest(string Code, string DeviceName);
     public record LogoutRequest(string RefreshToken);
 
     /// <summary>

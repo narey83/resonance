@@ -2470,6 +2470,20 @@ namespace resonance
             public bool Disabled { get; init; } = false;
 
             /// <summary>
+            ///     Gets a value indicating whether a phone may acquire a session by scanning a QR
+            ///     code shown in the web UI.
+            /// </summary>
+            /// <remarks>
+            ///     The redemption endpoint is necessarily anonymous — the phone has no session yet —
+            ///     so this exists to keep that surface closed unless it is wanted. Codes are
+            ///     single-use and short-lived regardless; see MobilePairingService.
+            /// </remarks>
+            [Argument(default, "mobile-pairing")]
+            [EnvironmentVariable("MOBILE_PAIRING")]
+            [Description("allow phones to pair by scanning a QR code")]
+            public bool MobilePairing { get; init; } = false;
+
+            /// <summary>
             ///     Gets the HTTP listen port.
             /// </summary>
             [Argument('l', "http-port")]
