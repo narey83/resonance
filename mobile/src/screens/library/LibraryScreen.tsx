@@ -1270,7 +1270,10 @@ function useServerCachedList<T>(
       if (cancelled) return;
       const t = Date.now();
       setData(d);
+      // Walks every row of the list to reseed signatures, on every cache re-read — so it scales
+      // with the whole library, not with what changed.
       seedRef.current?.(d);
+      notePerfBlock(`seedSlice:${cacheKey}(${d.length})`, t);
       dbg(`[slice] ${cacheKey} ${how} rows=${d.length} read=${ms}ms seed=${Date.now() - t}ms`);
     };
     const t0 = Date.now();

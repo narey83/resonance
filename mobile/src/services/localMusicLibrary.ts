@@ -37,6 +37,7 @@ import {
 } from 'expo-media-library';
 import { readId3Tags } from './id3Reader';
 import { dbg } from '../api/debugLog';
+import { notePerfBlock } from '../lib/perfProbe';
 import { MusicTrack, MusicAlbum, MusicArtist, MusicFolder, TracksResult } from '../api/musicLibrary';
 import {
   getMetadataForPaths,
@@ -224,9 +225,11 @@ export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
   if (!await requestPermissions()) return [];
 
   // Enumerate asset HANDLES only — cheap, no per-asset field reads yet.
+  const tEnum = Date.now();
   const assets = await new Query()
     .eq(AssetField.MEDIA_TYPE, MediaType.AUDIO)
     .exe();
+  notePerfBlock('local:enumerate', tEnum);
 
   // Change-detection fast path: if the file count + newest mtime match what we persisted
   // after the last fully-reconciled scan, the on-device library is unchanged. Rebuild the
@@ -238,9 +241,13 @@ export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
   const storedSignature = await getSchemaValue(LIBRARY_SIGNATURE_KEY).catch(() => null);
 
   if (storedSignature && storedSignature === signature) {
+    const tRows = Date.now();
     const rows = await getAllMetadata('local');
+    notePerfBlock(`local:readMeta(${rows.length})`, tRows);
     if (rows.length > 0) {
+      const tMap = Date.now();
       _trackCache = rows.map(m => metadataToMusicTrack(m.path, filenameFromUri(m.path), m));
+      notePerfBlock(`local:mapTracks(${rows.length})`, tMap);
       _trackCacheTime = now;
       dbg(`[local-scan] unchanged (signature hit) — ${rows.length} tracks from cache, no enumeration`);
       return _trackCache;
@@ -249,8 +256,10 @@ export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
 
   // Slow path: the file set changed (or first ever run). Read per-asset basics and diff
   // against the cached metadata; only genuinely new/modified files get re-parsed.
+  const tBasics = Date.now();
   const basics = (await Promise.all(assets.map(fetchAssetBasics)))
     .filter((b): b is AssetBasics => b !== null);
+  notePerfBlock(`local:assetBasics(${assets.length})`, tBasics);
 
   const uris = basics.map(b => b.uri);
   const cached = await getMetadataForPaths(uris);
