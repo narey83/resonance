@@ -144,6 +144,15 @@ export const logout = async () => {
   }
 };
 
+/**
+ * Requests a single-use pairing code for the CURRENT app account. The code carries no credentials —
+ * it is bound to this user, expires, and dies on first use — so a photograph of the QR is worth
+ * little and can be retired by generating another.
+ */
+export const createPairingCode = async () => {
+  return (await api.post('/session/pair')).data;
+};
+
 export const getSessions = async () => {
   return (await api.get('/session/sessions')).data;
 };

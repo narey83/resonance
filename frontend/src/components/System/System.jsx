@@ -41,6 +41,7 @@ import BlockedUsers from './BlockedUsers';
 import Events from './Events';
 import Info from './Info';
 import Logs from './Logs';
+import Mobile from './Mobile/Mobile';
 import Options from './Options';
 import Permissions from './Permissions';
 import UserManagement from './UserManagement';
@@ -103,6 +104,20 @@ const System = ({ options = {}, state = {}, theme }) => {
         </Tab.Pane>
       ),
       route: 'options',
+    },
+    {
+      adminOnly: true,
+      menuItem: {
+        content: 'Mobile',
+        icon: 'mobile alternate',
+        key: 'mobile',
+      },
+      render: () => (
+        <Tab.Pane>
+          <Mobile />
+        </Tab.Pane>
+      ),
+      route: 'mobile',
     },
     {
       menuItem: {
