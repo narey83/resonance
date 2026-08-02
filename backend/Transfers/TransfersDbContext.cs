@@ -145,16 +145,12 @@ namespace resonance.Transfers
                     .HasMethod("gin")
                     .HasOperators("gin_trgm_ops");
 
-                // Same reasoning for the transfer history page, which searches filenames across
-                // every user rather than within one. The per-user report could get away without
-                // this because the username predicate already narrowed the scan to a handful of
-                // rows; unscoped, a leading-wildcard ILIKE reads the whole table.
-                modelBuilder
-                    .Entity<Transfer>()
-                    .HasIndex(e => e.Filename)
-                    .HasDatabaseName("IDX_Transfers_FilenameTrgm")
-                    .HasMethod("gin")
-                    .HasOperators("gin_trgm_ops");
+                // No matching trigram index on Filename, deliberately. Building one over this table
+                // exceeded the 30s schema-init command timeout and so never completed, and it would
+                // have to be maintained on every completed transfer — the highest-write path there
+                // is. Measured without it: the history page's default seven-day window filters
+                // filenames in ~1s off IDX_Transfers_Reports, and an unbounded all-time search takes
+                // ~4.4s. That's an acceptable price for a query nobody runs by default.
             }
         }
     }

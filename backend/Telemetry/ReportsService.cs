@@ -1148,7 +1148,9 @@ public class ReportsService
             var stateClause = state is not null ? "AND \"StateDescription\" ILIKE @State" : string.Empty;
 
             // Matched against the filename OR the peer, so one box serves "find that track" and
-            // "what did I trade with this person". Both columns carry a trigram index.
+            // "what did I trade with this person". Only Username is trigram-indexed; the filename
+            // half is a filter over whatever the EndedAt range selects, which is why the page
+            // defaults to a bounded window rather than all time (see TransfersDbContext).
             var searchClause = search is not null
                 ? "AND (\"Filename\" ILIKE @Search ESCAPE '\\' OR \"Username\" ILIKE @Search ESCAPE '\\')"
                 : string.Empty;
