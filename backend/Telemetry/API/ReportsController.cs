@@ -265,7 +265,9 @@ public class ReportsController : ControllerBase
             return BadRequest($"Invalid sortBy; expected one of: {string.Join(", ", Enum.GetNames(typeof(LeaderboardSortBy)))}");
         }
 
-        if (!Enum.TryParse<SortOrder>(sortOrder, out var parsedSortOrder))
+        // An omitted query parameter binds as null rather than taking the C# default, and the
+        // parse is case-sensitive, so both "no sortOrder" and "desc" were rejected outright.
+        if (!Enum.TryParse<SortOrder>(string.IsNullOrWhiteSpace(sortOrder) ? nameof(SortOrder.DESC) : sortOrder, ignoreCase: true, out var parsedSortOrder))
         {
             return BadRequest($"Invalid sortOrder; expected one of: {string.Join(", ", Enum.GetNames(typeof(SortOrder)))}");
         }
@@ -422,7 +424,9 @@ public class ReportsController : ControllerBase
             return BadRequest("End time must be later than start time");
         }
 
-        if (!Enum.TryParse<SortOrder>(sortOrder, out var parsedSortOrder))
+        // An omitted query parameter binds as null rather than taking the C# default, and the
+        // parse is case-sensitive, so both "no sortOrder" and "desc" were rejected outright.
+        if (!Enum.TryParse<SortOrder>(string.IsNullOrWhiteSpace(sortOrder) ? nameof(SortOrder.DESC) : sortOrder, ignoreCase: true, out var parsedSortOrder))
         {
             return BadRequest($"Invalid sortOrder; expected one of: {string.Join(", ", Enum.GetNames(typeof(SortOrder)))}");
         }
@@ -569,7 +573,9 @@ public class ReportsController : ControllerBase
             return BadRequest($"Invalid sortBy; expected one of: {string.Join(", ", Enum.GetNames(typeof(UserReportSortBy)))}");
         }
 
-        if (!Enum.TryParse<SortOrder>(sortOrder, out var parsedSortOrder))
+        // An omitted query parameter binds as null rather than taking the C# default, and the
+        // parse is case-sensitive, so both "no sortOrder" and "desc" were rejected outright.
+        if (!Enum.TryParse<SortOrder>(string.IsNullOrWhiteSpace(sortOrder) ? nameof(SortOrder.DESC) : sortOrder, ignoreCase: true, out var parsedSortOrder))
         {
             return BadRequest($"Invalid sortOrder; expected one of: {string.Join(", ", Enum.GetNames(typeof(SortOrder)))}");
         }
@@ -664,7 +670,9 @@ public class ReportsController : ControllerBase
             transferDirection = parsedDirection;
         }
 
-        if (!Enum.TryParse<SortOrder>(sortOrder, out var parsedSortOrder))
+        // An omitted query parameter binds as null rather than taking the C# default, and the
+        // parse is case-sensitive, so both "no sortOrder" and "desc" were rejected outright.
+        if (!Enum.TryParse<SortOrder>(string.IsNullOrWhiteSpace(sortOrder) ? nameof(SortOrder.DESC) : sortOrder, ignoreCase: true, out var parsedSortOrder))
         {
             return BadRequest($"Invalid sortOrder; expected one of: {string.Join(", ", Enum.GetNames(typeof(SortOrder)))}");
         }
@@ -751,7 +759,9 @@ public class ReportsController : ControllerBase
             transferDirection = parsedDirection;
         }
 
-        if (!Enum.TryParse<SortOrder>(sortOrder, out var parsedSortOrder))
+        // An omitted query parameter binds as null rather than taking the C# default, and the
+        // parse is case-sensitive, so both "no sortOrder" and "desc" were rejected outright.
+        if (!Enum.TryParse<SortOrder>(string.IsNullOrWhiteSpace(sortOrder) ? nameof(SortOrder.DESC) : sortOrder, ignoreCase: true, out var parsedSortOrder))
         {
             return BadRequest($"Invalid sortOrder; expected one of: {string.Join(", ", Enum.GetNames(typeof(SortOrder)))}");
         }
