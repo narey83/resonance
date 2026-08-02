@@ -702,6 +702,96 @@ public class ReportsController : ControllerBase
     }
 
     /// <summary>
+    ///     Gets a paginated page of finished transfers across all users.
+    /// </summary>
+    /// <param name="direction">The transfer direction to limit results to.</param>
+    /// <param name="state">An optional term matched against the state description (e.g. Succeeded, Errored).</param>
+    /// <param name="start">The start time of the window (default: genesis).</param>
+    /// <param name="end">The end time of the window (default: now).</param>
+    /// <param name="sortOrder">The sort order, by end time.</param>
+    /// <param name="search">An optional term matched against the filename or the peer's username.</param>
+    /// <param name="limit">The number of records to return (Default: 50).</param>
+    /// <param name="offset">The record offset (if paginating).</param>
+    /// <returns></returns>
+    /// <response code="200">The request completed successfully.</response>
+    /// <response code="400">Bad request.</response>
+    /// <response code="500">An error occurred.</response>
+    [HttpGet("transfers/history")]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
+    [ProducesResponseType(typeof(List<UserTransferRecord>), 200)]
+    [ProducesResponseType(typeof(string), 400)]
+    [ProducesResponseType(typeof(string), 500)]
+    public IActionResult GetTransferHistory(
+        [FromQuery] string direction = null,
+        [FromQuery] string state = null,
+        [FromQuery] DateTime? start = null,
+        [FromQuery] DateTime? end = null,
+        [FromQuery] string sortOrder = "DESC",
+        [FromQuery] string search = null,
+        [FromQuery] int limit = 50,
+        [FromQuery] int offset = 0)
+    {
+        start ??= Program.GenesisDateTime;
+        end ??= DateTime.UtcNow;
+
+        if (start >= end)
+        {
+            return BadRequest("End time must be later than start time");
+        }
+
+        TransferDirection? transferDirection = null;
+
+        if (!string.IsNullOrWhiteSpace(direction))
+        {
+            if (!Enum.TryParse<TransferDirection>(direction, ignoreCase: true, out var parsedDirection))
+            {
+                return BadRequest($"Invalid direction; expected one of: {string.Join(", ", Enum.GetNames(typeof(TransferDirection)))}");
+            }
+
+            transferDirection = parsedDirection;
+        }
+
+        if (!Enum.TryParse<SortOrder>(sortOrder, out var parsedSortOrder))
+        {
+            return BadRequest($"Invalid sortOrder; expected one of: {string.Join(", ", Enum.GetNames(typeof(SortOrder)))}");
+        }
+
+        if (limit <= 0)
+        {
+            return BadRequest("Limit must be greater than zero");
+        }
+
+        if (offset < 0)
+        {
+            return BadRequest("Offset must be greater than or equal to zero");
+        }
+
+        try
+        {
+            var (items, total, totalBytes) = Telemetry.Reports.GetTransferHistory(
+                direction: transferDirection,
+                state: state,
+                start: start.Value,
+                end: end,
+                sortOrder: parsedSortOrder,
+                search: search,
+                limit: limit,
+                offset: offset);
+
+            // Same convention the other paginated report endpoints use; the byte total rides
+            // alongside so the page can show a volume for the current filter without a second call.
+            Response.Headers.Append("X-Total-Count", total.ToString());
+            Response.Headers.Append("X-Total-Bytes", totalBytes.ToString());
+            return Ok(items);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error fetching transfer history: {Message}", ex.Message);
+            return StatusCode(500, ex.Message);
+        }
+    }
+
+    /// <summary>
     ///     Gets paginated browse event timestamps for the specified user.
     /// </summary>
     /// <param name="username">The username of the user.</param>

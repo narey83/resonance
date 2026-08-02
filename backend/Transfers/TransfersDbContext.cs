@@ -144,6 +144,17 @@ namespace resonance.Transfers
                     .HasDatabaseName("IDX_Transfers_UsernameTrgm")
                     .HasMethod("gin")
                     .HasOperators("gin_trgm_ops");
+
+                // Same reasoning for the transfer history page, which searches filenames across
+                // every user rather than within one. The per-user report could get away without
+                // this because the username predicate already narrowed the scan to a handful of
+                // rows; unscoped, a leading-wildcard ILIKE reads the whole table.
+                modelBuilder
+                    .Entity<Transfer>()
+                    .HasIndex(e => e.Filename)
+                    .HasDatabaseName("IDX_Transfers_FilenameTrgm")
+                    .HasMethod("gin")
+                    .HasOperators("gin_trgm_ops");
             }
         }
     }

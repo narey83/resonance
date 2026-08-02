@@ -1109,6 +1109,165 @@ public class ReportsService
     }
 
     /// <summary>
+    ///     Returns a paginated, filterable page of finished transfers across every user, together
+    ///     with the total count and byte volume matching the filter.
+    /// </summary>
+    /// <remarks>
+    ///     The per-user report above answers "what did I exchange with this peer". This answers
+    ///     "what has this instance ever transferred", which is otherwise unreachable: the transfers
+    ///     list endpoint deliberately returns only in-flight transfers plus the most recent
+    ///     completions, so the rest of the history has no route to a client.
+    /// </remarks>
+    /// <returns></returns>
+    public (List<UserTransferRecord> Items, int Total, long TotalBytes) GetTransferHistory(
+        TransferDirection? direction = null,
+        string state = null,
+        DateTime? start = null,
+        DateTime? end = null,
+        SortOrder sortOrder = SortOrder.DESC,
+        string search = null,
+        int limit = 50,
+        int offset = 0)
+    {
+        var s = Utc(start ?? DateTime.MinValue);
+        var e = Utc(end ?? DateTime.MaxValue);
+
+        if (limit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than zero");
+        }
+
+        search = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+        state = string.IsNullOrWhiteSpace(state) ? null : state.Trim();
+
+        string sql, countSql;
+
+        if (UsePostgres)
+        {
+            var dirClause = direction is not null ? "AND \"Direction\" = @Direction" : string.Empty;
+            var stateClause = state is not null ? "AND \"StateDescription\" ILIKE @State" : string.Empty;
+
+            // Matched against the filename OR the peer, so one box serves "find that track" and
+            // "what did I trade with this person". Both columns carry a trigram index.
+            var searchClause = search is not null
+                ? "AND (\"Filename\" ILIKE @Search ESCAPE '\\' OR \"Username\" ILIKE @Search ESCAPE '\\')"
+                : string.Empty;
+
+            var where = $@"
+                WHERE ""EndedAt"" IS NOT NULL
+                    AND ""EndedAt"" BETWEEN @Start AND @End
+                    {dirClause}
+                    {stateClause}
+                    {searchClause}
+            ";
+
+            sql = $@"
+                SELECT
+                    ""Id""::text AS ""Id"",
+                    ""Username"",
+                    ""Direction"",
+                    ""Filename"",
+                    ""Size"",
+                    ""StateDescription"",
+                    CASE
+                        WHEN STRPOS(""Exception"", ' (') > 0 AND RIGHT(TRIM(""Exception""), 1) = ')'
+                        THEN TRIM(SUBSTR(""Exception"", 1, STRPOS(""Exception"", ' (') - 1))
+                        WHEN STRPOS(""Exception"", ': ') > 0
+                        THEN TRIM(SUBSTR(""Exception"", STRPOS(""Exception"", ': ') + 2))
+                        ELSE COALESCE(TRIM(""Exception""), '')
+                    END AS Exception,
+                    ""RequestedAt"",
+                    ""EnqueuedAt"",
+                    ""StartedAt"",
+                    ""EndedAt"",
+                    ""BytesTransferred"",
+                    ""AverageSpeed""
+                FROM transfers.""Transfers""
+                {where}
+                ORDER BY ""EndedAt"" {sortOrder}
+                LIMIT @Limit
+                OFFSET @Offset
+            ";
+
+            countSql = $@"
+                SELECT COUNT(*) AS ""Count"", COALESCE(SUM(""BytesTransferred""), 0) AS ""Bytes""
+                FROM transfers.""Transfers""
+                {where}
+            ";
+        }
+        else
+        {
+            var dirClause = direction is not null ? "AND Direction = @Direction" : string.Empty;
+            var stateClause = state is not null ? "AND StateDescription LIKE @State" : string.Empty;
+            var searchClause = search is not null
+                ? "AND (Filename LIKE @Search ESCAPE '\\' OR Username LIKE @Search ESCAPE '\\')"
+                : string.Empty;
+
+            var where = $@"
+                WHERE EndedAt IS NOT NULL
+                    AND EndedAt BETWEEN @Start AND @End
+                    {dirClause}
+                    {stateClause}
+                    {searchClause}
+            ";
+
+            sql = $@"
+                SELECT
+                    Id,
+                    Username,
+                    Direction,
+                    Filename,
+                    Size,
+                    StateDescription,
+                    CASE
+                        WHEN INSTR(Exception, ' (') > 0 AND SUBSTR(TRIM(Exception), -1) = ')'
+                        THEN TRIM(SUBSTR(Exception, 1, INSTR(Exception, ' (') - 1))
+                        WHEN INSTR(Exception, ': ') > 0
+                        THEN TRIM(SUBSTR(Exception, INSTR(Exception, ': ') + 2))
+                        ELSE COALESCE(TRIM(Exception), '')
+                    END AS Exception,
+                    RequestedAt,
+                    EnqueuedAt,
+                    StartedAt,
+                    EndedAt,
+                    BytesTransferred,
+                    AverageSpeed
+                FROM Transfers
+                {where}
+                ORDER BY EndedAt {sortOrder}
+                LIMIT @Limit
+                OFFSET @Offset
+            ";
+
+            countSql = $@"
+                SELECT COUNT(*) AS Count, COALESCE(SUM(BytesTransferred), 0) AS Bytes
+                FROM Transfers
+                {where}
+            ";
+        }
+
+        using var connection = OpenConnection(Database.Transfers);
+
+        var param = new
+        {
+            Direction = direction?.ToString(),
+            State = state is not null ? "%" + EscapeLike(state) + "%" : null,
+            Start = s,
+            End = e,
+            Search = search is not null ? "%" + EscapeLike(search) + "%" : null,
+            Limit = limit,
+            Offset = offset,
+        };
+
+        var items = connection.Query<UserTransferRecord>(sql, param).ToList();
+
+        // A named type with aliased columns, not a ValueTuple: Dapper maps by column name, and
+        // bare COUNT(*)/SUM() come back as "count"/"coalesce" in Postgres, which binds to neither.
+        var totals = connection.QuerySingle<HistoryTotals>(countSql, param);
+        return (items, totals.Count, totals.Bytes);
+    }
+
+    /// <summary>
     ///     Returns paginated browse event timestamps for the specified user from the events database.
     /// </summary>
     /// <returns></returns>
@@ -1915,5 +2074,11 @@ public class ReportsService
         public double AverageSpeed { get; init; }
         public double AverageWait { get; init; }
         public double AverageDuration { get; init; }
+    }
+
+    private sealed record HistoryTotals
+    {
+        public int Count { get; init; }
+        public long Bytes { get; init; }
     }
 }
