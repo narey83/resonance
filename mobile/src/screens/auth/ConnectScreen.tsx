@@ -47,6 +47,7 @@ import axios from 'axios';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import { checkInitialized } from '../../api/session';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/auth';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/AuthStack';
@@ -270,6 +271,17 @@ export default function ConnectScreen({ navigation }: Props) {
               : <Text style={s.btnText}>Connect</Text>
             }
           </Pressable>
+
+          {/* Additive, not a replacement: scanning fills in the address AND signs in, but typing
+              the address and credentials by hand stays the primary path above. */}
+          <Pressable
+            disabled={loading}
+            onPress={() => navigation.navigate('Scan')}
+            style={({ pressed }) => [s.scanBtn, pressed && s.btnPressed]}
+          >
+            <Ionicons color={colors.accent} name="qr-code-outline" size={17} />
+            <Text style={s.scanBtnText}>Scan QR from Resonance</Text>
+          </Pressable>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -323,6 +335,18 @@ function makeStyles(c: ThemeColors) {
     error:      { fontSize: Typography.sm, color: c.danger, marginTop: -Spacing.xs },
     btn:        { backgroundColor: c.accent, borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.xs },
     btnPressed: { opacity: 0.8 },
+    scanBtn: {
+      alignItems: 'center',
+      borderColor: c.border,
+      borderRadius: Radius.sm,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: Spacing.sm,
+      justifyContent: 'center',
+      marginTop: Spacing.md,
+      paddingVertical: Spacing.md,
+    },
+    scanBtnText: { color: c.accent, fontSize: Typography.base, fontWeight: '600' },
     btnText:    { color: '#fff', fontSize: Typography.base, fontWeight: '600' },
   });
 }

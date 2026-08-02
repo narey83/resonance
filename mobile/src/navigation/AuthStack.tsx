@@ -33,10 +33,12 @@ import { screenOptions } from '../theme';
 import { useAuthStore } from '../store/auth';
 import ConnectScreen from '../screens/auth/ConnectScreen';
 import LoginScreen   from '../screens/auth/LoginScreen';
+import ScanScreen    from '../screens/auth/ScanScreen';
 
 export type AuthStackParamList = {
   Connect: undefined;
   Login:   undefined;
+  Scan:    undefined;
 };
 
 const Stack = createNativeStackNavigator<AuthStackParamList>();
@@ -50,6 +52,7 @@ export default function AuthStack() {
     >
       <Stack.Screen name="Connect" component={ConnectScreen} />
       <Stack.Screen name="Login"   component={LoginScreen} />
+      <Stack.Screen name="Scan"    component={ScanScreen} />
     </Stack.Navigator>
   );
 }

@@ -53,6 +53,25 @@ export const login = async (
   return data;
 };
 
+/**
+ * Exchanges a pairing code from a scanned QR for a session on `serverUrl`.
+ *
+ * The code is single-use and short-lived, and carries no credentials — it identifies the Resonance
+ * account that generated it in the web UI, which is separate from the Soulseek network login.
+ */
+export const redeemPairingCode = async (
+  serverUrl: string,
+  code: string,
+  deviceName: string,
+): Promise<TokenResponse> => {
+  const { data } = await axios.post<TokenResponse>(
+    `${serverUrl}/api/v0/session/pair/redeem`,
+    { code, deviceName },
+    { timeout: 10000 },
+  );
+  return data;
+};
+
 export const checkInitialized = async (serverUrl: string): Promise<boolean> => {
   const { data } = await axios.get<boolean>(
     `${serverUrl}/api/v0/session/initialized`,

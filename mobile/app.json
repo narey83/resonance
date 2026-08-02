@@ -50,6 +50,13 @@
           "savePhotosPermission": "Allow $(PRODUCT_NAME) to save tracks to your music library.",
           "isAccessMediaLocationEnabled": true
         }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to use the camera to scan the sign-in code shown in Resonance on your computer.",
+          "recordAudioAndroid": false
+        }
       ]
     ],
     "extra": {
