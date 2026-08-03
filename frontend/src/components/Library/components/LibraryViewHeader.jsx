@@ -62,7 +62,10 @@ const LibraryViewHeader = ({
     <div className="jb-view-header">
       <span className="jb-view-header-title">{title}</span>
 
-      {total != null && (
+      {/* Only once there is a real count. A query change zeroes the total until the first page
+          lands, and flashing "0" next to a spinner reads as an empty library. A genuinely
+          empty result says so in the body instead. */}
+      {total > 0 && (
         <span className="jb-view-header-count">{total.toLocaleString()}</span>
       )}
 

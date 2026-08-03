@@ -501,15 +501,20 @@ const AlbumCard = ({
           </div>
         ) : null}
         <div className="jb-album-card-actions">
-          <button
+          {/* div, not button — see the play control above. */}
+          <div
             className="jb-icon-btn"
             onClick={handleShuffle}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') handleShuffle(e);
+            }}
+            role="button"
             style={{ background: 'transparent', border: 'none' }}
+            tabIndex={0}
             title="Shuffle album"
-            type="button"
           >
             <Shuffle size={12} />
-          </button>
+          </div>
         </div>
       </div>
     </button>

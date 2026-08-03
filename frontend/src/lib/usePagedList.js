@@ -69,8 +69,18 @@ export const usePagedList = (
   // slow first page can't overwrite results for a query the user has already moved past.
   const generationRef = useRef(0);
 
+  // A page can land after the user has navigated away from the view entirely — the generation
+  // check catches a changed query, but not an unmounted component.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const apply = useCallback((generation, page, append) => {
-    if (generation !== generationRef.current) return;
+    if (!mountedRef.current || generation !== generationRef.current) return;
     itemsRef.current = append
       ? [...itemsRef.current, ...(page.items ?? [])]
       : page.items ?? [];
@@ -108,7 +118,7 @@ export const usePagedList = (
       } catch {
         // leave the list empty; changing the query or scrolling retries
       } finally {
-        if (generation === generationRef.current) {
+        if (mountedRef.current && generation === generationRef.current) {
           busyRef.current = false;
           setLoading(false);
         }
@@ -144,7 +154,7 @@ export const usePagedList = (
       } catch {
         // keep what's loaded; the next scroll retries this same offset
       } finally {
-        if (generation === generationRef.current) {
+        if (mountedRef.current && generation === generationRef.current) {
           busyRef.current = false;
           setLoadingMore(false);
         }
@@ -154,6 +164,9 @@ export const usePagedList = (
 
   return { items, loading, loadingMore, loadMore, total };
 };
+
+// Sorts the server can bucket into letters for the A-Z rail. null is the default (artist).
+const ALPHABETICAL_SORTS = new Set([null, 'title', 'artist', 'album']);
 
 // A paged track list plus the sort/filter/A-Z state that goes with it, ready to spread onto
 // TrackTable. Every track list in the library is a filter over the same 48k rows — all tracks,
@@ -214,10 +227,11 @@ export const usePagedTracks = (
   }, [defaultSort]);
 
   return {
-    // The A-Z rail buckets by the column the list is ordered by, so its letters only mean
-    // what they appear to mean while that column is the alphabetical one. Sorted by BPM, "S"
-    // is nonsense — the view disables the rail rather than answering a question it can't.
-    alphaApplies: sortCol === defaultSort && sortDir === 'asc',
+    // The A-Z rail buckets by the column the list is ordered by (see the alphaColumn switch in
+    // MusicRepository.Query), so it stays meaningful across every alphabetical sort — not just
+    // the default one. Under BPM or Added, "S" is a question the ordering can't answer, and the
+    // view dims the rail rather than pretending otherwise.
+    alphaApplies: ALPHABETICAL_SORTS.has(sortCol) && sortDir === 'asc',
     clearLetter: useCallback(() => setLetter(null), []),
     isDefaultView:
       sortCol === defaultSort && sortDir === 'asc' && !letter && !filter,

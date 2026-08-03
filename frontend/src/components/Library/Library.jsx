@@ -1979,16 +1979,39 @@ const TracksView = ({
   return (
     <div className="jb-tracks-view">
       {/*
-        The one view that carries no `sorts` or `filter` on its header, and no tile mode.
-        Its sorting and filtering live in the table's own column headers — which is the point
-        of a table — and tiles would just be a worse version of it. Everything else (title,
-        count, letter chip, Reset) is the same bar every other view renders.
+        The header's sort pills and filter drive the very same serverSort/serverFilter the
+        table's own column headers do — one piece of state, two ways in — so clicking a pill
+        highlights the column and vice versa. Without them this bar was the only one in the
+        library with an empty right-hand side, which read as unfinished. Tracks still has no
+        tile mode: dense columns are the point of it.
       */}
       <LibraryViewHeader
+        filter={{
+          onChange: trackTableProps.serverFilter.onChange,
+          placeholder: 'Filter tracks…',
+          value: trackTableProps.serverFilter.value,
+        }}
         isDefault={isDefaultView}
         letter={letter}
         onClearLetter={clearLetter}
         onReset={reset}
+        onSort={(field) =>
+          trackTableProps.serverSort.onChange(
+            field,
+            field === trackTableProps.serverSort.col &&
+              trackTableProps.serverSort.dir === 'asc'
+              ? 'desc'
+              : 'asc',
+          )
+        }
+        sortBy={trackTableProps.serverSort.col}
+        sortDir={trackTableProps.serverSort.dir}
+        sorts={[
+          { field: 'title', label: 'A–Z' },
+          { field: 'artist', label: 'Artist' },
+          { field: 'album', label: 'Album' },
+          { field: 'added', label: 'Added' },
+        ]}
         title="All Tracks"
         total={total}
       />
