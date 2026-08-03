@@ -180,10 +180,7 @@ export default function RoomsScreen({ navigation }: Props) {
   }, [navigation]);
 
   const handleLeave = useCallback((room: Room) => {
-    Alert.alert(`Leave ${room.name}?`, undefined, [
-      { text: 'Leave', style: 'destructive', onPress: () => leave(room.name) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    leave(room.name);
   }, [leave]);
 
   const handleJoin = useCallback(async (roomName: string) => {

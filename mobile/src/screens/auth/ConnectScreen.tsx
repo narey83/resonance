@@ -27,7 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -39,9 +39,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import * as Network from 'expo-network';
 import { ResonanceLogo } from '../../components/ResonanceLogo';
-import axios from 'axios';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import { checkInitialized } from '../../api/session';
@@ -52,77 +50,16 @@ import type { AuthStackParamList } from '../../navigation/AuthStack';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Connect'>;
 
-const PROBE_PORT    = 5030;
-const PROBE_TIMEOUT = 800;
-
-
-// ── Network scan ──────────────────────────────────────────────────────────────
-
-const probeHost = async (ip: string): Promise<boolean> => {
-  try {
-    await axios.get(`http://${ip}:${PROBE_PORT}/api/v0/session/initialized`, { timeout: PROBE_TIMEOUT });
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const getSubnetPrefix = (ip: string): string | null => {
-  const parts = ip.split('.');
-  if (parts.length !== 4) return null;
-  return `${parts[0]}.${parts[1]}.${parts[2]}`;
-};
-
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function ConnectScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
-  const [url, setUrl]               = useState('');
-  const [error, setError]           = useState('');
-  const [loading, setLoading]       = useState(false);
-  const [scanning, setScanning]     = useState(true);
-  const [discovered, setDiscovered] = useState<string[]>([]);
-  const setServerUrl                = useAuthStore((s) => s.setServerUrl);
-  const scanCancelledRef            = useRef(false);
-
-  useEffect(() => {
-    scanCancelledRef.current = false;
-
-    const runScan = async () => {
-      try {
-        const ipInfo = await Network.getIpAddressAsync();
-        const prefix = getSubnetPrefix(ipInfo);
-        if (!prefix || scanCancelledRef.current) { setScanning(false); return; }
-
-        const hosts = Array.from({ length: 254 }, (_, i) => `${prefix}.${i + 1}`);
-        const BATCH = 20;
-
-        for (let i = 0; i < hosts.length; i += BATCH) {
-          if (scanCancelledRef.current) break;
-          const batch = hosts.slice(i, i + BATCH);
-          const results = await Promise.all(
-            batch.map(async (ip) => {
-              const found = await probeHost(ip);
-              return found ? `http://${ip}:${PROBE_PORT}` : null;
-            }),
-          );
-          const found = results.filter(Boolean) as string[];
-          if (found.length > 0 && !scanCancelledRef.current) {
-            setDiscovered((prev) => [...prev, ...found.filter((f) => !prev.includes(f))]);
-          }
-        }
-      } catch {
-        // Network unavailable
-      } finally {
-        if (!scanCancelledRef.current) setScanning(false);
-      }
-    };
-
-    runScan();
-    return () => { scanCancelledRef.current = true; };
-  }, []);
+  const [url, setUrl]         = useState('');
+  const [error, setError]     = useState('');
+  const [loading, setLoading] = useState(false);
+  const setServerUrl          = useAuthStore((s) => s.setServerUrl);
 
   const normalise = (raw: string) => {
     let s = raw.trim().replace(/\/+$/, '');
@@ -166,37 +103,6 @@ export default function ConnectScreen({ navigation }: Props) {
           <Text style={s.logo}>Resonance</Text>
           <Text style={s.tagline}>Connect to your server</Text>
         </View>
-
-        {discovered.length > 0 && (
-          <View style={s.discoveredList}>
-            {discovered.map((addr) => (
-              <Pressable
-                disabled={loading}
-                key={addr}
-                onPress={() => connectTo(addr)}
-                style={({ pressed }) => [s.discoveredItem, pressed && s.discoveredItemPressed]}
-              >
-                <Text style={s.discoveredAddr}>{addr}</Text>
-                <Text style={s.discoveredAction}>Connect →</Text>
-              </Pressable>
-            ))}
-          </View>
-        )}
-
-        {scanning && discovered.length === 0 && (
-          <View style={s.scanRow}>
-            <ActivityIndicator color={colors.accent} size="small" />
-            <Text style={s.scanText}>Scanning network…</Text>
-          </View>
-        )}
-
-        {(discovered.length > 0 || !scanning) && (
-          <View style={s.divider}>
-            <View style={s.dividerLine} />
-            <Text style={s.dividerLabel}>or enter manually</Text>
-            <View style={s.dividerLine} />
-          </View>
-        )}
 
         <View style={s.form}>
           <Text style={s.label}>Server address</Text>
@@ -249,29 +155,6 @@ function makeStyles(c: ThemeColors) {
     header:  { alignItems: 'center', marginBottom: Spacing.xxl, gap: Spacing.sm },
     logo:    { fontSize: Typography.xxl, fontWeight: '700', color: c.textPrimary, letterSpacing: -0.5 },
     tagline: { fontSize: Typography.sm, color: c.textMuted },
-
-    discoveredList: { gap: Spacing.sm, marginBottom: Spacing.md },
-    discoveredItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      backgroundColor: c.bgSurface,
-      borderWidth: 1,
-      borderColor: c.border,
-      borderRadius: Radius.md,
-      paddingHorizontal: Spacing.md,
-      paddingVertical: Spacing.md,
-    },
-    discoveredItemPressed: { opacity: 0.75 },
-    discoveredAddr:   { fontSize: Typography.base, color: c.textPrimary, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
-    discoveredAction: { fontSize: Typography.sm, color: c.accent, fontWeight: '500' },
-
-    scanRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, marginBottom: Spacing.md, paddingVertical: Spacing.sm },
-    scanText:     { fontSize: Typography.sm, color: c.textMuted },
-
-    divider:      { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.md },
-    dividerLine:  { flex: 1, height: 1, backgroundColor: c.border },
-    dividerLabel: { fontSize: Typography.xs, color: c.textMuted },
 
     form:       { gap: Spacing.sm },
     label:      { fontSize: Typography.sm, color: c.textMuted, fontWeight: '500' },

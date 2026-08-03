@@ -193,17 +193,7 @@ export default function SearchHomeScreen() {
   }, [load]);
 
   const onDelete = useCallback((id: string) => {
-    Alert.alert(
-      'Remove Search',
-      'Remove this search and its results?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove', style: 'destructive',
-          onPress: () => searchApi.remove(id).then(load).catch(() => {}),
-        },
-      ],
-    );
+    searchApi.remove(id).then(load).catch(() => {});
   }, [load]);
 
   const onRefresh = useCallback(async () => {

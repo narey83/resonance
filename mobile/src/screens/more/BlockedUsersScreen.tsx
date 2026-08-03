@@ -62,14 +62,7 @@ export default function BlockedUsersScreen() {
   }, [users, query]);
 
   const confirmUnblock = (username: string) =>
-    Alert.alert('Unblock', `Unblock ${username}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Unblock',
-        style: 'destructive',
-        onPress: () => unblock(username).catch(err => Alert.alert('Error', String(err?.message ?? err))),
-      },
-    ]);
+    unblock(username).catch(err => Alert.alert('Error', String(err?.message ?? err)));
 
   return (
     <View style={s.screen}>

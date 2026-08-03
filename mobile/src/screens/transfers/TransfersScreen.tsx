@@ -419,18 +419,7 @@ export default function TransfersScreen() {
 
   const onAction = useCallback((t: Transfer) => {
     const cat = stateCategory(t.stateDescription);
-    if (cat === 'done' || cat === 'failed') {
-      storeCancel(dir, t.username, t.id, true);
-    } else {
-      Alert.alert(
-        'Cancel Transfer',
-        `Cancel "${getFileName(t.filename)}"?`,
-        [
-          { text: 'Keep', style: 'cancel' },
-          { text: 'Cancel Transfer', style: 'destructive', onPress: () => storeCancel(dir, t.username, t.id, false) },
-        ],
-      );
-    }
+    storeCancel(dir, t.username, t.id, cat === 'done' || cat === 'failed');
   }, [dir, storeCancel]);
 
   const styles = useMemo(() => makeStyles(colors), [colors]);

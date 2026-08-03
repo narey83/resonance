@@ -97,11 +97,8 @@ export default function BlockedScreen({ navigation }: Props) {
 
   const previewUsers = useMemo(() => users.slice(0, USERS_PREVIEW), [users]);
 
-  const confirmUnblock = (label: string, action: () => Promise<void>) =>
-    Alert.alert('Unblock', `Unblock ${label}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Unblock', style: 'destructive', onPress: () => action().catch(err => Alert.alert('Error', String(err?.message ?? err))) },
-    ]);
+  const confirmUnblock = (_label: string, action: () => Promise<void>) =>
+    action().catch(err => Alert.alert('Error', String(err?.message ?? err)));
 
   const onBlockIp = async () => {
     if (!cidr.trim()) return;

@@ -29,7 +29,6 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -107,17 +106,8 @@ export default function BrowseScreen({ navigation }: Props) {
   }, [navigation]);
 
   const removeUser = useCallback((user: string) => {
-    Alert.alert(user, 'Remove from browse history?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: () => {
-          setHistory(prev => prev.filter(u => u.toLowerCase() !== user.toLowerCase()));
-          browseApi.removeFromBrowseHistory(user).then(setHistory).catch(() => {});
-        },
-      },
-    ]);
+    setHistory(prev => prev.filter(u => u.toLowerCase() !== user.toLowerCase()));
+    browseApi.removeFromBrowseHistory(user).then(setHistory).catch(() => {});
   }, []);
 
   return (
