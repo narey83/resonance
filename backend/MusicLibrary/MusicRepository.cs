@@ -39,6 +39,12 @@ namespace resonance.MusicLibrary
 
     public class MusicRepository
     {
+        // The A-Z rail buckets a row by the first character of its trimmed value, uppercased;
+        // anything outside A-Z falls under '#'. Spelled out as an IN list rather than
+        // BETWEEN 'A' AND 'Z' so the bucketing does not shift with the database collation
+        // (en_US.utf8 sorts accented letters inside the A-Z range; the client's alphaKey does not).
+        private const string AlphaLetters = "'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'";
+
         public MusicRepository(string connectionString, bool usePostgres = false)
         {
             ConnectionString = connectionString;
@@ -331,7 +337,7 @@ namespace resonance.MusicLibrary
             string search, string artist, string album,
             string genre, int? year, string folder,
             bool missingKey, bool missingBpm, bool missingTitle, bool missingArtist, bool missingArtwork,
-            int limit, int offset, string sort = null, bool descending = false)
+            int limit, int offset, string sort = null, bool descending = false, string startsWith = null)
         {
             using var conn = OpenConnection();
 
@@ -398,6 +404,27 @@ namespace resonance.MusicLibrary
                 conditions.Add("has_artwork = 0");
             }
 
+            // A-Z rail: narrow to one letter bucket of the column the list is sorted by, so a
+            // letter jump works across the whole library rather than only the rows already paged in.
+            // Bucket by whatever the list is actually ordered by, so the rail agrees with the
+            // visible order. Sorts with no alphabet (bpm, duration, ...) fall back to the
+            // default ordering column, artist.
+            var alphaColumn = sort?.ToLowerInvariant() switch
+            {
+                "title" => "COALESCE(NULLIF(title, ''), filename)",
+                "album" => "album",
+                _ => "artist",
+            };
+
+            var alphaLetter = startsWith?.Trim().ToUpperInvariant();
+            var hasAlpha = !string.IsNullOrEmpty(alphaLetter);
+            if (hasAlpha)
+            {
+                conditions.Add(alphaLetter == "#"
+                    ? $"({alphaColumn} IS NULL OR {FirstChar(alphaColumn)} NOT IN ({AlphaLetters}))"
+                    : $"{FirstChar(alphaColumn)} = @sw");
+            }
+
             var where = conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : string.Empty;
             var pattern = $"%{search?.Trim()}%";
 
@@ -434,6 +461,11 @@ namespace resonance.MusicLibrary
                 AddParam(countCmd, "@folderPrefix", MusicPath.ToRelative(folder).TrimEnd('/') + "/%");
             }
 
+            if (hasAlpha && alphaLetter != "#")
+            {
+                AddParam(countCmd, "@sw", alphaLetter);
+            }
+
             var total = Convert.ToInt32(countCmd.ExecuteScalar());
 
             // The sort key is mapped through a whitelist; user input never reaches the SQL directly
@@ -445,6 +477,8 @@ namespace resonance.MusicLibrary
                 "year" => $"year {dir}, {OrdBy("artist")}, {OrdBy("album")}, track_number",
                 "duration" => $"duration {dir}, {OrdBy("title")}",
                 "bpm" => $"bpm {dir}, {OrdBy("title")}",
+                "ext" => $"{OrdBy("extension", dir)}, {OrdBy("title")}",
+                "quality" => $"bit_rate {dir}, sample_rate {dir}, {OrdBy("title")}",
 
                 // Group tracks of the same musical key together (tracks with no detected key sort last).
                 "key" => $"CASE WHEN key_sig IS NULL OR key_sig = '' THEN 1 ELSE 0 END, {OrdBy("key_sig", dir)}, {OrdBy("title")}",
@@ -457,6 +491,16 @@ namespace resonance.MusicLibrary
                 "random" => "RANDOM()",
                 _ => $"{OrdBy("artist", dir)}, {OrdBy("album")}, disc_number, track_number, {OrdBy("title")}",
             };
+
+            // Every sort key above has heavy ties (thousands of rows share a title, an artist, a
+            // null bpm). Ties break arbitrarily between statements, so under LIMIT/OFFSET paging
+            // the same row can land on two pages while another is skipped entirely. path is
+            // unique, so appending it makes the total order deterministic across page requests.
+            // RANDOM() is deliberately exempt — a stable shuffle is not a shuffle.
+            if (orderBy != "RANDOM()")
+            {
+                orderBy += ", path";
+            }
 
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $@"
@@ -495,6 +539,11 @@ namespace resonance.MusicLibrary
             {
                 AddParam(cmd, "@folder", MusicPath.ToRelative(folder));
                 AddParam(cmd, "@folderPrefix", MusicPath.ToRelative(folder).TrimEnd('/') + "/%");
+            }
+
+            if (hasAlpha && alphaLetter != "#")
+            {
+                AddParam(cmd, "@sw", alphaLetter);
             }
 
             AddParam(cmd, "@limit", limit);
@@ -956,6 +1005,10 @@ namespace resonance.MusicLibrary
 
         // Case-insensitive ORDER BY expression for a column
         private string OrdBy(string col, string dir = "ASC") => UsePostgres ? $"lower({col}) {dir}" : $"{col} COLLATE NOCASE {dir}";
+
+        // First character of a value, uppercased — the A-Z rail's bucket key. Mirrors the
+        // client's alphaKey() so a letter jump lands on the same rows the rail is labelled with.
+        private string FirstChar(string col) => $"upper(substr(trim({col}), 1, 1))";
 
         // ── Helpers ───────────────────────────────────────────────────────────
         private DbConnection OpenConnection()

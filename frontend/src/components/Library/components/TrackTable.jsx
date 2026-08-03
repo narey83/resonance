@@ -95,13 +95,22 @@ const COLUMNS = [
   { def: '28px', fixed: true, id: 'love', min: 24 },
 ];
 
+// `serverSort`, `serverFilter` and `onEndReached` turn the table into a window onto a list the
+// server is paging. All three are optional: without them the table sorts and filters the array
+// it was handed, exactly as before — which is what the album, mixtape, loved and history views
+// still want, since those lists are small enough to hold whole.
 const TrackTable = ({
   alphaHandlerRef,
   loading,
+  loadingMore = false,
+  onAlphaJump,
   onContextMenu,
   onDeleteTracks,
+  onEndReached,
   onExportTracks,
   scrollContainerRef,
+  serverFilter,
+  serverSort,
   showAdded = true,
   tracks = [],
 }) => {
@@ -117,10 +126,34 @@ const TrackTable = ({
     [activity?.playStats],
   );
 
-  const [filters, setFilters] = useState({ title: '', artist: '', album: '' });
+  const [localFilters, setLocalFilters] = useState({
+    title: '',
+    artist: '',
+    album: '',
+  });
   const [activeCol, setActiveCol] = useState(null);
-  const [sortCol, setSortCol] = useState(null);
-  const [sortDir, setSortDir] = useState('asc');
+  const [localSortCol, setLocalSortCol] = useState(null);
+  const [localSortDir, setLocalSortDir] = useState('asc');
+
+  // In server mode the three column boxes drive the one thing the server can filter on: a
+  // search across title/artist/album/key. We remember which box was typed into purely so the
+  // text stays where the user put it — the query is the same whichever one they used.
+  const [serverFilterCol, setServerFilterCol] = useState('title');
+
+  const sortCol = serverSort ? serverSort.col : localSortCol;
+  const sortDir = serverSort ? serverSort.dir : localSortDir;
+  const filters = useMemo(
+    () =>
+      serverFilter
+        ? {
+            title: '',
+            artist: '',
+            album: '',
+            [serverFilterCol]: serverFilter.value,
+          }
+        : localFilters,
+    [localFilters, serverFilter, serverFilterCol],
+  );
   const [selectedPaths, setSelectedPaths] = useState(new Set());
   const [deleting, setDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -128,7 +161,10 @@ const TrackTable = ({
   const containerRef = useRef(null);
   const lastClickIndex = useRef(null);
 
+  // Server mode: the rows arrived already filtered and ordered by the query, so re-doing either
+  // here would only re-apply it to the window we happen to hold — and get it wrong.
   const filteredTracks = useMemo(() => {
+    if (serverFilter) return tracks;
     const { album, artist, title } = filters;
     if (!title && !artist && !album) return tracks;
     const tl = title.toLowerCase();
@@ -140,10 +176,10 @@ const TrackTable = ({
         (!al || (t.artist || '').toLowerCase().includes(al)) &&
         (!abl || (t.album || '').toLowerCase().includes(abl)),
     );
-  }, [filters, tracks]);
+  }, [filters, serverFilter, tracks]);
 
   const sortedTracks = useMemo(() => {
-    if (!sortCol) return filteredTracks;
+    if (serverSort || !sortCol) return filteredTracks;
     const copy = [...filteredTracks];
     copy.sort((a, b) => {
       let cmp = 0;
@@ -174,7 +210,7 @@ const TrackTable = ({
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return copy;
-  }, [filteredTracks, playStats, sortCol, sortDir]);
+  }, [filteredTracks, playStats, serverSort, sortCol, sortDir]);
 
   const filteredQueue = useMemo(
     () => sortedTracks.map(toQueue),
@@ -202,6 +238,13 @@ const TrackTable = ({
   useEffect(() => {
     if (!alphaHandlerRef) return undefined;
     alphaHandlerRef.current = (letter) => {
+      // Server mode: the letter almost certainly isn't in the window we hold, so ask for that
+      // bucket instead of scrolling to a row that was never loaded.
+      if (onAlphaJump) {
+        onAlphaJump(letter);
+        return;
+      }
+
       const index = sortedTracks.findIndex(
         (t) => alphaKey(t.title || t.filename) === letter,
       );
@@ -215,9 +258,27 @@ const TrackTable = ({
     return () => {
       alphaHandlerRef.current = null;
     };
-  }, [alphaHandlerRef, sortedTracks, virtualizer]);
+  }, [alphaHandlerRef, onAlphaJump, sortedTracks, virtualizer]);
 
-  const setFilter = (col, value) => setFilters((f) => ({ ...f, [col]: value }));
+  // Ask for the next page while there's still a screenful or so left below, so the list keeps
+  // moving instead of stalling at the bottom every 200 rows.
+  const lastVisibleIndex = virtualizer.getVirtualItems().at(-1)?.index ?? -1;
+  useEffect(() => {
+    if (onEndReached && lastVisibleIndex >= sortedTracks.length - 30) {
+      onEndReached();
+    }
+  }, [lastVisibleIndex, onEndReached, sortedTracks.length]);
+
+  const setFilter = (col, value) => {
+    if (serverFilter) {
+      setServerFilterCol(col);
+      serverFilter.onChange(value);
+      return;
+    }
+
+    setLocalFilters((f) => ({ ...f, [col]: value }));
+  };
+
   const clearFilter = (col) => {
     setFilter(col, '');
     setActiveCol(null);
@@ -301,13 +362,16 @@ const TrackTable = ({
 
   const handleSort = useCallback(
     (col) => {
-      if (col === sortCol) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-      else {
-        setSortCol(col);
-        setSortDir('asc');
+      const nextDir = col === sortCol && sortDir === 'asc' ? 'desc' : 'asc';
+      if (serverSort) {
+        serverSort.onChange(col, nextDir);
+        return;
       }
+
+      setLocalSortCol(col);
+      setLocalSortDir(nextDir);
     },
-    [sortCol],
+    [serverSort, sortCol, sortDir],
   );
 
   // Plain render functions — not components — so React doesn't remount on every render
@@ -473,6 +537,19 @@ const TrackTable = ({
 
   const plainSortHeader = (col, label, className) => {
     const active = sortCol === col;
+
+    // Play counts live in a different schema from the library, so the server can't order by
+    // them. Rather than offer a sort that would silently only reorder the loaded window,
+    // the column is just a label while the list is server-paged.
+    if (serverSort && col === 'plays') {
+      return (
+        <div className={className}>
+          {resizeHandle(col)}
+          <span className="jb-col-hdr-value">{label}</span>
+        </div>
+      );
+    }
+
     return (
       <div className={className}>
         {resizeHandle(col)}
@@ -572,7 +649,11 @@ const TrackTable = ({
         )}
 
         {!loading && !tracks.length && (
-          <div className="jb-state">No tracks found</div>
+          <div className="jb-state">
+            {serverFilter?.value
+              ? 'No tracks match the filter'
+              : 'No tracks found'}
+          </div>
         )}
 
         {!loading && tracks.length > 0 && sortedTracks.length === 0 && (
@@ -725,6 +806,13 @@ const TrackTable = ({
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {loadingMore && (
+          <div className="jb-tt-more">
+            <div className="jb-spinner" />
+            Loading more…
           </div>
         )}
       </div>

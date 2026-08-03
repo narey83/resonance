@@ -27,12 +27,16 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import useDebounce from '../../../hooks/useDebounce';
+import { getArtistPage, getTrackPage } from '../../../lib/musicLibrary';
 import * as prefs from '../../../lib/prefs';
+import { usePagedList } from '../../../lib/usePagedList';
+import AlphaFilterChip from './AlphaFilterChip';
 import SortButton from './SortButton';
 import TrackTable from './TrackTable';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronLeft, Play, Shuffle, X } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 const alphaKey = (s) => {
   const c = s?.trim()?.[0]?.toUpperCase();
@@ -94,29 +98,13 @@ const ArtistRow = ({ artist, onPlay, onSelect }) => (
 );
 
 const ArtistDetail = ({ artist, onBack, onContextMenu, onPlayArtist }) => {
-  const [tracks, setTracks] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    import('../../../lib/musicLibrary')
-      .then(({ getTracks }) =>
-        getTracks({ artist: artist.artist, limit: 5_000 }),
-      )
-      .then((result) => {
-        if (!cancelled) {
-          setTracks(result?.tracks ?? []);
-          setLoading(false);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [artist.artist]);
+  const {
+    items: tracks,
+    loadMore,
+    loading,
+    loadingMore,
+    total,
+  } = usePagedList(getTrackPage, { artist: artist.artist });
 
   return (
     <div className="jb-artist-detail-view">
@@ -130,7 +118,9 @@ const ArtistDetail = ({ artist, onBack, onContextMenu, onPlayArtist }) => {
           <ChevronLeft size={15} />
         </button>
         <span className="jb-section-title">{artist.artist}</span>
-        <span className="jb-section-count">{artist.trackCount} tracks</span>
+        <span className="jb-section-count">
+          {(total || artist.trackCount) ?? 0} tracks
+        </span>
         <div className="jb-section-controls">
           <button
             className="jb-btn"
@@ -152,7 +142,9 @@ const ArtistDetail = ({ artist, onBack, onContextMenu, onPlayArtist }) => {
       </div>
       <TrackTable
         loading={loading}
+        loadingMore={loadingMore}
         onContextMenu={onContextMenu}
+        onEndReached={loadMore}
         tracks={tracks}
       />
     </div>
@@ -161,8 +153,6 @@ const ArtistDetail = ({ artist, onBack, onContextMenu, onPlayArtist }) => {
 
 const ArtistsView = ({
   alphaHandlerRef,
-  artists = [],
-  loading,
   onContextMenu,
   onPlayArtist,
   scrollContainerRef,
@@ -170,12 +160,32 @@ const ArtistsView = ({
   const [selected, setSelected] = useState(null);
   const [artistFilter, setArtistFilter] = useState('');
   const [filterActive, setFilterActive] = useState(false);
+  const [letter, setLetter] = useState(null);
   const [sortBy, setSortBy] = useState(() =>
     prefs.get('resonance-artists-sort-by', 'name'),
   );
   const [sortDir, setSortDir] = useState(() =>
     prefs.get('resonance-artists-sort-dir', 'asc'),
   );
+
+  // Typing shouldn't fire a request per keystroke.
+  const search = useDebounce(artistFilter, 250);
+
+  // Filtering, ordering and the A-Z rail are all query parameters now: there are ~13k artists
+  // and we only ever hold the window that's been scrolled to, so none of them can be answered
+  // from what's in memory.
+  const {
+    items: artists,
+    loadMore,
+    loading,
+    loadingMore,
+    total,
+  } = usePagedList(getArtistPage, {
+    descending: sortDir === 'desc',
+    search: search || undefined,
+    sort: sortBy,
+    startsWith: letter || undefined,
+  });
 
   const setSort = (field) => {
     if (field === sortBy) {
@@ -190,41 +200,23 @@ const ArtistsView = ({
     }
   };
 
-  const filteredArtists = useMemo(() => {
-    if (!artistFilter) return artists;
-    const q = artistFilter.toLowerCase();
-    return artists.filter((a) => (a.artist || '').toLowerCase().includes(q));
-  }, [artistFilter, artists]);
-
-  const sortedArtists = useMemo(() => {
-    const copy = [...filteredArtists];
-    copy.sort((a, b) => {
-      const cmp =
-        sortBy === 'tracks'
-          ? (a.trackCount ?? 0) - (b.trackCount ?? 0)
-          : (a.artist || '').localeCompare(b.artist || '');
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-    return copy;
-  }, [filteredArtists, sortBy, sortDir]);
-
   const flatItems = useMemo(() => {
     if (sortBy !== 'name')
-      return sortedArtists.map((artist) => ({ type: 'artist', artist }));
+      return artists.map((artist) => ({ type: 'artist', artist }));
     const items = [];
     let lastLetter = null;
-    for (const artist of sortedArtists) {
-      const letter = alphaKey(artist.artist);
-      if (letter !== lastLetter) {
-        items.push({ type: 'header', letter });
-        lastLetter = letter;
+    for (const artist of artists) {
+      const artistLetter = alphaKey(artist.artist);
+      if (artistLetter !== lastLetter) {
+        items.push({ type: 'header', letter: artistLetter });
+        lastLetter = artistLetter;
       }
 
       items.push({ type: 'artist', artist });
     }
 
     return items;
-  }, [sortBy, sortedArtists]);
+  }, [artists, sortBy]);
 
   const virtualizer = useVirtualizer({
     count: flatItems.length,
@@ -236,23 +228,37 @@ const ArtistsView = ({
     paddingEnd: 8,
   });
 
+  // The rail narrows the query instead of scrolling, because the letter is almost never inside
+  // the window we hold. Re-picking the active letter clears it.
+  const jumpToLetter = useCallback((next) => {
+    setLetter((current) => (current === next ? null : next));
+    scrollContainerRef?.current?.scrollTo({ top: 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (!alphaHandlerRef || selected) return undefined;
-    alphaHandlerRef.current = (letter) => {
-      const index = flatItems.findIndex(
-        (item) => item.type === 'header' && item.letter === letter,
-      );
-      if (index >= 0)
-        virtualizer.scrollToIndex(index, {
-          align: 'start',
-          behavior: 'smooth',
-        });
-    };
-
+    alphaHandlerRef.current = jumpToLetter;
     return () => {
       alphaHandlerRef.current = null;
     };
-  }, [alphaHandlerRef, flatItems, selected, virtualizer]);
+  }, [alphaHandlerRef, jumpToLetter, selected]);
+
+  const lastIndex = virtualizer.getVirtualItems().at(-1)?.index ?? -1;
+  useEffect(() => {
+    if (lastIndex >= flatItems.length - 20) loadMore();
+  }, [flatItems.length, lastIndex, loadMore]);
+
+  if (selected) {
+    return (
+      <ArtistDetail
+        artist={selected}
+        onBack={() => setSelected(null)}
+        onContextMenu={onContextMenu}
+        onPlayArtist={onPlayArtist}
+      />
+    );
+  }
 
   if (loading) {
     return (
@@ -266,19 +272,10 @@ const ArtistsView = ({
   if (!loading && artists.length === 0) {
     return (
       <div className="jb-state">
-        No artists found. Run a library sync to index your music.
+        {search || letter
+          ? 'No artists match.'
+          : 'No artists found. Run a library sync to index your music.'}
       </div>
-    );
-  }
-
-  if (selected) {
-    return (
-      <ArtistDetail
-        artist={selected}
-        onBack={() => setSelected(null)}
-        onContextMenu={onContextMenu}
-        onPlayArtist={onPlayArtist}
-      />
     );
   }
 
@@ -302,6 +299,13 @@ const ArtistsView = ({
           sortBy={sortBy}
           sortDir={sortDir}
         />
+        <AlphaFilterChip
+          letter={letter}
+          onClear={() => setLetter(null)}
+        />
+        <span className="jb-sort-bar-count">
+          {total.toLocaleString()} {total === 1 ? 'artist' : 'artists'}
+        </span>
       </div>
       <div className="jb-artist-list-head">
         <span />
@@ -405,6 +409,12 @@ const ArtistsView = ({
           );
         })}
       </div>
+      {loadingMore && (
+        <div className="jb-tt-more">
+          <div className="jb-spinner" />
+          Loading more…
+        </div>
+      )}
     </>
   );
 };

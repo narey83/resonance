@@ -28,10 +28,11 @@
 // </copyright>
 
 import { artworkUrl as mixtapeArtworkUrl } from '../../../lib/mixtapes';
-import { getTracks } from '../../../lib/musicLibrary';
 import * as prefs from '../../../lib/prefs';
+import { usePagedTracks } from '../../../lib/usePagedList';
 import { formatIndexedAt } from '../../../lib/util';
 import AlbumArt from './AlbumArt';
+import AlphaFilterChip from './AlphaFilterChip';
 import SortButton from './SortButton';
 import TrackTable from './TrackTable';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -178,14 +179,31 @@ const FolderView = ({
   onDeleteTracks,
   onFolderContextMenu,
   onPlayFolder,
-  removedTrackPath,
+  removedPaths,
   scrollContainerRef,
   tileSize = 160,
   viewMode = 'tile',
 }) => {
   const [selected, setSelected] = useState(null);
-  const [tracks, setTracks] = useState([]);
-  const [tracksLoading, setTracksLoading] = useState(false);
+
+  const {
+    clearLetter,
+    letter,
+    total: trackTotal,
+    trackTableProps,
+  } = usePagedTracks(
+    { folder: selected?.path },
+    { enabled: Boolean(selected) },
+  );
+
+  const tracks = useMemo(
+    () =>
+      removedPaths.size === 0
+        ? trackTableProps.tracks
+        : trackTableProps.tracks.filter((t) => !removedPaths.has(t.path)),
+    [removedPaths, trackTableProps.tracks],
+  );
+
   const [sortBy, setSortBy] = useState(() =>
     prefs.get('resonance-folders-sort-by', 'name'),
   );
@@ -222,34 +240,6 @@ const FolderView = ({
     if (folder) setSelected(folder);
   }, [folders, initialFolder]);
 
-  useEffect(() => {
-    if (!selected) return undefined;
-    let cancelled = false;
-    setTracksLoading(true);
-    setTracks([]);
-
-    getTracks({ folder: selected.path, limit: 5_000 })
-      .then((result) => {
-        if (!cancelled) setTracks(result.tracks ?? []);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setTracksLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selected]);
-
-  useEffect(() => {
-    if (removedTrackPath) {
-      setTracks((previous) =>
-        previous.filter((t) => t.path !== removedTrackPath),
-      );
-    }
-  }, [removedTrackPath]);
-
   const sorted = useMemo(() => {
     const copy = [...folders];
     copy.sort((a, b) => {
@@ -273,8 +263,10 @@ const FolderView = ({
 
   useEffect(() => {
     if (!alphaHandlerRef || viewMode !== 'list' || selected) return undefined;
-    alphaHandlerRef.current = (letter) => {
-      const index = sorted.findIndex((f) => alphaKey(f.name) === letter);
+    // The folder list itself is small (tens of rows, fetched whole), so its rail still scrolls
+    // rather than re-querying. Only the track list inside a folder is paged.
+    alphaHandlerRef.current = (jumpTo) => {
+      const index = sorted.findIndex((f) => alphaKey(f.name) === jumpTo);
       if (index >= 0)
         virtualizer.scrollToIndex(index, {
           align: 'start',
@@ -313,7 +305,13 @@ const FolderView = ({
             <ChevronLeft size={15} />
           </button>
           <span className="jb-section-title">{selected.name}</span>
-          <span className="jb-section-count">{selected.trackCount} tracks</span>
+          <span className="jb-section-count">
+            {(trackTotal || selected.trackCount || 0).toLocaleString()} tracks
+          </span>
+          <AlphaFilterChip
+            letter={letter}
+            onClear={clearLetter}
+          />
           <div className="jb-section-controls">
             <button
               className="jb-btn jb-btn--primary"
@@ -326,19 +324,10 @@ const FolderView = ({
           </div>
         </div>
         <TrackTable
+          {...trackTableProps}
           alphaHandlerRef={alphaHandlerRef}
-          loading={tracksLoading}
           onContextMenu={onContextMenu}
-          onDeleteTracks={
-            onDeleteTracks
-              ? async (paths) => {
-                  await onDeleteTracks(paths);
-                  setTracks((previous) =>
-                    previous.filter((t) => !paths.includes(t.path)),
-                  );
-                }
-              : undefined
-          }
+          onDeleteTracks={onDeleteTracks}
           tracks={tracks}
         />
       </div>

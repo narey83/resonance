@@ -27,25 +27,27 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { getAlbumPage } from '../../../lib/musicLibrary';
+import { usePagedList } from '../../../lib/usePagedList';
 import { formatIndexedAt } from '../../../lib/util';
 import AlbumArt from './AlbumArt';
+import AlphaFilterChip from './AlphaFilterChip';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ArrowDownAZ, ArrowUpAZ, Play, Shuffle } from 'lucide-react';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 const LIST_ROW_HEIGHT = 52;
 const TILE_GAP = 16;
 const TILE_INFO_HEIGHT = 82;
 
-const alphaKey = (s) => {
-  const c = s?.trim()?.[0]?.toUpperCase();
-  return c >= 'A' && c <= 'Z' ? c : '#';
-};
-
 const AlbumsView = ({
-  albums = [],
   alphaHandlerRef,
-  loading,
   onAlbum,
   onAlbumContextMenu,
   onPlayAlbum,
@@ -62,27 +64,28 @@ const AlbumsView = ({
   };
   const [sortBy, setSortBy] = useState('name');
   const [sortDir, setSortDir] = useState('asc');
+  const [letter, setLetter] = useState(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const gridRef = useRef(null);
+
+  // ~19k album groups: ordering and the A-Z rail are query parameters, not things we can work
+  // out from the window currently in memory.
+  const {
+    items: sorted,
+    loadMore,
+    loading,
+    loadingMore,
+    total,
+  } = usePagedList(getAlbumPage, {
+    descending: sortDir === 'desc',
+    sort: sortBy,
+    startsWith: letter || undefined,
+  });
 
   const handleSortByChange = (newSortBy) => {
     setSortBy(newSortBy);
     setSortDir(DEFAULT_DIR[newSortBy] ?? 'asc');
   };
-
-  const sorted = useMemo(() => {
-    const list = [...albums];
-    list.sort((a, b) => {
-      let cmp = 0;
-      if (sortBy === 'name') cmp = (a.album || '').localeCompare(b.album || '');
-      else if (sortBy === 'artist')
-        cmp = (a.artist || '').localeCompare(b.artist || '');
-      else if (sortBy === 'year') cmp = (a.year ?? 0) - (b.year ?? 0);
-      else if (sortBy === 'date') cmp = (a.indexedAt ?? 0) - (b.indexedAt ?? 0);
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-    return list;
-  }, [albums, sortBy, sortDir]);
 
   // Track container width for grid column calculation
   useEffect(() => {
@@ -130,33 +133,36 @@ const AlbumsView = ({
     paddingEnd: 40,
   });
 
+  // The rail narrows the query instead of scrolling, because the letter is almost never inside
+  // the window we hold. Re-picking the active letter clears it.
+  const jumpToLetter = useCallback((next) => {
+    setLetter((current) => (current === next ? null : next));
+    scrollContainerRef?.current?.scrollTo({ top: 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (!alphaHandlerRef) return undefined;
-    alphaHandlerRef.current = (letter) => {
-      const index = sorted.findIndex((a) => alphaKey(a.album) === letter);
-      if (index < 0) return;
-      if (viewMode === 'list') {
-        listVirtualizer.scrollToIndex(index, {
-          align: 'start',
-          behavior: 'smooth',
-        });
-      } else if (cols > 0) {
-        gridVirtualizer.scrollToIndex(Math.floor(index / cols), {
-          align: 'start',
-          behavior: 'smooth',
-        });
-      }
-    };
-
+    alphaHandlerRef.current = jumpToLetter;
     return () => {
       alphaHandlerRef.current = null;
     };
+  }, [alphaHandlerRef, jumpToLetter]);
+
+  const lastListIndex = listVirtualizer.getVirtualItems().at(-1)?.index ?? -1;
+  const lastGridIndex = gridVirtualizer.getVirtualItems().at(-1)?.index ?? -1;
+  useEffect(() => {
+    const nearEnd =
+      viewMode === 'list'
+        ? lastListIndex >= sorted.length - 20
+        : lastGridIndex >= tileRows.length - 3;
+    if (nearEnd) loadMore();
   }, [
-    alphaHandlerRef,
-    cols,
-    gridVirtualizer,
-    listVirtualizer,
-    sorted,
+    lastGridIndex,
+    lastListIndex,
+    loadMore,
+    sorted.length,
+    tileRows.length,
     viewMode,
   ]);
 
@@ -169,10 +175,12 @@ const AlbumsView = ({
     );
   }
 
-  if (!loading && albums.length === 0) {
+  if (!loading && sorted.length === 0) {
     return (
       <div className="jb-state">
-        No albums found. Run a library sync to index your music.
+        {letter
+          ? 'No albums match.'
+          : 'No albums found. Run a library sync to index your music.'}
       </div>
     );
   }
@@ -184,7 +192,13 @@ const AlbumsView = ({
     <>
       <div className="jb-section-header">
         <span className="jb-section-title">Albums</span>
-        <span className="jb-section-count">{albums.length} albums</span>
+        <span className="jb-section-count">
+          {total.toLocaleString()} albums
+        </span>
+        <AlphaFilterChip
+          letter={letter}
+          onClear={() => setLetter(null)}
+        />
         <div className="jb-section-controls">
           <select
             className="jb-sort-select"
@@ -295,6 +309,12 @@ const AlbumsView = ({
               ))}
             </div>
           )}
+        </div>
+      )}
+      {loadingMore && (
+        <div className="jb-tt-more">
+          <div className="jb-spinner" />
+          Loading more…
         </div>
       )}
     </>

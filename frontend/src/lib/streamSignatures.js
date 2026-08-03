@@ -69,6 +69,20 @@ export const ensureSigned = async (paths) => {
   }
 };
 
+// Cache the signatures the list endpoints already embed on each row (MusicLibraryController
+// stamps Sig/Exp per row), instead of asking for them again. ensureSigned is a POST of every
+// path plus a same-size response — on a 48k-track list that is megabytes of round-trip,
+// serialised after the fetch and before anything renders, for data we were already sent.
+// `key` is the row field holding the path ('path' for tracks, 'coverPath' for artwork rows).
+export const seedSignatures = (rows, key = 'path') => {
+  for (const row of rows || []) {
+    const path = row?.[key];
+    if (path && row.sig && typeof row.exp === 'number') {
+      cache.set(path, { exp: row.exp, sig: row.sig });
+    }
+  }
+};
+
 // The `&exp=...&sig=...` query fragment for a path, or '' if not signed yet.
 export const signedQuery = (path) => {
   const s = cache.get(path);

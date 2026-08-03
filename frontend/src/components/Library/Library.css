@@ -372,6 +372,27 @@
   border-radius: 6px;
   transition: color 0.1s, background 0.12s;
 }
+.jb-alpha-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.jb-alpha-chip strong {
+  font-weight: 700;
+}
+
+.jb-alpha-chip:hover {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
 .jb-alpha-btn:hover {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
@@ -901,6 +922,24 @@
   font-size: 14px;
   padding: 32px;
   text-align: center;
+}
+
+/* Footer while the next page is on its way — deliberately not .jb-state, which reserves
+   240px and would shove the list up every time it appears. */
+.jb-tt-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 0 26px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.jb-tt-more .jb-spinner {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
 }
 
 .jb-spinner {
@@ -2389,6 +2428,14 @@
   color: var(--text-dim);
   font-size: 11px;
   margin-right: 2px;
+}
+
+/* Pushed to the far end of the sort bar: on a paged list this is the whole matching count,
+   not the number of rows currently loaded. */
+.jb-sort-bar-count {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 11px;
 }
 
 .jb-sort-btn {

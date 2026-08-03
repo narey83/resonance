@@ -32,6 +32,7 @@ import 'react-image-crop/dist/ReactCrop.css';
 import { urlBase } from '../../config';
 import { useLibraryActivity } from '../../context/LibraryActivityContext';
 import { usePlayer } from '../../context/PlayerContext';
+import useDebounce from '../../hooks/useDebounce';
 import useResizablePanel from '../../hooks/useResizablePanel';
 import { createMixtapesHubConnection } from '../../lib/hubFactory';
 import * as mixtapesAPI from '../../lib/mixtapes';
@@ -43,14 +44,15 @@ import {
   deleteFolder,
   deleteTrack,
   deleteTrackBatchLocal,
-  getAlbums,
-  getArtists,
+  getAlbumPage,
+  getArtistPage,
   getFolders,
   getGenres,
   getIssueTracks,
   getLibraryStats,
   getRecentlyAdded,
   getSyncState,
+  getTrackPage,
   getYears,
   renameFolder,
   renameTrack,
@@ -64,10 +66,12 @@ import {
   exportTrackToUsb,
   isUsbExportSupported,
 } from '../../lib/usbExport';
+import { usePagedList, usePagedTracks } from '../../lib/usePagedList';
 import { formatSeconds } from '../../lib/util';
 import AlbumArt from './components/AlbumArt';
 import AlbumDetail from './components/AlbumDetail';
 import AlbumsView from './components/AlbumsView';
+import AlphaFilterChip from './components/AlphaFilterChip';
 import ArtistsView from './components/ArtistsView';
 import FolderView from './components/FolderView';
 import GenreView from './components/GenreView';
@@ -1934,27 +1938,44 @@ const MixtapesView = ({
 
 const TracksView = ({
   alphaHandlerRef,
-  loading,
   onContextMenu,
   onDeleteTracks,
   onExportTracks,
-  tracks = [],
-}) => (
-  <div className="jb-tracks-view">
-    <div className="jb-section-header">
-      <span className="jb-section-title">All Tracks</span>
-      <span className="jb-section-count">{tracks.length} tracks</span>
+  removedPaths,
+}) => {
+  const { clearLetter, letter, total, trackTableProps } = usePagedTracks({});
+
+  const tracks = useMemo(
+    () =>
+      removedPaths.size === 0
+        ? trackTableProps.tracks
+        : trackTableProps.tracks.filter((t) => !removedPaths.has(t.path)),
+    [removedPaths, trackTableProps.tracks],
+  );
+
+  return (
+    <div className="jb-tracks-view">
+      <div className="jb-section-header">
+        <span className="jb-section-title">All Tracks</span>
+        <span className="jb-section-count">
+          {total.toLocaleString()} tracks
+        </span>
+        <AlphaFilterChip
+          letter={letter}
+          onClear={clearLetter}
+        />
+      </div>
+      <TrackTable
+        {...trackTableProps}
+        alphaHandlerRef={alphaHandlerRef}
+        onContextMenu={onContextMenu}
+        onDeleteTracks={onDeleteTracks}
+        onExportTracks={onExportTracks}
+        tracks={tracks}
+      />
     </div>
-    <TrackTable
-      alphaHandlerRef={alphaHandlerRef}
-      loading={loading}
-      onContextMenu={onContextMenu}
-      onDeleteTracks={onDeleteTracks}
-      onExportTracks={onExportTracks}
-      tracks={tracks}
-    />
-  </div>
-);
+  );
+};
 
 const LovedView = ({ allTracks, loading, lovedPaths, onContextMenu }) => {
   const activity = useLibraryActivity();
@@ -2041,10 +2062,8 @@ const SearchSection = ({ children, count, label }) => (
 );
 
 const SearchView = ({
-  artists,
   folders = [],
   genres = [],
-  loadingTracks,
   mixtapes = [],
   onArtist,
   onContextMenu,
@@ -2053,17 +2072,32 @@ const SearchView = ({
   onMixtape,
   onYear,
   query,
-  tracks,
   years = [],
 }) => {
   const q = query.toLowerCase();
 
-  const matchedArtists = useMemo(() => {
-    if (!q) return [];
-    return artists
-      .filter((a) => (a.artist || '').toLowerCase().includes(q))
-      .slice(0, 10);
-  }, [artists, q]);
+  // Tracks and artists are far too many to hold client-side, so both are matched by the server.
+  // Genres, years, folders and mixtapes are small enough to keep whole and filter here.
+  const debouncedQuery = useDebounce(query, 250);
+  const searchEnabled = Boolean(debouncedQuery);
+
+  const {
+    items: tracks,
+    loadMore,
+    loading: loadingTracks,
+    loadingMore,
+    total: trackTotal,
+  } = usePagedList(
+    getTrackPage,
+    { search: debouncedQuery || undefined, sort: 'title' },
+    { enabled: searchEnabled },
+  );
+
+  const { items: matchedArtists } = usePagedList(
+    getArtistPage,
+    { search: debouncedQuery || undefined },
+    { enabled: searchEnabled, pageSize: 10 },
+  );
 
   const matchedGenres = useMemo(() => {
     if (!q) return [];
@@ -2095,15 +2129,7 @@ const SearchView = ({
       .slice(0, 8);
   }, [mixtapes, q]);
 
-  const matchedTracks = useMemo(() => {
-    if (!q) return [];
-    return tracks.filter(
-      (t) =>
-        (t.title || t.filename || '').toLowerCase().includes(q) ||
-        (t.artist || '').toLowerCase().includes(q) ||
-        (t.album || '').toLowerCase().includes(q),
-    );
-  }, [q, tracks]);
+  const matchedTracks = tracks;
 
   if (!query) return null;
 
@@ -2258,11 +2284,13 @@ const SearchView = ({
 
       {!loadingTracks && matchedTracks.length > 0 && (
         <SearchSection
-          count={matchedTracks.length}
+          count={trackTotal}
           label="Tracks"
         >
           <TrackTable
+            loadingMore={loadingMore}
             onContextMenu={onContextMenu}
+            onEndReached={loadMore}
             tracks={matchedTracks}
           />
         </SearchSection>
@@ -2326,8 +2354,8 @@ const ISSUE_TYPES = [
 ];
 
 const HomeView = ({
-  albums,
-  artists,
+  albumCount,
+  artistCount,
   cachedCounts = {},
   issueCounts,
   mixtapes,
@@ -2360,7 +2388,7 @@ const HomeView = ({
           type="button"
         >
           <span className="jb-home-stat-num">
-            {(artists.length || cachedCounts.artists || 0).toLocaleString()}
+            {(artistCount || cachedCounts.artists || 0).toLocaleString()}
           </span>
           <span className="jb-home-stat-label">artists</span>
         </button>
@@ -2370,7 +2398,7 @@ const HomeView = ({
           type="button"
         >
           <span className="jb-home-stat-num">
-            {(albums.length || cachedCounts.albums || 0).toLocaleString()}
+            {(albumCount || cachedCounts.albums || 0).toLocaleString()}
           </span>
           <span className="jb-home-stat-label">albums</span>
         </button>
@@ -2737,11 +2765,14 @@ const Library = () => {
       ? Math.round(syncState.progress * 100)
       : null;
 
-  const [allTracks, setAllTracks] = useState([]);
   const [lovedTracks, setLovedTracks] = useState([]);
   const [loadingLoved, setLoadingLoved] = useState(false);
-  const [albums, setAlbums] = useState([]);
-  const [artists, setArtists] = useState([]);
+
+  // Only the counts, not the lists: the Artists and Albums views page their own rows now, and
+  // Home just prints these two numbers. A limit=1 request answers both from X-Total-Count for
+  // ~300 bytes, where fetching the lists to call .length on them cost 9MB.
+  const [albumCount, setAlbumCount] = useState(0);
+  const [artistCount, setArtistCount] = useState(0);
   const [libraryStats, setLibraryStats] = useState(null);
   // last-known home counts so the page doesn't flash zeros while the lists load
   const cachedCounts = useMemo(() => {
@@ -2761,11 +2792,8 @@ const Library = () => {
   const [contextMenu, setContextMenu] = useState(null);
   const [folderContextMenu, setFolderContextMenu] = useState(null);
   const [albumContextMenu, setAlbumContextMenu] = useState(null);
-  const [loadingAlbums, setLoadingAlbums] = useState(false);
-  const [loadingArtists, setLoadingArtists] = useState(true);
   const [loadingFolders, setLoadingFolders] = useState(false);
   const [loadingGenres, setLoadingGenres] = useState(false);
-  const [loadingTracks, setLoadingTracks] = useState(false);
   const [loadingYears, setLoadingYears] = useState(false);
   const [navStack, setNavStack] = useState(() => {
     try {
@@ -2840,43 +2868,40 @@ const Library = () => {
   }, []);
 
   const loadInitialData = useCallback(async () => {
-    setLoadingArtists(true);
     // apply each result as it arrives so the cheap stats call (track count)
-    // isn't held up behind the heavy artists/albums list fetches
+    // isn't held up behind the other fetches
     const apply = (promise, set) =>
       promise.then((data) => {
         if (isMountedRef.current && data != null) set(data);
       });
     try {
       await Promise.all([
-        apply(getArtists(), setArtists),
+        apply(getArtistPage({ limit: 1 }), (p) => setArtistCount(p.total)),
+        apply(getAlbumPage({ limit: 1 }), (p) => setAlbumCount(p.total)),
         apply(getGenres(), setGenres),
         apply(getRecentlyAdded(16), setRecentlyAdded),
-        apply(getAlbums(), setAlbums),
         apply(getLibraryStats(), setLibraryStats).catch(() => {}),
       ]);
     } catch {
       // ignore
-    } finally {
-      if (isMountedRef.current) setLoadingArtists(false);
     }
   }, []);
 
   useEffect(() => {
-    if (!libraryStats?.total || artists.length === 0) return;
+    if (!libraryStats?.total || artistCount === 0) return;
     try {
       localStorage.setItem(
         'resonance-library-home-counts',
         JSON.stringify({
-          albums: albums.length,
-          artists: artists.length,
+          albums: albumCount,
+          artists: artistCount,
           total: libraryStats.total,
         }),
       );
     } catch {
       /* ignore */
     }
-  }, [albums, artists, libraryStats]);
+  }, [albumCount, artistCount, libraryStats]);
 
   useEffect(() => {
     loadInitialData();
@@ -2885,8 +2910,6 @@ const Library = () => {
 
   useEffect(() => {
     if (libraryRevision === 0) return;
-    setAllTracks([]);
-    setAlbums([]);
     setGenres([]);
     setYears([]);
     setFolders([]);
@@ -2971,35 +2994,6 @@ const Library = () => {
     };
   }, [reloadMixtapes]);
 
-  useEffect(() => {
-    if (
-      (activeView === VIEWS.SEARCH || activeView === VIEWS.TRACKS) &&
-      allTracks.length === 0 &&
-      !loadingTracks
-    ) {
-      const loadTracks = async () => {
-        setLoadingTracks(true);
-        try {
-          const { getTracks } = await import('../../lib/musicLibrary');
-          const result = await getTracks({ limit: 500_000 });
-          const tracks = result?.tracks ?? [];
-          tracks.sort((a, b) =>
-            (a.title || a.filename || '').localeCompare(
-              b.title || b.filename || '',
-            ),
-          );
-          setAllTracks(tracks);
-        } catch {
-          // ignore
-        } finally {
-          setLoadingTracks(false);
-        }
-      };
-
-      loadTracks();
-    }
-  }, [activeView, allTracks.length, loadingTracks]);
-
   // Loved view fetches only its tracks (resolved server-side) rather than the whole library.
   // Refetch each time the view opens so newly-loved tracks appear.
   useEffect(() => {
@@ -3020,24 +3014,6 @@ const Library = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeView]);
-
-  useEffect(() => {
-    if (activeView === VIEWS.ALBUMS && albums.length === 0 && !loadingAlbums) {
-      const load = async () => {
-        setLoadingAlbums(true);
-        try {
-          const data = await getAlbums();
-          setAlbums(data ?? []);
-        } catch {
-          // ignore
-        } finally {
-          setLoadingAlbums(false);
-        }
-      };
-
-      load();
-    }
-  }, [activeView, albums.length, loadingAlbums]);
 
   useEffect(() => {
     if (activeView === VIEWS.GENRES && genres.length === 0 && !loadingGenres) {
@@ -3223,8 +3199,6 @@ const Library = () => {
         if (!state.running) break;
       }
 
-      setAllTracks([]);
-      setAlbums([]);
       setGenres([]);
       setYears([]);
       setFolders([]);
@@ -3533,30 +3507,41 @@ const Library = () => {
     [runBulkUsbExport],
   );
 
-  const [lastDeletedPath, setLastDeletedPath] = useState(null);
+  // Paths removed (or renamed away) during this session. The lists are server-paged, so a
+  // deleted row would otherwise come straight back on the next page fetch — the backend has
+  // not necessarily reindexed yet. Views filter their window through this.
+  const [removedPaths, setRemovedPaths] = useState(() => new Set());
+  const forgetPaths = useCallback((paths) => {
+    setRemovedPaths((previous) => new Set([...previous, ...paths]));
+  }, []);
+
   const [renamingFolder, setRenamingFolder] = useState(null); // { folder, name }
   const [renamingTrack, setRenamingTrack] = useState(null); // { track, name }
 
-  const handleDeleteTrack = useCallback(async (track) => {
-    try {
-      await deleteTrack(track.path);
-      toast.success(`Deleted "${track.title || track.filename}"`);
-      setAllTracks((previous) => previous.filter((t) => t.path !== track.path));
-      setLastDeletedPath(track.path);
-    } catch (error) {
-      const message =
-        error?.response?.data || error?.message || 'Delete failed';
-      toast.error(String(message));
-    }
-  }, []);
+  const handleDeleteTrack = useCallback(
+    async (track) => {
+      try {
+        await deleteTrack(track.path);
+        toast.success(`Deleted "${track.title || track.filename}"`);
+        forgetPaths([track.path]);
+      } catch (error) {
+        const message =
+          error?.response?.data || error?.message || 'Delete failed';
+        toast.error(String(message));
+      }
+    },
+    [forgetPaths],
+  );
 
-  const handleDeleteTracks = useCallback(async (paths) => {
-    const result = await deleteTrackBatchLocal(paths);
-    const n = result?.deleted ?? paths.length;
-    toast.success(`Deleted ${n} ${n === 1 ? 'track' : 'tracks'}`);
-    const pathSet = new Set(paths);
-    setAllTracks((previous) => previous.filter((t) => !pathSet.has(t.path)));
-  }, []);
+  const handleDeleteTracks = useCallback(
+    async (paths) => {
+      const result = await deleteTrackBatchLocal(paths);
+      const n = result?.deleted ?? paths.length;
+      toast.success(`Deleted ${n} ${n === 1 ? 'track' : 'tracks'}`);
+      forgetPaths(paths);
+    },
+    [forgetPaths],
+  );
 
   const handleDeleteFolder = useCallback(async (folder) => {
     try {
@@ -3617,21 +3602,15 @@ const Library = () => {
     if (!name.trim() || name.trim() === track.filename) return;
     try {
       await renameTrack(track.path, name.trim());
-      const newPath =
-        (track.directory ? track.directory + '/' : '') + name.trim();
-      setAllTracks((previous) =>
-        previous.map((t) =>
-          t.path === track.path
-            ? { ...t, path: newPath, filename: name.trim() }
-            : t,
-        ),
-      );
+      // Drop the row rather than patching its path in place: the old path is dead, and the
+      // renamed track reappears under its new name on the next fetch of this list.
+      forgetPaths([track.path]);
     } catch (error) {
       const message =
         error?.response?.data || error?.message || 'Rename failed';
       toast.error(String(message));
     }
-  }, [renamingTrack]);
+  }, [forgetPaths, renamingTrack]);
 
   const handleShowInFolders = useCallback((directory) => {
     setNavStack([
@@ -3686,10 +3665,12 @@ const Library = () => {
     [playQueue],
   );
 
+  // Bounded window rather than the whole scope: "play this folder" on the 24,922-track folder
+  // used to pull ~15MB to build a queue nobody reaches the end of.
   const playQuery = useCallback(
     async (parameters) => {
       const { getTracks } = await import('../../lib/musicLibrary');
-      const result = await getTracks({ ...parameters, limit: 500_000 });
+      const result = await getTracks({ ...parameters, limit: 2_000 });
       playQueue((result.tracks ?? []).map(libraryTrackToQueue), 0);
     },
     [playQueue],
@@ -3702,20 +3683,15 @@ const Library = () => {
       case VIEWS.HOME:
         return (
           <HomeView
-            albums={albums}
-            artists={artists}
+            albumCount={albumCount}
+            artistCount={artistCount}
             cachedCounts={cachedCounts}
             issueCounts={issueCounts}
             mixtapes={playlists}
             onAlbumContextMenu={openAlbumContextMenu}
             onNavigate={(view, parameters = {}) => navTo(view, parameters)}
             recentlyAdded={recentlyAdded}
-            totalTracks={
-              libraryStats?.total ??
-              (artists.length
-                ? artists.reduce((s, a) => s + a.trackCount, 0)
-                : cachedCounts.total ?? 0)
-            }
+            totalTracks={libraryStats?.total ?? cachedCounts.total ?? 0}
           />
         );
 
@@ -3739,9 +3715,7 @@ const Library = () => {
 
         return (
           <AlbumsView
-            albums={albums}
             alphaHandlerRef={alphaHandlerRef}
-            loading={loadingAlbums}
             onAlbum={(album) =>
               setNavStack((s) => {
                 const top = s[s.length - 1];
@@ -3775,8 +3749,6 @@ const Library = () => {
         return (
           <ArtistsView
             alphaHandlerRef={alphaHandlerRef}
-            artists={artists}
-            loading={loadingArtists}
             onContextMenu={openContextMenu}
             onPlayArtist={(a) => playQuery({ artist: a.artist })}
             scrollContainerRef={viewScrollRef}
@@ -3787,13 +3759,12 @@ const Library = () => {
         return (
           <TracksView
             alphaHandlerRef={alphaHandlerRef}
-            loading={loadingTracks}
             onContextMenu={openContextMenu}
             onDeleteTracks={handleDeleteTracks}
             onExportTracks={
               isUsbExportSupported() ? handleExportTracks : undefined
             }
-            tracks={allTracks}
+            removedPaths={removedPaths}
           />
         );
 
@@ -3848,7 +3819,7 @@ const Library = () => {
             onDeleteTracks={handleDeleteTracks}
             onFolderContextMenu={openFolderContextMenu}
             onPlayFolder={(path) => playQuery({ folder: path })}
-            removedTrackPath={lastDeletedPath}
+            removedPaths={removedPaths}
             scrollContainerRef={viewScrollRef}
             tileSize={tileSize}
             viewMode={viewMode}
@@ -3877,10 +3848,8 @@ const Library = () => {
       case VIEWS.SEARCH:
         return (
           <SearchView
-            artists={artists}
             folders={folders}
             genres={genres}
-            loadingTracks={loadingTracks}
             mixtapes={playlists}
             onArtist={goToArtist}
             onContextMenu={openContextMenu}
@@ -3889,7 +3858,6 @@ const Library = () => {
             onMixtape={goToMixtape}
             onYear={goToYear}
             query={searchQuery}
-            tracks={allTracks}
             years={years}
           />
         );

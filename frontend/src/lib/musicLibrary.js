@@ -29,10 +29,15 @@
 
 import { apiBaseUrl } from '../config';
 import api from './api';
-import { ensureSigned, signedQuery } from './streamSignatures';
+import { seedSignatures, signedQuery } from './streamSignatures';
 
 // btoa only handles Latin-1; encode to UTF-8 bytes first so paths with non-ASCII chars work
 const pathToBase64 = (s) => btoa(unescape(encodeURIComponent(s)));
+
+// Paged list endpoints report the pre-window total in X-Total-Count. Falls back to the row
+// count so an unpaged call (or a proxy that drops the header) still reports something sane.
+const totalOf = (response, rows) =>
+  Number(response.headers['x-total-count'] ?? rows.length) || rows.length;
 
 export const getLibraryStats = async () =>
   (await api.get('/musiclibrary/stats')).data;
@@ -48,15 +53,21 @@ export const getTracks = async (queryParameters) => {
   const data = (
     await api.get('/musiclibrary/tracks', { params: queryParameters })
   ).data;
-  await ensureSigned((data.tracks ?? []).map((t) => t.path));
+  seedSignatures(data.tracks ?? []);
   return data;
+};
+
+// One window of tracks, shaped for usePagedList. `total` is the whole matching set, not the page.
+export const getTrackPage = async (queryParameters) => {
+  const data = await getTracks(queryParameters);
+  return { items: data.tracks ?? [], total: data.total ?? 0 };
 };
 
 // Full track records for the user's loved paths only — resolved server-side against the library.
 // Avoids downloading the entire library (20k+ tracks) just to show a handful of loved tracks.
 export const getLovedTracks = async () => {
   const data = (await api.get('/musiclibrary/loved/tracks')).data ?? [];
-  await ensureSigned(data.map((t) => t.path));
+  seedSignatures(data);
   return data;
 };
 
@@ -64,35 +75,58 @@ export const getIssueTracks = async (issue, limit = 500_000) => {
   const data = (
     await api.get('/musiclibrary/tracks', { params: { [issue]: true, limit } })
   ).data;
-  await ensureSigned((data.tracks ?? []).map((t) => t.path));
+  seedSignatures(data.tracks ?? []);
   return data;
 };
 
-export const getAlbums = async (artist) => {
+// Omit `limit` for the whole list; supply it for one window (see getAlbumPage).
+export const getAlbums = async (artist, queryParameters = {}) => {
   const data = (
-    await api.get('/musiclibrary/albums', { params: artist ? { artist } : {} })
+    await api.get('/musiclibrary/albums', {
+      params: { ...(artist ? { artist } : {}), ...queryParameters },
+    })
   ).data;
-  await ensureSigned(data.map((a) => a.coverPath));
+  seedSignatures(data, 'coverPath');
   return data;
 };
 
-export const getArtists = async () => {
-  const data = (await api.get('/musiclibrary/artists')).data;
-  await ensureSigned(data.map((a) => a.coverPath));
+export const getAlbumPage = async (queryParameters) => {
+  const response = await api.get('/musiclibrary/albums', {
+    params: queryParameters,
+  });
+  const items = response.data ?? [];
+  seedSignatures(items, 'coverPath');
+  return { items, total: totalOf(response, items) };
+};
+
+export const getArtists = async (queryParameters = {}) => {
+  const data = (
+    await api.get('/musiclibrary/artists', { params: queryParameters })
+  ).data;
+  seedSignatures(data, 'coverPath');
   return data;
+};
+
+export const getArtistPage = async (queryParameters) => {
+  const response = await api.get('/musiclibrary/artists', {
+    params: queryParameters,
+  });
+  const items = response.data ?? [];
+  seedSignatures(items, 'coverPath');
+  return { items, total: totalOf(response, items) };
 };
 
 export const getRecentlyAdded = async (limit = 20) => {
   const data = (
     await api.get('/musiclibrary/recentlyadded', { params: { limit } })
   ).data;
-  await ensureSigned(data.map((a) => a.coverPath));
+  seedSignatures(data, 'coverPath');
   return data;
 };
 
 export const getKeyedTracks = async () => {
   const data = (await api.get('/musiclibrary/keyed')).data;
-  await ensureSigned(data.map((t) => t.path));
+  seedSignatures(data);
   return data;
 };
 
@@ -103,7 +137,7 @@ export const getYears = async () => (await api.get('/musiclibrary/years')).data;
 
 export const getFolders = async () => {
   const data = (await api.get('/musiclibrary/folders')).data;
-  await ensureSigned(data.map((f) => f.coverPath));
+  seedSignatures(data, 'coverPath');
   return data;
 };
 

@@ -27,8 +27,9 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import { getTracks } from '../../../lib/musicLibrary';
 import * as prefs from '../../../lib/prefs';
+import { usePagedTracks } from '../../../lib/usePagedList';
+import AlphaFilterChip from './AlphaFilterChip';
 import SortButton from './SortButton';
 import TrackTable from './TrackTable';
 import { ChevronLeft, Play, X } from 'lucide-react';
@@ -123,9 +124,25 @@ const GenreView = ({
   tileSize = 160,
   viewMode = 'tile',
 }) => {
-  const [selected, setSelected] = useState(initialSelected);
-  const [tracks, setTracks] = useState([]);
-  const [tracksLoading, setTracksLoading] = useState(false);
+  const [selected, setSelected] = useState(null);
+
+  // Navigation carries just the genre name (see goToGenre/goToYear in Library.jsx),
+  // but everything below wants the full row — resolve it against the loaded list.
+  useEffect(() => {
+    if (initialSelected == null) return;
+    setSelected(
+      (genres ?? []).find((x) => x.genre === initialSelected) ?? null,
+    );
+  }, [genres, initialSelected]);
+  const {
+    clearLetter,
+    letter,
+    total: trackTotal,
+    trackTableProps,
+  } = usePagedTracks(
+    { genre: selected?.genre },
+    { enabled: Boolean(selected) },
+  );
   const [genreFilter, setGenreFilter] = useState('');
   const [filterActive, setFilterActive] = useState(false);
   const [sortBy, setSortBy] = useState(() =>
@@ -165,35 +182,6 @@ const GenreView = ({
     });
     return copy;
   }, [filteredGenres, sortBy, sortDir]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (selected) {
-      setTracksLoading(true);
-      setTracks([]);
-
-      const load = async () => {
-        try {
-          const result = await getTracks({
-            genre: selected.genre,
-            limit: 5_000,
-          });
-          if (!cancelled) setTracks(result.tracks ?? []);
-        } catch {
-          // ignore
-        } finally {
-          if (!cancelled) setTracksLoading(false);
-        }
-      };
-
-      load();
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selected]);
 
   if (loading) {
     return (
@@ -240,9 +228,13 @@ const GenreView = ({
               {selected.genre}
             </div>
             <div className="jb-year-detail-meta">
-              {selected.trackCount} tracks
+              {(trackTotal || selected.trackCount || 0).toLocaleString()} tracks
             </div>
           </div>
+          <AlphaFilterChip
+            letter={letter}
+            onClear={clearLetter}
+          />
           <button
             className="jb-btn jb-btn--primary"
             onClick={() => onPlayGenre?.(selected)}
@@ -252,9 +244,8 @@ const GenreView = ({
           </button>
         </div>
         <TrackTable
-          loading={tracksLoading}
+          {...trackTableProps}
           onContextMenu={onContextMenu}
-          tracks={tracks}
         />
       </div>
     );

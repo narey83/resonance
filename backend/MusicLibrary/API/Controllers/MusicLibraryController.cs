@@ -225,11 +225,12 @@ namespace resonance.MusicLibrary.API
             [FromQuery] int limit = 50,
             [FromQuery] int offset = 0,
             [FromQuery] string sort = null,
-            [FromQuery] bool descending = false)
+            [FromQuery] bool descending = false,
+            [FromQuery] string startsWith = null)
         {
             limit = Math.Max(1, limit);
             offset = Math.Max(0, offset);
-            var result = Service.QueryTracks(search, artist, album, genre, year, folder, missingKey, missingBpm, missingTitle, missingArtist, missingArtwork, limit, offset, sort, descending);
+            var result = Service.QueryTracks(search, artist, album, genre, year, folder, missingKey, missingBpm, missingTitle, missingArtist, missingArtwork, limit, offset, sort, descending, startsWith);
             return Ok(result with { Tracks = result.Tracks.Select(SignTrack).ToList() });
         }
 
@@ -266,26 +267,75 @@ namespace resonance.MusicLibrary.API
             return NotModifiedOrNull(etag) ?? Ok(list.Select(SignFolder).ToList());
         }
 
-        /// <summary>Returns all albums grouped from the music library.</summary>
+        /// <summary>
+        ///     Returns albums grouped from the music library. Omit <paramref name="limit"/> to get
+        ///     the whole list; supply it to get one window, with the pre-window total in the
+        ///     <c>X-Total-Count</c> response header.
+        /// </summary>
         /// <returns></returns>
         [HttpGet("albums")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(typeof(System.Collections.Generic.IReadOnlyList<MusicAlbum>), 200)]
-        public IActionResult GetAlbums([FromQuery] string artist = null)
+        public IActionResult GetAlbums(
+            [FromQuery] string artist = null,
+            [FromQuery] int? limit = null,
+            [FromQuery] int offset = 0,
+            [FromQuery] string sort = null,
+            [FromQuery] bool descending = false,
+            [FromQuery] string search = null,
+            [FromQuery] string startsWith = null)
         {
             var (list, etag) = GetCachedListWithETag($"albums:{artist}", () => Service.GetAlbums(artist));
-            return NotModifiedOrNull(etag) ?? Ok(list.Select(SignAlbum).ToList());
+            var notModified = NotModifiedOrNull(PageETag(etag, sort, descending, search, startsWith, limit, offset));
+            if (notModified is not null)
+            {
+                return notModified;
+            }
+
+            // The cached list arrives ordered by album name, so A-Z ascending needs no work at all.
+            var ordered = sort?.ToLowerInvariant() switch
+            {
+                "artist" => Sorted(list, (a, b) => string.Compare(a.Artist, b.Artist, StringComparison.OrdinalIgnoreCase), descending),
+                "year" => Sorted(list, (a, b) => Nullable.Compare(a.Year, b.Year), descending),
+                "date" => Sorted(list, (a, b) => a.IndexedAt.CompareTo(b.IndexedAt), descending),
+                _ => descending ? list.Reverse().ToList() : list,
+            };
+
+            return Ok(Window(ordered, a => a.Album, search, startsWith, limit, offset).Select(SignAlbum).ToList());
         }
 
-        /// <summary>Returns all artists grouped from the music library.</summary>
+        /// <summary>
+        ///     Returns artists grouped from the music library. Omit <paramref name="limit"/> to get
+        ///     the whole list; supply it to get one window, with the pre-window total in the
+        ///     <c>X-Total-Count</c> response header.
+        /// </summary>
         /// <returns></returns>
         [HttpGet("artists")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(typeof(System.Collections.Generic.IReadOnlyList<MusicArtist>), 200)]
-        public IActionResult GetArtists()
+        public IActionResult GetArtists(
+            [FromQuery] int? limit = null,
+            [FromQuery] int offset = 0,
+            [FromQuery] string sort = null,
+            [FromQuery] bool descending = false,
+            [FromQuery] string search = null,
+            [FromQuery] string startsWith = null)
         {
             var (list, etag) = GetCachedListWithETag("artists", () => Service.GetArtists());
-            return NotModifiedOrNull(etag) ?? Ok(list.Select(SignArtist).ToList());
+            var notModified = NotModifiedOrNull(PageETag(etag, sort, descending, search, startsWith, limit, offset));
+            if (notModified is not null)
+            {
+                return notModified;
+            }
+
+            // The cached list arrives ordered by artist name, so A-Z ascending needs no work at all.
+            var ordered = sort?.ToLowerInvariant() switch
+            {
+                "tracks" => Sorted(list, (a, b) => a.TrackCount.CompareTo(b.TrackCount), descending),
+                _ => descending ? list.Reverse().ToList() : list,
+            };
+
+            return Ok(Window(ordered, a => a.Artist, search, startsWith, limit, offset).Select(SignArtist).ToList());
         }
 
         /// <summary>Returns recently added albums (by index time).</summary>
@@ -1155,8 +1205,77 @@ namespace resonance.MusicLibrary.API
         private IActionResult? NotModifiedOrNull(string etag)
         {
             Response.Headers.ETag = etag;
+
+            // Without an explicit directive a browser has no freshness signal and may not store the
+            // response at all, so it never gets to revalidate and re-downloads the full list every
+            // time. "no-cache" means store it but always revalidate — which is exactly the 304 path
+            // below. private, because these responses are per-account.
+            Response.Headers.CacheControl = "private, no-cache";
             return ClientHasETag(etag) ? StatusCode(StatusCodes.Status304NotModified) : null;
         }
+
+        // ── List paging (artists/albums) ────────────────────────────────────────
+        // These lists are aggregates over the whole library (~14k rows each), so they are paged in
+        // memory off the existing 5-minute cache rather than in SQL: the full list is already
+        // resident, and ordering/slicing it costs microseconds next to re-running the GROUP BY.
+        // Omitting `limit` returns the list exactly as before — the path mobile still uses.
+
+        // The A-Z rail bucket for a display string. Mirrors the client's alphaKey() and the
+        // repository's FirstChar()/AlphaLetters SQL so a letter means the same thing whether the
+        // list is paged in SQL (tracks) or in memory (artists/albums).
+        private string AlphaBucket(string value)
+        {
+            var trimmed = value?.Trim();
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                return "#";
+            }
+
+            var first = char.ToUpperInvariant(trimmed[0]);
+            return first is >= 'A' and <= 'Z' ? first.ToString() : "#";
+        }
+
+        private IReadOnlyList<T> Sorted<T>(IReadOnlyList<T> list, Comparison<T> comparison, bool descending)
+        {
+            var copy = list.ToList();
+            copy.Sort(descending ? (a, b) => comparison(b, a) : comparison);
+            return copy;
+        }
+
+        // Applies the search and A-Z rail filters and the offset/limit window, reporting the
+        // pre-window total in X-Total-Count so the client knows how far it can keep scrolling.
+        // `name` doubles as the search field and the A-Z bucket key — for these lists they are
+        // the same thing (the artist's or album's display name).
+        private IReadOnlyList<T> Window<T>(IReadOnlyList<T> list, Func<T, string> name, string search, string startsWith, int? limit, int offset)
+        {
+            var rows = list;
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var needle = search.Trim();
+                rows = rows.Where(x => (name(x) ?? string.Empty).Contains(needle, StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+
+            if (!string.IsNullOrWhiteSpace(startsWith))
+            {
+                rows = rows.Where(x => AlphaBucket(name(x)) == AlphaBucket(startsWith)).ToList();
+            }
+
+            Response.Headers["X-Total-Count"] = rows.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+            return limit is null
+                ? rows
+                : rows.Skip(Math.Max(0, offset)).Take(Math.Max(1, limit.Value)).ToList();
+        }
+
+        // Two windows over the same unchanged list are different bytes, so they must not validate
+        // against each other. An unwindowed request keeps the bare content ETag byte-identical to
+        // what it was before paging existed — clients with a persisted ETag don't get forced into
+        // a pointless full re-sync.
+        private string PageETag(string etag, string sort, bool descending, string search, string startsWith, int? limit, int offset)
+            => limit is null && !descending && string.IsNullOrWhiteSpace(sort) && string.IsNullOrWhiteSpace(search) && string.IsNullOrWhiteSpace(startsWith)
+                ? etag
+                : $"\"{etag.Trim('"')}-{sort}-{descending}-{search}-{startsWith}-{offset}-{limit}\"";
 
         // ── Signature stamping ──────────────────────────────────────────────────
         // Embed a fresh path-scoped signature so the client can build signed artwork/stream URLs
