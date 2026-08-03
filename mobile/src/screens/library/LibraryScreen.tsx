@@ -337,6 +337,26 @@ const TrackMetaRight = React.memo(({ item }: { item: MusicTrack }) => {
 });
 TrackMetaRight.displayName = 'TrackMetaRight';
 
+// Artist and album under a track title, one per line rather than joined with a dot. Takes plain
+// strings so the playlist editor's own row type can use it too. `extra` is appended to the artist
+// line (the "· device" marker), and keeps that line alive when there's no artist to hang it on.
+const RowArtistAlbum = React.memo(({ artist, album, extra }: {
+  artist?: string | null;
+  album?: string | null;
+  extra?: React.ReactNode;
+}) => {
+  const { s } = useLibStyles();
+  return (
+    <>
+      {(artist || extra) && (
+        <Text style={s.rowMeta} numberOfLines={1}>{artist}{extra}</Text>
+      )}
+      {album ? <Text style={s.rowMeta} numberOfLines={1}>{album}</Text> : null}
+    </>
+  );
+});
+RowArtistAlbum.displayName = 'RowArtistAlbum';
+
 // Tap a field to sort by it; tap again to flip direction.
 function useSort(defaultField: string | null = null, defaultDir: SortDir = 'asc') {
   const [sortBy, setSortBy] = useState<string | null>(defaultField);
@@ -1727,12 +1747,13 @@ function TracksTab() {
         />
         <View style={s.rowInfo}>
           <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
-          <Text style={s.rowMeta} numberOfLines={1}>
-            {[item.artist, item.album].filter(Boolean).join(' · ')}
-            {clientMode && !mergeLocalAndServer && local && (
-              <Text style={{ color: '#e08030' }}> · device</Text>
-            )}
-          </Text>
+          <RowArtistAlbum
+            artist={item.artist}
+            album={item.album}
+            extra={clientMode && !mergeLocalAndServer && local
+              ? <Text style={{ color: '#e08030' }}> · device</Text>
+              : undefined}
+          />
         </View>
         <TrackMetaRight item={item} />
         <Pressable onPress={() => setActionTrack(item)} hitSlop={8} style={s.moreBtn}>
@@ -1880,9 +1901,7 @@ function LovedTab() {
       />
       <View style={s.rowInfo}>
         <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
-        <Text style={s.rowMeta} numberOfLines={1}>
-          {[item.artist, item.album].filter(Boolean).join(' · ')}
-        </Text>
+        <RowArtistAlbum artist={item.artist} album={item.album} />
       </View>
       <Pressable onPress={() => toggleLove(item.path)} hitSlop={8} style={s.moreBtn}>
         <Ionicons name="heart" size={18} color="#e05a7a" />
@@ -3125,9 +3144,7 @@ function GenreDetail({ route }: GenreDetailProps) {
       <ArtworkBox path={getTrackArtworkPath(item)} size={42} />
       <View style={s.rowInfo}>
         <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
-        <Text style={s.rowMeta} numberOfLines={1}>
-          {[item.artist, item.album].filter(Boolean).join(' · ')}
-        </Text>
+        <RowArtistAlbum artist={item.artist} album={item.album} />
       </View>
       <TrackMetaRight item={item} />
       <Pressable onPress={() => setActionTrack(item)} hitSlop={8} style={s.moreBtn}>
@@ -3344,9 +3361,7 @@ function YearDetail({ route }: YearDetailProps) {
       <ArtworkBox path={getTrackArtworkPath(item)} size={42} />
       <View style={s.rowInfo}>
         <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
-        <Text style={s.rowMeta} numberOfLines={1}>
-          {[item.artist, item.album].filter(Boolean).join(' · ')}
-        </Text>
+        <RowArtistAlbum artist={item.artist} album={item.album} />
       </View>
       <TrackMetaRight item={item} />
       <Pressable onPress={() => setActionTrack(item)} hitSlop={8} style={s.moreBtn}>
@@ -3548,9 +3563,7 @@ function FolderDetail({ route }: FolderDetailProps) {
       />
       <View style={s.rowInfo}>
         <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
-        <Text style={s.rowMeta} numberOfLines={1}>
-          {[item.artist, item.album].filter(Boolean).join(' · ')}
-        </Text>
+        <RowArtistAlbum artist={item.artist} album={item.album} />
       </View>
       <TrackMetaRight item={item} />
       <Pressable onPress={() => setActionTrack(item)} hitSlop={8} style={s.moreBtn}>
@@ -3985,11 +3998,7 @@ function PlaylistDetail({ route, navigation: nav }: PlaylistDetailProps) {
               <ArtworkBox path={item.filePath} size={36} />
               <View style={s.rowInfo}>
                 <Text style={s.rowTitle} numberOfLines={1}>{displayTitle}</Text>
-                {(item.artist || item.album) && (
-                  <Text style={s.rowMeta} numberOfLines={1}>
-                    {[item.artist, item.album].filter(Boolean).join(' · ')}
-                  </Text>
-                )}
+                <RowArtistAlbum artist={item.artist} album={item.album} />
               </View>
               <Text style={s.trackDur}>{formatDuration(item.duration)}</Text>
               <Pressable
