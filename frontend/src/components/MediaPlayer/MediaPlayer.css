@@ -1012,17 +1012,15 @@
   border-radius: 3px;
 }
 
+/* The panel the waveform is drawn on comes from the theme (--wave-bg in
+   App.css), not from a fixed CDJ-dark hex: the canvas picks its band palette
+   and blend mode from the same token set, so the two always agree about how
+   dark the surface behind the bars is. */
 .mp-waveform-seeker {
   position: relative;
   flex: 1;
   height: 40px;
-}
-
-/* The Pioneer/rekordbox palette (blue/orange/white) is designed for a dark
-   CDJ-style screen — give it one regardless of site theme, or the white
-   "high" band washes out on the light theme's bright background. */
-.mp-waveform-seeker--bands {
-  background: #14161c;
+  background: var(--wave-bg, transparent);
   border-radius: 4px;
 }
 

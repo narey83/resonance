@@ -29,7 +29,34 @@
 
 // Shared waveform rendering, so the library preview, the analysis row viewer and
 // the player's seek bar all draw a track the same way.
-export const BAND_COLOURS = { high: '#f5f5f5', low: '#2f6fed', mid: '#ff8a3d' };
+
+// Canvas can't read a CSS variable, so the band blend mode arrives as text like
+// any other theme token — a typo there would silently break the blending, so
+// only the two values that mean anything here are honoured.
+const BLEND_MODES = ['lighter', 'multiply'];
+
+/**
+ * Reads the active theme's waveform palette off the element about to be drawn
+ * into. The Pioneer/rekordbox identity (blue lows, orange mids, bright highs) is
+ * built for a dark CDJ screen and blends additively; on a light surface that
+ * saturates to white, so a light theme supplies deeper hues and multiplies them
+ * instead — same reading, opposite direction. Keeping the palette in the theme
+ * rather than in a canvas constant is what lets both work.
+ * @param {HTMLElement} element the canvas (or its wrapper) to read tokens from.
+ * @returns {object} the three band colours and the blend mode to combine them.
+ */
+export const waveColours = (element) => {
+  const style = getComputedStyle(element);
+  const token = (name, fallback) =>
+    style.getPropertyValue(name).trim() || fallback;
+  const blend = token('--wave-blend', 'lighter');
+  return {
+    blend: BLEND_MODES.includes(blend) ? blend : 'lighter',
+    high: token('--wave-high', '#f5f5f5'),
+    low: token('--wave-low', '#2f6fed'),
+    mid: token('--wave-mid', '#ff8a3d'),
+  };
+};
 
 /**
  * Picks how much audio one beat-grid line should span, so the grid is never
@@ -67,15 +94,35 @@ export const beatGridSeconds = (bpm, pixelsPerSecond, minSpacing) => {
 // where an individual transient is the thing worth seeing.
 const RMS_ABOVE = 4;
 
-const aggregate = (data, slots, perSlot) => {
+/**
+ * Resamples a [startFrac, endFrac) slice of stored peaks into one value per
+ * drawn slot. Bucket bounds are proportional (float) rather than a fixed
+ * integer stride: an integer stride leaves a truncated, unsampled tail whenever
+ * the slice length isn't an exact multiple of the slot count, which silently
+ * compresses the back of the picture relative to the audio.
+ * @param {Float32Array} data one band of stored peaks.
+ * @param {number} slots how many values to produce.
+ * @param {number} [startFrac] start of the slice, as a fraction of the track.
+ * @param {number} [endFrac] end of the slice, as a fraction of the track.
+ * @returns {Float32Array} one summary value per slot.
+ */
+export const resamplePeaks = (data, slots, startFrac = 0, endFrac = 1) => {
+  const sliceStart = startFrac * data.length;
+  const sliceLength = (endFrac - startFrac) * data.length;
   const out = new Float32Array(slots);
-  const useRms = perSlot >= RMS_ABOVE;
+  const useRms = sliceLength / slots >= RMS_ABOVE;
 
   for (let slot = 0; slot < slots; slot++) {
-    const start = Math.floor(slot * perSlot);
+    const start = Math.max(
+      0,
+      Math.floor(sliceStart + (slot / slots) * sliceLength),
+    );
     const end = Math.min(
       data.length,
-      Math.max(start + 1, Math.floor((slot + 1) * perSlot)),
+      Math.max(
+        start + 1,
+        Math.floor(sliceStart + ((slot + 1) / slots) * sliceLength),
+      ),
     );
     if (end <= start) continue;
 
@@ -93,11 +140,15 @@ const aggregate = (data, slots, perSlot) => {
   return out;
 };
 
-// Normalising against the raw global peak leaves every RMS bar tiny, and against a
-// track's loudest instant leaves a limited master flat. Each band is scaled by the
-// largest value actually being drawn, so the picture uses its full height whatever
-// the source material.
-const maxOf = (array) => {
+/**
+ * Normalising against the raw global peak leaves every RMS bar tiny, and against
+ * a track's loudest instant leaves a limited master flat. Each band is scaled by
+ * the largest value actually being drawn, so the picture uses its full height
+ * whatever the source material.
+ * @param {Float32Array} array the values about to be drawn.
+ * @returns {number} the largest, never zero.
+ */
+export const maxOf = (array) => {
   let max = 0;
   for (const v of array) if (v > max) max = v;
   return max || 1;
@@ -149,17 +200,18 @@ export const drawWaveform = (canvas, peaks, options) => {
   const { high, low, mid, overall } = peaks;
   const halfH = height / 2;
   const slots = Math.max(1, Math.floor(width / (barWidth + gap)));
-  const perSlot = overall.length / slots;
 
-  const o = aggregate(overall, slots, perSlot);
-  const l = aggregate(low, slots, perSlot);
-  const m = aggregate(mid, slots, perSlot);
-  const h = aggregate(high, slots, perSlot);
+  const o = resamplePeaks(overall, slots);
+  const l = resamplePeaks(low, slots);
+  const m = resamplePeaks(mid, slots);
+  const h = resamplePeaks(high, slots);
 
   const max = maxOf(o);
   const lowMax = maxOf(l);
   const midMax = maxOf(m);
   const highMax = maxOf(h);
+  const bands = mono ? null : waveColours(canvas);
+  if (bands) context.globalCompositeOperation = bands.blend;
 
   for (let slot = 0; slot < slots; slot++) {
     const totalH = Math.max(1, (o[slot] / max) * halfH);
@@ -172,20 +224,22 @@ export const drawWaveform = (canvas, peaks, options) => {
     }
 
     // Alpha per band rather than stacked slices: a kick-heavy instant reads
-    // solid blue, a hat-heavy one white, a full mix blends toward grey. The
-    // 1.4/0.9 weights keep bass and highs perceptually level against mids.
+    // solid blue, a hat-heavy one as the "high" colour, a full mix blends to
+    // neutral. The 1.4/0.9 weights keep bass and highs perceptually level
+    // against mids.
     context.globalAlpha = Math.min(1, (l[slot] / lowMax) * 1.4);
-    context.fillStyle = BAND_COLOURS.low;
+    context.fillStyle = bands.low;
     context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
 
     context.globalAlpha = Math.min(1, m[slot] / midMax);
-    context.fillStyle = BAND_COLOURS.mid;
+    context.fillStyle = bands.mid;
     context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
 
     context.globalAlpha = Math.min(1, (h[slot] / highMax) * 0.9);
-    context.fillStyle = BAND_COLOURS.high;
+    context.fillStyle = bands.high;
     context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
   }
 
   context.globalAlpha = 1;
+  context.globalCompositeOperation = 'source-over';
 };
