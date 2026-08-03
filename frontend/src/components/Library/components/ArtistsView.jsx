@@ -32,6 +32,7 @@ import { getArtistPage, getTrackPage } from '../../../lib/musicLibrary';
 import * as prefs from '../../../lib/prefs';
 import { usePagedList } from '../../../lib/usePagedList';
 import AlphaFilterChip from './AlphaFilterChip';
+import ResetViewButton from './ResetViewButton';
 import SortButton from './SortButton';
 import TrackTable from './TrackTable';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -153,6 +154,7 @@ const ArtistDetail = ({ artist, onBack, onContextMenu, onPlayArtist }) => {
 
 const ArtistsView = ({
   alphaHandlerRef,
+  onAlphaEnabled,
   onContextMenu,
   onPlayArtist,
   scrollContainerRef,
@@ -244,6 +246,25 @@ const ArtistsView = ({
     };
   }, [alphaHandlerRef, jumpToLetter, selected]);
 
+  // The rail buckets by name, so it only means anything while the list is in name order.
+  const alphaApplies = sortBy === 'name' && sortDir === 'asc' && !selected;
+  useEffect(() => {
+    onAlphaEnabled?.(alphaApplies);
+  }, [alphaApplies, onAlphaEnabled]);
+
+  const isDefaultView =
+    sortBy === 'name' && sortDir === 'asc' && !letter && !artistFilter;
+
+  const resetView = () => {
+    setSortBy('name');
+    setSortDir('asc');
+    setLetter(null);
+    setArtistFilter('');
+    setFilterActive(false);
+    prefs.set('resonance-artists-sort-by', 'name');
+    prefs.set('resonance-artists-sort-dir', 'asc');
+  };
+
   const lastIndex = virtualizer.getVirtualItems().at(-1)?.index ?? -1;
   useEffect(() => {
     if (lastIndex >= flatItems.length - 20) loadMore();
@@ -302,6 +323,10 @@ const ArtistsView = ({
         <AlphaFilterChip
           letter={letter}
           onClear={() => setLetter(null)}
+        />
+        <ResetViewButton
+          hidden={isDefaultView}
+          onReset={resetView}
         />
         <span className="jb-sort-bar-count">
           {total.toLocaleString()} {total === 1 ? 'artist' : 'artists'}

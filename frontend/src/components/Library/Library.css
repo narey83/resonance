@@ -393,6 +393,33 @@
   background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
+.jb-reset-view {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.jb-reset-view:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+/* The rail buckets by the ordering column, so it is only meaningful while the list is sorted
+   alphabetically. Dimmed rather than removed — pulling 27 buttons out of the layout every
+   time the sort changes is more jarring than greying them. */
+.jb-alpha-strip--disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
 .jb-alpha-btn:hover {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);

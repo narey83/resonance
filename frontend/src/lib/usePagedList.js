@@ -206,9 +206,23 @@ export const usePagedTracks = (
     [filter],
   );
 
+  const reset = useCallback(() => {
+    setSortCol(defaultSort);
+    setSortDir('asc');
+    setLetter(null);
+    setFilter('');
+  }, [defaultSort]);
+
   return {
+    // The A-Z rail buckets by the column the list is ordered by, so its letters only mean
+    // what they appear to mean while that column is the alphabetical one. Sorted by BPM, "S"
+    // is nonsense — the view disables the rail rather than answering a question it can't.
+    alphaApplies: sortCol === defaultSort && sortDir === 'asc',
     clearLetter: useCallback(() => setLetter(null), []),
+    isDefaultView:
+      sortCol === defaultSort && sortDir === 'asc' && !letter && !filter,
     letter,
+    reset,
     total: page.total,
     trackTableProps: {
       loading: page.loading,

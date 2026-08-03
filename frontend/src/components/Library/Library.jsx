@@ -76,6 +76,7 @@ import ArtistsView from './components/ArtistsView';
 import FolderView from './components/FolderView';
 import GenreView from './components/GenreView';
 import PlayHistoryView from './components/PlayHistoryView';
+import ResetViewButton from './components/ResetViewButton';
 import SortButton from './components/SortButton';
 import TrackTable from './components/TrackTable';
 import YearView from './components/YearView';
@@ -168,11 +169,18 @@ const NAV_ITEMS = [
 
 const ALPHA_LETTERS = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')];
 
-const AlphaStrip = ({ handlerRef }) => (
-  <div className="jb-alpha-strip">
+// `disabled` when the list isn't sorted alphabetically: the rail narrows the query to a
+// letter bucket of the ordering column, so under a BPM or date sort its letters would answer
+// a question the ordering can't ask. Left visible but inert, with the reason in the tooltip.
+const AlphaStrip = ({ disabled, handlerRef }) => (
+  <div
+    className={`jb-alpha-strip${disabled ? ' jb-alpha-strip--disabled' : ''}`}
+    title={disabled ? 'Sort by name to jump to a letter' : undefined}
+  >
     {ALPHA_LETTERS.map((l) => (
       <button
         className="jb-alpha-btn hover-fx"
+        disabled={disabled}
         key={l}
         onClick={() => handlerRef.current?.(l)}
         type="button"
@@ -1938,6 +1946,7 @@ const MixtapesView = ({
 
 const TracksView = ({
   alphaHandlerRef,
+  onAlphaEnabled,
   onContextMenu,
   onDeleteTracks,
   onExportTracks,
@@ -1946,10 +1955,19 @@ const TracksView = ({
   // Title A-Z by default. The server buckets the A-Z rail by whatever column the list is
   // ordered by, so sorting by title is what makes the rail's letters agree with the titles
   // on screen — and it's the order this view has always opened in.
-  const { clearLetter, letter, total, trackTableProps } = usePagedTracks(
-    {},
-    { defaultSort: 'title' },
-  );
+  const {
+    alphaApplies,
+    clearLetter,
+    isDefaultView,
+    letter,
+    reset,
+    total,
+    trackTableProps,
+  } = usePagedTracks({}, { defaultSort: 'title' });
+
+  useEffect(() => {
+    onAlphaEnabled?.(alphaApplies);
+  }, [alphaApplies, onAlphaEnabled]);
 
   const tracks = useMemo(
     () =>
@@ -1969,6 +1987,10 @@ const TracksView = ({
         <AlphaFilterChip
           letter={letter}
           onClear={clearLetter}
+        />
+        <ResetViewButton
+          hidden={isDefaultView}
+          onReset={reset}
         />
       </div>
       <TrackTable
@@ -2629,6 +2651,7 @@ const HomeView = ({
 const IssuesView = ({
   alphaHandlerRef,
   initialIssue,
+  onAlphaEnabled,
   onContextMenu,
   onCountChange,
 }) => {
@@ -2639,6 +2662,12 @@ const IssuesView = ({
   const [counts, setCounts] = useState({});
   const [loading, setLoading] = useState(false);
   const { playQueue } = usePlayer();
+
+  // This list is fetched whole and jumped through client-side, so the rail always applies —
+  // said explicitly so a disabled rail left behind by another view doesn't persist here.
+  useEffect(() => {
+    onAlphaEnabled?.(true);
+  }, [onAlphaEnabled]);
 
   useEffect(() => {
     const loadCounts = async () => {
@@ -2861,6 +2890,10 @@ const Library = () => {
   const searchRef = useRef(null);
   const viewScrollRef = useRef(null);
   const alphaHandlerRef = useRef(null);
+
+  // Whether the active view's current ordering makes the A-Z rail meaningful. The views own
+  // their own sort state, so each reports it rather than Library trying to track theirs.
+  const [alphaEnabled, setAlphaEnabled] = useState(true);
   const current = navStack[navStack.length - 1];
   const activeView = current.view;
 
@@ -3732,6 +3765,7 @@ const Library = () => {
               })
             }
             onAlbumContextMenu={openAlbumContextMenu}
+            onAlphaEnabled={setAlphaEnabled}
             onPlayAlbum={(album) => playQuery(albumTrackParams(album))}
             onShuffleAlbum={(album) => playQuery(albumTrackParams(album))}
             scrollContainerRef={viewScrollRef}
@@ -3746,6 +3780,7 @@ const Library = () => {
           <IssuesView
             alphaHandlerRef={alphaHandlerRef}
             initialIssue={current.params?.initialIssue}
+            onAlphaEnabled={setAlphaEnabled}
             onContextMenu={openContextMenu}
             onCountChange={setIssueCounts}
           />
@@ -3755,6 +3790,7 @@ const Library = () => {
         return (
           <ArtistsView
             alphaHandlerRef={alphaHandlerRef}
+            onAlphaEnabled={setAlphaEnabled}
             onContextMenu={openContextMenu}
             onPlayArtist={(a) => playQuery({ artist: a.artist })}
             scrollContainerRef={viewScrollRef}
@@ -3765,6 +3801,7 @@ const Library = () => {
         return (
           <TracksView
             alphaHandlerRef={alphaHandlerRef}
+            onAlphaEnabled={setAlphaEnabled}
             onContextMenu={openContextMenu}
             onDeleteTracks={handleDeleteTracks}
             onExportTracks={
@@ -3821,6 +3858,7 @@ const Library = () => {
             initialFolder={current.params?.initialFolder ?? null}
             loading={loadingFolders}
             mixtapes={playlists}
+            onAlphaEnabled={setAlphaEnabled}
             onContextMenu={openContextMenu}
             onDeleteTracks={handleDeleteTracks}
             onFolderContextMenu={openFolderContextMenu}
@@ -4149,7 +4187,12 @@ const Library = () => {
           >
             {renderView()}
           </div>
-          {showAlphaStrip && <AlphaStrip handlerRef={alphaHandlerRef} />}
+          {showAlphaStrip && (
+            <AlphaStrip
+              disabled={!alphaEnabled}
+              handlerRef={alphaHandlerRef}
+            />
+          )}
         </div>
       </div>
 

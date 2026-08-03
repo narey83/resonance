@@ -32,6 +32,7 @@ import { usePagedList } from '../../../lib/usePagedList';
 import { formatIndexedAt } from '../../../lib/util';
 import AlbumArt from './AlbumArt';
 import AlphaFilterChip from './AlphaFilterChip';
+import ResetViewButton from './ResetViewButton';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ArrowDownAZ, ArrowUpAZ, Play, Shuffle } from 'lucide-react';
 import React, {
@@ -50,6 +51,7 @@ const AlbumsView = ({
   alphaHandlerRef,
   onAlbum,
   onAlbumContextMenu,
+  onAlphaEnabled,
   onPlayAlbum,
   onShuffleAlbum,
   scrollContainerRef,
@@ -66,7 +68,7 @@ const AlbumsView = ({
   const [sortDir, setSortDir] = useState('asc');
   const [letter, setLetter] = useState(null);
   const [containerWidth, setContainerWidth] = useState(0);
-  const gridRef = useRef(null);
+  const resizeObserverRef = useRef(null);
 
   // ~19k album groups: ordering and the A-Z rail are query parameters, not things we can work
   // out from the window currently in memory.
@@ -87,17 +89,27 @@ const AlbumsView = ({
     setSortDir(DEFAULT_DIR[newSortBy] ?? 'asc');
   };
 
-  // Track container width for grid column calculation
-  useEffect(() => {
-    const element = gridRef.current;
-    if (!element) return undefined;
+  // Tracks the container width, which decides how many tiles fit per row.
+  //
+  // A callback ref rather than an effect: the grid is behind the loading early-return, so it
+  // isn't in the DOM on first render. An effect keyed on viewMode would run once against a null
+  // ref, bail, and never re-run once the albums arrived — leaving containerWidth at 0, cols at
+  // 0, and the tile grid rendering nothing at all. This fires whenever the node actually
+  // mounts or unmounts.
+  const gridRef = useCallback((element) => {
+    resizeObserverRef.current?.disconnect();
+    resizeObserverRef.current = null;
+    if (!element) return;
+
     const ro = new ResizeObserver(([entry]) =>
       setContainerWidth(entry.contentRect.width),
     );
     ro.observe(element);
+    resizeObserverRef.current = ro;
     setContainerWidth(element.getBoundingClientRect().width);
-    return () => ro.disconnect();
-  }, [viewMode]);
+  }, []);
+
+  useEffect(() => () => resizeObserverRef.current?.disconnect(), []);
 
   const cols =
     containerWidth > 0
@@ -149,6 +161,20 @@ const AlbumsView = ({
     };
   }, [alphaHandlerRef, jumpToLetter]);
 
+  // The rail buckets by album name, so it only means anything in name order.
+  const alphaApplies = sortBy === 'name' && sortDir === 'asc';
+  useEffect(() => {
+    onAlphaEnabled?.(alphaApplies);
+  }, [alphaApplies, onAlphaEnabled]);
+
+  const isDefaultView = alphaApplies && !letter;
+
+  const resetView = () => {
+    setSortBy('name');
+    setSortDir('asc');
+    setLetter(null);
+  };
+
   const lastListIndex = listVirtualizer.getVirtualItems().at(-1)?.index ?? -1;
   const lastGridIndex = gridVirtualizer.getVirtualItems().at(-1)?.index ?? -1;
   useEffect(() => {
@@ -198,6 +224,10 @@ const AlbumsView = ({
         <AlphaFilterChip
           letter={letter}
           onClear={() => setLetter(null)}
+        />
+        <ResetViewButton
+          hidden={isDefaultView}
+          onReset={resetView}
         />
         <div className="jb-section-controls">
           <select

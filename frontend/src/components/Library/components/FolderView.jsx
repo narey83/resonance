@@ -33,6 +33,7 @@ import { usePagedTracks } from '../../../lib/usePagedList';
 import { formatIndexedAt } from '../../../lib/util';
 import AlbumArt from './AlbumArt';
 import AlphaFilterChip from './AlphaFilterChip';
+import ResetViewButton from './ResetViewButton';
 import SortButton from './SortButton';
 import TrackTable from './TrackTable';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -175,6 +176,7 @@ const FolderView = ({
   initialFolder,
   loading,
   mixtapes = [],
+  onAlphaEnabled,
   onContextMenu,
   onDeleteTracks,
   onFolderContextMenu,
@@ -187,13 +189,16 @@ const FolderView = ({
   const [selected, setSelected] = useState(null);
 
   const {
+    alphaApplies: trackAlphaApplies,
     clearLetter,
+    isDefaultView: tracksAreDefault,
     letter,
+    reset: resetTracks,
     total: trackTotal,
     trackTableProps,
   } = usePagedTracks(
     { folder: selected?.path },
-    { enabled: Boolean(selected) },
+    { defaultSort: 'title', enabled: Boolean(selected) },
   );
 
   const tracks = useMemo(
@@ -232,6 +237,21 @@ const FolderView = ({
       prefs.set('resonance-folders-sort-by', field);
       prefs.set('resonance-folders-sort-dir', 'asc');
     }
+  };
+
+  // Two lists share this view and the rail: the folder list itself (sorted here, in memory)
+  // and the selected folder's paged tracks. Whichever is on screen decides.
+  const foldersAreDefault = sortBy === 'name' && sortDir === 'asc';
+  const alphaApplies = selected ? trackAlphaApplies : foldersAreDefault;
+  useEffect(() => {
+    onAlphaEnabled?.(alphaApplies);
+  }, [alphaApplies, onAlphaEnabled]);
+
+  const resetFolders = () => {
+    setSortBy('name');
+    setSortDir('asc');
+    prefs.set('resonance-folders-sort-by', 'name');
+    prefs.set('resonance-folders-sort-dir', 'asc');
   };
 
   useEffect(() => {
@@ -312,6 +332,10 @@ const FolderView = ({
             letter={letter}
             onClear={clearLetter}
           />
+          <ResetViewButton
+            hidden={tracksAreDefault}
+            onReset={resetTracks}
+          />
           <div className="jb-section-controls">
             <button
               className="jb-btn jb-btn--primary"
@@ -357,6 +381,10 @@ const FolderView = ({
           onSort={setSort}
           sortBy={sortBy}
           sortDir={sortDir}
+        />
+        <ResetViewButton
+          hidden={foldersAreDefault}
+          onReset={resetFolders}
         />
       </div>
       {viewMode === 'list' ? (
