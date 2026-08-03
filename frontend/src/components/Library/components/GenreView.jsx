@@ -27,98 +27,23 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { genreHue, hueColour } from '../../../lib/accentHue';
+import { alphaKey } from '../../../lib/alphaBucket';
 import * as prefs from '../../../lib/prefs';
 import { usePagedTracks } from '../../../lib/usePagedList';
-import AlphaFilterChip from './AlphaFilterChip';
-import SortButton from './SortButton';
+import { trackCountLabel } from '../../../lib/util';
+import LibraryDetailHeader from './LibraryDetailHeader';
+import LibraryViewHeader from './LibraryViewHeader';
 import TrackTable from './TrackTable';
-import { ChevronLeft, Play, X } from 'lucide-react';
+import { Play } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 
-// Ordered by specificity — more specific keywords first
-const GENRE_HUES = [
-  ['drum and bass', 195],
-  ['drum n bass', 195],
-  ['dnb', 195],
-  ['hip hop', 45],
-  ['hip-hop', 45],
-  ['r&b', 285],
-  ['rnb', 285],
-  ['neo soul', 280],
-  ['bossa nova', 35],
-  ['new wave', 200],
-  ['post punk', 10],
-  ['post rock', 5],
-  ['prog rock', 355],
-  ['nu metal', 350],
-  ['death metal', 0],
-  ['black metal', 350],
-  ['heavy metal', 355],
-  ['metal', 0],
-  ['punk', 10],
-  ['grunge', 25],
-  ['shoegaze', 220],
-  ['indie', 195],
-  ['alternative', 170],
-  ['rock', 0],
-  ['techno', 195],
-  ['trance', 280],
-  ['house', 265],
-  ['ambient', 210],
-  ['industrial', 215],
-  ['experimental', 225],
-  ['electronic', 185],
-  ['synth', 200],
-  ['edm', 190],
-  ['bass', 205],
-  ['rap', 40],
-  ['trap', 30],
-  ['grime', 35],
-  ['hip', 45],
-  ['jazz', 38],
-  ['blues', 230],
-  ['soul', 280],
-  ['funk', 42],
-  ['gospel', 50],
-  ['classical', 220],
-  ['orchestral', 225],
-  ['opera', 230],
-  ['baroque', 215],
-  ['chamber', 200],
-  ['disco', 330],
-  ['dance', 300],
-  ['pop', 320],
-  ['country', 30],
-  ['folk', 100],
-  ['bluegrass', 110],
-  ['reggae', 120],
-  ['ska', 115],
-  ['latin', 25],
-  ['samba', 20],
-  ['world', 130],
-  ['afro', 40],
-];
-
-const getGenreHue = (genre) => {
-  const lower = (genre || '').toLowerCase();
-  for (const [keyword, hue] of GENRE_HUES) {
-    if (lower.includes(keyword)) return hue;
-  }
-
-  let hash = 0;
-  for (let index = 0; index < genre.length; index++) {
-    hash = ((genre.codePointAt(index) || 0) + hash * 31) % 2_147_483_647;
-  }
-
-  return hash % 360;
-};
-
-const genreColor = (hue) => `hsl(${hue} 65% 55%)`;
-
 const GenreView = ({
+  alphaHandlerRef,
   genres,
   initialSelected = null,
   loading,
+  onAlphaEnabled,
   onContextMenu,
   onPlayGenre,
   tileSize = 160,
@@ -135,22 +60,55 @@ const GenreView = ({
     );
   }, [genres, initialSelected]);
   const {
+    alphaApplies: trackAlphaApplies,
     clearLetter,
+    isDefaultView: tracksAreDefault,
     letter,
+    reset: resetTracks,
     total: trackTotal,
     trackTableProps,
   } = usePagedTracks(
     { genre: selected?.genre },
-    { enabled: Boolean(selected) },
+    { defaultSort: 'title', enabled: Boolean(selected) },
   );
   const [genreFilter, setGenreFilter] = useState('');
-  const [filterActive, setFilterActive] = useState(false);
+  const [listLetter, setListLetter] = useState(null);
   const [sortBy, setSortBy] = useState(() =>
     prefs.get('resonance-genres-sort-by', 'name'),
   );
   const [sortDir, setSortDir] = useState(() =>
     prefs.get('resonance-genres-sort-dir', 'asc'),
   );
+
+  const isDefaultView =
+    sortBy === 'name' && sortDir === 'asc' && !genreFilter && !listLetter;
+
+  const resetView = () => {
+    setSortBy('name');
+    setSortDir('asc');
+    setGenreFilter('');
+    setListLetter(null);
+    prefs.set('resonance-genres-sort-by', 'name');
+    prefs.set('resonance-genres-sort-dir', 'asc');
+  };
+
+  // Genre names are alphabetical, so the rail applies whenever the list is in name order.
+  // Whichever list is on screen owns the rail: the genre list, or the selected genre's tracks.
+  const alphaApplies = selected
+    ? trackAlphaApplies
+    : sortBy === 'name' && sortDir === 'asc';
+  useEffect(() => {
+    onAlphaEnabled?.(alphaApplies);
+  }, [alphaApplies, onAlphaEnabled]);
+
+  useEffect(() => {
+    if (!alphaHandlerRef || selected) return undefined;
+    alphaHandlerRef.current = (next) =>
+      setListLetter((current) => (current === next ? null : next));
+    return () => {
+      alphaHandlerRef.current = null;
+    };
+  }, [alphaHandlerRef, selected]);
 
   const setSort = (field) => {
     if (field === sortBy) {
@@ -165,11 +123,17 @@ const GenreView = ({
     }
   };
 
+  // The rail narrows the list to a letter, the same as it does on the paged views — the
+  // chip says "Starting with S", so it has to mean that everywhere. This list is small and
+  // held whole, so it filters here instead of re-querying.
   const filteredGenres = useMemo(() => {
-    if (!genreFilter) return genres;
     const q = genreFilter.toLowerCase();
-    return genres.filter((g) => g.genre.toLowerCase().includes(q));
-  }, [genreFilter, genres]);
+    return genres.filter(
+      (g) =>
+        (!q || g.genre.toLowerCase().includes(q)) &&
+        (!listLetter || alphaKey(g.genre) === listLetter),
+    );
+  }, [genreFilter, genres, listLetter]);
 
   const sortedGenres = useMemo(() => {
     const copy = [...filteredGenres];
@@ -201,147 +165,74 @@ const GenreView = ({
   }
 
   if (selected) {
-    const hue = getGenreHue(selected.genre);
-    const color = genreColor(hue);
     return (
-      <div className="jb-year-detail">
-        <div
-          className="jb-year-detail-header"
-          style={{
-            background: `color-mix(in srgb, ${color} 10%, var(--bg-primary))`,
-            borderBottomColor: `color-mix(in srgb, ${color} 25%, var(--border))`,
-          }}
-        >
-          <button
-            className="jb-icon-btn"
-            onClick={() => setSelected(null)}
-            title="Back"
-            type="button"
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <div style={{ flex: 1 }}>
-            <div
-              className="jb-year-detail-title"
-              style={{ color }}
+      <div className="jb-detail-view">
+        <LibraryDetailHeader
+          actions={
+            <button
+              className="jb-btn jb-btn--primary"
+              onClick={() => onPlayGenre?.(selected)}
+              type="button"
             >
-              {selected.genre}
-            </div>
-            <div className="jb-year-detail-meta">
-              {(trackTotal || selected.trackCount || 0).toLocaleString()} tracks
-            </div>
-          </div>
-          <AlphaFilterChip
-            letter={letter}
-            onClear={clearLetter}
-          />
-          <button
-            className="jb-btn jb-btn--primary"
-            onClick={() => onPlayGenre?.(selected)}
-            type="button"
-          >
-            <Play size={13} /> Play
-          </button>
-        </div>
+              <Play size={13} /> Play
+            </button>
+          }
+          hue={genreHue(selected.genre)}
+          isDefault={tracksAreDefault}
+          letter={letter}
+          meta={trackCountLabel(trackTotal || selected.trackCount || 0)}
+          onBack={() => setSelected(null)}
+          onClearLetter={clearLetter}
+          onReset={resetTracks}
+          title={selected.genre}
+        />
         <TrackTable
           {...trackTableProps}
+          alphaHandlerRef={alphaHandlerRef}
           onContextMenu={onContextMenu}
         />
       </div>
     );
   }
 
-  const sortBar = (
-    <div className="jb-folder-sort-bar">
-      <span className="jb-sort-label">Sort</span>
-      <SortButton
-        field="name"
-        label="A–Z"
-        onSort={setSort}
-        sortBy={sortBy}
-        sortDir={sortDir}
-      />
-      <SortButton
-        field="tracks"
-        label="Tracks"
-        onSort={setSort}
-        sortBy={sortBy}
-        sortDir={sortDir}
-      />
-    </div>
+  const header = (
+    <LibraryViewHeader
+      filter={{
+        onChange: setGenreFilter,
+        placeholder: 'Filter genre…',
+        value: genreFilter,
+      }}
+      isDefault={isDefaultView}
+      letter={listLetter}
+      onClearLetter={() => setListLetter(null)}
+      onReset={resetView}
+      onSort={setSort}
+      sortBy={sortBy}
+      sortDir={sortDir}
+      sorts={[
+        { field: 'name', label: 'A–Z' },
+        { field: 'tracks', label: 'Tracks' },
+      ]}
+      title="Genres"
+      total={sortedGenres.length}
+    />
   );
 
   if (viewMode === 'list') {
     return (
       <>
-        {sortBar}
+        {header}
+        {sortedGenres.length === 0 && (
+          <div className="jb-state">No genres match.</div>
+        )}
         <div className="jb-genre-list-view">
           <div className="jb-genre-list-head">
-            <span>
-              {filterActive ? (
-                <span className="jb-col-filter-wrap">
-                  <input
-                    autoFocus
-                    className="jb-col-filter-input"
-                    onBlur={() => setFilterActive(false)}
-                    onChange={(e) => setGenreFilter(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') {
-                        setGenreFilter('');
-                        setFilterActive(false);
-                      }
-
-                      if (e.key === 'Enter') setFilterActive(false);
-                    }}
-                    placeholder="Filter genre…"
-                    value={genreFilter}
-                  />
-                  {genreFilter && (
-                    <button
-                      className="jb-col-filter-x"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        setGenreFilter('');
-                        setFilterActive(false);
-                      }}
-                      type="button"
-                    >
-                      <X size={9} />
-                    </button>
-                  )}
-                </span>
-              ) : (
-                <button
-                  className={`jb-col-hdr-btn${genreFilter ? ' jb-col-hdr-btn--active' : ''}`}
-                  onClick={() => setFilterActive(true)}
-                  type="button"
-                >
-                  <span className="jb-col-hdr-value">
-                    {genreFilter || 'Genre'}
-                  </span>
-                  {genreFilter && (
-                    <span
-                      className="jb-col-filter-x"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setGenreFilter('');
-                      }}
-                      role="button"
-                      tabIndex={-1}
-                    >
-                      <X size={9} />
-                    </span>
-                  )}
-                </button>
-              )}
-            </span>
+            <span>Genre</span>
             <span>Tracks</span>
             <span />
           </div>
           {sortedGenres.map((genre) => {
-            const hue = getGenreHue(genre.genre);
-            const color = genreColor(hue);
+            const color = hueColour(genreHue(genre.genre));
             return (
               <div
                 className="jb-genre-list-row"
@@ -384,7 +275,10 @@ const GenreView = ({
 
   return (
     <>
-      {sortBar}
+      {header}
+      {sortedGenres.length === 0 && (
+        <div className="jb-state">No genres match.</div>
+      )}
       <div
         className="jb-genre-grid"
         style={{
@@ -392,8 +286,7 @@ const GenreView = ({
         }}
       >
         {sortedGenres.map((genre) => {
-          const hue = getGenreHue(genre.genre);
-          const color = genreColor(hue);
+          const color = hueColour(genreHue(genre.genre));
           return (
             <button
               className="jb-genre-card"
@@ -415,18 +308,27 @@ const GenreView = ({
                 {genre.trackCount} tracks
               </div>
               <div className="jb-album-card-actions">
-                <button
+                {/* div, not button: this sits inside the card's own <button>, and nesting
+                    buttons is invalid HTML. Mirrors FolderCard's play control. */}
+                <div
                   className="jb-icon-btn"
                   onClick={(e) => {
                     e.stopPropagation();
                     onPlayGenre?.(genre);
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.stopPropagation();
+                      onPlayGenre?.(genre);
+                    }
+                  }}
+                  role="button"
                   style={{ background: 'transparent', border: 'none' }}
+                  tabIndex={0}
                   title="Play genre"
-                  type="button"
                 >
                   <Play size={12} />
-                </button>
+                </div>
               </div>
             </button>
           );

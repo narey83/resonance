@@ -28,39 +28,26 @@
 // </copyright>
 
 import useDebounce from '../../../hooks/useDebounce';
-import { getArtistPage, getTrackPage } from '../../../lib/musicLibrary';
+import { nameHue } from '../../../lib/accentHue';
+import { alphaKey } from '../../../lib/alphaBucket';
+import { getArtistPage } from '../../../lib/musicLibrary';
 import * as prefs from '../../../lib/prefs';
-import { usePagedList } from '../../../lib/usePagedList';
-import AlphaFilterChip from './AlphaFilterChip';
-import ResetViewButton from './ResetViewButton';
-import SortButton from './SortButton';
+import { usePagedList, usePagedTracks } from '../../../lib/usePagedList';
+import { trackCountLabel } from '../../../lib/util';
+import AlbumArt from './AlbumArt';
+import LibraryDetailHeader from './LibraryDetailHeader';
+import LibraryViewHeader from './LibraryViewHeader';
 import TrackTable from './TrackTable';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ChevronLeft, Play, Shuffle, X } from 'lucide-react';
+import { Play, Shuffle } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-
-const alphaKey = (s) => {
-  const c = s?.trim()?.[0]?.toUpperCase();
-  return c >= 'A' && c <= 'Z' ? c : '#';
-};
 
 const HEADER_HEIGHT = 28;
 const ROW_HEIGHT = 46;
 
-const nameToHue = (name) => {
-  if (!name) return 0;
-  let hash = 0;
-  for (let index = 0; index < name.length; index++) {
-    // eslint-disable-next-line no-bitwise
-    hash = name.codePointAt(index) + ((hash << 5) - hash);
-  }
-
-  return Math.abs(hash) % 360;
-};
-
 const AvatarCircle = ({ name }) => {
   const initials = name ? name.trim()[0].toUpperCase() : '?';
-  const hue = nameToHue(name);
+  const hue = nameHue(name);
   return (
     <div
       className="jb-artist-avatar"
@@ -70,6 +57,70 @@ const AvatarCircle = ({ name }) => {
     </div>
   );
 };
+
+// Tile equivalent of ArtistRow, mirroring FolderCard so the grids match. Artists rarely have
+// their own artwork, so the avatar circle stays as the fallback — just at tile scale.
+const ArtistCard = ({ artist, onPlay, onSelect, tileSize }) => (
+  <button
+    className="jb-folder-card"
+    onClick={() => onSelect(artist)}
+    title={artist.artist}
+    type="button"
+  >
+    <div className="jb-folder-card-art">
+      {artist.hasArtwork && artist.coverPath ? (
+        <AlbumArt
+          hasArtwork
+          name={artist.artist}
+          path={artist.coverPath}
+          radius={0}
+          size={tileSize}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            minWidth: 'unset',
+          }}
+        />
+      ) : (
+        <div
+          className="jb-artist-tile-avatar"
+          style={{ background: `hsl(${nameHue(artist.artist)}, 45%, 35%)` }}
+        >
+          {artist.artist ? artist.artist.trim()[0].toUpperCase() : '?'}
+        </div>
+      )}
+      <div
+        className="jb-folder-card-play"
+        onClick={(e) => {
+          e.stopPropagation();
+          onPlay(artist);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.stopPropagation();
+            onPlay(artist);
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        title={`Play ${artist.artist}`}
+      >
+        <Play
+          fill="currentColor"
+          size={18}
+        />
+      </div>
+    </div>
+    <div className="jb-folder-card-info">
+      <div className="jb-folder-card-name">{artist.artist || '(Unknown)'}</div>
+      <div className="jb-folder-card-meta">
+        {artist.trackCount} {artist.trackCount === 1 ? 'track' : 'tracks'}
+      </div>
+    </div>
+  </button>
+);
 
 const ArtistRow = ({ artist, onPlay, onSelect }) => (
   <div
@@ -98,55 +149,63 @@ const ArtistRow = ({ artist, onPlay, onSelect }) => (
   </div>
 );
 
-const ArtistDetail = ({ artist, onBack, onContextMenu, onPlayArtist }) => {
+const ArtistDetail = ({
+  alphaHandlerRef,
+  artist,
+  onAlphaEnabled,
+  onBack,
+  onContextMenu,
+  onPlayArtist,
+}) => {
   const {
-    items: tracks,
-    loadMore,
-    loading,
-    loadingMore,
+    alphaApplies,
+    clearLetter,
+    isDefaultView,
+    letter,
+    reset,
     total,
-  } = usePagedList(getTrackPage, { artist: artist.artist });
+    trackTableProps,
+  } = usePagedTracks({ artist: artist.artist }, { defaultSort: 'title' });
+
+  // While a detail is open the rail belongs to its track list, not the artist list behind it.
+  useEffect(() => {
+    onAlphaEnabled?.(alphaApplies);
+  }, [alphaApplies, onAlphaEnabled]);
 
   return (
-    <div className="jb-artist-detail-view">
-      <div className="jb-section-header">
-        <button
-          className="jb-icon-btn"
-          onClick={onBack}
-          title="Back to artists"
-          type="button"
-        >
-          <ChevronLeft size={15} />
-        </button>
-        <span className="jb-section-title">{artist.artist}</span>
-        <span className="jb-section-count">
-          {(total || artist.trackCount) ?? 0} tracks
-        </span>
-        <div className="jb-section-controls">
-          <button
-            className="jb-btn"
-            disabled={!tracks.length}
-            onClick={() => onPlayArtist(artist)}
-            type="button"
-          >
-            <Shuffle size={12} /> Shuffle
-          </button>
-          <button
-            className="jb-btn jb-btn--primary"
-            disabled={!tracks.length}
-            onClick={() => onPlayArtist(artist)}
-            type="button"
-          >
-            <Play size={12} /> Play
-          </button>
-        </div>
-      </div>
+    <div className="jb-detail-view">
+      <LibraryDetailHeader
+        actions={
+          <>
+            <button
+              className="jb-btn"
+              onClick={() => onPlayArtist(artist)}
+              type="button"
+            >
+              <Shuffle size={12} /> Shuffle
+            </button>
+            <button
+              className="jb-btn jb-btn--primary"
+              onClick={() => onPlayArtist(artist)}
+              type="button"
+            >
+              <Play size={12} /> Play
+            </button>
+          </>
+        }
+        hue={nameHue(artist.artist)}
+        isDefault={isDefaultView}
+        letter={letter}
+        meta={trackCountLabel(total || artist.trackCount || 0)}
+        onBack={onBack}
+        onClearLetter={clearLetter}
+        onReset={reset}
+        title={artist.artist}
+      />
       <TrackTable
-        loading={loading}
-        loadingMore={loadingMore}
+        {...trackTableProps}
+        alphaHandlerRef={alphaHandlerRef}
         onContextMenu={onContextMenu}
-        onEndReached={loadMore}
-        tracks={tracks}
       />
     </div>
   );
@@ -158,10 +217,11 @@ const ArtistsView = ({
   onContextMenu,
   onPlayArtist,
   scrollContainerRef,
+  tileSize = 160,
+  viewMode = 'list',
 }) => {
   const [selected, setSelected] = useState(null);
   const [artistFilter, setArtistFilter] = useState('');
-  const [filterActive, setFilterActive] = useState(false);
   const [letter, setLetter] = useState(null);
   const [sortBy, setSortBy] = useState(() =>
     prefs.get('resonance-artists-sort-by', 'name'),
@@ -247,10 +307,11 @@ const ArtistsView = ({
   }, [alphaHandlerRef, jumpToLetter, selected]);
 
   // The rail buckets by name, so it only means anything while the list is in name order.
-  const alphaApplies = sortBy === 'name' && sortDir === 'asc' && !selected;
+  const alphaApplies = sortBy === 'name' && sortDir === 'asc';
   useEffect(() => {
+    if (selected) return;
     onAlphaEnabled?.(alphaApplies);
-  }, [alphaApplies, onAlphaEnabled]);
+  }, [alphaApplies, onAlphaEnabled, selected]);
 
   const isDefaultView =
     sortBy === 'name' && sortDir === 'asc' && !letter && !artistFilter;
@@ -260,7 +321,6 @@ const ArtistsView = ({
     setSortDir('asc');
     setLetter(null);
     setArtistFilter('');
-    setFilterActive(false);
     prefs.set('resonance-artists-sort-by', 'name');
     prefs.set('resonance-artists-sort-dir', 'asc');
   };
@@ -273,7 +333,9 @@ const ArtistsView = ({
   if (selected) {
     return (
       <ArtistDetail
+        alphaHandlerRef={alphaHandlerRef}
         artist={selected}
+        onAlphaEnabled={onAlphaEnabled}
         onBack={() => setSelected(null)}
         onContextMenu={onContextMenu}
         onPlayArtist={onPlayArtist}
@@ -281,159 +343,104 @@ const ArtistsView = ({
     );
   }
 
-  if (loading) {
-    return (
-      <div className="jb-state">
-        <div className="jb-spinner" />
-        Loading artists…
-      </div>
-    );
-  }
-
-  if (!loading && artists.length === 0) {
-    return (
-      <div className="jb-state">
-        {search || letter
-          ? 'No artists match.'
-          : 'No artists found. Run a library sync to index your music.'}
-      </div>
-    );
-  }
-
   const virtualItems = virtualizer.getVirtualItems();
 
   return (
     <>
-      <div className="jb-folder-sort-bar">
-        <span className="jb-sort-label">Sort</span>
-        <SortButton
-          field="name"
-          label="A–Z"
-          onSort={setSort}
-          sortBy={sortBy}
-          sortDir={sortDir}
-        />
-        <SortButton
-          field="tracks"
-          label="Tracks"
-          onSort={setSort}
-          sortBy={sortBy}
-          sortDir={sortDir}
-        />
-        <AlphaFilterChip
-          letter={letter}
-          onClear={() => setLetter(null)}
-        />
-        <ResetViewButton
-          hidden={isDefaultView}
-          onReset={resetView}
-        />
-        <span className="jb-sort-bar-count">
-          {total.toLocaleString()} {total === 1 ? 'artist' : 'artists'}
-        </span>
-      </div>
-      <div className="jb-artist-list-head">
-        <span />
-        <span />
-        <span>
-          {filterActive ? (
-            <span className="jb-col-filter-wrap">
-              <input
-                autoFocus
-                className="jb-col-filter-input"
-                onBlur={() => setFilterActive(false)}
-                onChange={(e) => setArtistFilter(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    setArtistFilter('');
-                    setFilterActive(false);
-                  }
-
-                  if (e.key === 'Enter') setFilterActive(false);
-                }}
-                placeholder="Filter artist…"
-                value={artistFilter}
-              />
-              {artistFilter && (
-                <button
-                  className="jb-col-filter-x"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    setArtistFilter('');
-                    setFilterActive(false);
-                  }}
-                  type="button"
-                >
-                  <X size={9} />
-                </button>
-              )}
-            </span>
-          ) : (
-            <button
-              className={`jb-col-hdr-btn${artistFilter ? ' jb-col-hdr-btn--active' : ''}`}
-              onClick={() => setFilterActive(true)}
-              type="button"
-            >
-              <span className="jb-col-hdr-value">
-                {artistFilter || 'Artist'}
-              </span>
-              {artistFilter && (
-                <span
-                  className="jb-col-filter-x"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setArtistFilter('');
-                  }}
-                  role="button"
-                  tabIndex={-1}
-                >
-                  <X size={9} />
-                </span>
-              )}
-            </button>
-          )}
-        </span>
-        <span />
-      </div>
-      <div
-        className="jb-artist-list-view"
-        style={{
-          height: `${virtualizer.getTotalSize()}px`,
-          position: 'relative',
+      <LibraryViewHeader
+        filter={{
+          onChange: setArtistFilter,
+          placeholder: 'Filter artist…',
+          value: artistFilter,
         }}
-      >
-        {virtualItems.map((vRow) => {
-          const item = flatItems[vRow.index];
-          return (
-            <div
-              key={
-                item.type === 'header'
-                  ? `hdr-${item.letter}`
-                  : item.artist.artist
-              }
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                height: `${vRow.size}px`,
-                transform: `translateY(${vRow.start}px)`,
-              }}
-            >
-              {item.type === 'header' ? (
-                <div className="jb-alpha-divider">{item.letter}</div>
-              ) : (
-                <ArtistRow
-                  artist={item.artist}
-                  onPlay={onPlayArtist}
-                  onSelect={setSelected}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
+        isDefault={isDefaultView}
+        letter={letter}
+        onClearLetter={() => setLetter(null)}
+        onReset={resetView}
+        onSort={setSort}
+        sortBy={sortBy}
+        sortDir={sortDir}
+        sorts={[
+          { field: 'name', label: 'A–Z' },
+          { field: 'tracks', label: 'Tracks' },
+        ]}
+        title="Artists"
+        total={total}
+      />
+      {loading && (
+        <div className="jb-state">
+          <div className="jb-spinner" />
+          Loading artists…
+        </div>
+      )}
+
+      {!loading && artists.length === 0 && (
+        <div className="jb-state">
+          {search || letter
+            ? 'No artists match.'
+            : 'No artists found. Run a library sync to index your music.'}
+        </div>
+      )}
+
+      {!loading &&
+        artists.length > 0 &&
+        (viewMode === 'tile' ? (
+          <div
+            className="jb-folders-grid"
+            style={{
+              gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))`,
+            }}
+          >
+            {artists.map((artist) => (
+              <ArtistCard
+                artist={artist}
+                key={artist.artist}
+                onPlay={onPlayArtist}
+                onSelect={setSelected}
+                tileSize={tileSize}
+              />
+            ))}
+          </div>
+        ) : (
+          <div
+            className="jb-artist-list-view"
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              position: 'relative',
+            }}
+          >
+            {virtualItems.map((vRow) => {
+              const item = flatItems[vRow.index];
+              return (
+                <div
+                  key={
+                    item.type === 'header'
+                      ? `hdr-${item.letter}`
+                      : item.artist.artist
+                  }
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: `${vRow.size}px`,
+                    transform: `translateY(${vRow.start}px)`,
+                  }}
+                >
+                  {item.type === 'header' ? (
+                    <div className="jb-alpha-divider">{item.letter}</div>
+                  ) : (
+                    <ArtistRow
+                      artist={item.artist}
+                      onPlay={onPlayArtist}
+                      onSelect={setSelected}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
       {loadingMore && (
         <div className="jb-tt-more">
           <div className="jb-spinner" />

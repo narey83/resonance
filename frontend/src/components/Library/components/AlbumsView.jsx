@@ -27,14 +27,14 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import useDebounce from '../../../hooks/useDebounce';
 import { getAlbumPage } from '../../../lib/musicLibrary';
 import { usePagedList } from '../../../lib/usePagedList';
 import { formatIndexedAt } from '../../../lib/util';
 import AlbumArt from './AlbumArt';
-import AlphaFilterChip from './AlphaFilterChip';
-import ResetViewButton from './ResetViewButton';
+import LibraryViewHeader from './LibraryViewHeader';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ArrowDownAZ, ArrowUpAZ, Play, Shuffle } from 'lucide-react';
+import { Play, Shuffle } from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
@@ -67,7 +67,11 @@ const AlbumsView = ({
   const [sortBy, setSortBy] = useState('name');
   const [sortDir, setSortDir] = useState('asc');
   const [letter, setLetter] = useState(null);
+  const [albumFilter, setAlbumFilter] = useState('');
   const [containerWidth, setContainerWidth] = useState(0);
+
+  // Typing shouldn't fire a request per keystroke.
+  const albumSearch = useDebounce(albumFilter, 250);
   const resizeObserverRef = useRef(null);
 
   // ~19k album groups: ordering and the A-Z rail are query parameters, not things we can work
@@ -80,13 +84,19 @@ const AlbumsView = ({
     total,
   } = usePagedList(getAlbumPage, {
     descending: sortDir === 'desc',
+    search: albumSearch || undefined,
     sort: sortBy,
     startsWith: letter || undefined,
   });
 
-  const handleSortByChange = (newSortBy) => {
-    setSortBy(newSortBy);
-    setSortDir(DEFAULT_DIR[newSortBy] ?? 'asc');
+  const setSort = (field) => {
+    if (field === sortBy) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+
+    setSortBy(field);
+    setSortDir(DEFAULT_DIR[field] ?? 'asc');
   };
 
   // Tracks the container width, which decides how many tiles fit per row.
@@ -167,12 +177,13 @@ const AlbumsView = ({
     onAlphaEnabled?.(alphaApplies);
   }, [alphaApplies, onAlphaEnabled]);
 
-  const isDefaultView = alphaApplies && !letter;
+  const isDefaultView = alphaApplies && !letter && !albumFilter;
 
   const resetView = () => {
     setSortBy('name');
     setSortDir('asc');
     setLetter(null);
+    setAlbumFilter('');
   };
 
   const lastListIndex = listVirtualizer.getVirtualItems().at(-1)?.index ?? -1;
@@ -192,155 +203,137 @@ const AlbumsView = ({
     viewMode,
   ]);
 
-  if (loading) {
-    return (
-      <div className="jb-state">
-        <div className="jb-spinner" />
-        Loading albums…
-      </div>
-    );
-  }
-
-  if (!loading && sorted.length === 0) {
-    return (
-      <div className="jb-state">
-        {letter
-          ? 'No albums match.'
-          : 'No albums found. Run a library sync to index your music.'}
-      </div>
-    );
-  }
-
   const listVirtualItems = listVirtualizer.getVirtualItems();
   const gridVirtualItems = gridVirtualizer.getVirtualItems();
 
   return (
     <>
-      <div className="jb-section-header">
-        <span className="jb-section-title">Albums</span>
-        <span className="jb-section-count">
-          {total.toLocaleString()} albums
-        </span>
-        <AlphaFilterChip
-          letter={letter}
-          onClear={() => setLetter(null)}
-        />
-        <ResetViewButton
-          hidden={isDefaultView}
-          onReset={resetView}
-        />
-        <div className="jb-section-controls">
-          <select
-            className="jb-sort-select"
-            onChange={({ target }) => handleSortByChange(target.value)}
-            value={sortBy}
-          >
-            <option value="name">A–Z</option>
-            <option value="artist">By artist</option>
-            <option value="year">By year</option>
-            <option value="date">Date added</option>
-          </select>
-          <button
-            className="jb-sort-dir-btn"
-            onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
-            title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
-            type="button"
-          >
-            {sortDir === 'asc' ? (
-              <ArrowUpAZ size={14} />
-            ) : (
-              <ArrowDownAZ size={14} />
-            )}
-          </button>
-        </div>
-      </div>
+      <LibraryViewHeader
+        filter={{
+          onChange: setAlbumFilter,
+          placeholder: 'Filter album…',
+          value: albumFilter,
+        }}
+        isDefault={isDefaultView}
+        letter={letter}
+        onClearLetter={() => setLetter(null)}
+        onReset={resetView}
+        onSort={setSort}
+        sortBy={sortBy}
+        sortDir={sortDir}
+        sorts={[
+          { field: 'name', label: 'A–Z' },
+          { field: 'artist', label: 'Artist' },
+          { field: 'year', label: 'Year' },
+          { field: 'date', label: 'Added' },
+        ]}
+        title="Albums"
+        total={total}
+      />
 
-      {viewMode === 'list' ? (
-        <div className="jb-album-list">
-          <div className="jb-album-list-head">
-            <span />
-            <span>Album</span>
-            <span>Year</span>
-            <span>Tracks</span>
-            <span>Date Added</span>
-            <span />
-          </div>
-          <div
-            style={{
-              height: `${listVirtualizer.getTotalSize()}px`,
-              position: 'relative',
-            }}
-          >
-            {listVirtualItems.map((vRow) => {
-              const album = sorted[vRow.index];
-              return (
-                <div
-                  key={`${album.album}-${album.artist}`}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: `${vRow.size}px`,
-                    transform: `translateY(${vRow.start}px)`,
-                  }}
-                >
-                  <AlbumRow
-                    album={album}
-                    onAlbum={onAlbum}
-                    onContextMenu={onAlbumContextMenu}
-                    onPlay={onPlayAlbum}
-                    onShuffle={onShuffleAlbum}
-                  />
-                </div>
-              );
-            })}
-          </div>
+      {loading && (
+        <div className="jb-state">
+          <div className="jb-spinner" />
+          Loading albums…
         </div>
-      ) : (
-        <div
-          ref={gridRef}
-          style={{ minHeight: 4 }}
-        >
-          {cols > 0 && (
+      )}
+
+      {!loading && sorted.length === 0 && (
+        <div className="jb-state">
+          {letter || albumFilter
+            ? 'No albums match.'
+            : 'No albums found. Run a library sync to index your music.'}
+        </div>
+      )}
+
+      {!loading &&
+        sorted.length > 0 &&
+        (viewMode === 'list' ? (
+          <div className="jb-album-list">
+            <div className="jb-album-list-head">
+              <span />
+              <span>Album</span>
+              <span>Year</span>
+              <span>Tracks</span>
+              <span>Date Added</span>
+              <span />
+            </div>
             <div
               style={{
-                height: `${gridVirtualizer.getTotalSize()}px`,
+                height: `${listVirtualizer.getTotalSize()}px`,
                 position: 'relative',
               }}
             >
-              {gridVirtualItems.map((vRow) => (
-                <div
-                  key={vRow.index}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: `${vRow.size}px`,
-                    transform: `translateY(${vRow.start}px)`,
-                    display: 'flex',
-                    gap: TILE_GAP,
-                    padding: `0 0 ${TILE_GAP}px`,
-                  }}
-                >
-                  {tileRows[vRow.index].map((album) => (
-                    <AlbumCard
+              {listVirtualItems.map((vRow) => {
+                const album = sorted[vRow.index];
+                return (
+                  <div
+                    key={`${album.album}-${album.artist}`}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: `${vRow.size}px`,
+                      transform: `translateY(${vRow.start}px)`,
+                    }}
+                  >
+                    <AlbumRow
                       album={album}
-                      key={`${album.album}-${album.artist}`}
                       onAlbum={onAlbum}
                       onContextMenu={onAlbumContextMenu}
                       onPlay={onPlayAlbum}
                       onShuffle={onShuffleAlbum}
-                      tileSize={tileSize}
                     />
-                  ))}
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        ) : (
+          <div
+            ref={gridRef}
+            style={{ minHeight: 4 }}
+          >
+            {cols > 0 && (
+              <div
+                style={{
+                  height: `${gridVirtualizer.getTotalSize()}px`,
+                  position: 'relative',
+                }}
+              >
+                {gridVirtualItems.map((vRow) => (
+                  <div
+                    key={vRow.index}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: `${vRow.size}px`,
+                      transform: `translateY(${vRow.start}px)`,
+                      display: 'flex',
+                      gap: TILE_GAP,
+                      padding: `0 0 ${TILE_GAP}px`,
+                    }}
+                  >
+                    {tileRows[vRow.index].map((album) => (
+                      <AlbumCard
+                        album={album}
+                        key={`${album.album}-${album.artist}`}
+                        onAlbum={onAlbum}
+                        onContextMenu={onAlbumContextMenu}
+                        onPlay={onPlayAlbum}
+                        onShuffle={onShuffleAlbum}
+                        tileSize={tileSize}
+                      />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
       {loadingMore && (
         <div className="jb-tt-more">
           <div className="jb-spinner" />
@@ -470,17 +463,23 @@ const AlbumCard = ({
             minWidth: 'unset',
           }}
         />
-        <button
+        {/* div, not button: this sits inside the card's own <button>, and nesting buttons
+            is invalid HTML. Mirrors FolderCard's play control. */}
+        <div
           className="jb-folder-card-play"
           onClick={handlePlay}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') handlePlay(e);
+          }}
+          role="button"
+          tabIndex={0}
           title="Play album"
-          type="button"
         >
           <Play
             fill="currentColor"
             size={18}
           />
-        </button>
+        </div>
       </div>
       <div className="jb-album-card-body">
         <div

@@ -682,6 +682,20 @@
   border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
 }
 
+/* Tile-scale version of the avatar circle, for artists with no artwork of their own. */
+.jb-artist-tile-avatar {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 44px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .jb-artist-avatar {
   width: 32px;
   height: 32px;
@@ -2299,6 +2313,35 @@
 
 .jb-year-detail-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 
+/* ── Standard detail header ──────────────────────────────────────
+   The tinted hero every drill-down uses (LibraryDetailHeader). Generalised from the
+   year/genre variant above, which is why those two shared a class named for years. */
+.jb-detail-view { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+
+.jb-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.jb-detail-header-text { flex: 1; min-width: 0; }
+
+.jb-detail-header-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jb-detail-header-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
 /* ── Folder view ─────────────────────────────────────────────── */
 .jb-folders-grid {
   display: grid;
@@ -2443,6 +2486,62 @@
 
 .jb-folder-row .jb-list-play-btn { opacity: 0; }
 .jb-folder-row:hover .jb-list-play-btn { opacity: 1; }
+
+/* ── Standard view header ────────────────────────────────────────
+   One control bar for every collection view (LibraryViewHeader). Replaces the four
+   bespoke bars these views used to build for themselves. */
+.jb-view-header {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  row-gap: 4px;
+  padding: 8px 16px 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.jb-view-header-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.jb-view-header-count {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.jb-view-header-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.jb-view-header-filter-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+.jb-view-header-filter {
+  max-width: 200px;
+}
+
+/* Pushed right, and allowed to wrap onto its own line rather than overflow — Albums
+   carries four pills and a fifth would previously have run off the edge. */
+.jb-view-header-sorts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: auto;
+}
 
 .jb-folder-sort-bar {
   align-items: center;

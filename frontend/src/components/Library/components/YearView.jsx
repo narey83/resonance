@@ -27,33 +27,15 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { hueColour, yearHue } from '../../../lib/accentHue';
 import * as prefs from '../../../lib/prefs';
 import { usePagedTracks } from '../../../lib/usePagedList';
-import AlphaFilterChip from './AlphaFilterChip';
-import SortButton from './SortButton';
+import { trackCountLabel } from '../../../lib/util';
+import LibraryDetailHeader from './LibraryDetailHeader';
+import LibraryViewHeader from './LibraryViewHeader';
 import TrackTable from './TrackTable';
-import { ChevronLeft, Play, X } from 'lucide-react';
+import { Play } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
-
-// Hue per decade — eras have recognisable colour associations
-const DECADE_HUES = {
-  194: 35, // 1940s — warm amber (big band)
-  195: 30, // 1950s — golden (rock 'n' roll dawn)
-  196: 270, // 1960s — psychedelic purple
-  197: 25, // 1970s — funky burnt orange
-  198: 320, // 1980s — neon magenta
-  199: 150, // 1990s — grunge green
-  200: 200, // 2000s — digital blue
-  201: 170, // 2010s — teal
-  202: 250, // 2020s — electric violet
-};
-
-const getYearHue = (year) => {
-  const key = Math.floor((year || 2_000) / 10);
-  return DECADE_HUES[key] ?? (key * 37) % 360;
-};
-
-const yearColor = (hue) => `hsl(${hue} 65% 55%)`;
 
 const YearView = ({
   initialSelected = null,
@@ -74,18 +56,29 @@ const YearView = ({
   }, [initialSelected, years]);
   const {
     clearLetter,
+    isDefaultView: tracksAreDefault,
     letter,
+    reset: resetTracks,
     total: trackTotal,
     trackTableProps,
   } = usePagedTracks({ year: selected?.year }, { enabled: Boolean(selected) });
   const [yearFilter, setYearFilter] = useState('');
-  const [filterActive, setFilterActive] = useState(false);
   const [sortBy, setSortBy] = useState(() =>
     prefs.get('resonance-years-sort-by', 'year'),
   );
   const [sortDir, setSortDir] = useState(() =>
     prefs.get('resonance-years-sort-dir', 'desc'),
   );
+
+  const isDefaultView = sortBy === 'year' && sortDir === 'desc' && !yearFilter;
+
+  const resetView = () => {
+    setSortBy('year');
+    setSortDir('desc');
+    setYearFilter('');
+    prefs.set('resonance-years-sort-by', 'year');
+    prefs.set('resonance-years-sort-dir', 'desc');
+  };
 
   const setSort = (field) => {
     if (field === sortBy) {
@@ -136,50 +129,29 @@ const YearView = ({
   }
 
   if (selected) {
-    const hue = getYearHue(selected.year);
-    const color = yearColor(hue);
     return (
-      <div className="jb-year-detail">
-        <div
-          className="jb-year-detail-header"
-          style={{
-            background: `color-mix(in srgb, ${color} 10%, var(--bg-primary))`,
-            borderBottomColor: `color-mix(in srgb, ${color} 25%, var(--border))`,
-          }}
-        >
-          <button
-            className="jb-icon-btn"
-            onClick={() => setSelected(null)}
-            title="Back"
-            type="button"
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <div style={{ flex: 1 }}>
-            <div
-              className="jb-year-detail-title"
-              style={{ color }}
+      <div className="jb-detail-view">
+        <LibraryDetailHeader
+          actions={
+            <button
+              className="jb-btn jb-btn--primary"
+              onClick={() => onPlayYear?.(selected)}
+              type="button"
             >
-              {selected.year}
-            </div>
-            <div className="jb-year-detail-meta">
-              {selected.albumCount}{' '}
-              {selected.albumCount === 1 ? 'album' : 'albums'} ·{' '}
-              {(trackTotal || selected.trackCount || 0).toLocaleString()} tracks
-            </div>
-          </div>
-          <AlphaFilterChip
-            letter={letter}
-            onClear={clearLetter}
-          />
-          <button
-            className="jb-btn jb-btn--primary"
-            onClick={() => onPlayYear?.(selected)}
-            type="button"
-          >
-            <Play size={13} /> Play
-          </button>
-        </div>
+              <Play size={13} /> Play
+            </button>
+          }
+          hue={yearHue(selected.year)}
+          isDefault={tracksAreDefault}
+          letter={letter}
+          meta={`${selected.albumCount} ${
+            selected.albumCount === 1 ? 'album' : 'albums'
+          } · ${trackCountLabel(trackTotal || selected.trackCount || 0)}`}
+          onBack={() => setSelected(null)}
+          onClearLetter={clearLetter}
+          onReset={resetTracks}
+          title={selected.year}
+        />
         <TrackTable
           {...trackTableProps}
           onContextMenu={onContextMenu}
@@ -188,98 +160,45 @@ const YearView = ({
     );
   }
 
-  const sortBar = (
-    <div className="jb-folder-sort-bar">
-      <span className="jb-sort-label">Sort</span>
-      <SortButton
-        field="year"
-        label="Year"
-        onSort={setSort}
-        sortBy={sortBy}
-        sortDir={sortDir}
-      />
-      <SortButton
-        field="tracks"
-        label="Tracks"
-        onSort={setSort}
-        sortBy={sortBy}
-        sortDir={sortDir}
-      />
-    </div>
+  // Years carry no alphabet — every entry buckets to '#' — so this view deliberately has no
+  // A-Z rail (Library omits VIEWS.YEARS from showAlphaStrip). Everything else is standard.
+  const header = (
+    <LibraryViewHeader
+      filter={{
+        onChange: setYearFilter,
+        placeholder: 'Filter year…',
+        value: yearFilter,
+      }}
+      isDefault={isDefaultView}
+      onReset={resetView}
+      onSort={setSort}
+      sortBy={sortBy}
+      sortDir={sortDir}
+      sorts={[
+        { field: 'year', label: 'Year' },
+        { field: 'tracks', label: 'Tracks' },
+      ]}
+      title="Years"
+      total={filteredYears.length}
+    />
   );
 
   if (viewMode === 'list') {
     return (
       <>
-        {sortBar}
+        {header}
+        {sortedYears.length === 0 && (
+          <div className="jb-state">No years match.</div>
+        )}
         <div className="jb-year-list">
           <div className="jb-year-list-head">
-            <span>
-              {filterActive ? (
-                <span className="jb-col-filter-wrap">
-                  <input
-                    autoFocus
-                    className="jb-col-filter-input"
-                    onBlur={() => setFilterActive(false)}
-                    onChange={(e) => setYearFilter(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') {
-                        setYearFilter('');
-                        setFilterActive(false);
-                      }
-
-                      if (e.key === 'Enter') setFilterActive(false);
-                    }}
-                    placeholder="Filter year…"
-                    value={yearFilter}
-                  />
-                  {yearFilter && (
-                    <button
-                      className="jb-col-filter-x"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        setYearFilter('');
-                        setFilterActive(false);
-                      }}
-                      type="button"
-                    >
-                      <X size={9} />
-                    </button>
-                  )}
-                </span>
-              ) : (
-                <button
-                  className={`jb-col-hdr-btn${yearFilter ? ' jb-col-hdr-btn--active' : ''}`}
-                  onClick={() => setFilterActive(true)}
-                  type="button"
-                >
-                  <span className="jb-col-hdr-value">
-                    {yearFilter || 'Year'}
-                  </span>
-                  {yearFilter && (
-                    <span
-                      className="jb-col-filter-x"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setYearFilter('');
-                      }}
-                      role="button"
-                      tabIndex={-1}
-                    >
-                      <X size={9} />
-                    </span>
-                  )}
-                </button>
-              )}
-            </span>
+            <span>Year</span>
             <span>Albums</span>
             <span>Tracks</span>
             <span />
           </div>
           {sortedYears.map((year) => {
-            const hue = getYearHue(year.year);
-            const color = yearColor(hue);
+            const color = hueColour(yearHue(year.year));
             return (
               <div
                 className="jb-year-list-row"
@@ -321,7 +240,10 @@ const YearView = ({
 
   return (
     <>
-      {sortBar}
+      {header}
+      {sortedYears.length === 0 && (
+        <div className="jb-state">No years match.</div>
+      )}
       <div
         className="jb-year-grid"
         style={{
@@ -329,8 +251,7 @@ const YearView = ({
         }}
       >
         {sortedYears.map((year) => {
-          const hue = getYearHue(year.year);
-          const color = yearColor(hue);
+          const color = hueColour(yearHue(year.year));
           return (
             <div
               className="jb-year-card"

@@ -27,23 +27,19 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { nameHue } from '../../../lib/accentHue';
+import { alphaKey } from '../../../lib/alphaBucket';
 import { artworkUrl as mixtapeArtworkUrl } from '../../../lib/mixtapes';
 import * as prefs from '../../../lib/prefs';
 import { usePagedTracks } from '../../../lib/usePagedList';
-import { formatIndexedAt } from '../../../lib/util';
+import { formatIndexedAt, trackCountLabel } from '../../../lib/util';
 import AlbumArt from './AlbumArt';
-import AlphaFilterChip from './AlphaFilterChip';
-import ResetViewButton from './ResetViewButton';
-import SortButton from './SortButton';
+import LibraryDetailHeader from './LibraryDetailHeader';
+import LibraryViewHeader from './LibraryViewHeader';
 import TrackTable from './TrackTable';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ChevronLeft, Clock, Play } from 'lucide-react';
+import { Play } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-
-const alphaKey = (s) => {
-  const c = s?.trim()?.[0]?.toUpperCase();
-  return c >= 'A' && c <= 'Z' ? c : '#';
-};
 
 const ROW_HEIGHT = 56;
 
@@ -187,6 +183,8 @@ const FolderView = ({
   viewMode = 'tile',
 }) => {
   const [selected, setSelected] = useState(null);
+  const [folderFilter, setFolderFilter] = useState('');
+  const [listLetter, setListLetter] = useState(null);
 
   const {
     alphaApplies: trackAlphaApplies,
@@ -241,7 +239,8 @@ const FolderView = ({
 
   // Two lists share this view and the rail: the folder list itself (sorted here, in memory)
   // and the selected folder's paged tracks. Whichever is on screen decides.
-  const foldersAreDefault = sortBy === 'name' && sortDir === 'asc';
+  const foldersAreDefault =
+    sortBy === 'name' && sortDir === 'asc' && !folderFilter && !listLetter;
   const alphaApplies = selected ? trackAlphaApplies : foldersAreDefault;
   useEffect(() => {
     onAlphaEnabled?.(alphaApplies);
@@ -250,6 +249,8 @@ const FolderView = ({
   const resetFolders = () => {
     setSortBy('name');
     setSortDir('asc');
+    setFolderFilter('');
+    setListLetter(null);
     prefs.set('resonance-folders-sort-by', 'name');
     prefs.set('resonance-folders-sort-dir', 'asc');
   };
@@ -261,7 +262,14 @@ const FolderView = ({
   }, [folders, initialFolder]);
 
   const sorted = useMemo(() => {
-    const copy = [...folders];
+    const q = folderFilter.toLowerCase();
+    const copy = folders.filter(
+      (f) =>
+        (!q ||
+          f.name.toLowerCase().includes(q) ||
+          f.path.toLowerCase().includes(q)) &&
+        (!listLetter || alphaKey(f.name) === listLetter),
+    );
     copy.sort((a, b) => {
       const cmp =
         sortBy === 'date'
@@ -270,7 +278,7 @@ const FolderView = ({
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return copy;
-  }, [folders, sortBy, sortDir]);
+  }, [folderFilter, folders, listLetter, sortBy, sortDir]);
 
   const virtualizer = useVirtualizer({
     count: sorted.length,
@@ -282,22 +290,13 @@ const FolderView = ({
   });
 
   useEffect(() => {
-    if (!alphaHandlerRef || viewMode !== 'list' || selected) return undefined;
-    // The folder list itself is small (tens of rows, fetched whole), so its rail still scrolls
-    // rather than re-querying. Only the track list inside a folder is paged.
-    alphaHandlerRef.current = (jumpTo) => {
-      const index = sorted.findIndex((f) => alphaKey(f.name) === jumpTo);
-      if (index >= 0)
-        virtualizer.scrollToIndex(index, {
-          align: 'start',
-          behavior: 'smooth',
-        });
-    };
-
+    if (!alphaHandlerRef || selected) return undefined;
+    alphaHandlerRef.current = (next) =>
+      setListLetter((current) => (current === next ? null : next));
     return () => {
       alphaHandlerRef.current = null;
     };
-  }, [alphaHandlerRef, selected, sorted, viewMode, virtualizer]);
+  }, [alphaHandlerRef, selected]);
 
   if (loading) {
     return (
@@ -314,29 +313,9 @@ const FolderView = ({
 
   if (selected) {
     return (
-      <div className="jb-folder-detail-view">
-        <div className="jb-section-header">
-          <button
-            className="jb-icon-btn"
-            onClick={() => setSelected(null)}
-            title="Back to folders"
-            type="button"
-          >
-            <ChevronLeft size={15} />
-          </button>
-          <span className="jb-section-title">{selected.name}</span>
-          <span className="jb-section-count">
-            {(trackTotal || selected.trackCount || 0).toLocaleString()} tracks
-          </span>
-          <AlphaFilterChip
-            letter={letter}
-            onClear={clearLetter}
-          />
-          <ResetViewButton
-            hidden={tracksAreDefault}
-            onReset={resetTracks}
-          />
-          <div className="jb-section-controls">
+      <div className="jb-detail-view">
+        <LibraryDetailHeader
+          actions={
             <button
               className="jb-btn jb-btn--primary"
               onClick={() => onPlayFolder(selected.path)}
@@ -345,8 +324,16 @@ const FolderView = ({
               <Play size={12} />
               Play
             </button>
-          </div>
-        </div>
+          }
+          hue={nameHue(selected.name)}
+          isDefault={tracksAreDefault}
+          letter={letter}
+          meta={trackCountLabel(trackTotal || selected.trackCount || 0)}
+          onBack={() => setSelected(null)}
+          onClearLetter={clearLetter}
+          onReset={resetTracks}
+          title={selected.name}
+        />
         <TrackTable
           {...trackTableProps}
           alphaHandlerRef={alphaHandlerRef}
@@ -362,31 +349,27 @@ const FolderView = ({
 
   return (
     <>
-      <div className="jb-folder-sort-bar">
-        <span className="jb-sort-label">Sort by</span>
-        <SortButton
-          field="name"
-          label="Name"
-          onSort={setSort}
-          sortBy={sortBy}
-          sortDir={sortDir}
-        />
-        <SortButton
-          field="date"
-          label={
-            <>
-              <Clock size={11} /> Date Added
-            </>
-          }
-          onSort={setSort}
-          sortBy={sortBy}
-          sortDir={sortDir}
-        />
-        <ResetViewButton
-          hidden={foldersAreDefault}
-          onReset={resetFolders}
-        />
-      </div>
+      <LibraryViewHeader
+        filter={{
+          onChange: setFolderFilter,
+          placeholder: 'Filter folder…',
+          value: folderFilter,
+        }}
+        isDefault={foldersAreDefault}
+        letter={listLetter}
+        onClearLetter={() => setListLetter(null)}
+        onReset={resetFolders}
+        onSort={setSort}
+        sortBy={sortBy}
+        sortDir={sortDir}
+        sorts={[
+          { field: 'name', label: 'Name' },
+          { field: 'date', label: 'Date Added' },
+        ]}
+        title="Folders"
+        total={sorted.length}
+      />
+      {sorted.length === 0 && <div className="jb-state">No folders match.</div>}
       {viewMode === 'list' ? (
         <div
           className="jb-folder-list"

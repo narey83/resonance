@@ -216,3 +216,8 @@ export const downloadFile = (data, filename, mime) => {
     window.URL.revokeObjectURL(blobURL);
   }
 };
+
+// "1 track" / "2 tracks" — every library detail header prints this, and hardcoding the plural
+// reads wrong on single-track genres and folders.
+export const trackCountLabel = (n) =>
+  `${(n ?? 0).toLocaleString()} ${n === 1 ? 'track' : 'tracks'}`;

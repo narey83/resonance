@@ -71,12 +71,11 @@ import { formatSeconds } from '../../lib/util';
 import AlbumArt from './components/AlbumArt';
 import AlbumDetail from './components/AlbumDetail';
 import AlbumsView from './components/AlbumsView';
-import AlphaFilterChip from './components/AlphaFilterChip';
 import ArtistsView from './components/ArtistsView';
 import FolderView from './components/FolderView';
 import GenreView from './components/GenreView';
+import LibraryViewHeader from './components/LibraryViewHeader';
 import PlayHistoryView from './components/PlayHistoryView';
-import ResetViewButton from './components/ResetViewButton';
 import SortButton from './components/SortButton';
 import TrackTable from './components/TrackTable';
 import YearView from './components/YearView';
@@ -1979,20 +1978,20 @@ const TracksView = ({
 
   return (
     <div className="jb-tracks-view">
-      <div className="jb-section-header">
-        <span className="jb-section-title">All Tracks</span>
-        <span className="jb-section-count">
-          {total.toLocaleString()} tracks
-        </span>
-        <AlphaFilterChip
-          letter={letter}
-          onClear={clearLetter}
-        />
-        <ResetViewButton
-          hidden={isDefaultView}
-          onReset={reset}
-        />
-      </div>
+      {/*
+        The one view that carries no `sorts` or `filter` on its header, and no tile mode.
+        Its sorting and filtering live in the table's own column headers — which is the point
+        of a table — and tiles would just be a worse version of it. Everything else (title,
+        count, letter chip, Reset) is the same bar every other view renders.
+      */}
+      <LibraryViewHeader
+        isDefault={isDefaultView}
+        letter={letter}
+        onClearLetter={clearLetter}
+        onReset={reset}
+        title="All Tracks"
+        total={total}
+      />
       <TrackTable
         {...trackTableProps}
         alphaHandlerRef={alphaHandlerRef}
@@ -3206,6 +3205,7 @@ const Library = () => {
   };
 
   const hasTileList = [
+    VIEWS.ARTISTS,
     VIEWS.ALBUMS,
     VIEWS.GENRES,
     VIEWS.YEARS,
@@ -3217,10 +3217,13 @@ const Library = () => {
     (activeView === VIEWS.MIXTAPES && Boolean(current.params?.selectedId)) ||
     (activeView === VIEWS.ALBUMS && Boolean(current.params?.selected));
 
+  // Years is deliberately absent: years are numeric, so every entry buckets to '#' and the
+  // rail would be permanently dead. Every other collection view has an alphabet.
   const showAlphaStrip =
     activeView === VIEWS.ARTISTS ||
     activeView === VIEWS.TRACKS ||
     activeView === VIEWS.ISSUES ||
+    activeView === VIEWS.GENRES ||
     (activeView === VIEWS.ALBUMS && !current.params?.selected) ||
     (activeView === VIEWS.FOLDERS && viewMode === 'list');
 
@@ -3794,6 +3797,8 @@ const Library = () => {
             onContextMenu={openContextMenu}
             onPlayArtist={(a) => playQuery({ artist: a.artist })}
             scrollContainerRef={viewScrollRef}
+            tileSize={tileSize}
+            viewMode={viewMode}
           />
         );
 
@@ -3827,9 +3832,11 @@ const Library = () => {
       case VIEWS.GENRES:
         return (
           <GenreView
+            alphaHandlerRef={alphaHandlerRef}
             genres={genres}
             initialSelected={current.params?.selected ?? null}
             loading={loadingGenres}
+            onAlphaEnabled={setAlphaEnabled}
             onContextMenu={openContextMenu}
             onPlayGenre={(g) => playQuery({ genre: g.genre })}
             tileSize={tileSize}
