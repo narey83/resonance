@@ -94,7 +94,7 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
   backendLogs:       false,
   artworkBackground: true,
   streamQuality:     'auto',
-  playerMode:        'bubble',
+  playerMode:        'bar',
   notifications:     DEFAULT_NOTIFICATIONS,
   loaded:            false,
 
@@ -110,7 +110,7 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
         backendLogs:       parsed.backendLogs       ?? false,
         artworkBackground: parsed.artworkBackground ?? true,
         streamQuality:     parsed.streamQuality     ?? 'auto',
-        playerMode:        parsed.playerMode         ?? 'bubble',
+        playerMode:        parsed.playerMode         ?? 'bar',
         notifications:     { ...DEFAULT_NOTIFICATIONS, ...(parsed.notifications ?? {}) },
         loaded:            true,
       });
