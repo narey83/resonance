@@ -755,8 +755,12 @@ export default function PlayerOverlay() {
               // Deliberately the thumbnail, not the full-size render: at blur radius 28 the extra
               // resolution is destroyed anyway, and this one is already on disk, so the background
               // paints immediately instead of waiting on a fresh server render.
-              recyclingKey={thumbCacheKey ?? artworkCacheKey ?? thumbUrl ?? artworkUrl ?? undefined}
+              // No recyclingKey here (unlike the hero): clearing the view on every track change
+              // blanked the backdrop until the next cover decoded — a hard flash to the sheet
+              // colour. At blur 28 the outgoing cover is unreadable mush, so holding it and
+              // cross-dissolving is both invisible and safe for photosensitive viewers.
               source={{ uri: (thumbUrl ?? artworkUrl)!, cacheKey: thumbCacheKey ?? artworkCacheKey }}
+              transition={{ duration: 320, effect: 'cross-dissolve' }}
               style={[StyleSheet.absoluteFill, { transform: [{ scale: 1.3 }] }]}
             />
           )}
@@ -1051,7 +1055,10 @@ function makeStyles(c: ThemeColors) {
     overlay: {
       position: 'absolute',
       top: 0, left: 0, right: 0, bottom: 0,
-      backgroundColor: c.bgPrimary,
+      // Always dark, never c.bgPrimary: the sheet is white-text/light-status-bar in every
+      // palette, so under the light palette this painted a near-white page behind the
+      // translucent scrim — and any frame without artwork flashed white.
+      backgroundColor: '#0d1117',
       overflow: 'hidden',
       zIndex: 100,
       elevation: 100,
