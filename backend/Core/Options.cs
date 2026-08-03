@@ -1415,13 +1415,6 @@ namespace resonance
         public class AnalysisOptions
         {
             /// <summary>
-            ///     Gets the number of concurrent workers. Each worker runs one ffmpeg and one
-            ///     Essentia process at a time, so this is roughly the CPU core count it will use.
-            /// </summary>
-            [Range(1, 16)]
-            public int Workers { get; init; } = 2;
-
-            /// <summary>
             ///     Gets a value indicating whether detected BPM and key are written back to file tags.
             /// </summary>
             public bool WriteToTags { get; init; } = true;

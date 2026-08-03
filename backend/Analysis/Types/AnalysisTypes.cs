@@ -112,7 +112,6 @@ namespace resonance.Analysis
         AnalysisMetrics Metrics = AnalysisMetrics.All,
         bool SkipAnalysed = true,
         bool ResetAll = false,
-        int Workers = 2,
         string[] OnlyFilenames = null);
 
     /// <summary>API response shape for waveform data.</summary>

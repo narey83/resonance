@@ -91,7 +91,6 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
   const [skipTagged, setSkipTagged] = useState(true);
   const [resetAll, setResetAll] = useState(false);
   const [metrics, setMetrics] = useState(() => new Set(METRICS));
-  const [workers, setWorkers] = useState(2);
 
   const toggleMetric = (m) =>
     setMetrics((previous) => {
@@ -138,21 +137,6 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
             scanning for four costs barely more than scanning for one.
           </span>
         </div>
-
-        <label className="ka-field">
-          <span className="ka-field-label">Workers</span>
-          <input
-            className="ka-input"
-            max={8}
-            min={1}
-            onChange={({ target }) => setWorkers(Number(target.value))}
-            type="number"
-            value={workers}
-          />
-          <span className="ka-field-hint">
-            Concurrent analysis threads (1–8).
-          </span>
-        </label>
 
         {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
         <label className="ka-toggle-row">
@@ -207,7 +191,6 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
               metrics: METRICS.filter((m) => metrics.has(m)).join(', '),
               skipAnalysed: skipTagged,
               resetAll,
-              workers,
             })
           }
           type="button"
@@ -801,7 +784,6 @@ const Analysis = () => {
         metrics: METRICS.join(', '),
         skipAnalysed: false,
         resetAll: false,
-        workers: 2,
       },
       filenames,
     );
@@ -1055,7 +1037,6 @@ const Analysis = () => {
         metrics: METRICS.join(', '),
         skipAnalysed: true,
         resetAll: false,
-        workers: 2,
       },
       allDirectoryIds,
     );

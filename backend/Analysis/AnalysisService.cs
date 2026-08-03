@@ -401,10 +401,16 @@ namespace resonance.Analysis
                 var failed = 0;
                 var inFlight = 0;
 
+                // One worker per core: each runs a single-threaded ffmpeg then a single-threaded
+                // Essentia, so the pool size is the core count rather than anything configurable.
+                // .NET reports the cgroup CPU limit here, so a constrained container gets its share
+                // rather than the host's total.
+                var workers = Environment.ProcessorCount;
+
                 SetState(true, false, false, total, 0, 0, 0, metrics: request.Metrics.ToString());
                 Log.Information(
                     "Analysis scan started. Metrics: {Metrics}, Workers: {Workers}, Tracks: {Total}, ResetAll: {ResetAll}",
-                    request.Metrics, request.Workers, total, request.ResetAll);
+                    request.Metrics, workers, total, request.ResetAll);
 
                 if (total == 0)
                 {
@@ -425,7 +431,6 @@ namespace resonance.Analysis
                 }
 
                 var options = Options.CurrentValue.Analysis;
-                var workers = Math.Max(1, request.Workers);
 
                 // Bounded so the queue does not materialise every pending track's state at once
                 // on a library of tens of thousands of files.

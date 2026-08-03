@@ -37,7 +37,7 @@ const BLEND_MODES = ['lighter', 'multiply'];
 
 /**
  * Reads the active theme's waveform palette off the element about to be drawn
- * into: indigo bass, coral mids, cyan air, plus the beat-grid line colour. The
+ * into: rose bass, amber mids, cream air, plus the beat-grid line colour. The
  * band colours are blended rather than stacked, and which blend reads correctly
  * depends on the panel — additive on a dark screen, multiply on a light one — so
  * the mode travels with the colours instead of being fixed here. Fallbacks are
@@ -52,10 +52,10 @@ export const waveColours = (element) => {
   const blend = token('--wave-blend', 'lighter');
   return {
     blend: BLEND_MODES.includes(blend) ? blend : 'lighter',
-    grid: token('--wave-grid', 'rgba(255,255,255,0.14)'),
-    high: token('--wave-high', '#63e0f0'),
-    low: token('--wave-low', '#4a5cd8'),
-    mid: token('--wave-mid', '#ff7a4d'),
+    grid: token('--wave-grid', 'rgba(255,232,214,0.13)'),
+    high: token('--wave-high', '#ffe2b0'),
+    low: token('--wave-low', '#e0417a'),
+    mid: token('--wave-mid', '#ffa629'),
   };
 };
 

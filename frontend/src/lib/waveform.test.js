@@ -110,10 +110,10 @@ describe('waveColours', () => {
     document.body.append(element);
     expect(waveColours(element)).toEqual({
       blend: 'lighter',
-      grid: 'rgba(255,255,255,0.14)',
-      high: '#63e0f0',
-      low: '#4a5cd8',
-      mid: '#ff7a4d',
+      grid: 'rgba(255,232,214,0.13)',
+      high: '#ffe2b0',
+      low: '#e0417a',
+      mid: '#ffa629',
     });
     element.remove();
   });

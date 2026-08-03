@@ -84,19 +84,18 @@
   --player-tooltip-bg:      rgba(10, 10, 20, 0.88);
 
   /* Waveform — the seek bar canvas reads these itself, so a theme switch
-     retints it with no JS. Indigo bass, coral mids, cyan air: a cooler, more
-     cohesive reading than the CDJ blue/orange/white, where the white highs blow
-     out and the orange mids fight everything. Band colours are *blended*, not
-     stacked, so the blend has to suit the panel — light mode multiplies (ink on
-     paper: overlaps darken), dark mode adds (light on a screen: overlaps
-     brighten). Both keep a bass-only or hats-only instant reading as its own
-     colour, which is the whole point of colouring by band. */
-  --wave-bg:    linear-gradient(180deg, rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.03));
+     retints it with no JS. A warm triad: rose bass, amber mids, sepia air. The
+     three stay apart on saturation and lightness rather than on hue distance,
+     which is what lets them all sit in the same warm family and still read as
+     separate bands. Band colours are *blended*, not stacked, so the blend has to
+     suit the panel — light mode multiplies (ink on paper: overlaps darken), dark
+     mode adds (light on a screen: overlaps brighten). */
+  --wave-bg:    linear-gradient(180deg, rgba(120, 60, 20, 0.07), rgba(120, 60, 20, 0.035));
   --wave-blend: multiply;
-  --wave-low:   #3b3fb6;
-  --wave-mid:   #e2571b;
-  --wave-high:  #0e8fa8;
-  --wave-grid:  rgba(0, 0, 0, 0.12);
+  --wave-low:   #b3204e;
+  --wave-mid:   #d97706;
+  --wave-high:  #8a5a2b;
+  --wave-grid:  rgba(80, 40, 10, 0.13);
 
   /* Nav tokens — light */
   --nav-bg:            var(--bg-surface);
@@ -202,14 +201,16 @@
 
   /* Waveform — the same three bands on a dark screen, one step brighter and
      blended additively, so a full-range hit sums to a warm white while bass and
-     air keep their own colour. The panel is a faint top-lit gradient rather than
-     a flat slab, which stops it reading as a hole in the page. */
-  --wave-bg:    linear-gradient(180deg, #181b24, #10121a);
+     air keep their own colour. The panel is warm charcoal on a faint top-lit
+     gradient rather than a flat neutral slab, which both stops it reading as a
+     hole in the page and keeps the rose end of the palette from looking cold
+     against it. */
+  --wave-bg:    linear-gradient(180deg, #221a19, #150f0e);
   --wave-blend: lighter;
-  --wave-low:   #4a5cd8;
-  --wave-mid:   #ff7a4d;
-  --wave-high:  #63e0f0;
-  --wave-grid:  rgba(255, 255, 255, 0.14);
+  --wave-low:   #e0417a;
+  --wave-mid:   #ffa629;
+  --wave-high:  #ffe2b0;
+  --wave-grid:  rgba(255, 232, 214, 0.13);
 }
 
 /* ─── Semantic UI dark overrides (amoled) ─────────────────────────────────────── */
