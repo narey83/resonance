@@ -1,0 +1,142 @@
+// <copyright file="LoudnessMeter.test.jsx" company="John Narey">
+//    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
+//   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
+//   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
+//   │ Copyright (c) 2026 John Narey.
+//   │ Part of Resonance, a Soulseek client based on slskd.
+//   │
+//   │ This program is free software: you can redistribute it and/or modify
+//   │ it under the terms of the GNU Affero General Public License as published
+//   │ by the Free Software Foundation, version 3.
+//   │
+//   │ This program is distributed in the hope that it will be useful,
+//   │ but WITHOUT ANY WARRANTY; without even the implied warranty of
+//   │ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//   │ GNU Affero General Public License for more details.
+//   │
+//   │ You should have received a copy of the GNU Affero General Public License
+//   │ along with this program.  If not, see https://www.gnu.org/licenses/.
+//   │
+//   │ This program is distributed with Additional Terms pursuant to Section 7
+//   │ of the AGPLv3.  See the LICENSE file in the root directory of this
+//   │ project for the complete terms and conditions.
+//   │
+//   ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ╌ ╌╌╌╌ ╌
+//   │ SPDX-FileCopyrightText: John Narey
+//   │ SPDX-License-Identifier: AGPL-3.0-only
+//   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
+// </copyright>
+
+import api from '../../lib/api';
+import LoudnessMeter from './LoudnessMeter';
+import React from 'react';
+import ReactDOM from 'react-dom';
+import { act } from 'react-dom/test-utils';
+
+jest.mock('../../lib/api', () => ({
+  __esModule: true,
+  default: { get: jest.fn() },
+}));
+
+// A constant 0.5 amplitude is a mean square of 0.25, so the meter should read
+// -0.691 + 10 * log10(0.25) = -6.7 LUFS. A fixed sample value keeps the
+// assertion an exact number rather than a range.
+const SAMPLE_AMPLITUDE = 0.5;
+const EXPECTED_LABEL = '-6.7 LUFS';
+
+const stubAudioContext = () => {
+  const node = () => ({
+    connect: jest.fn(),
+    frequency: { value: 0 },
+    gain: { setTargetAtTime: jest.fn(), value: 1 },
+    type: '',
+  });
+
+  window.AudioContext = jest.fn(() => ({
+    createAnalyser: () => ({
+      connect: jest.fn(),
+      fftSize: 32,
+      getFloatTimeDomainData: (buffer) => buffer.fill(SAMPLE_AMPLITUDE),
+      smoothingTimeConstant: 0,
+    }),
+    createBiquadFilter: node,
+    createGain: node,
+    createMediaElementSource: node,
+    currentTime: 0,
+    destination: {},
+    resume: jest.fn(() => Promise.resolve()),
+    state: 'running',
+  }));
+};
+
+describe('LoudnessMeter', () => {
+  let container;
+  let frame;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.append(container);
+    stubAudioContext();
+
+    // The meter's whole point is a number that is there on every track,
+    // including the ones nothing has analysed yet, so the loudness lookup is
+    // stubbed as the un-analysed case (404 → rejected) — exactly the state
+    // that used to leave the meter blank. Set here rather than in the
+    // jest.mock factory because CRA's jest resets mocks between tests.
+    api.get.mockRejectedValue(new Error('not analysed'));
+
+    // Driven by hand rather than by jsdom's timer-backed rAF: the meter
+    // throttles itself to ~15fps, so waiting for real frames makes the test
+    // a timing race for no gain.
+    frame = null;
+    jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      frame = cb;
+      return 1;
+    });
+    jest.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    ReactDOM.unmountComponentAtNode(container);
+    container.remove();
+    jest.restoreAllMocks();
+  });
+
+  const render = async () => {
+    const audioRef = { current: document.createElement('audio') };
+
+    await act(async () => {
+      ReactDOM.render(
+        <LoudnessMeter
+          audioRef={audioRef}
+          track={{ path: '/downloads/HATE/Sterac - P909.mp3' }}
+        />,
+        container,
+      );
+    });
+
+    return container.querySelector('.mp-loudness-meter-label');
+  };
+
+  it('shows a live reading on a track with no cached loudness', async () => {
+    const label = await render();
+
+    expect(label).not.toBeNull();
+
+    act(() => frame(1_000));
+
+    expect(label.textContent).toBe(EXPECTED_LABEL);
+  });
+
+  it('keeps reading while the meter is silent', async () => {
+    const label = await render();
+
+    act(() => frame(1_000));
+
+    // Second frame inside the 65ms throttle window: skipped, so the label must
+    // hold its last value rather than reset.
+    act(() => frame(1_010));
+
+    expect(label.textContent).toBe(EXPECTED_LABEL);
+  });
+});

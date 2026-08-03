@@ -66,6 +66,14 @@ const resamplePeaks = (peaks, numberSlots, startFrac = 0, endFrac = 1) => {
 // Pioneer CDJ / rekordbox-style frequency colouring: blue=low, orange=mid, white=high.
 const BAND_COLOURS = { high: '#f5f5f5', low: '#2f6fed', mid: '#ff8a3d' };
 
+// The cached whole-track grid is sampled finer than the bars actually drawn, so
+// the per-frame window resample is a genuine N:1 aggregation. Resampling by a
+// ratio close to — but not exactly — 1:1 duplicates or drops an atom at a
+// regular interval, striping the waveform with a periodic beat pattern that
+// crawls as the window scrolls. Aggregating several atoms per bar can't beat
+// against the bar grid at all.
+const GRID_OVERSAMPLE = 4;
+
 // SoundCloud-style mirrored bar waveform, click/drag to seek.
 // Falls back to nothing (caller renders the plain bar) when no peak data exists.
 // variant: 'mono' (single accent-coloured bars) or 'bands' (Pioneer-style frequency colouring).
@@ -172,13 +180,18 @@ const WaveformSeekBar = ({
     if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
     if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
 
-    // gap=0 (fully packed, zero margin) is fragile: any tiny mismatch between
-    // the canvas's device-pixel buffer and how the browser actually paints it
-    // (non-100% browser zoom, sub-pixel rounding) turns a 1px-per-bar pattern
-    // into visible periodic Moiré banding unrelated to the real audio. A 1px
-    // gap gives enough tolerance that a scale mismatch just softens bar edges.
-    const barWidth = 1;
-    const gap = 1;
+    // Bar geometry is defined in CSS pixels and scaled up to device pixels. A
+    // 1-device-pixel bar with a 1-device-pixel gap is a comb sitting exactly at
+    // the pixel grid's Nyquist frequency, so any non-1:1 mapping between the
+    // canvas backing store and the physical pixels (fractional
+    // devicePixelRatio, browser zoom, a scaled desktop, the compositor
+    // resampling the layer) beats against it and bands the whole waveform in
+    // Moiré unrelated to the audio. A 3-CSS-pixel period stays well below
+    // Nyquist at every density, and because it's a whole number of device
+    // pixels no bar gets antialiased differently from its neighbours.
+    const scale = Math.max(1, Math.round(dpr));
+    const barWidth = 2 * scale;
+    const gap = scale;
     const numberSlots = Math.max(1, Math.floor(pixelWidth / (barWidth + gap)));
 
     // Read the live audio position directly rather than the progressPct prop
@@ -192,14 +205,15 @@ const WaveformSeekBar = ({
         ? getCurrentTime()
         : (progressPct / 100) * duration;
 
-    // Pre-resample the whole track once, at exactly one grid "atom" per drawn
-    // bar at the current zoom, and cache it. Re-aggregating the shape straight
+    // Pre-resample the whole track once, at a few grid "atoms" per drawn bar at
+    // the current zoom, and cache it. Re-aggregating the shape straight
     // from raw peaks every frame (60x/sec) as a following window shifts by
     // fractions of a bin causes visible jitter — quantisation boundaries land
     // slightly differently frame to frame even though nothing audible changed.
-    // Against this grid the visible window is a straight 1:1 slice instead, so
-    // the shape is rock stable and the per-frame scan is one pass over what's
-    // actually drawn. (Sizing the grid for the deepest zoom instead meant
+    // Against this grid the visible window is a fixed GRID_OVERSAMPLE:1 slice
+    // instead, so the shape is rock stable and the per-frame scan is one pass
+    // over a small multiple of what's drawn. (Sizing the grid for the
+    // deepest zoom instead meant
     // every frame at zoom 1 re-scanned an array 100x larger than it drew,
     // which is where the frame budget was going.)
     let resampled = resampledRef.current;
@@ -215,7 +229,7 @@ const WaveformSeekBar = ({
       // this tolerance.
       Math.abs(resampled.numberSlots - numberSlots) > 20
     ) {
-      const fullSlots = numberSlots * zoom;
+      const fullSlots = numberSlots * zoom * GRID_OVERSAMPLE;
       const overallFull = resamplePeaks(peaks.overall, fullSlots);
       const lowFull = resamplePeaks(peaks.low, fullSlots);
       const midFull = resamplePeaks(peaks.mid, fullSlots);
@@ -287,9 +301,9 @@ const WaveformSeekBar = ({
     const startFrac = duration ? drawStart / duration : 0;
     const endFrac = duration ? drawEnd / duration : 1;
     // Resample the window from the cached grid (fullSlots), not the raw peaks
-    // — this is a direct 1:1 slice of an already-quantised, per-frame-stable
-    // set of "atoms" rather than a fresh aggregation of raw high-resolution
-    // samples, which is what kills the frame-to-frame jitter.
+    // — this aggregates an already-quantised, per-frame-stable set of "atoms"
+    // rather than freshly re-aggregating raw high-resolution samples, which is
+    // what kills the frame-to-frame jitter.
     const overall = resamplePeaks(resampled.overall, slots, startFrac, endFrac);
     const low = resamplePeaks(resampled.low, slots, startFrac, endFrac);
     const mid = resamplePeaks(resampled.mid, slots, startFrac, endFrac);
