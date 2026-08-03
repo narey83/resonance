@@ -358,6 +358,7 @@ export default function TransfersScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [openFolder, setOpenFolder] = useState<string | null>(null);
   const [actionUser, setActionUser] = useState<string | null>(null);
+  const [clearState, setClearState] = useState<'idle' | 'clearing' | 'cleared'>('idle');
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -397,11 +398,19 @@ export default function TransfersScreen() {
   }, [loadFn]);
 
   const onClearDone = useCallback(() => {
-    // Reported as an unhandled rejection otherwise, which surfaces as a bare
-    // "AxiosError: Network Error" toast and tells the user nothing useful.
-    storeClear(dir).catch(() => {
-      Alert.alert('Clear failed', 'The server did not confirm the request. Pull to refresh to check.');
-    });
+    setClearState('clearing');
+    storeClear(dir).then(
+      () => {
+        setClearState('cleared');
+        setTimeout(() => setClearState('idle'), 2000);
+      },
+      // Reported as an unhandled rejection otherwise, which surfaces as a bare
+      // "AxiosError: Network Error" toast and tells the user nothing useful.
+      () => {
+        setClearState('idle');
+        Alert.alert('Clear failed', 'The server did not confirm the request. Pull to refresh to check.');
+      },
+    );
   }, [dir, storeClear]);
 
   const onAction = useCallback((t: Transfer) => {
@@ -495,8 +504,10 @@ export default function TransfersScreen() {
             );
           })}
         </ScrollView>
-        <Pressable onPress={onClearDone} style={styles.clearBtn} hitSlop={8}>
-          <Text style={[styles.filterLabel, { color: colors.textMuted }]}>Clear Done</Text>
+        <Pressable disabled={clearState !== 'idle'} onPress={onClearDone} style={styles.clearBtn} hitSlop={8}>
+          <Text style={[styles.filterLabel, { color: clearState === 'cleared' ? colors.success : colors.textMuted }]}>
+            {clearState === 'clearing' ? 'Clearing…' : clearState === 'cleared' ? 'Cleared' : 'Clear Done'}
+          </Text>
         </Pressable>
       </View>
 
