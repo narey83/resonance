@@ -29,6 +29,7 @@
 
 import api from '../../lib/api';
 import { formatSeconds } from '../../lib/util';
+import { primeWaveformCache } from '../Shared/WaveformPreview';
 import React, { useEffect, useRef, useState } from 'react';
 
 // Resamples a [startFrac, endFrac) slice of peaks into one value per bar slot
@@ -108,6 +109,12 @@ const WaveformSeekBar = ({
       .get('/analysis/waveform', { params: { path: track.path } })
       .then(({ data }) => {
         if (cancelled || !data?.overallPeaks?.length) return;
+
+        // This request analyses the track if it wasn't already (no cachedOnly),
+        // so it's often the first place the peaks exist — hand them to the
+        // library rows' cache rather than let them keep showing "not analysed".
+        primeWaveformCache(track.path, data);
+
         peaksRef.current = {
           overall: new Float32Array(data.overallPeaks),
           low: new Float32Array(data.lowPeaks),

@@ -40,6 +40,20 @@ import React, { useEffect, useRef, useState } from 'react';
 const cache = new Map();
 const inFlight = new Map();
 
+// Rows already on screen when peaks arrive from somewhere else — playing a
+// track analyses it, since the player asks for its waveform without
+// cachedOnly — otherwise sat on their cached miss forever: the row is mounted,
+// so it never re-reads the cache, and `hasWaveform: false` from the list fetch
+// stops it asking again. Anything that learns a track's peaks calls
+// primeWaveformCache and the mounted row for that path redraws.
+const listeners = new Set();
+
+export const primeWaveformCache = (path, data) => {
+  if (!path || !data?.overallPeaks?.length) return;
+  cache.set(path, toPeaks(data));
+  for (const listener of listeners) listener(path);
+};
+
 // Analysis is queued, not synchronous, so a click watches the cached-only
 // endpoint until the peaks appear. ponytail: a fixed poll — worth replacing if
 // the analysis service ever pushes per-track progress over the hub.
@@ -216,6 +230,17 @@ const WaveformPreview = ({
       observer.disconnect();
     };
   }, [hasWaveform, path]);
+
+  useEffect(() => {
+    const listener = (changed) => {
+      if (changed === path) setPeaks(cache.get(path));
+    };
+
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  }, [path]);
 
   useEffect(() => {
     if (peaks) drawWaveform(canvasRef.current, peaks, { height, mono, width });

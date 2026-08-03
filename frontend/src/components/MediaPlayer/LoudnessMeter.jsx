@@ -68,6 +68,7 @@ const GRAPH_PROPERTY = '__resonanceLoudnessGraph';
 // close enough for a live visual meter, not a broadcast-certified measurement.
 const LoudnessMeter = ({ audioRef, track }) => {
   const fillRef = useRef(null);
+  const labelRef = useRef(null);
   const analyserRef = useRef(null);
   const bufferRef = useRef(null);
   const gainNodeRef = useRef(null);
@@ -255,6 +256,13 @@ const LoudnessMeter = ({ audioRef, track }) => {
             : pct > 65
               ? '#ffb84d'
               : 'var(--art-accent, #4d9fff)';
+
+        // Written straight to the DOM rather than through state — this runs
+        // ~15x/sec and a re-render of the whole player at that rate is exactly
+        // the main-thread contention the throttle above exists to avoid.
+        if (labelRef.current) {
+          labelRef.current.textContent = `${clamped.toFixed(1)} LUFS`;
+        }
       }
     };
 
@@ -263,7 +271,14 @@ const LoudnessMeter = ({ audioRef, track }) => {
   }, []);
 
   return (
-    <div className="mp-loudness-meter">
+    <div
+      className="mp-loudness-meter"
+      title={
+        staticLufs == null
+          ? 'Live loudness (LUFS)'
+          : `Live loudness — track averages ${staticLufs.toFixed(1)} LUFS integrated`
+      }
+    >
       <button
         className={`mp-loudness-normalize-btn${normalize ? ' mp-loudness-normalize-btn--active' : ''}`}
         onClick={toggleNormalize}
@@ -272,24 +287,22 @@ const LoudnessMeter = ({ audioRef, track }) => {
       >
         Norm
       </button>
-      <div
-        className="mp-loudness-meter-track"
-        title={
-          staticLufs == null
-            ? 'Live loudness (LUFS)'
-            : `Live loudness — track averages ${staticLufs.toFixed(1)} LUFS integrated`
-        }
-      >
+      <div className="mp-loudness-meter-track">
         <div
           className="mp-loudness-meter-fill"
           ref={fillRef}
         />
       </div>
-      {staticLufs != null && (
-        <span className="mp-loudness-meter-label">
-          {staticLufs.toFixed(1)} LUFS
-        </span>
-      )}
+      {/* Live momentary reading, not the track's integrated LUFS: the
+          integrated value only exists once the file has been analysed, so
+          keying the label on it left the meter with no number at all on every
+          not-yet-analysed track. The integrated figure lives in the tooltip. */}
+      <span
+        className="mp-loudness-meter-label"
+        ref={labelRef}
+      >
+        –
+      </span>
     </div>
   );
 };

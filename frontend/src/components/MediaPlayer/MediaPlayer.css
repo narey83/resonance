@@ -444,6 +444,11 @@
   font-size: 11px;
   color: var(--player-text-dim, rgba(255, 255, 255, 0.4));
   white-space: nowrap;
+  /* Live reading, so the digit count changes constantly (-9.4 → -14.9 → -40.0);
+     fixed width + tabular figures stop it shoving the close button around. */
+  min-width: 56px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .media-player-close-btn { color: var(--player-text-dim, rgba(255, 255, 255, 0.4)); }
