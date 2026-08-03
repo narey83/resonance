@@ -397,24 +397,11 @@ export default function TransfersScreen() {
   }, [loadFn]);
 
   const onClearDone = useCallback(() => {
-    Alert.alert(
-      'Clear Completed',
-      `Remove all completed ${dir === 'download' ? 'downloads' : 'uploads'} from the list?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          // Reported as an unhandled rejection otherwise, which surfaces as a bare
-          // "AxiosError: Network Error" toast and tells the user nothing useful.
-          onPress: () => {
-            storeClear(dir).catch(() => {
-              Alert.alert('Clear failed', 'The server did not confirm the request. Pull to refresh to check.');
-            });
-          },
-        },
-      ],
-    );
+    // Reported as an unhandled rejection otherwise, which surfaces as a bare
+    // "AxiosError: Network Error" toast and tells the user nothing useful.
+    storeClear(dir).catch(() => {
+      Alert.alert('Clear failed', 'The server did not confirm the request. Pull to refresh to check.');
+    });
   }, [dir, storeClear]);
 
   const onAction = useCallback((t: Transfer) => {
