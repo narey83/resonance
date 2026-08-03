@@ -61,6 +61,23 @@ const GAIN_RAMP_SECONDS = 0.08;
 // throws again. A property on the element itself survives the hot-swap.
 const GRAPH_PROPERTY = '__resonanceLoudnessGraph';
 
+// The bar on its own says nothing about what full means — 0 LUFS is digital
+// full scale, which a real master never reaches, so "nearly full" is the
+// useful landmark rather than the top of the scale. Newlines render in a title
+// attribute, so the whole measurement fits without any extra chrome in a bar
+// that has no room for it.
+const describe = (loudness) => {
+  const scale = `Live momentary loudness · ${METER_MAX_LUFS} LUFS is full scale, meter floor ${METER_MIN_LUFS}`;
+  if (!loudness) return `${scale}\nThis track has not been analysed yet`;
+
+  return [
+    scale,
+    `Integrated: ${loudness.integratedLufs?.toFixed(1)} LUFS (the track's overall level)`,
+    `Range: ${loudness.loudnessRange?.toFixed(1)} LU (quiet-to-loud spread)`,
+    `True peak: ${loudness.truePeak?.toFixed(1)} dBTP (above 0 clips)`,
+  ].join('\n');
+};
+
 // Live LUFS-style loudness meter, fed by the actual <audio> element via the
 // Web Audio API, plus the track's cached integrated LUFS as a static reference
 // number. Approximates ITU-R BS.1770 K-weighting with two BiquadFilterNodes
@@ -73,20 +90,24 @@ const LoudnessMeter = ({ audioRef, track }) => {
   const bufferRef = useRef(null);
   const gainNodeRef = useRef(null);
   const audioContextRef = useRef(null);
-  const [staticLufs, setStaticLufs] = useState(null);
+  // The whole measurement, not just the integrated figure: one analysis pass
+  // produces the loudness range and true peak too, and the endpoint was
+  // already returning them to be thrown away.
+  const [loudness, setLoudness] = useState(null);
+  const staticLufs = loudness?.integratedLufs ?? null;
   const [normalize, setNormalize] = useState(() =>
     prefs.get('mediaPlayer.lufsNormalize', false),
   );
 
   useEffect(() => {
-    setStaticLufs(null);
+    setLoudness(null);
     if (!track?.path) return undefined;
 
     let cancelled = false;
     api
       .get('/analysis/loudness', { params: { path: track.path } })
       .then(({ data }) => {
-        if (!cancelled) setStaticLufs(data.integratedLufs);
+        if (!cancelled) setLoudness(data);
       })
       .catch(() => {
         /* no cached loudness yet — static reference just stays hidden */
@@ -273,11 +294,7 @@ const LoudnessMeter = ({ audioRef, track }) => {
   return (
     <div
       className="mp-loudness-meter"
-      title={
-        staticLufs == null
-          ? 'Live loudness (LUFS)'
-          : `Live loudness — track averages ${staticLufs.toFixed(1)} LUFS integrated`
-      }
+      title={describe(loudness)}
     >
       <button
         className={`mp-loudness-normalize-btn${normalize ? ' mp-loudness-normalize-btn--active' : ''}`}
