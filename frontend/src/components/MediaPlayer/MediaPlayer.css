@@ -444,9 +444,13 @@
   font-size: 11px;
   color: var(--player-text-dim, rgba(255, 255, 255, 0.4));
   white-space: nowrap;
-  /* Live reading, so the digit count changes constantly (-9.4 → -14.9 → -40.0);
-     fixed width + tabular figures stop it shoving the close button around. */
-  min-width: 56px;
+  /* Live reading, so the digit count changes constantly (0.0 → -9.4 → -40.0).
+     A hard width sized to the longest possible value (-40.0 LUFS, the meter's
+     floor) plus tabular figures, so nothing to the right of it ever moves —
+     min-width still grew once the reading got long enough to overrun it, and
+     flex: none stops the row squeezing it back. */
+  flex: none;
+  width: 66px;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
