@@ -31,6 +31,33 @@
 // the player's seek bar all draw a track the same way.
 export const BAND_COLOURS = { high: '#f5f5f5', low: '#2f6fed', mid: '#ff8a3d' };
 
+/**
+ * Picks how much audio one beat-grid line should span, so the grid is never
+ * drawn finer than it can be seen. A line per beat is only legible while
+ * zoomed in: a whole 128bpm track across a 900px seek bar puts a beat every
+ * ~1.4 pixels, which is a comb at the pixel grid's own frequency — it aliases
+ * into Moiré bands that have nothing to do with the audio, and they crawl as
+ * soon as the view scrolls. Step up to bar lines, then four-bar phrase lines,
+ * then give up.
+ * @param {number} bpm the track's detected tempo.
+ * @param {number} pixelsPerSecond current horizontal scale, in canvas pixels.
+ * @param {number} minSpacing closest two lines may sit, in canvas pixels.
+ * @returns {number} seconds between lines, or 0 to skip the grid entirely.
+ */
+export const beatGridSeconds = (bpm, pixelsPerSecond, minSpacing) => {
+  if (!bpm || !pixelsPerSecond) return 0;
+  const secondsPerBeat = 60 / bpm;
+  // 1 beat, 1 bar, 1 phrase — all multiples of a beat, so whatever survives is
+  // still anchored to the same grid.
+  for (const beats of [1, 4, 16]) {
+    if (secondsPerBeat * beats * pixelsPerSecond >= minSpacing) {
+      return secondsPerBeat * beats;
+    }
+  }
+
+  return 0;
+};
+
 // A drawn bar spanning more than a handful of stored bars is an overview, and
 // there peak is the wrong summary: taking the maximum of ~1000 stored peaks lands
 // near the track's loudest moment nearly every time, so every bar draws full

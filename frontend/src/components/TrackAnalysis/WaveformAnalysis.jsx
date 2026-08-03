@@ -33,6 +33,7 @@ import api from '../../lib/api';
 import { getLocalStreamUrl } from '../../lib/files';
 import { fuzzyFilter } from '../../lib/fuzzy';
 import { getTracks } from '../../lib/musicLibrary';
+import { beatGridSeconds } from '../../lib/waveform';
 import {
   Activity,
   AudioWaveform,
@@ -399,12 +400,15 @@ const drawBpmGrid = (canvas, bpm, duration, zoom = 1, scrollFraction = 0) => {
   const visibleDuration = duration / zoom;
   const startTime = scrollFraction * (duration - visibleDuration);
   const pixelsPerSecond = canvas.width / visibleDuration;
-  const secondsPerBeat = 60 / bpm;
+  // Zoomed out, a line per beat lands every pixel or two and aliases into
+  // Moiré bands rather than reading as a grid — widen it, or skip it.
+  const lineSeconds = beatGridSeconds(bpm, pixelsPerSecond, 8);
+  if (!lineSeconds) return;
 
   context.save();
   context.strokeStyle = 'rgba(255,255,255,0.22)';
   context.lineWidth = 1;
-  for (let time = 0; time < duration; time += secondsPerBeat) {
+  for (let time = 0; time < duration; time += lineSeconds) {
     if (time < startTime || time > startTime + visibleDuration) continue;
     const x = Math.round((time - startTime) * pixelsPerSecond) + 0.5;
     context.beginPath();

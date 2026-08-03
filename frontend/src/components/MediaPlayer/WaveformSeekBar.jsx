@@ -29,6 +29,7 @@
 
 import api from '../../lib/api';
 import { formatSeconds } from '../../lib/util';
+import { beatGridSeconds } from '../../lib/waveform';
 import { primeWaveformCache } from '../Shared/WaveformPreview';
 import React, { useEffect, useRef, useState } from 'react';
 
@@ -180,19 +181,18 @@ const WaveformSeekBar = ({
     if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
     if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
 
-    // Bar geometry is defined in CSS pixels and scaled up to device pixels. A
-    // 1-device-pixel bar with a 1-device-pixel gap is a comb sitting exactly at
-    // the pixel grid's Nyquist frequency, so any non-1:1 mapping between the
-    // canvas backing store and the physical pixels (fractional
-    // devicePixelRatio, browser zoom, a scaled desktop, the compositor
-    // resampling the layer) beats against it and bands the whole waveform in
-    // Moiré unrelated to the audio. A 3-CSS-pixel period stays well below
-    // Nyquist at every density, and because it's a whole number of device
-    // pixels no bar gets antialiased differently from its neighbours.
-    const scale = Math.max(1, Math.round(dpr));
-    const barWidth = 2 * scale;
-    const gap = scale;
-    const numberSlots = Math.max(1, Math.floor(pixelWidth / (barWidth + gap)));
+    // One column per CSS pixel, packed edge to edge with no gap. Any gap makes
+    // the waveform a comb, and a 1-device-pixel bar with a 1-device-pixel gap
+    // is a comb at exactly the pixel grid's Nyquist frequency: every non-1:1
+    // mapping between the canvas backing store and the physical pixels
+    // (fractional devicePixelRatio, browser zoom, a scaled desktop, the
+    // compositor resampling the layer) then beats against it and bands the
+    // whole waveform in Moiré unrelated to the audio. A solid fill has no
+    // periodic structure to beat against at all, and a whole number of device
+    // pixels per column keeps every column identical to its neighbours.
+    const dprScale = Math.max(1, Math.round(dpr));
+    const barWidth = dprScale;
+    const numberSlots = Math.max(1, Math.floor(pixelWidth / barWidth));
 
     // Read the live audio position directly rather than the progressPct prop
     // — that prop only updates as often as the browser's throttled
@@ -287,14 +287,14 @@ const WaveformSeekBar = ({
     // Bars can only be sampled on whole-slot boundaries, but the window slides
     // continuously — so snap the sampled window down to the nearest slot and
     // carry the leftover as a sub-pixel canvas translation. Without this the
-    // scroll only moves when it has accumulated a whole bar, which at zoom 2
-    // is one 2px jerk every few hundred ms: the stutter. One extra slot is
+    // scroll only moves when it has accumulated a whole column, which at zoom 2
+    // is one jerk every few hundred ms: the stutter. One extra slot is
     // sampled to cover what the shift pulls in from the right.
     const windowDuration = windowEnd - windowStart || 1;
     const slotSeconds = windowDuration / numberSlots;
     const slotStart = windowStart / slotSeconds;
     const snappedSlot = Math.floor(slotStart);
-    const offsetPx = (slotStart - snappedSlot) * (barWidth + gap);
+    const offsetPx = (slotStart - snappedSlot) * barWidth;
     const slots = numberSlots + 1;
     const drawStart = snappedSlot * slotSeconds;
     const drawEnd = drawStart + slots * slotSeconds;
@@ -314,7 +314,7 @@ const WaveformSeekBar = ({
     context.clearRect(0, 0, pixelWidth, pixelHeight);
     context.translate(-offsetPx, 0);
     const halfH = pixelHeight / 2;
-    const pixelsPerSecond = (barWidth + gap) / slotSeconds;
+    const pixelsPerSecond = barWidth / slotSeconds;
     // Exact fractional playhead position. Colouring whole bars played/unplayed
     // instead (what this used to do) quantises the boundary to a bar, i.e. to
     // ~half a second of audio at zoom 1 — the played edge visibly hopped.
@@ -325,21 +325,26 @@ const WaveformSeekBar = ({
       context.clip();
     };
 
-    // Beat grid: a line every beat (60/bpm seconds), anchored at track start —
-    // there's no detected downbeat/phase offset stored per track, only a
-    // single averaged BPM, so this assumes beat 1 lands at 0:00. Correct BPM
-    // + a beat starting right at the top of the track means the kicks should
-    // sit right on these lines; an intro/pickup before the beat locks in will
-    // drift the two apart even with correct BPM.
+    // Beat grid, anchored at track start — there's no detected downbeat/phase
+    // offset stored per track, only a single averaged BPM, so this assumes beat
+    // 1 lands at 0:00. Correct BPM + a beat starting right at the top of the
+    // track means the kicks should sit right on these lines; an intro/pickup
+    // before the beat locks in will drift the two apart even with correct BPM.
     const drawBeatGrid = () => {
-      const bpm = track?.bpm;
-      if (!bpm) return;
-      const secondsPerBeat = 60 / bpm;
-      const firstBeat = Math.ceil(drawStart / secondsPerBeat) * secondsPerBeat;
+      // One line per beat at zoom 1 is a line every pixel or two — a second
+      // comb at almost exactly the waveform's own period, which is where the
+      // crawling Moiré came from. Widen to bar/phrase lines, or drop the grid.
+      const lineSeconds = beatGridSeconds(
+        track?.bpm,
+        pixelsPerSecond,
+        8 * dprScale,
+      );
+      if (!lineSeconds) return;
+      const firstBeat = Math.ceil(drawStart / lineSeconds) * lineSeconds;
       context.save();
       context.strokeStyle = 'rgba(128,128,128,0.4)';
       context.lineWidth = 1;
-      for (let time = firstBeat; time < drawEnd; time += secondsPerBeat) {
+      for (let time = firstBeat; time < drawEnd; time += lineSeconds) {
         // Whole-pixel snapping only where the view is static — under a
         // scrolling sub-pixel offset it would make the grid jitter against
         // the bars it is supposed to line up with.
@@ -365,7 +370,7 @@ const WaveformSeekBar = ({
       const drawBandBars = (playedAlpha) => {
         for (let slot = 0; slot < slots; slot++) {
           const totalH = Math.max(2, (overall[slot] / max) * halfH);
-          const x = slot * (barWidth + gap);
+          const x = slot * barWidth;
 
           // Opacity per frequency band, not a fixed-height stacked slice — each
           // band's alpha is how present it is RIGHT NOW relative to its own
@@ -420,12 +425,7 @@ const WaveformSeekBar = ({
       context.fillStyle = colour;
       for (let slot = 0; slot < slots; slot++) {
         const barH = Math.max(2, (overall[slot] / max) * halfH);
-        context.fillRect(
-          slot * (barWidth + gap),
-          halfH - barH,
-          barWidth,
-          barH * 2,
-        );
+        context.fillRect(slot * barWidth, halfH - barH, barWidth, barH * 2);
       }
     };
 
