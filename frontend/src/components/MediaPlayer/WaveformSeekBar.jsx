@@ -307,6 +307,11 @@ const WaveformSeekBar = ({
       context.clip();
     };
 
+    // Both variants take their colours from the active theme's tokens rather
+    // than fixed hexes, so light and AMOLED each get a palette that suits the
+    // panel they're drawn on.
+    const colours = getColours(canvas);
+
     // Beat grid, anchored at track start — there's no detected downbeat/phase
     // offset stored per track, only a single averaged BPM, so this assumes beat
     // 1 lands at 0:00. Correct BPM + a beat starting right at the top of the
@@ -324,7 +329,7 @@ const WaveformSeekBar = ({
       if (!lineSeconds) return;
       const firstBeat = Math.ceil(drawStart / lineSeconds) * lineSeconds;
       context.save();
-      context.strokeStyle = 'rgba(128,128,128,0.4)';
+      context.strokeStyle = colours.grid;
       context.lineWidth = 1;
       for (let time = firstBeat; time < drawEnd; time += lineSeconds) {
         // Whole-pixel snapping only where the view is static — under a
@@ -340,11 +345,6 @@ const WaveformSeekBar = ({
 
       context.restore();
     };
-
-    // Both variants take their colours from the active theme's tokens rather
-    // than fixed hexes, so light and AMOLED each get a palette that suits the
-    // panel they're drawn on.
-    const colours = getColours(canvas);
 
     if (variant === 'bands') {
       // Plain source-over layering muddies the three bands into a flat wash:

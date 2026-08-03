@@ -37,13 +37,13 @@ const BLEND_MODES = ['lighter', 'multiply'];
 
 /**
  * Reads the active theme's waveform palette off the element about to be drawn
- * into. The Pioneer/rekordbox identity (blue lows, orange mids, bright highs) is
- * built for a dark CDJ screen and blends additively; on a light surface that
- * saturates to white, so a light theme supplies deeper hues and multiplies them
- * instead — same reading, opposite direction. Keeping the palette in the theme
- * rather than in a canvas constant is what lets both work.
+ * into: indigo bass, coral mids, cyan air, plus the beat-grid line colour. The
+ * band colours are blended rather than stacked, and which blend reads correctly
+ * depends on the panel — additive on a dark screen, multiply on a light one — so
+ * the mode travels with the colours instead of being fixed here. Fallbacks are
+ * the dark palette, for anything rendering outside a themed tree.
  * @param {HTMLElement} element the canvas (or its wrapper) to read tokens from.
- * @returns {object} the three band colours and the blend mode to combine them.
+ * @returns {object} the band colours, the grid colour and the blend mode.
  */
 export const waveColours = (element) => {
   const style = getComputedStyle(element);
@@ -52,9 +52,10 @@ export const waveColours = (element) => {
   const blend = token('--wave-blend', 'lighter');
   return {
     blend: BLEND_MODES.includes(blend) ? blend : 'lighter',
-    high: token('--wave-high', '#f5f5f5'),
-    low: token('--wave-low', '#2f6fed'),
-    mid: token('--wave-mid', '#ff8a3d'),
+    grid: token('--wave-grid', 'rgba(255,255,255,0.14)'),
+    high: token('--wave-high', '#63e0f0'),
+    low: token('--wave-low', '#4a5cd8'),
+    mid: token('--wave-mid', '#ff7a4d'),
   };
 };
 

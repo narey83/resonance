@@ -105,14 +105,15 @@ describe('resamplePeaks', () => {
 });
 
 describe('waveColours', () => {
-  it('falls back to the CDJ palette when a theme defines no tokens', () => {
+  it('falls back to the dark palette when a theme defines no tokens', () => {
     const element = document.createElement('div');
     document.body.append(element);
     expect(waveColours(element)).toEqual({
       blend: 'lighter',
-      high: '#f5f5f5',
-      low: '#2f6fed',
-      mid: '#ff8a3d',
+      grid: 'rgba(255,255,255,0.14)',
+      high: '#63e0f0',
+      low: '#4a5cd8',
+      mid: '#ff7a4d',
     });
     element.remove();
   });

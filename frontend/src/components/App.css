@@ -84,18 +84,19 @@
   --player-tooltip-bg:      rgba(10, 10, 20, 0.88);
 
   /* Waveform — the seek bar canvas reads these itself, so a theme switch
-     retints it with no JS. Pioneer's blue/orange/white band palette is
-     *additively* blended, which only works on a dark screen: on a light panel
-     everything saturates to white. Light mode therefore multiplies deeper
-     versions of the same three hues, which is the ink-on-paper equivalent —
-     overlapping bands darken instead of brightening, and a bass-only or
-     hats-only instant still reads as its own colour. "High" has to invert to a
-     slate rather than stay white, since white is the paper here. */
-  --wave-bg:    rgba(0, 0, 0, 0.05);
+     retints it with no JS. Indigo bass, coral mids, cyan air: a cooler, more
+     cohesive reading than the CDJ blue/orange/white, where the white highs blow
+     out and the orange mids fight everything. Band colours are *blended*, not
+     stacked, so the blend has to suit the panel — light mode multiplies (ink on
+     paper: overlaps darken), dark mode adds (light on a screen: overlaps
+     brighten). Both keep a bass-only or hats-only instant reading as its own
+     colour, which is the whole point of colouring by band. */
+  --wave-bg:    linear-gradient(180deg, rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.03));
   --wave-blend: multiply;
-  --wave-low:   #2558c8;
-  --wave-mid:   #e06b12;
-  --wave-high:  #4a5566;
+  --wave-low:   #3b3fb6;
+  --wave-mid:   #e2571b;
+  --wave-high:  #0e8fa8;
+  --wave-grid:  rgba(0, 0, 0, 0.12);
 
   /* Nav tokens — light */
   --nav-bg:            var(--bg-surface);
@@ -199,13 +200,16 @@
   --player-surface-border:  rgba(255, 255, 255, 0.10);
   --player-scrollbar-thumb: rgba(255, 255, 255, 0.15);
 
-  /* Waveform — the CDJ/rekordbox palette on a CDJ-dark screen, blended
-     additively so overlapping bands brighten into vivid combined colour. */
-  --wave-bg:    #14161c;
+  /* Waveform — the same three bands on a dark screen, one step brighter and
+     blended additively, so a full-range hit sums to a warm white while bass and
+     air keep their own colour. The panel is a faint top-lit gradient rather than
+     a flat slab, which stops it reading as a hole in the page. */
+  --wave-bg:    linear-gradient(180deg, #181b24, #10121a);
   --wave-blend: lighter;
-  --wave-low:   #2f6fed;
-  --wave-mid:   #ff8a3d;
-  --wave-high:  #f5f5f5;
+  --wave-low:   #4a5cd8;
+  --wave-mid:   #ff7a4d;
+  --wave-high:  #63e0f0;
+  --wave-grid:  rgba(255, 255, 255, 0.14);
 }
 
 /* ─── Semantic UI dark overrides (amoled) ─────────────────────────────────────── */
