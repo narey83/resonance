@@ -318,14 +318,19 @@ const SortControl = ({ options, sortBy, sortDir, onSort }: {
   );
 };
 
-// Right-hand metadata for a track row: musical key, BPM and duration stacked one per line (key and
-// BPM only when present). Shared across every track list so they render identically everywhere.
+// Right-hand metadata for a track row: musical key, BPM and duration stacked one per line. Key and
+// BPM keep their line when unknown, showing a dash, so rows stay the same height and the columns
+// line up. Shared across every track list so they render identically everywhere.
 const TrackMetaRight = React.memo(({ item }: { item: MusicTrack }) => {
   const { s } = useLibStyles();
   return (
     <View style={s.trackRight}>
-      {item.key ? <Text style={s.trackKey} numberOfLines={1}>{item.key}</Text> : null}
-      {item.bpm != null ? <Text style={s.trackBpm}>{Math.round(item.bpm)}</Text> : null}
+      <Text style={[s.trackKey, !item.key && s.trackMetaMissing]} numberOfLines={1}>
+        {item.key || '—'}
+      </Text>
+      <Text style={[s.trackBpm, item.bpm == null && s.trackMetaMissing]}>
+        {item.bpm != null ? Math.round(item.bpm) : '—'}
+      </Text>
       <Text style={s.trackDur}>{formatDuration(item.duration)}</Text>
     </View>
   );
@@ -4178,6 +4183,7 @@ function makeLibStyles(c: ThemeColors) {
     trackRight:  { alignItems: 'flex-end', gap: 2 },
     trackKey:    { fontSize: Typography.xs, fontWeight: '700', color: c.accent, maxWidth: 64 },
     trackBpm:    { fontSize: Typography.xs, color: c.textDim },
+    trackMetaMissing: { color: c.textDim, fontWeight: '400' },
     moreBtn: { paddingLeft: Spacing.xs },
     clearAllBtn: { flexDirection: 'row', alignItems: 'center', padding: Spacing.md, opacity: 0.6 },
 
