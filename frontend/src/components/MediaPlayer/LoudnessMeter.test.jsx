@@ -42,7 +42,7 @@ jest.mock('../../lib/api', () => ({
 // -0.691 + 10 * log10(0.25) = -6.7 LUFS. A fixed sample value keeps the
 // assertion an exact number rather than a range.
 const SAMPLE_AMPLITUDE = 0.5;
-const EXPECTED_LABEL = '-6.7 LUFS';
+const EXPECTED_LABEL = 'live -6.7 LUFS';
 
 // Every node in the meter's graph is only ever configured and connected, so
 // one shape covers the source, both filters and the gain.
@@ -137,6 +137,22 @@ describe('LoudnessMeter', () => {
     act(() => frame(1_000));
 
     expect(label.textContent).toBe(EXPECTED_LABEL);
+  });
+
+  it("shows the track's overall level once it has been analysed", async () => {
+    expect.hasAssertions();
+
+    api.get.mockResolvedValue({
+      data: { integratedLufs: -14.9, loudnessRange: 7.3, truePeak: -0.2 },
+    });
+
+    const label = await render();
+
+    // The redraw loop must leave the integrated figure alone — it is the whole
+    // point of showing it, and the live reading would overwrite it 15x/sec.
+    act(() => frame(1_000));
+
+    expect(label.textContent).toBe('avg -14.9 LUFS');
   });
 
   it('keeps reading while the meter is silent', async () => {

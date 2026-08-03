@@ -95,6 +95,10 @@ const LoudnessMeter = ({ audioRef, track }) => {
   // already returning them to be thrown away.
   const [loudness, setLoudness] = useState(null);
   const staticLufs = loudness?.integratedLufs ?? null;
+  // The redraw loop is started once and never restarted (it reads everything
+  // through refs), so it can't close over the current track's loudness.
+  const hasIntegratedRef = useRef(false);
+  hasIntegratedRef.current = staticLufs != null;
   const [normalize, setNormalize] = useState(() =>
     prefs.get('mediaPlayer.lufsNormalize', false),
   );
@@ -278,11 +282,13 @@ const LoudnessMeter = ({ audioRef, track }) => {
               ? '#ffb84d'
               : 'var(--art-accent, #4d9fff)';
 
-        // Written straight to the DOM rather than through state — this runs
-        // ~15x/sec and a re-render of the whole player at that rate is exactly
+        // Only while there is no integrated figure to show instead — an
+        // analysed track's readout is the track's overall level, which doesn't
+        // move. Written straight to the DOM rather than through state: this
+        // runs ~15x/sec and re-rendering the player at that rate is exactly
         // the main-thread contention the throttle above exists to avoid.
-        if (labelRef.current) {
-          labelRef.current.textContent = `${clamped.toFixed(1)} LUFS`;
+        if (labelRef.current && !hasIntegratedRef.current) {
+          labelRef.current.textContent = `live ${clamped.toFixed(1)} LUFS`;
         }
       }
     };
@@ -310,15 +316,16 @@ const LoudnessMeter = ({ audioRef, track }) => {
           ref={fillRef}
         />
       </div>
-      {/* Live momentary reading, not the track's integrated LUFS: the
-          integrated value only exists once the file has been analysed, so
-          keying the label on it left the meter with no number at all on every
-          not-yet-analysed track. The integrated figure lives in the tooltip. */}
+      {/* The track's overall (integrated) level once it has been analysed —
+          that is the figure worth reading, and it only changes per track, so
+          React owns the text. Until then the redraw loop fills the same span
+          with the live momentary reading, so the meter is never blank; the
+          prefix says which of the two you are looking at. */}
       <span
         className="mp-loudness-meter-label"
         ref={labelRef}
       >
-        –
+        {staticLufs == null ? '–' : `avg ${staticLufs.toFixed(1)} LUFS`}
       </span>
     </div>
   );
