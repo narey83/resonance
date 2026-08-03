@@ -57,6 +57,11 @@ namespace resonance.MusicLibrary
         // Schema-qualified table name: "music"."tracks" for Postgres, "tracks" for SQLite
         private string T => UsePostgres ? "music.tracks" : "tracks";
 
+        // The analysis cache, which keys on the same relative path this table stores and carries
+        // the same file_size guard — so "does this track have a waveform?" is answerable here as
+        // a join, with none of the filesystem work the analysis endpoint has to do per request.
+        private string TA => UsePostgres ? "analysis.track_analysis" : "track_analysis";
+
         // Case-insensitive LIKE operator
         private string Like => UsePostgres ? "ILIKE" : "LIKE";
 
@@ -127,7 +132,14 @@ namespace resonance.MusicLibrary
                 );
                 CREATE INDEX IF NOT EXISTS idx_tracks_directory ON {T}(directory);
                 CREATE INDEX IF NOT EXISTS idx_tracks_artist    ON {T}(lower(artist));
-                CREATE INDEX IF NOT EXISTS idx_tracks_album     ON {T}(lower(album));"
+                CREATE INDEX IF NOT EXISTS idx_tracks_album     ON {T}(lower(album));
+
+                -- The list is paged, so its ORDER BY runs once per page rather than once per
+                -- session. These match the two orderings the library opens in, column for column
+                -- (including the path tiebreaker), so a page is an index walk instead of a seq
+                -- scan and top-N sort of all 48k rows — which cost ~500ms of every page fetch.
+                CREATE INDEX IF NOT EXISTS idx_tracks_sort_title ON {T}(lower(title), lower(artist), path);
+                CREATE INDEX IF NOT EXISTS idx_tracks_sort_artist ON {T}(lower(artist), lower(album), disc_number, track_number, lower(title), path);"
                 : $@"CREATE TABLE IF NOT EXISTS {T} (
                     path         TEXT PRIMARY KEY,
                     filename     TEXT NOT NULL,
@@ -503,10 +515,17 @@ namespace resonance.MusicLibrary
             }
 
             using var cmd = conn.CreateCommand();
+
+            // has_waveform is appended AFTER the columns ReadRow expects, so the shared row reader
+            // keeps working for every other query that doesn't select it.
             cmd.CommandText = $@"
                 SELECT path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
                        title, artist, album_artist, album, year, track_number, disc_number,
-                       genre, bpm, key_sig, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth
+                       genre, bpm, key_sig, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth,
+                       EXISTS (SELECT 1 FROM {TA} a
+                               WHERE a.masked_filename = {T}.path
+                                 AND a.file_size = {T}.file_size
+                                 AND a.overall_peaks IS NOT NULL) AS has_waveform
                 FROM {T} {where}
                 ORDER BY {orderBy}
                 LIMIT @limit OFFSET @offset";
@@ -551,9 +570,13 @@ namespace resonance.MusicLibrary
 
             var tracks = new List<MusicTrack>();
             using var reader = cmd.ExecuteReader();
+            const int hasWaveformOrdinal = 24;
             while (reader.Read())
             {
-                tracks.Add(ReadRow(reader));
+                tracks.Add(ReadRow(reader) with
+                {
+                    HasWaveform = !reader.IsDBNull(hasWaveformOrdinal) && Convert.ToBoolean(reader.GetValue(hasWaveformOrdinal)),
+                });
             }
 
             return new MusicLibraryQueryResult(total, offset, limit, tracks);

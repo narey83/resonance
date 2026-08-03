@@ -147,7 +147,18 @@ const fetchPeaks = (path) => {
   return request;
 };
 
-const WaveformPreview = ({ height = 22, mono = false, path, width = 132 }) => {
+// `hasWaveform` is what the library list rows carry. Explicit false means the server already
+// told us there are no cached peaks, so the row renders its analyse button without asking —
+// scrolling a page of 200 rows used to fire 200 requests, ~98% of which came back empty after
+// two stat() calls each on the music mount, starving the next page's fetch of a connection.
+// undefined means "not stated" (the player, mixtapes, play history), which asks as before.
+const WaveformPreview = ({
+  hasWaveform,
+  height = 22,
+  mono = false,
+  path,
+  width = 132,
+}) => {
   const canvasRef = useRef(null);
   const holderRef = useRef(null);
   const [peaks, setPeaks] = useState(() => cache.get(path) ?? null);
@@ -183,6 +194,11 @@ const WaveformPreview = ({ height = 22, mono = false, path, width = 132 }) => {
       return undefined;
     }
 
+    // The list already told us there is nothing cached — don't spend a request finding out.
+    if (hasWaveform === false) {
+      return undefined;
+    }
+
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries.some((e) => e.isIntersecting)) return;
@@ -199,7 +215,7 @@ const WaveformPreview = ({ height = 22, mono = false, path, width = 132 }) => {
       cancelled = true;
       observer.disconnect();
     };
-  }, [path]);
+  }, [hasWaveform, path]);
 
   useEffect(() => {
     if (peaks) drawWaveform(canvasRef.current, peaks, { height, mono, width });

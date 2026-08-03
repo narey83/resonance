@@ -1943,7 +1943,13 @@ const TracksView = ({
   onExportTracks,
   removedPaths,
 }) => {
-  const { clearLetter, letter, total, trackTableProps } = usePagedTracks({});
+  // Title A-Z by default. The server buckets the A-Z rail by whatever column the list is
+  // ordered by, so sorting by title is what makes the rail's letters agree with the titles
+  // on screen — and it's the order this view has always opened in.
+  const { clearLetter, letter, total, trackTableProps } = usePagedTracks(
+    {},
+    { defaultSort: 'title' },
+  );
 
   const tracks = useMemo(
     () =>

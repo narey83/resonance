@@ -93,6 +93,13 @@ namespace resonance.MusicLibrary
         public string Sig { get; init; }
 
         public long Exp { get; init; }
+
+        // Whether cached waveform peaks exist for this track. Additive like Sig/Exp, and only
+        // set by the list query. A row that doesn't carry it leaves the client asking the
+        // waveform endpoint as before; false tells it not to bother. Roughly 2% of a library
+        // has been analysed, so without this the list fires a request per row to be told "no" —
+        // and each of those costs two stat() calls on the music mount.
+        public bool? HasWaveform { get; init; }
     }
 
     public record MusicGenre(string Genre, int TrackCount, double? TotalDuration);

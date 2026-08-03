@@ -756,6 +756,7 @@ const TrackTable = ({
                     </div>
                     <div className="jb-tt-wave">
                       <WaveformPreview
+                        hasWaveform={track.hasWaveform}
                         height={24}
                         path={track.path}
                         width={waveWidth}

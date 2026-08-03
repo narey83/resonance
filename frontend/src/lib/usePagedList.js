@@ -160,8 +160,11 @@ export const usePagedList = (
 // one folder, one genre, one year — and each of them needs ordering, searching and the letter
 // rail answered by the server rather than by whatever happens to be scrolled in. `baseQuery`
 // is what makes each list different (e.g. { folder }, { genre }, {}).
-export const usePagedTracks = (baseQuery, { enabled = true } = {}) => {
-  const [sortCol, setSortCol] = useState(null);
+export const usePagedTracks = (
+  baseQuery,
+  { defaultSort = null, enabled = true } = {},
+) => {
+  const [sortCol, setSortCol] = useState(defaultSort);
   const [sortDir, setSortDir] = useState('asc');
   const [letter, setLetter] = useState(null);
   const [filter, setFilter] = useState('');
