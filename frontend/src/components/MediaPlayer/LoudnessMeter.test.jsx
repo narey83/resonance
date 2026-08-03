@@ -44,30 +44,39 @@ jest.mock('../../lib/api', () => ({
 const SAMPLE_AMPLITUDE = 0.5;
 const EXPECTED_LABEL = '-6.7 LUFS';
 
-const stubAudioContext = () => {
-  const node = () => ({
+// Every node in the meter's graph is only ever configured and connected, so
+// one shape covers the source, both filters and the gain.
+const stubNode = () => ({
+  connect: jest.fn(),
+  frequency: { value: 0 },
+  gain: { setTargetAtTime: jest.fn(), value: 1 },
+  type: '',
+});
+
+// jsdom has no Web Audio, so there is nothing to spy on — and it has to be a
+// class rather than an arrow function because the meter calls it with `new`.
+class AudioContextStub {
+  createAnalyser = () => ({
     connect: jest.fn(),
-    frequency: { value: 0 },
-    gain: { setTargetAtTime: jest.fn(), value: 1 },
-    type: '',
+    fftSize: 32,
+    getFloatTimeDomainData: (buffer) => buffer.fill(SAMPLE_AMPLITUDE),
+    smoothingTimeConstant: 0,
   });
 
-  window.AudioContext = jest.fn(() => ({
-    createAnalyser: () => ({
-      connect: jest.fn(),
-      fftSize: 32,
-      getFloatTimeDomainData: (buffer) => buffer.fill(SAMPLE_AMPLITUDE),
-      smoothingTimeConstant: 0,
-    }),
-    createBiquadFilter: node,
-    createGain: node,
-    createMediaElementSource: node,
-    currentTime: 0,
-    destination: {},
-    resume: jest.fn(() => Promise.resolve()),
-    state: 'running',
-  }));
-};
+  createBiquadFilter = stubNode;
+
+  createGain = stubNode;
+
+  createMediaElementSource = stubNode;
+
+  currentTime = 0;
+
+  destination = {};
+
+  resume = () => Promise.resolve();
+
+  state = 'running';
+}
 
 describe('LoudnessMeter', () => {
   let container;
@@ -76,7 +85,7 @@ describe('LoudnessMeter', () => {
   beforeEach(() => {
     container = document.createElement('div');
     document.body.append(container);
-    stubAudioContext();
+    window.AudioContext = AudioContextStub;
 
     // The meter's whole point is a number that is there on every track,
     // including the ones nothing has analysed yet, so the loudness lookup is
@@ -119,6 +128,8 @@ describe('LoudnessMeter', () => {
   };
 
   it('shows a live reading on a track with no cached loudness', async () => {
+    expect.hasAssertions();
+
     const label = await render();
 
     expect(label).not.toBeNull();
@@ -129,6 +140,8 @@ describe('LoudnessMeter', () => {
   });
 
   it('keeps reading while the meter is silent', async () => {
+    expect.hasAssertions();
+
     const label = await render();
 
     act(() => frame(1_000));

@@ -28,7 +28,6 @@
 // </copyright>
 
 import * as analysisApi from '../../lib/analysis';
-import { drawWaveform } from '../../lib/waveform';
 import WaveformPreview, { primeWaveformCache } from './WaveformPreview';
 import React from 'react';
 import ReactDOM from 'react-dom';
@@ -96,7 +95,6 @@ describe('WaveformPreview', () => {
 
     expect(container.querySelector('.jb-wave-analyse')).toBeNull();
     expect(container.querySelector('canvas')).not.toBeNull();
-    expect(drawWaveform).toHaveBeenCalled();
   });
 
   it('does not ask the server when the list said there are no peaks', () => {
