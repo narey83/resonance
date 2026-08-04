@@ -1,3 +1,18 @@
+diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/TrackMetadata.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/TrackMetadata.kt
+index fb92033..f472b97 100644
+--- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/TrackMetadata.kt
++++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/TrackMetadata.kt
+@@ -19,7 +19,10 @@ abstract class TrackMetadata {
+     var mediaId: String? = null
+ 
+     open fun setMetadata(context: Context, bundle: Bundle?, ratingType: Int) {
++        // resonance patch: fall back to the app logo so the Android Auto now-playing screen (and the
++        // notification) show branding instead of a blank/generic tile for artwork-less tracks.
+         artwork = BundleUtils.getUri(context, bundle, "artwork")
++            ?: Uri.parse("android.resource://${context.packageName}/drawable/resonance_placeholder")
+         title = bundle!!.getString("title")
+         artist = bundle.getString("artist")
+         album = bundle.getString("album")
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicEvents.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicEvents.kt
 index 2f9f28f..eafb80c 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicEvents.kt
@@ -34,7 +49,7 @@ index 13a6c60..7ad01e6 100644
      // which causes an exception. We can work around this using a wrapper.
      private fun launchInScope(block: suspend () -> Unit) {
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
-index b495b5a..9ad685e 100644
+index b495b5a..07c5e27 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
 +++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
 @@ -19,7 +19,9 @@ import androidx.media3.common.Player
@@ -175,7 +190,7 @@ index b495b5a..9ad685e 100644
              )
              mediaSession.setAvailableCommands(
                  mediaSession.mediaNotificationControllerInfo!!,
-@@ -677,6 +763,87 @@ class MusicService : HeadlessJsMediaService() {
+@@ -677,6 +763,96 @@ class MusicService : HeadlessJsMediaService() {
          reactContext?.emitDeviceEvent(event, data?.let { Arguments.fromBundle(it) })
      }
  
@@ -201,18 +216,20 @@ index b495b5a..9ad685e 100644
 +                if (isBrowsable) MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
 +                else MediaMetadata.MEDIA_TYPE_MUSIC
 +            )
-+            .apply { if (!iconUri.isNullOrEmpty()) setArtworkUri(Uri.parse(iconUri)) }
++            // Artwork-less rows get the app logo rather than the car's generic placeholder.
++            .setArtworkUri(
++                if (!iconUri.isNullOrEmpty()) Uri.parse(iconUri)
++                else Uri.parse("android.resource://$packageName/drawable/resonance_placeholder")
++            )
 +            .build()
 +
-+        val builder = MediaItem.Builder()
++        // Deliberately no playback URI: JS owns playback via `remote-play-id`, and a URI baked
++        // into the tree at browse time would be the wrong one by the time it was played (see
++        // onAddMediaItems).
++        return MediaItem.Builder()
 +            .setMediaId(mediaId)
 +            .setMediaMetadata(metadata)
-+        // Carry the stream URL when present so the media3 player can resolve the
-+        // item even though JS drives actual playback via `remote-play-id`.
-+        if (map.hasKey("mediaUri")) {
-+            map.getString("mediaUri")?.let { if (it.isNotEmpty()) builder.setUri(it) }
-+        }
-+        return builder.build()
++            .build()
 +    }
 +
 +    @MainThread
@@ -234,14 +251,21 @@ index b495b5a..9ad685e 100644
 +            newTree[parentId] = children
 +        }
 +
++        // Only nodes whose child *ids* changed are worth notifying: a notification makes Android
++        // Auto rebuild that list and lose its scroll position, so re-pushing the tree (a lazy
++        // sibling load, a re-signed stream URL) must not disturb the list the user is scrolling.
++        val changed = newTree.keys.filter { parentId ->
++            val old = browseTree[parentId]
++            val now = newTree.getValue(parentId)
++            old == null || old.size != now.size || old.indices.any { old[it].mediaId != now[it].mediaId }
++        }
++
 +        browseTree.clear(); browseTree.putAll(newTree)
 +        browseIndex.clear(); browseIndex.putAll(newIndex)
 +
-+        // Tell connected controllers (Android Auto) to re-request the nodes that
-+        // changed so freshly-loaded children become visible.
 +        if (::mediaSession.isInitialized) {
-+            for ((parentId, children) in newTree) {
-+                mediaSession.notifyChildrenChanged(parentId, children.size, null)
++            for (parentId in changed) {
++                mediaSession.notifyChildrenChanged(parentId, newTree.getValue(parentId).size, null)
 +            }
 +        }
 +        return "ok:${newTree.size}"
@@ -263,7 +287,7 @@ index b495b5a..9ad685e 100644
      @SuppressLint("VisibleForTests")
      @MainThread
      private fun emitList(event: String, data: List<Bundle> = emptyList()) {
-@@ -905,13 +1072,15 @@ class MusicService : HeadlessJsMediaService() {
+@@ -905,13 +1081,15 @@ class MusicService : HeadlessJsMediaService() {
                      onStartCommand(null, 0, 0)
                  }
              }
@@ -281,7 +305,7 @@ index b495b5a..9ad685e 100644
                      .setAvailableSessionCommands(
                          sessionCommands
                              ?: MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
-@@ -937,6 +1106,8 @@ class MusicService : HeadlessJsMediaService() {
+@@ -937,6 +1115,8 @@ class MusicService : HeadlessJsMediaService() {
                      CustomCommandButton.JUMP_FORWARD.customAction -> { it.seekForward() }
                      CustomCommandButton.NEXT.customAction -> { it.seekToNext() }
                      CustomCommandButton.PREVIOUS.customAction -> { it.seekToPrevious() }
@@ -290,7 +314,7 @@ index b495b5a..9ad685e 100644
                  }
              }
              return super.onCustomCommand(session, controller, command, args)
-@@ -976,6 +1147,66 @@ class MusicService : HeadlessJsMediaService() {
+@@ -976,6 +1156,78 @@ class MusicService : HeadlessJsMediaService() {
              }
              return super.onSetRating(session, controller, rating)
          }
@@ -320,8 +344,15 @@ index b495b5a..9ad685e 100644
 +            if (children == null) {
 +                emit(MusicEvents.BUTTON_BROWSE, Bundle().apply { putString("mediaId", parentId) })
 +            }
++            // Honour the requested page. Returning the whole list for every page (a 500-track
++            // folder answering page 0, 1, 2… identically) makes the car re-render the list from
++            // the top as it pages in, which reads as the list snapping back to the first row.
++            val all = children ?: emptyList()
++            val slice =
++                if (pageSize <= 0 || pageSize == Int.MAX_VALUE) all
++                else all.drop(page * pageSize).take(pageSize)
 +            return Futures.immediateFuture(
-+                LibraryResult.ofItemList(ImmutableList.copyOf(children ?: emptyList()), params)
++                LibraryResult.ofItemList(ImmutableList.copyOf(slice), params)
 +            )
 +        }
 +
@@ -337,27 +368,32 @@ index b495b5a..9ad685e 100644
 +
 +        // When the user taps a playable item in the car, route it to JS so RNTP's
 +        // queue/player stays authoritative (matches the `remote-play-id` contract).
-+        // We still return resolved items so media3's size contract is satisfied.
++        //
++        // Nothing is handed back to the player: returning the browse item would make media3
++        // prepare the URL baked into the tree at *browse* time while JS is concurrently setting
++        // its own queue — two loads of the same track, the first with a possibly stale signature
++        // and the wrong quality for the current connection (a full-rate FLAC where JS would have
++        // asked for a transcode), which surfaced as source errors. The empty timeline lives for
++        // the few ms until JS's setQueue lands.
 +        override fun onAddMediaItems(
 +            mediaSession: MediaSession,
 +            controller: MediaSession.ControllerInfo,
 +            mediaItems: MutableList<MediaItem>
 +        ): ListenableFuture<MutableList<MediaItem>> {
-+            val resolved = mediaItems.map { requested ->
-+                browseIndex[requested.mediaId] ?: requested
-+            }.toMutableList()
-+
-+            resolved.firstOrNull { it.mediaMetadata.isPlayable == true }?.let { playable ->
-+                emit(MusicEvents.BUTTON_PLAY_FROM_ID, Bundle().apply {
-+                    putString("id", playable.mediaId)
-+                })
-+            }
-+            return Futures.immediateFuture(resolved)
++            mediaItems
++                .map { browseIndex[it.mediaId] ?: it }
++                .firstOrNull { it.mediaMetadata.isPlayable == true }
++                ?.let { playable ->
++                    emit(MusicEvents.BUTTON_PLAY_FROM_ID, Bundle().apply {
++                        putString("id", playable.mediaId)
++                    })
++                }
++            return Futures.immediateFuture(mutableListOf())
 +        }
      }
  
      private fun getPendingIntentFlags(): Int {
-@@ -1029,5 +1260,8 @@ class MusicService : HeadlessJsMediaService() {
+@@ -1029,5 +1281,8 @@ class MusicService : HeadlessJsMediaService() {
  
          const val DEFAULT_JUMP_INTERVAL = 15.0
          const val DEFAULT_STOP_FOREGROUND_GRACE_PERIOD = 5

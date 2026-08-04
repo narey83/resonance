@@ -83,11 +83,15 @@ export function buildPlayerOptions(isLoved: boolean) {
       // this is the only way to shut the player down without force-stopping the app.
       Capability.Stop,
     ],
+    // The native side derives the session's *player commands* from this list, not from
+    // `capabilities` — so omitting SeekTo here left COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM off the
+    // session and Android Auto drew a progress bar with no thumb that refused to scrub.
     notificationCapabilities: [
       Capability.Play,
       Capability.Pause,
       Capability.SkipToNext,
       Capability.SkipToPrevious,
+      Capability.SeekTo,
       Capability.SetRating,
       Capability.Stop,
     ],

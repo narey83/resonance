@@ -68,7 +68,6 @@ type BrowseItem = {
   title: string;
   subtitle?: string;
   iconUri?: string;
-  mediaUri?: string;
   playable: string;
 };
 type BrowseTree = Record<string, BrowseItem[]>;
@@ -121,7 +120,6 @@ const playableItem = (track: MusicTrack): BrowseItem => ({
   title: getTrackTitle(track),
   subtitle: track.artist ?? undefined,
   iconUri: track.hasArtwork ? (getArtworkUrl(track.path, ARTWORK_THUMB_SIZE) ?? undefined) : undefined,
-  mediaUri: getStreamUrl(track.path),
   playable: MediaItemPlayable.MediaPlayable,
 });
 
@@ -131,7 +129,6 @@ const localPlayableItem = (track: MusicTrack): BrowseItem => ({
   title: getTrackTitle(track),
   subtitle: track.artist ?? undefined,
   iconUri: track.hasArtwork ? (track.coverPath ?? undefined) : undefined,
-  mediaUri: track.path,
   playable: MediaItemPlayable.MediaPlayable,
 });
 
@@ -311,7 +308,9 @@ export const playAndroidAutoMediaId = async (mediaId: string): Promise<void> => 
   if (!mediaId) return;
   const auth = useAuthStore.getState();
   if (!auth.isReady) await auth.hydrate();
-  if (!isAuthed()) return;
+  // On-device files play straight off disk — only server paths need a session. Native no longer
+  // hands the browse item to the player itself, so bailing here would mean silence, not a fallback.
+  if (!isLocalPath(mediaId) && !isAuthed()) return;
 
   // Queue the siblings from whichever node this track was browsed in, if known.
   let queue: MusicTrack[] | undefined;

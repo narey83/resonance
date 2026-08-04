@@ -84,18 +84,25 @@ const withAndroidAuto = (config) => {
     return config;
   });
 
-  // ── automotive_app_desc.xml resource ───────────────────────────────────────
+  // ── automotive_app_desc.xml + placeholder artwork resources ────────────────
   config = withDangerousMod(config, [
     'android',
     (config) => {
-      const xmlDir = path.join(
-        config.modRequest.platformProjectRoot,
-        'app/src/main/res/xml',
-      );
-      fs.mkdirSync(xmlDir, { recursive: true });
+      const resDir = path.join(config.modRequest.platformProjectRoot, 'app/src/main/res');
+      fs.mkdirSync(path.join(resDir, 'xml'), { recursive: true });
       fs.writeFileSync(
-        path.join(xmlDir, 'automotive_app_desc.xml'),
+        path.join(resDir, 'xml/automotive_app_desc.xml'),
         '<?xml version="1.0" encoding="utf-8"?>\n<automotiveApp>\n    <uses name="media"/>\n</automotiveApp>\n',
+      );
+
+      // Artwork placeholder for tracks/folders with no cover. It has to be a real Android
+      // resource, not a bundled JS asset: the patched MusicService hands Android Auto an
+      // `android.resource://<pkg>/drawable/resonance_placeholder` URI, which the car's own
+      // process opens over the ContentResolver.
+      fs.mkdirSync(path.join(resDir, 'drawable-nodpi'), { recursive: true });
+      fs.copyFileSync(
+        path.join(config.modRequest.projectRoot, 'assets/icon.png'),
+        path.join(resDir, 'drawable-nodpi/resonance_placeholder.png'),
       );
       return config;
     },
