@@ -299,6 +299,10 @@
   white-space: nowrap;
 }
 
+.dl-dir-stat-failed {
+  color: var(--danger);
+}
+
 /* ─── File row ───────────────────────────────────────────────────────────── */
 
 .dl-file-row td {

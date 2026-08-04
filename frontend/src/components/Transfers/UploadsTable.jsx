@@ -137,11 +137,17 @@ const buildGroups = (transfers, stateFilter) =>
             ...directory,
             /* Counts span both sections: the section filter strips completed
                files out of the active group, so a folder-local ratio would
-               always read 0 / n while it uploads. */
-            completedTotal: uploads.filter((file) =>
-              isCompletedState(file.state),
+               always read 0 / n while it uploads. Sent and failed are counted
+               apart because "done" lumped dropped peers in with real uploads. */
+            failedTotal: uploads.filter(
+              (file) =>
+                isCompletedState(file.state) &&
+                file.state !== 'Completed, Succeeded',
             ).length,
             fileTotal: uploads.length,
+            sentTotal: uploads.filter(
+              (file) => file.state === 'Completed, Succeeded',
+            ).length,
             files: uploads
               .filter((file) => stateFilter(file.state))
               .sort(byStateThenTime),
@@ -333,7 +339,10 @@ const DirectoryGroup = ({
   const completedCount = files.filter((f) =>
     f.state?.startsWith('Completed'),
   ).length;
-  const completedTotal = directory.completedTotal ?? completedCount;
+  const sentTotal =
+    directory.sentTotal ??
+    files.filter((f) => f.state === 'Completed, Succeeded').length;
+  const failedTotal = directory.failedTotal ?? 0;
   const fileTotal = directory.fileTotal ?? files.length;
   const allCompleted = completedCount === files.length;
   const allSucceeded = files.every((f) => f.state === 'Completed, Succeeded');
@@ -375,7 +384,13 @@ const DirectoryGroup = ({
         </td>
         <td className="dl-cell dl-cell--state">
           <span className="dl-dir-stat">
-            {completedTotal} / {fileTotal} done
+            {sentTotal} of {fileTotal} sent
+            {failedTotal > 0 && (
+              <span className="dl-dir-stat-failed">
+                {' '}
+                · {failedTotal} failed
+              </span>
+            )}
           </span>
         </td>
         <td className="dl-cell dl-cell--progress">
@@ -594,7 +609,7 @@ const UserGroup = ({
               className="dl-user-stat"
               style={{ color: 'var(--success)' }}
             >
-              {succeededCount} done
+              {succeededCount} sent
             </span>
           )}
           {totalSpeed > 0 && (
