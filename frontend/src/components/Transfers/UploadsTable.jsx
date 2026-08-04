@@ -129,13 +129,24 @@ const buildGroups = (transfers, stateFilter) =>
     .map((user) => ({
       ...user,
       directories: (user.directories ?? [])
-        .map((directory) => ({
-          ...directory,
-          files: (directory.files ?? [])
-            .filter((file) => file.direction?.toLowerCase() === 'upload')
-            .filter((file) => stateFilter(file.state))
-            .sort(byStateThenTime),
-        }))
+        .map((directory) => {
+          const uploads = (directory.files ?? []).filter(
+            (file) => file.direction?.toLowerCase() === 'upload',
+          );
+          return {
+            ...directory,
+            /* Counts span both sections: the section filter strips completed
+               files out of the active group, so a folder-local ratio would
+               always read 0 / n while it uploads. */
+            completedTotal: uploads.filter((file) =>
+              isCompletedState(file.state),
+            ).length,
+            fileTotal: uploads.length,
+            files: uploads
+              .filter((file) => stateFilter(file.state))
+              .sort(byStateThenTime),
+          };
+        })
         .filter((directory) => directory.files.length > 0)
         .sort((a, b) => maxTime(b.files) - maxTime(a.files)),
     }))
@@ -322,6 +333,8 @@ const DirectoryGroup = ({
   const completedCount = files.filter((f) =>
     f.state?.startsWith('Completed'),
   ).length;
+  const completedTotal = directory.completedTotal ?? completedCount;
+  const fileTotal = directory.fileTotal ?? files.length;
   const allCompleted = completedCount === files.length;
   const allSucceeded = files.every((f) => f.state === 'Completed, Succeeded');
   const anyActive = files.some((f) => f.state === 'InProgress');
@@ -362,7 +375,7 @@ const DirectoryGroup = ({
         </td>
         <td className="dl-cell dl-cell--state">
           <span className="dl-dir-stat">
-            {completedCount} / {files.length} done
+            {completedTotal} / {fileTotal} done
           </span>
         </td>
         <td className="dl-cell dl-cell--progress">
