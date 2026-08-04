@@ -54,9 +54,6 @@ import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 import { useAuthStore } from '../../store/auth';
 import * as analytics from '../../api/analytics';
 import * as sharesApi from '../../api/shares';
-import * as musicLibraryApi from '../../api/musicLibrary';
-import * as libraryActivityApi from '../../api/libraryActivity';
-import * as eventsApi from '../../api/events';
 import { SectionHeader } from '../../components/overview/shared';
 import type { Histogram } from '../../components/overview/histogramUtils';
 import TransferFlow from '../../components/overview/TransferFlow';
@@ -75,9 +72,6 @@ import UserReports from '../../components/overview/UserReports';
 import GeographyCard from '../../components/overview/GeographyCard';
 import WorldMap from '../../components/overview/WorldMap';
 import PeerRetentionCard from '../../components/overview/PeerRetentionCard';
-import LibraryComposition from '../../components/overview/LibraryComposition';
-import FileTypeChart from '../../components/overview/FileTypeChart';
-import NotificationFeed from '../../components/overview/NotificationFeed';
 import UserReportModal from '../../components/overview/UserReportModal';
 import PersonalSummary from '../../components/overview/PersonalSummary';
 import { SkeletonCard, SkeletonRows } from '../../components/Skeleton';
@@ -96,8 +90,6 @@ const TABS = [
   { id: 'reliability', label: 'Reliability' },
   { id: 'top', label: 'Top Users' },
   { id: 'geography', label: 'Geography' },
-  { id: 'library', label: 'Library' },
-  { id: 'feed', label: 'Feed' },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
 
@@ -152,7 +144,7 @@ type Props = NativeStackScreenProps<MoreStackParamList, 'Overview'>;
 // needs them; a group is fetched the first time its tab is opened (per range)
 // and cached until pull-to-refresh.
 
-type FetchGroup = 'glance' | 'activity' | 'reliability' | 'top' | 'geography' | 'coverage' | 'library' | 'feed';
+type FetchGroup = 'glance' | 'activity' | 'reliability' | 'top' | 'geography' | 'coverage';
 
 const TAB_GROUPS: Record<TabId, FetchGroup[]> = {
   glance:      ['glance', 'coverage'],
@@ -160,8 +152,6 @@ const TAB_GROUPS: Record<TabId, FetchGroup[]> = {
   reliability: ['reliability'],
   top:         ['top'],
   geography:   ['geography'],
-  library:     ['library', 'coverage'],
-  feed:        ['feed'],
 };
 
 // Groups whose data depends on the selected time range (the rest are global).
@@ -186,10 +176,6 @@ export default function OverviewScreen({ navigation }: Props) {
 
   const [fileTypeCounts, setFileTypeCounts] = useState<Record<string, number>>({});
   const [coverage, setCoverage] = useState<analytics.CoverageReport | null>(null);
-  const [genres, setGenres] = useState<musicLibraryApi.MusicGenre[]>([]);
-  const [years, setYears] = useState<musicLibraryApi.MusicYear[]>([]);
-  const [playStats, setPlayStats] = useState<libraryActivityApi.PlayStat[]>([]);
-  const [events, setEvents] = useState<eventsApi.EventRecord[]>([]);
 
   const fetchedRef = useRef<Set<string>>(new Set());
 
@@ -279,21 +265,6 @@ export default function OverviewScreen({ navigation }: Props) {
         setCoverage(cov);
         break;
       }
-      case 'library': {
-        const [g, y, p] = await Promise.all([
-          musicLibraryApi.getGenres(),
-          musicLibraryApi.getYears(),
-          libraryActivityApi.getPlayStats(),
-        ]);
-        setGenres(g);
-        setYears(y);
-        setPlayStats(p);
-        break;
-      }
-      case 'feed': {
-        setEvents(await eventsApi.list({ limit: 50 }));
-        break;
-      }
     }
   }, [applyData]);
 
@@ -337,10 +308,8 @@ export default function OverviewScreen({ navigation }: Props) {
                               || data.leaderboard.upload.length > 0
                               || data.topFiles.length > 0;
       case 'geography':   return data.geography != null || data.mapUsers.length > 0;
-      case 'library':     return genres.length > 0 || years.length > 0;
-      case 'feed':        return events.length > 0;
     }
-  }, [data, genres, years, events]);
+  }, [data]);
 
   const hasData      = tabHasData(tab);
   const showSkeleton = tabLoading && !hasData;   // cold load: nothing to show yet
@@ -470,20 +439,6 @@ export default function OverviewScreen({ navigation }: Props) {
               <GeographyCard geography={data.geography} colors={colors} />
               <SectionHeader title="Peer Retention" colors={colors} />
               <PeerRetentionCard data={data.peerRetention} colors={colors} />
-            </>
-          )}
-          {!showSkeleton && !showError && tab === 'library' && (
-            <>
-              <SectionHeader title="Composition" colors={colors} />
-              <LibraryComposition genres={genres} years={years} playStats={playStats} colors={colors} />
-              <SectionHeader title="File Types" colors={colors} />
-              <FileTypeChart counts={fileTypeCounts} colors={colors} />
-            </>
-          )}
-          {!showSkeleton && !showError && tab === 'feed' && (
-            <>
-              <SectionHeader title="Recent Activity" colors={colors} />
-              <NotificationFeed events={events} colors={colors} />
             </>
           )}
         </View>

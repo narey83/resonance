@@ -32,12 +32,11 @@ import { ThemeColors } from '../../theme';
 import { TransferDirectorySummary } from '../../api/analytics';
 import { BarRow, Card, EmptyState, fmtNum } from './shared';
 
-// Same path-truncation heuristic as the web PopularDirectories.jsx: keep the
-// last two path segments so results stay readable on a narrow screen.
-const shorten = (path: string): string => {
-  const parts = path.split(/[/\\]/).filter(Boolean);
-  return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : path;
-};
+// Directories arrive as share-relative paths (`downloads\HATE`, `music\HATE`).
+// The share root is noise on a phone — it's the same one or two names on every
+// row — so show the leaf folder only. Two shares holding the same album do then
+// render as two identically-labelled rows, which is what the data says.
+const leafName = (path: string): string => path.split(/[/\\]/).filter(Boolean).pop() ?? path;
 
 export default function PopularDirectories({ directories, colors }: { directories: TransferDirectorySummary[]; colors: ThemeColors }) {
   const max = Math.max(1, ...directories.map((d) => d.distinctUsers));
@@ -51,7 +50,7 @@ export default function PopularDirectories({ directories, colors }: { directorie
       {directories.map((d, i) => (
         <BarRow
           key={d.directory}
-          label={shorten(d.directory)}
+          label={leafName(d.directory)}
           value={`${fmtNum(d.distinctUsers)} users`}
           fraction={d.distinctUsers / max}
           colors={colors}
