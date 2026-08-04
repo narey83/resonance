@@ -1281,6 +1281,15 @@ namespace resonance
 
             if (OptionsAtStartup.Feature.Swagger)
             {
+                // ponytail: Swashbuckle 6.x regenerates the whole document on every request, and its XML
+                // comment lookups are a linear scan of the 800KB resonance.xml per member; that's ~10s for
+                // this API, which reads as "Swagger won't load". The document can't change while the process
+                // is alive, so serve it from cache. Upgrading to Swashbuckle >= 7.2 (indexed XML lookups)
+                // would make the generation itself fast enough to drop this.
+                services.AddOutputCache(cache => cache.AddBasePolicy(policy => policy
+                    .With(context => context.HttpContext.Request.Path.StartsWithSegments("/swagger"))
+                    .Expire(TimeSpan.FromDays(1))));
+
                 services.AddSwaggerGen(options =>
                 {
                     options.CustomSchemaIds(type => type.FullName.Replace("+", "."));
@@ -1529,6 +1538,9 @@ namespace resonance
 
             if (OptionsAtStartup.Feature.Swagger)
             {
+                // sits inside UseResponseCompression so the cached body is the uncompressed one, and after
+                // UseCors/UseRouting as the output cache middleware requires
+                app.UseOutputCache();
                 app.UseSwagger();
                 app.UseSwaggerUI(options => app.Services.GetRequiredService<IApiVersionDescriptionProvider>().ApiVersionDescriptions.ToList()
                     .ForEach(description => options.SwaggerEndpoint($"{(urlBase == "/" ? string.Empty : urlBase)}/swagger/{description.GroupName}/swagger.json", description.GroupName)));
