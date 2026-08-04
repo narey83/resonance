@@ -2049,7 +2049,9 @@
 .jb-track-table-head,
 .jb-track-table .jb-track-row {
   display: grid;
-  grid-template-columns: 28px 220px minmax(0, 2.2fr) minmax(0, 1.4fr) minmax(0, 1.4fr) 44px 44px 42px 72px 52px 36px 28px;
+  /* Fallback only — TrackTable sets this inline from COLUMNS. Floors kept in step with it so the
+     first paint doesn't squeeze the names to nothing before the width observer reports. */
+  grid-template-columns: 28px 220px minmax(80px, 2.2fr) minmax(60px, 1.4fr) minmax(60px, 1.4fr) 44px 44px 42px 72px 52px 36px 28px;
   align-items: center;
   gap: 10px;
   padding: 4px 24px;

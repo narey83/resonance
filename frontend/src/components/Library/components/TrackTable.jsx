@@ -79,12 +79,15 @@ const WIDTHS_PREF = 'library-column-widths';
 // Column order and default track sizes. Flexible defaults stay flexible until the
 // user drags one, at which point that column is pinned to the pixel width it had.
 // num and love are icon slots and are not resizable.
-const COLUMNS = [
+// Title and artist carry a floor rather than minmax(0, …): a 0 minimum lets the flexible columns
+// be squeezed to nothing once the fixed ones fill the row, and since the table only scrolls
+// vertically there was then no way to reach them — a narrow window hid the track names entirely.
+export const COLUMNS = [
   { def: '28px', fixed: true, id: 'num', min: 24 },
   { def: '220px', id: 'wave', min: 60 },
-  { def: 'minmax(0, 2.2fr)', id: 'title', min: 80 },
-  { def: 'minmax(0, 1.4fr)', id: 'artist', min: 60 },
-  { def: 'minmax(0, 1.4fr)', id: 'album', min: 60 },
+  { def: 'minmax(80px, 2.2fr)', id: 'title', min: 80 },
+  { def: 'minmax(60px, 1.4fr)', id: 'artist', min: 60 },
+  { def: 'minmax(60px, 1.4fr)', id: 'album', min: 60 },
   { def: '44px', id: 'key', min: 32 },
   { def: '44px', id: 'bpm', min: 32 },
   { def: '42px', id: 'ext', min: 32 },
@@ -94,6 +97,42 @@ const COLUMNS = [
   { def: '160px', id: 'added', min: 60, onlyWhenAdded: true },
   { def: '28px', fixed: true, id: 'love', min: 24 },
 ];
+
+// What a narrowing table gives up, in the order it gives it up. Floors alone only stop the names
+// collapsing; without dropping something they'd still be squeezed to 80px of ellipsis. num, title,
+// artist, duration and love are deliberately absent — a row you can't read isn't a track listing.
+const DROP_ORDER = ['plays', 'quality', 'ext', 'wave', 'album', 'bpm', 'key'];
+
+const COLUMN_GAP = 10;
+const ROW_PADDING = 48;
+
+// The width a column will not go below: whatever it has been dragged to, else its own size if
+// fixed, else its declared minimum.
+const columnFloor = (column, widths) =>
+  widths[column.id] ??
+  (column.def.endsWith('px') ? Number.parseInt(column.def, 10) : column.min);
+
+const requiredWidth = (columns, widths) =>
+  columns.reduce((sum, c) => sum + columnFloor(c, widths), 0) +
+  COLUMN_GAP * Math.max(0, columns.length - 1) +
+  ROW_PADDING;
+
+// Drops columns in DROP_ORDER until what's left actually fits. Returns everything when the width
+// is unknown (first render, before the observer reports) so the table never starts out mutilated.
+// Exported for testing — rendering the whole virtualised table to assert on arithmetic is a far
+// heavier way to ask the same question.
+export const fitColumns = (columns, width, widths) => {
+  if (!width) return columns;
+
+  const kept = [...columns];
+  for (const id of DROP_ORDER) {
+    if (requiredWidth(kept, widths) <= width) break;
+    const index = kept.findIndex((c) => c.id === id);
+    if (index !== -1) kept.splice(index, 1);
+  }
+
+  return kept;
+};
 
 // `serverSort`, `serverFilter` and `onEndReached` turn the table into a window onto a list the
 // server is paging. All three are optional: without them the table sorts and filters the array
@@ -381,9 +420,35 @@ const TrackTable = ({
   const headRef = useRef(null);
   const dragRef = useRef(null);
 
+  // The table's own width, not the window's — the nav rail and queue panel come out of it, so a
+  // window-width breakpoint would drop columns at the wrong moment.
+  const [tableWidth, setTableWidth] = useState(0);
+  useEffect(() => {
+    const element = headRef.current;
+    if (!element) return undefined;
+
+    const observer = new ResizeObserver(([entry]) =>
+      setTableWidth(entry.contentRect.width + ROW_PADDING),
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   const activeColumns = useMemo(
-    () => COLUMNS.filter((c) => !c.onlyWhenAdded || showAdded),
-    [showAdded],
+    () =>
+      fitColumns(
+        COLUMNS.filter((c) => !c.onlyWhenAdded || showAdded),
+        tableWidth,
+        colWidths,
+      ),
+    [colWidths, showAdded, tableWidth],
+  );
+
+  // Cells are written out in column order rather than generated, so a dropped column has to skip
+  // its cell too or every row shifts one place left of its heading.
+  const shows = useMemo(
+    () => new Set(activeColumns.map((c) => c.id)),
+    [activeColumns],
   );
 
   const gridTemplate = useMemo(
@@ -619,19 +684,23 @@ const TrackTable = ({
               '#'
             )}
           </div>
-          <div className="jb-tt-wave">
-            {resizeHandle('wave')}
-            Wave
-          </div>
+          {shows.has('wave') && (
+            <div className="jb-tt-wave">
+              {resizeHandle('wave')}
+              Wave
+            </div>
+          )}
           {colHeader('title', 'Title', 'jb-tt-title')}
           {colHeader('artist', 'Artist', 'jb-tt-artist')}
-          {colHeader('album', 'Album', 'jb-tt-album')}
-          {plainSortHeader('key', 'Key', 'jb-tt-key')}
-          {plainSortHeader('bpm', 'BPM', 'jb-tt-bpm')}
-          {plainSortHeader('ext', 'Ext', 'jb-tt-ext')}
-          {plainSortHeader('quality', 'Quality', 'jb-tt-quality')}
+          {shows.has('album') && colHeader('album', 'Album', 'jb-tt-album')}
+          {shows.has('key') && plainSortHeader('key', 'Key', 'jb-tt-key')}
+          {shows.has('bpm') && plainSortHeader('bpm', 'BPM', 'jb-tt-bpm')}
+          {shows.has('ext') && plainSortHeader('ext', 'Ext', 'jb-tt-ext')}
+          {shows.has('quality') &&
+            plainSortHeader('quality', 'Quality', 'jb-tt-quality')}
           {plainSortHeader('duration', 'Time', 'jb-tt-dur')}
-          {plainSortHeader('plays', 'Plays', 'jb-tt-plays')}
+          {shows.has('plays') &&
+            plainSortHeader('plays', 'Plays', 'jb-tt-plays')}
           {showAdded && plainSortHeader('added', 'Added', 'jb-tt-added')}
           <div className="jb-tt-love">
             <Heart
@@ -754,31 +823,47 @@ const TrackTable = ({
                         </>
                       )}
                     </div>
-                    <div className="jb-tt-wave">
-                      <WaveformPreview
-                        hasWaveform={track.hasWaveform}
-                        height={24}
-                        path={track.path}
-                        width={waveWidth}
-                      />
-                    </div>
+                    {shows.has('wave') && (
+                      <div className="jb-tt-wave">
+                        <WaveformPreview
+                          hasWaveform={track.hasWaveform}
+                          height={24}
+                          path={track.path}
+                          width={waveWidth}
+                        />
+                      </div>
+                    )}
                     <div className="jb-tt-title">
                       {track.title || track.filename}
                     </div>
                     <div className="jb-tt-artist">{track.artist || '–'}</div>
-                    <div className="jb-tt-album">{track.album || '–'}</div>
-                    <div className="jb-tt-key">{track.key || '–'}</div>
-                    <div className="jb-tt-bpm">{track.bpm || '–'}</div>
-                    <div className="jb-tt-ext">
-                      {track.extension?.toUpperCase() || '–'}
-                    </div>
-                    <div className="jb-tt-quality">
-                      {formatAttributes(track) || '–'}
-                    </div>
+                    {shows.has('album') && (
+                      <div className="jb-tt-album">{track.album || '–'}</div>
+                    )}
+                    {shows.has('key') && (
+                      <div className="jb-tt-key">{track.key || '–'}</div>
+                    )}
+                    {shows.has('bpm') && (
+                      <div className="jb-tt-bpm">{track.bpm || '–'}</div>
+                    )}
+                    {shows.has('ext') && (
+                      <div className="jb-tt-ext">
+                        {track.extension?.toUpperCase() || '–'}
+                      </div>
+                    )}
+                    {shows.has('quality') && (
+                      <div className="jb-tt-quality">
+                        {formatAttributes(track) || '–'}
+                      </div>
+                    )}
                     <div className="jb-tt-dur">
                       {track.duration ? formatSeconds(track.duration) : '–'}
                     </div>
-                    <div className="jb-tt-plays">{stat?.playCount ?? '–'}</div>
+                    {shows.has('plays') && (
+                      <div className="jb-tt-plays">
+                        {stat?.playCount ?? '–'}
+                      </div>
+                    )}
                     {showAdded && (
                       <div className="jb-tt-added">
                         {formatIndexedAt(track.indexedAt) || '–'}
