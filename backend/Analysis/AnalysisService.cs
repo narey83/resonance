@@ -404,13 +404,14 @@ namespace resonance.Analysis
                 // One worker per core: each runs a single-threaded ffmpeg then a single-threaded
                 // Essentia, so the pool size is the core count rather than anything configurable.
                 // .NET reports the cgroup CPU limit here, so a constrained container gets its share
-                // rather than the host's total.
-                var workers = Environment.ProcessorCount;
+                // rather than the host's total. Logged as Cores, not Workers — there is no worker
+                // setting any more, and naming it that made the log read like there still is one.
+                var cores = Environment.ProcessorCount;
 
                 SetState(true, false, false, total, 0, 0, 0, metrics: request.Metrics.ToString());
                 Log.Information(
-                    "Analysis scan started. Metrics: {Metrics}, Workers: {Workers}, Tracks: {Total}, ResetAll: {ResetAll}",
-                    request.Metrics, workers, total, request.ResetAll);
+                    "Analysis scan started. Metrics: {Metrics}, Cores: {Cores}, Tracks: {Total}, ResetAll: {ResetAll}",
+                    request.Metrics, cores, total, request.ResetAll);
 
                 if (total == 0)
                 {
@@ -435,9 +436,9 @@ namespace resonance.Analysis
                 // Bounded so the queue does not materialise every pending track's state at once
                 // on a library of tens of thousands of files.
                 var channel = Channel.CreateBounded<(TrackAnalysisInfo Track, AnalysisMetrics Metrics)>(
-                    new BoundedChannelOptions(workers * 2) { FullMode = BoundedChannelFullMode.Wait });
+                    new BoundedChannelOptions(cores * 2) { FullMode = BoundedChannelFullMode.Wait });
 
-                var tasks = Enumerable.Range(0, workers).Select(_ => Task.Run(async () =>
+                var tasks = Enumerable.Range(0, cores).Select(_ => Task.Run(async () =>
                 {
                     await foreach (var (track, metrics) in channel.Reader.ReadAllAsync(ct))
                     {
