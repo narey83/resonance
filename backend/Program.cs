@@ -1289,6 +1289,7 @@ namespace resonance
                 // would make the generation itself fast enough to drop this.
                 services.AddOutputCache(cache => cache.AddBasePolicy(policy => policy
                     .With(context => context.HttpContext.Request.Path.StartsWithSegments("/swagger"))
+                    .SetVaryByHost(false)
                     .Expire(TimeSpan.FromDays(1))));
 
                 services.AddSwaggerGen(options =>
@@ -1558,7 +1559,9 @@ namespace resonance
 
                 // ponytail: whoever requests the document first pays the full build (Swashbuckle 6.x
                 // scans the 800KB XML doc once per member, ~12s here). Spend it in the background during
-                // startup, so the cache is already warm by the time anyone opens the page.
+                // startup, so the cache is already warm by the time anyone opens the page. The document
+                // carries no 'servers' block, so the copy primed over loopback serves every hostname --
+                // hence SetVaryByHost(false) on the cache policy.
                 if (!OptionsAtStartup.Web.Disabled)
                 {
                     var url = $"http://localhost:{OptionsAtStartup.Web.Port}{(urlBase == "/" ? string.Empty : urlBase)}/swagger/v0/swagger.json";
