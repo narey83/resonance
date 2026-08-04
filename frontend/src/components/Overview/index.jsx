@@ -34,9 +34,6 @@
 // </copyright>
 
 import './Overview.css';
-import * as eventsAPI from '../../lib/events';
-import * as libraryActivityAPI from '../../lib/libraryActivity';
-import * as musicLibraryAPI from '../../lib/musicLibrary';
 import * as prefs from '../../lib/prefs';
 import * as reportsAPI from '../../lib/reports';
 import * as sharesAPI from '../../lib/shares';
@@ -48,11 +45,8 @@ import ActivityHeatmap from './ActivityHeatmap';
 import BlockedUsersCard from './BlockedUsersCard';
 import CoverageCard from './CoverageCard';
 import ErrorChart from './ErrorChart';
-import FileTypeChart from './FileTypeChart';
 import GeographyCard from './GeographyCard';
 import KpiCards from './KpiCards';
-import LibraryComposition from './LibraryComposition';
-import NotificationFeed from './NotificationFeed';
 import PeerRetentionCard from './PeerRetentionCard';
 import PersonalSummary from './PersonalSummary';
 import PopularDirectories from './PopularDirectories';
@@ -88,8 +82,6 @@ const ANALYTICS_TABS = [
   { id: 'reliability', label: 'Reliability' },
   { id: 'top', label: 'Top Users & Content' },
   { id: 'geography', label: 'Audience & Geography' },
-  { id: 'library', label: 'Library' },
-  { id: 'feed', label: 'Activity Feed' },
 ];
 
 // Refresh interval values are in milliseconds; 0 = off
@@ -146,7 +138,6 @@ const AdminOverview = () => {
   const [topFiles, setTopFiles] = useState([]);
   const [dlExceptions, setDlExceptions] = useState([]);
   const [ulExceptions, setUlExceptions] = useState([]);
-  const [events, setEvents] = useState([]);
   const [fileTypeCounts, setFileTypeCounts] = useState(null);
   const [heatmap, setHeatmap] = useState([]);
   const [geography, setGeography] = useState(null);
@@ -155,9 +146,6 @@ const AdminOverview = () => {
   const [peers, setPeers] = useState(null);
   const [social, setSocial] = useState(null);
   const [coverage, setCoverage] = useState(null);
-  const [genres, setGenres] = useState([]);
-  const [years, setYears] = useState([]);
-  const [playStats, setPlayStats] = useState([]);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   // Frosted-glass transition overlay — shown only on user-initiated range
   // changes, not on background auto-refresh (which would flash it).
@@ -203,31 +191,6 @@ const AdminOverview = () => {
     };
   }, []);
 
-  // Events feed — scoped to the selected range
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      const to = new Date().toISOString();
-      const from = new Date(Date.now() - range * 60 * 60 * 1_000).toISOString();
-      try {
-        const { events: loadedEvents } = await eventsAPI.list({
-          from,
-          limit: 50,
-          offset: 0,
-          to,
-        });
-        if (!cancelled) setEvents(loadedEvents ?? []);
-      } catch {
-        // silently ignore
-      }
-    };
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [analyticsRefresh, range]);
-
   // File type counts — load once on mount
   useEffect(() => {
     let cancelled = false;
@@ -270,21 +233,13 @@ const AdminOverview = () => {
     };
   }, [analyticsRefresh]);
 
-  // Catalog coverage + local library composition — load once on mount (not time-windowed)
+  // Catalog coverage — load once on mount (not time-windowed)
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const [cov, gen, yrs, plays] = await Promise.all([
-        reportsAPI.getCoverage().catch(() => null),
-        musicLibraryAPI.getGenres().catch(() => null),
-        musicLibraryAPI.getYears().catch(() => null),
-        libraryActivityAPI.getPlayStats().catch(() => null),
-      ]);
+      const cov = await reportsAPI.getCoverage().catch(() => null);
       if (cancelled) return;
       setCoverage(cov);
-      setGenres(gen ?? []);
-      setYears(yrs ?? []);
-      setPlayStats(plays ?? []);
     };
 
     load();
@@ -599,25 +554,6 @@ const AdminOverview = () => {
                     <div className="overview-row">
                       <BlockedUsersCard />
                     </div>
-                  </section>
-                )}
-
-                {analyticsTab === 'library' && (
-                  <section className="overview-section">
-                    <div className="overview-row">
-                      <LibraryComposition
-                        genres={genres}
-                        playStats={playStats}
-                        years={years}
-                      />
-                      <FileTypeChart counts={fileTypeCounts} />
-                    </div>
-                  </section>
-                )}
-
-                {analyticsTab === 'feed' && (
-                  <section className="overview-section overview-section--feed">
-                    <NotificationFeed events={events} />
                   </section>
                 )}
               </div>
