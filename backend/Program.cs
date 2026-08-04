@@ -95,6 +95,7 @@ namespace resonance
     using Serilog.Sinks.Grafana.Loki;
     using Serilog.Sinks.SystemConsole.Themes;
     using Soulseek;
+    using Swashbuckle.AspNetCore.SwaggerUI;
     using Utility.CommandLine;
     using Utility.EnvironmentVariables;
     using IOFile = System.IO.File;
@@ -1542,10 +1543,41 @@ namespace resonance
                 // UseCors/UseRouting as the output cache middleware requires
                 app.UseOutputCache();
                 app.UseSwagger();
-                app.UseSwaggerUI(options => app.Services.GetRequiredService<IApiVersionDescriptionProvider>().ApiVersionDescriptions.ToList()
-                    .ForEach(description => options.SwaggerEndpoint($"{(urlBase == "/" ? string.Empty : urlBase)}/swagger/{description.GroupName}/swagger.json", description.GroupName)));
+                app.UseSwaggerUI(options =>
+                {
+                    // 304 operations and 229 schemas is more than Swagger UI can lay out quickly; start
+                    // everything collapsed so the first paint isn't the whole API
+                    options.DocExpansion(DocExpansion.None);
+                    options.DefaultModelsExpandDepth(0);
+
+                    app.Services.GetRequiredService<IApiVersionDescriptionProvider>().ApiVersionDescriptions.ToList()
+                        .ForEach(description => options.SwaggerEndpoint($"{(urlBase == "/" ? string.Empty : urlBase)}/swagger/{description.GroupName}/swagger.json", description.GroupName));
+                });
 
                 Log.Information("Publishing Swagger documentation to {URL}", "/swagger");
+
+                // ponytail: whoever requests the document first pays the full build (Swashbuckle 6.x
+                // scans the 800KB XML doc once per member, ~12s here). Spend it in the background during
+                // startup, so the cache is already warm by the time anyone opens the page.
+                if (!OptionsAtStartup.Web.Disabled)
+                {
+                    var url = $"http://localhost:{OptionsAtStartup.Web.Port}{(urlBase == "/" ? string.Empty : urlBase)}/swagger/v0/swagger.json";
+
+                    app.Lifetime.ApplicationStarted.Register(() => _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
+                            await http.GetAsync(url);
+
+                            Log.Debug("Primed the Swagger document cache");
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Debug(ex, "Failed to prime the Swagger document cache");
+                        }
+                    }));
+                }
             }
 
             return app;
