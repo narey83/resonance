@@ -28,6 +28,7 @@
 // </copyright>
 
 import api from '../../lib/api';
+import { analyzeTrack } from '../../lib/musicLibrary';
 import { formatSeconds } from '../../lib/util';
 import {
   beatGridSeconds,
@@ -85,6 +86,18 @@ const WaveformSeekBar = ({
     if (!track?.path) return undefined;
 
     let cancelled = false;
+
+    // The waveform request below only asks for waveform and loudness, so a track played
+    // before it was ever scanned kept its blank BPM and key no matter how often you played
+    // it. Playing is the clearest signal the user cares about this track, so top up the
+    // metrics it's still missing. skipAnalysed lets the backend narrow the work to the
+    // actual gaps, making this free for a track that already has both, and a 409 just means
+    // a scan is already running — which will reach this track on its own.
+    analyzeTrack([track.path], {
+      metrics: 'Bpm, Key',
+      skipAnalysed: true,
+    }).catch(() => {});
+
     api
       .get('/analysis/waveform', { params: { path: track.path } })
       .then(({ data }) => {
