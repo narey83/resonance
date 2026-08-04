@@ -37,15 +37,8 @@ import { View } from 'react-native';
 import { Spacing, ThemeColors } from '../../theme';
 import { getApplicationState } from '../../api/application';
 import { getSummary, TransferSummary } from '../../api/analytics';
-import { fmtBytes, fmtNum, fmtPct, SectionHeader, StatTileGrid } from './shared';
-
-function aggregate(byState: Record<string, TransferSummary> | undefined) {
-  const states = Object.values(byState ?? {});
-  const totalBytes = states.reduce((sum, s) => sum + (s.totalBytes ?? 0), 0);
-  const count = states.reduce((sum, s) => sum + (s.count ?? 0), 0);
-  const succeeded = byState?.Succeeded?.count ?? 0;
-  return { totalBytes, count, successRate: count > 0 ? succeeded / count : 0 };
-}
+import { SectionHeader } from './shared';
+import TransferFlow from './TransferFlow';
 
 export default function PersonalSummary({ colors }: { colors: ThemeColors }) {
   const [summary, setSummary] = useState<Record<string, Record<string, TransferSummary>> | null>(null);
@@ -59,21 +52,13 @@ export default function PersonalSummary({ colors }: { colors: ThemeColors }) {
     return () => { cancelled = true; };
   }, []);
 
-  const dl = aggregate(summary?.Download);
-  const ul = aggregate(summary?.Upload);
-
   return (
     <View style={{ padding: Spacing.lg, gap: Spacing.sm }}>
-      <SectionHeader title="My Activity (last 7 days)" colors={colors} />
-      <StatTileGrid
-        colors={colors}
-        tiles={[
-          { key: 'dl', label: 'Downloaded', value: summary ? fmtBytes(dl.totalBytes) : '—', sub: summary ? `${fmtNum(dl.count)} files` : undefined },
-          { key: 'ul', label: 'Uploaded', value: summary ? fmtBytes(ul.totalBytes) : '—', sub: summary ? `${fmtNum(ul.count)} files` : undefined },
-          { key: 'dl-rate', label: 'Download Success', value: summary ? fmtPct(dl.successRate) : '—' },
-          { key: 'ul-rate', label: 'Upload Success', value: summary ? fmtPct(ul.successRate) : '—' },
-        ]}
-      />
+      <SectionHeader title="My Activity" colors={colors} />
+      {/* No prior window to compare against here: the admin dashboard picks a
+          range and can fetch the one before it, this endpoint just returns the
+          server's default window. */}
+      <TransferFlow summary={summary} caption="Last 7 days" colors={colors} />
     </View>
   );
 }

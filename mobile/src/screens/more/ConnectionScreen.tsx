@@ -47,8 +47,8 @@
 // each hop its own rail, colour and live packet, and every detail tile below
 // belongs to exactly one hop.
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Easing, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
 import { useDeferredFocusEffect } from '../../hooks/useDeferredEffect';
@@ -57,7 +57,7 @@ import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 import { getApplicationState, AppState } from '../../api/application';
 import { useConnectionStore } from '../../services/connectionMonitor';
 import { useAuthStore } from '../../store/auth';
-import { fmtBytes, fmtDate, fmtNum, fmtSpeed, Card, SectionHeader, StatRow, StatTileGrid } from '../../components/overview/shared';
+import { fmtBytes, fmtDate, fmtNum, fmtSpeed, Card, SectionHeader, StatRow, StatTileGrid, TravellingPacket } from '../../components/overview/shared';
 
 const NODE     = 44;   // node circle diameter
 const GUTTER   = 56;   // width of the rail column the nodes/links sit in
@@ -124,34 +124,18 @@ function ChainLink({ title, status, chips, color, live, colors }: {
   colors: ThemeColors;
 }) {
   const s = useMemo(() => makeChainStyles(colors), [colors]);
-  const travel = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (!live) return;
-    travel.setValue(0);
-    const loop = Animated.loop(Animated.sequence([
-      Animated.timing(travel, { toValue: 1, duration: 1_100, easing: Easing.in(Easing.quad), useNativeDriver: true }),
-      Animated.delay(500),
-    ]));
-    loop.start();
-    return () => loop.stop();
-  }, [live, travel]);
 
   return (
     <View style={s.row}>
       <View style={[s.gutter, { height: LINK_H }]}>
         <View style={[s.rail, { backgroundColor: color + (live ? '44' : '99') }]} />
-        {live && (
-          <Animated.View
-            style={[
-              s.packet,
-              {
-                backgroundColor: color,
-                transform: [{ translateY: travel.interpolate({ inputRange: [0, 1], outputRange: [0, LINK_H - PACKET_H] }) }],
-              },
-            ]}
-          />
-        )}
+        <TravellingPacket
+          live={live}
+          distance={LINK_H - PACKET_H}
+          length={PACKET_H}
+          color={color}
+          style={s.packet}
+        />
       </View>
       <View style={s.hop}>
         <Text style={s.hopTitle}>{title}</Text>
@@ -177,10 +161,10 @@ function makeChainStyles(c: ThemeColors) {
     nodeTitle: { fontSize: Typography.md, fontWeight: '700', color: c.textPrimary },
     nodeSub:   { fontSize: Typography.sm, color: c.textMuted },
     // Left is pinned rather than left to alignItems: an absolutely positioned
-    // child's static position is easy to get wrong across platforms, and this
-    // has to line up with the node circles above and below it to the pixel.
+    // child's static position is easy to get wrong across platforms, and the
+    // rail has to line up with the node circles above and below it to the pixel.
     rail:      { position: 'absolute', top: 0, bottom: 0, left: (GUTTER - 3) / 2, width: 3, borderRadius: Radius.full },
-    packet:    { position: 'absolute', top: 0, left: (GUTTER - 3) / 2, width: 3, height: PACKET_H, borderRadius: Radius.full },
+    packet:    { left: (GUTTER - 3) / 2 },
     hop:       { flex: 1, paddingRight: Spacing.sm, paddingVertical: Spacing.xs, gap: 3 },
     hopTitle:  { fontSize: Typography.xs, color: c.textMuted, fontWeight: '600', letterSpacing: 0.8 },
     hopStatus: { fontSize: Typography.base, fontWeight: '600' },

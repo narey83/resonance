@@ -59,9 +59,8 @@ import * as libraryActivityApi from '../../api/libraryActivity';
 import * as eventsApi from '../../api/events';
 import { SectionHeader } from '../../components/overview/shared';
 import type { Histogram } from '../../components/overview/histogramUtils';
-import KpiCards from '../../components/overview/KpiCards';
+import TransferFlow from '../../components/overview/TransferFlow';
 import SocialPulse from '../../components/overview/SocialPulse';
-import RatioCard from '../../components/overview/RatioCard';
 import CoverageCard from '../../components/overview/CoverageCard';
 import ActivityChart from '../../components/overview/ActivityChart';
 import ActivityHeatmap from '../../components/overview/ActivityHeatmap';
@@ -84,11 +83,11 @@ import PersonalSummary from '../../components/overview/PersonalSummary';
 import { SkeletonCard, SkeletonRows } from '../../components/Skeleton';
 
 const RANGES = [
-  { hours: 1, label: '1h' },
-  { hours: 6, label: '6h' },
-  { hours: 24, label: '24h' },
-  { hours: 168, label: '7d' },
-  { hours: 720, label: '30d' },
+  { hours: 1, label: '1h', long: 'Last hour' },
+  { hours: 6, label: '6h', long: 'Last 6 hours' },
+  { hours: 24, label: '24h', long: 'Last 24 hours' },
+  { hours: 168, label: '7d', long: 'Last 7 days' },
+  { hours: 720, label: '30d', long: 'Last 30 days' },
 ];
 
 const TABS = [
@@ -415,9 +414,12 @@ export default function OverviewScreen({ navigation }: Props) {
           )}
           {!showSkeleton && !showError && tab === 'glance' && (
             <>
-              <KpiCards summary={data.summary} prevSummary={data.prevSummary} colors={colors} />
-              <SectionHeader title="Ratio" colors={colors} />
-              <RatioCard summary={data.summary} colors={colors} />
+              <TransferFlow
+                summary={data.summary}
+                prevSummary={data.prevSummary}
+                caption={RANGES.find((r) => r.hours === rangeHours)?.long ?? ''}
+                colors={colors}
+              />
               <SectionHeader title="Catalog Coverage" colors={colors} />
               <CoverageCard
                 totalFiles={Object.values(fileTypeCounts).reduce((a, b) => a + b, 0)}

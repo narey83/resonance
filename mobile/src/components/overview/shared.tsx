@@ -27,8 +27,9 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import React, { useMemo } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 
 export function fmtBytes(bytes: number): string {
@@ -238,6 +239,70 @@ function makeTileStyles(c: ThemeColors) {
     value: { fontSize: Typography.xl, color: c.textPrimary, fontWeight: '700' },
     sub:   { fontSize: Typography.xs, color: c.textMuted },
   });
+}
+
+// A "data" streak that runs the length of a rail while a link is live — the
+// shared idiom for an active connection or flow (ConnectionScreen's hop rails,
+// TransferFlow's direction lanes). Absolutely positioned, so the caller owns
+// the rail it runs along and is responsible for clipping it.
+export function TravellingPacket({
+  live,
+  distance,
+  color,
+  horizontal = false,
+  reverse = false,
+  thickness = 3,
+  length = 20,
+  duration = 1_100,
+  style,
+}: {
+  live:        boolean;
+  distance:    number;  // px to travel; nothing is drawn when this is <= 0
+  color:       string;
+  horizontal?: boolean;
+  reverse?:    boolean; // run toward the rail's start instead of its end
+  thickness?:  number;
+  length?:     number;
+  duration?:   number;
+  style?:      StyleProp<ViewStyle>;
+}) {
+  const travel  = useRef(new Animated.Value(0)).current;
+  const running = live && distance > 0;
+
+  useEffect(() => {
+    if (!running) return;
+    travel.setValue(0);
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(travel, { toValue: 1, duration, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.delay(500),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [running, duration, travel]);
+
+  if (!running) return null;
+
+  const anchor: ViewStyle = horizontal
+    ? (reverse ? { right: 0 } : { left: 0 })
+    : (reverse ? { bottom: 0 } : { top: 0 });
+  const offset = travel.interpolate({ inputRange: [0, 1], outputRange: [0, reverse ? -distance : distance] });
+
+  return (
+    <Animated.View
+      style={[
+        {
+          position: 'absolute',
+          width:  horizontal ? length : thickness,
+          height: horizontal ? thickness : length,
+          borderRadius: Radius.full,
+          backgroundColor: color,
+          transform: [horizontal ? { translateX: offset } : { translateY: offset }],
+        },
+        anchor,
+        style,
+      ]}
+    />
+  );
 }
 
 export function EmptyState({ text, colors }: { text: string; colors: ThemeColors }) {
