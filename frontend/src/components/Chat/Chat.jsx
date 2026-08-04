@@ -196,52 +196,59 @@ const Chat = ({ history, location }) => {
   // ── Fetch conversations ──────────────────────────────────────────────────────
 
   const fetchConversations = useCallback(async () => {
-    let fetched = await chat.getAll();
-    fetched = fetched.filter((c) => c.username !== '..');
+    try {
+      let fetched = await chat.getAll();
+      fetched = fetched.filter((c) => c.username !== '..');
 
-    let convMap =
-      fetched.length === 0
-        ? {}
-        : fetched.reduce((map, c) => {
-            map[c.username] = c;
-            return map;
-          }, {});
+      let convMap =
+        fetched.length === 0
+          ? {}
+          : fetched.reduce((map, c) => {
+              map[c.username] = c;
+              return map;
+            }, {});
 
-    const currentActive = activeRef.current;
-    const activeConv = convMap[currentActive];
+      const currentActive = activeRef.current;
+      const activeConv = convMap[currentActive];
 
-    if (activeConv) {
-      if (activeConv.hasUnAcknowledgedMessages) {
-        await chat.acknowledge({ username: currentActive });
+      if (activeConv) {
+        if (activeConv.hasUnAcknowledgedMessages) {
+          await chat.acknowledge({ username: currentActive });
+        }
+
+        const activeDetail = await chat.get({ username: currentActive });
+        convMap = { ...convMap, [currentActive]: activeDetail };
       }
 
-      const activeDetail = await chat.get({ username: currentActive });
-      convMap = { ...convMap, [currentActive]: activeDetail };
+      if (!mountedRef.current) return;
+
+      setConversations((previous) => {
+        // Preserve locally-initiated conversations not yet on the server
+        const merged = { ...convMap };
+        for (const [username, conv] of Object.entries(previous)) {
+          if (!merged[username]) merged[username] = conv;
+        }
+
+        // Only redirect away if the active user is absent from both server and local state
+        if (
+          currentActive &&
+          !convMap[currentActive] &&
+          !previous[currentActive]
+        ) {
+          const first = Object.keys(merged)[0] || '';
+          setActive(first);
+          activeRef.current = first;
+          sessionStorage.setItem(activeChatKey, first);
+        }
+
+        return merged;
+      });
+    } catch (error) {
+      // Every caller of this — mount, the 5s poll, the hub event — left the rejection
+      // unhandled, so a bouncing backend threw 502s straight into the error overlay.
+      // Announcing the outage is the connection manager's job; the next poll recovers.
+      console.debug('failed to fetch conversations', error);
     }
-
-    if (!mountedRef.current) return;
-
-    setConversations((previous) => {
-      // Preserve locally-initiated conversations not yet on the server
-      const merged = { ...convMap };
-      for (const [username, conv] of Object.entries(previous)) {
-        if (!merged[username]) merged[username] = conv;
-      }
-
-      // Only redirect away if the active user is absent from both server and local state
-      if (
-        currentActive &&
-        !convMap[currentActive] &&
-        !previous[currentActive]
-      ) {
-        const first = Object.keys(merged)[0] || '';
-        setActive(first);
-        activeRef.current = first;
-        sessionStorage.setItem(activeChatKey, first);
-      }
-
-      return merged;
-    });
   }, []);
 
   // ── Open / initiate conversation ─────────────────────────────────────────────

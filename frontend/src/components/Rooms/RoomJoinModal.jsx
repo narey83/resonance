@@ -59,9 +59,16 @@ const RoomJoinModal = ({ joinRoom: parentJoinRoom, ...modalOptions }) => {
   useEffect(() => {
     const getAvailableRooms = async () => {
       setLoading(true);
-      const availableResult = await rooms.getAvailable();
-      setAvailable(availableResult);
-      setLoading(false);
+      try {
+        setAvailable(await rooms.getAvailable());
+      } catch (error) {
+        // Without this the rejection went unhandled and the spinner span forever;
+        // an empty list at least lets the modal render and be closed.
+        console.debug('failed to fetch available rooms', error);
+        setAvailable([]);
+      } finally {
+        setLoading(false);
+      }
     };
 
     if (open) getAvailableRooms();

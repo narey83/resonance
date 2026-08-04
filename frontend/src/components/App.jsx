@@ -864,7 +864,14 @@ const App = () => {
   }, []);
 
   const handleLogout = useCallback(async () => {
-    await session.logout();
+    // Signing out is local state; if the server call fails (it's down, the session
+    // is already gone) that's no reason to keep someone logged in.
+    try {
+      await session.logout();
+    } catch (error) {
+      console.debug('logout request failed, signing out locally anyway', error);
+    }
+
     setIsLoggedIn(false);
     setApplicationState({});
     setApplicationOptions({});
