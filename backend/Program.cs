@@ -1466,6 +1466,31 @@ namespace resonance
                     _ = applicationHub.BroadcastBlockedUserAlertAsync(username, ip);
                     _ = applicationHub.BroadcastBlockedUsersAsync(blockedUsers);
                 };
+
+                // Blocking only rejects new requests; a peer already downloading keeps downloading
+                // until their transfers are cancelled. Kick them off the moment they're blocked.
+                if (!IsRelayAgent)
+                {
+                    var transfers = app.Services.GetRequiredService<ITransferService>();
+
+                    blockedUsers.UserBlocked += username =>
+                    {
+                        var live = transfers.Uploads
+                            .List(t => t.Username == username, includeRemoved: false)
+                            .Where(t => !TransferStateCategories.Completed.Contains(t.State))
+                            .ToList();
+
+                        foreach (var upload in live)
+                        {
+                            transfers.Uploads.TryCancel(upload.Id);
+                        }
+
+                        if (live.Count > 0)
+                        {
+                            Log.Information("Cancelled {Count} in-flight upload(s) to newly blocked user {Username}", live.Count, username);
+                        }
+                    };
+                }
             }
 
 #pragma warning disable ASP0014 // Suggest using top level route registrations

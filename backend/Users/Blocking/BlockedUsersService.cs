@@ -73,6 +73,13 @@ public class BlockedUsersService
     public event Action<string, string> AutoBlocked;
 
     /// <summary>
+    ///     Raised with the username whenever a user is blocked. The guards only reject *new*
+    ///     requests, so anything already queued or mid-transfer keeps running unless something
+    ///     listening here stops it.
+    /// </summary>
+    public event Action<string> UserBlocked;
+
+    /// <summary>
     ///     Gets a value indicating whether the geo database is loaded; place blocking is inert without it.
     /// </summary>
     public bool GeoAvailable => Geo?.IsAvailable == true;
@@ -221,6 +228,18 @@ public class BlockedUsersService
         Log.Information("Blocked user {Username}", username);
         BackfillFromHistory(username);
         Reload();
+
+        try
+        {
+            UserBlocked?.Invoke(username);
+        }
+        catch (Exception ex)
+        {
+            // Block() is called from the network guards (auto-block); a listener blowing up
+            // must not take the block itself down with it
+            Log.Warning("Post-block handler failed for {Username}: {Message}", username, ex.Message);
+        }
+
         return GetAll();
     }
 
