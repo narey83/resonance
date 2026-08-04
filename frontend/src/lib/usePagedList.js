@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { useLibraryActivity } from '../context/LibraryActivityContext';
 import useDebounce from '../hooks/useDebounce';
 import { getTrackPage } from './musicLibrary';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -46,7 +47,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 export const usePagedList = (
   fetchPage,
   query,
-  { enabled = true, pageSize = 200 } = {},
+  { enabled = true, pageSize = 200, refreshToken = 0 } = {},
 ) => {
   const key = JSON.stringify(query ?? null);
 
@@ -128,6 +129,38 @@ export const usePagedList = (
     return undefined;
   }, [apply, enabled, key, pageSize]);
 
+  // Rows already on screen go stale when something rewrites them — an analysis writing BPM and
+  // key into a track's tags, a rename, a rescan. Refetch exactly the window we already hold
+  // instead of starting the query over: clearing items first would collapse the list back to
+  // its first page and throw away the user's place in it.
+  //
+  // ponytail: refetches the whole loaded window on every library update, so a long scan that
+  // broadcasts repeatedly re-reads the same rows each time. Debounce it if that ever shows up
+  // in a profile — one query against a cached list is cheap next to losing your place.
+  useEffect(() => {
+    if (!enabled || refreshToken === 0 || busyRef.current) return;
+
+    const count = itemsRef.current.length;
+    if (count === 0) return;
+
+    const generation = generationRef.current;
+    (async () => {
+      try {
+        const page = await fetchRef.current({
+          ...JSON.parse(key),
+          limit: count,
+          offset: 0,
+        });
+        apply(generation, page, false);
+      } catch {
+        // keep showing what's there; the next update or query change retries
+      }
+    })();
+    // key deliberately absent: a query change already refetches through the effect above, and
+    // listing it here would fire this one redundantly alongside it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshToken]);
+
   const loadMore = useCallback(() => {
     if (
       busyRef.current ||
@@ -185,6 +218,11 @@ export const usePagedTracks = (
   // Typing shouldn't fire a request per keystroke.
   const search = useDebounce(filter, 250);
 
+  // Every track list in the library shows tag-derived columns, so all of them want refreshing
+  // when the library reports a change — the analysis that fills in BPM and key is the common
+  // case, and until this the new values only appeared if you left the view and came back.
+  const libraryRevision = useLibraryActivity()?.libraryRevision ?? 0;
+
   const page = usePagedList(
     getTrackPage,
     {
@@ -194,7 +232,7 @@ export const usePagedTracks = (
       sort: sortCol || undefined,
       startsWith: letter || undefined,
     },
-    { enabled },
+    { enabled, refreshToken: libraryRevision },
   );
 
   const onAlphaJump = useCallback(
