@@ -44,6 +44,11 @@ export interface Conversation {
   isActive: boolean;
   unAcknowledgedMessageCount: number;
   hasUnAcknowledgedMessages: boolean;
+  lastMessageTimestamp?: string | null;
+  // Populated by the list endpoint only, so the conversation list can show a
+  // preview without pulling every conversation's messages; null on the
+  // single-conversation endpoint, which returns `messages` instead.
+  lastMessage?: PrivateMessage | null;
   messages?: PrivateMessage[];
 }
 

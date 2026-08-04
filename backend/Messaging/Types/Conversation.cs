@@ -45,6 +45,12 @@ namespace resonance.Messaging
         public int UnAcknowledgedMessageCount { get; set; }
         public bool HasUnAcknowledgedMessages => UnAcknowledgedMessageCount > 0;
         public DateTime? LastMessageTimestamp { get; set; }
+
+        /// <summary>
+        ///     Gets or sets the most recent message in the conversation, used to render a preview in list views
+        ///     without fetching every conversation's messages. Null when <see cref="Messages"/> is populated.
+        /// </summary>
+        public PrivateMessage LastMessage { get; set; }
         public IEnumerable<PrivateMessage> Messages { get; set; }
     }
 }

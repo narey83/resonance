@@ -50,8 +50,34 @@ import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import type { ChatStackParamList } from '../../navigation/MainTabs';
 import UserActionSheet from '../../components/UserActionSheet';
+import UserAvatar from '../../components/UserAvatar';
+import { useUserInfoStore } from '../../store/userInfoStore';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatConversation'>;
+
+// The peer's picture and tagline, sitting under the nav bar like WhatsApp's
+// contact header. Renders nothing at all until (or unless) the peer answers the
+// info request, so an offline user costs no vertical space. Tapping it opens the
+// full user sheet.
+function ProfileStrip({ username, colors, onPress }: { username: string; colors: ThemeColors; onPress: () => void }) {
+  const profile = useUserInfoStore((st) => st.profiles[username]);
+  const load    = useUserInfoStore((st) => st.load);
+  const s       = useMemo(() => makeStyles(colors), [colors]);
+
+  React.useEffect(() => { load(username); }, [username, load]);
+
+  if (!profile?.picture && !profile?.description) return null;
+
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [s.strip, pressed && { backgroundColor: colors.bgElevated }]}>
+      <UserAvatar username={username} size={36} />
+      <Text style={s.stripText} numberOfLines={2}>
+        {profile.description ?? username}
+      </Text>
+      <Ionicons color={colors.textDim} name="chevron-forward" size={16} />
+    </Pressable>
+  );
+}
 
 const dayKey = (iso: string) => iso.slice(0, 10);
 
@@ -292,6 +318,7 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
 
   return (
     <View style={s.container}>
+      <ProfileStrip username={username} colors={colors} onPress={() => setActionUser(username)} />
       <Animated.FlatList
         data={reversedThread}
         inverted
@@ -354,6 +381,18 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
 
 function makeStyles(c: ThemeColors) {
   return StyleSheet.create({
+    strip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing.md,
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.sm,
+      backgroundColor: c.bgSurface,
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+    },
+    stripText: { flex: 1, fontSize: Typography.sm, color: c.textMuted, fontStyle: 'italic' },
+
     container: { flex: 1, backgroundColor: c.bgPrimary },
     list: {
       padding: Spacing.md,

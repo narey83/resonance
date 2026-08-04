@@ -268,11 +268,17 @@ namespace resonance.Messaging
                 .Where(m => !m.IsAcknowledged)
                 .ToList();
 
-            var lastMessageTimestamps = context.PrivateMessages
+            // The most recent message per conversation, so list views can render a preview line without asking
+            // for every conversation's messages. "No later message exists for this user" translates to a
+            // correlated NOT EXISTS, keeping this one query returning one row per conversation instead of a
+            // grouped Max plus a second round trip for the bodies. Two messages sharing a timestamp yield two
+            // rows, hence the group rather than a direct ToDictionary.
+            var lastMessages = context.PrivateMessages
                 .AsNoTracking()
+                .Where(m => !context.PrivateMessages.Any(later => later.Username == m.Username && later.Timestamp > m.Timestamp))
+                .ToList()
                 .GroupBy(m => m.Username)
-                .Select(g => new { Username = g.Key, Timestamp = g.Max(m => m.Timestamp) })
-                .ToDictionary(g => g.Username, g => g.Timestamp);
+                .ToDictionary(g => g.Key, g => g.First());
 
             var conversations = context.Conversations
                 .AsNoTracking()
@@ -285,7 +291,8 @@ namespace resonance.Messaging
                     Username = c.Username,
                     IsActive = c.IsActive,
                     UnAcknowledgedMessageCount = unAckedMessages.Count(m => m.Username == c.Username),
-                    LastMessageTimestamp = lastMessageTimestamps.TryGetValue(c.Username, out var timestamp) ? timestamp : null,
+                    LastMessage = lastMessages.TryGetValue(c.Username, out var last) ? last : null,
+                    LastMessageTimestamp = lastMessages.TryGetValue(c.Username, out var lastForTimestamp) ? lastForTimestamp.Timestamp : null,
                 })
                 .OrderByDescending(c => c.LastMessageTimestamp ?? DateTime.MinValue)
                 .ThenBy(c => c.Username);

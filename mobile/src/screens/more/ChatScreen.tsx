@@ -45,10 +45,86 @@ import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import type { ChatStackParamList } from '../../navigation/MainTabs';
 import BottomSheet from '../../components/BottomSheet';
+import UserAvatar from '../../components/UserAvatar';
+import { useUserInfoStore } from '../../store/userInfoStore';
 import UserActionSheet from '../../components/UserActionSheet';
 import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Chat'>;
+
+const AVATAR = 48;
+
+// Messenger-style relative time: clock for today, "Yesterday", weekday inside
+// the last week, then a short date — the same ladder WhatsApp uses, so the
+// column stays narrow whatever the age of the conversation.
+function fmtWhen(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+
+  if (now.getTime() - d.getTime() < 7 * 86_400_000) return d.toLocaleDateString([], { weekday: 'short' });
+  return d.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+function ConversationRow({
+  item,
+  onPress,
+  onLongPress,
+  s,
+}: {
+  item:        Conversation;
+  onPress:     () => void;
+  onLongPress: () => void;
+  s:           ReturnType<typeof makeStyles>;
+}) {
+  // Third line: the user's own tagline, which arrives asynchronously (or never,
+  // for an offline peer) — the row just gets shorter without it.
+  const tagline = useUserInfoStore((st) => st.profiles[item.username]?.description);
+
+  const unread = item.unAcknowledgedMessageCount;
+  const last   = item.lastMessage;
+  // Collapse newlines so a multi-line message can't blow out the single-line preview.
+  const preview = last
+    ? `${last.direction === 'Out' ? 'You: ' : ''}${last.message.replace(/\s+/g, ' ').trim()}`
+    : 'No messages yet';
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      style={({ pressed }) => [s.row, pressed && s.rowPressed]}
+    >
+      <UserAvatar username={item.username} size={AVATAR} />
+
+      <View style={s.rowContent}>
+        <View style={s.line}>
+          <Text style={s.username} numberOfLines={1}>{item.username}</Text>
+          <Text style={[s.when, unread > 0 && s.whenUnread]}>
+            {fmtWhen(item.lastMessageTimestamp ?? last?.timestamp)}
+          </Text>
+        </View>
+        <View style={s.line}>
+          <Text style={[s.preview, unread > 0 && s.previewUnread]} numberOfLines={1}>{preview}</Text>
+          {unread > 0 && (
+            <View style={s.badge}>
+              <Text style={s.badgeText}>{unread > 99 ? '99+' : unread}</Text>
+            </View>
+          )}
+        </View>
+        {!!tagline && <Text style={s.tagline} numberOfLines={1}>{tagline}</Text>}
+      </View>
+    </Pressable>
+  );
+}
 
 export default function ChatScreen({ navigation }: Props) {
   const { colors } = useTheme();
@@ -91,30 +167,20 @@ export default function ChatScreen({ navigation }: Props) {
     openConversation(username);
   };
 
-  const renderItem = ({ item, index }: { item: Conversation; index: number }) => {
-    const isLast = index === conversations.length - 1;
-    return (
-      <Pressable
-        onPress={() => openConversation(item.username)}
-        onLongPress={() => handleLongPress(item)}
-        style={({ pressed }) => [s.row, isLast && s.rowLast, pressed && s.rowPressed]}
-      >
-        <View style={s.avatar}>
-          <Ionicons color={colors.accent} name="person" size={18} />
-        </View>
-        <View style={s.rowContent}>
-          <Text style={s.username}>{item.username}</Text>
-          {item.unAcknowledgedMessageCount > 0 && (
-            <View style={s.badge}>
-              <Text style={s.badgeText}>
-                {item.unAcknowledgedMessageCount > 99 ? '99+' : item.unAcknowledgedMessageCount}
-              </Text>
-            </View>
-          )}
-        </View>
-        <Ionicons color={colors.textDim} name="chevron-forward" size={16} />
-      </Pressable>
-    );
+  const renderItem = ({ item }: { item: Conversation }) => (
+    <ConversationRow
+      item={item}
+      onPress={() => openConversation(item.username)}
+      onLongPress={() => handleLongPress(item)}
+      s={s}
+    />
+  );
+
+  // Pull-to-refresh also retries the profile lookups: the common failure is the
+  // peer being offline, and that's exactly what a manual refresh is for.
+  const refresh = () => {
+    useUserInfoStore.getState().reset();
+    loadConversations();
   };
 
   return (
@@ -130,10 +196,10 @@ export default function ChatScreen({ navigation }: Props) {
           {...LIST_PERF_PROPS}
           data={conversations}
           keyExtractor={(item) => item.username}
-          onRefresh={loadConversations}
+          onRefresh={refresh}
           refreshing={isLoading}
           renderItem={renderItem}
-          contentContainerStyle={s.list}
+          ItemSeparatorComponent={() => <View style={s.separator} />}
         />
       )}
 
@@ -187,35 +253,29 @@ export default function ChatScreen({ navigation }: Props) {
 function makeStyles(c: ThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: c.bgPrimary },
-    list:      { padding: Spacing.lg },
 
     row: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: Spacing.md,
       paddingVertical: Spacing.md,
-      paddingHorizontal: Spacing.md,
-      backgroundColor: c.bgSurface,
-      borderBottomWidth: 1,
-      borderBottomColor: c.border,
+      paddingHorizontal: Spacing.lg,
     },
-    rowLast:    { borderBottomWidth: 0 },
     rowPressed: { backgroundColor: c.bgElevated },
+    // Inset past the avatar, so the rows read as one list rather than stacked cards.
+    separator: { height: 1, marginLeft: Spacing.lg + AVATAR + Spacing.md, backgroundColor: c.border },
 
-    avatar: {
-      width: 36,
-      height: 36,
-      borderRadius: Radius.full,
-      backgroundColor: c.bgElevated,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    rowContent: { flex: 1 },
-    username:   { fontSize: Typography.base, fontWeight: '500', color: c.textPrimary },
+    rowContent: { flex: 1, gap: 3 },
+    line:       { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    username:   { flex: 1, fontSize: Typography.md, fontWeight: '600', color: c.textPrimary },
+    when:       { fontSize: Typography.xs, color: c.textMuted },
+    whenUnread: { color: c.accent, fontWeight: '700' },
+
+    preview:       { flex: 1, fontSize: Typography.base, color: c.textMuted },
+    previewUnread: { color: c.textPrimary, fontWeight: '600' },
+    tagline:       { fontSize: Typography.xs, color: c.textDim, fontStyle: 'italic' },
 
     badge: {
-      alignSelf: 'flex-start',
-      marginTop: 2,
       backgroundColor: c.accent,
       borderRadius: Radius.full,
       paddingHorizontal: 6,
