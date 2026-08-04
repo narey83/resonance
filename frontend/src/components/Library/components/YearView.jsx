@@ -111,7 +111,10 @@ const YearView = ({
     return copy;
   }, [filteredYears, sortBy, sortDir]);
 
-  if (loading) {
+  // Not while a year is open — see the note in FolderView. A library refresh empties the
+  // collection to force a refetch, and swapping in a placeholder would unmount the open
+  // year's TrackTable and lose its scroll position.
+  if (loading && !selected) {
     return (
       <div className="jb-state">
         <div className="jb-spinner" />
@@ -120,7 +123,7 @@ const YearView = ({
     );
   }
 
-  if (!years.length) {
+  if (!years.length && !selected) {
     return (
       <div className="jb-state">
         No year data found. Add year tags to your tracks.

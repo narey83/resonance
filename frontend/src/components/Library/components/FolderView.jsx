@@ -298,7 +298,12 @@ const FolderView = ({
     };
   }, [alphaHandlerRef, selected]);
 
-  if (loading) {
+  // Both guards stand down once a folder is open: they describe the folder *list*, and the
+  // open folder doesn't depend on it. A library refresh empties `folders` to force a refetch,
+  // and letting that swap in a placeholder unmounted the TrackTable underneath an open folder
+  // — which threw away its scroll position. Analysing a large folder writes tags to every
+  // track, so the watcher fired this repeatedly and the list jumped to the top each time.
+  if (loading && !selected) {
     return (
       <div className="jb-state">
         <div className="jb-spinner" />
@@ -307,7 +312,7 @@ const FolderView = ({
     );
   }
 
-  if (!folders.length) {
+  if (!folders.length && !selected) {
     return <div className="jb-state">No folders found in library.</div>;
   }
 

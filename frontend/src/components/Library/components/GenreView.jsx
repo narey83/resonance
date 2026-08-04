@@ -147,7 +147,10 @@ const GenreView = ({
     return copy;
   }, [filteredGenres, sortBy, sortDir]);
 
-  if (loading) {
+  // Not while a genre is open — see the note in FolderView. A library refresh empties the
+  // collection to force a refetch, and swapping in a placeholder would unmount the open
+  // genre's TrackTable and lose its scroll position.
+  if (loading && !selected) {
     return (
       <div className="jb-state">
         <div className="jb-spinner" />
@@ -156,7 +159,7 @@ const GenreView = ({
     );
   }
 
-  if (!genres.length) {
+  if (!genres.length && !selected) {
     return (
       <div className="jb-state">
         No genres found. Add genre tags to your tracks.
