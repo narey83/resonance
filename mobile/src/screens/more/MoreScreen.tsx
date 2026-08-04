@@ -74,7 +74,7 @@ const MENU_SECTIONS: MenuSection[] = [
     title: 'App',
     items: [
       { label: 'Overview',   icon: 'bar-chart-outline', screen: 'Overview',  subtitle: 'Stats & activity dashboard', adminOnly: true },
-      { label: 'Connection', icon: 'wifi-outline',     screen: 'Connection', subtitle: 'Server & session status' },
+      { label: 'Connection', icon: 'wifi-outline',     screen: 'Connection', subtitle: 'App, Soulseek & disk status' },
       { label: 'Server Logs', icon: 'reader-outline',   screen: 'Logs',       subtitle: 'Live & historical server logs' },
       { label: 'Blocked',    icon: 'ban-outline',      screen: 'Blocked',    subtitle: 'Blocked users, IPs & locations' },
       { label: 'Settings',   icon: 'settings-outline', screen: 'Settings',   subtitle: 'App preferences' },

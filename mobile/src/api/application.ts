@@ -39,13 +39,40 @@ export interface AppState {
     isDevelopment:     boolean;
   };
   server: {
-    address:     string;
-    state:       string;
-    isConnected: boolean;
-    isLoggedIn:  boolean;
+    address:         string;
+    ipEndPoint?:     string | null;
+    state:           string;
+    isConnected:     boolean;
+    isConnecting:    boolean;
+    isLoggedIn:      boolean;
+    isTransitioning: boolean;
+  };
+  connectionWatchdog?: {
+    isEnabled:              boolean;
+    isAttemptingConnection: boolean;
+    isAwaitingVpn:          boolean;
+    nextAttemptAt?:         string | null;
+  };
+  upnp?: {
+    isEnabled:          boolean;
+    isMapped:           boolean;
+    externalIPAddress?: string | null;
+    mappedPort?:        number | null;
+  };
+  distributedNetwork?: {
+    branchLevel:  number;
+    branchRoot?:  string | null;
+    hasParent:    boolean;
+    isBranchRoot: boolean;
+    parent?:      string | null;
+    children:     unknown[];
+  };
+  health?: {
+    search: { incoming: { latency: number; queueDepth: number; dropRate: number } };
   };
   user: {
     username:   string;
+    presence?:  string;
     privileges: { isPrivileged: boolean; privilegesRemaining: number };
     statistics: { averageSpeed: number; directoryCount: number; fileCount: number; uploadCount: number };
   };
@@ -57,19 +84,14 @@ export interface AppState {
     directories: number;
     files:       number;
   };
-}
-
-export interface KpiMetric {
-  name:     string;
-  help:     string;
-  type:     string;
-  sum?:     number;
-  count?:   number;
-  samples?: { value?: number; labels: Record<string, string> }[];
+  // Free space on the volume holding the *downloads* directory — not the
+  // container/host root (see Application.GetDiskState on the backend).
+  disk?: {
+    availableBytes:   number;
+    totalBytes:       number;
+    downloadsBlocked: boolean;
+  };
 }
 
 export const getApplicationState = () =>
   apiClient.get<AppState>('/application').then(r => r.data);
-
-export const getKpis = () =>
-  apiClient.get<Record<string, KpiMetric>>('/telemetry/metrics/kpis').then(r => r.data);
