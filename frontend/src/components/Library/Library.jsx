@@ -3981,39 +3981,6 @@ const Library = () => {
       )}
 
       <div className="jb-content">
-        {syncState?.running && (
-          <div
-            className="jb-scan-banner"
-            role="status"
-          >
-            <Loader2
-              className="jb-scan-spinner"
-              size={14}
-            />
-            <span className="jb-scan-label">
-              Scanning music library
-              {scanProgressPct === null ? '…' : ` — ${scanProgressPct}%`}
-            </span>
-            <div className="jb-scan-track">
-              <div
-                className="jb-scan-fill"
-                style={
-                  scanProgressPct === null
-                    ? undefined
-                    : { width: `${scanProgressPct}%` }
-                }
-              />
-            </div>
-            <button
-              className="jb-scan-stop hover-fx"
-              onClick={() => cancelSync().catch(() => {})}
-              title="Stop scanning"
-              type="button"
-            >
-              Stop
-            </button>
-          </div>
-        )}
         <div className="jb-topbar">
           <button
             className={`jb-icon-btn hover-fx${navOpen ? ' jb-icon-btn--active' : ''}`}
@@ -4224,6 +4191,46 @@ const Library = () => {
             />
           )}
         </div>
+
+        {/*
+          Last child of jb-content and absolutely positioned, so it floats over the bottom-right
+          of the list rather than occupying a row. As a banner above the topbar it pushed the
+          whole library down the moment a scan started and let it spring back when one finished
+          — and scans start on their own, so the jump arrived unprompted.
+        */}
+        {syncState?.running && (
+          <div
+            className="jb-scan-pill"
+            role="status"
+          >
+            <Loader2
+              className="jb-scan-spinner"
+              size={14}
+            />
+            <span className="jb-scan-label">
+              Scanning music library
+              {scanProgressPct === null ? '…' : ` — ${scanProgressPct}%`}
+            </span>
+            <div className="jb-scan-track">
+              <div
+                className="jb-scan-fill"
+                style={
+                  scanProgressPct === null
+                    ? undefined
+                    : { width: `${scanProgressPct}%` }
+                }
+              />
+            </div>
+            <button
+              className="jb-scan-stop hover-fx"
+              onClick={() => cancelSync().catch(() => {})}
+              title="Stop scanning"
+              type="button"
+            >
+              Stop
+            </button>
+          </div>
+        )}
       </div>
 
       {contextMenu && (
