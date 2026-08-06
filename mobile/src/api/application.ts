@@ -60,12 +60,15 @@ export interface AppState {
     mappedPort?:        number | null;
   };
   distributedNetwork?: {
-    branchLevel:  number;
-    branchRoot?:  string | null;
-    hasParent:    boolean;
-    isBranchRoot: boolean;
-    parent?:      string | null;
-    children:     unknown[];
+    branchLevel:       number;
+    branchRoot?:       string | null;
+    canAcceptChildren: boolean;
+    childLimit:        number;
+    hasParent:         boolean;
+    isBranchRoot:      boolean;
+    parent?:           string | null;
+    parentIPEndPoint?: string | null;
+    children:          { username: string; ipEndPoint?: string | null }[];
   };
   health?: {
     search: { incoming: { latency: number; queueDepth: number; dropRate: number } };

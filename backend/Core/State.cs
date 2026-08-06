@@ -209,10 +209,21 @@ namespace resonance
         public string BranchRoot { get; init; }
         public bool CanAcceptChildren { get; init; }
         public int ChildLimit { get; init; }
-        public IReadOnlyCollection<string> Children { get; init; } = new List<string>().AsReadOnly();
+        public IReadOnlyCollection<DistributedPeerState> Children { get; init; } = new List<DistributedPeerState>().AsReadOnly();
         public bool HasParent { get; init; }
         public bool IsBranchRoot { get; init; }
         public string Parent { get; init; }
+
+        [JsonConverter(typeof(IPEndPointConverter))]
+        public IPEndPoint ParentIPEndPoint { get; init; }
+    }
+
+    public record DistributedPeerState
+    {
+        public string Username { get; init; }
+
+        [JsonConverter(typeof(IPEndPointConverter))]
+        public IPEndPoint IPEndPoint { get; init; }
     }
 
     /// <summary>

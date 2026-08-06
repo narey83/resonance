@@ -30,6 +30,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 
 export function fmtBytes(bytes: number): string {
@@ -303,6 +304,101 @@ export function TravellingPacket({
       ]}
     />
   );
+}
+
+// ── Chain diagram ───────────────────────────────────────────────────────────
+// A vertical chain of nodes linked by rails with a travelling "data" packet —
+// originally built for ConnectionScreen's app/Soulseek hop diagram, reused
+// here for any "A feeds B" relationship (e.g. the distributed network's
+// parent → you → children chain).
+
+export const CHAIN_NODE   = 44;  // node circle diameter
+export const CHAIN_GUTTER = 56;  // width of the rail column the nodes/links sit in
+export const CHAIN_LINK_H = 66;  // height of a connector between two nodes
+const CHAIN_PACKET_H = 20;       // travelling "data" streak
+
+export function ChainNode({ icon, title, sub, color, colors }: {
+  icon:   React.ComponentProps<typeof Ionicons>['name'];
+  title:  string;
+  sub:    string;
+  color:  string;
+  colors: ThemeColors;
+}) {
+  const s = useMemo(() => makeChainStyles(colors), [colors]);
+  return (
+    <View style={s.row}>
+      <View style={s.gutter}>
+        <View style={[s.node, { borderColor: color, backgroundColor: color + '1f' }]}>
+          <Ionicons name={icon} size={20} color={color} />
+        </View>
+      </View>
+      <View style={s.nodeText}>
+        <Text style={s.nodeTitle} numberOfLines={1}>{title}</Text>
+        <Text style={s.nodeSub} numberOfLines={1}>{sub}</Text>
+      </View>
+    </View>
+  );
+}
+
+// One hop: a coloured rail with a packet streaking down it while the hop is
+// live, plus the hop's own headline and metric chips.
+export function ChainLink({ title, status, chips, color, live, colors }: {
+  title:  string;
+  status: string;
+  chips:  string[];
+  color:  string;
+  live:   boolean;
+  colors: ThemeColors;
+}) {
+  const s = useMemo(() => makeChainStyles(colors), [colors]);
+
+  return (
+    <View style={s.row}>
+      <View style={[s.gutter, { height: CHAIN_LINK_H }]}>
+        <View style={[s.rail, { backgroundColor: color + (live ? '44' : '99') }]} />
+        <TravellingPacket
+          live={live}
+          distance={CHAIN_LINK_H - CHAIN_PACKET_H}
+          length={CHAIN_PACKET_H}
+          color={color}
+          style={s.packet}
+        />
+      </View>
+      <View style={s.hop}>
+        <Text style={s.hopTitle}>{title}</Text>
+        <Text style={[s.hopStatus, { color }]} numberOfLines={1}>{status}</Text>
+        <View style={s.chipRow}>
+          {chips.map((c) => (
+            <View key={c} style={[s.chip, { borderColor: color + '55', backgroundColor: color + '14' }]}>
+              <Text style={[s.chipText, { color }]} numberOfLines={1}>{c}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function makeChainStyles(c: ThemeColors) {
+  return StyleSheet.create({
+    row:       { flexDirection: 'row', alignItems: 'center' },
+    gutter:    { width: CHAIN_GUTTER, alignItems: 'center', justifyContent: 'center' },
+    node:      { width: CHAIN_NODE, height: CHAIN_NODE, borderRadius: CHAIN_NODE / 2, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+    nodeText:  { flex: 1, paddingRight: Spacing.sm },
+    nodeTitle: { fontSize: Typography.md, fontWeight: '700', color: c.textPrimary },
+    nodeSub:   { fontSize: Typography.sm, color: c.textMuted },
+    // Left is pinned rather than left to alignItems: an absolutely positioned
+    // child's static position is easy to get wrong across platforms, and the
+    // rail has to line up with the node circles above and below it to the pixel.
+    rail:      { position: 'absolute', top: 0, bottom: 0, left: (CHAIN_GUTTER - 3) / 2, width: 3, borderRadius: Radius.full },
+    packet:    { left: (CHAIN_GUTTER - 3) / 2 },
+    hop:       { flex: 1, paddingRight: Spacing.sm, paddingVertical: Spacing.xs, gap: 3 },
+    hopTitle:  { fontSize: Typography.xs, color: c.textMuted, fontWeight: '600', letterSpacing: 0.8 },
+    hopStatus: { fontSize: Typography.base, fontWeight: '600' },
+    chipRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs, marginTop: 2 },
+    chip:      { borderWidth: 1, borderRadius: Radius.full, paddingHorizontal: Spacing.sm, paddingVertical: 1 },
+    chipText:  { fontSize: Typography.xs, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  });
 }
 
 export function EmptyState({ text, colors }: { text: string; colors: ThemeColors }) {

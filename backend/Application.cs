@@ -1394,10 +1394,11 @@ namespace resonance
                     BranchRoot = e.BranchRoot,
                     CanAcceptChildren = e.CanAcceptChildren,
                     ChildLimit = e.ChildLimit,
-                    Children = e.Children.Select(c => c.Username).ToList().AsReadOnly(),
+                    Children = e.Children.Select(c => new DistributedPeerState { Username = c.Username, IPEndPoint = c.IPEndPoint }).ToList().AsReadOnly(),
                     HasParent = e.HasParent,
                     IsBranchRoot = e.IsBranchRoot,
                     Parent = e.Parent.Username,
+                    ParentIPEndPoint = e.Parent.IPEndPoint,
                 },
             });
 

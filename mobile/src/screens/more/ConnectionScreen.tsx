@@ -49,20 +49,15 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
 import { useDeferredFocusEffect } from '../../hooks/useDeferredEffect';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
+import { Spacing, Typography, ThemeColors } from '../../theme';
 import { getApplicationState, AppState } from '../../api/application';
 import { useConnectionStore } from '../../services/connectionMonitor';
 import { useAuthStore } from '../../store/auth';
-import { fmtBytes, fmtDate, fmtNum, fmtSpeed, Card, SectionHeader, StatRow, StatTileGrid, TravellingPacket } from '../../components/overview/shared';
+import { fmtBytes, fmtDate, fmtNum, fmtSpeed, Card, ChainLink, ChainNode, SectionHeader, StatRow, StatTileGrid } from '../../components/overview/shared';
 
-const NODE     = 44;   // node circle diameter
-const GUTTER   = 56;   // width of the rail column the nodes/links sit in
-const LINK_H   = 66;   // height of a connector between two nodes
-const PACKET_H = 20;   // travelling "data" streak
 const RING     = 116;  // disk gauge diameter
 const RING_W   = 11;
 
@@ -86,92 +81,6 @@ function parseServerUrl(url: string | null): { host: string; secure: boolean } {
   const secure = url.startsWith('https://');
   const host = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
   return { host, secure };
-}
-
-// ── Chain diagram ───────────────────────────────────────────────────────────
-
-function ChainNode({ icon, title, sub, color, colors }: {
-  icon:   React.ComponentProps<typeof Ionicons>['name'];
-  title:  string;
-  sub:    string;
-  color:  string;
-  colors: ThemeColors;
-}) {
-  const s = useMemo(() => makeChainStyles(colors), [colors]);
-  return (
-    <View style={s.row}>
-      <View style={s.gutter}>
-        <View style={[s.node, { borderColor: color, backgroundColor: color + '1f' }]}>
-          <Ionicons name={icon} size={20} color={color} />
-        </View>
-      </View>
-      <View style={s.nodeText}>
-        <Text style={s.nodeTitle} numberOfLines={1}>{title}</Text>
-        <Text style={s.nodeSub} numberOfLines={1}>{sub}</Text>
-      </View>
-    </View>
-  );
-}
-
-// One hop: a coloured rail with a packet streaking down it while the hop is
-// live, plus the hop's own headline and metric chips.
-function ChainLink({ title, status, chips, color, live, colors }: {
-  title:  string;
-  status: string;
-  chips:  string[];
-  color:  string;
-  live:   boolean;
-  colors: ThemeColors;
-}) {
-  const s = useMemo(() => makeChainStyles(colors), [colors]);
-
-  return (
-    <View style={s.row}>
-      <View style={[s.gutter, { height: LINK_H }]}>
-        <View style={[s.rail, { backgroundColor: color + (live ? '44' : '99') }]} />
-        <TravellingPacket
-          live={live}
-          distance={LINK_H - PACKET_H}
-          length={PACKET_H}
-          color={color}
-          style={s.packet}
-        />
-      </View>
-      <View style={s.hop}>
-        <Text style={s.hopTitle}>{title}</Text>
-        <Text style={[s.hopStatus, { color }]} numberOfLines={1}>{status}</Text>
-        <View style={s.chipRow}>
-          {chips.map((c) => (
-            <View key={c} style={[s.chip, { borderColor: color + '55', backgroundColor: color + '14' }]}>
-              <Text style={[s.chipText, { color }]} numberOfLines={1}>{c}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
-    </View>
-  );
-}
-
-function makeChainStyles(c: ThemeColors) {
-  return StyleSheet.create({
-    row:       { flexDirection: 'row', alignItems: 'center' },
-    gutter:    { width: GUTTER, alignItems: 'center', justifyContent: 'center' },
-    node:      { width: NODE, height: NODE, borderRadius: NODE / 2, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-    nodeText:  { flex: 1, paddingRight: Spacing.sm },
-    nodeTitle: { fontSize: Typography.md, fontWeight: '700', color: c.textPrimary },
-    nodeSub:   { fontSize: Typography.sm, color: c.textMuted },
-    // Left is pinned rather than left to alignItems: an absolutely positioned
-    // child's static position is easy to get wrong across platforms, and the
-    // rail has to line up with the node circles above and below it to the pixel.
-    rail:      { position: 'absolute', top: 0, bottom: 0, left: (GUTTER - 3) / 2, width: 3, borderRadius: Radius.full },
-    packet:    { left: (GUTTER - 3) / 2 },
-    hop:       { flex: 1, paddingRight: Spacing.sm, paddingVertical: Spacing.xs, gap: 3 },
-    hopTitle:  { fontSize: Typography.xs, color: c.textMuted, fontWeight: '600', letterSpacing: 0.8 },
-    hopStatus: { fontSize: Typography.base, fontWeight: '600' },
-    chipRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs, marginTop: 2 },
-    chip:      { borderWidth: 1, borderRadius: Radius.full, paddingHorizontal: Spacing.sm, paddingVertical: 1 },
-    chipText:  { fontSize: Typography.xs, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  });
 }
 
 // ── Download folder gauge ───────────────────────────────────────────────────

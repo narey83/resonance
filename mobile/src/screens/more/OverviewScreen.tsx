@@ -54,6 +54,7 @@ import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 import { useAuthStore } from '../../store/auth';
 import * as analytics from '../../api/analytics';
 import * as sharesApi from '../../api/shares';
+import { getApplicationState, AppState } from '../../api/application';
 import { SectionHeader } from '../../components/overview/shared';
 import type { Histogram } from '../../components/overview/histogramUtils';
 import TransferFlow from '../../components/overview/TransferFlow';
@@ -71,6 +72,7 @@ import TopFiles from '../../components/overview/TopFiles';
 import UserReports from '../../components/overview/UserReports';
 import GeographyCard from '../../components/overview/GeographyCard';
 import WorldMap from '../../components/overview/WorldMap';
+import DistributedNetworkCard from '../../components/overview/DistributedNetworkCard';
 import PeerRetentionCard from '../../components/overview/PeerRetentionCard';
 import UserReportModal from '../../components/overview/UserReportModal';
 import PersonalSummary from '../../components/overview/PersonalSummary';
@@ -86,6 +88,7 @@ const RANGES = [
 
 const TABS = [
   { id: 'glance', label: 'At a Glance' },
+  { id: 'network', label: 'Network' },
   { id: 'activity', label: 'Activity' },
   { id: 'reliability', label: 'Reliability' },
   { id: 'top', label: 'Top Users' },
@@ -144,10 +147,11 @@ type Props = NativeStackScreenProps<MoreStackParamList, 'Overview'>;
 // needs them; a group is fetched the first time its tab is opened (per range)
 // and cached until pull-to-refresh.
 
-type FetchGroup = 'glance' | 'activity' | 'reliability' | 'top' | 'geography' | 'coverage';
+type FetchGroup = 'glance' | 'activity' | 'reliability' | 'top' | 'geography' | 'coverage' | 'network';
 
 const TAB_GROUPS: Record<TabId, FetchGroup[]> = {
   glance:      ['glance', 'coverage'],
+  network:     ['network'],
   activity:    ['activity'],
   reliability: ['reliability'],
   top:         ['top'],
@@ -176,6 +180,7 @@ export default function OverviewScreen({ navigation }: Props) {
 
   const [fileTypeCounts, setFileTypeCounts] = useState<Record<string, number>>({});
   const [coverage, setCoverage] = useState<analytics.CoverageReport | null>(null);
+  const [distributedNetwork, setDistributedNetwork] = useState<AppState['distributedNetwork'] | null>(null);
 
   const fetchedRef = useRef<Set<string>>(new Set());
 
@@ -265,6 +270,11 @@ export default function OverviewScreen({ navigation }: Props) {
         setCoverage(cov);
         break;
       }
+      case 'network': {
+        const state = await getApplicationState();
+        setDistributedNetwork(state.distributedNetwork ?? null);
+        break;
+      }
     }
   }, [applyData]);
 
@@ -302,6 +312,7 @@ export default function OverviewScreen({ navigation }: Props) {
   const tabHasData = useCallback((t: TabId): boolean => {
     switch (t) {
       case 'glance':      return data.summary != null;
+      case 'network':     return distributedNetwork != null;
       case 'activity':    return data.histogram != null || data.heatmap.length > 0;
       case 'reliability': return data.summary != null || data.histogram != null;
       case 'top':         return data.leaderboard.download.length > 0
@@ -309,7 +320,7 @@ export default function OverviewScreen({ navigation }: Props) {
                               || data.topFiles.length > 0;
       case 'geography':   return data.geography != null || data.mapUsers.length > 0;
     }
-  }, [data]);
+  }, [data, distributedNetwork]);
 
   const hasData      = tabHasData(tab);
   const showSkeleton = tabLoading && !hasData;   // cold load: nothing to show yet
@@ -398,6 +409,9 @@ export default function OverviewScreen({ navigation }: Props) {
               <SectionHeader title="Social" colors={colors} />
               <SocialPulse data={data.social} colors={colors} />
             </>
+          )}
+          {!showSkeleton && !showError && tab === 'network' && (
+            <DistributedNetworkCard data={distributedNetwork ?? null} colors={colors} />
           )}
           {!showSkeleton && !showError && tab === 'activity' && (
             <>
