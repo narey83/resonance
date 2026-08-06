@@ -40,6 +40,7 @@ namespace resonance.Messaging
     using System;
     using System.Collections.Generic;
     using System.Linq;
+    using System.Text.Json;
     using System.Threading.Tasks;
     using resonance.Events;
     using resonance.Users;
@@ -82,6 +83,8 @@ namespace resonance.Messaging
     /// </summary>
     public class RoomService : IRoomService
     {
+        private const string PersistedRoomsSettingKey = "resonance:messaging:rooms";
+
         /// <summary>
         ///     Initializes a new instance of the <see cref="RoomService"/> class.
         /// </summary>
@@ -200,6 +203,40 @@ namespace resonance.Messaging
             }
         }
 
+        /// <summary>
+        ///     Loads the set of rooms persisted by <see cref="PersistJoinedRooms(string[])"/>.
+        /// </summary>
+        /// <returns>The persisted room names, or an empty array if none are persisted.</returns>
+        private static string[] LoadPersistedRooms()
+        {
+            if (!Program.SettingsStore.GetAll().TryGetValue(PersistedRoomsSettingKey, out var json) || string.IsNullOrWhiteSpace(json))
+            {
+                return Array.Empty<string>();
+            }
+
+            try
+            {
+                return JsonSerializer.Deserialize<string[]>(json) ?? Array.Empty<string>();
+            }
+            catch (JsonException)
+            {
+                return Array.Empty<string>();
+            }
+        }
+
+        /// <summary>
+        ///     Persists the set of currently-joined rooms so they can be rejoined after a process restart, when
+        ///     <see cref="RoomTracker"/>'s in-memory state is gone.
+        /// </summary>
+        /// <param name="rooms">The full set of currently-joined room names.</param>
+        private static void PersistJoinedRooms(string[] rooms)
+        {
+            Program.SettingsStore.SetMany(new Dictionary<string, string>
+            {
+                [PersistedRoomsSettingKey] = JsonSerializer.Serialize(rooms),
+            });
+        }
+
         private async void Client_LoggedIn(object sender, EventArgs e)
         {
             var autoJoinRooms = OptionsMonitor.CurrentValue.Rooms;
@@ -210,12 +247,18 @@ namespace resonance.Messaging
                 await TryJoinAsync(autoJoinRooms);
             }
 
-            var previouslyJoinedRooms = RoomTracker.Rooms.Keys.Except(autoJoinRooms);
+            // covers both a live reconnect (RoomTracker still has the old keys) and a process
+            // restart (RoomTracker is empty, so the persisted set carries the rejoin instead)
+            var previouslyJoinedRooms = RoomTracker.Rooms.Keys
+                .Concat(LoadPersistedRooms())
+                .Except(autoJoinRooms)
+                .Distinct()
+                .ToArray();
 
             if (previouslyJoinedRooms.Any())
             {
                 Logger.Information("Attempting to rejoin room(s) {Rooms}", string.Join(", ", previouslyJoinedRooms));
-                await TryJoinAsync(previouslyJoinedRooms.ToArray());
+                await TryJoinAsync(previouslyJoinedRooms);
             }
         }
 
@@ -224,7 +267,8 @@ namespace resonance.Messaging
             if (args.Username == Client.Username)
             {
                 Logger.Information("Joined room {Room}", args.RoomName);
-                StateMutator.SetValue(state => state with { Rooms = state.Rooms.Concat(new[] { args.RoomName }).Distinct().ToArray() });
+                var state = StateMutator.SetValue(state => state with { Rooms = state.Rooms.Concat(new[] { args.RoomName }).Distinct().ToArray() });
+                PersistJoinedRooms(state.Rooms);
             }
             else
             {
@@ -237,7 +281,8 @@ namespace resonance.Messaging
             if (args.Username == Client.Username)
             {
                 Logger.Information("Left room {Room}", args.RoomName);
-                StateMutator.SetValue(state => state with { Rooms = state.Rooms.Where(room => room != args.RoomName).ToArray() });
+                var state = StateMutator.SetValue(state => state with { Rooms = state.Rooms.Where(room => room != args.RoomName).ToArray() });
+                PersistJoinedRooms(state.Rooms);
             }
             else
             {
