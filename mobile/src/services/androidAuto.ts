@@ -109,6 +109,24 @@ const isAuthed = () => {
   return !!accessToken && !!serverUrl;
 };
 
+// The car can open the browser before the session exists — it cold-starts the app itself, and on
+// a phone that was rebooted or force-stopped the token isn't restored yet. Returning empty there
+// left every menu permanently blank (confirmed on the head unit 2026-08-06: the app made no API
+// calls at all), because the car only re-asks for a node if the user backs out and re-enters.
+// So park the request and build the tree the moment a session appears.
+let waitingForAuth = false;
+const buildWhenAuthed = () => {
+  if (waitingForAuth) return;
+  waitingForAuth = true;
+  remoteLog('info', '[aa] browse before sign-in — deferring tree build until a session exists');
+  const unsubscribe = useAuthStore.subscribe(() => {
+    if (!isAuthed()) return;
+    unsubscribe();
+    waitingForAuth = false;
+    buildAndroidAutoTree().catch((e) => remoteLog('error', `[aa] deferred build failed — ${String(e)}`));
+  });
+};
+
 const browsable = (
   mediaId: string,
   title: string,
@@ -173,69 +191,101 @@ const push = async () => {
   }
 };
 
+// Android Auto will not scroll a very long browse list: the 14,277-artist node rendered its
+// first screen and then ignored every scroll (reproduced on the Desktop Head Unit 2026-08-06,
+// while a 100-track folder scrolled fine). Any node longer than this is served as ranged
+// sub-nodes — recursively, so a list of ranges can't get too long either.
+const LIST_MAX = 100;
+const PREFIX_CHUNK = 'aa:chunk:';
+const chunkChildren = new Map<string, BrowseItem[]>();
+
+const rangeLabel = (items: BrowseItem[]): string => {
+  const trim = (t: string) => (t.length > 16 ? `${t.slice(0, 16).trimEnd()}…` : t);
+  return `${trim(items[0].title)} – ${trim(items[items.length - 1].title)}`;
+};
+
+const chunked = (nodeId: string, items: BrowseItem[]): BrowseItem[] => {
+  if (items.length <= LIST_MAX) return items;
+  const groups: BrowseItem[] = [];
+  for (let i = 0; i < items.length; i += LIST_MAX) {
+    const slice = items.slice(i, i + LIST_MAX);
+    const id = `${PREFIX_CHUNK}${i}:${nodeId}`;
+    chunkChildren.set(id, slice);
+    groups.push(browsable(id, rangeLabel(slice), `${slice.length} items`));
+  }
+  // ponytail: chunk ids live only in memory. A headless restart loses them, and the car has to
+  // re-open the parent to get valid ids again — which is what it does after a reconnect anyway.
+  return chunked(`${nodeId}:g`, groups);
+};
+
 const loadNode = async (mediaId: string): Promise<void> => {
+  if (mediaId.startsWith(PREFIX_CHUNK)) {
+    tree[mediaId] = chunkChildren.get(mediaId) ?? [];
+    await push();
+    return;
+  }
   if (mediaId === TAB_PLAYED) {
     const history = await getPlayHistory(50);
     const stubs = history.map(playRecordToTrack);
-    tree[mediaId] = stubs.map(trackPlayableItem);
+    tree[mediaId] = chunked(mediaId, stubs.map(trackPlayableItem));
     recordTracks(mediaId, stubs);
   } else if (mediaId === TAB_RECENT) {
     const albums = await getRecentlyAdded(30);
-    tree[mediaId] = albums.map((a) =>
+    tree[mediaId] = chunked(mediaId, albums.map((a) =>
       browsable(albumNodeId(a), a.album, a.artist, a.coverPath ? (getArtworkUrl(a.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
-    );
+    ));
   } else if (mediaId === TAB_ARTISTS) {
     const artists = await getArtists();
-    tree[mediaId] = artists.map((a) =>
+    tree[mediaId] = chunked(mediaId, artists.map((a) =>
       browsable(PREFIX_ARTIST + encodeURIComponent(a.artist), a.artist, undefined, a.coverPath ? (getArtworkUrl(a.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
-    );
+    ));
   } else if (mediaId === TAB_FOLDERS) {
     const folders = await getFolders();
-    tree[mediaId] = folders.map((f) =>
+    tree[mediaId] = chunked(mediaId, folders.map((f) =>
       browsable(PREFIX_FOLDER + encodeURIComponent(f.path), f.name, undefined, f.coverPath ? (getArtworkUrl(f.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
-    );
+    ));
   } else if (mediaId.startsWith(PREFIX_ARTIST)) {
     const artist = decodeURIComponent(mediaId.slice(PREFIX_ARTIST.length));
     const albums = await getAlbums(artist);
-    tree[mediaId] = albums.map((a) =>
+    tree[mediaId] = chunked(mediaId, albums.map((a) =>
       browsable(albumNodeId(a), a.album, a.artist, a.coverPath ? (getArtworkUrl(a.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
-    );
+    ));
   } else if (mediaId.startsWith(PREFIX_ALBUM)) {
     const [artistEnc, albumEnc] = mediaId.slice(PREFIX_ALBUM.length).split(SEP);
     const artist = decodeURIComponent(artistEnc ?? '');
     const album = decodeURIComponent(albumEnc ?? '');
     const res = await getTracks({ album, artist, limit: 500 });
-    tree[mediaId] = res.tracks.map(playableItem);
+    tree[mediaId] = chunked(mediaId, res.tracks.map(playableItem));
     recordTracks(mediaId, res.tracks);
   } else if (mediaId.startsWith(PREFIX_FOLDER)) {
     const folder = decodeURIComponent(mediaId.slice(PREFIX_FOLDER.length));
     const res = await getTracks({ folder, limit: 5000 });
-    tree[mediaId] = res.tracks.map(playableItem);
+    tree[mediaId] = chunked(mediaId, res.tracks.map(playableItem));
     recordTracks(mediaId, res.tracks);
   } else if (mediaId === TAB_LOCAL) {
-    tree[mediaId] = [
+    tree[mediaId] = chunked(mediaId, [
       browsable(TAB_LOCAL_ALBUMS, 'Albums'),
       browsable(TAB_LOCAL_FOLDERS, 'Folders'),
-    ];
+    ]);
   } else if (mediaId === TAB_LOCAL_ALBUMS) {
     const albums = await getLocalAlbums();
-    tree[mediaId] = albums.map((a) =>
+    tree[mediaId] = chunked(mediaId, albums.map((a) =>
       browsable(PREFIX_LOCAL_ALBUM + encodeURIComponent(a.album), a.album, a.artist || undefined),
-    );
+    ));
   } else if (mediaId === TAB_LOCAL_FOLDERS) {
     const folders = await getLocalFolders();
-    tree[mediaId] = folders.map((f) =>
+    tree[mediaId] = chunked(mediaId, folders.map((f) =>
       browsable(PREFIX_LOCAL_FOLDER + encodeURIComponent(f.path), f.name, undefined, f.coverPath ?? undefined),
-    );
+    ));
   } else if (mediaId.startsWith(PREFIX_LOCAL_ALBUM)) {
     const album = decodeURIComponent(mediaId.slice(PREFIX_LOCAL_ALBUM.length));
     const tracks = await getLocalAlbumTracks(album);
-    tree[mediaId] = tracks.map(localPlayableItem);
+    tree[mediaId] = chunked(mediaId, tracks.map(localPlayableItem));
     recordTracks(mediaId, tracks);
   } else if (mediaId.startsWith(PREFIX_LOCAL_FOLDER)) {
     const folder = decodeURIComponent(mediaId.slice(PREFIX_LOCAL_FOLDER.length));
     const tracks = await getLocalFolderTracks(folder);
-    tree[mediaId] = tracks.map(localPlayableItem);
+    tree[mediaId] = chunked(mediaId, tracks.map(localPlayableItem));
     recordTracks(mediaId, tracks);
   } else {
     return; // unknown node
@@ -246,9 +296,10 @@ const loadNode = async (mediaId: string): Promise<void> => {
 // Build the four root tabs and eagerly populate their first level so the car
 // menu isn't empty on connect. Deeper nodes load lazily via remote-browse.
 export const buildAndroidAutoTree = async (): Promise<void> => {
-  const auth = useAuthStore.getState();
-  if (!auth.isReady) await auth.hydrate();
-  if (!isAuthed()) return;
+  // The tabs are static, so publish them before doing anything that can block. The car asks for
+  // the root the instant it connects and keeps whatever it gets: answer that first request with an
+  // empty list — because we were still hydrating the session — and it shows "No items" until the
+  // next connection, no matter what we notify afterwards.
   tree[ROOT] = [
     browsable(TAB_PLAYED, 'Recently Played'),
     browsable(TAB_RECENT, 'Recently Added'),
@@ -257,6 +308,10 @@ export const buildAndroidAutoTree = async (): Promise<void> => {
     browsable(TAB_LOCAL, 'On Device'),
   ];
   await push();
+
+  const auth = useAuthStore.getState();
+  if (!auth.isReady) await auth.hydrate();
+  if (!isAuthed()) { buildWhenAuthed(); return; }
   const results = await Promise.allSettled([
     loadNode(TAB_PLAYED),
     loadNode(TAB_RECENT),
@@ -281,9 +336,18 @@ export const clearAndroidAutoTree = async (): Promise<void> => {
 export const handleAndroidAutoBrowse = async (mediaId: string): Promise<void> => {
   if (!mediaId) return;
   // Hydrate auth if running headless (app UI not mounted).
+  if (mediaId === ROOT && !tree[ROOT]) {
+    try {
+      await buildAndroidAutoTree();
+    } catch (e) {
+      remoteLog('error', `[aa] root build failed — ${String(e)}`);
+    }
+    return;
+  }
+
   const auth = useAuthStore.getState();
   if (!auth.isReady) await auth.hydrate();
-  if (!isAuthed()) return;
+  if (!isAuthed()) { buildWhenAuthed(); return; }
 
   if (mediaId === ROOT) {
     // Car opened the root — build the tree on first connect (handles headless startup).
@@ -296,7 +360,7 @@ export const handleAndroidAutoBrowse = async (mediaId: string): Promise<void> =>
     }
     return;
   }
-  if (tree[mediaId]) return;
+  if (tree[mediaId]?.length) return;
   try {
     await loadNode(mediaId);
   } catch (e) {

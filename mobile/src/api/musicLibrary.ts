@@ -219,6 +219,10 @@ const resolveStreamQuality = (): 'low' | null => {
   return isCellular || status === 'slow' ? 'low' : null;
 };
 
+/** Which stream flavour the next queue build will ask for — surfaced in playback-error logs,
+ *  since the transcoded (cellular/saver) path and the original-file path fail differently. */
+export const currentStreamQuality = (): string => resolveStreamQuality() ?? 'original';
+
 export const getStreamUrl = (path: string): string => {
   const { serverUrl, accessToken } = useAuthStore.getState();
   const token = accessToken ? `&access_token=${encodeURIComponent(accessToken)}` : '';

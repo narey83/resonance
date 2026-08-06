@@ -114,7 +114,7 @@ index 13a6c60..7ad01e6 100644
      // which causes an exception. We can work around this using a wrapper.
      private fun launchInScope(block: suspend () -> Unit) {
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
-index b495b5a..07c5e27 100644
+index b495b5a..32a3428 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
 +++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
 @@ -19,7 +19,9 @@ import androidx.media3.common.Player
@@ -136,7 +136,7 @@ index b495b5a..07c5e27 100644
  import com.facebook.react.jstasks.HeadlessJsTaskConfig
  import com.google.common.collect.ImmutableList
  import com.google.common.util.concurrent.Futures
-@@ -64,9 +68,20 @@ class MusicService : HeadlessJsMediaService() {
+@@ -64,9 +68,28 @@ class MusicService : HeadlessJsMediaService() {
      private lateinit var fakePlayer: ExoPlayer
      private lateinit var mediaSession: MediaLibrarySession
      private var progressUpdateJob: Job? = null
@@ -146,6 +146,14 @@ index b495b5a..07c5e27 100644
 +    // (lazily-expanded) tree via setBrowseTree; we serve it from the media3 callbacks.
 +    private val browseTree = java.util.concurrent.ConcurrentHashMap<String, List<MediaItem>>()
 +    private val browseIndex = java.util.concurrent.ConcurrentHashMap<String, MediaItem>()
++    // Nodes the car asked for before JS had them. It subscribes as it opens a node, so a
++    // notifyChildrenChanged that lands in that gap is missed — and since we now only notify on a
++    // real change, nothing would ever tell it again and the list stayed on "No items" for good.
++    private val servedEmpty = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
++    // Nodes restored from disk. Serving them satisfies the car so completely that the JS side is
++    // never asked for anything and stays asleep — and then the first node that ISN'T cached (a
++    // chunk, a folder) gets no answer at all. So a cache hit still pokes JS to reload that node.
++    private val restoredNodes = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
      private var sessionCommands: SessionCommands? = null
      private var playerCommands: Player.Commands? = null
      private var customLayout: List<CommandButton> = listOf()
@@ -157,7 +165,15 @@ index b495b5a..07c5e27 100644
      private var lastWake: Long = 0
      var onStartCommandIntentValid: Boolean = true
  
-@@ -290,12 +305,79 @@ class MusicService : HeadlessJsMediaService() {
+@@ -97,6 +120,7 @@ class MusicService : HeadlessJsMediaService() {
+                 return "RNTP-${element.className}:${element.methodName}"
+             }
+         })
++        restoreBrowseTree()
+         fakePlayer = ExoPlayer.Builder(this).build()
+         val openAppIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+@@ -290,12 +314,79 @@ class MusicService : HeadlessJsMediaService() {
                      playerCommandsBuilder.add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
                  }
  
@@ -237,7 +253,7 @@ index b495b5a..07c5e27 100644
          val sessionCommandsBuilder =
              MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
          customLayout.forEach { v ->
-@@ -305,11 +387,15 @@ class MusicService : HeadlessJsMediaService() {
+@@ -305,11 +396,15 @@ class MusicService : HeadlessJsMediaService() {
          sessionCommands = sessionCommandsBuilder.build()
          playerCommands = playerCommandsBuilder.build()
  
@@ -255,7 +271,7 @@ index b495b5a..07c5e27 100644
              )
              mediaSession.setAvailableCommands(
                  mediaSession.mediaNotificationControllerInfo!!,
-@@ -677,6 +763,96 @@ class MusicService : HeadlessJsMediaService() {
+@@ -677,6 +772,174 @@ class MusicService : HeadlessJsMediaService() {
          reactContext?.emitDeviceEvent(event, data?.let { Arguments.fromBundle(it) })
      }
  
@@ -297,6 +313,72 @@ index b495b5a..07c5e27 100644
 +            .build()
 +    }
 +
++    // The car binds this service and asks for its menu immediately — before the JS bundle has
++    // loaded, which is every time you plug the phone in. notifyChildrenChanged does NOT make it
++    // re-fetch a list it has already painted (verified on the head unit: the Artists tab stayed on
++    // "No items" for a minute after the real list was pushed), so answering that first request
++    // with an empty list breaks the menu for the whole session. The last session's tree is kept
++    // on disk and replayed until JS pushes the real one, which it then does in the background.
++    //
++    // Separators are U+241E/U+241F: SharedPreferences is XML-backed, which cannot carry the
++    // control characters an obvious framing would use.
++    // ponytail: line-based, capped at BROWSE_CACHE_NODES nodes. Every node is <= 100 items (JS
++    // chunks anything longer), so the file stays small. Swap for a real store if it ever grows.
++    private fun browsePrefs() = getSharedPreferences("resonance_browse_cache", MODE_PRIVATE)
++
++    private fun cacheBrowseTree(newTree: Map<String, List<MediaItem>>) {
++        val encoded = newTree.entries.take(BROWSE_CACHE_NODES).joinToString("\u241E") { (parentId, children) ->
++            val rows = children.joinToString("\n") { item ->
++                val m = item.mediaMetadata
++                listOf(
++                    item.mediaId,
++                    m.title ?: "",
++                    m.subtitle ?: "",
++                    m.artworkUri?.toString() ?: "",
++                    if (m.isBrowsable == true) "1" else "0",
++                ).joinToString("\t")
++            }
++            "$parentId\u241F$rows"
++        }
++        browsePrefs().edit().putString("tree", encoded).apply()
++    }
++
++    private fun restoreBrowseTree() {
++        val encoded = browsePrefs().getString("tree", null) ?: return
++        for (node in encoded.split("\u241E")) {
++            val split = node.split("\u241F")
++            if (split.size != 2 || split[0].isEmpty()) continue
++            val children = split[1].split("\n").mapNotNull { row ->
++                val f = row.split("\t")
++                if (f.size != 5 || f[0].isEmpty()) return@mapNotNull null
++                val browsable = f[4] == "1"
++                val item = MediaItem.Builder()
++                    .setMediaId(f[0])
++                    .setMediaMetadata(
++                        MediaMetadata.Builder()
++                            .setTitle(f[1])
++                            .setSubtitle(f[2].ifEmpty { null })
++                            .setIsBrowsable(browsable)
++                            .setIsPlayable(!browsable)
++                            .setMediaType(
++                                if (browsable) MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
++                                else MediaMetadata.MEDIA_TYPE_MUSIC
++                            )
++                            .setArtworkUri(if (f[3].isEmpty()) null else Uri.parse(f[3]))
++                            .build()
++                    )
++                    .build()
++                browseIndex[item.mediaId] = item
++                item
++            }
++            if (children.isNotEmpty()) {
++                browseTree[split[0]] = children
++                restoredNodes.add(split[0])
++            }
++        }
++        android.util.Log.i("ResoAA", "restored browse cache: ${browseTree.size} nodes")
++    }
++
 +    @MainThread
 +    fun setBrowseTree(data: ReadableMap): String {
 +        val newTree = HashMap<String, List<MediaItem>>()
@@ -322,12 +404,24 @@ index b495b5a..07c5e27 100644
 +        val changed = newTree.keys.filter { parentId ->
 +            val old = browseTree[parentId]
 +            val now = newTree.getValue(parentId)
-+            old == null || old.size != now.size || old.indices.any { old[it].mediaId != now[it].mediaId }
++            old == null || old.size != now.size || old.indices.any { old[it].mediaId != now[it].mediaId } ||
++                (servedEmpty.contains(parentId) && now.isNotEmpty())
++        }
++        changed.forEach { if (newTree.getValue(it).isNotEmpty()) servedEmpty.remove(it) }
++
++        // Merge, don't replace: JS starts each run with an empty tree and pushes it a node at a
++        // time, so replacing would throw away everything restored from disk (and re-break the menu
++        // one push after a cold start). An empty push is the logout signal and does wipe.
++        if (newTree.isEmpty()) {
++            browseTree.clear(); browseIndex.clear(); restoredNodes.clear()
++            browsePrefs().edit().clear().apply()
++        } else {
++            browseTree.putAll(newTree)
++            browseIndex.putAll(newIndex)
 +        }
 +
-+        browseTree.clear(); browseTree.putAll(newTree)
-+        browseIndex.clear(); browseIndex.putAll(newIndex)
-+
++        if (newTree.isNotEmpty()) cacheBrowseTree(browseTree)
++        android.util.Log.i("ResoAA", "setBrowseTree nodes=${newTree.size} notifying=${changed.size} $changed")
 +        if (::mediaSession.isInitialized) {
 +            for (parentId in changed) {
 +                mediaSession.notifyChildrenChanged(parentId, newTree.getValue(parentId).size, null)
@@ -352,7 +446,7 @@ index b495b5a..07c5e27 100644
      @SuppressLint("VisibleForTests")
      @MainThread
      private fun emitList(event: String, data: List<Bundle> = emptyList()) {
-@@ -905,13 +1081,15 @@ class MusicService : HeadlessJsMediaService() {
+@@ -905,13 +1168,15 @@ class MusicService : HeadlessJsMediaService() {
                      onStartCommand(null, 0, 0)
                  }
              }
@@ -370,7 +464,7 @@ index b495b5a..07c5e27 100644
                      .setAvailableSessionCommands(
                          sessionCommands
                              ?: MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
-@@ -937,6 +1115,8 @@ class MusicService : HeadlessJsMediaService() {
+@@ -937,6 +1202,8 @@ class MusicService : HeadlessJsMediaService() {
                      CustomCommandButton.JUMP_FORWARD.customAction -> { it.seekForward() }
                      CustomCommandButton.NEXT.customAction -> { it.seekToNext() }
                      CustomCommandButton.PREVIOUS.customAction -> { it.seekToPrevious() }
@@ -379,7 +473,7 @@ index b495b5a..07c5e27 100644
                  }
              }
              return super.onCustomCommand(session, controller, command, args)
-@@ -976,6 +1156,78 @@ class MusicService : HeadlessJsMediaService() {
+@@ -976,6 +1243,81 @@ class MusicService : HeadlessJsMediaService() {
              }
              return super.onSetRating(session, controller, rating)
          }
@@ -406,7 +500,7 @@ index b495b5a..07c5e27 100644
 +            // Not loaded yet — ask JS to populate this node, then return what we
 +            // have (often empty). JS will push the expanded tree and trigger a
 +            // notifyChildrenChanged, prompting Android Auto to re-request.
-+            if (children == null) {
++            if (children == null || restoredNodes.remove(parentId)) {
 +                emit(MusicEvents.BUTTON_BROWSE, Bundle().apply { putString("mediaId", parentId) })
 +            }
 +            // Honour the requested page. Returning the whole list for every page (a 500-track
@@ -416,6 +510,8 @@ index b495b5a..07c5e27 100644
 +            val slice =
 +                if (pageSize <= 0 || pageSize == Int.MAX_VALUE) all
 +                else all.drop(page * pageSize).take(pageSize)
++            if (slice.isEmpty()) servedEmpty.add(parentId) else servedEmpty.remove(parentId)
++            android.util.Log.i("ResoAA", "onGetChildren parent=$parentId page=$page pageSize=$pageSize have=${all.size} returning=${slice.size} browser=${browser.packageName}")
 +            return Futures.immediateFuture(
 +                LibraryResult.ofItemList(ImmutableList.copyOf(slice), params)
 +            )
@@ -449,6 +545,7 @@ index b495b5a..07c5e27 100644
 +                .map { browseIndex[it.mediaId] ?: it }
 +                .firstOrNull { it.mediaMetadata.isPlayable == true }
 +                ?.let { playable ->
++                    android.util.Log.i("ResoAA", "onAddMediaItems -> JS play id=${playable.mediaId}")
 +                    emit(MusicEvents.BUTTON_PLAY_FROM_ID, Bundle().apply {
 +                        putString("id", playable.mediaId)
 +                    })
@@ -458,13 +555,14 @@ index b495b5a..07c5e27 100644
      }
  
      private fun getPendingIntentFlags(): Int {
-@@ -1029,5 +1281,8 @@ class MusicService : HeadlessJsMediaService() {
+@@ -1029,5 +1371,9 @@ class MusicService : HeadlessJsMediaService() {
  
          const val DEFAULT_JUMP_INTERVAL = 15.0
          const val DEFAULT_STOP_FOREGROUND_GRACE_PERIOD = 5
 +
 +        // Android Auto browse tree root (resonance patch)
 +        const val BROWSE_ROOT_ID = "/"
++        const val BROWSE_CACHE_NODES = 40
      }
  }
 diff --git a/node_modules/react-native-track-player/lib/module/trackPlayer.js b/node_modules/react-native-track-player/lib/module/trackPlayer.js

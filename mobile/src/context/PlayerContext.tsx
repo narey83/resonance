@@ -47,7 +47,7 @@ import TrackPlayer, {
   useTrackPlayerEvents,
 } from 'react-native-track-player';
 import { AppState } from 'react-native';
-import { MusicTrack, getArtworkUrl, getStreamUrl, getTrackTitle } from '../api/musicLibrary';
+import { MusicTrack, getArtworkUrl, getStreamUrl, getTrackTitle, currentStreamQuality } from '../api/musicLibrary';
 import { getArtworkCacheKey, prefetchArtwork, PLAYER_ART_SIZE } from '../services/artworkCache';
 import { isLocalPath } from '../services/localMusicLibrary';
 import { useLibraryActivityStore } from '../store/libraryActivityStore';
@@ -292,7 +292,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         });
         streamLoadRef.current = null;
       }
-      remoteLog('error', `[player] playback error — ${'message' in event ? String(event.message) : JSON.stringify(event)}`);
+      const failed = queueRef.current[queueIndexRef.current];
+      remoteLog('error', `[player] playback error — ${'message' in event ? String(event.message) : JSON.stringify(event)} [quality=${currentStreamQuality()}, track=${failed?.path ?? 'none'}]`);
       // A remote stream can fail two ways: an expired signature baked into its URL (401), or a
       // transient server/network blip (e.g. the backend 502ing during a restart). Both recover on
       // their own if we retry — re-sign (cheap, fixes the 401 case) and re-prepare the player
