@@ -79,7 +79,6 @@ const RANGES = [
 // one focused panel group at a time instead of a long scroll.
 const ANALYTICS_TABS = [
   { id: 'glance', label: 'At a Glance' },
-  { id: 'network', label: 'Network' },
   { id: 'activity', label: 'Transfer Activity' },
   { id: 'reliability', label: 'Reliability' },
   { id: 'top', label: 'Top Users & Content' },
@@ -388,6 +387,16 @@ const AdminOverview = () => {
           Analytics
         </button>
         <button
+          className={`overview-tab${activeTab === 'network' ? ' active' : ''}`}
+          onClick={() => {
+            prefs.set('overview:tab', 'network');
+            setActiveTab('network');
+          }}
+          type="button"
+        >
+          Network
+        </button>
+        <button
           className={`overview-tab${activeTab === 'users' ? ' active' : ''}`}
           onClick={() => {
             prefs.set('overview:tab', 'users');
@@ -412,6 +421,11 @@ const AdminOverview = () => {
           className={`overview-analytics${activeTab === 'users' ? ' overview-analytics--users' : ''}`}
         >
           {activeTab === 'users' && <UserReports />}
+          {activeTab === 'network' && (
+            <section className="overview-section">
+              <DistributedNetworkCard />
+            </section>
+          )}
           {activeTab === 'analytics' && (
             <>
               <div className="overview-controls">
@@ -505,12 +519,6 @@ const AdminOverview = () => {
                       />
                     </div>
                     <SystemStatsCard />
-                  </section>
-                )}
-
-                {analyticsTab === 'network' && (
-                  <section className="overview-section">
-                    <DistributedNetworkCard />
                   </section>
                 )}
 
