@@ -64,6 +64,7 @@ import {
 } from '../services/androidAuto';
 import { ensurePlayerSetup, buildPlayerOptions } from '../services/playerSetup';
 import { promptBatteryExemptionOnce } from '../services/batteryOptimization';
+import { contentTypeFor } from '../lib/mimeTypes';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -123,13 +124,14 @@ type RntpTrack = Track & { _source: MusicTrack };
 const toRntpTrack = (track: MusicTrack): RntpTrack => {
   const isLocal = isLocalPath(track.path);
   return {
-    url:      isLocal ? track.path : getStreamUrl(track.path),
-    title:    getTrackTitle(track),
-    artist:   track.artist    ?? undefined,
-    album:    track.album     ?? undefined,
-    artwork:  track.hasArtwork ? (isLocal ? track.coverPath ?? undefined : getArtworkUrl(track.path, PLAYER_ART_SIZE) ?? undefined) : undefined,
-    duration: track.duration  ?? undefined,
-    _source:  track,
+    url:         isLocal ? track.path : getStreamUrl(track.path),
+    title:       getTrackTitle(track),
+    artist:      track.artist    ?? undefined,
+    album:       track.album     ?? undefined,
+    artwork:     track.hasArtwork ? (isLocal ? track.coverPath ?? undefined : getArtworkUrl(track.path, PLAYER_ART_SIZE) ?? undefined) : undefined,
+    duration:    track.duration  ?? undefined,
+    contentType: contentTypeFor(track.path),
+    _source:     track,
   } as RntpTrack;
 };
 

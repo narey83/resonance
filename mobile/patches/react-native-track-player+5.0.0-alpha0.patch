@@ -1,3 +1,68 @@
+diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/kotlinaudio/models/AudioItem.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/kotlinaudio/models/AudioItem.kt
+index 5a1b2bf..04fcecd 100644
+--- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/kotlinaudio/models/AudioItem.kt
++++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/kotlinaudio/models/AudioItem.kt
+@@ -36,12 +36,31 @@ open class AudioItem(
+             .setArtworkUri(Uri.parse(artwork))
+             .setExtras(extras)
+             .build()
+-        return MediaItem.Builder()
++        val mediaItemBuilder = MediaItem.Builder()
+             .setMediaId(mediaId ?: audioUrl)
+             .setUri(audioUrl)
+             .setMediaMetadata(mediaMetadata)
+             .setTag(this)
+-            .build()
++
++        val mimeType = (this as? com.doublesymmetry.trackplayer.model.TrackAudioItem)?.contentType
++            ?: inferMimeFromUrl(audioUrl)
++        if (!mimeType.isNullOrEmpty()) {
++            mediaItemBuilder.setMimeType(mimeType)
++        }
++
++        return mediaItemBuilder.build()
++    }
++
++    private fun inferMimeFromUrl(url: String): String? {
++        val lower = url.lowercase()
++        return when {
++            lower.contains(".flac") || lower.contains("format=flac") -> "audio/flac"
++            lower.contains(".mp3")  -> "audio/mpeg"
++            lower.contains(".ogg") || lower.contains(".opus") -> "audio/ogg"
++            lower.contains(".wav")  -> "audio/wav"
++            lower.contains(".m4a") || lower.contains(".aac") -> "audio/mp4"
++            else -> null
++        }
+     }
+ 
+     companion object {
+diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/Track.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/Track.kt
+index 6527258..91a9174 100644
+--- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/Track.kt
++++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/Track.kt
+@@ -42,7 +42,8 @@ class Track
+             artwork = artwork.toString(),
+             duration = duration,
+             options = AudioItemOptions(headers, userAgent, resourceId),
+-            mediaId = mediaId
++            mediaId = mediaId,
++            contentType = contentType
+         )
+     }
+ 
+diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/TrackAudioItem.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/TrackAudioItem.kt
+index d6e3483..7028072 100644
+--- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/TrackAudioItem.kt
++++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/TrackAudioItem.kt
+@@ -14,5 +14,6 @@ data class TrackAudioItem(
+     override val artwork: String? = null,
+     override val duration: Long? = null,
+     override val options: AudioItemOptions? = null,
+-    override val mediaId: String? = null
++    override val mediaId: String? = null,
++    val contentType: String? = null
+ ): AudioItem(audioUrl, type, artist, title, albumTitle, artwork, duration, options, mediaId)
+\ No newline at end of file
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/TrackMetadata.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/TrackMetadata.kt
 index fb92033..f472b97 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/TrackMetadata.kt

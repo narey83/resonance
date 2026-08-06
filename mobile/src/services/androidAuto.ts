@@ -28,6 +28,7 @@
 // </copyright>
 
 import TrackPlayer, { MediaItemPlayable } from 'react-native-track-player';
+import { contentTypeFor } from '../lib/mimeTypes';
 import {
   getArtists,
   getAlbums,
@@ -342,6 +343,7 @@ export const playAndroidAutoMediaId = async (mediaId: string): Promise<void> => 
         ? (t.coverPath ?? undefined)
         : (t.hasArtwork ? (getArtworkUrl(t.path, PLAYER_ART_SIZE) ?? undefined) : undefined),
       duration: t.duration ?? undefined,
+      contentType: contentTypeFor(t.path),
       _source: t,
     }));
     await TrackPlayer.setQueue(rntp);

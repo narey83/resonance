@@ -296,14 +296,14 @@ function parseVorbisComments(
   const end = offset + length;
   let p = offset;
   if (p + 4 > end) return;
-  const vendorLen = b[p] | (b[p+1] << 8) | (b[p+2] << 16) | (b[p+3] << 24);
+  const vendorLen = (b[p] | (b[p+1] << 8) | (b[p+2] << 16) | (b[p+3] << 24)) >>> 0;
   p += 4 + vendorLen;
   if (p + 4 > end) return;
-  const count = b[p] | (b[p+1] << 8) | (b[p+2] << 16) | (b[p+3] << 24);
+  const count = (b[p] | (b[p+1] << 8) | (b[p+2] << 16) | (b[p+3] << 24)) >>> 0;
   p += 4;
   const dec = new TextDecoder();
   for (let i = 0; i < count && p + 4 <= end; i++) {
-    const len = b[p] | (b[p+1] << 8) | (b[p+2] << 16) | (b[p+3] << 24);
+    const len = (b[p] | (b[p+1] << 8) | (b[p+2] << 16) | (b[p+3] << 24)) >>> 0;
     p += 4;
     if (p + len > end) break;
     const comment = dec.decode(b.subarray(p, p + len));
