@@ -44,6 +44,7 @@ import ActivityChart from './ActivityChart';
 import ActivityHeatmap from './ActivityHeatmap';
 import BlockedUsersCard from './BlockedUsersCard';
 import CoverageCard from './CoverageCard';
+import DistributedNetworkCard from './DistributedNetworkCard';
 import ErrorChart from './ErrorChart';
 import GeographyCard from './GeographyCard';
 import KpiCards from './KpiCards';
@@ -78,6 +79,7 @@ const RANGES = [
 // one focused panel group at a time instead of a long scroll.
 const ANALYTICS_TABS = [
   { id: 'glance', label: 'At a Glance' },
+  { id: 'network', label: 'Network' },
   { id: 'activity', label: 'Transfer Activity' },
   { id: 'reliability', label: 'Reliability' },
   { id: 'top', label: 'Top Users & Content' },
@@ -503,6 +505,12 @@ const AdminOverview = () => {
                       />
                     </div>
                     <SystemStatsCard />
+                  </section>
+                )}
+
+                {analyticsTab === 'network' && (
+                  <section className="overview-section">
+                    <DistributedNetworkCard />
                   </section>
                 )}
 
