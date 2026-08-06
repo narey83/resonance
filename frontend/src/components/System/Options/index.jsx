@@ -49,6 +49,7 @@ import FfmpegSection from './FfmpegSection';
 import QoSSection from './QoSSection';
 import SharesSection from './SharesSection';
 import TransferErrorNotificationSection from './TransferErrorNotificationSection';
+import UpnpStatusSection from './UpnpStatusSection';
 import YtDlpOptionsSection from './YtDlpOptionsSection';
 import React, { useEffect, useRef, useState } from 'react';
 import YAML from 'yaml';
@@ -2124,6 +2125,9 @@ const Options = ({ options, state = {}, theme }) => {
                   <YtDlpOptionsSection />
                 )}
                 {SCHEMA[activeSection].title === 'ffmpeg' && <FfmpegSection />}
+                {SCHEMA[activeSection].title === 'UPnP Port Mapping' && (
+                  <UpnpStatusSection upnp={state?.upnp} />
+                )}
               </div>
             </div>
           )}

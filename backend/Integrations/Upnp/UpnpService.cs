@@ -45,6 +45,10 @@ using Serilog;
 /// </summary>
 public class UpnpService : IDisposable
 {
+    // gateways that dropped their UPnP responder (e.g. a router reboot) get retried at this
+    // cadence instead of waiting out the full renewal interval, which can be up to an hour.
+    private const int RetryIntervalSeconds = 30;
+
     /// <summary>
     ///     Initializes a new instance of the <see cref="UpnpService"/> class.
     /// </summary>
@@ -67,14 +71,14 @@ public class UpnpService : IDisposable
             // renew at half the lease lifetime (so a renewal always lands before expiry), bounded to a sane
             // range. with a permanent mapping (lease == 0) we still poll periodically to (re)assert the mapping
             // in case the gateway dropped it or the listen port changed.
-            var renewalSeconds = lease > 0 ? Math.Clamp(lease / 2, 60, 3600) : 300;
+            RenewalSeconds = lease > 0 ? Math.Clamp(lease / 2, 60, 3600) : 300;
 
-            Timer = new System.Timers.Timer(interval: renewalSeconds * 1000d)
+            Timer = new System.Timers.Timer(interval: RenewalSeconds * 1000d)
             {
                 AutoReset = true,
             };
 
-            Timer.Elapsed += async (_, _) => await EnsureMappingAsync();
+            Timer.Elapsed += async (_, _) => await RunMappingPassAsync();
         }
     }
 
@@ -87,6 +91,7 @@ public class UpnpService : IDisposable
     private IOptionsMonitor<Options> OptionsMonitor { get; }
     private IStateMutator<State> StateMutator { get; }
     private System.Timers.Timer Timer { get; }
+    private int RenewalSeconds { get; set; }
     private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Integrations.UPnP);
     private ConcurrentDictionary<string, INatDevice> Devices { get; } = new();
     private SemaphoreSlim SyncRoot { get; } = new SemaphoreSlim(1, 1);
@@ -117,6 +122,25 @@ public class UpnpService : IDisposable
             "UPnP integration enabled; discovering gateway to map Soulseek listen port {Port}/{Protocol}",
             OptionsMonitor.CurrentValue.Soulseek.ListenPort,
             options.Protocol.ToUpperInvariant());
+    }
+
+    /// <summary>
+    ///     Forces an immediate rediscovery and mapping attempt, e.g. in response to a user-initiated retry.
+    /// </summary>
+    /// <returns>A <see cref="Task"/> that completes when the attempt finishes.</returns>
+    public async Task RetryNowAsync()
+    {
+        if (!Started)
+        {
+            return;
+        }
+
+        RestartDiscovery();
+
+        // give the gateway a moment to answer the fresh SSDP search before attempting to map;
+        // any devices that answer after this still trigger their own mapping pass via OnDeviceFound.
+        await Task.Delay(2000);
+        await RunMappingPassAsync();
     }
 
     /// <summary>
@@ -204,6 +228,53 @@ public class UpnpService : IDisposable
 
         // fire and forget; EnsureMappingAsync is internally synchronized and swallows its own exceptions
         _ = EnsureMappingAsync();
+    }
+
+    // Runs one mapping pass and adapts the timer's cadence to the result: back off to the normal
+    // renewal interval once mapped, or retry soon and force a fresh SSDP search while not mapped —
+    // a gateway that rebooted (e.g. a router power-cycle) needs a new search, not just another
+    // attempt against the same now-stale device reference.
+    private async Task RunMappingPassAsync()
+    {
+        await EnsureMappingAsync();
+
+        if (IsMapped)
+        {
+            Timer.Interval = RenewalSeconds * 1000d;
+        }
+        else
+        {
+            Timer.Interval = RetryIntervalSeconds * 1000d;
+            RestartDiscovery();
+        }
+    }
+
+    private void RestartDiscovery()
+    {
+        if (!Started)
+        {
+            return;
+        }
+
+        try
+        {
+            NatUtility.StopDiscovery();
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Failed to stop UPnP discovery ahead of a retry: {Message}", ex.Message);
+        }
+
+        Devices.Clear();
+
+        try
+        {
+            NatUtility.StartDiscovery();
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Failed to restart UPnP discovery: {Message}", ex.Message);
+        }
     }
 
     private async Task EnsureMappingAsync()
