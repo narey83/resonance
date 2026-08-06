@@ -149,6 +149,7 @@ export default function RoomsScreen({ navigation }: Props) {
   const [joining, setJoining]      = useState<string | null>(null);
   const [customRoom, setCustomRoom] = useState('');
   const [showCustom, setShowCustom] = useState(false);
+  const [query, setQuery] = useState('');
 
   // O(1) lookup for "already joined" in AvailRow
   const joinedNames = useMemo(() => new Set(joined.map((r) => r.name)), [joined]);
@@ -160,20 +161,35 @@ export default function RoomsScreen({ navigation }: Props) {
     }, [loadJoined, loadAvailable])
   );
 
-  const sections: RoomSection[] = useMemo(() => [
-    {
-      key:   'joined',
-      title: 'Joined',
-      data:  joined.length > 0
-        ? joined.map((room) => ({ _type: 'joined' as const, room }))
-        : [{ _type: 'empty'  as const }],
-    },
-    {
-      key:   'available',
-      title: 'Available',
-      data:  available.map((room) => ({ _type: 'available' as const, room })),
-    },
-  ], [joined, available]);
+  const q = query.trim().toLowerCase();
+  const filteredJoined = useMemo(
+    () => (q ? joined.filter((r) => r.name.toLowerCase().includes(q)) : joined),
+    [joined, q]
+  );
+  const filteredAvailable = useMemo(
+    () => (q ? available.filter((r) => r.name.toLowerCase().includes(q)) : available),
+    [available, q]
+  );
+
+  const sections: RoomSection[] = useMemo(() => {
+    const all: RoomSection[] = [
+      {
+        key:   'joined',
+        title: 'Joined',
+        data:  filteredJoined.length > 0
+          ? filteredJoined.map((room) => ({ _type: 'joined' as const, room }))
+          : q
+            ? []
+            : [{ _type: 'empty'  as const }],
+      },
+      {
+        key:   'available',
+        title: 'All Rooms',
+        data:  filteredAvailable.map((room) => ({ _type: 'available' as const, room })),
+      },
+    ];
+    return all.filter((section) => section.data.length > 0);
+  }, [filteredJoined, filteredAvailable, q]);
 
   const handleNavigate = useCallback((roomName: string) => {
     navigation.navigate('RoomDetail', { roomName });
@@ -256,9 +272,28 @@ export default function RoomsScreen({ navigation }: Props) {
   , []);
 
   const isLoading = isLoadingJoined || isLoadingAvailable;
+  const noMatches = sections.length === 0;
 
   return (
     <View style={s.container}>
+      <View style={s.searchBar}>
+        <Ionicons color={colors.textMuted} name="search" size={16} />
+        <TextInput
+          autoCapitalize="none"
+          autoCorrect={false}
+          onChangeText={setQuery}
+          placeholder="Search rooms…"
+          placeholderTextColor={colors.textMuted}
+          style={s.searchInput}
+          value={query}
+        />
+        {query.length > 0 && (
+          <Pressable hitSlop={8} onPress={() => setQuery('')}>
+            <Ionicons color={colors.textMuted} name="close-circle" size={16} />
+          </Pressable>
+        )}
+      </View>
+
       <SectionList
         sections={sections}
         keyExtractor={keyExtractor}
@@ -274,6 +309,20 @@ export default function RoomsScreen({ navigation }: Props) {
         maxToRenderPerBatch={20}
         windowSize={5}
         updateCellsBatchingPeriod={50}
+        ListEmptyComponent={
+          noMatches && q ? (
+            <Pressable
+              disabled={joining === query.trim()}
+              onPress={() => handleJoin(query.trim())}
+              style={s.joinCustomRow}
+            >
+              <Ionicons color={colors.accent} name="add-circle-outline" size={18} />
+              <Text style={s.joinCustomText}>
+                {joining === query.trim() ? 'Joining…' : `Join "${query.trim()}"`}
+              </Text>
+            </Pressable>
+          ) : null
+        }
       />
 
       <BottomSheet visible={showCustom} onClose={() => { setShowCustom(false); setCustomRoom(''); }}>
@@ -308,7 +357,39 @@ export default function RoomsScreen({ navigation }: Props) {
 function makeStyles(c: ThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: c.bgPrimary },
-    list:      { padding: Spacing.lg },
+    list:      { padding: Spacing.lg, flexGrow: 1 },
+
+    searchBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing.sm,
+      marginHorizontal: Spacing.lg,
+      marginTop: Spacing.lg,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
+      borderRadius: Radius.md,
+      backgroundColor: c.bgElevated,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    searchInput: {
+      flex: 1,
+      fontSize: Typography.base,
+      color: c.textPrimary,
+      padding: 0,
+    },
+
+    joinCustomRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing.sm,
+      padding: Spacing.md,
+      borderRadius: Radius.lg,
+      borderWidth: 1,
+      borderColor: c.border,
+      borderStyle: 'dashed',
+    },
+    joinCustomText: { fontSize: Typography.base, fontWeight: '500', color: c.accent },
 
     sectionHeader: {
       flexDirection: 'row',

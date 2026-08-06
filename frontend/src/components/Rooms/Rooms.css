@@ -35,160 +35,149 @@
 </copyright>
 */
 
-.popup-menu {
-  overflow-y: auto;
-  position: fixed;
-  z-index: 1000;
+.rooms-root {
+  height: calc(100vh - 110px);
 }
 
-.rooms {
-  padding-left: 15px;
-  padding-right: 15px;
-  max-width: 1200px !important;
-  margin-left: auto !important;
-  margin-right: auto !important;
-  margin-bottom: 16px;
+/* ── Sidebar search box ──────────────────────────────────────────────────── */
+
+.room-search-wrap {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--nav-border);
+  flex-shrink: 0;
 }
 
-.rooms-segment {
-  margin-top: 15px !important;
-  height: 78px;
+.room-list-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  flex-shrink: 0;
+}
+
+.room-join-custom {
+  color: var(--accent);
+}
+
+/* ── Header avatar (static room icon, not per-user) ──────────────────────── */
+
+.room-header-avatar {
+  background: var(--bg-elevated);
+  color: var(--accent);
+}
+
+/* ── Message list (flat, Discord-style rows) ─────────────────────────────── */
+
+.room-messages {
   display: flex;
+  flex-direction: column;
 }
 
-.rooms-segment-icon {
-  padding-top: 10px;
-  padding-right: .5em;
+.room-msg-row {
+  display: flex;
+  gap: 10px;
+  padding: 2px 0;
 }
 
-.room-menu {
-  overflow-x: auto;
-  box-shadow: unset !important;
-  height: 47px;
-  width: 100%;
-  margin-top: unset !important;
+.room-msg-row--cont {
+  padding-top: 0;
 }
 
-.room-menu > .menu-item {
-  font-size: 14pt;
+.room-msg-avatar {
+  margin-top: 2px;
 }
 
-.room-menu > .menu-active {
-  font-weight: bold !important;
+.room-msg-gutter {
+  width: 34px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
 }
 
-.room-menu > .menu > .add-button {
-  margin: 0px;
-  border-top-left-radius: 0%;
-  border-bottom-left-radius: 0%;
-  border-radius: 0%;
+.room-msg-row:hover .room-msg-time-ghost {
+  opacity: 1;
 }
 
-.join-room-modal > .content > .table > thead > tr > th > .icon {
-  float: right !important;
+.room-msg-time-ghost {
+  opacity: 0;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  transition: opacity 0.1s;
 }
 
-@media only screen and (max-width: 767px) {
-  .room-users {
+.room-msg-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.room-msg-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.room-msg-time {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.room-msg-text {
+  font-size: 13.5px;
+  color: var(--text-primary);
+  line-height: 1.45;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+/* ── Member list panel ───────────────────────────────────────────────────── */
+
+.room-users-panel {
+  width: 210px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border);
+}
+
+.room-users-panel-header {
+  padding: 12px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.room-users-panel .list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px !important;
+  margin: 0 !important;
+}
+
+.room-user-self {
+  color: var(--accent) !important;
+}
+
+.unknown-user-flag {
+  opacity: 0.35 !important;
+}
+
+@media only screen and (max-width: 900px) {
+  .room-users-panel {
     display: none;
   }
 }
 
-.room {
-  display: flex;
-  margin-top: 1rem;
-  height: calc(100vh - 255px);
-}
-
-.room-active-card {
-  width: 100% !important;
-}
-
-.room-active-card > .content > .room > .segments {
-  box-shadow: unset !important;
-  margin-bottom: 0px;
-  border-top-right-radius: unset !important;
-  border-bottom-right-radius: unset !important;
-  width: 100% !important;
-}
-
-.room-history {
-  padding: .5em .5em 0 .5em !important;
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-  scroll-snap-type: y proximity;
-  display: grid;
-  height: calc(100vh - 292px);
-}
-
-.room-history > .list {
-  align-self: end;
-  margin-bottom: .5em !important;
-}
-
-.room-users {
-  margin-top: 0px !important;
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-  scroll-snap-type: y proximity;
-  overflow-x: hidden;
-  min-width: 250px;
-  max-width: 250px;
-  box-shadow: unset !important;
-  border-left: unset !important;
-  border-bottom-left-radius: unset !important;
-  border-top-left-radius: unset !important;
-  padding: 7px !important;
-}
-
-.room-message-name {
-  font-weight: bold;
-}
-
-.room-message-time {
-  float:right;
-  opacity: .5;
-  font-size: smaller;
-  font-variant: small-caps;
-  font-style: italic;
-}
-
-.room-message-self, .room-user-self {
-  color: blue;
-}
-
-.room-input {
-  align-items: center;
-  display: flex;
-  gap: 8px;
-  padding: 0px 0px 0px 1em !important;
-}
-
-.room-input .emoji-picker-anchor {
-  margin-left: -8px;
-}
-
-.room-input .ui.input {
-  flex: 1;
-}
-
-.room-message-button {
-  background-color: transparent !important;
-}
-
-#room-history-scroll-anchor {
-  scroll-snap-align: start
-}
-
-/* semantic-ui-react colors the border of inputs
-   when a right aligned action is used, even when 
-   transparent is specified, and it uses !important.
-   this had to be added to an id to override the class
-   declaration. */
-#room-message-input {
-    border-right-color: transparent !important;
-}
-
-.unknown-user-flag {
-  opacity: .1 !important;
+@media only screen and (max-width: 700px) {
+  .rooms-root .sr-sidebar {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
 }

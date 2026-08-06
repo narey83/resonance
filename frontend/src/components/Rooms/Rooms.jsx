@@ -34,375 +34,324 @@
 // </copyright>
 
 import '../Chat/Chat.css';
+import '../Search/Search.css';
+import './Rooms.css';
 import { activeRoomKey } from '../../config';
 import * as prefs from '../../lib/prefs';
 import * as rooms from '../../lib/rooms';
 import * as translation from '../../lib/translation';
-import { parseUtcDate } from '../../lib/util';
-import { groupByDate } from '../Chat/chatUtils';
+import { avatarColor, avatarInitial, groupByDate } from '../Chat/chatUtils';
 import EmojiPickerButton from '../Shared/EmojiPickerButton';
-import PlaceholderSegment from '../Shared/PlaceholderSegment';
 import UsernameLink from '../Shared/UsernameLink';
-import RoomMenu from './RoomMenu';
 import RoomUserList from './RoomUserList';
-import React, { Component, createRef } from 'react';
-import { withRouter } from 'react-router-dom';
 import {
-  Button,
-  Card,
-  Dimmer,
-  Icon,
-  Input,
-  List,
-  Loader,
-  Portal,
-  Ref,
-  Segment,
-} from 'semantic-ui-react';
+  Globe,
+  Hash,
+  Languages,
+  LogOut,
+  Plus,
+  Search as SearchIcon,
+  Send,
+  Users,
+} from 'lucide-react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { withRouter } from 'react-router-dom';
 
 const roomMessageKey = (message) =>
   `${message.username}|${message.timestamp}|${message.message}`;
 
 const translatePrefKey = (roomName) => `resonance:roomTranslate:${roomName}`;
 const replyPrefKey = (roomName) => `resonance:roomReply:${roomName}`;
+const SIDEBAR_WIDTH_KEY = 'resonance-rooms-sidebar-width';
+const SIDEBAR_MIN = 200;
+const SIDEBAR_MAX = 420;
+const USERS_POLL_MS = 1_000;
+const JOINED_POLL_MS = 3_000;
+const AVAILABLE_POLL_MS = 15_000;
 
 const baseLang = (code) => (code || '').toUpperCase().split('-')[0];
 
-const initialState = {
-  active: '',
-  autoTranslate: false,
-  contextMenu: {
-    message: null,
-    open: false,
-    x: 0,
-    y: 0,
-  },
-  intervals: {
-    messages: undefined,
-    rooms: undefined,
-  },
-  joined: [],
-  loading: false,
-  message: '',
-  replyTranslate: false,
-  room: {
-    messages: [],
-    users: [],
-  },
-  showOriginal: [],
-  targetLang: 'EN',
-  translateEnabled: false,
-  translations: {},
-};
+const formatTimestamp = (timestamp) =>
+  new Date(timestamp).toLocaleTimeString('en', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 
-const RoomMessageHistory = React.memo(
-  ({
-    autoTranslate,
-    formatTimestamp,
-    messages,
-    onHandleContextMenu,
-    onToggleOriginal,
-    showOriginal,
-    targetLang,
-    translateEnabled,
-    translations,
-  }) => {
-    const groups = groupByDate(messages);
-    return (
-      <>
-        {groups.map((group) => (
-          <React.Fragment key={group.label}>
-            <div className="chat-date-sep">
-              <span>{group.label}</span>
-            </div>
-            {group.messages.map((message) => {
-              const key = roomMessageKey(message);
-              const tr = translations[key];
-              const canTranslate =
-                translateEnabled && autoTranslate && !message.self;
-              const translatedDiffers =
-                Boolean(tr?.text) &&
-                Boolean(tr?.detectedSourceLanguage) &&
-                tr.detectedSourceLanguage.toUpperCase().split('-')[0] !==
-                  targetLang.toUpperCase();
-              const viewingOriginal = showOriginal.includes(key);
-              const showTranslated =
-                canTranslate && translatedDiffers && !viewingOriginal;
-              // Your own message shown in your language: exact original if we
-              // captured it at send time, else a back-translation of the sent text.
-              const captured = message.self
-                ? translation.recallOutgoing(message.message)
-                : null;
-              const backTranslation =
-                message.self &&
-                !captured &&
-                Boolean(tr?.text) &&
-                Boolean(tr?.detectedSourceLanguage) &&
-                tr.detectedSourceLanguage.toUpperCase().split('-')[0] !==
-                  targetLang.toUpperCase()
-                  ? tr
-                  : null;
-              const selfForeign =
-                (Boolean(captured) && captured.original !== message.message) ||
-                Boolean(backTranslation);
-              const selfExact = Boolean(captured);
-              const selfInLang = captured
-                ? captured.original
-                : backTranslation?.text;
-              const selfSourceLang = captured
-                ? captured.lang
-                : backTranslation?.detectedSourceLanguage;
-              const showSelfInLang = selfForeign && viewingOriginal;
-              return (
-                <div
-                  key={`${message.timestamp}+${message.message}`}
-                  onContextMenu={(clickEvent) =>
-                    onHandleContextMenu(clickEvent, message)
-                  }
-                >
-                  <List.Content
-                    className={`room-message ${message.self ? 'room-message-self' : ''}`}
-                  >
-                    <span className="room-message-time">
-                      {formatTimestamp(message.timestamp)}
-                    </span>
-                    <UsernameLink
-                      className="room-message-name"
-                      username={message.username}
-                    />
-                    <span className="room-message-name-sep">: </span>
-                    <span className="room-message-message">
-                      {message.self
-                        ? showSelfInLang
-                          ? selfInLang
-                          : message.message
-                        : showTranslated
-                          ? tr.text
-                          : message.message}
-                    </span>
-                    {canTranslate && translatedDiffers && (
-                      <button
-                        className="chat-translate-note room-translate-note"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onToggleOriginal(key);
-                        }}
-                        type="button"
-                      >
-                        {showTranslated
-                          ? `translated from ${translation.languageName(tr.detectedSourceLanguage)} · show original`
-                          : 'show translation'}
-                      </button>
-                    )}
-                    {selfForeign && (
-                      <button
-                        className="chat-translate-note room-translate-note"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onToggleOriginal(key);
-                        }}
-                        type="button"
-                      >
-                        {showSelfInLang
-                          ? 'show sent message'
-                          : `sent in ${translation.languageName(selfSourceLang)} · ${selfExact ? 'show original' : `show in ${translation.languageName(targetLang)}`}`}
-                      </button>
-                    )}
-                  </List.Content>
-                </div>
-              );
-            })}
-          </React.Fragment>
-        ))}
-        <List.Content id="room-history-scroll-anchor" />
-      </>
-    );
-  },
+// ── Sidebar room row ─────────────────────────────────────────────────────────
+
+const RoomListItem = ({ active, joined, joining, onSelect, room }) => (
+  <button
+    className={`sr-search-item${active ? ' sr-search-item--active' : ''}`}
+    disabled={joining}
+    onClick={() => onSelect(room.name)}
+    type="button"
+  >
+    <span className="sr-search-item-icon">
+      {joined ? (
+        <span className="room-list-dot" />
+      ) : (
+        <Hash
+          size={13}
+          strokeWidth={2}
+        />
+      )}
+    </span>
+    <span className="sr-search-item-text">{room.name}</span>
+    <span className="sr-search-item-count">
+      {joining
+        ? 'Joining…'
+        : Number.isFinite(room.userCount)
+          ? room.userCount
+          : ''}
+    </span>
+  </button>
 );
 
-RoomMessageHistory.displayName = 'RoomMessageHistory';
+// ── Main component ────────────────────────────────────────────────────────────
 
-class Rooms extends Component {
-  constructor(props) {
-    super(props);
+const Rooms = ({ history }) => {
+  const [joinedNames, setJoinedNames] = useState([]);
+  const [availableRooms, setAvailableRooms] = useState([]);
+  const [active, setActive] = useState('');
+  const [room, setRoom] = useState({ messages: [], users: [] });
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const [joiningRoom, setJoiningRoom] = useState(null);
+  const [message, setMessage] = useState('');
+  const [showUsers, setShowUsers] = useState(true);
+  const [contextMenu, setContextMenu] = useState(null);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = Number(prefs.get(SIDEBAR_WIDTH_KEY, 240));
+    return Number.isFinite(saved) ? saved : 240;
+  });
 
-    this.state = initialState;
-  }
+  const [translateStatus, setTranslateStatus] = useState({
+    defaultTargetLanguage: 'EN',
+    enabled: false,
+  });
+  const [autoTranslate, setAutoTranslate] = useState(false);
+  const [replyTranslate, setReplyTranslate] = useState(false);
+  const [translations, setTranslations] = useState({});
+  const [showOriginal, setShowOriginal] = useState(() => new Set());
+  const translationsRef = useRef({});
 
-  componentDidMount() {
-    this.setState(
-      {
-        active: sessionStorage.getItem(activeRoomKey) || '',
-        intervals: {
-          messages: window.setInterval(this.fetchActiveRoom, 1_000),
-          rooms: window.setInterval(this.fetchJoinedRooms, 500),
-        },
-      },
-      async () => {
-        await this.fetchJoinedRooms();
-        this.selectRoom(this.state.active || this.getFirstRoom());
-        document.addEventListener('click', this.handleCloseContextMenu);
-      },
+  const targetLang = translateStatus.defaultTargetLanguage || 'EN';
+
+  const messagesRef = useRef(null);
+  const inputRef = useRef(null);
+  const rootRef = useRef(null);
+  const dividerMoveRef = useRef(null);
+  const activeRef = useRef('');
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+
+  // ── Fetching ─────────────────────────────────────────────────────────────
+
+  const fetchJoined = useCallback(async () => {
+    try {
+      const names = (await rooms.getJoined()) || [];
+      if (mountedRef.current) setJoinedNames(names);
+    } catch {
+      // best-effort poll; next tick recovers
+    }
+  }, []);
+
+  const fetchAvailable = useCallback(async () => {
+    try {
+      const list = (await rooms.getAvailable()) || [];
+      if (mountedRef.current) setAvailableRooms(list);
+    } catch {
+      // best-effort poll; next tick recovers
+    }
+  }, []);
+
+  const fetchActiveRoom = useCallback(async () => {
+    const roomName = activeRef.current;
+    if (!roomName) return;
+
+    try {
+      const [messages, users] = await Promise.all([
+        rooms.getMessages({ roomName }),
+        rooms.getUsers({ roomName }),
+      ]);
+
+      if (mountedRef.current && activeRef.current === roomName) {
+        setRoom({ messages: messages || [], users: users || [] });
+      }
+    } catch {
+      // best-effort poll; next tick recovers
+    }
+  }, []);
+
+  // ── Select / join / leave ───────────────────────────────────────────────
+
+  const selectRoom = useCallback(
+    async (roomName) => {
+      setActive(roomName);
+      activeRef.current = roomName;
+      sessionStorage.setItem(activeRoomKey, roomName);
+      setAutoTranslate(Boolean(prefs.get(translatePrefKey(roomName), false)));
+      setReplyTranslate(Boolean(prefs.get(replyPrefKey(roomName), false)));
+      setMessage('');
+      setLoading(true);
+      setRoom({ messages: [], users: [] });
+
+      try {
+        await fetchActiveRoom();
+      } finally {
+        if (mountedRef.current) {
+          setLoading(false);
+          setTimeout(() => {
+            const el = messagesRef.current;
+            if (el) el.scrollTop = el.scrollHeight;
+            inputRef.current?.focus();
+          }, 50);
+        }
+      }
+    },
+    [fetchActiveRoom],
+  );
+
+  const handleSelect = useCallback(
+    async (roomName) => {
+      if (joinedNames.includes(roomName)) {
+        await selectRoom(roomName);
+        return;
+      }
+
+      setJoiningRoom(roomName);
+      try {
+        await rooms.join({ roomName });
+        await fetchJoined();
+        await selectRoom(roomName);
+        setSearch('');
+      } catch {
+        // room may not exist or join was rejected; leave the search box as-is
+      } finally {
+        if (mountedRef.current) setJoiningRoom(null);
+      }
+    },
+    [fetchJoined, joinedNames, selectRoom],
+  );
+
+  const leaveRoom = useCallback(
+    async (roomName) => {
+      await rooms.leave({ roomName });
+      const remaining = joinedNames.filter((name) => name !== roomName);
+      setJoinedNames(remaining);
+      if (activeRef.current === roomName) {
+        const next = remaining[0] || '';
+        if (next) await selectRoom(next);
+        else {
+          setActive('');
+          activeRef.current = '';
+          setRoom({ messages: [], users: [] });
+        }
+      }
+    },
+    [joinedNames, selectRoom],
+  );
+
+  // ── Mount ────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    mountedRef.current = true;
+    const savedActive = sessionStorage.getItem(activeRoomKey) || '';
+
+    (async () => {
+      await fetchJoined();
+      await fetchAvailable();
+      if (!mountedRef.current) return;
+
+      const names = await rooms.getJoined();
+      const initial =
+        savedActive && (names || []).includes(savedActive)
+          ? savedActive
+          : (names || [])[0] || '';
+      if (initial) selectRoom(initial);
+    })();
+
+    const joinedInterval = window.setInterval(fetchJoined, JOINED_POLL_MS);
+    const availableInterval = window.setInterval(
+      fetchAvailable,
+      AVAILABLE_POLL_MS,
     );
+    const messagesInterval = window.setInterval(fetchActiveRoom, USERS_POLL_MS);
+
+    const onDocumentClick = () => setContextMenu(null);
+    document.addEventListener('click', onDocumentClick);
 
     translation
       .getStatus()
       .then((status) => {
-        if (status) {
-          this.setState({
-            targetLang: status.defaultTargetLanguage || 'EN',
-            translateEnabled: status.enabled,
-          });
-        }
+        if (mountedRef.current && status) setTranslateStatus(status);
       })
       .catch(() => {});
-  }
 
-  componentWillUnmount() {
-    const { messages: messagesInterval, rooms: roomsInterval } =
-      this.state.intervals;
+    return () => {
+      mountedRef.current = false;
+      window.clearInterval(joinedInterval);
+      window.clearInterval(availableInterval);
+      window.clearInterval(messagesInterval);
+      document.removeEventListener('click', onDocumentClick);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    clearInterval(roomsInterval);
-    clearInterval(messagesInterval);
+  useEffect(() => {
+    translationsRef.current = translations;
+  }, [translations]);
 
-    document.removeEventListener('click', this.handleCloseContextMenu);
+  // ── Translation ──────────────────────────────────────────────────────────
 
-    this.setState({ intervals: initialState.intervals });
-  }
-
-  listRef = createRef();
-
-  messageRef = undefined;
-
-  getFirstRoom = () => {
-    return this.state.joined.length > 0 ? this.state.joined[0] : '';
-  };
-
-  fetchJoinedRooms = async () => {
-    const joined = await rooms.getJoined();
-    this.setState(
-      {
-        joined,
-      },
-      () => {
-        if (!this.state.joined.includes(this.state.active)) {
-          this.selectRoom(this.getFirstRoom());
+  const toggleAutoTranslate = useCallback(() => {
+    setAutoTranslate((previous) => {
+      const next = !previous;
+      if (active) {
+        prefs.set(translatePrefKey(active), next);
+        if (next) {
+          setReplyTranslate(true);
+          prefs.set(replyPrefKey(active), true);
         }
-      },
-    );
-  };
-
-  fetchActiveRoom = async () => {
-    const { active } = this.state;
-
-    if (active.length === 0) return;
-
-    const messages = await rooms.getMessages({ roomName: active });
-    const users = await rooms.getUsers({ roomName: active });
-
-    this.setState(
-      {
-        room: {
-          messages,
-          users,
-        },
-      },
-      () => this.translatePending(),
-    );
-  };
-
-  translatePending = async () => {
-    const {
-      active,
-      autoTranslate,
-      room,
-      targetLang,
-      translateEnabled,
-      translations,
-    } = this.state;
-
-    if (!translateEnabled || !autoTranslate || !active) return;
-
-    const pending = (room.messages || []).filter(
-      (m) =>
-        m.message &&
-        m.message.trim() &&
-        !(roomMessageKey(m) in translations) &&
-        // incoming messages, plus your own sends we didn't capture an original for
-        (!m.self || !translation.recallOutgoing(m.message)),
-    );
-
-    if (pending.length === 0) return;
-
-    try {
-      const results = await translation.translate({
-        targetLanguage: targetLang,
-        texts: pending.map((m) => m.message),
-      });
-
-      this.setState((previousState) => {
-        const next = { ...previousState.translations };
-        for (const [index, m] of pending.entries()) {
-          next[roomMessageKey(m)] = results[index];
-        }
-
-        return { translations: next };
-      });
-    } catch {
-      // Translation is best-effort; leave the originals in place on failure.
-    }
-  };
-
-  toggleAutoTranslate = () => {
-    this.setState(
-      (previousState) => {
-        const next = !previousState.autoTranslate;
-        if (previousState.active) {
-          prefs.set(translatePrefKey(previousState.active), next);
-          if (next) prefs.set(replyPrefKey(previousState.active), true);
-        }
-
-        return next
-          ? { autoTranslate: next, replyTranslate: true }
-          : { autoTranslate: next };
-      },
-      () => this.translatePending(),
-    );
-  };
-
-  handleToggleOriginal = (key) => {
-    this.setState((previousState) => {
-      const has = previousState.showOriginal.includes(key);
-      return {
-        showOriginal: has
-          ? previousState.showOriginal.filter((k) => k !== key)
-          : [...previousState.showOriginal, key],
-      };
-    });
-  };
-
-  toggleReplyTranslate = () => {
-    this.setState((previousState) => {
-      const next = !previousState.replyTranslate;
-      if (previousState.active) {
-        prefs.set(replyPrefKey(previousState.active), next);
       }
 
-      return { replyTranslate: next };
+      return next;
     });
-  };
+  }, [active]);
 
-  // Resolve the language to translate an outgoing reply into: the most recent
-  // other-user message's detected language (from cache, or probed on demand).
-  resolveReplyLang = async () => {
-    const { room, targetLang, translations } = this.state;
+  const toggleReplyTranslate = useCallback(() => {
+    setReplyTranslate((previous) => {
+      const next = !previous;
+      if (active) prefs.set(replyPrefKey(active), next);
+      return next;
+    });
+  }, [active]);
+
+  const toggleShowOriginal = useCallback((key) => {
+    setShowOriginal((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const resolveReplyLang = useCallback(async () => {
     const msgs = room.messages || [];
-
     for (let index = msgs.length - 1; index >= 0; index--) {
       const m = msgs[index];
       if (m.self === true || !m.message?.trim()) continue;
 
-      const cached = translations[roomMessageKey(m)];
+      const cached = translationsRef.current[roomMessageKey(m)];
       if (cached?.detectedSourceLanguage) {
         return baseLang(cached.detectedSourceLanguage);
       }
@@ -419,86 +368,59 @@ class Rooms extends Component {
     }
 
     return null;
-  };
+  }, [room.messages, targetLang]);
 
-  selectRoom = async (roomName) => {
-    this.setState(
-      (previousState) => ({
-        active: roomName,
-        autoTranslate: roomName
-          ? Boolean(prefs.get(translatePrefKey(roomName), false))
-          : false,
-        replyTranslate: roomName
-          ? Boolean(prefs.get(replyPrefKey(roomName), false))
-          : false,
-        loading: true,
-        message: previousState.active === roomName ? previousState.message : '',
-        room: initialState.room,
-      }),
-      async () => {
-        const { active } = this.state;
+  useEffect(() => {
+    if (!translateStatus.enabled || !autoTranslate || !active) return undefined;
 
-        sessionStorage.setItem(activeRoomKey, active);
-
-        await this.fetchActiveRoom();
-        this.setState({ loading: false }, () => {
-          try {
-            this.listRef.current.lastChild.scrollIntoView();
-          } catch {
-            // no-op
-          }
-
-          try {
-            this.messageRef.current.focus();
-          } catch {
-            // no-op
-          }
-        });
-      },
+    const pending = (room.messages || []).filter(
+      (m) =>
+        m.message &&
+        m.message.trim() &&
+        !(roomMessageKey(m) in translationsRef.current) &&
+        (!m.self || !translation.recallOutgoing(m.message)),
     );
-  };
 
-  joinRoom = async (roomName) => {
-    await rooms.join({ roomName });
-    await this.fetchJoinedRooms();
-    this.selectRoom(roomName);
-  };
+    if (pending.length === 0) return undefined;
 
-  leaveRoom = async (roomName) => {
-    await rooms.leave({ roomName });
-    await this.fetchJoinedRooms();
-    this.selectRoom(this.getFirstRoom());
-  };
+    let cancelled = false;
+    translation
+      .translate({
+        targetLanguage: targetLang,
+        texts: pending.map((m) => m.message),
+      })
+      .then((results) => {
+        if (cancelled || !mountedRef.current) return;
+        setTranslations((previous) => {
+          const next = { ...previous };
+          for (const [index, m] of pending.entries()) {
+            next[roomMessageKey(m)] = results[index];
+          }
 
-  validInput = () =>
-    (this.state.active || '').length > 0 &&
-    (this.state.message || '').length > 0;
+          return next;
+        });
+      })
+      .catch(() => {});
 
-  focusInput = () => {
-    this.messageRef.current.focus();
-  };
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    active,
+    autoTranslate,
+    translateStatus.enabled,
+    targetLang,
+    room.messages,
+  ]);
 
-  formatTimestamp = (timestamp) => {
-    const date = parseUtcDate(timestamp);
-    const dtfUS = new Intl.DateTimeFormat('en', {
-      hour: 'numeric',
-      minute: '2-digit',
-    });
+  // ── Sending ──────────────────────────────────────────────────────────────
 
-    return dtfUS.format(date);
-  };
-
-  sendMessage = async () => {
-    const { active, message, replyTranslate, targetLang, translateEnabled } =
-      this.state;
-
-    if (!this.validInput()) {
-      return;
-    }
+  const sendMessage = useCallback(async () => {
+    if (!active || !message.trim()) return;
 
     let toSend = message;
-    if (translateEnabled && replyTranslate) {
-      const lang = await this.resolveReplyLang();
+    if (translateStatus.enabled && replyTranslate) {
+      const lang = await resolveReplyLang();
       if (lang && lang !== targetLang.toUpperCase()) {
         try {
           const [translated] = await translation.translate({
@@ -507,7 +429,6 @@ class Rooms extends Component {
           });
           if (translated?.text) {
             toSend = translated.text;
-            // Remember what we typed so the sent bubble can reveal the original.
             translation.rememberOutgoing(toSend, message, lang);
           }
         } catch {
@@ -517,259 +438,559 @@ class Rooms extends Component {
     }
 
     await rooms.sendMessage({ message: toSend, roomName: active });
-    this.setState({ message: '' });
-  };
+    setMessage('');
+    fetchActiveRoom();
+  }, [
+    active,
+    message,
+    replyTranslate,
+    resolveReplyLang,
+    targetLang,
+    translateStatus.enabled,
+    fetchActiveRoom,
+  ]);
 
-  handleEmojiSelect = (emoji) => {
-    const input = this.messageRef?.current;
-    const { message } = this.state;
-    const start = input?.selectionStart ?? message.length;
-    const end = input?.selectionEnd ?? message.length;
+  const handleEmojiSelect = useCallback(
+    (emoji) => {
+      const input = inputRef.current;
+      const start = input?.selectionStart ?? message.length;
+      const end = input?.selectionEnd ?? message.length;
 
-    this.setState(
-      { message: message.slice(0, start) + emoji + message.slice(end) },
-      () => {
-        if (!input) return;
-        input.focus();
+      setMessage(
+        (previous) => previous.slice(0, start) + emoji + previous.slice(end),
+      );
+
+      setTimeout(() => {
+        input?.focus();
         const cursor = start + emoji.length;
-        input.setSelectionRange(cursor, cursor);
-      },
+        input?.setSelectionRange(cursor, cursor);
+      }, 0);
+    },
+    [message],
+  );
+
+  // ── Context menu ─────────────────────────────────────────────────────────
+
+  const openContextMenu = useCallback((event, msg) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({ left: event.clientX, top: event.clientY, msg });
+  }, []);
+
+  const handleReply = useCallback(() => {
+    setMessage(
+      (previous) =>
+        `${previous}[${contextMenu.msg.username}] ${contextMenu.msg.message} --> `,
     );
+    setContextMenu(null);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }, [contextMenu]);
+
+  const handleUserProfile = useCallback(() => {
+    history.push('/users', { user: contextMenu.msg.username });
+    setContextMenu(null);
+  }, [contextMenu, history]);
+
+  const handleBrowseShares = useCallback(() => {
+    history.push('/browse', { user: contextMenu.msg.username });
+    setContextMenu(null);
+  }, [contextMenu, history]);
+
+  // ── Resizable divider ────────────────────────────────────────────────────
+
+  const onDividerMouseDown = (e) => {
+    e.preventDefault();
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+
+    dividerMoveRef.current = (moveEvent) => {
+      const rect = rootRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setSidebarWidth(
+        Math.min(
+          SIDEBAR_MAX,
+          Math.max(SIDEBAR_MIN, moveEvent.clientX - rect.left),
+        ),
+      );
+    };
+
+    const onMouseUp = () => {
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      setSidebarWidth((w) => {
+        prefs.set(SIDEBAR_WIDTH_KEY, w);
+        return w;
+      });
+      document.removeEventListener('mousemove', dividerMoveRef.current);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', dividerMoveRef.current);
+    document.addEventListener('mouseup', onMouseUp);
   };
 
-  handleContextMenu = (clickEvent, message) => {
-    clickEvent.preventDefault();
-    this.setState({
-      contextMenu: {
-        message,
-        open: true,
-        x: clickEvent.pageX,
-        y: clickEvent.pageY,
-      },
-    });
-  };
+  // ── Derived sidebar lists ────────────────────────────────────────────────
 
-  handleCloseContextMenu = () => {
-    this.setState((previousState) => ({
-      contextMenu: {
-        ...previousState.contextMenu,
-        open: false,
-      },
-    }));
-  };
+  const availableByName = useMemo(() => {
+    const map = new Map();
+    for (const r of availableRooms) map.set(r.name, r);
+    return map;
+  }, [availableRooms]);
 
-  handleReply = () => {
-    this.setState(
-      (previousState) => ({
-        message: `[${previousState.contextMenu.message.username}] ${previousState.contextMenu.message.message} --> `,
-      }),
-      () => this.focusInput(),
-    );
-  };
+  const joinedRooms = useMemo(
+    () =>
+      joinedNames.map((name) => ({
+        name,
+        userCount:
+          availableByName.get(name)?.userCount ??
+          (name === active ? room.users.length : undefined),
+      })),
+    [joinedNames, availableByName, active, room.users.length],
+  );
 
-  handleUserProfile = () => {
-    this.props.history.push('/users', {
-      user: this.state.contextMenu.message.username,
-    });
-  };
+  const query = search.trim().toLowerCase();
 
-  handleBrowseShares = () => {
-    this.props.history.push('/browse', {
-      user: this.state.contextMenu.message.username,
-    });
-  };
+  const joinedFiltered = useMemo(
+    () =>
+      joinedRooms
+        .filter((r) => r.name.toLowerCase().includes(query))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [joinedRooms, query],
+  );
 
-  renderContextMenu() {
-    const { contextMenu } = this.state;
-    return (
-      <Portal open={contextMenu.open}>
+  const browseFiltered = useMemo(
+    () =>
+      availableRooms
+        .filter(
+          (r) =>
+            !joinedNames.includes(r.name) &&
+            r.name.toLowerCase().includes(query),
+        )
+        .sort((a, b) => b.userCount - a.userCount),
+    [availableRooms, joinedNames, query],
+  );
+
+  const noMatches = joinedFiltered.length === 0 && browseFiltered.length === 0;
+  const exactExists =
+    query.length > 0 &&
+    (joinedNames.some((n) => n.toLowerCase() === query) ||
+      availableRooms.some((r) => r.name.toLowerCase() === query));
+
+  // ── Messages, grouped for a flat Discord-style render ───────────────────
+
+  const groups = useMemo(() => groupByDate(room.messages), [room.messages]);
+
+  const flatItems = useMemo(() => {
+    const result = [];
+    for (const group of groups) {
+      result.push({ type: 'date', label: group.label });
+      for (const [index, m] of group.messages.entries()) {
+        const previous = group.messages[index - 1];
+        result.push({
+          type: 'msg',
+          msg: m,
+          showHeader: !previous || previous.username !== m.username,
+        });
+      }
+    }
+
+    return result;
+  }, [groups]);
+
+  useEffect(() => {
+    const el = messagesRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [flatItems.length]);
+
+  return (
+    <>
+      <div
+        className="sr-root rooms-root"
+        ref={rootRef}
+      >
+        {/* ── Sidebar ── */}
         <div
-          className="ui vertical buttons popup-menu"
-          style={{
-            left: contextMenu.x,
-            maxHeight: `calc(100vh - ${contextMenu.y}px)`,
-            top: contextMenu.y,
-          }}
+          className="sr-sidebar"
+          style={{ width: sidebarWidth, minWidth: sidebarWidth }}
         >
-          <Button
-            className="ui compact button popup-option"
-            onClick={this.handleReply}
-          >
-            Reply
-          </Button>
-          <Button
-            className="ui compact button popup-option"
-            onClick={this.handleUserProfile}
-          >
-            User Profile
-          </Button>
-          <Button
-            className="ui compact button popup-option"
-            onClick={this.handleBrowseShares}
-          >
-            Browse Shares
-          </Button>
-        </div>
-      </Portal>
-    );
-  }
-
-  render() {
-    const { active = [], joined = [], loading, room } = this.state;
-
-    return (
-      <div className="rooms">
-        <Segment
-          className="rooms-segment"
-          raised
-        >
-          <div className="rooms-segment-icon">
-            <Icon
-              name="comments"
-              size="big"
-            />
+          <div className="sr-sidebar-top">
+            <span className="chat-sidebar-title">
+              <Hash
+                size={14}
+                strokeWidth={2}
+              />
+              Rooms
+            </span>
           </div>
-          <RoomMenu
-            active={active}
-            joinRoom={this.joinRoom}
-            joined={joined}
-            onRoomChange={(name) => this.selectRoom(name)}
-          />
-        </Segment>
-        {active?.length === 0 ? (
-          <PlaceholderSegment
-            caption="No rooms to display"
-            icon="comments"
-          />
-        ) : (
-          <Card
-            className="room-active-card"
-            raised
-          >
-            <Card.Content onClick={() => this.focusInput()}>
-              <Card.Header>
-                <Icon
-                  color="green"
-                  name="circle"
-                />
-                {active}
-                {this.state.translateEnabled && (
-                  <Icon
-                    className="room-translate-button"
-                    color={this.state.autoTranslate ? 'blue' : 'grey'}
-                    link
-                    name="language"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      this.toggleAutoTranslate();
-                    }}
-                    title={
-                      this.state.autoTranslate
-                        ? `Auto-translating to ${translation.languageName(this.state.targetLang)}`
-                        : 'Auto-translate messages'
-                    }
+          <div className="room-search-wrap">
+            <div className="sr-input-wrap">
+              <SearchIcon
+                className="sr-input-icon"
+                size={13}
+              />
+              <input
+                className="sr-input"
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search rooms…"
+                type="text"
+                value={search}
+              />
+            </div>
+          </div>
+
+          <div className="sr-search-list">
+            {joinedFiltered.length > 0 && (
+              <>
+                <div className="chat-conv-section-label">Joined</div>
+                {joinedFiltered.map((r) => (
+                  <RoomListItem
+                    active={active === r.name}
+                    joined
+                    key={r.name}
+                    onSelect={handleSelect}
+                    room={r}
                   />
-                )}
-                <Icon
-                  className="close-button"
-                  color="red"
-                  link
-                  name="close"
-                  onClick={() => this.leaveRoom(active)}
-                />
-              </Card.Header>
-              <div className="room">
-                {loading ? (
-                  <Dimmer
-                    active
-                    inverted
+                ))}
+              </>
+            )}
+            {browseFiltered.length > 0 && (
+              <>
+                <div className="chat-conv-section-label">All Rooms</div>
+                {browseFiltered.map((r) => (
+                  <RoomListItem
+                    active={false}
+                    joined={false}
+                    joining={joiningRoom === r.name}
+                    key={r.name}
+                    onSelect={handleSelect}
+                    room={r}
+                  />
+                ))}
+              </>
+            )}
+            {noMatches && query.length === 0 && (
+              <div className="sr-search-list-empty">No rooms available</div>
+            )}
+            {noMatches && query.length > 0 && !exactExists && (
+              <button
+                className="sr-search-item room-join-custom"
+                disabled={joiningRoom === search.trim()}
+                onClick={() => handleSelect(search.trim())}
+                type="button"
+              >
+                <span className="sr-search-item-icon">
+                  <Plus
+                    size={13}
+                    strokeWidth={2}
+                  />
+                </span>
+                <span className="sr-search-item-text">
+                  Join &ldquo;{search.trim()}&rdquo;
+                </span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* ── Resize divider ── */}
+        <div
+          aria-orientation="vertical"
+          className="sr-divider"
+          onMouseDown={onDividerMouseDown}
+          role="separator"
+        />
+
+        {/* ── Main panel ── */}
+        <div className="sr-main">
+          {active ? (
+            <div className="chat-main">
+              <div className="chat-header">
+                <div className="chat-header-avatar room-header-avatar">
+                  <Hash size={16} />
+                </div>
+                <div className="chat-header-info">
+                  <span className="chat-header-name">{active}</span>
+                </div>
+                <div className="sr-detail-header-actions">
+                  {translateStatus.enabled && (
+                    <button
+                      className={`sr-btn hover-fx chat-translate-toggle${autoTranslate ? ' chat-translate-toggle--on' : ''}`}
+                      onClick={toggleAutoTranslate}
+                      title={
+                        autoTranslate
+                          ? `Auto-translating to ${translation.languageName(targetLang)}`
+                          : 'Auto-translate messages'
+                      }
+                      type="button"
+                    >
+                      <Languages size={13} />{' '}
+                      {autoTranslate
+                        ? `Translating → ${targetLang}`
+                        : 'Translate'}
+                    </button>
+                  )}
+                  <button
+                    className={`sr-btn hover-fx${showUsers ? ' chat-translate-toggle--on' : ''}`}
+                    onClick={() => setShowUsers((v) => !v)}
+                    title={showUsers ? 'Hide member list' : 'Show member list'}
+                    type="button"
                   >
-                    <Loader inverted />
-                  </Dimmer>
+                    <Users size={13} /> {room.users.length}
+                  </button>
+                  <button
+                    className="sr-btn sr-btn--danger hover-fx"
+                    onClick={() => leaveRoom(active)}
+                    title="Leave room"
+                    type="button"
+                  >
+                    <LogOut size={13} /> Leave
+                  </button>
+                </div>
+              </div>
+
+              <div
+                className="chat-messages room-messages"
+                ref={messagesRef}
+              >
+                {loading ? (
+                  <div className="chat-loading">
+                    <span className="chat-loading-dot" />
+                    <span className="chat-loading-dot" />
+                    <span className="chat-loading-dot" />
+                  </div>
+                ) : flatItems.length === 0 ? (
+                  <div className="chat-empty-state">
+                    <div className="chat-empty-avatar room-header-avatar">
+                      <Hash size={22} />
+                    </div>
+                    <p>
+                      No messages yet in <strong>{active}</strong>
+                    </p>
+                  </div>
                 ) : (
-                  <>
-                    <Segment.Group>
-                      <Segment className="room-history">
-                        <Ref innerRef={this.listRef}>
-                          <List>
-                            <RoomMessageHistory
-                              autoTranslate={this.state.autoTranslate}
-                              formatTimestamp={this.formatTimestamp}
-                              messages={room.messages}
-                              onHandleContextMenu={this.handleContextMenu}
-                              onToggleOriginal={this.handleToggleOriginal}
-                              showOriginal={this.state.showOriginal}
-                              targetLang={this.state.targetLang}
-                              translateEnabled={this.state.translateEnabled}
-                              translations={this.state.translations}
-                            />
-                          </List>
-                        </Ref>
-                      </Segment>
-                      <Segment className="room-input">
-                        <EmojiPickerButton onSelect={this.handleEmojiSelect} />
-                        {this.state.translateEnabled && (
-                          <Icon
-                            className="room-reply-toggle"
-                            color={this.state.replyTranslate ? 'blue' : 'grey'}
-                            link
-                            name="globe"
-                            onClick={() => this.toggleReplyTranslate()}
-                            title={
-                              this.state.replyTranslate
-                                ? "Reply translation on — your message is translated into the other user's language before sending"
-                                : 'Reply in their language'
-                            }
-                          />
+                  flatItems.map((item) => {
+                    if (item.type === 'date') {
+                      return (
+                        <div
+                          className="chat-date-sep"
+                          key={`date-${item.label}`}
+                        >
+                          <span>{item.label}</span>
+                        </div>
+                      );
+                    }
+
+                    const m = item.msg;
+                    const key = roomMessageKey(m);
+                    const tr = translations[key];
+                    const canTranslate =
+                      translateStatus.enabled && autoTranslate && !m.self;
+                    const translatedDiffers =
+                      Boolean(tr?.text) &&
+                      Boolean(tr?.detectedSourceLanguage) &&
+                      baseLang(tr.detectedSourceLanguage) !==
+                        targetLang.toUpperCase();
+                    const viewingOriginal = showOriginal.has(key);
+                    const showTranslated =
+                      canTranslate && translatedDiffers && !viewingOriginal;
+
+                    const captured = m.self
+                      ? translation.recallOutgoing(m.message)
+                      : null;
+                    const backTranslation =
+                      m.self &&
+                      !captured &&
+                      Boolean(tr?.text) &&
+                      Boolean(tr?.detectedSourceLanguage) &&
+                      baseLang(tr.detectedSourceLanguage) !==
+                        targetLang.toUpperCase()
+                        ? tr
+                        : null;
+                    const selfForeign =
+                      (Boolean(captured) && captured.original !== m.message) ||
+                      Boolean(backTranslation);
+                    const selfExact = Boolean(captured);
+                    const selfInLang = captured
+                      ? captured.original
+                      : backTranslation?.text;
+                    const selfSourceLang = captured
+                      ? captured.lang
+                      : backTranslation?.detectedSourceLanguage;
+                    const showSelfInLang = selfForeign && viewingOriginal;
+
+                    return (
+                      <div
+                        className={`room-msg-row${item.showHeader ? '' : ' room-msg-row--cont'}`}
+                        key={key}
+                        onContextMenu={(e) => openContextMenu(e, m)}
+                      >
+                        {item.showHeader ? (
+                          <div
+                            className="chat-bubble-avatar room-msg-avatar"
+                            style={{ background: avatarColor(m.username) }}
+                          >
+                            {avatarInitial(m.username)}
+                          </div>
+                        ) : (
+                          <div className="room-msg-gutter">
+                            <span className="room-msg-time-ghost">
+                              {formatTimestamp(m.timestamp)}
+                            </span>
+                          </div>
                         )}
-                        <Input
-                          action={{
-                            className: 'room-message-button',
-                            disabled: !this.validInput(),
-                            icon: (
-                              <Icon
-                                color="green"
-                                name="send"
-                              />
-                            ),
-                            onClick: this.sendMessage,
-                          }}
-                          fluid
-                          input={
-                            <input
-                              autoComplete="off"
-                              data-lpignore="true"
-                              id="room-message-input"
-                              onChange={(event) =>
-                                this.setState({ message: event.target.value })
-                              }
-                              type="text"
-                              value={this.state.message}
-                            />
-                          }
-                          onKeyUp={(event) =>
-                            event.key === 'Enter' ? this.sendMessage() : ''
-                          }
-                          ref={(input) =>
-                            (this.messageRef = input && input.inputRef)
-                          }
-                          transparent
-                        />
-                      </Segment>
-                    </Segment.Group>
-                    <Segment className="room-users">
-                      <RoomUserList users={room.users} />
-                    </Segment>
-                  </>
+                        <div className="room-msg-body">
+                          {item.showHeader && (
+                            <div className="room-msg-header">
+                              <UsernameLink username={m.username} />
+                              <span className="room-msg-time">
+                                {formatTimestamp(m.timestamp)}
+                              </span>
+                            </div>
+                          )}
+                          <div className="room-msg-text">
+                            {m.self
+                              ? showSelfInLang
+                                ? selfInLang
+                                : m.message
+                              : showTranslated
+                                ? tr.text
+                                : m.message}
+                          </div>
+                          {canTranslate && translatedDiffers && (
+                            <button
+                              className="chat-translate-note"
+                              onClick={() => toggleShowOriginal(key)}
+                              type="button"
+                            >
+                              {showTranslated
+                                ? `Translated from ${translation.languageName(tr.detectedSourceLanguage)} · Show original`
+                                : 'Show translation'}
+                            </button>
+                          )}
+                          {selfForeign && (
+                            <button
+                              className="chat-translate-note"
+                              onClick={() => toggleShowOriginal(key)}
+                              type="button"
+                            >
+                              {showSelfInLang
+                                ? 'Show sent message'
+                                : `Sent in ${translation.languageName(selfSourceLang)} · ${selfExact ? 'Show original' : `Show in ${translation.languageName(targetLang)}`}`}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
                 )}
               </div>
-            </Card.Content>
-          </Card>
+
+              <div className="chat-input-bar">
+                <EmojiPickerButton onSelect={handleEmojiSelect} />
+                {translateStatus.enabled && (
+                  <button
+                    className={`chat-reply-toggle hover-fx${replyTranslate ? ' chat-reply-toggle--on' : ''}`}
+                    onClick={toggleReplyTranslate}
+                    title={
+                      replyTranslate
+                        ? "Reply translation on — your message is translated into the other person's language before sending"
+                        : 'Reply in their language'
+                    }
+                    type="button"
+                  >
+                    <Globe
+                      size={16}
+                      strokeWidth={2}
+                    />
+                  </button>
+                )}
+                <input
+                  autoComplete="off"
+                  className="chat-input-field"
+                  data-lpignore="true"
+                  onChange={(e) => setMessage(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      sendMessage();
+                    }
+                  }}
+                  placeholder={
+                    replyTranslate
+                      ? `Reply in ${active}'s language…`
+                      : `Message #${active}…`
+                  }
+                  ref={inputRef}
+                  type="text"
+                  value={message}
+                />
+                <button
+                  className="chat-send-btn hover-fx"
+                  disabled={!message.trim()}
+                  onClick={sendMessage}
+                  title="Send"
+                  type="button"
+                >
+                  <Send
+                    size={16}
+                    strokeWidth={2}
+                  />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="sr-empty">
+              <Hash
+                size={32}
+                strokeWidth={1.25}
+              />
+              <p>Search for a room or pick one on the left to join it</p>
+            </div>
+          )}
+        </div>
+
+        {/* ── Member list ── */}
+        {active && showUsers && (
+          <div className="room-users-panel">
+            <div className="room-users-panel-header">
+              Members — {room.users.length}
+            </div>
+            <RoomUserList users={room.users} />
+          </div>
         )}
-        {this.renderContextMenu()}
       </div>
-    );
-  }
-}
+
+      {contextMenu && (
+        <div
+          className="chat-ctx-menu"
+          style={{ left: contextMenu.left, top: contextMenu.top }}
+        >
+          <div className="chat-ctx-username">{contextMenu.msg.username}</div>
+          <button
+            className="chat-ctx-item"
+            onClick={handleReply}
+            type="button"
+          >
+            Reply
+          </button>
+          <button
+            className="chat-ctx-item"
+            onClick={handleUserProfile}
+            type="button"
+          >
+            User Profile
+          </button>
+          <button
+            className="chat-ctx-item"
+            onClick={handleBrowseShares}
+            type="button"
+          >
+            Browse Shares
+          </button>
+        </div>
+      )}
+    </>
+  );
+};
 
 export default withRouter(Rooms);
