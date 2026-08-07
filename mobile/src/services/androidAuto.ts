@@ -30,19 +30,15 @@
 import TrackPlayer, { MediaItemPlayable } from 'react-native-track-player';
 import { contentTypeFor } from '../lib/mimeTypes';
 import {
-  getArtists,
-  getAlbums,
   getFolders,
-  getRecentlyAdded,
   getTracks,
   getArtworkUrl,
   getStreamUrl,
   getTrackTitle,
   type MusicTrack,
-  type MusicAlbum,
 } from '../api/musicLibrary';
 import { ARTWORK_THUMB_SIZE, PLAYER_ART_SIZE } from './artworkCache';
-import { getPlayHistory, type PlayRecord } from '../api/libraryActivity';
+import { type PlayRecord } from '../api/libraryActivity';
 import {
   getLocalAlbums,
   getLocalAlbumTracks,
@@ -77,19 +73,13 @@ type BrowseItem = {
 type BrowseTree = Record<string, BrowseItem[]>;
 
 const ROOT = '/';
-const TAB_PLAYED = 'aa:played';
-const TAB_RECENT = 'aa:recent';
-const TAB_ARTISTS = 'aa:artists';
 const TAB_FOLDERS = 'aa:folders';
 const TAB_LOCAL = 'aa:local';
 const TAB_LOCAL_ALBUMS = 'aa:local:albums';
 const TAB_LOCAL_FOLDERS = 'aa:local:folders';
-const PREFIX_ARTIST = 'aa:artist:';
-const PREFIX_ALBUM = 'aa:album:';
 const PREFIX_FOLDER = 'aa:folder:';
 const PREFIX_LOCAL_ALBUM = 'aa:local:album:';
 const PREFIX_LOCAL_FOLDER = 'aa:local:folder:';
-const SEP = ''; // album mediaId = aa:album:<artist><SEP><album>
 
 // Accumulating tree — every change re-pushes the full dict to native.
 const tree: BrowseTree = {};
@@ -160,9 +150,6 @@ const localPlayableItem = (track: MusicTrack): BrowseItem => ({
   playable: MediaItemPlayable.MediaPlayable,
 });
 
-const trackPlayableItem = (track: MusicTrack): BrowseItem =>
-  isLocalPath(track.path) ? localPlayableItem(track) : playableItem(track);
-
 // A PlayRecord lacks most MusicTrack fields; build a usable stub for queueing.
 const playRecordToTrack = (r: PlayRecord): MusicTrack => ({
   path: r.path,
@@ -183,9 +170,6 @@ const playRecordToTrack = (r: PlayRecord): MusicTrack => ({
   key: null,
   fileSize: null,
 });
-
-const albumNodeId = (a: MusicAlbum) =>
-  PREFIX_ALBUM + encodeURIComponent(a.albumArtist ?? a.artist) + SEP + encodeURIComponent(a.album);
 
 const recordTracks = (nodeId: string, tracks: MusicTrack[]) => {
   tracksByNode.set(nodeId, tracks);
@@ -234,39 +218,11 @@ const loadNode = async (mediaId: string): Promise<void> => {
     await push();
     return;
   }
-  if (mediaId === TAB_PLAYED) {
-    const history = await getPlayHistory(50);
-    const stubs = history.map(playRecordToTrack);
-    tree[mediaId] = chunked(mediaId, stubs.map(trackPlayableItem));
-    recordTracks(mediaId, stubs);
-  } else if (mediaId === TAB_RECENT) {
-    const albums = await getRecentlyAdded(30);
-    tree[mediaId] = chunked(mediaId, albums.map((a) =>
-      browsable(albumNodeId(a), a.album, a.artist, a.coverPath ? (getArtworkUrl(a.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
-    ));
-  } else if (mediaId === TAB_ARTISTS) {
-    const artists = await getArtists();
-    tree[mediaId] = chunked(mediaId, artists.map((a) =>
-      browsable(PREFIX_ARTIST + encodeURIComponent(a.artist), a.artist, undefined, a.coverPath ? (getArtworkUrl(a.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
-    ));
-  } else if (mediaId === TAB_FOLDERS) {
+  if (mediaId === TAB_FOLDERS) {
     const folders = await getFolders();
     tree[mediaId] = chunked(mediaId, folders.map((f) =>
       browsable(PREFIX_FOLDER + encodeURIComponent(f.path), f.name, undefined, f.coverPath ? (getArtworkUrl(f.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
     ));
-  } else if (mediaId.startsWith(PREFIX_ARTIST)) {
-    const artist = decodeURIComponent(mediaId.slice(PREFIX_ARTIST.length));
-    const albums = await getAlbums(artist);
-    tree[mediaId] = chunked(mediaId, albums.map((a) =>
-      browsable(albumNodeId(a), a.album, a.artist, a.coverPath ? (getArtworkUrl(a.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
-    ));
-  } else if (mediaId.startsWith(PREFIX_ALBUM)) {
-    const [artistEnc, albumEnc] = mediaId.slice(PREFIX_ALBUM.length).split(SEP);
-    const artist = decodeURIComponent(artistEnc ?? '');
-    const album = decodeURIComponent(albumEnc ?? '');
-    const res = await getTracks({ album, artist, limit: 500 });
-    tree[mediaId] = chunked(mediaId, res.tracks.map(playableItem));
-    recordTracks(mediaId, res.tracks);
   } else if (mediaId.startsWith(PREFIX_FOLDER)) {
     const folder = decodeURIComponent(mediaId.slice(PREFIX_FOLDER.length));
     // One page tells us the size of the folder. Anything bigger becomes numbered page nodes that
@@ -334,11 +290,8 @@ export const buildAndroidAutoTree = async (): Promise<void> => {
   // empty list — because we were still hydrating the session — and it shows "No items" until the
   // next connection, no matter what we notify afterwards.
   tree[ROOT] = [
-    tab(TAB_PLAYED, 'Recent'),
-    tab(TAB_RECENT, 'New'),
-    tab(TAB_ARTISTS, 'Artists'),
-    tab(TAB_FOLDERS, 'Folders'),
-    tab(TAB_LOCAL, 'On Device'),
+    tab(TAB_FOLDERS, 'Music from Server'),
+    tab(TAB_LOCAL, 'Music on Device'),
   ];
   await push();
 
@@ -346,9 +299,6 @@ export const buildAndroidAutoTree = async (): Promise<void> => {
   if (!auth.isReady) await auth.hydrate();
   if (!isAuthed()) { buildWhenAuthed(); return; }
   const results = await Promise.allSettled([
-    loadNode(TAB_PLAYED),
-    loadNode(TAB_RECENT),
-    loadNode(TAB_ARTISTS),
     loadNode(TAB_FOLDERS),
     loadNode(TAB_LOCAL),
   ]);
