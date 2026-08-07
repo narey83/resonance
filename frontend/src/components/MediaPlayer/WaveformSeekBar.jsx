@@ -75,7 +75,6 @@ const WaveformSeekBar = ({
   // zoomed into a sub-range of the track. Updated every draw() call.
   const windowRef = useRef({ end: 0, start: 0 });
   const [ready, setReady] = useState(false);
-  const [analysing, setAnalysing] = useState(false);
   const [hoverFraction, setHoverFraction] = useState(null);
   const draggingRef = useRef(false);
 
@@ -84,13 +83,11 @@ const WaveformSeekBar = ({
     onReady(false);
     peaksRef.current = null;
     if (!track?.path) {
-      setAnalysing(false);
       onAnalysing?.(false);
       return undefined;
     }
 
     let cancelled = false;
-    setAnalysing(true);
     onAnalysing?.(true);
 
     // The waveform request below only asks for waveform and loudness, so a track played
@@ -125,7 +122,6 @@ const WaveformSeekBar = ({
       })
       .finally(() => {
         if (cancelled) return;
-        setAnalysing(false);
         onAnalysing?.(false);
       });
 
@@ -469,18 +465,10 @@ const WaveformSeekBar = ({
     if (event.key === 'ArrowLeft') onSeek(Math.max(current - 5, 0));
   };
 
-  if (!ready) {
-    if (!analysing) return null;
-    return (
-      <div
-        className="mp-waveform-seeker mp-waveform-seeker--analysing"
-        style={{ height }}
-      >
-        <span className="media-player-spinner media-player-spinner--sm" />
-        Analyzing waveform…
-      </div>
-    );
-  }
+  // Not ready yet — the caller keeps its plain scrubber live and seekable in the
+  // meantime (and shows its own "analysing" label over it via onAnalysing), so
+  // there is nothing for this component to render until peaks actually arrive.
+  if (!ready) return null;
 
   return (
     <div

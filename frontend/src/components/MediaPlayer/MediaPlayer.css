@@ -1030,14 +1030,28 @@
   touch-action: none;
 }
 
-.mp-waveform-seeker--analysing {
+/* Floats above the plain scrubber (same anchor as the hover time tooltip) while a
+   track's waveform is still decoding, so the bar underneath stays fully seekable
+   instead of being replaced by a "come back later" state. */
+.mp-scrubber-analysing {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--player-text-dim, rgba(255, 255, 255, 0.5));
+  gap: 6px;
+  background: var(--player-tooltip-bg);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 5px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
+
+.mp-scrubber-analysing--mini { font-size: 10px; }
 
 .mp-expanded-controls {
   display: flex;

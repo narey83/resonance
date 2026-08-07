@@ -1148,10 +1148,7 @@ const MediaPlayer = () => {
                   onKeyDown={handleSeekKey}
                   role="slider"
                   style={{
-                    display:
-                      seekerEnabled && (waveformReady || waveformAnalysing)
-                        ? 'none'
-                        : 'block',
+                    display: seekerEnabled && waveformReady ? 'none' : 'block',
                   }}
                   tabIndex={0}
                 >
@@ -1163,6 +1160,12 @@ const MediaPlayer = () => {
                     className="media-player-scrubber-fill"
                     style={{ width: `${progressPct}%` }}
                   />
+                  {seekerEnabled && waveformAnalysing && (
+                    <span className="mp-scrubber-analysing">
+                      <span className="media-player-spinner media-player-spinner--sm" />
+                      Analyzing waveform…
+                    </span>
+                  )}
                 </div>
                 <span className="mp-expanded-time">
                   {formatSeconds(displayDuration)}
@@ -1406,10 +1409,7 @@ const MediaPlayer = () => {
           onMouseMove={handleScrubMove}
           role="slider"
           style={{
-            display:
-              seekerEnabled && (miniWaveformReady || miniWaveformAnalysing)
-                ? 'none'
-                : 'block',
+            display: seekerEnabled && miniWaveformReady ? 'none' : 'block',
           }}
           tabIndex={0}
         >
@@ -1421,6 +1421,12 @@ const MediaPlayer = () => {
             className="media-player-scrubber-fill"
             style={{ width: `${progressPct}%` }}
           />
+          {seekerEnabled && miniWaveformAnalysing && (
+            <span className="mp-scrubber-analysing mp-scrubber-analysing--mini">
+              <span className="media-player-spinner media-player-spinner--sm" />
+              Analyzing waveform…
+            </span>
+          )}
           {scrubHover !== null && (
             <div
               className="media-player-scrubber-tooltip"
