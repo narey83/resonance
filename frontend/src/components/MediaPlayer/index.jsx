@@ -78,8 +78,6 @@ import { createPortal } from 'react-dom';
 import { toast } from 'react-toastify';
 
 const RESUME_POSITION_KEY = 'resonance-player-position';
-const SEEKER_STYLES = ['mono', 'colored'];
-const SEEKER_STYLE_LABELS = { colored: 'Colored', mono: 'Mono' };
 const SEEKER_HEIGHTS = [40, 70, 110, 150];
 const SEEKER_ZOOMS = [1, 2, 4, 8, 16, 32, 64, 128];
 
@@ -311,11 +309,6 @@ const MediaPlayer = () => {
       'mediaPlayer.seekerEnabled',
       prefs.get('mediaPlayer.seekerStyle', 'bar') !== 'bar',
     ),
-  );
-  const [seekerStyle, setSeekerStyle] = useState(() =>
-    prefs.get('mediaPlayer.seekerStyle', 'mono') === 'colored'
-      ? 'colored'
-      : 'mono',
   );
   const [seekerHeight, setSeekerHeight] = useState(() =>
     prefs.get('mediaPlayer.seekerHeight', 40),
@@ -798,15 +791,6 @@ const MediaPlayer = () => {
     prefs.set('mediaPlayer.seekerEnabled', enabled);
   };
 
-  const toggleSeekerStyle = () => {
-    const style =
-      SEEKER_STYLES[
-        (SEEKER_STYLES.indexOf(seekerStyle) + 1) % SEEKER_STYLES.length
-      ];
-    setSeekerStyle(style);
-    prefs.set('mediaPlayer.seekerStyle', style);
-  };
-
   const cycleSeekerHeight = () => {
     const index = SEEKER_HEIGHTS.indexOf(seekerHeight);
     const nextHeight =
@@ -1083,14 +1067,6 @@ const MediaPlayer = () => {
                   <>
                     <button
                       className="mp-seeker-menu-btn hover-fx"
-                      onClick={toggleSeekerStyle}
-                      title={`Click for ${SEEKER_STYLE_LABELS[SEEKER_STYLES[(SEEKER_STYLES.indexOf(seekerStyle) + 1) % SEEKER_STYLES.length]]}`}
-                      type="button"
-                    >
-                      {SEEKER_STYLE_LABELS[seekerStyle]}
-                    </button>
-                    <button
-                      className="mp-seeker-menu-btn hover-fx"
                       onClick={cycleSeekerHeight}
                       title="Make taller"
                       type="button"
@@ -1127,7 +1103,6 @@ const MediaPlayer = () => {
                     onSeek={seekTo}
                     progressPct={progressPct}
                     track={track}
-                    variant={seekerStyle === 'colored' ? 'bands' : 'mono'}
                     zoom={seekerZoom}
                   />
                 )}
@@ -1348,14 +1323,6 @@ const MediaPlayer = () => {
           <>
             <button
               className="mp-seeker-menu-btn hover-fx"
-              onClick={toggleSeekerStyle}
-              title={`Click for ${SEEKER_STYLE_LABELS[SEEKER_STYLES[(SEEKER_STYLES.indexOf(seekerStyle) + 1) % SEEKER_STYLES.length]]}`}
-              type="button"
-            >
-              {SEEKER_STYLE_LABELS[seekerStyle]}
-            </button>
-            <button
-              className="mp-seeker-menu-btn hover-fx"
               onClick={cycleSeekerHeight}
               title="Make taller"
               type="button"
@@ -1388,7 +1355,6 @@ const MediaPlayer = () => {
             onSeek={seekTo}
             progressPct={progressPct}
             track={track}
-            variant={seekerStyle === 'colored' ? 'bands' : 'mono'}
             zoom={seekerZoom}
           />
         )}

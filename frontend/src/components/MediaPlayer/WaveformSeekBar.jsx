@@ -49,7 +49,6 @@ const GRID_OVERSAMPLE = 4;
 
 // SoundCloud-style mirrored bar waveform, click/drag to seek.
 // Falls back to nothing (caller renders the plain bar) when no peak data exists.
-// variant: 'mono' (single accent-coloured bars) or 'bands' (Pioneer-style frequency colouring).
 const WaveformSeekBar = ({
   duration,
   getCurrentTime,
@@ -61,7 +60,6 @@ const WaveformSeekBar = ({
   onSeek,
   progressPct,
   track,
-  variant = 'mono',
   zoom = 1,
 }) => {
   const canvasRef = useRef(null);
@@ -110,9 +108,6 @@ const WaveformSeekBar = ({
 
         peaksRef.current = {
           overall: new Float32Array(data.overallPeaks),
-          low: new Float32Array(data.lowPeaks),
-          mid: new Float32Array(data.midPeaks),
-          high: new Float32Array(data.highPeaks),
         };
         setReady(true);
         onReady(true);
@@ -234,9 +229,6 @@ const WaveformSeekBar = ({
         peaks.overall.length,
       );
       const overallFull = resamplePeaks(peaks.overall, fullSlots);
-      const lowFull = resamplePeaks(peaks.low, fullSlots);
-      const midFull = resamplePeaks(peaks.mid, fullSlots);
-      const highFull = resamplePeaks(peaks.high, fullSlots);
       resampled = {
         source: peaks,
         numberSlots,
@@ -245,23 +237,14 @@ const WaveformSeekBar = ({
         // Fixed, whole-track reference so bar heights stay stable as the
         // window scrolls — recomputing this from only what's currently
         // visible would make the whole waveform rescale ("breathe") as loud
-        // or quiet moments enter/leave the frame. Each band normalises against
-        // its OWN max: bass energy and hi-hat energy live at very different
-        // absolute magnitudes, so a shared scale leaves one band permanently
-        // faint.
+        // or quiet moments enter/leave the frame.
         max: maxOf(overallFull),
-        lowMax: maxOf(lowFull),
-        midMax: maxOf(midFull),
-        highMax: maxOf(highFull),
         overall: overallFull,
-        low: lowFull,
-        mid: midFull,
-        high: highFull,
       };
       resampledRef.current = resampled;
     }
 
-    const { highMax, lowMax, max, midMax } = resampled;
+    const { max } = resampled;
 
     // At zoom > 1, only a window of the track is visible, centred on (and
     // following) the current playback position, clamped so it never scrolls
@@ -300,9 +283,6 @@ const WaveformSeekBar = ({
     // rather than freshly re-aggregating raw high-resolution samples, which is
     // what kills the frame-to-frame jitter.
     const overall = resamplePeaks(resampled.overall, slots, startFrac, endFrac);
-    const low = resamplePeaks(resampled.low, slots, startFrac, endFrac);
-    const mid = resamplePeaks(resampled.mid, slots, startFrac, endFrac);
-    const high = resamplePeaks(resampled.high, slots, startFrac, endFrac);
 
     const context = canvas.getContext('2d');
     context.setTransform(1, 0, 0, 1, 0, 0);
@@ -320,9 +300,8 @@ const WaveformSeekBar = ({
       context.clip();
     };
 
-    // Both variants take their colours from the active theme's tokens rather
-    // than fixed hexes, so light and AMOLED each get a palette that suits the
-    // panel they're drawn on.
+    // Colours come from the active theme's tokens rather than fixed hexes, so
+    // light and AMOLED each get a palette that suits the panel they're drawn on.
     const colours = getColours(canvas);
 
     // Beat grid, anchored at track start — there's no detected downbeat/phase
@@ -358,57 +337,6 @@ const WaveformSeekBar = ({
 
       context.restore();
     };
-
-    if (variant === 'bands') {
-      // Plain source-over layering muddies the three bands into a flat wash:
-      // once a column covers any real span of audio most columns have all three
-      // bands moderately present. Blending them instead makes an overlap mean
-      // something — additively on a dark panel (bands brighten into vivid
-      // combined colour), multiplied on a light one (they darken like ink).
-      context.globalCompositeOperation = colours.blend;
-      const drawBandBars = (playedAlpha) => {
-        for (let slot = 0; slot < slots; slot++) {
-          const totalH = Math.max(2, (overall[slot] / max) * halfH);
-          const x = slot * barWidth;
-
-          // Opacity per frequency band, not a fixed-height stacked slice — each
-          // band's alpha is how present it is RIGHT NOW relative to its own
-          // dynamic range, so a kick-heavy instant reads as solid blue and a
-          // hi-hat-heavy one as the "high" colour, while a full mix blends to
-          // neutral. The 1.4/0.9 weights keep bass/highs perceptually balanced
-          // against mids (DJ-style).
-          const lowAlpha = Math.min(1, (low[slot] / lowMax) * 1.4);
-          const midAlpha = Math.min(1, mid[slot] / midMax);
-          const highAlpha = Math.min(1, (high[slot] / highMax) * 0.9);
-
-          context.globalAlpha = playedAlpha * lowAlpha;
-          context.fillStyle = colours.low;
-          context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
-
-          context.globalAlpha = playedAlpha * midAlpha;
-          context.fillStyle = colours.mid;
-          context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
-
-          context.globalAlpha = playedAlpha * highAlpha;
-          context.fillStyle = colours.high;
-          context.fillRect(x, halfH - totalH, barWidth, totalH * 2);
-        }
-      };
-
-      // Unplayed pass over everything, then the played region on top, clipped
-      // at the exact playhead pixel, so the two passes accumulate to a
-      // full-strength played bar (0.35 + 0.65).
-      drawBandBars(0.35);
-      context.save();
-      clipToPlayed();
-      drawBandBars(0.65);
-      context.restore();
-
-      context.globalAlpha = 1;
-      context.globalCompositeOperation = 'source-over';
-      drawBeatGrid();
-      return;
-    }
 
     const { accent, dim: dimColour } = colours;
 
