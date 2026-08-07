@@ -122,6 +122,9 @@ const Rooms = ({ history }) => {
   const [room, setRoom] = useState({ messages: [], users: [] });
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const [roomsTab, setRoomsTab] = useState(() =>
+    prefs.get('resonance-rooms-tab', 'joined'),
+  );
   const [joiningRoom, setJoiningRoom] = useState(null);
   const [message, setMessage] = useState('');
   const [showUsers, setShowUsers] = useState(true);
@@ -570,11 +573,15 @@ const Rooms = ({ history }) => {
     [availableRooms, joinedNames, query],
   );
 
-  const noMatches = joinedFiltered.length === 0 && browseFiltered.length === 0;
+  const noMatches =
+    roomsTab === 'joined'
+      ? joinedFiltered.length === 0
+      : browseFiltered.length === 0;
   const exactExists =
     query.length > 0 &&
-    (joinedNames.some((n) => n.toLowerCase() === query) ||
-      availableRooms.some((r) => r.name.toLowerCase() === query));
+    (roomsTab === 'joined'
+      ? joinedNames.some((n) => n.toLowerCase() === query)
+      : availableRooms.some((r) => r.name.toLowerCase() === query));
 
   // ── Messages, grouped for a flat Discord-style render ───────────────────
 
@@ -638,38 +645,57 @@ const Rooms = ({ history }) => {
             </div>
           </div>
 
+          <div className="room-tabs">
+            <button
+              className={`room-tab${roomsTab === 'joined' ? ' active' : ''}`}
+              onClick={() => {
+                prefs.set('resonance-rooms-tab', 'joined');
+                setRoomsTab('joined');
+              }}
+              type="button"
+            >
+              Joined
+            </button>
+            <button
+              className={`room-tab${roomsTab === 'browse' ? ' active' : ''}`}
+              onClick={() => {
+                prefs.set('resonance-rooms-tab', 'browse');
+                setRoomsTab('browse');
+              }}
+              type="button"
+            >
+              Browse
+            </button>
+          </div>
+
           <div className="sr-search-list">
-            {joinedFiltered.length > 0 && (
-              <>
-                <div className="chat-conv-section-label">Joined</div>
-                {joinedFiltered.map((r) => (
-                  <RoomListItem
-                    active={active === r.name}
-                    joined
-                    key={r.name}
-                    onSelect={handleSelect}
-                    room={r}
-                  />
-                ))}
-              </>
-            )}
-            {browseFiltered.length > 0 && (
-              <>
-                <div className="chat-conv-section-label">All Rooms</div>
-                {browseFiltered.map((r) => (
-                  <RoomListItem
-                    active={false}
-                    joined={false}
-                    joining={joiningRoom === r.name}
-                    key={r.name}
-                    onSelect={handleSelect}
-                    room={r}
-                  />
-                ))}
-              </>
-            )}
+            {roomsTab === 'joined' &&
+              joinedFiltered.map((r) => (
+                <RoomListItem
+                  active={active === r.name}
+                  joined
+                  key={r.name}
+                  onSelect={handleSelect}
+                  room={r}
+                />
+              ))}
+            {roomsTab === 'browse' &&
+              browseFiltered.map((r) => (
+                <RoomListItem
+                  active={false}
+                  joined={false}
+                  joining={joiningRoom === r.name}
+                  key={r.name}
+                  onSelect={handleSelect}
+                  room={r}
+                />
+              ))}
             {noMatches && query.length === 0 && (
-              <div className="sr-search-list-empty">No rooms available</div>
+              <div className="sr-search-list-empty">
+                {roomsTab === 'joined'
+                  ? "You haven't joined any rooms — try Browse"
+                  : 'No rooms available'}
+              </div>
             )}
             {noMatches && query.length > 0 && !exactExists && (
               <button

@@ -59,6 +59,37 @@
   color: var(--accent);
 }
 
+/* ── Sidebar tab strip (Joined / Browse) ─────────────────────────────────── */
+
+.room-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px;
+  flex-shrink: 0;
+}
+
+.room-tab {
+  flex: 1;
+  padding: 6px 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.12s, background-color 0.12s;
+}
+
+.room-tab:hover {
+  color: var(--text-primary);
+}
+
+.room-tab.active {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
 /* ── Header avatar (static room icon, not per-user) ──────────────────────── */
 
 .room-header-avatar {
@@ -134,7 +165,7 @@
 /* ── Member list panel ───────────────────────────────────────────────────── */
 
 .room-users-panel {
-  width: 210px;
+  width: 260px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -159,6 +190,24 @@
   overflow-y: auto;
   padding: 6px !important;
   margin: 0 !important;
+}
+
+.room-users-panel .list .item {
+  padding: 5px 6px !important;
+}
+
+.room-users-panel .list .item .content {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.room-users-panel .list .item .content .ulink-root {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .room-user-self {
