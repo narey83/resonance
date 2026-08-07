@@ -51,9 +51,8 @@ interface JoinedRowProps {
   colors:     ThemeColors;
   mentions:   number;
   onNavigate: (roomName: string) => void;
-  onLeave:    (room: Room) => void;
 }
-const JoinedRow = React.memo(function JoinedRow({ room, isFirst, isLast, s, colors, mentions, onNavigate, onLeave }: JoinedRowProps) {
+const JoinedRow = React.memo(function JoinedRow({ room, isFirst, isLast, s, colors, mentions, onNavigate }: JoinedRowProps) {
   return (
     <Pressable
       onPress={() => onNavigate(room.name)}
@@ -71,9 +70,6 @@ const JoinedRow = React.memo(function JoinedRow({ room, isFirst, isLast, s, colo
           <Text style={s.mentionBadgeText}>{mentions > 99 ? '99+' : mentions}</Text>
         </View>
       )}
-      <Pressable hitSlop={8} onPress={() => onLeave(room)} style={s.leaveBtn}>
-        <Text style={s.leaveBtnText}>Leave</Text>
-      </Pressable>
       <Ionicons color={colors.textDim} name="chevron-forward" size={16} />
     </Pressable>
   );
@@ -85,7 +81,7 @@ export default function RoomsScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
-  const { joined, mentions, isLoadingJoined, loadJoined, join, leave } = useRoomStore();
+  const { joined, mentions, isLoadingJoined, loadJoined, join } = useRoomStore();
   const [joining, setJoining]       = useState<string | null>(null);
   const [customRoom, setCustomRoom] = useState('');
   const [showCustom, setShowCustom] = useState(false);
@@ -95,10 +91,6 @@ export default function RoomsScreen({ navigation }: Props) {
   const handleNavigate = useCallback((roomName: string) => {
     navigation.navigate('RoomDetail', { roomName });
   }, [navigation]);
-
-  const handleLeave = useCallback((room: Room) => {
-    leave(room.name);
-  }, [leave]);
 
   const handleJoin = useCallback(async (roomName: string) => {
     setJoining(roomName);
@@ -129,9 +121,8 @@ export default function RoomsScreen({ navigation }: Props) {
       colors={colors}
       mentions={mentions[item.name] ?? 0}
       onNavigate={handleNavigate}
-      onLeave={handleLeave}
     />
-  ), [joined.length, s, colors, mentions, handleNavigate, handleLeave]);
+  ), [joined.length, s, colors, mentions, handleNavigate]);
 
   return (
     <View style={s.container}>
@@ -250,9 +241,6 @@ function makeStyles(c: ThemeColors) {
     rowContent: { flex: 1 },
     rowLabel:   { fontSize: Typography.base, fontWeight: '500', color: c.textPrimary },
     rowSub:     { fontSize: Typography.xs, color: c.textMuted, marginTop: 1 },
-
-    leaveBtn:     { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.sm, borderWidth: 1, borderColor: c.danger },
-    leaveBtnText: { fontSize: Typography.xs, fontWeight: '600', color: c.danger },
 
     mentionBadge: {
       minWidth: 18,

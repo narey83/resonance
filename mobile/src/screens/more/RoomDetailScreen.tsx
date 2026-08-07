@@ -29,6 +29,7 @@
 
 import React, { useCallback, useMemo, useState } from 'react';
 import {
+  Alert,
   FlatList,
   Modal,
   Platform,
@@ -77,7 +78,7 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
-  const { joined, messages, loadMessages, sendMessage, clearMentions } = useRoomStore();
+  const { joined, messages, loadMessages, sendMessage, clearMentions, leave } = useRoomStore();
   const room = joined.find((r) => r.name === roomName);
   const thread = useMemo(() => messages[roomName] ?? [], [messages, roomName]);
 
@@ -118,6 +119,20 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
     setActionUser(username);
   };
 
+  const handleLeave = useCallback(() => {
+    Alert.alert('Leave room?', `You'll stop receiving messages from "${roomName}".`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Leave',
+        style: 'destructive',
+        onPress: async () => {
+          await leave(roomName);
+          navigation.goBack();
+        },
+      },
+    ]);
+  }, [roomName, leave, navigation]);
+
   React.useLayoutEffect(() => {
     navigation.setOptions({
       title: roomName,
@@ -140,10 +155,13 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
               )}
             </View>
           </Pressable>
+          <Pressable hitSlop={8} onPress={handleLeave}>
+            <Ionicons color={colors.danger} name="log-out-outline" size={20} />
+          </Pressable>
         </View>
       ),
     });
-  }, [navigation, roomName, colors, room, s, translationEnabled, auto, threadKey, toggleAuto]);
+  }, [navigation, roomName, colors, room, s, translationEnabled, auto, threadKey, toggleAuto, handleLeave]);
 
   useFocusEffect(
     useCallback(() => {
