@@ -120,7 +120,9 @@ const withAndroidAuto = (config) => {
         path.join(config.modRequest.projectRoot, 'assets/aa-placeholder.png'),
         path.join(resDir, 'drawable-nodpi/resonance_placeholder.png'),
       );
-      // The icon the car shows for the app itself (see the <service> above). It has to be an
+      // The icon the car shows for the app itself (see the <service> above). Its backing layer is
+      // white to match the circular plate the car draws behind every app icon — anything else
+      // leaves that plate's edge showing as a ring around the logo. It has to be an
       // adaptive icon: the car draws a circular badge and insets a plain drawable into it, which
       // left a white ring around a dark square. Adaptive icons get masked to the circle instead.
       fs.mkdirSync(path.join(resDir, 'mipmap-anydpi-v26'), { recursive: true });
@@ -140,7 +142,7 @@ const withAndroidAuto = (config) => {
       );
       fs.writeFileSync(
         path.join(resDir, 'values/aa_icon.xml'),
-        '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="aa_icon_background">#202024</color>\n</resources>\n',
+        '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="aa_icon_background">#FFFFFF</color>\n</resources>\n',
       );
       return config;
     },
