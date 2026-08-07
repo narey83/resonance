@@ -121,10 +121,16 @@ const byStateThenTime = (a, b) => {
   return p !== 0 ? p : getTime(a) - getTime(b);
 };
 
-const isActiveState = (state) => !state?.startsWith('Completed');
 const isCompletedState = (state) => Boolean(state?.startsWith('Completed'));
+/* A folder only moves to "Uploaded" once every file in it has finished
+   sending to that user. One straggler keeps the whole folder in "Uploading",
+   matching how Downloads gates folders. */
+const isDirectoryActive = (files) =>
+  files.some((f) => !isCompletedState(f.state));
+const isDirectoryCompleted = (files) =>
+  files.every((f) => isCompletedState(f.state));
 
-const buildGroups = (transfers, stateFilter) =>
+const buildGroups = (transfers, directoryFilter) =>
   (transfers ?? [])
     .map((user) => ({
       ...user,
@@ -135,10 +141,6 @@ const buildGroups = (transfers, stateFilter) =>
           );
           return {
             ...directory,
-            /* Counts span both sections: the section filter strips completed
-               files out of the active group, so a folder-local ratio would
-               always read 0 / n while it uploads. Sent and failed are counted
-               apart because "done" lumped dropped peers in with real uploads. */
             failedTotal: uploads.filter(
               (file) =>
                 isCompletedState(file.state) &&
@@ -148,12 +150,11 @@ const buildGroups = (transfers, stateFilter) =>
             sentTotal: uploads.filter(
               (file) => file.state === 'Completed, Succeeded',
             ).length,
-            files: uploads
-              .filter((file) => stateFilter(file.state))
-              .sort(byStateThenTime),
+            files: uploads.sort(byStateThenTime),
           };
         })
         .filter((directory) => directory.files.length > 0)
+        .filter((directory) => directoryFilter(directory.files))
         .sort((a, b) => maxTime(b.files) - maxTime(a.files)),
     }))
     .filter((user) => user.directories.length > 0)
@@ -489,8 +490,8 @@ const UserGroup = ({
   const totalSpeed = allFiles
     .filter((f) => f.state === 'InProgress')
     .reduce((sum, file) => sum + (file.averageSpeed ?? 0), 0);
-  const activeCount = allFiles.filter((file) =>
-    isActiveState(file.state),
+  const activeCount = allFiles.filter(
+    (file) => !isCompletedState(file.state),
   ).length;
 
   useEffect(() => {
@@ -763,11 +764,11 @@ const UploadsTable = ({
   const [pageSize, setPageSize] = useState(15);
 
   const activeGroups = useMemo(
-    () => buildGroups(transfers, isActiveState),
+    () => buildGroups(transfers, isDirectoryActive),
     [transfers],
   );
   const completedGroups = useMemo(
-    () => buildGroups(transfers, isCompletedState),
+    () => buildGroups(transfers, isDirectoryCompleted),
     [transfers],
   );
 
