@@ -105,14 +105,6 @@ const formatPrivileges = (seconds) => {
 
 const kpiValue = (kpis, name) => kpis?.[name]?.value ?? null;
 
-const parseDeviceName = (raw) => {
-  if (!raw) return { label: null, browserId: null };
-  const m = raw.match(/\(([\da-f]{8})\)$/);
-  return m
-    ? { label: raw.slice(0, raw.length - m[0].length).trim(), browserId: m[1] }
-    : { label: raw, browserId: null };
-};
-
 const DeviceIcon = ({ name }) => {
   const n = (name || '').toLowerCase();
   if (/iphone|ipad|android|pixel|mobile/.test(n))
@@ -220,20 +212,23 @@ const SessionsPanel = () => {
         <div className="session-empty">No active sessions</div>
       ) : (
         sessions.map((s) => {
-          const { browserId, label } = parseDeviceName(s.deviceName);
           return (
             <div
               className={`session-row${s.id === mySessionId ? ' session-row--current' : ''}`}
               key={s.id}
             >
               <span className="session-row-icon">
-                <DeviceIcon name={label} />
+                <DeviceIcon name={s.deviceName} />
               </span>
               <div className="session-row-body">
                 <div className="session-row-device">
-                  {label || <em style={{ opacity: 0.5 }}>Unknown device</em>}
-                  {browserId && (
-                    <span className="session-browser-id">#{browserId}</span>
+                  {s.deviceName || (
+                    <em style={{ opacity: 0.5 }}>Unknown device</em>
+                  )}
+                  {s.deviceId && (
+                    <span className="session-browser-id">
+                      #{s.deviceId.slice(0, 8)}
+                    </span>
                   )}
                   {s.id === mySessionId && (
                     <span className="session-badge">current</span>

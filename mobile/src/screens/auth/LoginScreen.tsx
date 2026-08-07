@@ -42,7 +42,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import { login } from '../../api/session';
-import { getDeviceName, useAuthStore } from '../../store/auth';
+import { getDeviceId, getDeviceName, useAuthStore } from '../../store/auth';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/AuthStack';
 
@@ -67,8 +67,8 @@ export default function LoginScreen({ navigation }: Props) {
     setError('');
     setLoading(true);
     try {
-      const deviceName = await getDeviceName();
-      const data = await login(serverUrl, username, password, deviceName, sessionId);
+      const [deviceName, deviceId] = await Promise.all([getDeviceName(), getDeviceId()]);
+      const data = await login(serverUrl, username, password, deviceName, deviceId, sessionId);
       await setTokens(data.token, data.refreshToken, data.sessionId);
     } catch (e: any) {
       if (e?.response?.status === 401) {

@@ -41,7 +41,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import type { AuthStackParamList } from '../../navigation/AuthStack';
 import { redeemPairingCode } from '../../api/session';
-import { getDeviceName, useAuthStore } from '../../store/auth';
+import { getDeviceId, getDeviceName, useAuthStore } from '../../store/auth';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 
@@ -99,7 +99,8 @@ export default function ScanScreen({ navigation }: Props) {
 
       try {
         const serverUrl = payload.url!.replace(/\/+$/, '');
-        const tokens = await redeemPairingCode(serverUrl, payload.code!, await getDeviceName());
+        const [deviceName, deviceId] = await Promise.all([getDeviceName(), getDeviceId()]);
+        const tokens = await redeemPairingCode(serverUrl, payload.code!, deviceName, deviceId);
 
         // Order matters: the server address has to be stored before the tokens, because the app
         // treats "has token and has url" as signed in and will immediately start calling the API.

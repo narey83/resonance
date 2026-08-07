@@ -62,9 +62,6 @@ const getDeviceName = () => {
   else if (/Linux/.test(ua)) os = 'Linux';
   else os = 'Browser';
 
-  // Include the browser so the session manager can tell apart two logins from the same machine.
-  // Storage is origin-scoped, so each browser (and each origin) already gets its own browserId below;
-  // labelling the browser makes those distinct entries self-explanatory instead of looking duplicated.
   // Order matters: Edge/Opera UAs also contain "Chrome", and Chrome's UA contains "Safari".
   let browser;
   if (/Edg\//.test(ua)) browser = 'Edge';
@@ -74,6 +71,13 @@ const getDeviceName = () => {
   else if (/Safari\//.test(ua)) browser = 'Safari';
   else browser = null;
 
+  return browser ? `${os} · ${browser}` : os;
+};
+
+// A stable per-browser identifier, kept separate from the human-readable deviceName above so the
+// backend can dedupe sessions by identity rather than by parsing an id out of a display label.
+// Storage is origin-scoped, so this is naturally one id per browser (or private-browsing session).
+const getDeviceId = () => {
   const key = 'resonance_browser_id';
   let browserId = localStorage.getItem(key);
   if (!browserId) {
@@ -81,8 +85,7 @@ const getDeviceName = () => {
     localStorage.setItem(key, browserId);
   }
 
-  const platform = browser ? `${os} · ${browser}` : os;
-  return `${platform} (${browserId.slice(0, 8)})`;
+  return browserId;
 };
 
 export const setup = async ({ username, password }) => {
@@ -91,6 +94,7 @@ export const setup = async ({ username, password }) => {
       password,
       username,
       deviceName: getDeviceName(),
+      deviceId: getDeviceId(),
       existingSessionId: getSessionId(),
     })
   ).data;
@@ -121,6 +125,7 @@ export const login = async ({ username, password, rememberMe = false }) => {
       password,
       username,
       deviceName: getDeviceName(),
+      deviceId: getDeviceId(),
       existingSessionId: getSessionId(),
     })
   ).data;

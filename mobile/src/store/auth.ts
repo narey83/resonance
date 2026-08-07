@@ -28,6 +28,7 @@
 // </copyright>
 
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 import { create } from 'zustand';
 
 const KEYS = {
@@ -36,6 +37,7 @@ const KEYS = {
   refreshToken: 'resonance_refresh_token',
   sessionId:    'resonance_session_id',
   deviceName:   'resonance_device_name',
+  deviceId:     'resonance_device_id',
 };
 
 // ASP.NET Core issues the role claim under the long claim-type URI, not a
@@ -148,4 +150,29 @@ export const getDeviceName = async (): Promise<string> => {
   const name = `${base} (${randomHex8()})`;
   await SecureStore.setItemAsync(KEYS.deviceName, name);
   return name;
+};
+
+// A stable per-install identifier, distinct from the human-readable deviceName above, so the
+// backend can tell "same phone logging in again" from "a new device" even if deviceName's random
+// suffix ever gets regenerated. Android ID / iOS identifierForVendor survive an app reinstall
+// (they're tied to the device, not to this app's storage) — a random value stashed in SecureStore
+// does not, which was the root cause of duplicate sessions for one physical device.
+export const getDeviceId = async (): Promise<string> => {
+  const Application = await import('expo-application');
+
+  if (Platform.OS === 'android') {
+    const id = Application.getAndroidId();
+    if (id) return id;
+  } else if (Platform.OS === 'ios') {
+    const id = await Application.getIosIdForVendorAsync();
+    if (id) return id;
+  }
+
+  // Fallback (web, or the rare case the platform id comes back empty): a random id persisted
+  // in SecureStore. Not as durable as the platform id, but only used when that's unavailable.
+  const stored = await SecureStore.getItemAsync(KEYS.deviceId);
+  if (stored) return stored;
+  const generated = randomHex8() + randomHex8();
+  await SecureStore.setItemAsync(KEYS.deviceId, generated);
+  return generated;
 };

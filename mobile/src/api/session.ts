@@ -43,11 +43,12 @@ export const login = async (
   username: string,
   password: string,
   deviceName: string,
+  deviceId: string,
   existingSessionId?: string | null,
 ): Promise<TokenResponse> => {
   const { data } = await axios.post<TokenResponse>(
     `${serverUrl}/api/v0/session`,
-    { username, password, deviceName, existingSessionId },
+    { username, password, deviceName, deviceId, existingSessionId },
     { timeout: 10000 },
   );
   return data;
@@ -63,10 +64,11 @@ export const redeemPairingCode = async (
   serverUrl: string,
   code: string,
   deviceName: string,
+  deviceId: string,
 ): Promise<TokenResponse> => {
   const { data } = await axios.post<TokenResponse>(
     `${serverUrl}/api/v0/session/pair/redeem`,
-    { code, deviceName },
+    { code, deviceName, deviceId },
     { timeout: 10000 },
   );
   return data;

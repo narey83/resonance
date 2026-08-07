@@ -138,7 +138,7 @@ namespace resonance.Core.API
 
             var user = Users.Create(request.Username, request.Password, Role.Administrator);
 
-            var (refreshToken, sessionId) = Sessions.CreateSession(user.Username, request.DeviceName, GetCallerIp(), request.ExistingSessionId);
+            var (refreshToken, sessionId) = Sessions.CreateSession(user.Username, request.DeviceName, request.DeviceId, GetCallerIp(), request.ExistingSessionId);
             var jwt = Security.GenerateJwt(user.Username, user.Role, sessionId: sessionId);
             return Ok(new TokenResponse(jwt, refreshToken, sessionId));
         }
@@ -161,7 +161,7 @@ namespace resonance.Core.API
                 return BadRequest("Username and password are required");
             }
 
-            var (token, error) = IssueToken(login.Username, login.Password, login.DeviceName, login.ExistingSessionId);
+            var (token, error) = IssueToken(login.Username, login.Password, login.DeviceName, login.DeviceId, login.ExistingSessionId);
             return error ?? Ok(token);
         }
 
@@ -180,7 +180,7 @@ namespace resonance.Core.API
         [ProducesResponseType(429)]
         public IActionResult Token([FromForm] OAuthTokenRequest request)
         {
-            var (token, error) = IssueToken(request?.Username, request?.Password, deviceName: "Swagger UI", existingSessionId: null);
+            var (token, error) = IssueToken(request?.Username, request?.Password, deviceName: "Swagger UI", deviceId: null, existingSessionId: null);
             if (error is not null)
             {
                 return error;
@@ -303,6 +303,7 @@ namespace resonance.Core.API
             var (refreshToken, sessionId) = Sessions.CreateSession(
                 user.Username,
                 string.IsNullOrWhiteSpace(request.DeviceName) ? "Mobile (paired)" : request.DeviceName,
+                request.DeviceId,
                 callerIp,
                 existingSessionId: null);
 
@@ -393,6 +394,7 @@ namespace resonance.Core.API
                     Id = s.Id,
                     Username = s.Username,
                     DeviceName = s.DeviceName,
+                    DeviceId = s.DeviceId,
                     IpAddress = s.IpAddress,
                     CreatedAt = DateTime.SpecifyKind(s.CreatedAt, DateTimeKind.Utc),
                     LastUsedAt = DateTime.SpecifyKind(s.LastUsedAt, DateTimeKind.Utc),
@@ -442,7 +444,7 @@ namespace resonance.Core.API
             return Ok();
         }
 
-        private (TokenResponse Token, IActionResult Error) IssueToken(string username, string password, string deviceName, Guid? existingSessionId)
+        private (TokenResponse Token, IActionResult Error) IssueToken(string username, string password, string deviceName, string deviceId, Guid? existingSessionId)
         {
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
             {
@@ -467,7 +469,7 @@ namespace resonance.Core.API
 
             LoginAttempts.RecordSuccess(callerIp);
 
-            var (refreshToken, sessionId) = Sessions.CreateSession(user.Username, deviceName, callerIp, existingSessionId);
+            var (refreshToken, sessionId) = Sessions.CreateSession(user.Username, deviceName, deviceId, callerIp, existingSessionId);
             var jwt = Security.GenerateJwt(user.Username, user.Role, sessionId: sessionId);
             return (new TokenResponse(jwt, refreshToken, sessionId), null);
         }
@@ -498,7 +500,7 @@ namespace resonance.Core.API
     /// <summary>
     ///     A request to exchange a pairing code for a session.
     /// </summary>
-    public record RedeemPairingRequest(string Code, string DeviceName);
+    public record RedeemPairingRequest(string Code, string DeviceName, string DeviceId);
     public record LogoutRequest(string RefreshToken);
 
     /// <summary>
@@ -539,6 +541,7 @@ namespace resonance.Core.API
         public Guid Id { get; set; }
         public string Username { get; set; }
         public string DeviceName { get; set; }
+        public string DeviceId { get; set; }
         public string IpAddress { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime LastUsedAt { get; set; }

@@ -38,6 +38,10 @@ public class UserSession
     public string RefreshTokenHash { get; set; }
     public string? PreviousTokenHash { get; set; }
     public string? DeviceName { get; set; }
+
+    // Stable per-install identifier (Android ID / iOS identifierForVendor), distinct from
+    // DeviceName which is a display label. Nullable: older app builds don't send one yet.
+    public string? DeviceId { get; set; }
     public string? IpAddress { get; set; }
     public bool IsRevoked { get; set; } = false;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

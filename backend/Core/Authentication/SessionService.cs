@@ -77,13 +77,20 @@ public sealed class SessionService : IDisposable
     // racing to rotate independently. Refreshes are infrequent, so a single lock is ample.
     private object RotationLock { get; } = new();
 
+    // Serialises the supersede-check-then-insert in CreateSession, so two near-simultaneous
+    // logins from the same device can't both pass the "any existing session for this device?"
+    // check before either has inserted its row, leaving two live sessions for one device. Logins
+    // are infrequent, so a single lock is ample (same reasoning as RotationLock).
+    private object CreationLock { get; } = new();
+
     /// <summary>
     ///     Creates a new session for the given user and returns the opaque refresh token and session ID.
     ///     Only the SHA-256 hash of the token is stored; the plaintext is never persisted.
-    ///     Any existing active session for the same (username, deviceName) or matching existingSessionId is revoked before creating the new one.
+    ///     Any existing active session matching existingSessionId, deviceId, or (as a fallback for
+    ///     older clients that don't send a deviceId) deviceName is revoked before creating the new one.
     /// </summary>
     /// <returns></returns>
-    public (string RefreshToken, Guid SessionId) CreateSession(string username, string deviceName = null, string ipAddress = null, Guid? existingSessionId = null)
+    public (string RefreshToken, Guid SessionId) CreateSession(string username, string deviceName = null, string deviceId = null, string ipAddress = null, Guid? existingSessionId = null)
     {
         var token = GenerateToken();
         var ttlMs = Options.Web.Authentication.Jwt.RefreshTokenTtl;
@@ -92,38 +99,53 @@ public sealed class SessionService : IDisposable
             Username = username,
             RefreshTokenHash = HashToken(token),
             DeviceName = deviceName,
+            DeviceId = deviceId,
             IpAddress = ipAddress,
             ExpiresAt = DateTime.UtcNow.AddMilliseconds(ttlMs),
         };
 
-        using var db = ContextFactory.CreateDbContext();
-
-        // Revoke by explicit session ID first — survives device name changes (e.g. localStorage cleared, app reinstall)
-        if (existingSessionId.HasValue)
+        lock (CreationLock)
         {
-            var previous = db.Sessions.FirstOrDefault(s => s.Id == existingSessionId.Value && s.Username == username && !s.IsRevoked);
-            if (previous is not null)
+            using var db = ContextFactory.CreateDbContext();
+
+            // Revoke by explicit session ID first — survives device identity changes entirely.
+            if (existingSessionId.HasValue)
             {
-                previous.IsRevoked = true;
-                CacheRevocation(previous.Id);
+                var previous = db.Sessions.FirstOrDefault(s => s.Id == existingSessionId.Value && s.Username == username && !s.IsRevoked);
+                if (previous is not null)
+                {
+                    previous.IsRevoked = true;
+                    CacheRevocation(previous.Id);
+                }
             }
-        }
 
-        // Belt-and-suspenders: also revoke by device name in case the session ID wasn't stored
-        if (!string.IsNullOrWhiteSpace(deviceName))
-        {
-            var superseded = db.Sessions
-                .Where(s => s.Username == username && s.DeviceName == deviceName && !s.IsRevoked && s.ExpiresAt > DateTime.UtcNow && s.Id != existingSessionId)
-                .ToList();
-            superseded.ForEach(s =>
+            // Primary device match: the stable per-install ID (Android ID / iOS identifierForVendor),
+            // not affected by app reinstalls or local storage being cleared.
+            IEnumerable<UserSession> superseded = Enumerable.Empty<UserSession>();
+            if (!string.IsNullOrWhiteSpace(deviceId))
+            {
+                superseded = db.Sessions
+                    .Where(s => s.Username == username && s.DeviceId == deviceId && !s.IsRevoked && s.ExpiresAt > DateTime.UtcNow && s.Id != existingSessionId)
+                    .ToList();
+            }
+            else if (!string.IsNullOrWhiteSpace(deviceName))
+            {
+                // Fallback for clients that haven't sent a deviceId yet: match by the free-text
+                // device name, which is what the old duplicate-session behaviour was keyed on.
+                superseded = db.Sessions
+                    .Where(s => s.Username == username && s.DeviceName == deviceName && !s.IsRevoked && s.ExpiresAt > DateTime.UtcNow && s.Id != existingSessionId)
+                    .ToList();
+            }
+
+            foreach (var s in superseded)
             {
                 s.IsRevoked = true;
                 CacheRevocation(s.Id);
-            });
-        }
+            }
 
-        db.Sessions.Add(session);
-        db.SaveChanges();
+            db.Sessions.Add(session);
+            db.SaveChanges();
+        }
 
         return (token, session.Id);
     }

@@ -47,6 +47,7 @@ namespace resonance.Core.API
         public string Password { get; set; }
 
         public string DeviceName { get; set; }
+        public string DeviceId { get; set; }
         public Guid? ExistingSessionId { get; set; }
     }
 }
