@@ -54,6 +54,7 @@ import ConnectionScreen          from '../screens/more/ConnectionScreen';
 import BrowseScreen              from '../screens/more/BrowseScreen';
 import BrowseUserScreen          from '../screens/more/BrowseUserScreen';
 import RoomsScreen               from '../screens/more/RoomsScreen';
+import BrowseRoomsScreen         from '../screens/more/BrowseRoomsScreen';
 import RoomDetailScreen          from '../screens/more/RoomDetailScreen';
 import ChatScreen                from '../screens/more/ChatScreen';
 import ChatConversationScreen    from '../screens/more/ChatConversationScreen';
@@ -94,8 +95,9 @@ export type BrowseStackParamList = {
 };
 
 export type RoomsStackParamList = {
-  Rooms:      undefined;
-  RoomDetail: { roomName: string };
+  Rooms:        undefined;
+  BrowseRooms:  undefined;
+  RoomDetail:   { roomName: string };
 };
 
 export type ChatStackParamList = {
@@ -142,8 +144,9 @@ function RoomsStack() {
   const { colors } = useTheme();
   return (
     <Rooms.Navigator screenOptions={makeScreenOptions(colors)}>
-      <Rooms.Screen name="Rooms"      component={RoomsScreen}      options={{ title: 'Rooms' }} />
-      <Rooms.Screen name="RoomDetail" component={RoomDetailScreen} options={{ title: '' }} />
+      <Rooms.Screen name="Rooms"       component={RoomsScreen}       options={{ title: 'Rooms' }} />
+      <Rooms.Screen name="BrowseRooms" component={BrowseRoomsScreen} options={{ title: 'Browse Rooms' }} />
+      <Rooms.Screen name="RoomDetail"  component={RoomDetailScreen}  options={{ title: '' }} />
     </Rooms.Navigator>
   );
 }

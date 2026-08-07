@@ -28,20 +28,12 @@
 // </copyright>
 
 import React, { useCallback, useMemo, useState } from 'react';
-import {
-  Alert,
-  Pressable,
-  SectionList,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useDeferredFocusEffect } from '../../hooks/useDeferredEffect';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useRoomStore } from '../../store/roomStore';
-import type { Room, RoomInfo } from '../../api/rooms';
+import type { Room } from '../../api/rooms';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import type { RoomsStackParamList } from '../../navigation/MainTabs';
@@ -49,26 +41,13 @@ import BottomSheet from '../../components/BottomSheet';
 
 type Props = NativeStackScreenProps<RoomsStackParamList, 'Rooms'>;
 
-type JoinedItem   = { _type: 'joined';   room: Room }
-type EmptyItem    = { _type: 'empty' }
-type AvailItem    = { _type: 'available'; room: RoomInfo }
-type AnyItem      = JoinedItem | EmptyItem | AvailItem;
-type RoomSection  = { key: 'joined' | 'available'; title: string; data: AnyItem[] };
+// ─── memoised row component ─────────────────────────────────────────────────
 
-// ─── memoised row components ────────────────────────────────────────────────
-
-interface RowShared { isFirst: boolean; isLast: boolean; s: ReturnType<typeof makeStyles> }
-
-const EmptyRow = React.memo(function EmptyRow({ s }: { s: ReturnType<typeof makeStyles> }) {
-  return (
-    <View style={[s.row, s.rowFirst, s.rowLast, s.emptyRow]}>
-      <Text style={s.emptyText}>No rooms joined</Text>
-    </View>
-  );
-});
-
-interface JoinedRowProps extends RowShared {
+interface JoinedRowProps {
   room:       Room;
+  isFirst:    boolean;
+  isLast:     boolean;
+  s:          ReturnType<typeof makeStyles>;
   colors:     ThemeColors;
   mentions:   number;
   onNavigate: (roomName: string) => void;
@@ -100,96 +79,18 @@ const JoinedRow = React.memo(function JoinedRow({ room, isFirst, isLast, s, colo
   );
 });
 
-interface AvailRowProps extends RowShared {
-  room:      RoomInfo;
-  colors:    ThemeColors;
-  isJoined:  boolean;
-  isLoading: boolean;
-  onJoin:    (roomName: string) => void;
-}
-const AvailRow = React.memo(function AvailRow({ room, isFirst, isLast, s, colors, isJoined, isLoading, onJoin }: AvailRowProps) {
-  return (
-    <View style={[s.row, isFirst && s.rowFirst, isLast && s.rowLast]}>
-      <View style={s.iconWrap}>
-        <Ionicons color={colors.textMuted} name="chatbubbles-outline" size={18} />
-      </View>
-      <View style={s.rowContent}>
-        <Text style={s.rowLabel}>{room.name}</Text>
-        <Text style={s.rowSub}>{room.userCount} user{room.userCount !== 1 ? 's' : ''}</Text>
-      </View>
-      {isJoined ? (
-        <View style={s.joinedPill}>
-          <Text style={s.joinedPillText}>Joined</Text>
-        </View>
-      ) : (
-        <Pressable
-          disabled={isLoading}
-          onPress={() => onJoin(room.name)}
-          style={[s.joinBtn, isLoading && s.joinBtnDisabled]}
-        >
-          <Text style={[s.joinBtnText, isLoading && s.joinBtnTextDisabled]}>
-            {isLoading ? 'Joining…' : 'Join'}
-          </Text>
-        </Pressable>
-      )}
-    </View>
-  );
-});
-
-const SectionGap = () => <View style={sectionGapStyle} />;
-const sectionGapStyle = { height: Spacing.lg };
-
 // ─── screen ──────────────────────────────────────────────────────────────────
 
 export default function RoomsScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
-  const { joined, available, mentions, isLoadingJoined, isLoadingAvailable, loadJoined, loadAvailable, join, leave } = useRoomStore();
-  const [joining, setJoining]      = useState<string | null>(null);
+  const { joined, mentions, isLoadingJoined, loadJoined, join, leave } = useRoomStore();
+  const [joining, setJoining]       = useState<string | null>(null);
   const [customRoom, setCustomRoom] = useState('');
   const [showCustom, setShowCustom] = useState(false);
-  const [query, setQuery] = useState('');
 
-  // O(1) lookup for "already joined" in AvailRow
-  const joinedNames = useMemo(() => new Set(joined.map((r) => r.name)), [joined]);
-
-  useDeferredFocusEffect(
-    useCallback(() => {
-      loadJoined();
-      loadAvailable();
-    }, [loadJoined, loadAvailable])
-  );
-
-  const q = query.trim().toLowerCase();
-  const filteredJoined = useMemo(
-    () => (q ? joined.filter((r) => r.name.toLowerCase().includes(q)) : joined),
-    [joined, q]
-  );
-  const filteredAvailable = useMemo(
-    () => (q ? available.filter((r) => r.name.toLowerCase().includes(q)) : available),
-    [available, q]
-  );
-
-  const sections: RoomSection[] = useMemo(() => {
-    const all: RoomSection[] = [
-      {
-        key:   'joined',
-        title: 'Joined',
-        data:  filteredJoined.length > 0
-          ? filteredJoined.map((room) => ({ _type: 'joined' as const, room }))
-          : q
-            ? []
-            : [{ _type: 'empty'  as const }],
-      },
-      {
-        key:   'available',
-        title: 'All Rooms',
-        data:  filteredAvailable.map((room) => ({ _type: 'available' as const, room })),
-      },
-    ];
-    return all.filter((section) => section.data.length > 0);
-  }, [filteredJoined, filteredAvailable, q]);
+  useDeferredFocusEffect(useCallback(() => { loadJoined(); }, [loadJoined]));
 
   const handleNavigate = useCallback((roomName: string) => {
     navigation.navigate('RoomDetail', { roomName });
@@ -219,115 +120,56 @@ export default function RoomsScreen({ navigation }: Props) {
     await handleJoin(name);
   }, [customRoom, handleJoin]);
 
-  const renderSectionHeader = useCallback(({ section }: { section: RoomSection }) => (
-    <View style={s.sectionHeader}>
-      <Text style={s.sectionTitle}>{section.title}</Text>
-      {section.key === 'joined' && (
-        <Pressable hitSlop={8} onPress={() => setShowCustom(true)}>
-          <Ionicons color={colors.accent} name="add-circle-outline" size={20} />
-        </Pressable>
-      )}
-    </View>
-  ), [s, colors]);
-
-  const renderItem = useCallback(({ item, index, section }: { item: AnyItem; index: number; section: RoomSection }) => {
-    const isFirst = index === 0;
-    const isLast  = index === section.data.length - 1;
-
-    if (item._type === 'empty') {
-      return <EmptyRow s={s} />;
-    }
-    if (item._type === 'joined') {
-      return (
-        <JoinedRow
-          room={item.room}
-          isFirst={isFirst}
-          isLast={isLast}
-          s={s}
-          colors={colors}
-          mentions={mentions[item.room.name] ?? 0}
-          onNavigate={handleNavigate}
-          onLeave={handleLeave}
-        />
-      );
-    }
-    return (
-      <AvailRow
-        room={item.room}
-        isFirst={isFirst}
-        isLast={isLast}
-        s={s}
-        colors={colors}
-        isJoined={joinedNames.has(item.room.name)}
-        isLoading={joining === item.room.name}
-        onJoin={handleJoin}
-      />
-    );
-  }, [s, colors, mentions, handleNavigate, handleLeave, handleJoin, joinedNames, joining]);
-
-  const keyExtractor = useCallback((item: AnyItem, index: number) =>
-    item._type === 'joined'    ? item.room.name :
-    item._type === 'available' ? item.room.name :
-    `empty-${index}`
-  , []);
-
-  const isLoading = isLoadingJoined || isLoadingAvailable;
-  const noMatches = sections.length === 0;
+  const renderItem = useCallback(({ item, index }: { item: Room; index: number }) => (
+    <JoinedRow
+      room={item}
+      isFirst={index === 0}
+      isLast={index === joined.length - 1}
+      s={s}
+      colors={colors}
+      mentions={mentions[item.name] ?? 0}
+      onNavigate={handleNavigate}
+      onLeave={handleLeave}
+    />
+  ), [joined.length, s, colors, mentions, handleNavigate, handleLeave]);
 
   return (
     <View style={s.container}>
-      <View style={s.searchBar}>
-        <Ionicons color={colors.textMuted} name="search" size={16} />
-        <TextInput
-          autoCapitalize="none"
-          autoCorrect={false}
-          onChangeText={setQuery}
-          placeholder="Search rooms…"
-          placeholderTextColor={colors.textMuted}
-          style={s.searchInput}
-          value={query}
-        />
-        {query.length > 0 && (
-          <Pressable hitSlop={8} onPress={() => setQuery('')}>
-            <Ionicons color={colors.textMuted} name="close-circle" size={16} />
-          </Pressable>
-        )}
+      <View style={s.actionsRow}>
+        <Pressable onPress={() => navigation.navigate('BrowseRooms')} style={s.actionBtn}>
+          <Ionicons color={colors.accent} name="search" size={16} />
+          <Text style={s.actionBtnText}>Browse Rooms</Text>
+        </Pressable>
+        <Pressable onPress={() => setShowCustom(true)} style={s.actionBtn}>
+          <Ionicons color={colors.accent} name="add-circle-outline" size={16} />
+          <Text style={s.actionBtnText}>Create Room</Text>
+        </Pressable>
       </View>
 
-      <SectionList
-        sections={sections}
-        keyExtractor={keyExtractor}
-        renderItem={renderItem}
-        renderSectionHeader={renderSectionHeader}
-        onRefresh={() => { loadJoined(); loadAvailable(); }}
-        refreshing={isLoading}
-        stickySectionHeadersEnabled={false}
+      <FlatList
         contentContainerStyle={s.list}
-        SectionSeparatorComponent={SectionGap}
+        data={joined}
+        keyExtractor={(item) => item.name}
+        onRefresh={loadJoined}
+        refreshing={isLoadingJoined}
+        renderItem={renderItem}
+        ListEmptyComponent={
+          <View style={s.empty}>
+            <Ionicons color={colors.textMuted} name="chatbubbles-outline" size={28} />
+            <Text style={s.emptyText}>No rooms joined</Text>
+            <Text style={s.emptyHint}>Browse Rooms to find one, or create your own</Text>
+          </View>
+        }
         removeClippedSubviews
         initialNumToRender={20}
         maxToRenderPerBatch={20}
         windowSize={5}
         updateCellsBatchingPeriod={50}
-        ListEmptyComponent={
-          noMatches && q ? (
-            <Pressable
-              disabled={joining === query.trim()}
-              onPress={() => handleJoin(query.trim())}
-              style={s.joinCustomRow}
-            >
-              <Ionicons color={colors.accent} name="add-circle-outline" size={18} />
-              <Text style={s.joinCustomText}>
-                {joining === query.trim() ? 'Joining…' : `Join "${query.trim()}"`}
-              </Text>
-            </Pressable>
-          ) : null
-        }
       />
 
       <BottomSheet visible={showCustom} onClose={() => { setShowCustom(false); setCustomRoom(''); }}>
         <View style={s.sheet}>
-          <Text style={s.sheetTitle}>Join a room</Text>
+          <Text style={s.sheetTitle}>Create a room</Text>
           <TextInput
             autoCapitalize="none"
             autoCorrect={false}
@@ -344,8 +186,8 @@ export default function RoomsScreen({ navigation }: Props) {
             <Pressable onPress={() => { setShowCustom(false); setCustomRoom(''); }} style={s.sheetCancel}>
               <Text style={s.sheetCancelText}>Cancel</Text>
             </Pressable>
-            <Pressable onPress={handleCustomJoin} style={s.sheetJoin}>
-              <Text style={s.sheetJoinText}>Join</Text>
+            <Pressable disabled={joining === customRoom.trim()} onPress={handleCustomJoin} style={s.sheetJoin}>
+              <Text style={s.sheetJoinText}>{joining === customRoom.trim() ? 'Joining…' : 'Create'}</Text>
             </Pressable>
           </View>
         </View>
@@ -359,53 +201,29 @@ function makeStyles(c: ThemeColors) {
     container: { flex: 1, backgroundColor: c.bgPrimary },
     list:      { padding: Spacing.lg, flexGrow: 1 },
 
-    searchBar: {
+    actionsRow: {
       flexDirection: 'row',
-      alignItems: 'center',
       gap: Spacing.sm,
       marginHorizontal: Spacing.lg,
       marginTop: Spacing.lg,
-      paddingHorizontal: Spacing.md,
+    },
+    actionBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: Spacing.xs,
       paddingVertical: Spacing.sm,
       borderRadius: Radius.md,
       backgroundColor: c.bgElevated,
       borderWidth: 1,
       borderColor: c.border,
     },
-    searchInput: {
-      flex: 1,
-      fontSize: Typography.base,
-      color: c.textPrimary,
-      padding: 0,
-    },
+    actionBtnText: { fontSize: Typography.sm, fontWeight: '600', color: c.accent },
 
-    joinCustomRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: Spacing.sm,
-      padding: Spacing.md,
-      borderRadius: Radius.lg,
-      borderWidth: 1,
-      borderColor: c.border,
-      borderStyle: 'dashed',
-    },
-    joinCustomText: { fontSize: Typography.base, fontWeight: '500', color: c.accent },
-
-    sectionHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: Spacing.xs,
-      paddingBottom: Spacing.sm,
-      backgroundColor: c.bgPrimary,
-    },
-    sectionTitle: {
-      fontSize: Typography.sm,
-      fontWeight: '600',
-      color: c.textMuted,
-      textTransform: 'uppercase',
-      letterSpacing: 0.8,
-    },
+    empty: { alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.xxl },
+    emptyText: { fontSize: Typography.base, fontWeight: '500', color: c.textPrimary },
+    emptyHint: { fontSize: Typography.sm, color: c.textMuted },
 
     row: {
       flexDirection: 'row',
@@ -420,8 +238,6 @@ function makeStyles(c: ThemeColors) {
     rowFirst:   { borderTopWidth: 1, borderTopLeftRadius: Radius.lg, borderTopRightRadius: Radius.lg },
     rowLast:    { borderBottomLeftRadius: Radius.lg, borderBottomRightRadius: Radius.lg },
     rowPressed: { backgroundColor: c.bgElevated },
-    emptyRow:   { justifyContent: 'center' },
-    emptyText:  { fontSize: Typography.sm, color: c.textMuted },
 
     iconWrap: {
       width: 32,
@@ -435,16 +251,8 @@ function makeStyles(c: ThemeColors) {
     rowLabel:   { fontSize: Typography.base, fontWeight: '500', color: c.textPrimary },
     rowSub:     { fontSize: Typography.xs, color: c.textMuted, marginTop: 1 },
 
-    leaveBtn:       { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.sm, borderWidth: 1, borderColor: c.danger },
-    leaveBtnText:   { fontSize: Typography.xs, fontWeight: '600', color: c.danger },
-
-    joinBtn:             { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.sm, backgroundColor: c.accent },
-    joinBtnDisabled:     { backgroundColor: c.bgElevated },
-    joinBtnText:         { fontSize: Typography.xs, fontWeight: '600', color: '#fff' },
-    joinBtnTextDisabled: { color: c.textMuted },
-
-    joinedPill:     { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.sm, backgroundColor: c.bgElevated },
-    joinedPillText: { fontSize: Typography.xs, color: c.textMuted },
+    leaveBtn:     { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.sm, borderWidth: 1, borderColor: c.danger },
+    leaveBtnText: { fontSize: Typography.xs, fontWeight: '600', color: c.danger },
 
     mentionBadge: {
       minWidth: 18,
@@ -465,7 +273,7 @@ function makeStyles(c: ThemeColors) {
       padding: Spacing.xl,
       gap: Spacing.md,
     },
-    sheetTitle:      { fontSize: Typography.md, fontWeight: '600', color: c.textPrimary },
+    sheetTitle: { fontSize: Typography.md, fontWeight: '600', color: c.textPrimary },
     sheetInput: {
       backgroundColor: c.bgElevated,
       borderRadius: Radius.md,
