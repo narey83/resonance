@@ -30,7 +30,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useRef } from 'react';
 import { Image } from 'expo-image';
-import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Keyboard, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import { getArtworkUrl, getTrackTitle } from '../api/musicLibrary';
 import { useCast } from '../context/CastContext';
 import { usePlaybackPosition, usePlaybackStatus, usePlayer } from '../context/PlayerContext';
@@ -69,10 +69,18 @@ export function PlayerMiniBar() {
   const { isCasting, isGoogleCasting, castIsPlaying, castTogglePlayPause } = useCast();
   const { expand } = usePlayerUI();
 
+  // Expanding while a chat/room input is focused would otherwise leave the
+  // keyboard covering the full player, since it opened over a different screen
+  // than the one now on top.
+  const expandPlayer = () => {
+    Keyboard.dismiss();
+    expand();
+  };
+
   const swipePan = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) => g.dy < -10 && Math.abs(g.dy) > Math.abs(g.dx),
-      onPanResponderRelease: (_, g) => { if (g.dy < -30 || g.vy < -0.3) expand(); },
+      onPanResponderRelease: (_, g) => { if (g.dy < -30 || g.vy < -0.3) expandPlayer(); },
     }),
   ).current;
 
@@ -99,7 +107,7 @@ export function PlayerMiniBar() {
       <View style={[StyleSheet.absoluteFill, styles.scrim]} />
 
       {/* Content row */}
-      <Pressable onPress={() => expand()} style={styles.row}>
+      <Pressable onPress={expandPlayer} style={styles.row}>
         {/* Artwork thumbnail */}
         {artUrl ? (
           <Image cachePolicy="memory-disk" recyclingKey={artCacheKey ?? artUrl} source={{ uri: artUrl, cacheKey: artCacheKey }} style={styles.art} />
@@ -140,7 +148,7 @@ export function PlayerMiniBar() {
           >
             <Ionicons color="#fff" name="play-skip-forward" size={22} />
           </Pressable>
-          <Pressable hitSlop={10} onPress={(e) => { e.stopPropagation(); expand(); }} style={styles.btn}>
+          <Pressable hitSlop={10} onPress={(e) => { e.stopPropagation(); expandPlayer(); }} style={styles.btn}>
             <Ionicons color="rgba(255,255,255,0.5)" name="chevron-up" size={22} />
           </Pressable>
         </View>

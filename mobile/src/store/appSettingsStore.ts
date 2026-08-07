@@ -37,7 +37,6 @@ export interface NotificationPrefs {
   downloadsComplete: boolean;
   uploadComplete:    boolean;
   shareScanComplete: boolean;
-  serverDisconnect:  boolean;
   privateMessage:    boolean;
   roomMention:       boolean;
   userBlocked:       boolean;
@@ -80,7 +79,6 @@ const DEFAULT_NOTIFICATIONS: NotificationPrefs = {
   downloadsComplete: true,
   uploadComplete:    false,
   shareScanComplete: false,
-  serverDisconnect:  true,
   privateMessage:    true,
   roomMention:       true,
   userBlocked:       true,

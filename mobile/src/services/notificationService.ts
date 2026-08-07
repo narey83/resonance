@@ -121,24 +121,6 @@ export async function notifyShareScanComplete() {
   await send('Share scan complete', 'Your library index has been updated.');
 }
 
-export async function notifyServerDisconnect() {
-  const { notifications } = useAppSettings.getState();
-  if (!notifications.serverDisconnect) return;
-  await send('Server disconnected', 'Resonance lost its connection to the Soulseek network.');
-}
-
-export async function notifyServerRestarting() {
-  const { notifications } = useAppSettings.getState();
-  if (!notifications.serverDisconnect) return;
-  await send('Server restarting', 'Resonance backend is restarting. It will reconnect automatically.');
-}
-
-export async function notifyServerReady() {
-  const { notifications } = useAppSettings.getState();
-  if (!notifications.serverDisconnect) return;
-  await send('Server ready', 'Resonance backend is back online.');
-}
-
 export async function notifyPrivateMessage(username: string, message: string) {
   const { notifications } = useAppSettings.getState();
   if (!notifications.privateMessage) return;
@@ -163,7 +145,6 @@ export const useNotificationHub = () => {
     const hub = createApplicationHubConnection();
     if (!hub) return;
 
-    let prevConnected: boolean | null = null;
     let prevScanning: boolean | null = null;
 
     attachHubLogging(hub, 'application');
@@ -197,27 +178,14 @@ export const useNotificationHub = () => {
       notifyUploadComplete(filename);
     });
 
-    hub.on('STATE', (state: { server?: { isConnected?: boolean }; shares?: { scanning?: boolean } }) => {
-      const connected = state?.server?.isConnected ?? false;
-      const scanning  = state?.shares?.scanning  ?? false;
+    hub.on('STATE', (state: { shares?: { scanning?: boolean } }) => {
+      const scanning = state?.shares?.scanning ?? false;
 
-      if (prevConnected === true && !connected) {
-        notifyServerDisconnect();
-      }
       if (prevScanning === true && !scanning) {
         notifyShareScanComplete();
       }
 
-      prevConnected = connected;
-      prevScanning  = scanning;
-    });
-
-    hub.on('SERVER_RESTARTING', () => {
-      notifyServerRestarting();
-    });
-
-    hub.on('SERVER_READY', () => {
-      notifyServerReady();
+      prevScanning = scanning;
     });
 
     hub.on('BROWSED', () => {});
@@ -235,10 +203,6 @@ export const useNotificationHub = () => {
         useRoomStore.getState().loadMessages(roomName).catch(() => {});
       }
       notifyRoomMention(roomName, username, message);
-    });
-
-    hub.onreconnected(() => {
-      notifyServerReady();
     });
 
     // Messages that arrived while the app was closed only reach the tab badge

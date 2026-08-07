@@ -212,19 +212,6 @@ export default function SettingsScreen({ navigation }: Props) {
           />
         </SettingRow>
         <SettingRow
-          label="Server disconnect"
-          subtitle="Alert when the server loses its connection"
-          colors={colors}
-        >
-          <Switch
-            disabled={!loaded}
-            onValueChange={(v) => setNotification('serverDisconnect', v)}
-            thumbColor={colors.textPrimary}
-            trackColor={{ false: colors.bgElevated, true: colors.accent }}
-            value={notifications.serverDisconnect}
-          />
-        </SettingRow>
-        <SettingRow
           label="Private messages"
           subtitle="Play a sound for new private messages"
           colors={colors}
