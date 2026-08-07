@@ -35,10 +35,6 @@
 </copyright>
 */
 
-.rooms-root {
-  height: calc(100vh - 110px);
-}
-
 /* ── Sidebar search box ──────────────────────────────────────────────────── */
 
 .room-search-wrap {
