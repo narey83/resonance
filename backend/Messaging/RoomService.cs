@@ -42,6 +42,7 @@ namespace resonance.Messaging
     using System.Linq;
     using System.Text.Json;
     using System.Threading.Tasks;
+    using Microsoft.EntityFrameworkCore;
     using resonance.Events;
     using resonance.Users;
     using resonance.Users.Blocking;
@@ -95,6 +96,7 @@ namespace resonance.Messaging
         /// <param name="userService"></param>
         /// <param name="eventBus"></param>
         /// <param name="blockedUsersService"></param>
+        /// <param name="contextFactory"></param>
         public RoomService(
             ISoulseekClient soulseekClient,
             IOptionsMonitor<Options> optionsMonitor,
@@ -102,7 +104,8 @@ namespace resonance.Messaging
             IRoomTracker roomTracker,
             IUserService userService,
             EventBus eventBus,
-            BlockedUsersService blockedUsersService)
+            BlockedUsersService blockedUsersService,
+            IDbContextFactory<MessagingDbContext> contextFactory)
         {
             Client = soulseekClient;
 
@@ -114,6 +117,7 @@ namespace resonance.Messaging
             Users = userService;
             EventBus = eventBus;
             Blocked = blockedUsersService;
+            ContextFactory = contextFactory;
 
             Client.LoggedIn += Client_LoggedIn;
 
@@ -130,6 +134,7 @@ namespace resonance.Messaging
         private IUserService Users { get; set; }
         private EventBus EventBus { get; }
         private BlockedUsersService Blocked { get; }
+        private IDbContextFactory<MessagingDbContext> ContextFactory { get; }
 
         /// <summary>
         ///     Joins the specified <paramref name="roomName"/>.
@@ -305,9 +310,20 @@ namespace resonance.Messaging
             }
 
             var message = RoomMessage.FromEventArgs(args, DateTime.UtcNow);
+            message.Direction = MessageDirection.In;
             RoomTracker.AddOrUpdateMessage(args.RoomName, message);
 
-            // todo: persist these in the database before raising (why are we not??)
+            using (var context = ContextFactory.CreateDbContext())
+            {
+                // RoomMessage is mapped with HasNoKey() (no natural key exists), so it can't be
+                // tracked/added through the change tracker; insert it directly instead.
+                context.Database.ExecuteSqlInterpolated(
+                    $"""
+                    INSERT INTO messaging."RoomMessages" ("Timestamp", "Username", "Message", "RoomName", "Direction")
+                    VALUES ({message.Timestamp}, {message.Username}, {message.Message}, {message.RoomName}, {(int)message.Direction})
+                    """);
+            }
+
             EventBus.Raise<RoomMessageReceivedEvent>(new RoomMessageReceivedEvent
             {
                 Message = message,

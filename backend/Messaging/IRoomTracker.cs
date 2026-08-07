@@ -49,6 +49,11 @@ namespace resonance.Messaging
         ConcurrentDictionary<string, Room> Rooms { get; }
 
         /// <summary>
+        ///     Gets the maximum number of messages retained per room.
+        /// </summary>
+        int MessageLimit { get; }
+
+        /// <summary>
         ///     Adds a room and appends the specified <paramref name="message"/>, or just appends the message if the room exists.
         /// </summary>
         /// <param name="roomName"></param>

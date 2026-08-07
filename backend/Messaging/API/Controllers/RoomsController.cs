@@ -45,6 +45,7 @@ namespace resonance.Messaging.API
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Http;
     using Microsoft.AspNetCore.Mvc;
+    using Microsoft.EntityFrameworkCore;
     using Soulseek;
 
     /// <summary>
@@ -63,13 +64,15 @@ namespace resonance.Messaging.API
             IRoomService roomService,
             IStateMonitor<State> applicationStateMonitor,
             IOptionsSnapshot<Options> optionsSnapshot,
-            IRoomTracker tracker)
+            IRoomTracker tracker,
+            IDbContextFactory<MessagingDbContext> contextFactory)
         {
             Client = soulseekClient;
             ApplicationStateMonitor = applicationStateMonitor;
             OptionsSnapshot = optionsSnapshot;
             Tracker = tracker;
             RoomService = roomService;
+            ContextFactory = contextFactory;
         }
 
         private IRoomService RoomService { get; }
@@ -77,6 +80,7 @@ namespace resonance.Messaging.API
         private IStateMonitor<State> ApplicationStateMonitor { get; }
         private IRoomTracker Tracker { get; }
         private IOptionsSnapshot<Options> OptionsSnapshot { get; }
+        private IDbContextFactory<MessagingDbContext> ContextFactory { get; }
 
         /// <summary>
         ///     Gets all rooms.
@@ -253,9 +257,18 @@ namespace resonance.Messaging.API
                 return Forbid();
             }
 
-            if (Tracker.TryGet(roomName, out var room))
+            if (Tracker.TryGet(roomName, out var _))
             {
-                var response = room.Messages
+                using var context = ContextFactory.CreateDbContext();
+
+                var messages = context.RoomMessages
+                    .Where(m => m.RoomName == roomName)
+                    .OrderByDescending(m => m.Timestamp)
+                    .Take(Tracker.MessageLimit)
+                    .OrderBy(m => m.Timestamp)
+                    .ToList();
+
+                var response = messages
                     .Select(message => RoomMessageResponse.FromRoomMessage(message, self: message.Username == ApplicationStateMonitor.CurrentValue.User.Username));
 
                 return Ok(response);

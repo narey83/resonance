@@ -59,7 +59,8 @@ namespace resonance.Messaging
         /// </summary>
         public ConcurrentDictionary<string, Room> Rooms { get; } = new ConcurrentDictionary<string, Room>();
 
-        private int MessageLimit { get; }
+        /// <inheritdoc/>
+        public int MessageLimit { get; }
 
         /// <summary>
         ///     Adds a room and appends the specified <paramref name="message"/>, or just appends the message if the room exists.
