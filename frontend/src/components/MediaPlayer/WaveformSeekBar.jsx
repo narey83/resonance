@@ -53,6 +53,7 @@ const WaveformSeekBar = ({
   duration,
   getCurrentTime,
   height = 40,
+  onAnalysing,
   onReady,
   onScratchEnd,
   onScratchMove,
@@ -74,6 +75,7 @@ const WaveformSeekBar = ({
   // zoomed into a sub-range of the track. Updated every draw() call.
   const windowRef = useRef({ end: 0, start: 0 });
   const [ready, setReady] = useState(false);
+  const [analysing, setAnalysing] = useState(false);
   const [hoverFraction, setHoverFraction] = useState(null);
   const draggingRef = useRef(false);
 
@@ -81,9 +83,15 @@ const WaveformSeekBar = ({
     setReady(false);
     onReady(false);
     peaksRef.current = null;
-    if (!track?.path) return undefined;
+    if (!track?.path) {
+      setAnalysing(false);
+      onAnalysing?.(false);
+      return undefined;
+    }
 
     let cancelled = false;
+    setAnalysing(true);
+    onAnalysing?.(true);
 
     // The waveform request below only asks for waveform and loudness, so a track played
     // before it was ever scanned kept its blank BPM and key no matter how often you played
@@ -114,6 +122,11 @@ const WaveformSeekBar = ({
       })
       .catch(() => {
         /* no cached waveform — caller falls back to the plain bar */
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setAnalysing(false);
+        onAnalysing?.(false);
       });
 
     return () => {
@@ -456,7 +469,18 @@ const WaveformSeekBar = ({
     if (event.key === 'ArrowLeft') onSeek(Math.max(current - 5, 0));
   };
 
-  if (!ready) return null;
+  if (!ready) {
+    if (!analysing) return null;
+    return (
+      <div
+        className="mp-waveform-seeker mp-waveform-seeker--analysing"
+        style={{ height }}
+      >
+        <span className="media-player-spinner media-player-spinner--sm" />
+        Analyzing waveform…
+      </div>
+    );
+  }
 
   return (
     <div

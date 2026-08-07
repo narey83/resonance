@@ -319,7 +319,9 @@ const MediaPlayer = () => {
     prefs.get('mediaPlayer.seekerZoom', 1),
   );
   const [waveformReady, setWaveformReady] = useState(false);
+  const [waveformAnalysing, setWaveformAnalysing] = useState(false);
   const [miniWaveformReady, setMiniWaveformReady] = useState(false);
+  const [miniWaveformAnalysing, setMiniWaveformAnalysing] = useState(false);
   const [showCast, setShowCast] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
@@ -1125,6 +1127,7 @@ const MediaPlayer = () => {
                     duration={displayDuration}
                     getCurrentTime={getCurrentTime}
                     height={seekerHeight}
+                    onAnalysing={setWaveformAnalysing}
                     onReady={setWaveformReady}
                     onScratchEnd={handleScratchEnd}
                     onScratchMove={handleScratchMove}
@@ -1145,7 +1148,10 @@ const MediaPlayer = () => {
                   onKeyDown={handleSeekKey}
                   role="slider"
                   style={{
-                    display: seekerEnabled && waveformReady ? 'none' : 'block',
+                    display:
+                      seekerEnabled && (waveformReady || waveformAnalysing)
+                        ? 'none'
+                        : 'block',
                   }}
                   tabIndex={0}
                 >
@@ -1377,6 +1383,7 @@ const MediaPlayer = () => {
             duration={displayDuration}
             getCurrentTime={getCurrentTime}
             height={seekerHeight}
+            onAnalysing={setMiniWaveformAnalysing}
             onReady={setMiniWaveformReady}
             onScratchEnd={handleScratchEnd}
             onScratchMove={handleScratchMove}
@@ -1399,7 +1406,10 @@ const MediaPlayer = () => {
           onMouseMove={handleScrubMove}
           role="slider"
           style={{
-            display: seekerEnabled && miniWaveformReady ? 'none' : 'block',
+            display:
+              seekerEnabled && (miniWaveformReady || miniWaveformAnalysing)
+                ? 'none'
+                : 'block',
           }}
           tabIndex={0}
         >
