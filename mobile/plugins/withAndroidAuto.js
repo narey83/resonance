@@ -95,13 +95,14 @@ const withAndroidAuto = (config) => {
         '<?xml version="1.0" encoding="utf-8"?>\n<automotiveApp>\n    <uses name="media"/>\n</automotiveApp>\n',
       );
 
-      // Artwork placeholder for tracks/folders with no cover. It has to be a real Android
+      // Artwork placeholder for tracks/folders with no cover — a dark tile, deliberately not the
+      // blue app icon, which was too loud repeated down a list. It has to be a real Android
       // resource, not a bundled JS asset: the patched MusicService hands Android Auto an
       // `android.resource://<pkg>/drawable/resonance_placeholder` URI, which the car's own
       // process opens over the ContentResolver.
       fs.mkdirSync(path.join(resDir, 'drawable-nodpi'), { recursive: true });
       fs.copyFileSync(
-        path.join(config.modRequest.projectRoot, 'assets/icon.png'),
+        path.join(config.modRequest.projectRoot, 'assets/aa-placeholder.png'),
         path.join(resDir, 'drawable-nodpi/resonance_placeholder.png'),
       );
       return config;

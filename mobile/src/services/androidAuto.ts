@@ -30,15 +30,23 @@
 import TrackPlayer, { MediaItemPlayable } from 'react-native-track-player';
 import { contentTypeFor } from '../lib/mimeTypes';
 import {
+  getAlbums,
+  getArtists,
   getFolders,
+  getGenres,
+  getLovedTracks,
   getTracks,
+  getYears,
   getArtworkUrl,
   getStreamUrl,
   getTrackTitle,
   type MusicTrack,
+  type MusicAlbum,
 } from '../api/musicLibrary';
 import { ARTWORK_THUMB_SIZE, PLAYER_ART_SIZE } from './artworkCache';
 import { type PlayRecord } from '../api/libraryActivity';
+import * as mixtapes from '../api/mixtapes';
+import type { MixtapeTrack } from '../api/mixtapes';
 import {
   getLocalAlbums,
   getLocalAlbumTracks,
@@ -73,11 +81,24 @@ type BrowseItem = {
 type BrowseTree = Record<string, BrowseItem[]>;
 
 const ROOT = '/';
+const TAB_SERVER = 'aa:server';
+const TAB_ARTISTS = 'aa:artists';
+const TAB_TRACKS = 'aa:tracks';
+const TAB_ALBUMS = 'aa:albums';
+const TAB_GENRES = 'aa:genres';
+const TAB_YEARS = 'aa:years';
+const TAB_MIXTAPES = 'aa:mixtapes';
+const TAB_LOVED = 'aa:loved';
 const TAB_FOLDERS = 'aa:folders';
 const TAB_LOCAL = 'aa:local';
 const TAB_LOCAL_ALBUMS = 'aa:local:albums';
 const TAB_LOCAL_FOLDERS = 'aa:local:folders';
 const PREFIX_FOLDER = 'aa:folder:';
+const PREFIX_ARTIST = 'aa:artist:';
+const PREFIX_ALBUM = 'aa:album:';   // aa:album:<artist>|<album>, both URI-encoded
+const PREFIX_GENRE = 'aa:genre:';
+const PREFIX_YEAR = 'aa:year:';
+const PREFIX_MIXTAPE = 'aa:mixtape:';
 const PREFIX_LOCAL_ALBUM = 'aa:local:album:';
 const PREFIX_LOCAL_FOLDER = 'aa:local:folder:';
 
@@ -108,6 +129,9 @@ const isAuthed = () => {
 // calls at all), because the car only re-asks for a node if the user backs out and re-enters.
 // So park the request and build the tree the moment a session appears.
 let waitingForAuth = false;
+// Nodes the car asked for while we had no session. The car does not ask twice, so these have to
+// be loaded as soon as one appears or they stay empty until it reconnects.
+const deferredBrowses = new Set<string>();
 const buildWhenAuthed = () => {
   if (waitingForAuth) return;
   waitingForAuth = true;
@@ -116,7 +140,13 @@ const buildWhenAuthed = () => {
     if (!isAuthed()) return;
     unsubscribe();
     waitingForAuth = false;
-    buildAndroidAutoTree().catch((e) => remoteLog('error', `[aa] deferred build failed — ${String(e)}`));
+    buildAndroidAutoTree()
+      .then(async () => {
+        const pending = [...deferredBrowses];
+        deferredBrowses.clear();
+        for (const id of pending) await loadNode(id).catch(() => { /* node may no longer exist */ });
+      })
+      .catch((e) => remoteLog('error', `[aa] deferred build failed — ${String(e)}`));
   });
 };
 
@@ -171,6 +201,30 @@ const playRecordToTrack = (r: PlayRecord): MusicTrack => ({
   fileSize: null,
 });
 
+// A MixtapeTrack carries only what the mixtape stored; enough to queue and stream.
+const mixtapeTrackToTrack = (t: MixtapeTrack): MusicTrack => ({
+  path: t.filePath,
+  filename: t.filePath.split(/[/\\]/).pop() ?? t.filePath,
+  directory: '',
+  duration: t.duration,
+  title: t.title,
+  artist: t.artist,
+  albumArtist: null,
+  album: t.album,
+  year: null,
+  trackNumber: null,
+  discNumber: null,
+  hasArtwork: true, // resolved by path against the artwork endpoint
+  coverPath: null,
+  genre: null,
+  bpm: null,
+  key: null,
+  fileSize: null,
+});
+
+const albumNodeId = (a: MusicAlbum) =>
+  `${PREFIX_ALBUM}${encodeURIComponent(a.albumArtist ?? a.artist)}|${encodeURIComponent(a.album)}`;
+
 const recordTracks = (nodeId: string, tracks: MusicTrack[]) => {
   tracksByNode.set(nodeId, tracks);
   for (const t of tracks) trackByPath.set(t.path, t);
@@ -188,10 +242,17 @@ const push = async () => {
 // first screen and then ignored every scroll (reproduced on the Desktop Head Unit 2026-08-06,
 // while a 100-track folder scrolled fine). Any node longer than this is served as ranged
 // sub-nodes — recursively, so a list of ranges can't get too long either.
-const LIST_MAX = 100;
+// The ceiling sits between 288 and 500: a 288-genre list renders and scrolls, while a 500-item
+// list is delivered to the car (have=500 in the log) and then drawn as "No items". 300 keeps
+// whole categories (288 genres, 46 years, 70 folders) in one list without going near it.
+const LIST_MAX = 300;
 const PREFIX_CHUNK = 'aa:chunk:';
-const PREFIX_PAGE = 'aa:page:'; // aa:page:<offset>:<encoded folder path>
+// aa:page:<offset>:<kind>:<key> — self-describing so a page still resolves after a restart.
+// kind: f=folder, g=genre, y=year, a=all tracks.
+const PREFIX_PAGE = 'aa:page:';
 const chunkChildren = new Map<string, BrowseItem[]>();
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const rangeLabel = (items: BrowseItem[]): string => {
   const trim = (t: string) => (t.length > 16 ? `${t.slice(0, 16).trimEnd()}…` : t);
@@ -205,50 +266,134 @@ const chunked = (nodeId: string, items: BrowseItem[]): BrowseItem[] => {
     const slice = items.slice(i, i + LIST_MAX);
     const id = `${PREFIX_CHUNK}${i}:${nodeId}`;
     chunkChildren.set(id, slice);
-    groups.push(browsable(id, rangeLabel(slice), `${slice.length} items`));
+    groups.push(browsable(id, rangeLabel(slice), plural(slice.length, 'item')));
   }
-  // ponytail: chunk ids live only in memory. A headless restart loses them, and the car has to
-  // re-open the parent to get valid ids again — which is what it does after a reconnect anyway.
   return chunked(`${nodeId}:g`, groups);
+};
+
+const pageQuery = (kind: string, key: string): Record<string, string | number> => {
+  if (kind === 'f') return { folder: decodeURIComponent(key) };
+  if (kind === 'g') return { genre: decodeURIComponent(key) };
+  if (kind === 'y') return { year: Number(key) };
+  return {};
+};
+
+// Serve a track query as one list if it fits, or as numbered pages that fetch on demand. The
+// biggest folder here holds 24,935 tracks, so nothing may assume it can hold a whole list.
+const loadTracks = async (nodeId: string, kind: string, key: string): Promise<void> => {
+  const query = pageQuery(kind, key);
+  const res = await getTracks({ ...query, limit: LIST_MAX });
+  if (res.total > res.tracks.length) {
+    const pages: BrowseItem[] = [];
+    for (let off = 0; off < res.total; off += LIST_MAX) {
+      pages.push(browsable(
+        `${PREFIX_PAGE}${off}:${kind}:${key}`,
+        `${off + 1} – ${Math.min(off + LIST_MAX, res.total)}`,
+        `of ${res.total}`,
+      ));
+    }
+    tree[nodeId] = chunked(nodeId, pages);
+  } else {
+    tree[nodeId] = chunked(nodeId, res.tracks.map(playableItem));
+    recordTracks(nodeId, res.tracks);
+  }
 };
 
 const loadNode = async (mediaId: string): Promise<void> => {
   if (mediaId.startsWith(PREFIX_CHUNK)) {
+    // A chunk's contents live in memory, but the car remembers where it was and asks for one
+    // directly after a restart — which used to answer empty for good. The id carries its parent
+    // (aa:chunk:<offset>:<parentId>, with :g per grouping level), so rebuild the parent: chunking
+    // is deterministic, so that regenerates this exact id.
+    if (!chunkChildren.has(mediaId)) {
+      const parentId = mediaId.slice(mediaId.indexOf(':', PREFIX_CHUNK.length) + 1);
+      await loadNode(parentId.replace(/(:g)+$/, ''));
+    }
     tree[mediaId] = chunkChildren.get(mediaId) ?? [];
     await push();
     return;
   }
-  if (mediaId === TAB_FOLDERS) {
+  if (mediaId === TAB_SERVER) {
+    // Same views as the phone's Library screen.
+    tree[mediaId] = [
+      browsable(TAB_ARTISTS, 'Artists'),
+      browsable(TAB_ALBUMS, 'Albums'),
+      browsable(TAB_TRACKS, 'Tracks'),
+      browsable(TAB_FOLDERS, 'Folders'),
+      browsable(TAB_GENRES, 'Genres'),
+      browsable(TAB_YEARS, 'Years'),
+      browsable(TAB_MIXTAPES, 'Mixtapes'),
+      browsable(TAB_LOVED, 'Loved'),
+    ];
+  } else if (mediaId === TAB_ARTISTS) {
+    const artists = await getArtists();
+    tree[mediaId] = chunked(mediaId, artists.map((a) =>
+      browsable(PREFIX_ARTIST + encodeURIComponent(a.artist), a.artist, plural(a.trackCount, 'track'), a.coverPath ? (getArtworkUrl(a.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
+    ));
+  } else if (mediaId === TAB_ALBUMS) {
+    const albums = await getAlbums();
+    tree[mediaId] = chunked(mediaId, albums.map((a) =>
+      browsable(albumNodeId(a), a.album, a.artist, a.coverPath ? (getArtworkUrl(a.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
+    ));
+  } else if (mediaId === TAB_TRACKS) {
+    await loadTracks(mediaId, 'a', '');
+  } else if (mediaId === TAB_GENRES) {
+    const genres = await getGenres();
+    tree[mediaId] = chunked(mediaId, genres.map((g) =>
+      browsable(PREFIX_GENRE + encodeURIComponent(g.genre), g.genre, plural(g.trackCount, 'track')),
+    ));
+  } else if (mediaId === TAB_YEARS) {
+    const years = await getYears();
+    tree[mediaId] = chunked(mediaId, years.map((y) =>
+      browsable(PREFIX_YEAR + y.year, String(y.year), plural(y.trackCount, 'track')),
+    ));
+  } else if (mediaId === TAB_MIXTAPES) {
+    const all = await mixtapes.getAll();
+    tree[mediaId] = chunked(mediaId, all.map((m) =>
+      browsable(PREFIX_MIXTAPE + encodeURIComponent(m.id), m.name, plural(m.tracks.length, 'track'), m.hasArtwork ? (mixtapes.getMixtapeArtworkUrl(m.id) ?? undefined) : undefined),
+    ));
+  } else if (mediaId === TAB_LOVED) {
+    const loved = await getLovedTracks();
+    tree[mediaId] = chunked(mediaId, loved.map(playableItem));
+    recordTracks(mediaId, loved);
+  } else if (mediaId === TAB_FOLDERS) {
     const folders = await getFolders();
     tree[mediaId] = chunked(mediaId, folders.map((f) =>
-      browsable(PREFIX_FOLDER + encodeURIComponent(f.path), f.name, undefined, f.coverPath ? (getArtworkUrl(f.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
+      browsable(PREFIX_FOLDER + encodeURIComponent(f.path), f.name, plural(f.trackCount, 'track'), f.coverPath ? (getArtworkUrl(f.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
     ));
+  } else if (mediaId.startsWith(PREFIX_ARTIST)) {
+    const artist = decodeURIComponent(mediaId.slice(PREFIX_ARTIST.length));
+    const albums = await getAlbums(artist);
+    tree[mediaId] = chunked(mediaId, albums.map((a) =>
+      browsable(albumNodeId(a), a.album, a.artist, a.coverPath ? (getArtworkUrl(a.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
+    ));
+  } else if (mediaId.startsWith(PREFIX_ALBUM)) {
+    const [artistEnc, albumEnc] = mediaId.slice(PREFIX_ALBUM.length).split('|');
+    const res = await getTracks({
+      artist: decodeURIComponent(artistEnc ?? ''),
+      album: decodeURIComponent(albumEnc ?? ''),
+      limit: LIST_MAX,
+    });
+    tree[mediaId] = chunked(mediaId, res.tracks.map(playableItem));
+    recordTracks(mediaId, res.tracks);
+  } else if (mediaId.startsWith(PREFIX_GENRE)) {
+    await loadTracks(mediaId, 'g', mediaId.slice(PREFIX_GENRE.length));
+  } else if (mediaId.startsWith(PREFIX_YEAR)) {
+    await loadTracks(mediaId, 'y', mediaId.slice(PREFIX_YEAR.length));
+  } else if (mediaId.startsWith(PREFIX_MIXTAPE)) {
+    const mixtape = await mixtapes.getById(decodeURIComponent(mediaId.slice(PREFIX_MIXTAPE.length)));
+    const tracks = mixtape.tracks.map(mixtapeTrackToTrack);
+    tree[mediaId] = chunked(mediaId, tracks.map(playableItem));
+    recordTracks(mediaId, tracks);
   } else if (mediaId.startsWith(PREFIX_FOLDER)) {
-    const folder = decodeURIComponent(mediaId.slice(PREFIX_FOLDER.length));
-    // One page tells us the size of the folder. Anything bigger becomes numbered page nodes that
-    // fetch on demand — the old fixed limit silently dropped everything past 5,000 tracks, which
-    // hid ~20,000 of them in the largest folder.
-    const res = await getTracks({ folder, limit: LIST_MAX });
-    if (res.total > res.tracks.length) {
-      const pages: BrowseItem[] = [];
-      for (let off = 0; off < res.total; off += LIST_MAX) {
-        pages.push(browsable(
-          `${PREFIX_PAGE}${off}:${encodeURIComponent(folder)}`,
-          `${off + 1} – ${Math.min(off + LIST_MAX, res.total)}`,
-          `of ${res.total}`,
-        ));
-      }
-      tree[mediaId] = chunked(mediaId, pages);
-    } else {
-      tree[mediaId] = chunked(mediaId, res.tracks.map(playableItem));
-      recordTracks(mediaId, res.tracks);
-    }
+    await loadTracks(mediaId, 'f', mediaId.slice(PREFIX_FOLDER.length));
   } else if (mediaId.startsWith(PREFIX_PAGE)) {
-    const rest = mediaId.slice(PREFIX_PAGE.length);
-    const sep = rest.indexOf(':');
-    const offset = Number(rest.slice(0, sep));
-    const folder = decodeURIComponent(rest.slice(sep + 1));
-    const res = await getTracks({ folder, offset, limit: LIST_MAX });
+    const [offStr, kind, ...keyParts] = mediaId.slice(PREFIX_PAGE.length).split(':');
+    const res = await getTracks({
+      ...pageQuery(kind, keyParts.join(':')),
+      offset: Number(offStr),
+      limit: LIST_MAX,
+    });
     tree[mediaId] = chunked(mediaId, res.tracks.map(playableItem));
     recordTracks(mediaId, res.tracks);
   } else if (mediaId === TAB_LOCAL) {
@@ -290,7 +435,7 @@ export const buildAndroidAutoTree = async (): Promise<void> => {
   // empty list — because we were still hydrating the session — and it shows "No items" until the
   // next connection, no matter what we notify afterwards.
   tree[ROOT] = [
-    tab(TAB_FOLDERS, 'Music from Server'),
+    tab(TAB_SERVER, 'Music from Server'),
     tab(TAB_LOCAL, 'Music on Device'),
   ];
   await push();
@@ -299,7 +444,7 @@ export const buildAndroidAutoTree = async (): Promise<void> => {
   if (!auth.isReady) await auth.hydrate();
   if (!isAuthed()) { buildWhenAuthed(); return; }
   const results = await Promise.allSettled([
-    loadNode(TAB_FOLDERS),
+    loadNode(TAB_SERVER),
     loadNode(TAB_LOCAL),
   ]);
   results.forEach((r) => {
@@ -330,7 +475,11 @@ export const handleAndroidAutoBrowse = async (mediaId: string): Promise<void> =>
 
   const auth = useAuthStore.getState();
   if (!auth.isReady) await auth.hydrate();
-  if (!isAuthed()) { buildWhenAuthed(); return; }
+  if (!isAuthed()) {
+    if (mediaId !== ROOT) deferredBrowses.add(mediaId);
+    buildWhenAuthed();
+    return;
+  }
 
   if (mediaId === ROOT) {
     // Car opened the root — build the tree on first connect (handles headless startup).
