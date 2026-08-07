@@ -41,6 +41,7 @@ import {
 import { getYaml, updateYaml, validateYaml } from '../../../lib/options';
 import * as prefs from '../../../lib/prefs';
 import * as sharesLibrary from '../../../lib/shares';
+import { KIB_PER_GBPS, KIB_PER_MBPS } from '../../../lib/util';
 import { ShrinkableButton } from '../../Shared';
 import FolderPicker from '../../Shared/FolderPicker';
 import BrowseRateLimitSection from './BrowseRateLimitSection';
@@ -1173,9 +1174,7 @@ const Toggle = ({ disabled, onChange, value }) => (
 
 // Speed limits are stored internally in KiB/s (the backend option unit), but
 // humans think about connection speed in bits/s (Mbps/Gbps), so the UI presents
-// and accepts bit-based units and converts. 1 Mbps = 1e6 bits/s = 125000 B/s.
-const KIB_PER_MBPS = 1_000_000 / 8 / 1_024; // 122.0703125
-const KIB_PER_GBPS = KIB_PER_MBPS * 1_000;
+// and accepts bit-based units and converts.
 const SPEED_UNITS = { Mbps: KIB_PER_MBPS, Gbps: KIB_PER_GBPS };
 const INT_MAX = 2_147_483_647;
 const CONN_SPEED_PREFIX = 'resonance:connSpeed:';

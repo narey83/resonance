@@ -30,7 +30,7 @@
 import { lookupIp } from '../../lib/network';
 import { isStateCancellable, isStateRemovable } from '../../lib/transfers';
 import { getStatus } from '../../lib/users';
-import { formatBytes, getFileName } from '../../lib/util';
+import { formatBitrate, formatBytes, getFileName } from '../../lib/util';
 import { UsernameLink } from '../Shared';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -269,7 +269,7 @@ const FileRow = ({ file, onCancel, onRemove }) => {
           : formatBytes(file.size)}
       </td>
       <td className="dl-cell dl-cell--speed">
-        {file.averageSpeed > 0 ? `${formatBytes(file.averageSpeed)}/s` : '—'}
+        {file.averageSpeed > 0 ? formatBitrate(file.averageSpeed) : '—'}
       </td>
       <td className="dl-cell dl-cell--actions">
         {canCancel && (
@@ -405,7 +405,7 @@ const DirectoryGroup = ({
             : `${formatBytes(totalTransferred)} / ${formatBytes(totalSize)}`}
         </td>
         <td className="dl-cell dl-cell--speed">
-          {totalSpeed > 0 ? `${formatBytes(totalSpeed)}/s` : '—'}
+          {totalSpeed > 0 ? formatBitrate(totalSpeed) : '—'}
         </td>
         <td className="dl-cell dl-cell--actions">
           {!allCompleted && (
@@ -614,7 +614,7 @@ const UserGroup = ({
           )}
           {totalSpeed > 0 && (
             <span className="dl-user-stat dl-user-stat--speed">
-              {formatBytes(totalSpeed)}/s
+              {formatBitrate(totalSpeed)}
             </span>
           )}
           <span className="dl-user-stat">

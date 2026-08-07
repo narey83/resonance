@@ -27,7 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import { formatBytes } from '../../lib/util';
+import { formatBitrate, formatBytes } from '../../lib/util';
 import React from 'react';
 
 const sumBytes = (directionData) =>
@@ -152,7 +152,7 @@ const KpiCards = ({ downloads, loading, prevSummary, summary, uploads }) => {
         label="Downloaded"
         loading={loading}
         sub={
-          liveDownSpeed > 0 ? `${formatBytes(liveDownSpeed)}/s now` : undefined
+          liveDownSpeed > 0 ? `${formatBitrate(liveDownSpeed)} now` : undefined
         }
         value={kpis ? formatBytes(kpis.dlBytes) : '—'}
       />
@@ -160,7 +160,7 @@ const KpiCards = ({ downloads, loading, prevSummary, summary, uploads }) => {
         delta={kpis && prev ? pctChange(kpis.ulBytes, prev.ulBytes) : null}
         label="Uploaded"
         loading={loading}
-        sub={liveUpSpeed > 0 ? `${formatBytes(liveUpSpeed)}/s now` : undefined}
+        sub={liveUpSpeed > 0 ? `${formatBitrate(liveUpSpeed)} now` : undefined}
         value={kpis ? formatBytes(kpis.ulBytes) : '—'}
       />
       <KpiCard
@@ -182,7 +182,7 @@ const KpiCards = ({ downloads, loading, prevSummary, summary, uploads }) => {
       <KpiCard
         label="Avg Speed"
         loading={loading}
-        value={kpis ? `${formatBytes(kpis.avgSpeed)}/s` : '—'}
+        value={kpis ? formatBitrate(kpis.avgSpeed) : '—'}
       />
       <KpiCard
         label="Avg Queue Wait"

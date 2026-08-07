@@ -27,11 +27,11 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import { formatBytes } from '../../lib/util';
+import { formatBitrate, formatBytes } from '../../lib/util';
 import UsernameLink from '../Shared/UsernameLink';
 import React from 'react';
 
-const formatSpeed = (speed) => (speed > 0 ? `${formatBytes(speed)}/s` : '—');
+const formatSpeed = (speed) => (speed > 0 ? formatBitrate(speed) : '—');
 
 const LeaderboardTable = ({ entries }) => {
   if (!entries || entries.length === 0) {

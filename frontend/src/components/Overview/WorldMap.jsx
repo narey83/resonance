@@ -28,7 +28,7 @@
 // </copyright>
 
 import { lookupIp } from '../../lib/network';
-import { formatBytes, parseUtcDate } from '../../lib/util';
+import { formatBitrate, parseUtcDate } from '../../lib/util';
 import UsernameLink from '../Shared/UsernameLink';
 import UserReportWindow from './UserReportWindow';
 import React, {
@@ -549,7 +549,7 @@ const WorldMap = ({
           <div className="map-overlay-stat">
             <span className="map-overlay-label">↓</span>
             <span className="map-overlay-value map-overlay-dl">
-              {formatBytes(liveDownSpeed)}/s
+              {formatBitrate(liveDownSpeed)}
             </span>
           </div>
         )}
@@ -557,7 +557,7 @@ const WorldMap = ({
           <div className="map-overlay-stat">
             <span className="map-overlay-label">↑</span>
             <span className="map-overlay-value map-overlay-ul">
-              {formatBytes(liveUpSpeed)}/s
+              {formatBitrate(liveUpSpeed)}
             </span>
           </div>
         )}

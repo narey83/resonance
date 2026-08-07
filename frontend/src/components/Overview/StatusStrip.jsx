@@ -30,7 +30,7 @@
 import * as serverAPI from '../../lib/server';
 import * as session from '../../lib/session';
 import * as sharesAPI from '../../lib/shares';
-import { formatBytes } from '../../lib/util';
+import { formatBitrate, formatBytes } from '../../lib/util';
 import ResonanceMark from '../Shared/ResonanceMark';
 import {
   ArrowDown,
@@ -57,24 +57,6 @@ import {
 import React, { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { toast } from 'react-toastify';
-
-// Format a byte/second throughput as a bit/second rate (Mbps/Gbps), matching the
-// units used by the Speed Limit setting so the header speaks the same language as
-// the cap. 1 Mbps = 1e6 bits/s = 125000 B/s.
-const formatBitrate = (bytesPerSecond) => {
-  const mbps = ((bytesPerSecond ?? 0) * 8) / 1_000_000;
-
-  if (mbps >= 1_000) {
-    const gbps = mbps / 1_000;
-    return `${gbps % 1 === 0 ? gbps : gbps.toFixed(2)} Gbps`;
-  }
-
-  if (mbps > 0 && mbps < 10) {
-    return `${mbps.toFixed(1)} Mbps`;
-  }
-
-  return `${Math.round(mbps)} Mbps`;
-};
 
 const StatusStrip = ({
   brand,

@@ -33,7 +33,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import { formatBytes, formatDate } from '../../lib/util';
+import { formatBitrate, formatBytes, formatDate } from '../../lib/util';
 import { Table } from 'semantic-ui-react';
 
 // Regex patterns for field name formatting
@@ -79,7 +79,7 @@ const formatValue = (key, value) => {
 
   // Format speed
   if (lowerKey.includes('speed')) {
-    return `${formatBytes(value)}/s`;
+    return formatBitrate(value);
   }
 
   // Format percentage

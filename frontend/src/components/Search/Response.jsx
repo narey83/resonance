@@ -36,7 +36,7 @@
 import { findDuplicates } from '../../lib/dedup';
 import * as transfers from '../../lib/transfers';
 import { getDirectoryContents, getStatus } from '../../lib/users';
-import { formatBytes, getDirectoryName } from '../../lib/util';
+import { formatBitrate, formatBytes, getDirectoryName } from '../../lib/util';
 import FileList from '../Shared/FileList';
 import UsernameLink from '../Shared/UsernameLink';
 import { AlertTriangle, Download, Search, X } from 'lucide-react';
@@ -230,7 +230,7 @@ class Response extends Component {
 
           <div className="result-card-stats">
             <span className="result-stat">
-              {formatBytes(response.uploadSpeed)}/s
+              {formatBitrate(response.uploadSpeed)}
             </span>
             <span
               className={`result-stat${free ? ' result-stat--slot-free' : ' result-stat--slot-busy'}`}

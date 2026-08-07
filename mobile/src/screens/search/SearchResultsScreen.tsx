@@ -158,9 +158,13 @@ function fmtBytes(b: number): string {
   return `${(b / 1_073_741_824).toFixed(2)} GB`;
 }
 
+// Connection speed is shown in bits (Kbps/Mbps), matching ISP/OS convention,
+// while file sizes above stay in bytes.
 function fmtSpeed(bps: number): string {
-  if (bps < 1_048_576) return `${(bps / 1024).toFixed(0)} KB/s`;
-  return `${(bps / 1_048_576).toFixed(1)} MB/s`;
+  const kbps = (bps * 8) / 1000;
+  if (kbps < 1000) return `${Math.round(kbps)} Kbps`;
+  const mbps = kbps / 1000;
+  return `${mbps < 10 ? mbps.toFixed(1) : Math.round(mbps)} Mbps`;
 }
 
 function getFileName(path: string): string {

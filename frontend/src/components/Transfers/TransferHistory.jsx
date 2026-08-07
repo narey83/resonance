@@ -29,7 +29,7 @@
 
 import './TransferHistory.css';
 import { getTransferHistory } from '../../lib/reports';
-import { formatBytes } from '../../lib/util';
+import { formatBitrate, formatBytes } from '../../lib/util';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 const PAGE_SIZE = 50;
@@ -66,7 +66,7 @@ const stateClass = (description = '') => {
 };
 
 const formatSpeed = (bytesPerSecond) =>
-  bytesPerSecond > 0 ? `${formatBytes(bytesPerSecond)}/s` : '—';
+  bytesPerSecond > 0 ? formatBitrate(bytesPerSecond) : '—';
 
 const formatWhen = (value) => {
   if (!value) return '—';

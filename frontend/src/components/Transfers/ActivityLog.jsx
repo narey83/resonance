@@ -27,7 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import { formatBytes, getFileName } from '../../lib/util';
+import { formatBitrate, formatBytes, getFileName } from '../../lib/util';
 import { UsernameLink } from '../Shared';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import React, { useMemo } from 'react';
@@ -95,9 +95,7 @@ const ActivityLog = ({ direction, transfers }) => {
               {formatBytes(file.size ?? 0)}
             </span>
             <span className="activity-log-speed">
-              {file.averageSpeed > 0
-                ? `${formatBytes(file.averageSpeed)}/s`
-                : '—'}
+              {file.averageSpeed > 0 ? formatBitrate(file.averageSpeed) : '—'}
             </span>
           </div>
         ))}

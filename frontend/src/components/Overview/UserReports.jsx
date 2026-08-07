@@ -29,7 +29,7 @@
 
 import * as reportsAPI from '../../lib/reports';
 import { onTransferComplete } from '../../lib/transferEvents';
-import { formatBytes, formatDate } from '../../lib/util';
+import { formatBitrate, formatBytes, formatDate } from '../../lib/util';
 import UsernameLink from '../Shared/UsernameLink';
 import {
   Building2,
@@ -68,7 +68,7 @@ const COLUMNS = [
   { key: 'DownloadSpeed', label: 'DL Speed', Icon: Gauge, num: true },
 ];
 
-const formatSpeed = (speed) => (speed > 0 ? `${formatBytes(speed)}/s` : '—');
+const formatSpeed = (speed) => (speed > 0 ? formatBitrate(speed) : '—');
 
 const SortHeader = ({ col, onSort, sortBy, sortOrder }) => {
   const active = sortBy === col.key;

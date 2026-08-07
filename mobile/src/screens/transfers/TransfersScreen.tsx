@@ -101,6 +101,15 @@ function fmtBytes(b: number): string {
   return `${(b / 1_073_741_824).toFixed(2)} GB`;
 }
 
+// Connection speed is shown in bits (Kbps/Mbps), matching ISP/OS convention,
+// while file sizes above stay in bytes.
+function fmtSpeed(bytesPerSec: number): string {
+  const kbps = (bytesPerSec * 8) / 1000;
+  if (kbps < 1000) return `${Math.round(kbps)} Kbps`;
+  const mbps = kbps / 1000;
+  return `${mbps < 10 ? mbps.toFixed(1) : Math.round(mbps)} Mbps`;
+}
+
 function fmtEta(remaining: number, speed: number): string | null {
   if (speed <= 0) return null;
   const s = Math.round(remaining / speed);
@@ -131,7 +140,7 @@ function stateLabel(t: Transfer, dir: TransferDir): string {
   switch (t.stateDescription) {
     case 'InProgress': {
       if (t.averageSpeed > 0) {
-        const spd = `${fmtBytes(t.averageSpeed)}/s`;
+        const spd = fmtSpeed(t.averageSpeed);
         const eta = fmtEta(t.bytesRemaining, t.averageSpeed);
         return eta ? `${spd} · ${eta}` : spd;
       }

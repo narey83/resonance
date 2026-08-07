@@ -68,6 +68,30 @@ export const formatBytes = (bytes, decimals = 2) => {
   );
 };
 
+// Connection/transfer speeds are shown in bits (Kbps/Mbps/Gbps), matching how
+// ISPs and OSes report bandwidth, while file sizes stay in bytes (formatBytes
+// above). 1 Mbps = 1e6 bits/s = 125,000 B/s.
+export const KIB_PER_MBPS = 1_000_000 / 8 / 1_024; // 122.0703125
+export const KIB_PER_GBPS = KIB_PER_MBPS * 1_000;
+
+export const formatBitrate = (bytesPerSecond) => {
+  const kbps = ((bytesPerSecond ?? 0) * 8) / 1_000;
+
+  if (kbps <= 0) return '0 Kbps';
+
+  if (kbps >= 1_000_000) {
+    const gbps = kbps / 1_000_000;
+    return `${gbps % 1 === 0 ? gbps : gbps.toFixed(2)} Gbps`;
+  }
+
+  if (kbps >= 1_000) {
+    const mbps = kbps / 1_000;
+    return `${mbps % 1 === 0 ? mbps : mbps.toFixed(mbps < 10 ? 1 : 0)} Mbps`;
+  }
+
+  return `${Math.round(kbps)} Kbps`;
+};
+
 // Backend DateTimes are UTC but serialized without a timezone designator,
 // so the browser would otherwise parse them as local time.
 export const parseUtcDate = (value) => {

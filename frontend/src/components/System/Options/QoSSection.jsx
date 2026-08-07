@@ -27,7 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import React from 'react';
+import { KIB_PER_GBPS, KIB_PER_MBPS } from '../../../lib/util';
+import React, { useEffect, useState } from 'react';
 
 const EMPTY_ENTRY = {
   label: '',
@@ -35,6 +36,87 @@ const EMPTY_ENTRY = {
   end: '00:00',
   download_speed_limit: null,
   upload_speed_limit: null,
+};
+
+// Scheduled limits are stored in KiB/s (the backend option unit), same as the
+// global speed limits above, so this field speaks the same Mbps/Gbps language.
+const SPEED_UNITS = { Mbps: KIB_PER_MBPS, Gbps: KIB_PER_GBPS };
+const detectSpeedUnit = (kib) => (kib >= KIB_PER_GBPS ? 'Gbps' : 'Mbps');
+
+// value is KiB/s: null means "inherit the global limit", 0 means "explicitly
+// unlimited during this window" — both are meaningful, so they're kept distinct.
+const SpeedLimitInput = ({ disabled, onChange, value }) => {
+  const [unit, setUnit] = useState(() => detectSpeedUnit(value ?? 0));
+  const [input, setInput] = useState(() =>
+    value == null
+      ? ''
+      : String(
+          Math.round((value / SPEED_UNITS[detectSpeedUnit(value)]) * 100) / 100,
+        ),
+  );
+
+  useEffect(() => {
+    if (value == null) {
+      setInput('');
+      return;
+    }
+
+    const nextUnit = detectSpeedUnit(value);
+    setUnit(nextUnit);
+    setInput(String(Math.round((value / SPEED_UNITS[nextUnit]) * 100) / 100));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-way sync from saved value
+  }, [value]);
+
+  const apply = (rawInput, rawUnit) => {
+    if (rawInput === '') {
+      onChange(null);
+      return;
+    }
+
+    const n = Number.parseFloat(rawInput);
+    if (Number.isNaN(n) || n < 0) {
+      onChange(null);
+      return;
+    }
+
+    onChange(n === 0 ? 0 : Math.round(n * SPEED_UNITS[rawUnit]));
+  };
+
+  return (
+    <div className="opt-input-wrap">
+      <input
+        className="opt-input"
+        disabled={disabled}
+        min={0}
+        onChange={(e) => {
+          setInput(e.target.value);
+          apply(e.target.value, unit);
+        }}
+        placeholder="unlimited"
+        step="any"
+        type="number"
+        value={input}
+      />
+      <select
+        className="opt-unit-select"
+        disabled={disabled}
+        onChange={(e) => {
+          setUnit(e.target.value);
+          apply(input, e.target.value);
+        }}
+        value={unit}
+      >
+        {Object.keys(SPEED_UNITS).map((u) => (
+          <option
+            key={u}
+            value={u}
+          >
+            {u}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
 };
 
 const QoSSection = ({ disabled, onChange, value = [] }) => {
@@ -107,45 +189,19 @@ const QoSSection = ({ disabled, onChange, value = [] }) => {
               </div>
               <div className="qos-entry-field">
                 <span className="qos-entry-field-label">Download</span>
-                <div className="opt-input-wrap">
-                  <input
-                    className="opt-input"
-                    disabled={disabled}
-                    min={0}
-                    onChange={(e) =>
-                      update(
-                        index,
-                        'download_speed_limit',
-                        e.target.value === '' ? null : Number(e.target.value),
-                      )
-                    }
-                    placeholder="unlimited"
-                    type="number"
-                    value={entry.download_speed_limit ?? ''}
-                  />
-                  <span className="opt-unit">KiB/s</span>
-                </div>
+                <SpeedLimitInput
+                  disabled={disabled}
+                  onChange={(kib) => update(index, 'download_speed_limit', kib)}
+                  value={entry.download_speed_limit}
+                />
               </div>
               <div className="qos-entry-field">
                 <span className="qos-entry-field-label">Upload</span>
-                <div className="opt-input-wrap">
-                  <input
-                    className="opt-input"
-                    disabled={disabled}
-                    min={0}
-                    onChange={(e) =>
-                      update(
-                        index,
-                        'upload_speed_limit',
-                        e.target.value === '' ? null : Number(e.target.value),
-                      )
-                    }
-                    placeholder="unlimited"
-                    type="number"
-                    value={entry.upload_speed_limit ?? ''}
-                  />
-                  <span className="opt-unit">KiB/s</span>
-                </div>
+                <SpeedLimitInput
+                  disabled={disabled}
+                  onChange={(kib) => update(index, 'upload_speed_limit', kib)}
+                  value={entry.upload_speed_limit}
+                />
               </div>
             </div>
           </div>

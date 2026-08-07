@@ -28,7 +28,7 @@
 // </copyright>
 
 import { urlBase } from '../../config';
-import { formatBytes, getFileName } from '../../lib/util';
+import { formatBitrate, getFileName } from '../../lib/util';
 import { ArrowDown, ArrowRight, ArrowUp } from 'lucide-react';
 import React from 'react';
 import { Link } from 'react-router-dom';
@@ -57,7 +57,7 @@ const LiveTransferPanel = ({ direction, transfers }) => {
           <span>{label}</span>
         </div>
         <div className="live-panel-stats">
-          <span className="live-speed">{formatBytes(totalSpeed)}/s</span>
+          <span className="live-speed">{formatBitrate(totalSpeed)}</span>
           {active.length > 0 && (
             <span className="live-total">{active.length} active</span>
           )}

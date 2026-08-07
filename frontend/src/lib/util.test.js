@@ -41,6 +41,25 @@ describe('formatBytesAsUnit', () => {
   });
 });
 
+describe('formatBitrate', () => {
+  it('formats sub-Mbps speeds as Kbps', () => {
+    expect(utils.formatBitrate(50_000)).toBe('400 Kbps');
+  });
+
+  it('formats mid-range speeds as Mbps', () => {
+    expect(utils.formatBitrate(1_250_000)).toBe('10 Mbps');
+  });
+
+  it('formats very fast speeds as Gbps', () => {
+    expect(utils.formatBitrate(125_000_000)).toBe('1 Gbps');
+  });
+
+  it('returns 0 Kbps for zero or missing input', () => {
+    expect(utils.formatBitrate(0)).toBe('0 Kbps');
+    expect(utils.formatBitrate(undefined)).toBe('0 Kbps');
+  });
+});
+
 describe('keepIfEqual', () => {
   // The whole point is reference identity: an equal-but-new value must come
   // back as the OLD reference, or the re-render it exists to prevent happens

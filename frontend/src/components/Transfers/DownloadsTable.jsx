@@ -34,7 +34,12 @@ import {
   isStateRetryable,
 } from '../../lib/transfers';
 import { getStatus } from '../../lib/users';
-import { formatBytes, formatSeconds, getFileName } from '../../lib/util';
+import {
+  formatBitrate,
+  formatBytes,
+  formatSeconds,
+  getFileName,
+} from '../../lib/util';
 import { UsernameLink } from '../Shared';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -245,7 +250,7 @@ const FileRow = ({ file, onCancel, onRemove, onRetry }) => {
           : formatBytes(file.size)}
       </td>
       <td className="dl-cell dl-cell--speed">
-        {file.averageSpeed > 0 ? `${formatBytes(file.averageSpeed)}/s` : '—'}
+        {file.averageSpeed > 0 ? formatBitrate(file.averageSpeed) : '—'}
       </td>
       <td className="dl-cell dl-cell--eta">
         {file.remainingTime > 0
@@ -419,7 +424,7 @@ const DirectoryGroup = ({
             : `${formatBytes(totalTransferred)} / ${formatBytes(totalSize)}`}
         </td>
         <td className="dl-cell dl-cell--speed">
-          {folderSpeed > 0 ? `${formatBytes(folderSpeed)}/s` : '—'}
+          {folderSpeed > 0 ? formatBitrate(folderSpeed) : '—'}
         </td>
         <td className="dl-cell dl-cell--eta">
           {folderEta > 0 ? formatSeconds(folderEta / 1_000) : '—'}
@@ -681,7 +686,7 @@ const UserGroup = ({
           )}
           {totalSpeed > 0 && (
             <span className="dl-user-stat dl-user-stat--speed">
-              {formatBytes(totalSpeed)}/s
+              {formatBitrate(totalSpeed)}
             </span>
           )}
           <span className="dl-user-stat">

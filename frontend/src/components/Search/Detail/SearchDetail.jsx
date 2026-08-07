@@ -54,6 +54,7 @@ import * as transfers from '../../../lib/transfers';
 import { getDirectoryContents, getStatus } from '../../../lib/users';
 import {
   formatAttributes,
+  formatBitrate,
   formatBytes,
   formatSeconds,
   getDirectoryName,
@@ -185,7 +186,7 @@ const FileRow = React.memo(({ checked, disabled, file, onToggleFile }) => {
         <span
           className={`sr-slot-dot${file._hasFreeUploadSlot ? ' sr-slot-dot--free' : ''}`}
         />
-        {formatBytes(file._uploadSpeed)}/s
+        {formatBitrate(file._uploadSpeed)}
       </div>
     </div>
   );
@@ -328,7 +329,7 @@ const FolderGroup = ({
           <span
             className={`sr-slot-dot${group.hasFreeSlot ? ' sr-slot-dot--free' : ''}`}
           />
-          {formatBytes(group.bestSpeed)}/s
+          {formatBitrate(group.bestSpeed)}
         </span>
 
         {presence === 'Offline' ? (
@@ -467,7 +468,7 @@ const AlbumGroup = React.memo(
             <span
               className={`sr-slot-dot${albumGroup.hasFreeSlot ? ' sr-slot-dot--free' : ''}`}
             />
-            {formatBytes(albumGroup.bestSpeed)}/s
+            {formatBitrate(albumGroup.bestSpeed)}
           </span>
         </div>
 

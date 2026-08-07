@@ -41,6 +41,7 @@ import {
 import * as reportsAPI from '../../lib/reports';
 import * as usersAPI from '../../lib/users';
 import {
+  formatBitrate,
   formatBytes,
   formatDate,
   getFileName,
@@ -91,7 +92,7 @@ const TREND_INTERVAL_MINUTES = 1_440;
 // thousands of records), so hold off until typing settles.
 const SEARCH_DEBOUNCE_MS = 300;
 
-const formatSpeed = (speed) => (speed > 0 ? `${formatBytes(speed)}/s` : '—');
+const formatSpeed = (speed) => (speed > 0 ? formatBitrate(speed) : '—');
 
 // Show only the immediate parent folder, dropping the share-root segments
 // (e.g. "music\") — matches the Uploads/Downloads tables.

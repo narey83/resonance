@@ -50,8 +50,17 @@ export function fmtPct(n: number, digits = 1): string {
   return Number.isFinite(n) ? `${(n * 100).toFixed(digits)}%` : '—';
 }
 
+// Connection speeds are shown in bits (Kbps/Mbps/Gbps), matching how ISPs and
+// OSes report bandwidth, while file sizes stay in bytes (fmtBytes above).
 export function fmtSpeed(bytesPerSec: number): string {
-  return `${fmtBytes(bytesPerSec)}/s`;
+  if (!Number.isFinite(bytesPerSec) || bytesPerSec <= 0) return '0 Kbps';
+  const kbps = (bytesPerSec * 8) / 1000;
+  if (kbps >= 1_000_000) return `${(kbps / 1_000_000).toFixed(2).replace(/\.00$/, '')} Gbps`;
+  if (kbps >= 1000) {
+    const mbps = kbps / 1000;
+    return `${mbps < 10 ? mbps.toFixed(1) : Math.round(mbps)} Mbps`;
+  }
+  return `${Math.round(kbps)} Kbps`;
 }
 
 // Handles both past ("Xm ago") and future ("in Xm") timestamps — the latter
