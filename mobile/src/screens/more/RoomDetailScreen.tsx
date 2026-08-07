@@ -39,9 +39,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import { KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useRoomStore } from '../../store/roomStore';
 import { useTranslationStore } from '../../store/translationStore';
@@ -51,7 +53,6 @@ import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import type { RoomsStackParamList } from '../../navigation/MainTabs';
 import UserActionSheet from '../../components/UserActionSheet';
-import { useMiniBarHeight } from '../../components/PlayerMiniBar';
 import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
 type Props = NativeStackScreenProps<RoomsStackParamList, 'RoomDetail'>;
@@ -108,9 +109,16 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
   const [showUsers, setShowUsers] = useState(false);
   const [actionUser, setActionUser] = useState<string | null>(null);
 
-  // The mini bar lifts itself onto the keyboard, so reserve its height on top of
-  // the keyboard's or it lands over the input bar.
-  const miniBarHeight = useMiniBarHeight();
+  // Same keyboard-stacking pattern as ChatConversationScreen: an animated spacer
+  // reserves scroll space equal to the live keyboard height (paired with
+  // KeyboardStickyView below), and the input bar is lifted by `tabBarHeight`
+  // (mini bar excluded) so it lands flush on top of the mini bar, which rides
+  // the keyboard independently via the global KeyboardStickyView in MainTabs.
+  const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
+  const spacerAnimatedStyle = useAnimatedStyle(() => ({
+    height: -keyboardHeight.value,
+  }));
+  const tabBarHeight = useBottomTabBarHeight();
 
   // Close the user-list modal before opening the action sheet — stacked
   // visible Modals are unreliable on iOS.
@@ -318,12 +326,7 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
   };
 
   return (
-    <KeyboardAvoidingView
-      automaticOffset
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={miniBarHeight}
-      style={s.container}
-    >
+    <View style={s.container}>
       <FlatList
         {...LIST_PERF_PROPS}
         // removeClippedSubviews is unreliable on Android inverted lists (blanks rows),
@@ -334,6 +337,7 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
         keyExtractor={(item, index) => `${item.username}-${item.timestamp}-${index}`}
         renderItem={renderMessage}
         contentContainerStyle={s.list}
+        ListHeaderComponent={<Animated.View style={spacerAnimatedStyle} />}
         onRefresh={() => loadMessages(roomName)}
         refreshing={false}
         ListEmptyComponent={
@@ -345,44 +349,46 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
           </View>
         }
       />
-      <View style={s.inputBar}>
-        {translationEnabled && (
+      <KeyboardStickyView offset={{ opened: tabBarHeight }}>
+        <View style={s.inputBar}>
+          {translationEnabled && (
+            <Pressable
+              hitSlop={8}
+              onPress={() => toggleReply(threadKey)}
+              style={[s.replyToggle, reply && s.replyToggleOn]}
+            >
+              <Ionicons
+                color={reply ? '#fff' : colors.textMuted}
+                name="globe-outline"
+                size={18}
+              />
+            </Pressable>
+          )}
+          <TextInput
+            multiline
+            onChangeText={setText}
+            onSubmitEditing={handleSend}
+            placeholder={reply ? 'Reply in their language…' : `Message ${roomName}…`}
+            placeholderTextColor={colors.textMuted}
+            returnKeyType="send"
+            style={s.input}
+            value={text}
+            blurOnSubmit={false}
+          />
           <Pressable
+            disabled={!text.trim() || sending}
             hitSlop={8}
-            onPress={() => toggleReply(threadKey)}
-            style={[s.replyToggle, reply && s.replyToggleOn]}
+            onPress={handleSend}
+            style={[s.sendBtn, (!text.trim() || sending) && s.sendBtnDisabled]}
           >
             <Ionicons
-              color={reply ? '#fff' : colors.textMuted}
-              name="globe-outline"
+              color={!text.trim() || sending ? colors.textDim : '#fff'}
+              name="send"
               size={18}
             />
           </Pressable>
-        )}
-        <TextInput
-          multiline
-          onChangeText={setText}
-          onSubmitEditing={handleSend}
-          placeholder={reply ? 'Reply in their language…' : `Message ${roomName}…`}
-          placeholderTextColor={colors.textMuted}
-          returnKeyType="send"
-          style={s.input}
-          value={text}
-          blurOnSubmit={false}
-        />
-        <Pressable
-          disabled={!text.trim() || sending}
-          hitSlop={8}
-          onPress={handleSend}
-          style={[s.sendBtn, (!text.trim() || sending) && s.sendBtnDisabled]}
-        >
-          <Ionicons
-            color={!text.trim() || sending ? colors.textDim : '#fff'}
-            name="send"
-            size={18}
-          />
-        </Pressable>
-      </View>
+        </View>
+      </KeyboardStickyView>
 
       {/* User list modal */}
       <Modal
@@ -409,7 +415,7 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
       </Modal>
 
       <UserActionSheet username={actionUser} onClose={() => setActionUser(null)} />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
