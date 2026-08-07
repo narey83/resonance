@@ -133,6 +133,7 @@ export const PlayerProvider = ({ children }) => {
   const queueIndexRef = useRef(queueIndex);
   const shuffleRef = useRef(shuffle);
   const shuffleOrderRef = useRef(shuffleOrder);
+  const trackRef = useRef(track);
 
   useEffect(() => {
     queueRef.current = queue;
@@ -146,6 +147,22 @@ export const PlayerProvider = ({ children }) => {
   useEffect(() => {
     shuffleOrderRef.current = shuffleOrder;
   }, [shuffleOrder]);
+  useEffect(() => {
+    trackRef.current = track;
+  }, [track]);
+
+  // A click on a mini waveform wants to seek a track that may not be the one
+  // loaded yet. MediaPlayer owns the actual <audio> element, so the two sides
+  // meet through refs shared via context rather than lifting playback
+  // mechanics up here: seekHandlerRef is MediaPlayer's "seek the track that's
+  // already loaded and make sure it's playing", pendingSeekRef is the
+  // position to jump to once a newly-switched-to track finishes loading.
+  const seekHandlerRef = useRef(null);
+  const pendingSeekRef = useRef(null);
+
+  const registerSeekHandler = useCallback((fn) => {
+    seekHandlerRef.current = fn;
+  }, []);
 
   // On mount, validate session queue paths against music.db and drop stale entries.
   // PlayerProvider only mounts when authenticated so API calls are safe.
@@ -237,6 +254,27 @@ export const PlayerProvider = ({ children }) => {
       setShuffleOrder([]);
     }
   }, []);
+
+  // Same track already loaded → seek it in place. Different track → queue it
+  // like a normal click would, and leave the position for MediaPlayer to pick
+  // up once that track's audio has actually loaded.
+  const seekTrack = useCallback(
+    (allTracks, index, time) => {
+      const target = allTracks[index];
+      if (!target) return;
+      const identity = target.filename || target.path;
+      const currentIdentity =
+        trackRef.current?.filename || trackRef.current?.path;
+      if (identity === currentIdentity && seekHandlerRef.current) {
+        seekHandlerRef.current(time);
+        return;
+      }
+
+      pendingSeekRef.current = { identity, time };
+      playQueue(allTracks, index);
+    },
+    [playQueue],
+  );
 
   const next = useCallback(() => {
     const currentQueue = queueRef.current;
@@ -390,15 +428,18 @@ export const PlayerProvider = ({ children }) => {
       isPlaying,
       jumpTo,
       next,
+      pendingSeekRef,
       play,
       playQueue,
       prev: previous,
       queue: sessionValidated ? queue : [],
       queueIndex,
       queuePanelOpen,
+      registerSeekHandler,
       removeFromQueue,
       reorderQueue,
       restoredFromSession: sessionValidated && restoredFromSession,
+      seekTrack,
       setIsPlaying,
       shuffle,
       stop,
@@ -420,9 +461,11 @@ export const PlayerProvider = ({ children }) => {
       queue,
       queueIndex,
       queuePanelOpen,
+      registerSeekHandler,
       removeFromQueue,
       reorderQueue,
       restoredFromSession,
+      seekTrack,
       sessionValidated,
       setIsPlaying,
       shuffle,

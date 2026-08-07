@@ -58,15 +58,16 @@ describe('fitColumns', () => {
     );
   });
 
-  // The point of the whole exercise: a track listing that doesn't say what the track is isn't
-  // one. These four survive every width, however little is left.
+  // The point of the whole exercise: a track listing that doesn't say what the track is (or show
+  // its waveform) isn't one. These five survive every width, however little is left.
   it.each([1_600, 1_200, 900, 700, 500, 360, 240])(
     'still shows the name columns at %ipx',
     (width) => {
-      expect.assertions(4);
+      expect.assertions(5);
       const kept = ids(width);
       expect(kept).toContain('title');
       expect(kept).toContain('artist');
+      expect(kept).toContain('wave');
       expect(kept).toContain('num');
       expect(kept).toContain('love');
     },
@@ -74,10 +75,10 @@ describe('fitColumns', () => {
 
   it('drops columns in priority order as the table narrows', () => {
     expect.assertions(3);
-    // Plays goes before quality, which goes before the waveform.
-    expect(ids(900)).not.toContain('plays');
-    expect(ids(900)).toContain('wave');
-    expect(ids(700)).not.toContain('wave');
+    // Plays goes before quality — the waveform isn't in the drop order at all.
+    expect(ids(750)).not.toContain('plays');
+    expect(ids(750)).toContain('quality');
+    expect(ids(700)).not.toContain('quality');
   });
 
   // Widths at or above the point where there is still something left to give up. Narrower than
@@ -95,9 +96,10 @@ describe('fitColumns', () => {
     },
   );
 
-  it('respects a column the user has dragged wider', () => {
+  it('never drops the waveform, even dragged wide enough to overflow', () => {
     expect.assertions(1);
-    // A 600px waveform cannot coexist with the rest in a 900px table, so it has to go.
-    expect(ids(900, { wave: 600 })).not.toContain('wave');
+    // Unlike a droppable column, a 600px waveform dragged this wide in a 900px table causes
+    // overflow rather than getting removed — same treatment as title and artist.
+    expect(ids(900, { wave: 600 })).toContain('wave');
   });
 });

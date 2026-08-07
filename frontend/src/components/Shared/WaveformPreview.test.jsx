@@ -111,4 +111,49 @@ describe('WaveformPreview', () => {
 
     expect(container.querySelector('.jb-wave-analyse')).not.toBeNull();
   });
+
+  it("reports the fraction clicked, not a seek time — that conversion is the caller's job", () => {
+    const path = '/downloads/HATE/click-to-seek.mp3';
+    const onSeek = jest.fn();
+
+    act(() => {
+      ReactDOM.render(
+        <WaveformPreview
+          hasWaveform={false}
+          onSeek={onSeek}
+          path={path}
+          width={100}
+        />,
+        container,
+      );
+    });
+    act(() => primeWaveformCache(path, waveformResponse));
+
+    const preview = container.querySelector('.jb-wave-preview');
+    preview.getBoundingClientRect = () => ({ left: 0, width: 100 });
+    act(() => {
+      preview.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, clientX: 25 }),
+      );
+    });
+
+    expect(onSeek).toHaveBeenCalledWith(0.25);
+  });
+
+  it('does not attach a click handler when no onSeek is given', () => {
+    const path = '/downloads/HATE/no-seek.mp3';
+
+    render(path, false);
+    act(() => primeWaveformCache(path, waveformResponse));
+
+    const preview = container.querySelector('.jb-wave-preview');
+    preview.getBoundingClientRect = () => ({ left: 0, width: 100 });
+    // A click without a handler must be a no-op, not a throw.
+    act(() => {
+      preview.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, clientX: 25 }),
+      );
+    });
+    expect(container.querySelector('canvas')).not.toBeNull();
+  });
 });

@@ -79,12 +79,13 @@ const WIDTHS_PREF = 'library-column-widths';
 // Column order and default track sizes. Flexible defaults stay flexible until the
 // user drags one, at which point that column is pinned to the pixel width it had.
 // num and love are icon slots and are not resizable.
-// Title and artist carry a floor rather than minmax(0, …): a 0 minimum lets the flexible columns
-// be squeezed to nothing once the fixed ones fill the row, and since the table only scrolls
-// vertically there was then no way to reach them — a narrow window hid the track names entirely.
+// Title, artist and wave carry a floor rather than minmax(0, …): a 0 minimum lets the flexible
+// columns be squeezed to nothing once the fixed ones fill the row, and since the table only
+// scrolls vertically there was then no way to reach them — a narrow window hid the track names
+// (and the waveform) entirely.
 export const COLUMNS = [
   { def: '28px', fixed: true, id: 'num', min: 24 },
-  { def: '220px', id: 'wave', min: 60 },
+  { def: 'minmax(60px, 1fr)', id: 'wave', min: 60 },
   { def: 'minmax(80px, 2.2fr)', id: 'title', min: 80 },
   { def: 'minmax(60px, 1.4fr)', id: 'artist', min: 60 },
   { def: 'minmax(60px, 1.4fr)', id: 'album', min: 60 },
@@ -99,9 +100,10 @@ export const COLUMNS = [
 ];
 
 // What a narrowing table gives up, in the order it gives it up. Floors alone only stop the names
-// collapsing; without dropping something they'd still be squeezed to 80px of ellipsis. num, title,
-// artist, duration and love are deliberately absent — a row you can't read isn't a track listing.
-const DROP_ORDER = ['plays', 'quality', 'ext', 'wave', 'album', 'bpm', 'key'];
+// collapsing; without dropping something they'd still be squeezed to 80px of ellipsis. num, wave,
+// title, artist, duration and love are deliberately absent — a row you can't read (or see the
+// waveform of) isn't a track listing.
+const DROP_ORDER = ['plays', 'quality', 'ext', 'album', 'bpm', 'key'];
 
 const COLUMN_GAP = 10;
 const ROW_PADDING = 48;
@@ -156,6 +158,7 @@ const TrackTable = ({
   const {
     isPlaying: playerIsPlaying,
     playQueue,
+    seekTrack,
     track: currentTrack,
   } = usePlayer();
   const activity = useLibraryActivity();
@@ -419,6 +422,7 @@ const TrackTable = ({
   );
   const headRef = useRef(null);
   const dragRef = useRef(null);
+  const waveHeadRef = useRef(null);
 
   // The table's own width, not the window's — the nav rail and queue panel come out of it, so a
   // window-width breakpoint would drop columns at the wrong moment.
@@ -429,6 +433,21 @@ const TrackTable = ({
 
     const observer = new ResizeObserver(([entry]) =>
       setTableWidth(entry.contentRect.width + ROW_PADDING),
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  // The wave column is now flexible (minmax, not a fixed px), so its rendered width can only be
+  // read off the DOM, not computed from colWidths — every row shares this one measurement rather
+  // than each running its own observer.
+  const [waveColPx, setWaveColPx] = useState(0);
+  useEffect(() => {
+    const element = waveHeadRef.current;
+    if (!element) return undefined;
+
+    const observer = new ResizeObserver(([entry]) =>
+      setWaveColPx(entry.contentRect.width),
     );
     observer.observe(element);
     return () => observer.disconnect();
@@ -635,9 +654,10 @@ const TrackTable = ({
     );
   };
 
-  // The preview is drawn at the column's width, so resizing the column reveals
-  // more of the waveform rather than stretching the same picture.
-  const waveWidth = Math.max(40, (colWidths.wave ?? 220) - 10);
+  // The preview is drawn at the column's actual rendered width (measured, since the column is
+  // flexible), so resizing or narrowing the window reveals more or less of the waveform rather
+  // than stretching the same picture.
+  const waveWidth = Math.max(40, waveColPx - 10);
 
   const virtualItems = virtualizer.getVirtualItems();
 
@@ -684,12 +704,13 @@ const TrackTable = ({
               '#'
             )}
           </div>
-          {shows.has('wave') && (
-            <div className="jb-tt-wave">
-              {resizeHandle('wave')}
-              Wave
-            </div>
-          )}
+          <div
+            className="jb-tt-wave"
+            ref={waveHeadRef}
+          >
+            {resizeHandle('wave')}
+            Wave
+          </div>
           {colHeader('title', 'Title', 'jb-tt-title')}
           {colHeader('artist', 'Artist', 'jb-tt-artist')}
           {shows.has('album') && colHeader('album', 'Album', 'jb-tt-album')}
@@ -823,16 +844,24 @@ const TrackTable = ({
                         </>
                       )}
                     </div>
-                    {shows.has('wave') && (
-                      <div className="jb-tt-wave">
-                        <WaveformPreview
-                          hasWaveform={track.hasWaveform}
-                          height={24}
-                          path={track.path}
-                          width={waveWidth}
-                        />
-                      </div>
-                    )}
+                    <div className="jb-tt-wave">
+                      <WaveformPreview
+                        hasWaveform={track.hasWaveform}
+                        height={24}
+                        onSeek={
+                          track.duration
+                            ? (fraction) =>
+                                seekTrack(
+                                  filteredQueue,
+                                  vRow.index,
+                                  fraction * track.duration,
+                                )
+                            : undefined
+                        }
+                        path={track.path}
+                        width={waveWidth}
+                      />
+                    </div>
                     <div className="jb-tt-title">
                       {track.title || track.filename}
                     </div>

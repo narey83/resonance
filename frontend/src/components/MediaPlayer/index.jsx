@@ -265,10 +265,12 @@ const MediaPlayer = () => {
     hasQueue,
     jumpTo,
     next,
+    pendingSeekRef,
     prev,
     queue,
     queueIndex,
     queuePanelOpen,
+    registerSeekHandler,
     removeFromQueue,
     restoredFromSession,
     setIsPlaying,
@@ -335,6 +337,27 @@ const MediaPlayer = () => {
   googleCastRef.current = googleCast;
   const trackRef = useRef(track);
   trackRef.current = track;
+
+  // A mini waveform click on the track already loaded here doesn't need a
+  // reload — just jump the position and make sure playback is running.
+  useEffect(() => {
+    registerSeekHandler((time) => {
+      if (googleCastRef.current?.connected) {
+        googleCastRef.current.castSeek(time);
+        if (googleCastRef.current.castIsPaused)
+          googleCastRef.current.castTogglePlay();
+        return;
+      }
+
+      const audio = audioRef.current;
+      if (!audio) return;
+      audio.currentTime = time;
+      audio
+        .play()
+        .then(() => setPlaying(true))
+        .catch(() => {});
+    });
+  }, [registerSeekHandler]);
 
   // While an actual scratch drag is in progress, this holds the live scratch
   // position so the waveform's played/unplayed boundary follows the drag
@@ -699,6 +722,12 @@ const MediaPlayer = () => {
       ) {
         audio.currentTime = pendingResumeRef.current.time;
         pendingResumeRef.current = null;
+      } else if (
+        pendingSeekRef.current &&
+        pendingSeekRef.current.identity === resumeIdentity
+      ) {
+        audio.currentTime = pendingSeekRef.current.time;
+        pendingSeekRef.current = null;
       }
 
       const started = await playAudio();
@@ -728,7 +757,7 @@ const MediaPlayer = () => {
       audio.removeEventListener('waiting', onWaiting);
       audio.removeEventListener('playing', onPlaying);
     };
-  }, [next, track]);
+  }, [next, pendingSeekRef, track]);
 
   const togglePlay = async () => {
     if (googleCast.connected) {

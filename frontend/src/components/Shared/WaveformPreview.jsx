@@ -170,6 +170,7 @@ const WaveformPreview = ({
   hasWaveform,
   height = 22,
   mono = false,
+  onSeek,
   path,
   width = 132,
 }) => {
@@ -292,11 +293,20 @@ const WaveformPreview = ({
     );
   }
 
+  const seek = (event) => {
+    if (!onSeek) return;
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    onSeek(Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)));
+  };
+
   return (
     <span
       className="jb-wave-preview"
+      onClick={seek}
+      onDoubleClick={(event) => event.stopPropagation()}
       ref={holderRef}
-      style={{ height, width }}
+      style={{ cursor: onSeek ? 'pointer' : undefined, height, width }}
     >
       <canvas ref={canvasRef} />
     </span>
