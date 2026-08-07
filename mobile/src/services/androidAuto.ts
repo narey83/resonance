@@ -493,10 +493,17 @@ export const handleAndroidAutoBrowse = async (mediaId: string): Promise<void> =>
     return;
   }
   if (tree[mediaId]?.length) return;
-  try {
-    await loadNode(mediaId);
-  } catch (e) {
-    remoteLog('error', `[aa] browse ${mediaId} failed — ${String(e)}`);
+  // One failed request must not decide what this node looks like for the rest of the drive: the
+  // car keeps whatever it is first told, so a blip on a slow connection would leave the folder
+  // permanently empty. Retry once before giving up.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await loadNode(mediaId);
+      return;
+    } catch (e) {
+      remoteLog(attempt === 0 ? 'warn' : 'error', `[aa] browse ${mediaId} failed (attempt ${attempt + 1}) — ${String(e)}`);
+      await new Promise((r) => setTimeout(r, 700));
+    }
   }
 };
 
