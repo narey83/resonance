@@ -130,7 +130,12 @@ const toRntpTrack = (track: MusicTrack): RntpTrack => {
     album:       track.album     ?? undefined,
     artwork:     track.hasArtwork ? (isLocal ? track.coverPath ?? undefined : getArtworkUrl(track.path, PLAYER_ART_SIZE) ?? undefined) : undefined,
     duration:    track.duration  ?? undefined,
-    contentType: contentTypeFor(track.path),
+    // On a metered/slow connection the server transcodes to MP3, so the file's own extension is
+    // the wrong label — declaring audio/flac for MPEG bytes makes the player fail to open the
+    // stream. That is why FLAC played on Wi-Fi and died on mobile data.
+    contentType: isLocal || currentStreamQuality() === 'original'
+      ? contentTypeFor(track.path)
+      : 'audio/mpeg',
     _source:     track,
   } as RntpTrack;
 };
