@@ -114,7 +114,7 @@ index 13a6c60..7ad01e6 100644
      // which causes an exception. We can work around this using a wrapper.
      private fun launchInScope(block: suspend () -> Unit) {
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
-index b495b5a..32a3428 100644
+index b495b5a..47e584a 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
 +++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
 @@ -19,7 +19,9 @@ import androidx.media3.common.Player
@@ -271,7 +271,7 @@ index b495b5a..32a3428 100644
              )
              mediaSession.setAvailableCommands(
                  mediaSession.mediaNotificationControllerInfo!!,
-@@ -677,6 +772,174 @@ class MusicService : HeadlessJsMediaService() {
+@@ -677,6 +772,178 @@ class MusicService : HeadlessJsMediaService() {
          reactContext?.emitDeviceEvent(event, data?.let { Arguments.fromBundle(it) })
      }
  
@@ -297,10 +297,14 @@ index b495b5a..32a3428 100644
 +                if (isBrowsable) MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
 +                else MediaMetadata.MEDIA_TYPE_MUSIC
 +            )
-+            // Artwork-less rows get the app logo rather than the car's generic placeholder.
++            // Artwork-less rows get the app logo rather than the car's generic placeholder — except
++            // where JS asks for no icon at all (the root tabs, where the car draws a grey box).
 +            .setArtworkUri(
-+                if (!iconUri.isNullOrEmpty()) Uri.parse(iconUri)
-+                else Uri.parse("android.resource://$packageName/drawable/resonance_placeholder")
++                when {
++                    !iconUri.isNullOrEmpty() -> Uri.parse(iconUri)
++                    map.hasKey("noIcon") -> null
++                    else -> Uri.parse("android.resource://$packageName/drawable/resonance_placeholder")
++                }
 +            )
 +            .build()
 +
@@ -446,7 +450,7 @@ index b495b5a..32a3428 100644
      @SuppressLint("VisibleForTests")
      @MainThread
      private fun emitList(event: String, data: List<Bundle> = emptyList()) {
-@@ -905,13 +1168,15 @@ class MusicService : HeadlessJsMediaService() {
+@@ -905,13 +1172,15 @@ class MusicService : HeadlessJsMediaService() {
                      onStartCommand(null, 0, 0)
                  }
              }
@@ -464,7 +468,7 @@ index b495b5a..32a3428 100644
                      .setAvailableSessionCommands(
                          sessionCommands
                              ?: MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
-@@ -937,6 +1202,8 @@ class MusicService : HeadlessJsMediaService() {
+@@ -937,6 +1206,8 @@ class MusicService : HeadlessJsMediaService() {
                      CustomCommandButton.JUMP_FORWARD.customAction -> { it.seekForward() }
                      CustomCommandButton.NEXT.customAction -> { it.seekToNext() }
                      CustomCommandButton.PREVIOUS.customAction -> { it.seekToPrevious() }
@@ -473,7 +477,7 @@ index b495b5a..32a3428 100644
                  }
              }
              return super.onCustomCommand(session, controller, command, args)
-@@ -976,6 +1243,81 @@ class MusicService : HeadlessJsMediaService() {
+@@ -976,6 +1247,81 @@ class MusicService : HeadlessJsMediaService() {
              }
              return super.onSetRating(session, controller, rating)
          }
@@ -555,7 +559,7 @@ index b495b5a..32a3428 100644
      }
  
      private fun getPendingIntentFlags(): Int {
-@@ -1029,5 +1371,9 @@ class MusicService : HeadlessJsMediaService() {
+@@ -1029,5 +1375,9 @@ class MusicService : HeadlessJsMediaService() {
  
          const val DEFAULT_JUMP_INTERVAL = 15.0
          const val DEFAULT_STOP_FOREGROUND_GRACE_PERIOD = 5

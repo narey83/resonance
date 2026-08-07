@@ -69,6 +69,9 @@ type BrowseItem = {
   title: string;
   subtitle?: string;
   iconUri?: string;
+  // Root tabs only: suppress the artwork placeholder. The car renders a tab's icon as a plain
+  // grey square when it can't use the image, which looked like a broken box above every label.
+  noIcon?: string;
   playable: string;
 };
 type BrowseTree = Record<string, BrowseItem[]>;
@@ -134,6 +137,12 @@ const browsable = (
   iconUri?: string,
 ): BrowseItem => ({ mediaId, title, subtitle, iconUri, playable: MediaItemPlayable.MediaBrowsable });
 
+// Tab titles are truncated hard by the car ("Recently Pla…"), so they have to be short.
+const tab = (mediaId: string, title: string): BrowseItem => ({
+  ...browsable(mediaId, title),
+  noIcon: '1',
+});
+
 const playableItem = (track: MusicTrack): BrowseItem => ({
   mediaId: track.path,
   title: getTrackTitle(track),
@@ -197,6 +206,7 @@ const push = async () => {
 // sub-nodes — recursively, so a list of ranges can't get too long either.
 const LIST_MAX = 100;
 const PREFIX_CHUNK = 'aa:chunk:';
+const PREFIX_PAGE = 'aa:page:'; // aa:page:<offset>:<encoded folder path>
 const chunkChildren = new Map<string, BrowseItem[]>();
 
 const rangeLabel = (items: BrowseItem[]): string => {
@@ -259,7 +269,30 @@ const loadNode = async (mediaId: string): Promise<void> => {
     recordTracks(mediaId, res.tracks);
   } else if (mediaId.startsWith(PREFIX_FOLDER)) {
     const folder = decodeURIComponent(mediaId.slice(PREFIX_FOLDER.length));
-    const res = await getTracks({ folder, limit: 5000 });
+    // One page tells us the size of the folder. Anything bigger becomes numbered page nodes that
+    // fetch on demand — the old fixed limit silently dropped everything past 5,000 tracks, which
+    // hid ~20,000 of them in the largest folder.
+    const res = await getTracks({ folder, limit: LIST_MAX });
+    if (res.total > res.tracks.length) {
+      const pages: BrowseItem[] = [];
+      for (let off = 0; off < res.total; off += LIST_MAX) {
+        pages.push(browsable(
+          `${PREFIX_PAGE}${off}:${encodeURIComponent(folder)}`,
+          `${off + 1} – ${Math.min(off + LIST_MAX, res.total)}`,
+          `of ${res.total}`,
+        ));
+      }
+      tree[mediaId] = chunked(mediaId, pages);
+    } else {
+      tree[mediaId] = chunked(mediaId, res.tracks.map(playableItem));
+      recordTracks(mediaId, res.tracks);
+    }
+  } else if (mediaId.startsWith(PREFIX_PAGE)) {
+    const rest = mediaId.slice(PREFIX_PAGE.length);
+    const sep = rest.indexOf(':');
+    const offset = Number(rest.slice(0, sep));
+    const folder = decodeURIComponent(rest.slice(sep + 1));
+    const res = await getTracks({ folder, offset, limit: LIST_MAX });
     tree[mediaId] = chunked(mediaId, res.tracks.map(playableItem));
     recordTracks(mediaId, res.tracks);
   } else if (mediaId === TAB_LOCAL) {
@@ -301,11 +334,11 @@ export const buildAndroidAutoTree = async (): Promise<void> => {
   // empty list — because we were still hydrating the session — and it shows "No items" until the
   // next connection, no matter what we notify afterwards.
   tree[ROOT] = [
-    browsable(TAB_PLAYED, 'Recently Played'),
-    browsable(TAB_RECENT, 'Recently Added'),
-    browsable(TAB_ARTISTS, 'Artists'),
-    browsable(TAB_FOLDERS, 'Folders'),
-    browsable(TAB_LOCAL, 'On Device'),
+    tab(TAB_PLAYED, 'Recent'),
+    tab(TAB_RECENT, 'New'),
+    tab(TAB_ARTISTS, 'Artists'),
+    tab(TAB_FOLDERS, 'Folders'),
+    tab(TAB_LOCAL, 'On Device'),
   ];
   await push();
 
