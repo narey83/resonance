@@ -100,6 +100,10 @@ namespace resonance.MusicLibrary
         // has been analysed, so without this the list fires a request per row to be told "no" —
         // and each of those costs two stat() calls on the music mount.
         public bool? HasWaveform { get; init; }
+
+        // Integrated loudness in LUFS, joined from analysis.track_analysis the same way as
+        // HasWaveform. Null until the track has been analysed.
+        public double? Lufs { get; init; }
     }
 
     public record MusicGenre(string Genre, int TrackCount, double? TotalDuration);

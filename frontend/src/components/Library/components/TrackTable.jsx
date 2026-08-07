@@ -91,6 +91,7 @@ export const COLUMNS = [
   { def: 'minmax(60px, 1.4fr)', id: 'album', min: 60 },
   { def: '44px', id: 'key', min: 32 },
   { def: '44px', id: 'bpm', min: 32 },
+  { def: '52px', id: 'lufs', min: 36 },
   { def: '42px', id: 'ext', min: 32 },
   { def: '72px', id: 'quality', min: 40 },
   { def: '52px', id: 'duration', min: 40 },
@@ -103,7 +104,7 @@ export const COLUMNS = [
 // collapsing; without dropping something they'd still be squeezed to 80px of ellipsis. num, wave,
 // title, artist, duration and love are deliberately absent — a row you can't read (or see the
 // waveform of) isn't a track listing.
-const DROP_ORDER = ['plays', 'quality', 'ext', 'album', 'bpm', 'key'];
+const DROP_ORDER = ['plays', 'quality', 'ext', 'album', 'bpm', 'lufs', 'key'];
 
 const COLUMN_GAP = 10;
 const ROW_PADDING = 48;
@@ -236,6 +237,10 @@ const TrackTable = ({
       else if (sortCol === 'key')
         cmp = (a.key || '').localeCompare(b.key || '');
       else if (sortCol === 'bpm') cmp = (a.bpm ?? 0) - (b.bpm ?? 0);
+      else if (sortCol === 'lufs')
+        cmp =
+          (a.lufs ?? Number.NEGATIVE_INFINITY) -
+          (b.lufs ?? Number.NEGATIVE_INFINITY);
       else if (sortCol === 'ext')
         cmp = (a.extension || '').localeCompare(b.extension || '');
       else if (sortCol === 'quality')
@@ -716,6 +721,7 @@ const TrackTable = ({
           {shows.has('album') && colHeader('album', 'Album', 'jb-tt-album')}
           {shows.has('key') && plainSortHeader('key', 'Key', 'jb-tt-key')}
           {shows.has('bpm') && plainSortHeader('bpm', 'BPM', 'jb-tt-bpm')}
+          {shows.has('lufs') && plainSortHeader('lufs', 'LUFS', 'jb-tt-lufs')}
           {shows.has('ext') && plainSortHeader('ext', 'Ext', 'jb-tt-ext')}
           {shows.has('quality') &&
             plainSortHeader('quality', 'Quality', 'jb-tt-quality')}
@@ -874,6 +880,11 @@ const TrackTable = ({
                     )}
                     {shows.has('bpm') && (
                       <div className="jb-tt-bpm">{track.bpm || '–'}</div>
+                    )}
+                    {shows.has('lufs') && (
+                      <div className="jb-tt-lufs">
+                        {track.lufs != null ? track.lufs.toFixed(1) : '–'}
+                      </div>
                     )}
                     {shows.has('ext') && (
                       <div className="jb-tt-ext">

@@ -35,11 +35,13 @@ namespace resonance.Analysis
     using System.Threading;
     using System.Threading.Channels;
     using System.Threading.Tasks;
+    using Microsoft.AspNetCore.SignalR;
     using Microsoft.Extensions.Hosting;
     using Microsoft.Extensions.Options;
     using resonance.Common;
     using resonance.Common.Ffmpeg;
     using resonance.MusicLibrary;
+    using resonance.MusicLibrary.API;
     using resonance.Shares;
     using Serilog;
 
@@ -60,13 +62,15 @@ namespace resonance.Analysis
             IOptionsMonitor<resonance.Options> optionsMonitor,
             IFfmpegService ffmpeg,
             AnalysisStore store,
-            IMusicLibraryService musicLibrary = null)
+            IMusicLibraryService musicLibrary = null,
+            IHubContext<LibraryActivityHub> hub = null)
         {
             ShareService = shareService;
             Options = optionsMonitor;
             Ffmpeg = ffmpeg;
             Store = store;
             MusicLibrary = musicLibrary;
+            Hub = hub;
         }
 
         public AnalysisScanState ScanState => CurrentState;
@@ -76,6 +80,7 @@ namespace resonance.Analysis
         private IFfmpegService Ffmpeg { get; }
         private AnalysisStore Store { get; }
         private IMusicLibraryService MusicLibrary { get; }
+        private IHubContext<LibraryActivityHub> Hub { get; }
         private AudioAnalyzer Analyzer { get; } = new AudioAnalyzer();
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Analysis);
 
@@ -226,7 +231,7 @@ namespace resonance.Analysis
                 return null;
             }
 
-            Store.Save(path, result);
+            SaveAndNotify(path, result);
             return result.Waveform;
         }
 
@@ -244,7 +249,7 @@ namespace resonance.Analysis
                 return null;
             }
 
-            Store.Save(path, result);
+            SaveAndNotify(path, result);
             return result.Loudness;
         }
 
@@ -285,6 +290,17 @@ namespace resonance.Analysis
         public void ClearBpm(string maskedFilename) => UpdateTags(maskedFilename, t => t with { Bpm = 0 });
 
         public void ClearKey(string maskedFilename) => UpdateTags(maskedFilename, t => t with { Key = null });
+
+        // Waveform/loudness results never touch a file's tags — unlike Bpm/Key, there's no
+        // WriteFileTags → TriggerSync → LIBRARY_UPDATED chain to ride along on, so a row showing
+        // one of these would otherwise sit stale until something else happened to refresh the
+        // list. Broadcasting here, right where the value lands in the DB, covers both on-demand
+        // single-track callers (GetWaveformAsync, GetLoudnessAsync).
+        private void SaveAndNotify(string path, AnalysisResult result)
+        {
+            Store.Save(path, result);
+            _ = Hub?.BroadcastLibraryUpdatedAsync(0, 1, 0);
+        }
 
         // ── Scan loop ─────────────────────────────────────────────────────────
         private void UpdateTags(string maskedFilename, Func<FileTags, FileTags> update)
@@ -465,6 +481,11 @@ namespace resonance.Analysis
 
                             if (result.Waveform != null || result.Loudness != null)
                             {
+                                // Not SaveAndNotify: a full scan can touch thousands of tracks, and
+                                // broadcasting once per track would flood every connected client
+                                // with refetches. Bpm/Key still ride the tag-write's own (debounced)
+                                // sync broadcast; a scan-only waveform/loudness result is picked up
+                                // next time something else refreshes the list.
                                 Store.Save(path, result);
                             }
 

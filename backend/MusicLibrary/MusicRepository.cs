@@ -489,6 +489,7 @@ namespace resonance.MusicLibrary
                 "year" => $"year {dir}, {OrdBy("artist")}, {OrdBy("album")}, track_number",
                 "duration" => $"duration {dir}, {OrdBy("title")}",
                 "bpm" => $"bpm {dir}, {OrdBy("title")}",
+                "lufs" => $"lufs {dir}, {OrdBy("title")}",
                 "ext" => $"{OrdBy("extension", dir)}, {OrdBy("title")}",
                 "quality" => $"bit_rate {dir}, sample_rate {dir}, {OrdBy("title")}",
 
@@ -516,8 +517,8 @@ namespace resonance.MusicLibrary
 
             using var cmd = conn.CreateCommand();
 
-            // has_waveform is appended AFTER the columns ReadRow expects, so the shared row reader
-            // keeps working for every other query that doesn't select it.
+            // has_waveform and lufs are appended AFTER the columns ReadRow expects, so the shared
+            // row reader keeps working for every other query that doesn't select them.
             cmd.CommandText = $@"
                 SELECT path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
                        title, artist, album_artist, album, year, track_number, disc_number,
@@ -525,7 +526,10 @@ namespace resonance.MusicLibrary
                        EXISTS (SELECT 1 FROM {TA} a
                                WHERE a.masked_filename = {T}.path
                                  AND a.file_size = {T}.file_size
-                                 AND a.overall_peaks IS NOT NULL) AS has_waveform
+                                 AND a.overall_peaks IS NOT NULL) AS has_waveform,
+                       (SELECT a.lufs FROM {TA} a
+                        WHERE a.masked_filename = {T}.path
+                          AND a.file_size = {T}.file_size) AS lufs
                 FROM {T} {where}
                 ORDER BY {orderBy}
                 LIMIT @limit OFFSET @offset";
@@ -571,11 +575,13 @@ namespace resonance.MusicLibrary
             var tracks = new List<MusicTrack>();
             using var reader = cmd.ExecuteReader();
             const int hasWaveformOrdinal = 24;
+            const int lufsOrdinal = 25;
             while (reader.Read())
             {
                 tracks.Add(ReadRow(reader) with
                 {
                     HasWaveform = !reader.IsDBNull(hasWaveformOrdinal) && Convert.ToBoolean(reader.GetValue(hasWaveformOrdinal)),
+                    Lufs = reader.IsDBNull(lufsOrdinal) ? null : reader.GetDouble(lufsOrdinal),
                 });
             }
 
