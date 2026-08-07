@@ -364,9 +364,17 @@ const loadNode = async (mediaId: string): Promise<void> => {
   } else if (mediaId.startsWith(PREFIX_ARTIST)) {
     const artist = decodeURIComponent(mediaId.slice(PREFIX_ARTIST.length));
     const albums = await getAlbums(artist);
-    tree[mediaId] = chunked(mediaId, albums.map((a) =>
-      browsable(albumNodeId(a), a.album, a.artist, a.coverPath ? (getArtworkUrl(a.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
-    ));
+    if (albums.length === 0) {
+      // An artist whose tracks carry no album tag has no albums to show — a dead end in the car.
+      // Show the tracks themselves instead.
+      const res = await getTracks({ artist, limit: LIST_MAX });
+      tree[mediaId] = chunked(mediaId, res.tracks.map(playableItem));
+      recordTracks(mediaId, res.tracks);
+    } else {
+      tree[mediaId] = chunked(mediaId, albums.map((a) =>
+        browsable(albumNodeId(a), a.album, a.artist, a.coverPath ? (getArtworkUrl(a.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
+      ));
+    }
   } else if (mediaId.startsWith(PREFIX_ALBUM)) {
     const [artistEnc, albumEnc] = mediaId.slice(PREFIX_ALBUM.length).split('|');
     const res = await getTracks({
@@ -460,6 +468,22 @@ export const clearAndroidAutoTree = async (): Promise<void> => {
   await push();
 };
 
+// A node that turned out to be empty, or that we could not load at all, is a dead end in the car:
+// tapping it opens a blank screen. Take it out of the lists it appears in so it stops being
+// offered — the car picks the change up next time it draws that list.
+const dropFromParents = (mediaId: string) => {
+  let removed = false;
+  for (const [parentId, children] of Object.entries(tree)) {
+    const kept = children.filter((c) => c.mediaId !== mediaId);
+    if (kept.length !== children.length) {
+      tree[parentId] = kept;
+      removed = true;
+    }
+  }
+  delete tree[mediaId];
+  if (removed) void push();
+};
+
 // Native emitted `remote-browse` for a node we haven't loaded.
 export const handleAndroidAutoBrowse = async (mediaId: string): Promise<void> => {
   if (!mediaId) return;
@@ -499,12 +523,14 @@ export const handleAndroidAutoBrowse = async (mediaId: string): Promise<void> =>
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       await loadNode(mediaId);
+      if (tree[mediaId]?.length === 0) dropFromParents(mediaId);
       return;
     } catch (e) {
       remoteLog(attempt === 0 ? 'warn' : 'error', `[aa] browse ${mediaId} failed (attempt ${attempt + 1}) — ${String(e)}`);
       await new Promise((r) => setTimeout(r, 700));
     }
   }
+  dropFromParents(mediaId);
 };
 
 // Native emitted `remote-play-id` — the user tapped a track in the car.

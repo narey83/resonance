@@ -32,6 +32,7 @@ const fs   = require('fs');
 const path = require('path');
 
 const CAR_META_KEY  = 'com.google.android.gms.car.application';
+const MUSIC_SERVICE = 'com.doublesymmetry.trackplayer.service.MusicService';
 
 const withAndroidAuto = (config) => {
 
@@ -76,10 +77,24 @@ const withAndroidAuto = (config) => {
       });
     }
 
-    // NOTE: react-native-track-player 5.x already declares its MusicService
-    // (with the MediaLibraryService / MediaBrowserService intent-filters) in its
-    // own library manifest, so we intentionally do NOT add a <service> here — a
-    // duplicate declaration would conflict during manifest merge.
+    // react-native-track-player 5.x declares MusicService itself (with the MediaLibraryService /
+    // MediaBrowserService intent-filters), so this adds nothing but an icon and lets the manifest
+    // merger fold it into that declaration — the car shows the media service's icon, and the app's
+    // own launcher icon is bright blue, which is wrong against Android Auto's dark UI.
+    manifest.$ = manifest.$ ?? {};
+    manifest.$['xmlns:tools'] = manifest.$['xmlns:tools'] ?? 'http://schemas.android.com/tools';
+    app.service = app.service ?? [];
+    if (!app.service.some((s) => s.$?.['android:name'] === MUSIC_SERVICE)) {
+      app.service.push({
+        $: {
+          'android:name': MUSIC_SERVICE,
+          'android:icon': '@mipmap/ic_launcher_aa',
+          'tools:node':   'merge',
+          // The class lives in the RNTP library, so lint can't resolve it from the app module.
+          'tools:ignore': 'Instantiatable',
+        },
+      });
+    }
 
     return config;
   });
@@ -104,6 +119,28 @@ const withAndroidAuto = (config) => {
       fs.copyFileSync(
         path.join(config.modRequest.projectRoot, 'assets/aa-placeholder.png'),
         path.join(resDir, 'drawable-nodpi/resonance_placeholder.png'),
+      );
+      // The icon the car shows for the app itself (see the <service> above). It has to be an
+      // adaptive icon: the car draws a circular badge and insets a plain drawable into it, which
+      // left a white ring around a dark square. Adaptive icons get masked to the circle instead.
+      fs.mkdirSync(path.join(resDir, 'mipmap-anydpi-v26'), { recursive: true });
+      fs.mkdirSync(path.join(resDir, 'mipmap-nodpi'), { recursive: true });
+      fs.mkdirSync(path.join(resDir, 'values'), { recursive: true });
+      fs.copyFileSync(
+        path.join(config.modRequest.projectRoot, 'assets/aa-icon-foreground.png'),
+        path.join(resDir, 'drawable-nodpi/resonance_aa_foreground.png'),
+      );
+      fs.copyFileSync(
+        path.join(config.modRequest.projectRoot, 'assets/aa-app-icon.png'),
+        path.join(resDir, 'mipmap-nodpi/ic_launcher_aa.png'),
+      );
+      fs.writeFileSync(
+        path.join(resDir, 'mipmap-anydpi-v26/ic_launcher_aa.xml'),
+        '<?xml version="1.0" encoding="utf-8"?>\n<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n    <background android:drawable="@color/aa_icon_background"/>\n    <foreground android:drawable="@drawable/resonance_aa_foreground"/>\n</adaptive-icon>\n',
+      );
+      fs.writeFileSync(
+        path.join(resDir, 'values/aa_icon.xml'),
+        '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="aa_icon_background">#202024</color>\n</resources>\n',
       );
       return config;
     },
