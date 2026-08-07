@@ -322,6 +322,28 @@ namespace resonance.Analysis
         }
 
         /// <summary>
+        ///     True if a track's BPM tag looks like real data rather than a half-/double-time
+        ///     mistag some DJ-pool release shipped with (e.g. "42" for a 168bpm track).
+        /// </summary>
+        /// <remarks>
+        ///     A hand-typed tag never goes through <see cref="AudioAnalyzer.FoldOctave"/>, so
+        ///     unlike a computed detection it can sit outside the configured tempo window forever
+        ///     — <see cref="MissingMetrics"/> otherwise treats any nonzero tag as "already
+        ///     analysed" and never revisits it. Folding the tag value against that same window is
+        ///     just reusing the octave-error check the detector already relies on.
+        /// </remarks>
+        private bool HasReliableBpm(TrackAnalysisInfo track)
+        {
+            if (!track.HasBpm)
+            {
+                return false;
+            }
+
+            var analysis = Options.CurrentValue.Analysis;
+            return AudioAnalyzer.FoldOctave(track.Bpm.Value, analysis.MinBpm, analysis.MaxBpm) == track.Bpm.Value;
+        }
+
+        /// <summary>
         ///     Narrows the requested metrics to those this track is actually missing, so a rescan
         ///     of a mostly-analysed library only pays for the gaps.
         /// </summary>
@@ -329,7 +351,7 @@ namespace resonance.Analysis
         {
             var missing = AnalysisMetrics.None;
 
-            if (requested.HasFlag(AnalysisMetrics.Bpm) && !track.HasBpm)
+            if (requested.HasFlag(AnalysisMetrics.Bpm) && !HasReliableBpm(track))
             {
                 missing |= AnalysisMetrics.Bpm;
             }
