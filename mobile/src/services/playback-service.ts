@@ -28,7 +28,12 @@
 // </copyright>
 
 import TrackPlayer, { Event, State } from 'react-native-track-player';
-import { handleAndroidAutoBrowse, playAndroidAutoMediaId, handleAndroidAutoLove } from './androidAuto';
+import {
+  buildAndroidAutoTree,
+  handleAndroidAutoBrowse,
+  playAndroidAutoMediaId,
+  handleAndroidAutoLove,
+} from './androidAuto';
 import { ensurePlayerSetup } from './playerSetup';
 
 // Runs in a background thread — handles remote control events from
@@ -57,6 +62,12 @@ export default async function () {
     'remote-love',
     () => handleAndroidAutoLove(),
   );
+
+  // Build the car's menu now rather than waiting to be asked. The car requests the root the
+  // instant it binds the service — measured 0.3s BEFORE this bundle finishes starting — so that
+  // request lands with nothing listening, and nothing ever asks again: the menu stays empty for
+  // the whole session. Publishing up front means the answer is ready when the request arrives.
+  buildAndroidAutoTree().catch(() => { /* logged inside; the car retries on next connect */ });
 
   let wasPlayingBeforeDuck = false;
 
