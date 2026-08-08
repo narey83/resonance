@@ -30,6 +30,7 @@
 namespace resonance.Analysis
 {
     using System;
+    using System.Collections.Concurrent;
     using System.Collections.Generic;
     using System.Linq;
     using System.Threading;
@@ -67,10 +68,27 @@ namespace resonance.Analysis
         // just because someone's been listening all evening.
         private static readonly TimeSpan MaxPlaybackWait = TimeSpan.FromMinutes(10);
 
+        // How often a running scan is allowed to broadcast a waveform/loudness update. Bpm/Key
+        // ride the tag-write's own (debounced) sync broadcast for free; Waveform/Loudness never
+        // touch a tag, so without a broadcast of their own an open Library row could sit on a
+        // stale "not analysed" waveform indefinitely after a scan quietly filled it in. Throttled
+        // rather than sent per track — a full-library scan can touch tens of thousands of rows.
+        private static readonly TimeSpan WaveformBroadcastThrottle = TimeSpan.FromSeconds(1);
+
+        // One decode per file at a time, shared across every caller — the scan queue and the
+        // on-demand single-track methods (GetWaveformAsync, GetLoudnessAsync) used to have no
+        // idea about each other, so playing a track while a scan was already touching it could
+        // start two ffmpeg/Essentia passes over the same file at once.
+        // ponytail: grows one entry per distinct path ever analysed and nothing is ever evicted —
+        // a SemaphoreSlim is a few dozen bytes, so even a 50k-track library tops out around a few
+        // MB. Evict here if a profile ever says otherwise.
+        private readonly ConcurrentDictionary<string, SemaphoreSlim> pathLocks = new();
+
         // Ticks (DateTime.UtcNow.Ticks), not a DateTime — a plain field can't be updated
         // atomically from the stream endpoint's request threads while a background analysis
         // task reads it, so this goes through Interlocked instead of a lock.
         private long lastPlaybackActivityTicks;
+        private long lastWaveformBroadcastTicks;
 
         public AnalysisService(
             IShareService shareService,
@@ -245,17 +263,34 @@ namespace resonance.Analysis
                 return cached;
             }
 
-            // A single-track miss also measures loudness, since the decode is already paid for
-            // and the player asks for both.
-            var result = await AnalyseOneAsync(
-                path, AnalysisMetrics.Waveform | AnalysisMetrics.Loudness, ct);
-            if (result?.Waveform == null)
+            var gate = LockFor(path);
+            await gate.WaitAsync(ct);
+            try
             {
-                return null;
-            }
+                // Someone else (the scan queue, or another player/row) may have finished
+                // decoding this exact file while this call was waiting for the gate.
+                cached = Store.GetWaveform(path);
+                if (cached != null)
+                {
+                    return cached;
+                }
 
-            SaveAndNotify(path, result);
-            return result.Waveform;
+                // A single-track miss also measures loudness, since the decode is already paid for
+                // and the player asks for both.
+                var result = await AnalyseOneAsync(
+                    path, AnalysisMetrics.Waveform | AnalysisMetrics.Loudness, ct);
+                if (result?.Waveform == null)
+                {
+                    return null;
+                }
+
+                SaveAndNotify(path, result);
+                return result.Waveform;
+            }
+            finally
+            {
+                gate.Release();
+            }
         }
 
         public async Task<LoudnessData> GetLoudnessAsync(string path, CancellationToken ct)
@@ -266,14 +301,29 @@ namespace resonance.Analysis
                 return cached;
             }
 
-            var result = await AnalyseOneAsync(path, AnalysisMetrics.Loudness, ct);
-            if (result?.Loudness == null)
+            var gate = LockFor(path);
+            await gate.WaitAsync(ct);
+            try
             {
-                return null;
-            }
+                cached = Store.GetLoudness(path);
+                if (cached != null)
+                {
+                    return cached;
+                }
 
-            SaveAndNotify(path, result);
-            return result.Loudness;
+                var result = await AnalyseOneAsync(path, AnalysisMetrics.Loudness, ct);
+                if (result?.Loudness == null)
+                {
+                    return null;
+                }
+
+                SaveAndNotify(path, result);
+                return result.Loudness;
+            }
+            finally
+            {
+                gate.Release();
+            }
         }
 
         public void SetBpm(string maskedFilename, uint bpm) => Apply(maskedFilename, bpm, null);
@@ -360,6 +410,8 @@ namespace resonance.Analysis
             var ffmpegPath = await Ffmpeg.GetFfmpegPathAsync(ct);
             return await Analyzer.AnalyseAsync(originalFilename, ffmpegPath, metrics, Options.CurrentValue.Analysis, ct);
         }
+
+        private SemaphoreSlim LockFor(string path) => pathLocks.GetOrAdd(path, _ => new SemaphoreSlim(1, 1));
 
         private bool IsPlaybackActive() =>
             DateTime.UtcNow.Ticks - Interlocked.Read(ref lastPlaybackActivityTicks) < PlaybackIdleWindow.Ticks;
@@ -652,7 +704,20 @@ namespace resonance.Analysis
                             (double)(analysed + skipped + failed) / total, inFlight, request.Metrics.ToString(), inFlightFiles.Keys.ToList());
                         try
                         {
-                            var result = await Analyzer.AnalyseAsync(path, ffmpegPath, metrics, options, ct);
+                            // Shared with the on-demand single-track methods below — without this,
+                            // playing a track a scan is already decoding started a second, fully
+                            // redundant ffmpeg/Essentia pass over the same file.
+                            var gate = LockFor(path);
+                            await gate.WaitAsync(ct);
+                            AnalysisResult result;
+                            try
+                            {
+                                result = await Analyzer.AnalyseAsync(path, ffmpegPath, metrics, options, ct);
+                            }
+                            finally
+                            {
+                                gate.Release();
+                            }
 
                             if (result == null)
                             {
@@ -668,12 +733,22 @@ namespace resonance.Analysis
 
                             if (result.Waveform != null || result.Loudness != null)
                             {
-                                // Not SaveAndNotify: a full scan can touch thousands of tracks, and
-                                // broadcasting once per track would flood every connected client
-                                // with refetches. Bpm/Key still ride the tag-write's own (debounced)
-                                // sync broadcast; a scan-only waveform/loudness result is picked up
-                                // next time something else refreshes the list.
+                                // Not SaveAndNotify on every track — a full scan can touch thousands
+                                // of them, and broadcasting once per track would flood every
+                                // connected client with a refetch. Throttled to at most once a
+                                // second instead (see WaveformBroadcastThrottle), so an open Library
+                                // row still catches up in real time without that flood.
                                 Store.Save(path, result);
+
+                                var now = DateTime.UtcNow.Ticks;
+                                var last = Interlocked.Read(ref lastWaveformBroadcastTicks);
+                                if (now - last > WaveformBroadcastThrottle.Ticks &&
+                                    Interlocked.CompareExchange(ref lastWaveformBroadcastTicks, now, last) == last)
+                                {
+                                    // Not `_ =`: this runs inside the per-core Task.Run(async () => ...)
+                                    // lambda below, whose own Enumerable.Range parameter is named `_`.
+                                    var broadcastTask = Hub?.BroadcastLibraryUpdatedAsync(0, 1, 0);
+                                }
                             }
 
                             var produced = result.Bpm.HasValue || result.Key != null
@@ -740,6 +815,13 @@ namespace resonance.Analysis
                     cancelled ? CurrentState.Progress : 1.0);
                 Log.Information("Analysis scan complete. Analysed: {A}, Skipped: {S}, Failed: {F}",
                     analysed, skipped, failed);
+
+                // Guarantees a change made right before the scan ended isn't left sitting inside
+                // the throttle window above with nothing left running to eventually flush it.
+                if (analysed > 0)
+                {
+                    _ = Hub?.BroadcastLibraryUpdatedAsync(0, 1, 0);
+                }
             }
             catch (OperationCanceledException)
             {

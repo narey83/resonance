@@ -27,8 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import * as analysisApi from '../../lib/analysis';
-import { drawWaveform, toPeaks } from '../../lib/waveform';
+import { drawWaveform } from '../../lib/waveform';
+import { analyseTrack, fetchPeaks } from '../Shared/WaveformPreview';
 import { Loader2, ZoomIn, ZoomOut } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 
@@ -47,23 +47,28 @@ const RowWaveform = ({ track }) => {
     setState('loading');
     peaksRef.current = null;
 
-    // Not cachedOnly: opening one row deliberately analyses that track if needed.
-    analysisApi
-      .getWaveform(track.path)
-      .then((data) => {
-        if (cancelled) return;
-        const parsed = toPeaks(data);
-        if (!parsed) {
-          setState('empty');
-          return;
-        }
+    (async () => {
+      // Cheap check first — never triggers a decode, and covers the common case of a
+      // track that's already fully analysed.
+      let peaks = await fetchPeaks(track.path);
+      let error = null;
 
-        peaksRef.current = parsed;
-        setState('ready');
-      })
-      .catch(() => {
-        if (!cancelled) setState('error');
-      });
+      // Nothing cached: run the same full analysis (BPM, key, waveform, loudness) every
+      // other "click to analyse" row uses, instead of the narrow waveform-only endpoint
+      // this used to call directly — that endpoint never fills in BPM/key.
+      if (!peaks) {
+        ({ error, peaks } = await analyseTrack(track.path));
+      }
+
+      if (cancelled) return;
+      if (!peaks) {
+        setState(error ? 'error' : 'empty');
+        return;
+      }
+
+      peaksRef.current = peaks;
+      setState('ready');
+    })();
 
     return () => {
       cancelled = true;

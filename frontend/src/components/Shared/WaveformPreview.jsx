@@ -116,7 +116,10 @@ const waitForPeaks = async (path) => {
 // instead of sitting there empty until something else happens to refetch.
 const running = new Map();
 
-const analyseTrack = (path) => {
+// Runs the same full analysis (all 4 metrics) every "click to analyse" surface uses — the
+// canonical scan, not the narrow waveform-only endpoint — so BPM/key get filled in alongside
+// the waveform no matter which row started it. Exported for RowWaveform (Analysis page).
+export const analyseTrack = (path) => {
   if (running.has(path)) return running.get(path);
 
   // A click means "look again", so the miss cached on the way in must not
@@ -138,7 +141,10 @@ const analyseTrack = (path) => {
   return run;
 };
 
-const fetchPeaks = (path) => {
+// cachedOnly, never triggers a decode — the fast path for a track that's already analysed.
+// Exported so other "show this track's waveform" surfaces (RowWaveform on the Analysis page)
+// share this cache/in-flight bookkeeping instead of hand-rolling their own fetch.
+export const fetchPeaks = (path) => {
   if (cache.has(path)) return Promise.resolve(cache.get(path));
   if (inFlight.has(path)) return inFlight.get(path);
 
