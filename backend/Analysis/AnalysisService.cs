@@ -109,7 +109,7 @@ namespace resonance.Analysis
         {
             if (MusicLibrary != null)
             {
-                MusicLibrary.NewTracksTagged += OnNewTracksTagged;
+                MusicLibrary.NewTracksIndexed += OnNewTracksIndexed;
             }
 
             return Task.CompletedTask;
@@ -362,7 +362,7 @@ namespace resonance.Analysis
                 return;
             }
 
-            Log.Information("Auto BPM check: playback is active — waiting for it to go idle before analysing new tracks.");
+            Log.Information("Auto analysis: playback is active — waiting for it to go idle before analysing new tracks.");
 
             var deadline = DateTime.UtcNow + MaxPlaybackWait;
             while (IsPlaybackActive() && DateTime.UtcNow < deadline)
@@ -373,12 +373,12 @@ namespace resonance.Analysis
             if (IsPlaybackActive())
             {
                 Log.Information(
-                    "Auto BPM check: gave up waiting for playback to go idle after {Minutes:F0} minutes — proceeding anyway.",
+                    "Auto analysis: gave up waiting for playback to go idle after {Minutes:F0} minutes — proceeding anyway.",
                     MaxPlaybackWait.TotalMinutes);
             }
             else
             {
-                Log.Information("Auto BPM check: playback went idle — proceeding.");
+                Log.Information("Auto analysis: playback went idle — proceeding.");
             }
         }
 
@@ -405,12 +405,18 @@ namespace resonance.Analysis
         }
 
         /// <summary>
-        ///     Runs a BPM-only check on tracks a library sync just added that already carry a
-        ///     nonzero tag — the same octave-fold plausibility test a manual scan applies
-        ///     (<see cref="HasReliableBpm"/>) — so a bad tag on a fresh download gets corrected
-        ///     without waiting for someone to run a scan by hand. Never fires for untagged tracks.
+        ///     Runs the full analysis pass (BPM, key, waveform, loudness) on tracks a library sync
+        ///     just added — the same single-decode pipeline a manual scan uses — so a fresh
+        ///     download doesn't sit incomplete, or wrong (an implausible BPM tag, per
+        ///     <see cref="HasReliableBpm"/>), until someone runs a scan by hand.
         /// </summary>
-        private void OnNewTracksTagged(IReadOnlyList<(string Path, uint Bpm)> tracks)
+        /// <remarks>
+        ///     <see cref="AnalysisScanRequest.AllowBpmFabrication"/> is false here: a track with no
+        ///     BPM tag at all is left alone (a blank BPM is often correct — ambient, spoken word —
+        ///     not something to fabricate a value for). Key/waveform/loudness have no such
+        ///     ambiguity, so they're always filled in for a new track.
+        /// </remarks>
+        private void OnNewTracksIndexed(IReadOnlyList<string> paths)
         {
             // Offloaded: this runs synchronously on the library sync's own thread, and resolving
             // masked filenames / starting a scan must not delay that sync from completing.
@@ -419,7 +425,7 @@ namespace resonance.Analysis
                 try
                 {
                     var masked = ShareService
-                        .FindMaskedFilenames(tracks.Select(t => MusicPath.ToRelative(t.Path)).Distinct(StringComparer.OrdinalIgnoreCase))
+                        .FindMaskedFilenames(paths.Select(MusicPath.ToRelative).Distinct(StringComparer.OrdinalIgnoreCase))
                         .Distinct()
                         .ToArray();
 
@@ -429,18 +435,19 @@ namespace resonance.Analysis
                     }
 
                     await WaitForPlaybackIdleAsync();
-                    await StartScanAsync(new AnalysisScanRequest(Metrics: AnalysisMetrics.Bpm, SkipAnalysed: true, OnlyFilenames: masked));
+                    await StartScanAsync(new AnalysisScanRequest(
+                        Metrics: AnalysisMetrics.All, SkipAnalysed: true, OnlyFilenames: masked, AllowBpmFabrication: false));
                 }
                 catch (InvalidOperationException)
                 {
                     // A manual/other scan was already running. Rare enough not to warrant queuing
                     // or retrying — the next scan someone runs will still catch these via the
                     // normal SkipAnalysed=true plausibility check.
-                    Log.Debug("Skipped auto BPM check for {Count} new track(s) — a scan was already running.", tracks.Count);
+                    Log.Debug("Skipped auto analysis for {Count} new track(s) — a scan was already running.", paths.Count);
                 }
                 catch (Exception ex)
                 {
-                    Log.Warning("Auto BPM check for new tracks failed: {Error}", ex.Message);
+                    Log.Warning("Auto analysis for new tracks failed: {Error}", ex.Message);
                 }
             });
         }
@@ -449,11 +456,11 @@ namespace resonance.Analysis
         ///     Narrows the requested metrics to those this track is actually missing, so a rescan
         ///     of a mostly-analysed library only pays for the gaps.
         /// </summary>
-        private AnalysisMetrics MissingMetrics(TrackAnalysisInfo track, AnalysisMetrics requested)
+        private AnalysisMetrics MissingMetrics(TrackAnalysisInfo track, AnalysisMetrics requested, bool allowBpmFabrication)
         {
             var missing = AnalysisMetrics.None;
 
-            if (requested.HasFlag(AnalysisMetrics.Bpm) && !HasReliableBpm(track))
+            if (requested.HasFlag(AnalysisMetrics.Bpm) && !HasReliableBpm(track) && (allowBpmFabrication || track.HasBpm))
             {
                 missing |= AnalysisMetrics.Bpm;
             }
@@ -530,7 +537,7 @@ namespace resonance.Analysis
                 // is dropped from the queue entirely rather than decoded and discarded.
                 var queue = tracks
                     .Select(t => (Track: t, Metrics: request.SkipAnalysed && !request.ResetAll
-                        ? MissingMetrics(t, request.Metrics)
+                        ? MissingMetrics(t, request.Metrics, request.AllowBpmFabrication)
                         : request.Metrics))
                     .Where(x => x.Metrics != AnalysisMetrics.None)
                     .ToList();

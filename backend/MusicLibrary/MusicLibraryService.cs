@@ -152,7 +152,7 @@ namespace resonance.MusicLibrary
             Activity = activity;
         }
 
-        public event Action<IReadOnlyList<(string Path, uint Bpm)>> NewTracksTagged;
+        public event Action<IReadOnlyList<string>> NewTracksIndexed;
 
         public MusicLibrarySyncState SyncState => CurrentState;
 
@@ -731,12 +731,11 @@ namespace resonance.MusicLibrary
                 var doneReads = 0;
                 var unchangedBase = unchanged; // fixed once partitioning is done
 
-                // Newly-added tracks that already carry a nonzero BPM tag — handed to
-                // NewTracksTagged once the sync commits, so a bad tag on a fresh download gets
-                // checked automatically instead of sitting wrong until someone runs a manual scan.
-                // Untagged tracks never go in this list: a blank BPM is often correct (ambient,
-                // spoken word), not something to fabricate a value for.
-                var newlyTagged = new System.Collections.Concurrent.ConcurrentBag<(string Path, uint Bpm)>();
+                // Every newly-added track's path — handed to NewTracksIndexed once the sync
+                // commits, so the full analysis pass (BPM, key, waveform, loudness) runs
+                // automatically on a fresh download instead of sitting incomplete/wrong until
+                // someone runs a manual scan.
+                var newlyAdded = new System.Collections.Concurrent.ConcurrentBag<string>();
 
                 var channel = Channel.CreateBounded<MusicTrack>(
                     new BoundedChannelOptions(SyncWriteBatchSize * 4) { SingleReader = true, SingleWriter = false });
@@ -777,11 +776,7 @@ namespace resonance.MusicLibrary
                                 if (item.IsNew)
                                 {
                                     Interlocked.Increment(ref added);
-
-                                    if (track.Bpm is > 0)
-                                    {
-                                        newlyTagged.Add((track.Path, (uint)track.Bpm.Value));
-                                    }
+                                    newlyAdded.Add(track.Path);
                                 }
                                 else
                                 {
@@ -827,9 +822,9 @@ namespace resonance.MusicLibrary
                     "Music library sync complete — {Total} tracks · added={A} updated={U} removed={R} unchanged={N} failed={F}",
                     totalTracks, added, updated, removed, unchanged, failed);
 
-                if (!newlyTagged.IsEmpty)
+                if (!newlyAdded.IsEmpty)
                 {
-                    NewTracksTagged?.Invoke(newlyTagged.ToList());
+                    NewTracksIndexed?.Invoke(newlyAdded.ToList());
                 }
 
                 SetState(new MusicLibrarySyncState(

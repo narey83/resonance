@@ -36,11 +36,11 @@ namespace resonance.MusicLibrary
     public interface IMusicLibraryService : IHostedService
     {
         /// <summary>
-        ///     Raised after a sync finishes, with newly-added tracks that already carry a nonzero
-        ///     BPM tag — never for untagged tracks, since a blank BPM is often correct (ambient,
-        ///     spoken word) rather than missing data.
+        ///     Raised after a sync finishes, with the paths of every newly-added track — so the
+        ///     full analysis pass (BPM, key, waveform, loudness) can run automatically on a fresh
+        ///     download instead of waiting for someone to run a manual scan.
         /// </summary>
-        event Action<IReadOnlyList<(string Path, uint Bpm)>> NewTracksTagged;
+        event Action<IReadOnlyList<string>> NewTracksIndexed;
 
         MusicLibrarySyncState SyncState { get; }
 

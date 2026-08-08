@@ -108,11 +108,22 @@ namespace resonance.Analysis
     ///     <see cref="OnlyFilenames"/>: null scans the whole library, an empty array scans
     ///     nothing, and a populated array restricts the scan to those files.
     /// </remarks>
+    /// <param name="Metrics">Which metrics to produce.</param>
+    /// <param name="SkipAnalysed">Skip a track's metrics that are already present.</param>
+    /// <param name="ResetAll">Clear existing results for the selection before scanning.</param>
+    /// <param name="OnlyFilenames">Restricts the scan to these masked filenames; null scans everything.</param>
+    /// <param name="AllowBpmFabrication">
+    ///     Whether a track with no BPM tag at all should have one computed and written. True for
+    ///     every human-requested scan (someone asking to fill in blanks is the point). The
+    ///     automatic post-download check sets this false — a blank BPM is often correct (ambient,
+    ///     spoken word), not something to fabricate a value for.
+    /// </param>
     public record AnalysisScanRequest(
         AnalysisMetrics Metrics = AnalysisMetrics.All,
         bool SkipAnalysed = true,
         bool ResetAll = false,
-        string[] OnlyFilenames = null);
+        string[] OnlyFilenames = null,
+        bool AllowBpmFabrication = true);
 
     /// <summary>API response shape for waveform data.</summary>
     public record WaveformResponse(
