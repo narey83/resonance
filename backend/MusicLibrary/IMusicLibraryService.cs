@@ -29,11 +29,19 @@
 
 namespace resonance.MusicLibrary
 {
+    using System;
     using System.Collections.Generic;
     using Microsoft.Extensions.Hosting;
 
     public interface IMusicLibraryService : IHostedService
     {
+        /// <summary>
+        ///     Raised after a sync finishes, with newly-added tracks that already carry a nonzero
+        ///     BPM tag — never for untagged tracks, since a blank BPM is often correct (ambient,
+        ///     spoken word) rather than missing data.
+        /// </summary>
+        event Action<IReadOnlyList<(string Path, uint Bpm)>> NewTracksTagged;
+
         MusicLibrarySyncState SyncState { get; }
 
         /// <summary>

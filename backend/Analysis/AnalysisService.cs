@@ -90,7 +90,15 @@ namespace resonance.Analysis
         private Task ScanTask { get; set; }
 
         // ── IHostedService ────────────────────────────────────────────────────
-        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            if (MusicLibrary != null)
+            {
+                MusicLibrary.NewTracksTagged += OnNewTracksTagged;
+            }
+
+            return Task.CompletedTask;
+        }
 
         public async Task StopAsync(CancellationToken cancellationToken)
         {
@@ -341,6 +349,46 @@ namespace resonance.Analysis
 
             var analysis = Options.CurrentValue.Analysis;
             return AudioAnalyzer.FoldOctave(track.Bpm.Value, analysis.MinBpm, analysis.MaxBpm) == track.Bpm.Value;
+        }
+
+        /// <summary>
+        ///     Runs a BPM-only check on tracks a library sync just added that already carry a
+        ///     nonzero tag — the same octave-fold plausibility test a manual scan applies
+        ///     (<see cref="HasReliableBpm"/>) — so a bad tag on a fresh download gets corrected
+        ///     without waiting for someone to run a scan by hand. Never fires for untagged tracks.
+        /// </summary>
+        private void OnNewTracksTagged(IReadOnlyList<(string Path, uint Bpm)> tracks)
+        {
+            // Offloaded: this runs synchronously on the library sync's own thread, and resolving
+            // masked filenames / starting a scan must not delay that sync from completing.
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var masked = ShareService
+                        .FindMaskedFilenames(tracks.Select(t => MusicPath.ToRelative(t.Path)).Distinct(StringComparer.OrdinalIgnoreCase))
+                        .Distinct()
+                        .ToArray();
+
+                    if (masked.Length == 0)
+                    {
+                        return;
+                    }
+
+                    await StartScanAsync(new AnalysisScanRequest(Metrics: AnalysisMetrics.Bpm, SkipAnalysed: true, OnlyFilenames: masked));
+                }
+                catch (InvalidOperationException)
+                {
+                    // A manual/other scan was already running. Rare enough not to warrant queuing
+                    // or retrying — the next scan someone runs will still catch these via the
+                    // normal SkipAnalysed=true plausibility check.
+                    Log.Debug("Skipped auto BPM check for {Count} new track(s) — a scan was already running.", tracks.Count);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning("Auto BPM check for new tracks failed: {Error}", ex.Message);
+                }
+            });
         }
 
         /// <summary>

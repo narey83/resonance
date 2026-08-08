@@ -152,6 +152,8 @@ namespace resonance.MusicLibrary
             Activity = activity;
         }
 
+        public event Action<IReadOnlyList<(string Path, uint Bpm)>> NewTracksTagged;
+
         public MusicLibrarySyncState SyncState => CurrentState;
 
         private OptionsAtStartup Options { get; }
@@ -729,6 +731,13 @@ namespace resonance.MusicLibrary
                 var doneReads = 0;
                 var unchangedBase = unchanged; // fixed once partitioning is done
 
+                // Newly-added tracks that already carry a nonzero BPM tag — handed to
+                // NewTracksTagged once the sync commits, so a bad tag on a fresh download gets
+                // checked automatically instead of sitting wrong until someone runs a manual scan.
+                // Untagged tracks never go in this list: a blank BPM is often correct (ambient,
+                // spoken word), not something to fabricate a value for.
+                var newlyTagged = new System.Collections.Concurrent.ConcurrentBag<(string Path, uint Bpm)>();
+
                 var channel = Channel.CreateBounded<MusicTrack>(
                     new BoundedChannelOptions(SyncWriteBatchSize * 4) { SingleReader = true, SingleWriter = false });
 
@@ -768,6 +777,11 @@ namespace resonance.MusicLibrary
                                 if (item.IsNew)
                                 {
                                     Interlocked.Increment(ref added);
+
+                                    if (track.Bpm is > 0)
+                                    {
+                                        newlyTagged.Add((track.Path, (uint)track.Bpm.Value));
+                                    }
                                 }
                                 else
                                 {
@@ -812,6 +826,11 @@ namespace resonance.MusicLibrary
                 Log.Information(
                     "Music library sync complete — {Total} tracks · added={A} updated={U} removed={R} unchanged={N} failed={F}",
                     totalTracks, added, updated, removed, unchanged, failed);
+
+                if (!newlyTagged.IsEmpty)
+                {
+                    NewTracksTagged?.Invoke(newlyTagged.ToList());
+                }
 
                 SetState(new MusicLibrarySyncState(
                     false, true, DateTimeOffset.UtcNow.Ticks,
