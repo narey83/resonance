@@ -72,9 +72,12 @@ import { useLibrarySync } from '../../store/librarySyncStore';
 import { peekListCache, readListCache, writeListCache, hasListCache } from '../../services/libraryCache';
 import { dbg, isSyncDebugOn } from '../../api/debugLog';
 import {
-  getLocalAlbums, getLocalArtists, getLocalAlbumTracks,
+  getLocalAlbums, getLocalArtists, getLocalAlbumTracksFor,
   getAllLocalTracks, getLocalFolders, getLocalFolderTracks,
+  getLocalArtistTracks, getLocalArtistAlbums,
+  getLocalGenres, getLocalGenreTracks, getLocalYears, getLocalYearTracks,
   isLocalPath, forceRescanLocalTracks, setScanProgressCallback,
+  type LocalScanProgress,
 } from '../../services/localMusicLibrary';
 import { exportTrackToUsb, exportTracksToUsb } from '../../services/usbExport';
 import { Image } from 'expo-image';
@@ -83,6 +86,7 @@ import { getArtworkCacheKey, ARTWORK_THUMB_SIZE, PLAYER_ART_SIZE } from '../../s
 import { LEAD_IN, MAX_QUEUE, usePlayer } from '../../context/PlayerContext';
 import { useMixtapeStore } from '../../store/mixtapeStore';
 import { useLibraryActivityStore } from '../../store/libraryActivityStore';
+import { useLocalLibraryActivityStore } from '../../store/localLibraryActivityStore';
 import { getPlayHistory, type PlayRecord } from '../../api/libraryActivity';
 import * as mixtapesAPI from '../../api/mixtapes';
 import { create as createSearch, stripRemixInfo } from '../../api/searches';
@@ -96,11 +100,11 @@ import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
 type LibraryStackParamList = {
   LibraryHome:    undefined;
-  Artist:         { artistName: string };
+  Artist:         { artistName: string; isLocal?: boolean };
   Album:          { album: MusicAlbum; localAlbumTitle?: string };
   FolderDetail:   { folderPath: string; folderName: string; isLocal?: boolean };
-  GenreDetail:    { genre: string; trackCount: number };
-  YearDetail:     { year: number; trackCount: number };
+  GenreDetail:    { genre: string; trackCount: number; isLocal?: boolean };
+  YearDetail:     { year: number; trackCount: number; isLocal?: boolean };
   PlaylistDetail: { playlistId: string };
 };
 
@@ -909,8 +913,15 @@ function TrackActionSheet({
   const navigation = useNavigation<LibraryNav>();
   const [showPicker, setShowPicker] = useState(false);
   const { mixtapes: playlists, addTrack } = useMixtapeStore();
+  // Local tracks have no other entry point to love/unlove outside of the player screen (which
+  // needs the track to already be playing) — server tracks already have that via PlayerOverlay,
+  // so this row only appears for local ones, to avoid duplicating a control that already exists.
+  const localLovedPaths = useLocalLibraryActivityStore((st) => st.lovedPaths);
+  const toggleLocalLove = useLocalLibraryActivityStore((st) => st.toggleLove);
 
   if (!track) return null;
+  const isLocal = isLocalPath(track.path);
+  const isLoved = isLocal && localLovedPaths.has(track.path);
 
   const metaParts = [
     track.genre,
@@ -977,6 +988,13 @@ function TrackActionSheet({
             <SheetRow icon="play-skip-forward" label="Play Next" onPress={() => onPlayNext(track)} />
             <SheetRow icon="add-circle-outline" label="Add to Queue" onPress={() => onAddToQueue(track)} />
             <SheetRow icon="list" label="Add to Mixtape" onPress={() => setShowPicker(true)} />
+            {isLocal && (
+              <SheetRow
+                icon={isLoved ? 'heart' : 'heart-outline'}
+                label={isLoved ? 'Unlove' : 'Love'}
+                onPress={() => { toggleLocalLove(track.path); onClose(); }}
+              />
+            )}
             {(goArtist || goFolder) && <View style={s.sheetDivider} />}
             {goArtist && <SheetRow icon="folder-open-outline" label="Go to artist folder" onPress={goArtist} />}
             {goFolder && <SheetRow icon="folder-outline" label={`Show in folder: ${fName}`} onPress={goFolder} />}
@@ -987,7 +1005,7 @@ function TrackActionSheet({
                 onPress={() => { onRename(track); onClose(); }}
               />
             )}
-            {isLocalPath(track.path) && (
+            {isLocal && (
               <SheetRow
                 icon="save-outline"
                 label="Export to USB"
@@ -1050,7 +1068,6 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
   const {
     visibleTabsServer, visibleTabsLocal, setVisibleTabs,
     includeLocalLibrary,
-    mergeLocalAndServer, setMergeLocalAndServer,
   } = useLibrarySettings();
   const bumpLibraryRevision = useLibraryActivityStore((s) => s.bumpLibraryRevision);
   const [rescanning, setRescanning] = useState(false);
@@ -1105,24 +1122,6 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
 
           {includeLocalLibrary && (
             <Pressable
-              onPress={() => setMergeLocalAndServer(!mergeLocalAndServer)}
-              style={[s.sheetBtn, { justifyContent: 'space-between' }]}
-            >
-              <View>
-                <Text style={s.sheetBtnText}>Merge with Server Library</Text>
-                <Text style={s.sheetMetaSub}>Show local and server tracks in one list</Text>
-              </View>
-              <Switch
-                value={mergeLocalAndServer}
-                onValueChange={setMergeLocalAndServer}
-                thumbColor={mergeLocalAndServer ? c.accent : c.textMuted}
-                trackColor={{ false: c.bgElevated, true: `${c.accent}88` }}
-              />
-            </Pressable>
-          )}
-
-          {includeLocalLibrary && (
-            <Pressable
               onPress={handleRescan}
               disabled={rescanning}
               style={[s.sheetBtn, { justifyContent: 'space-between', opacity: rescanning ? 0.5 : 1 }]}
@@ -1149,23 +1148,6 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
               </View>
               <Ionicons name="save-outline" size={20} color={c.textMuted} />
             </Pressable>
-          )}
-
-          {includeLocalLibrary && mergeLocalAndServer && (
-            <View style={[s.sheetBtn, { flexDirection: 'row', gap: Spacing.lg }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: c.accent, alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name="cloud" size={10} color="#fff" />
-                </View>
-                <Text style={s.sheetMetaSub}>Server</Text>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#e08030', alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name="phone-portrait" size={10} color="#fff" />
-                </View>
-                <Text style={s.sheetMetaSub}>Device</Text>
-              </View>
-            </View>
           )}
 
           <View style={s.sheetDivider} />
@@ -1251,7 +1233,7 @@ function DownloadingLibrary({ label = 'Downloading metadata…', percent, detail
   );
 }
 
-function UpdatingBanner({ visible }: { visible: boolean }) {
+function UpdatingBanner({ visible, label = 'Updating metadata…' }: { visible: boolean; label?: string }) {
   const { c } = useLibStyles();
   if (!visible) return null;
   return (
@@ -1260,7 +1242,7 @@ function UpdatingBanner({ visible }: { visible: boolean }) {
       gap: 8, paddingVertical: 5, backgroundColor: c.bgElevated,
     }}>
       <ActivityIndicator size="small" color={c.accent} />
-      <Text style={{ color: c.textMuted, fontSize: 12 }}>Updating metadata…</Text>
+      <Text style={{ color: c.textMuted, fontSize: 12 }}>{label}</Text>
     </View>
   );
 }
@@ -1377,9 +1359,13 @@ function ArtistsTab() {
     return sortList(list, sortBy, sortDir, (a, f) => a[f as keyof MusicArtist]);
   }, [artists, search, sortBy, sortDir]);
 
+  // Merged mode dedups/sums local+server by name (above) and loses per-item origin, so a merged
+  // row always opens the server-side detail view — the same as before local Artists existed. Only
+  // pure local-only mode (every row genuinely local) can pass isLocal through.
+  const localOnly = includeLocalLibrary && !mergeLocalAndServer;
   const renderItem = useCallback(({ item }: { item: MusicArtist }) => (
     <Pressable
-      onPress={() => navigation.push('Artist', { artistName: item.artist })}
+      onPress={() => navigation.push('Artist', { artistName: item.artist, isLocal: localOnly })}
       style={({ pressed }) => [s.row, pressed && s.rowPressed]}
     >
       <View style={s.artistIcon}>
@@ -1393,18 +1379,7 @@ function ArtistsTab() {
       </View>
       <Ionicons name="chevron-forward" size={16} color={c.textMuted} />
     </Pressable>
-  ), [navigation, s, c]);
-
-  if (!loading && includeLocalLibrary && !mergeLocalAndServer && filtered.length === 0) {
-    return (
-      <View style={[s.flex, { justifyContent: 'center', alignItems: 'center', padding: Spacing.xl }]}>
-        <Ionicons name="phone-portrait-outline" size={48} color={c.textDim} />
-        <Text style={[s.rowMeta, { marginTop: 12, textAlign: 'center' }]}>
-          {'Artist info isn\'t available for device music.\nBrowse your local tracks via Albums or Tracks.'}
-        </Text>
-      </View>
-    );
-  }
+  ), [navigation, s, c, localOnly]);
 
   return (
     <View style={s.flex}>
@@ -1851,28 +1826,45 @@ function TracksTab() {
 function LovedTab() {
   const { s, c } = useLibStyles();
   const { playQueue, addToQueue, playNext } = usePlayer();
-  const { lovedPaths, toggleLove, clearAllLoved } = useLibraryActivityStore();
+  const { includeLocalLibrary } = useLibrarySettings();
+
+  // Local tracks are loved entirely on-device — the server has no concept of a phone-only file
+  // path — so this stays a fully separate store from the server one, regardless of whether
+  // "Merge with Server Library" is on.
+  const serverActivity = useLibraryActivityStore();
+  const localActivity = useLocalLibraryActivityStore();
+  useEffect(() => {
+    if (includeLocalLibrary) localActivity.load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [includeLocalLibrary]);
+  const lovedPaths = includeLocalLibrary ? localActivity.lovedPaths : serverActivity.lovedPaths;
+  const toggleLove = includeLocalLibrary ? localActivity.toggleLove : serverActivity.toggleLove;
+  const clearAllLoved = includeLocalLibrary ? localActivity.clearAllLoved : serverActivity.clearAllLoved;
+
   const [actionTrack, setActionTrack] = useState<MusicTrack | null>(null);
   const { sortBy, sortDir, onSort } = useSort(null);
 
   // Fetch only the loved tracks (resolved server-side) rather than the whole 20k+ library.
   // We still filter by the reactive lovedPaths below so unloving updates the list live.
-  const { data: cachedTracks, loading, refreshing } =
-    useServerCachedList<MusicTrack>('loved', getLovedTracks, true, seedTrackSignatures);
+  const { data: cachedTracks, loading: serverLoading, refreshing } =
+    useServerCachedList<MusicTrack>('loved', getLovedTracks, !includeLocalLibrary, seedTrackSignatures);
 
   // The bulk sync only re-downloads that cached list when the LIBRARY changes, so a track loved
   // here or on the web never showed up until the next scan. The loved list is tiny — refetch it
   // whenever the loved set moves (lovedPaths is a fresh Set on every love/unlove).
   const [fresh, setFresh] = useState<MusicTrack[] | null>(null);
   useEffect(() => {
+    if (includeLocalLibrary) return;
     let cancelled = false;
     getLovedTracks()
       .then((t) => { if (!cancelled) { seedTrackSignatures(t); setFresh(t); } })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [lovedPaths]);
+  }, [lovedPaths, includeLocalLibrary]);
 
-  const allTracks = fresh ?? cachedTracks;
+  const localTracks = useLocalList<MusicTrack>(getAllLocalTracks, includeLocalLibrary);
+  const allTracks = includeLocalLibrary ? localTracks : (fresh ?? cachedTracks);
+  const loading = includeLocalLibrary ? false : serverLoading;
 
   const lovedTracks = useMemo(() => {
     const list = allTracks.filter((t) => lovedPaths.has(t.path));
@@ -2003,7 +1995,17 @@ const formatWhen = (ms: number): string => {
 function HistoryTab() {
   const { s, c } = useLibStyles();
   const { playQueue, addToQueue, playNext } = usePlayer();
-  const { recentPlays, historyVersion, deletePlay, clearHistory } = useLibraryActivityStore();
+  const { includeLocalLibrary } = useLibrarySettings();
+
+  // Same split as LovedTab: a local track's history never leaves the phone, so it's tracked in
+  // a fully separate store — regardless of the merge toggle.
+  const serverActivity = useLibraryActivityStore();
+  const localActivity = useLocalLibraryActivityStore();
+  useEffect(() => {
+    if (includeLocalLibrary) localActivity.load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [includeLocalLibrary]);
+
   const [actionTrack, setActionTrack] = useState<MusicTrack | null>(null);
   const { sortBy, sortDir, onSort } = useSort('playedAt', 'desc');
 
@@ -2014,8 +2016,10 @@ function HistoryTab() {
 
   useEffect(() => { restEntriesRef.current = restEntries; }, [restEntries]);
 
-  // Reload from REST whenever a delete/clear happened (historyVersion bumps)
+  // Reload from REST whenever a delete/clear happened (historyVersion bumps) — server mode only;
+  // local mode has no REST layer, its full (capped) history is already in localActivity.recentPlays.
   const loadRest = useCallback(async (reset: boolean) => {
+    if (includeLocalLibrary) return;
     if (reset) setLoading(true); else setLoadingMore(true);
     try {
       const offset = reset ? 0 : restEntriesRef.current.length;
@@ -2023,39 +2027,48 @@ function HistoryTab() {
       setRestEntries((prev) => reset ? data : [...prev, ...data]);
     } catch {}
     finally { setLoading(false); setLoadingMore(false); }
-  }, []);
+  }, [includeLocalLibrary]);
 
+  useEffect(() => {
+    if (includeLocalLibrary) { setLoading(false); return; }
+    loadRest(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadRest(true); }, [historyVersion]);
+  }, [serverActivity.historyVersion, includeLocalLibrary]);
 
   // Merge: recentPlays (SignalR) on top, REST below, deduplicated.
   // Sorting only covers loaded entries; older pages stream in as the list is scrolled.
   const entries = useMemo(() => {
+    if (includeLocalLibrary) {
+      return sortList(localActivity.recentPlays, sortBy, sortDir, (e, f) => e[f as keyof PlayRecord]);
+    }
     const restIds = new Set(restEntries.map((e) => e.id));
-    const fresh = recentPlays.filter((r) => !restIds.has(r.id));
+    const fresh = serverActivity.recentPlays.filter((r) => !restIds.has(r.id));
     return sortList([...fresh, ...restEntries], sortBy, sortDir, (e, f) => e[f as keyof PlayRecord]);
-  }, [recentPlays, restEntries, sortBy, sortDir]);
+  }, [includeLocalLibrary, localActivity.recentPlays, serverActivity.recentPlays, restEntries, sortBy, sortDir]);
 
   const tracksFromEntries = useMemo(
     () => entries.map(recordToTrack),
     [entries],
   );
 
+  const deletePlay = includeLocalLibrary ? localActivity.deletePlay : serverActivity.deletePlay;
+  const clearHistory = includeLocalLibrary ? localActivity.clearHistory : serverActivity.clearHistory;
+
   const handleDeletePlay = useCallback((id: string) => {
     // Optimistically remove from local REST list; store handles recentPlays
-    setRestEntries((prev) => prev.filter((e) => e.id !== id));
+    if (!includeLocalLibrary) setRestEntries((prev) => prev.filter((e) => e.id !== id));
     deletePlay(id);
-  }, [deletePlay]);
+  }, [deletePlay, includeLocalLibrary]);
 
   const handleClearAll = useCallback(() => {
     Alert.alert('Clear play history?', 'All play history will be deleted. This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Clear all', style: 'destructive', onPress: () => {
-        setRestEntries([]);
+        if (!includeLocalLibrary) setRestEntries([]);
         clearHistory();
       }},
     ]);
-  }, [clearHistory]);
+  }, [clearHistory, includeLocalLibrary]);
 
   const renderEntry = useCallback(({ item, index }: { item: PlayRecord; index: number }) => {
     const track = tracksFromEntries[index];
@@ -2291,6 +2304,8 @@ function FoldersTab() {
 
 // ── Tab: Genres ───────────────────────────────────────────────────────────────
 
+type GenreWithSource = MusicGenre & { _local?: boolean };
+
 function GenresTab() {
   const { s, c } = useLibStyles();
   const navigation = useNavigation<LibraryNav>();
@@ -2298,12 +2313,23 @@ function GenresTab() {
   const { sortBy, sortDir, onSort } = useSort('genre');
   const { includeLocalLibrary, mergeLocalAndServer } = useLibrarySettings();
 
-  // Local tracks have no genre metadata; show server genres in both server-only
-  // and merged modes. In local-only mode the list will be empty.
   const wantServer = !includeLocalLibrary || mergeLocalAndServer;
-  const { data: genres, loading: serverLoading, refreshing } =
-    useServerCachedList<MusicGenre>('genres', getGenres, wantServer);
+  const { data: serverGenres, loading: serverLoading, refreshing } =
+    useServerCachedList<GenreWithSource>('genres', getGenres, wantServer);
+  const localGenresRaw = useLocalList<MusicGenre>(getLocalGenres, includeLocalLibrary);
+  const localGenres = useMemo<GenreWithSource[]>(
+    () => localGenresRaw.map((g) => ({ ...g, _local: true })),
+    [localGenresRaw],
+  );
+
+  const genres = useMemo<GenreWithSource[]>(() => {
+    if (includeLocalLibrary && !mergeLocalAndServer) return localGenres;
+    if (includeLocalLibrary && mergeLocalAndServer) return [...serverGenres, ...localGenres];
+    return serverGenres;
+  }, [serverGenres, localGenres, includeLocalLibrary, mergeLocalAndServer]);
+
   const loading = wantServer && serverLoading && genres.length === 0;
+  const showBadge = includeLocalLibrary && mergeLocalAndServer;
 
   const filtered = useMemo(() => {
     let list = genres;
@@ -2314,9 +2340,9 @@ function GenresTab() {
     return sortList(list, sortBy, sortDir, (g, f) => g[f as keyof MusicGenre]);
   }, [genres, search, sortBy, sortDir]);
 
-  const renderItem = useCallback(({ item }: { item: MusicGenre }) => (
+  const renderItem = useCallback(({ item }: { item: GenreWithSource }) => (
     <Pressable
-      onPress={() => navigation.push('GenreDetail', { genre: item.genre, trackCount: item.trackCount })}
+      onPress={() => navigation.push('GenreDetail', { genre: item.genre, trackCount: item.trackCount, isLocal: item._local })}
       style={({ pressed }) => [s.row, pressed && s.rowPressed]}
     >
       <View style={s.artistIcon}>
@@ -2324,11 +2350,14 @@ function GenresTab() {
       </View>
       <View style={s.rowInfo}>
         <Text style={s.rowTitle} numberOfLines={1}>{item.genre || '(Unknown Genre)'}</Text>
-        <Text style={s.rowMeta}>{item.trackCount} track{item.trackCount !== 1 ? 's' : ''}</Text>
+        <Text style={s.rowMeta}>
+          {item.trackCount} track{item.trackCount !== 1 ? 's' : ''}
+          {item._local && !showBadge && <Text style={{ color: '#e08030' }}> · device</Text>}
+        </Text>
       </View>
       <Ionicons name="chevron-forward" size={16} color={c.textMuted} />
     </Pressable>
-  ), [navigation, s, c]);
+  ), [navigation, s, c, showBadge]);
 
   return (
     <View style={s.flex}>
@@ -2355,17 +2384,11 @@ function GenresTab() {
           <FlatList
             {...LIST_PERF_PROPS}
             data={filtered}
-            keyExtractor={(item) => item.genre}
+            keyExtractor={(item) => `${item.genre}-${item._local ? 'l' : 's'}`}
             renderItem={renderItem}
             contentContainerStyle={s.listContent}
             ListEmptyComponent={
-              <Text style={s.empty}>
-                {search
-                  ? 'No genres match'
-                  : includeLocalLibrary && !mergeLocalAndServer
-                    ? 'Genre tags are not available for device music'
-                    : 'No genres in library'}
-              </Text>
+              <Text style={s.empty}>{search ? 'No genres match' : 'No genres in library'}</Text>
             }
           />
         )}
@@ -2548,8 +2571,12 @@ function LibraryHome({ navigation }: HomeProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const bumpRevisionOnce = useLibraryActivityStore((s) => s.bumpLibraryRevision);
+  const [localScanProgress, setLocalScanProgress] = useState<LocalScanProgress>(null);
   useEffect(() => {
-    setScanProgressCallback(bumpRevisionOnce);
+    setScanProgressCallback((progress) => {
+      setLocalScanProgress(progress);
+      bumpRevisionOnce();
+    });
     if (!settingsLoaded) loadSettings();
     loadMixtapes();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2707,6 +2734,17 @@ function LibraryHome({ navigation }: HomeProps) {
           <View style={{ width: `${syncPercent}%`, height: '100%', backgroundColor: c.accent }} />
         </View>
       )}
+      {includeLocalLibrary && localScanProgress && (
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+          gap: 8, paddingVertical: 5, backgroundColor: c.bgElevated,
+        }}>
+          <ActivityIndicator size="small" color={c.accent} />
+          <Text style={{ color: c.textMuted, fontSize: 12 }}>
+            Scanning device music — {localScanProgress.done}/{localScanProgress.total}
+          </Text>
+        </View>
+      )}
       <SourcePicker />
       {tab === 'Artists'   && <ArtistsTab />}
       {tab === 'Albums'    && <AlbumsTab />}
@@ -2728,7 +2766,7 @@ type ArtistProps = NativeStackScreenProps<LibraryStackParamList, 'Artist'>;
 
 function ArtistDetail({ route }: ArtistProps) {
   const { s, c } = useLibStyles();
-  const { artistName } = route.params;
+  const { artistName, isLocal } = route.params;
   const { playQueue, addToQueue, playNext } = usePlayer();
   const navigation = useNavigation<LibraryNav>();
   const [albums, setAlbums] = useState<MusicAlbum[]>([]);
@@ -2740,8 +2778,10 @@ function ArtistDetail({ route }: ArtistProps) {
   const [renameTarget, setRenameTarget] = useState<MusicTrack | null>(null);
 
   useEffect(() => {
-    getAlbums(artistName).then((d) => setAlbums(d ?? [])).catch(() => {});
-  }, [artistName]);
+    (isLocal ? getLocalArtistAlbums(artistName) : getAlbums(artistName))
+      .then((d) => setAlbums(d ?? []))
+      .catch(() => {});
+  }, [artistName, isLocal]);
 
   const fetchingRef  = useRef(false);
   const tracksRef    = useRef<MusicTrack[]>([]);
@@ -2755,7 +2795,26 @@ function ArtistDetail({ route }: ArtistProps) {
   useEffect(() => { searchRef.current = search; }, [search]);
   useEffect(() => { scanningRef.current = scanning; }, [scanning]);
 
+  // Local: no pagination — load every track by this artist once, then filter/sort client-side.
+  const [allLocalTracks, setAllLocalTracks] = useState<MusicTrack[]>([]);
+  useEffect(() => {
+    if (!isLocal) return;
+    setFetching(true);
+    getLocalArtistTracks(artistName)
+      .then((t) => { setAllLocalTracks(t); setTotal(t.length); totalRef.current = t.length; })
+      .catch(() => {})
+      .finally(() => setFetching(false));
+  }, [isLocal, artistName]);
+
+  useEffect(() => {
+    if (!isLocal) return;
+    const q = search.toLowerCase();
+    const list = q ? allLocalTracks.filter((t) => getTrackTitle(t).toLowerCase().includes(q)) : allLocalTracks;
+    setTracks(list);
+  }, [isLocal, allLocalTracks, search]);
+
   const loadPage = useCallback(async (reset: boolean, query: string) => {
+    if (isLocal) return;
     if (scanningRef.current) return; // backend is rebuilding the DB — don't fetch into a hang
     if (fetchingRef.current) return;
     const offset = reset ? 0 : tracksRef.current.length;
@@ -2769,16 +2828,17 @@ function ArtistDetail({ route }: ArtistProps) {
       totalRef.current = result.total;
     } catch {}
     finally { fetchingRef.current = false; setFetching(false); }
-  }, []);
+  }, [isLocal]);
 
   useEffect(() => {
-    if (scanning) return;
+    if (isLocal || scanning) return;
     const t = setTimeout(() => loadPage(true, search), search ? 300 : 0);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, scanning]);
+  }, [search, scanning, isLocal]);
 
   const fetchAllTracks = useCallback(async (opts?: QueueFetch): Promise<MusicTrack[]> => {
+    if (isLocal) return tracksRef.current;
     if (!opts?.random && totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return tracksRef.current;
     try {
       const result = await getTracks({
@@ -2786,7 +2846,7 @@ function ArtistDetail({ route }: ArtistProps) {
       });
       return result.tracks;
     } catch { return tracksRef.current; }
-  }, []);
+  }, [isLocal]);
 
   const handlePlayAll = useCallback(async () => {
     const all = await fetchAllTracks();
@@ -2854,7 +2914,9 @@ function ArtistDetail({ route }: ArtistProps) {
             {albums.map((al) => (
               <Pressable
                 key={`${al.album}-${al.artist}`}
-                onPress={() => navigation.push('Album', { album: al })}
+                onPress={() => navigation.push('Album', isLocal
+                  ? { album: al, localAlbumTitle: al.album ?? undefined }
+                  : { album: al })}
                 style={({ pressed }) => [s.row, pressed && s.rowPressed]}
               >
                 <ArtworkBox path={al.hasArtwork ? al.coverPath : null} size={48} />
@@ -2893,7 +2955,7 @@ function ArtistDetail({ route }: ArtistProps) {
         }}
         onPlayNext={(t) => { playNext([t]); setActionTrack(null); }}
         onAddToQueue={(t) => { addToQueue([t]); setActionTrack(null); }}
-        onRename={(t) => { setActionTrack(null); setRenameTarget(t); }}
+        onRename={!isLocal ? (t) => { setActionTrack(null); setRenameTarget(t); } : undefined}
       />
       <RenameModal
         initialValue={renameTarget?.filename ?? ''}
@@ -2929,7 +2991,7 @@ function AlbumDetail({ route }: AlbumProps) {
 
   useEffect(() => {
     if (localAlbumTitle) {
-      getLocalAlbumTracks(localAlbumTitle)
+      getLocalAlbumTracksFor(album)
         .then(setTracks)
         .catch(() => {})
         .finally(() => setLoading(false));
@@ -2953,6 +3015,11 @@ function AlbumDetail({ route }: AlbumProps) {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+  // Deliberately field-scoped, not `album` itself: the object comes from a route param and its
+  // identity isn't stable across re-renders, but which album it names is fully pinned down by
+  // these three fields (see albumGroupKey in localMusicLibrary.ts) — re-running on every
+  // re-render would refetch on every navigation focus change for no reason.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [album.album, album.artist, album.directory, localAlbumTitle]);
 
   // Album tracks are all loaded up front (limit 500), so the full list already lives in tracksRef.
@@ -3049,7 +3116,7 @@ function AlbumDetail({ route }: AlbumProps) {
         }}
         onPlayNext={(t) => { playNext([t]); setActionTrack(null); }}
         onAddToQueue={(t) => { addToQueue([t]); setActionTrack(null); }}
-        onRename={(t) => { setActionTrack(null); setRenameTarget(t); }}
+        onRename={!localAlbumTitle ? (t) => { setActionTrack(null); setRenameTarget(t); } : undefined}
       />
       <RenameModal
         initialValue={renameTarget?.filename ?? ''}
@@ -3074,7 +3141,7 @@ type GenreDetailProps = NativeStackScreenProps<LibraryStackParamList, 'GenreDeta
 
 function GenreDetail({ route }: GenreDetailProps) {
   const { s, c } = useLibStyles();
-  const { genre } = route.params;
+  const { genre, isLocal } = route.params;
   const { playQueue, addToQueue, playNext } = usePlayer();
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
   const [total, setTotal] = useState(0);
@@ -3094,7 +3161,25 @@ function GenreDetail({ route }: GenreDetailProps) {
   useEffect(() => { searchRef.current = search; }, [search]);
   useEffect(() => { scanningRef.current = scanning; }, [scanning]);
 
+  // Local: no pagination — load every track in this genre once, filter/sort client-side.
+  const [allLocalTracks, setAllLocalTracks] = useState<MusicTrack[]>([]);
+  useEffect(() => {
+    if (!isLocal) return;
+    setFetching(true);
+    getLocalGenreTracks(genre)
+      .then((t) => { setAllLocalTracks(t); setTotal(t.length); totalRef.current = t.length; })
+      .catch(() => {})
+      .finally(() => setFetching(false));
+  }, [isLocal, genre]);
+
+  useEffect(() => {
+    if (!isLocal) return;
+    const q = search.toLowerCase();
+    setTracks(q ? allLocalTracks.filter((t) => getTrackTitle(t).toLowerCase().includes(q)) : allLocalTracks);
+  }, [isLocal, allLocalTracks, search]);
+
   const loadPage = useCallback(async (reset: boolean, query: string) => {
+    if (isLocal) return;
     if (scanningRef.current) return; // backend is rebuilding the DB — don't fetch into a hang
     if (fetchingRef.current) return;
     const offset = reset ? 0 : tracksRef.current.length;
@@ -3108,22 +3193,23 @@ function GenreDetail({ route }: GenreDetailProps) {
       totalRef.current = result.total;
     } catch {}
     finally { fetchingRef.current = false; setFetching(false); }
-  }, []);
+  }, [isLocal]);
 
   useEffect(() => {
-    if (scanning) return;
+    if (isLocal || scanning) return;
     const t = setTimeout(() => loadPage(true, search), search ? 300 : 0);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, scanning]);
+  }, [search, scanning, isLocal]);
 
   const fetchAllTracks = useCallback(async (opts?: QueueFetch): Promise<MusicTrack[]> => {
+    if (isLocal) return tracksRef.current;
     if (!opts?.random && totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return tracksRef.current;
     try {
       const result = await getTracks({ genre: genreRef.current, search: searchRef.current, ...queueWindow(opts) });
       return result.tracks;
     } catch { return tracksRef.current; }
-  }, []);
+  }, [isLocal]);
 
   const handlePlayAll = useCallback(async () => {
     const all = await fetchAllTracks();
@@ -3220,27 +3306,40 @@ function GenreDetail({ route }: GenreDetailProps) {
 
 // ── YearsTab ──────────────────────────────────────────────────────────────────
 
+type YearWithSource = MusicYear & { _local?: boolean };
+
 function YearsTab() {
   const { s, c } = useLibStyles();
   const navigation = useNavigation<LibraryNav>();
   const { sortBy, sortDir, onSort } = useSort('year', 'desc');
   const { includeLocalLibrary, mergeLocalAndServer } = useLibrarySettings();
 
-  // Local tracks have no year metadata; show server years in both server-only
-  // and merged modes. In local-only mode the list will be empty.
   const wantServer = !includeLocalLibrary || mergeLocalAndServer;
-  const { data: years, loading: serverLoading, refreshing } =
-    useServerCachedList<MusicYear>('years', getYears, wantServer);
+  const { data: serverYears, loading: serverLoading, refreshing } =
+    useServerCachedList<YearWithSource>('years', getYears, wantServer);
+  const localYearsRaw = useLocalList<MusicYear>(getLocalYears, includeLocalLibrary);
+  const localYears = useMemo<YearWithSource[]>(
+    () => localYearsRaw.map((y) => ({ ...y, _local: true })),
+    [localYearsRaw],
+  );
+
+  const years = useMemo<YearWithSource[]>(() => {
+    if (includeLocalLibrary && !mergeLocalAndServer) return localYears;
+    if (includeLocalLibrary && mergeLocalAndServer) return [...serverYears, ...localYears];
+    return serverYears;
+  }, [serverYears, localYears, includeLocalLibrary, mergeLocalAndServer]);
+
   const loading = wantServer && serverLoading && years.length === 0;
+  const showBadge = includeLocalLibrary && mergeLocalAndServer;
 
   const sorted = useMemo(
     () => sortList(years, sortBy, sortDir, (y, f) => y[f as keyof MusicYear]),
     [years, sortBy, sortDir],
   );
 
-  const renderItem = useCallback(({ item }: { item: MusicYear }) => (
+  const renderItem = useCallback(({ item }: { item: YearWithSource }) => (
     <Pressable
-      onPress={() => navigation.push('YearDetail', { year: item.year, trackCount: item.trackCount })}
+      onPress={() => navigation.push('YearDetail', { year: item.year, trackCount: item.trackCount, isLocal: item._local })}
       style={({ pressed }) => [s.row, pressed && s.rowPressed]}
     >
       <View style={s.artistIcon}>
@@ -3251,11 +3350,12 @@ function YearsTab() {
         <Text style={s.rowMeta}>
           {item.trackCount} track{item.trackCount !== 1 ? 's' : ''}
           {item.albumCount > 0 ? ` · ${item.albumCount} album${item.albumCount !== 1 ? 's' : ''}` : ''}
+          {item._local && !showBadge && <Text style={{ color: '#e08030' }}> · device</Text>}
         </Text>
       </View>
       <Ionicons name="chevron-forward" size={16} color={c.textMuted} />
     </Pressable>
-  ), [navigation, s, c]);
+  ), [navigation, s, c, showBadge]);
 
   return (
     <View style={s.flex}>
@@ -3278,15 +3378,11 @@ function YearsTab() {
           <FlatList
             {...LIST_PERF_PROPS}
             data={sorted}
-            keyExtractor={(item) => String(item.year)}
+            keyExtractor={(item) => `${item.year}-${item._local ? 'l' : 's'}`}
             renderItem={renderItem}
             contentContainerStyle={s.listContent}
             ListEmptyComponent={
-              <Text style={s.empty}>
-                {includeLocalLibrary && !mergeLocalAndServer
-                  ? 'Year tags are not available for device music'
-                  : 'No years in library'}
-              </Text>
+              <Text style={s.empty}>No years in library</Text>
             }
           />
         )}
@@ -3300,7 +3396,7 @@ type YearDetailProps = NativeStackScreenProps<LibraryStackParamList, 'YearDetail
 
 function YearDetail({ route }: YearDetailProps) {
   const { s, c } = useLibStyles();
-  const { year } = route.params;
+  const { year, isLocal } = route.params;
   const { playQueue, addToQueue, playNext } = usePlayer();
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
   const [total, setTotal] = useState(0);
@@ -3316,7 +3412,17 @@ function YearDetail({ route }: YearDetailProps) {
   useEffect(() => { totalRef.current = total; }, [total]);
   useEffect(() => { scanningRef.current = scanning; }, [scanning]);
 
+  useEffect(() => {
+    if (!isLocal) return;
+    setFetching(true);
+    getLocalYearTracks(year)
+      .then((t) => { setTracks(t); setTotal(t.length); totalRef.current = t.length; })
+      .catch(() => {})
+      .finally(() => setFetching(false));
+  }, [isLocal, year]);
+
   const loadPage = useCallback(async (reset: boolean) => {
+    if (isLocal) return;
     if (scanningRef.current) return; // backend is rebuilding the DB — don't fetch into a hang
     if (fetchingRef.current) return;
     const offset = reset ? 0 : tracksRef.current.length;
@@ -3330,17 +3436,18 @@ function YearDetail({ route }: YearDetailProps) {
       totalRef.current = result.total;
     } catch {}
     finally { fetchingRef.current = false; setFetching(false); }
-  }, [year]);
+  }, [year, isLocal]);
 
-  useEffect(() => { if (!scanning) loadPage(true); }, [loadPage, scanning]);
+  useEffect(() => { if (!isLocal && !scanning) loadPage(true); }, [loadPage, scanning, isLocal]);
 
   const fetchAllTracks = useCallback(async (opts?: QueueFetch): Promise<MusicTrack[]> => {
+    if (isLocal) return tracksRef.current;
     if (!opts?.random && totalRef.current > 0 && tracksRef.current.length >= totalRef.current) return tracksRef.current;
     try {
       const result = await getTracks({ year, ...queueWindow(opts) });
       return result.tracks;
     } catch { return tracksRef.current; }
-  }, [year]);
+  }, [year, isLocal]);
 
   const handlePlayAll = useCallback(async () => {
     const all = await fetchAllTracks();

@@ -58,6 +58,8 @@ import { isSigned } from '../api/streamSignatures';
 import { ARTWORK_THUMB_SIZE, getArtworkCacheKey, PLAYER_ART_SIZE } from '../services/artworkCache';
 import { useMixtapeStore } from '../store/mixtapeStore';
 import { useLibraryActivityStore } from '../store/libraryActivityStore';
+import { useLocalLibraryActivityStore } from '../store/localLibraryActivityStore';
+import { isLocalPath } from '../services/localMusicLibrary';
 import { usePlayerUI } from '../store/playerUIStore';
 import { haptics } from '../lib/haptics';
 import { Radius, Spacing, ThemeColors, Typography } from '../theme';
@@ -451,9 +453,12 @@ export default function PlayerOverlay() {
   const mixtapes     = useMixtapeStore((st) => st.mixtapes);
   const loadMixtapes = useMixtapeStore((st) => st.load);
   const addTrack     = useMixtapeStore((st) => st.addTrack);
-  const lovedPaths   = useLibraryActivityStore((st) => st.lovedPaths);
-  const toggleLove   = useLibraryActivityStore((st) => st.toggleLove);
-  const isLoved = track ? lovedPaths.has(track.path) : false;
+  const lovedPaths      = useLibraryActivityStore((st) => st.lovedPaths);
+  const toggleLove      = useLibraryActivityStore((st) => st.toggleLove);
+  const localLovedPaths = useLocalLibraryActivityStore((st) => st.lovedPaths);
+  const toggleLocalLove = useLocalLibraryActivityStore((st) => st.toggleLove);
+  const trackIsLocal = track ? isLocalPath(track.path) : false;
+  const isLoved = track ? (trackIsLocal ? localLovedPaths : lovedPaths).has(track.path) : false;
   const inMixtape = track ? mixtapes.some((pl) => pl.tracks.some((t) => t.filePath === track.path)) : false;
 
   const [mixtapeModalVisible, setMixtapeModalVisible] = useState(false);
@@ -935,7 +940,7 @@ export default function PlayerOverlay() {
                   </Pressable>
                 </View>
                 <View style={s.actionRowRight}>
-                  <Pressable hitSlop={12} onPress={() => { haptics.light(); toggleLove(track.path); }} style={({ pressed }) => [s.iconBtn, pressed && { opacity: 0.5 }]}>
+                  <Pressable hitSlop={12} onPress={() => { haptics.light(); (trackIsLocal ? toggleLocalLove : toggleLove)(track.path); }} style={({ pressed }) => [s.iconBtn, pressed && { opacity: 0.5 }]}>
                     <Ionicons color={isLoved ? '#e05a7a' : 'rgba(255,255,255,0.6)'} name={isLoved ? 'heart' : 'heart-outline'} size={24} />
                   </Pressable>
                   <Pressable hitSlop={12} onPress={() => setMixtapeModalVisible(true)} style={({ pressed }) => [s.iconBtn, pressed && { opacity: 0.5 }]}>

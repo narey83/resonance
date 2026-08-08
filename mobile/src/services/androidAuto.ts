@@ -56,6 +56,7 @@ import {
 } from './localMusicLibrary';
 import { useAuthStore } from '../store/auth';
 import { useLibraryActivityStore } from '../store/libraryActivityStore';
+import { useLocalLibraryActivityStore } from '../store/localLibraryActivityStore';
 import { remoteLog } from '../api/remoteLogger';
 
 // Android Auto content browsing for react-native-track-player.
@@ -595,7 +596,8 @@ export const handleAndroidAutoLove = async (): Promise<void> => {
     const rntpTrack = await TrackPlayer.getActiveTrack();
     const path: string | undefined = (rntpTrack as any)?._source?.path ?? (rntpTrack as any)?._path;
     if (!path) return;
-    await useLibraryActivityStore.getState().toggleLove(path);
+    const store = isLocalPath(path) ? useLocalLibraryActivityStore : useLibraryActivityStore;
+    await store.getState().toggleLove(path);
   } catch (e) {
     remoteLog('error', `[aa] love failed — ${String(e)}`);
   }

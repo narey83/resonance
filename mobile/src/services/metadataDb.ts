@@ -56,14 +56,25 @@ const artworkDirectory = () => new Directory(Paths.cache, 'resonance_artwork');
 
 // Bump this whenever the local scanning logic changes in a way that
 // requires previously-cached entries to be re-scanned from scratch.
-const LOCAL_SCAN_VERSION = 15;
+const LOCAL_SCAN_VERSION = 22; // fixed: openDb() race that made every local-scan write fail silently
 
-let _db: SQLiteDatabase | null = null;
+// Memoizes the in-flight open, not just the resolved db — with only a resolved-value cache,
+// two callers racing at startup (e.g. PlayerContext loading local Loved/History alongside the
+// Library screen's local scan, both on mount) would each see no db yet and both independently
+// call openDatabaseAsync() for the same file, and every write after that started rejecting with
+// "NativeDatabase.execAsync has been rejected" — the local scan ran to completion but silently
+// wrote nothing, leaving Artists/Albums/Genres/Years empty despite tag reading working fine.
+let _dbPromise: Promise<SQLiteDatabase> | null = null;
 
-export const openDb = async (): Promise<SQLiteDatabase> => {
-  if (_db) return _db;
-  _db = await openDatabaseAsync('resonance_metadata.db');
-  await _db.execAsync(`
+export const openDb = (): Promise<SQLiteDatabase> => {
+  if (_dbPromise) return _dbPromise;
+  _dbPromise = openDbInternal();
+  return _dbPromise;
+};
+
+const openDbInternal = async (): Promise<SQLiteDatabase> => {
+  const db = await openDatabaseAsync('resonance_metadata.db');
+  await db.execAsync(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS schema_info (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS track_metadata (
@@ -87,21 +98,34 @@ export const openDb = async (): Promise<SQLiteDatabase> => {
       cached_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
     );
     CREATE INDEX IF NOT EXISTS idx_tm_source ON track_metadata(source);
+    CREATE TABLE IF NOT EXISTS local_loved (
+      path TEXT PRIMARY KEY,
+      loved_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS local_play_history (
+      id TEXT PRIMARY KEY,
+      path TEXT NOT NULL,
+      played_at INTEGER NOT NULL,
+      title TEXT,
+      artist TEXT,
+      folder TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_lph_played_at ON local_play_history(played_at DESC);
   `);
 
   // If the scan version is outdated, wipe local entries so they're re-scanned fresh.
-  const row = await _db.getFirstAsync<{ value: string }>(
+  const row = await db.getFirstAsync<{ value: string }>(
     'SELECT value FROM schema_info WHERE key = ?', ['local_scan_version'],
   );
   if (!row || parseInt(row.value, 10) < LOCAL_SCAN_VERSION) {
-    await _db.runAsync('DELETE FROM track_metadata WHERE source = ?', ['local']);
-    await _db.runAsync(
+    await db.runAsync('DELETE FROM track_metadata WHERE source = ?', ['local']);
+    await db.runAsync(
       'INSERT OR REPLACE INTO schema_info (key, value) VALUES (?, ?)',
       ['local_scan_version', String(LOCAL_SCAN_VERSION)],
     );
   }
 
-  return _db;
+  return db;
 };
 
 // Read the whole persisted metadata table for a source. Used by the local library's
@@ -212,6 +236,72 @@ export const cacheArtwork = async (trackPath: string, base64Data: string): Promi
     encoding: LegacyFS.EncodingType.Base64,
   });
   return file.uri;
+};
+
+// Local-only Loved/History storage. These never leave the phone — the server has no concept of
+// a device file path, so local activity is tracked entirely on-device instead of via the
+// /musiclibrary/loved and /musiclibrary/plays endpoints used for server tracks.
+export interface LocalPlayEntry {
+  id: string;
+  path: string;
+  playedAt: number;
+  title: string | null;
+  artist: string | null;
+  folder: string | null;
+}
+
+export const getLocalLovedPaths = async (): Promise<string[]> => {
+  const db = await openDb();
+  const rows = await db.getAllAsync<{ path: string }>('SELECT path FROM local_loved');
+  return rows.map((r) => r.path);
+};
+
+export const addLocalLoved = async (path: string): Promise<void> => {
+  const db = await openDb();
+  await db.runAsync('INSERT OR REPLACE INTO local_loved (path, loved_at) VALUES (?, ?)', [path, Date.now()]);
+};
+
+export const removeLocalLoved = async (path: string): Promise<void> => {
+  const db = await openDb();
+  await db.runAsync('DELETE FROM local_loved WHERE path = ?', [path]);
+};
+
+export const clearLocalLoved = async (): Promise<void> => {
+  const db = await openDb();
+  await db.runAsync('DELETE FROM local_loved');
+};
+
+export const getLocalPlayHistory = async (limit = 500): Promise<LocalPlayEntry[]> => {
+  const db = await openDb();
+  const rows = await db.getAllAsync<Record<string, unknown>>(
+    'SELECT * FROM local_play_history ORDER BY played_at DESC LIMIT ?', [limit],
+  );
+  return rows.map((r) => ({
+    id: r.id as string,
+    path: r.path as string,
+    playedAt: r.played_at as number,
+    title: (r.title as string | null) ?? null,
+    artist: (r.artist as string | null) ?? null,
+    folder: (r.folder as string | null) ?? null,
+  }));
+};
+
+export const addLocalPlay = async (entry: LocalPlayEntry): Promise<void> => {
+  const db = await openDb();
+  await db.runAsync(
+    'INSERT OR REPLACE INTO local_play_history (id, path, played_at, title, artist, folder) VALUES (?,?,?,?,?,?)',
+    [entry.id, entry.path, entry.playedAt, entry.title, entry.artist, entry.folder],
+  );
+};
+
+export const removeLocalPlay = async (id: string): Promise<void> => {
+  const db = await openDb();
+  await db.runAsync('DELETE FROM local_play_history WHERE id = ?', [id]);
+};
+
+export const clearLocalPlayHistory = async (): Promise<void> => {
+  const db = await openDb();
+  await db.runAsync('DELETE FROM local_play_history');
 };
 
 const rowToMetadata = (row: Record<string, unknown>): TrackMetadata => ({

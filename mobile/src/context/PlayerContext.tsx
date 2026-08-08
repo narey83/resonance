@@ -51,6 +51,7 @@ import { MusicTrack, getArtworkUrl, getStreamUrl, getTrackTitle, currentStreamQu
 import { getArtworkCacheKey, prefetchArtwork, PLAYER_ART_SIZE } from '../services/artworkCache';
 import { isLocalPath } from '../services/localMusicLibrary';
 import { useLibraryActivityStore } from '../store/libraryActivityStore';
+import { useLocalLibraryActivityStore } from '../store/localLibraryActivityStore';
 import { usePlayerUI } from '../store/playerUIStore';
 import { useConnectionStore } from '../services/connectionMonitor';
 import { useAuthStore } from '../store/auth';
@@ -223,6 +224,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     ensurePlayerSetup();
   }, []);
 
+  // Local Loved/History state lives on-device (see localLibraryActivityStore) and isn't pushed
+  // by any hub — load it once at startup so it's ready before the first local track plays, rather
+  // than lazily on first visit to the Loved/History tabs.
+  useEffect(() => {
+    useLocalLibraryActivityStore.getState().load();
+  }, []);
+
   // Rehydrate the React queue from RNTP after a JS-context reload. When Android tears down
   // the JS runtime in the background, the RNTP foreground service keeps the native queue and
   // active track alive — but this provider remounts with queue: []. useActiveTrack() then shows
@@ -367,15 +375,18 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   // ── Side effects ───────────────────────────────────────────────────────────
 
   const recordPlay = useLibraryActivityStore((s) => s.recordPlay);
+  const recordLocalPlay = useLocalLibraryActivityStore((s) => s.recordPlay);
   useEffect(() => {
     if (!currentTrack?.path) return;
-    const local = isLocalPath(currentTrack.path);
-    recordPlay(currentTrack.path, local ? {
-      title: currentTrack.title ?? undefined,
-      artist: currentTrack.artist ?? undefined,
-      folder: currentTrack.directory ?? undefined,
-      source: 'local',
-    } : undefined);
+    // Local files mean nothing to the server (it has no concept of a phone-only path), so their
+    // plays are tracked entirely on-device instead of round-tripping to /musiclibrary/plays.
+    if (isLocalPath(currentTrack.path)) {
+      recordLocalPlay(currentTrack.path, {
+        title: currentTrack.title, artist: currentTrack.artist, folder: currentTrack.directory,
+      });
+    } else {
+      recordPlay(currentTrack.path);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrack?.path]);
 
@@ -571,8 +582,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, [storeAccessToken]);
 
   const lovedPaths = useLibraryActivityStore((s) => s.lovedPaths);
+  const localLovedPaths = useLocalLibraryActivityStore((s) => s.lovedPaths);
   useEffect(() => {
-    const isLoved = currentTrack ? lovedPaths.has(currentTrack.path) : false;
+    const isLoved = currentTrack
+      ? (isLocalPath(currentTrack.path) ? localLovedPaths : lovedPaths).has(currentTrack.path)
+      : false;
     // Wait for setup — this effect fires on mount, racing the async player init.
     ensurePlayerSetup()
       // Pass the FULL options (not just likeOptions) — updateOptions is a full replace, so a
@@ -580,7 +594,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       .then(() => TrackPlayer.updateOptions(buildPlayerOptions(isLoved)))
       .catch(() => { /* player unavailable */ });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTrack?.path, lovedPaths]);
+  }, [currentTrack?.path, lovedPaths, localLovedPaths]);
 
   const playTrack = useCallback((track: MusicTrack) => {
     playQueue([track], 0);

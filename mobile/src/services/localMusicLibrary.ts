@@ -30,7 +30,6 @@
 import {
   requestPermissionsAsync,
   Asset,
-  Album,
   Query,
   AssetField,
   MediaType,
@@ -38,7 +37,7 @@ import {
 import { readId3Tags } from './id3Reader';
 import { dbg } from '../api/debugLog';
 import { notePerfBlock } from '../lib/perfProbe';
-import { MusicTrack, MusicAlbum, MusicArtist, MusicFolder, TracksResult } from '../api/musicLibrary';
+import { MusicTrack, MusicAlbum, MusicArtist, MusicGenre, MusicYear, MusicFolder, TracksResult } from '../api/musicLibrary';
 import {
   getMetadataForPaths,
   getAllMetadata,
@@ -131,21 +130,33 @@ const fetchAssetBasics = async (asset: Asset): Promise<AssetBasics | null> => {
   }
 };
 
+// Falls back to filename convention when a file has no embedded artist/title tag at all — common
+// for old rips that just number tracks ("01 Artist - Title.mp3"). Requires whitespace around the
+// dash so it doesn't split a hyphenated word within an untagged single-part title.
+const FILENAME_ARTIST_TITLE = /^\s*(?:\d+[\s.\-_]*)?(.+?)\s+-\s+(.+?)\s*$/;
+function parseFilenameArtistTitle(filename: string): { artist: string | null; title: string | null } {
+  const stem = filename.replace(/\.[^.]+$/, '');
+  const m = stem.match(FILENAME_ARTIST_TITLE);
+  return m ? { artist: m[1].trim() || null, title: m[2].trim() || null } : { artist: null, title: null };
+}
+
 const parseId3 = async (basics: AssetBasics): Promise<TrackMetadata> => {
   let title: string | null = null;
   let artist: string | null = null;
   let album: string | null = null;
   let genre: string | null = null;
+  let year: number | null = null;
   let artworkPath: string | null = null;
 
   try {
     const tags = await readId3Tags(basics.uri, {
-      title: true, artist: true, album: true, genre: true, picture: true,
+      title: true, artist: true, album: true, genre: true, year: true, picture: true,
     });
     title = tags.title;
     artist = tags.artist;
     album = tags.album;
     genre = tags.genre;
+    year = tags.year;
     if (tags.picture) {
       const commaIdx = tags.picture.indexOf(',');
       const base64 = commaIdx >= 0 ? tags.picture.slice(commaIdx + 1) : tags.picture;
@@ -156,7 +167,22 @@ const parseId3 = async (basics: AssetBasics): Promise<TrackMetadata> => {
       }
     }
   } catch {
-    // ID3 parse failure — title will fall back to filename
+    // ID3 parse failure — artist/title/album fall back below regardless of what failed above
+  }
+
+  // Filename/folder fallbacks apply whenever the tag read didn't supply a value — including
+  // when the read failed outright, not only when it succeeded but simply omitted a field. This
+  // must live outside the try block above: it used to sit inside it, so a thrown tag-read error
+  // skipped straight past this too, silently leaving the file completely untitled/unattributed
+  // instead of falling back to its filename.
+  if (!artist || !title) {
+    const fromName = parseFilenameArtistTitle(basics.filename);
+    artist = artist ?? fromName.artist;
+    title = title ?? fromName.title;
+  }
+  if (!album) {
+    const dir = extractDirectory(basics.uri);
+    album = dir ? (dir.split('/').filter(Boolean).pop() ?? null) : null;
   }
 
   return {
@@ -166,7 +192,7 @@ const parseId3 = async (basics: AssetBasics): Promise<TrackMetadata> => {
     artist,
     albumArtist: null,
     album,
-    year: null,
+    year,
     genre,
     trackNumber: null,
     discNumber: null,
@@ -185,10 +211,13 @@ const parseId3 = async (basics: AssetBasics): Promise<TrackMetadata> => {
 let _trackCache: MusicTrack[] | null = null;
 let _trackCacheTime = 0;
 let _backgroundScan: Promise<void> | null = null;
-// Set by the app to bump libraryRevision whenever a scan batch completes.
-let _onScanProgress: (() => void) | null = null;
+// Set by the app to react to each scan batch — bump libraryRevision and, since a full rescan
+// (e.g. after a version-gated cache wipe) can take a while, drive a visible progress indicator.
+// `progress` is null once the scan is idle/finished.
+export type LocalScanProgress = { done: number; total: number } | null;
+let _onScanProgress: ((progress: LocalScanProgress) => void) | null = null;
 
-export const setScanProgressCallback = (cb: () => void) => { _onScanProgress = cb; };
+export const setScanProgressCallback = (cb: (progress: LocalScanProgress) => void) => { _onScanProgress = cb; };
 
 export const invalidateLocalTracksCache = () => {
   _trackCache = null;
@@ -244,7 +273,13 @@ export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
     const tRows = Date.now();
     const rows = await getAllMetadata('local');
     notePerfBlock(`local:readMeta(${rows.length})`, tRows);
-    if (rows.length > 0) {
+    // Require the cache to cover every known file, not just "some" — a scan interrupted mid-way
+    // (app killed, battery died, force-stopped) leaves a signature that still matches (file count/
+    // mtime on disk didn't change) but a table that's only partially repopulated. `rows.length > 0`
+    // let that partial cache satisfy the fast path forever, since nothing about the signature check
+    // ever changes again. Falling through to the slow path re-detects the missing files as stale
+    // and finishes the interrupted scan instead of silently serving it as "done".
+    if (rows.length >= assets.length) {
       const tMap = Date.now();
       _trackCache = rows.map(m => metadataToMusicTrack(m.path, filenameFromUri(m.path), m));
       notePerfBlock(`local:mapTracks(${rows.length})`, tMap);
@@ -305,7 +340,9 @@ export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
   } else if (!_backgroundScan) {
     _backgroundScan = (async () => {
       const BATCH = 32;
+      const total = stale.length;
       let skipped = 0;
+      _onScanProgress?.({ done: 0, total });
       try {
         for (let i = 0; i < stale.length; i += BATCH) {
           try {
@@ -323,7 +360,7 @@ export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
             dbg(`[local-scan] batch @${i} failed, skipping: ${String((e as Error)?.message ?? e)}`);
           }
           // Fire progress even after a skipped batch so the UI keeps reconciling.
-          _onScanProgress?.();
+          _onScanProgress?.({ done: Math.min(i + BATCH, total), total });
         }
         await pruneRemovedTracks(uris, 'local').catch(() => {});
         // Only pin the signature when every file parsed cleanly — otherwise leave it stale
@@ -334,6 +371,7 @@ export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
         // next getAllLocalTracks() call — a stuck non-null promise would otherwise make
         // the `!_backgroundScan` guard block every future scan permanently.
         _backgroundScan = null;
+        _onScanProgress?.(null);
       }
     })();
   }
@@ -346,64 +384,63 @@ export const getLocalTracks = async (offset = 0, limit = 50): Promise<TracksResu
   return { total: all.length, offset, limit, tracks: all.slice(offset, offset + limit) };
 };
 
+// Groups tracks into albums by their (album, artist) tag pair, same as the server does, instead
+// of asking Android's own on-device MediaStore album index — which has no artist/year exposed
+// per album at all. Falls back to grouping by folder when the artist tag is missing, so a batch
+// of untagged files doesn't all collapse into one "album" bucket just for sharing an album title.
+// ponytail: exact-string grouping, no fuzzy artist matching — same ceiling as Genres/Years.
+const albumGroupKey = (t: MusicTrack): string => t.artist || t.directory || '';
+
 export const getLocalAlbums = async (): Promise<MusicAlbum[]> => {
-  if (!await requestPermissions()) return [];
-
-  const albums = await Album.getAll();
-  const albumData = await Promise.all(
-    albums.map(async (album) => {
-      const [title, audioAssets] = await Promise.all([
-        album.getTitle(),
-        new Query().eq(AssetField.MEDIA_TYPE, MediaType.AUDIO).album(album).exe(),
-      ]);
-      return { title, assetCount: audioAssets.length };
-    })
-  );
-
-  return albumData
-    .filter(a => a.assetCount > 0)
-    .map(({ title, assetCount }) => ({
-      album: title,
-      artist: '',
-      albumArtist: null,
-      year: null,
-      trackCount: assetCount,
-      totalDuration: null,
-      coverPath: null,
-      hasArtwork: false,
-    }));
+  const tracks = await getAllLocalTracks();
+  interface Agg {
+    artist: string; albumArtist: string | null; year: number | null; trackCount: number;
+    totalDuration: number; coverPath: string | null; hasArtwork: boolean; directory: string | null;
+  }
+  const map = new Map<string, Agg>();
+  for (const t of tracks) {
+    const album = t.album?.trim();
+    if (!album) continue;
+    const key = `${album}\u0000${albumGroupKey(t)}`;
+    let entry = map.get(key);
+    if (!entry) {
+      entry = {
+        artist: t.artist ?? '', albumArtist: t.albumArtist, year: t.year, trackCount: 0,
+        totalDuration: 0, coverPath: null, hasArtwork: false, directory: t.directory ?? null,
+      };
+      map.set(key, entry);
+    }
+    entry.trackCount++;
+    if (t.duration) entry.totalDuration += t.duration;
+    if (!entry.coverPath && t.coverPath) { entry.coverPath = t.coverPath; entry.hasArtwork = t.hasArtwork; }
+    if (entry.year == null && t.year != null) entry.year = t.year;
+  }
+  return Array.from(map.entries()).map(([key, e]) => ({
+    album: key.slice(0, key.indexOf('\u0000')),
+    artist: e.artist,
+    albumArtist: e.albumArtist,
+    year: e.year,
+    trackCount: e.trackCount,
+    totalDuration: e.totalDuration || null,
+    coverPath: e.coverPath,
+    hasArtwork: e.hasArtwork,
+    directory: e.directory,
+  }));
 };
 
+// Title-only lookup — used by Android Auto's browse tree, which only round-trips the album title
+// (not the artist) in its media IDs. Ambiguous same-titled albums by different artists collapse
+// here, same as they already do in the AA tree itself; the in-app AlbumDetail screen uses
+// getLocalAlbumTracksFor() below instead, which disambiguates by artist/folder.
 export const getLocalAlbumTracks = async (albumTitle: string): Promise<MusicTrack[]> => {
-  if (!await requestPermissions()) return [];
+  const tracks = await getAllLocalTracks();
+  return tracks.filter(t => t.album === albumTitle);
+};
 
-  const album = await Album.get(albumTitle);
-  if (!album) return [];
-
-  const assets = await new Query()
-    .eq(AssetField.MEDIA_TYPE, MediaType.AUDIO)
-    .album(album)
-    .exe();
-
-  const basics = (await Promise.all(assets.map(fetchAssetBasics)))
-    .filter((b): b is AssetBasics => b !== null);
-
-  const uris = basics.map(b => b.uri);
-  const cached = await getMetadataForPaths(uris);
-
-  return basics.map(b => {
-    const meta = cached.get(b.uri);
-    if (!meta) {
-      return {
-        path: b.uri, filename: b.filename, directory: extractDirectory(b.uri),
-        duration: b.durationSec, title: b.filename.replace(/\.[^.]+$/, ''),
-        artist: null, albumArtist: null, album: albumTitle,
-        year: null, trackNumber: null, discNumber: null,
-        hasArtwork: false, coverPath: null, genre: null, bpm: null, key: null, fileSize: null,
-      };
-    }
-    return metadataToMusicTrack(b.uri, b.filename, { ...meta, duration: meta.duration ?? b.durationSec });
-  });
+export const getLocalAlbumTracksFor = async (album: MusicAlbum): Promise<MusicTrack[]> => {
+  const tracks = await getAllLocalTracks();
+  const key = album.artist || album.directory || '';
+  return tracks.filter(t => t.album === album.album && albumGroupKey(t) === key);
 };
 
 export const getLocalFolders = async (): Promise<MusicFolder[]> => {
@@ -437,5 +474,67 @@ export const getLocalFolderTracks = async (dirPath: string): Promise<MusicTrack[
 };
 
 export const getLocalArtists = async (): Promise<MusicArtist[]> => {
-  return [];
+  const tracks = await getAllLocalTracks();
+  interface Agg { albums: Set<string>; trackCount: number; coverPath: string | null; hasArtwork: boolean; }
+  const map = new Map<string, Agg>();
+  for (const t of tracks) {
+    const name = t.artist;
+    if (!name) continue;
+    let entry = map.get(name);
+    if (!entry) { entry = { albums: new Set(), trackCount: 0, coverPath: null, hasArtwork: false }; map.set(name, entry); }
+    entry.trackCount++;
+    if (t.album) entry.albums.add(t.album);
+    if (!entry.coverPath && t.coverPath) { entry.coverPath = t.coverPath; entry.hasArtwork = t.hasArtwork; }
+  }
+  return Array.from(map.entries()).map(([artist, e]) => ({
+    artist, albumCount: e.albums.size, trackCount: e.trackCount,
+    coverPath: e.coverPath, hasArtwork: e.hasArtwork,
+  }));
+};
+
+export const getLocalArtistTracks = async (artistName: string): Promise<MusicTrack[]> => {
+  const tracks = await getAllLocalTracks();
+  return tracks.filter(t => t.artist === artistName);
+};
+
+export const getLocalArtistAlbums = async (artistName: string): Promise<MusicAlbum[]> => {
+  const albums = await getLocalAlbums();
+  return albums.filter(a => a.artist === artistName);
+};
+
+export const getLocalGenres = async (): Promise<MusicGenre[]> => {
+  const tracks = await getAllLocalTracks();
+  const map = new Map<string, number>();
+  for (const t of tracks) {
+    const g = t.genre;
+    if (!g) continue;
+    map.set(g, (map.get(g) ?? 0) + 1);
+  }
+  return Array.from(map.entries()).map(([genre, trackCount]) => ({ genre, trackCount }));
+};
+
+export const getLocalGenreTracks = async (genre: string): Promise<MusicTrack[]> => {
+  const tracks = await getAllLocalTracks();
+  return tracks.filter(t => t.genre === genre);
+};
+
+export const getLocalYears = async (): Promise<MusicYear[]> => {
+  const tracks = await getAllLocalTracks();
+  interface Agg { trackCount: number; albums: Set<string>; }
+  const map = new Map<number, Agg>();
+  for (const t of tracks) {
+    if (t.year == null) continue;
+    let entry = map.get(t.year);
+    if (!entry) { entry = { trackCount: 0, albums: new Set() }; map.set(t.year, entry); }
+    entry.trackCount++;
+    if (t.album) entry.albums.add(t.album);
+  }
+  return Array.from(map.entries()).map(([year, e]) => ({
+    year, trackCount: e.trackCount, albumCount: e.albums.size,
+  }));
+};
+
+export const getLocalYearTracks = async (year: number): Promise<MusicTrack[]> => {
+  const tracks = await getAllLocalTracks();
+  return tracks.filter(t => t.year === year);
 };

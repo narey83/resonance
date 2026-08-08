@@ -36,8 +36,19 @@ export interface Id3Tags {
   artist: string | null;
   album: string | null;
   genre: string | null;
+  /** 4-digit year, extracted from whatever date/year frame the format provides */
+  year: number | null;
   /** Base64 data URL: "data:<mime>;base64,<data>" */
   picture: string | null;
+}
+
+// Pulls a plausible 4-digit year out of a year/date tag value — ID3v2.4's TDRC and Vorbis's
+// DATE are full timestamps ("2023-05-01T00:00:00"), not just a year, so take the leading digits.
+function extractYear(raw: string): number | null {
+  const m = raw.match(/\d{4}/);
+  if (!m) return null;
+  const y = parseInt(m[0], 10);
+  return y >= 1000 && y <= 9999 ? y : null;
 }
 
 async function readBytes(uri: string, position: number, length: number): Promise<Uint8Array | null> {
@@ -152,9 +163,9 @@ function parseApic(b: Uint8Array, o: number, size: number, v2: boolean): string 
 async function readM4aTags(
   uri: string,
   first: Uint8Array,
-  opts: { title?: boolean; artist?: boolean; album?: boolean; genre?: boolean; picture?: boolean },
+  opts: { title?: boolean; artist?: boolean; album?: boolean; genre?: boolean; year?: boolean; picture?: boolean },
 ): Promise<Id3Tags> {
-  const result: Id3Tags = { title: null, artist: null, album: null, genre: null, picture: null };
+  const result: Id3Tags = { title: null, artist: null, album: null, genre: null, year: null, picture: null };
 
   // Random-access read — prefer bytes already in `first`, else read from file
   const readAt = async (pos: number, len: number): Promise<Uint8Array | null> => {
@@ -249,6 +260,7 @@ async function readM4aTags(
             else if (k === 'ART' && opts.artist !== false && !result.artist) result.artist = text;
             else if (k === 'alb' && opts.album  !== false && !result.album)  result.album  = text;
             else if (k === 'gen' && opts.genre  !== false && !result.genre)  result.genre  = text;
+            else if (k === 'day' && opts.year   !== false && !result.year)   result.year   = extractYear(text);
           }
         } else if ((typeFlag === 13 || typeFlag === 14) && opts.picture && tagType === 'covr' && !result.picture && dataStart < dataEnd) {
           const mime = typeFlag === 14 ? 'image/png' : 'image/jpeg';
@@ -291,7 +303,7 @@ function parseFlacPicture(b: Uint8Array, offset: number, length: number): string
 
 function parseVorbisComments(
   b: Uint8Array, offset: number, length: number, result: Id3Tags,
-  opts: { title?: boolean; artist?: boolean; album?: boolean; genre?: boolean },
+  opts: { title?: boolean; artist?: boolean; album?: boolean; genre?: boolean; year?: boolean },
 ): void {
   const end = offset + length;
   let p = offset;
@@ -317,15 +329,17 @@ function parseVorbisComments(
     if (key === 'ARTIST' && opts.artist !== false && !result.artist) result.artist = val;
     if (key === 'ALBUM'  && opts.album  !== false && !result.album)  result.album  = val;
     if (key === 'GENRE'  && opts.genre  !== false && !result.genre)  result.genre  = val;
+    if ((key === 'DATE' || key === 'YEAR') && opts.year !== false && !result.year)
+      result.year = extractYear(val);
   }
 }
 
 async function readFlacTags(
   uri: string,
   first: Uint8Array,
-  opts: { title?: boolean; artist?: boolean; album?: boolean; genre?: boolean; picture?: boolean },
+  opts: { title?: boolean; artist?: boolean; album?: boolean; genre?: boolean; year?: boolean; picture?: boolean },
 ): Promise<Id3Tags> {
-  const result: Id3Tags = { title: null, artist: null, album: null, genre: null, picture: null };
+  const result: Id3Tags = { title: null, artist: null, album: null, genre: null, year: null, picture: null };
   let buf = first;
 
   const ensure = async (upTo: number): Promise<boolean> => {
@@ -379,10 +393,10 @@ let _dbgCount = 0;
 
 export async function readId3Tags(
   uri: string,
-  opts: { title?: boolean; artist?: boolean; album?: boolean; genre?: boolean; picture?: boolean } = {},
+  opts: { title?: boolean; artist?: boolean; album?: boolean; genre?: boolean; year?: boolean; picture?: boolean } = {},
 ): Promise<Id3Tags> {
   const dbg = _dbgCount++ < 3;
-  const result: Id3Tags = { title: null, artist: null, album: null, genre: null, picture: null };
+  const result: Id3Tags = { title: null, artist: null, album: null, genre: null, year: null, picture: null };
 
   // Read first chunk — always contains the ID3/FLAC header if one exists
   const first = await readBytes(uri, 0, CHUNK_SIZE);
@@ -470,6 +484,13 @@ export async function readId3Tags(
         if (opts.genre !== false)
           result.genre = decodeText(id3, dStart + 1, frameSize - 1, enc) || null;
         break;
+      // TYER/TYE: plain 4-digit year (v2.2/2.3). TDRC: v2.4 recording timestamp, full date.
+      case 'TYER': case 'TYE': case 'TDRC':
+        if (opts.year !== false) {
+          const text = decodeText(id3, dStart + 1, frameSize - 1, enc);
+          if (text) result.year = extractYear(text);
+        }
+        break;
       case 'APIC': case 'PIC':
         if (opts.picture) {
           result.picture = parseApic(id3, dStart, frameSize, v2);
@@ -486,6 +507,7 @@ export async function readId3Tags(
       (opts.artist === false || result.artist) &&
       (opts.album === false || result.album) &&
       (opts.genre === false || result.genre) &&
+      (opts.year === false || result.year) &&
       (!opts.picture || result.picture);
     if (done) break;
   }

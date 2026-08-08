@@ -89,7 +89,9 @@ export const useLibrarySettings = create<LibrarySettingsStore>((set, get) => ({
           visibleTabsServer: sanitizeTabs(parsed.visibleTabsServer ?? legacy),
           visibleTabsLocal: sanitizeTabs(parsed.visibleTabsLocal ?? legacy),
           includeLocalLibrary: parsed.includeLocalLibrary ?? false,
-          mergeLocalAndServer: parsed.mergeLocalAndServer ?? false,
+          // Merging local and server library views is retired — force off even if a device
+          // has an old settings blob on disk with it saved as true.
+          mergeLocalAndServer: false,
           loaded: true,
         });
       } else {
