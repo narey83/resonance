@@ -468,6 +468,19 @@ export const clearAndroidAutoTree = async (): Promise<void> => {
   await push();
 };
 
+// Release a request the car is holding when we cannot fill it. An unanswered or empty answer is
+// remembered by the car for the whole session; a failure is not, so it will ask again.
+const reportBrowseFailed = async (mediaId: string, why: string): Promise<void> => {
+  remoteLog('warn', `[aa] browse ${mediaId} unresolved (${why}) — failing the car's request`);
+  delete tree[mediaId]; // never leave an empty node behind: it would stop native asking us again
+  try {
+    await (TrackPlayer as unknown as { browseFailed: (id: string) => Promise<string> })
+      .browseFailed(mediaId);
+  } catch (e) {
+    remoteLog('error', `[aa] browseFailed(${mediaId}) errored — ${String(e)}`);
+  }
+};
+
 // Native emitted `remote-browse` for a node we haven't loaded.
 export const handleAndroidAutoBrowse = async (mediaId: string): Promise<void> => {
   if (!mediaId) return;
@@ -484,7 +497,12 @@ export const handleAndroidAutoBrowse = async (mediaId: string): Promise<void> =>
   const auth = useAuthStore.getState();
   if (!auth.isReady) await auth.hydrate();
   if (!isAuthed()) {
-    if (mediaId !== ROOT) deferredBrowses.add(mediaId);
+    if (mediaId !== ROOT) {
+      deferredBrowses.add(mediaId);
+      // Fail the held request rather than making the car wait on a session that may be minutes
+      // away; the replay below repopulates the node so the next open is instant.
+      await reportBrowseFailed(mediaId, 'no session yet');
+    }
     buildWhenAuthed();
     return;
   }
@@ -501,18 +519,24 @@ export const handleAndroidAutoBrowse = async (mediaId: string): Promise<void> =>
     return;
   }
   if (tree[mediaId]?.length) return;
-  // One failed request must not decide what this node looks like for the rest of the drive: the
-  // car keeps whatever it is first told, so a blip on a slow connection would leave the folder
-  // permanently empty. Retry once before giving up.
+
+  // The car holds this request open until we answer it, so every path out of here must resolve it:
+  // loadNode pushes the tree on success, and browseFailed releases it on failure. Falling through
+  // silently would leave the car waiting on the watchdog.
+  const startedAt = Date.now();
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       await loadNode(mediaId);
+      const count = tree[mediaId]?.length ?? 0;
+      remoteLog('info', `[aa] browse ${mediaId} -> ${count} items in ${Date.now() - startedAt}ms`);
+      if (count === 0) await reportBrowseFailed(mediaId, 'loaded but empty');
       return;
     } catch (e) {
-      remoteLog(attempt === 0 ? 'warn' : 'error', `[aa] browse ${mediaId} failed (attempt ${attempt + 1}) — ${String(e)}`);
-      await new Promise((r) => setTimeout(r, 700));
+      remoteLog(attempt === 0 ? 'warn' : 'error', `[aa] browse ${mediaId} failed (attempt ${attempt + 1}, ${Date.now() - startedAt}ms) — ${String(e)}`);
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 700));
     }
   }
+  await reportBrowseFailed(mediaId, 'load failed');
 };
 
 // Native emitted `remote-play-id` — the user tapped a track in the car.
