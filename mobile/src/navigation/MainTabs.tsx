@@ -64,6 +64,8 @@ import LogsScreen                from '../screens/more/LogsScreen';
 import BlockedScreen             from '../screens/more/BlockedScreen';
 import BlockedUsersScreen        from '../screens/more/BlockedUsersScreen';
 import SettingsScreen            from '../screens/more/SettingsScreen';
+import NotificationsScreen       from '../screens/more/NotificationsScreen';
+import SoulseekRelayScreen       from '../screens/more/SoulseekRelayScreen';
 import NetworkLogScreen          from '../screens/more/NetworkLogScreen';
 
 export type MainTabParamList = {
@@ -86,6 +88,8 @@ export type MoreStackParamList = {
   Blocked:          undefined;
   BlockedUsers:     undefined;
   Settings:         undefined;
+  Notifications:    undefined;
+  SoulseekRelay:    undefined;
   NetworkLog:       undefined;
 };
 
@@ -125,6 +129,8 @@ function MoreStack() {
       <More.Screen name="Blocked"          component={BlockedScreen}          options={{ title: 'Blocked' }} />
       <More.Screen name="BlockedUsers"     component={BlockedUsersScreen}     options={{ title: 'Blocked Users' }} />
       <More.Screen name="Settings"         component={SettingsScreen}         options={{ title: 'Settings' }} />
+      <More.Screen name="Notifications"    component={NotificationsScreen}    options={{ title: 'Notifications' }} />
+      <More.Screen name="SoulseekRelay"    component={SoulseekRelayScreen}    options={{ title: 'Soulseek Relay' }} />
       <More.Screen name="NetworkLog"       component={NetworkLogScreen}       options={{ title: 'Network Log' }} />
     </More.Navigator>
   );

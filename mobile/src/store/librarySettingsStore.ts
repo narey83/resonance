@@ -34,6 +34,10 @@ export type LibraryTab = 'Artists' | 'Albums' | 'Tracks' | 'Folders' | 'Genres' 
 
 export const ALL_TABS: LibraryTab[] = ['Artists', 'Albums', 'Tracks', 'Folders', 'Genres', 'Years', 'Mixtapes', 'Loved', 'History'];
 const DEFAULT_TABS: LibraryTab[] = ['Artists', 'Albums', 'Tracks', 'Folders', 'Genres', 'Years', 'Mixtapes', 'Loved', 'History'];
+// Mixtapes are entirely server-backed (no local variant — a mixtape lives on the server whether
+// or not any of its tracks happen to be local files), so it's not a real option for Local Library.
+export const LOCAL_TABS: LibraryTab[] = ALL_TABS.filter((t) => t !== 'Mixtapes');
+const LOCAL_DEFAULT_TABS: LibraryTab[] = DEFAULT_TABS.filter((t) => t !== 'Mixtapes');
 const STORE_KEY = 'library_settings_v1';
 // Bumped when a new tab is introduced so settings saved before it existed pick it up
 const SETTINGS_VERSION = 2;
@@ -52,18 +56,20 @@ interface LibrarySettingsStore {
   setMergeLocalAndServer: (merge: boolean) => Promise<void>;
 }
 
-function sanitizeTabs(tabs: string[] | undefined): LibraryTab[] {
-  // Migrate: 'Playlists' was renamed to 'Mixtapes'; keep only known tabs, canonically sorted
-  const mapped = (tabs ?? DEFAULT_TABS).map((t) => t === 'Playlists' ? 'Mixtapes' : t);
+function sanitizeTabs(tabs: string[] | undefined, allowed: LibraryTab[], fallback: LibraryTab[]): LibraryTab[] {
+  // Migrate: 'Playlists' was renamed to 'Mixtapes'; keep only known-and-allowed tabs, canonically
+  // sorted. `allowed` also strips anything that's since become source-inapplicable (e.g. Mixtapes
+  // for local) even out of an old persisted list that predates that restriction.
+  const mapped = (tabs ?? fallback).map((t) => t === 'Playlists' ? 'Mixtapes' : t);
   const sorted = (mapped as LibraryTab[])
-    .filter((t) => ALL_TABS.includes(t))
-    .sort((a, b) => ALL_TABS.indexOf(a) - ALL_TABS.indexOf(b));
-  return sorted.length ? sorted : DEFAULT_TABS;
+    .filter((t) => allowed.includes(t))
+    .sort((a, b) => allowed.indexOf(a) - allowed.indexOf(b));
+  return sorted.length ? sorted : fallback;
 }
 
 export const useLibrarySettings = create<LibrarySettingsStore>((set, get) => ({
   visibleTabsServer: DEFAULT_TABS,
-  visibleTabsLocal: DEFAULT_TABS,
+  visibleTabsLocal: LOCAL_DEFAULT_TABS,
   includeLocalLibrary: false,
   mergeLocalAndServer: false,
   loaded: false,
@@ -86,8 +92,8 @@ export const useLibrarySettings = create<LibrarySettingsStore>((set, get) => ({
           : parsed.visibleTabs;
         // Pre-split settings had one shared list; seed both sources from it once
         set({
-          visibleTabsServer: sanitizeTabs(parsed.visibleTabsServer ?? legacy),
-          visibleTabsLocal: sanitizeTabs(parsed.visibleTabsLocal ?? legacy),
+          visibleTabsServer: sanitizeTabs(parsed.visibleTabsServer ?? legacy, ALL_TABS, DEFAULT_TABS),
+          visibleTabsLocal: sanitizeTabs(parsed.visibleTabsLocal ?? legacy, LOCAL_TABS, LOCAL_DEFAULT_TABS),
           includeLocalLibrary: parsed.includeLocalLibrary ?? false,
           // Merging local and server library views is retired — force off even if a device
           // has an old settings blob on disk with it saved as true.

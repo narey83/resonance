@@ -91,7 +91,7 @@ import { getPlayHistory, type PlayRecord } from '../../api/libraryActivity';
 import * as mixtapesAPI from '../../api/mixtapes';
 import { create as createSearch, stripRemixInfo } from '../../api/searches';
 import { MixtapeTrack, getMixtapeArtworkUrl } from '../../api/mixtapes';
-import { useLibrarySettings, ALL_TABS, LibraryTab } from '../../store/librarySettingsStore';
+import { useLibrarySettings, ALL_TABS, LOCAL_TABS, LibraryTab } from '../../store/librarySettingsStore';
 import { useAuthStore } from '../../store/auth';
 import { notePerfBlock } from '../../lib/perfProbe';
 import { LIST_PERF_PROPS } from '../../lib/listPerf';
@@ -1074,7 +1074,14 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState({ done: 0, total: 0 });
   // Which source's tab list this drawer is currently editing — defaults to whichever is on screen.
+  // Re-synced on every open, not just on first mount: the Modal's children stay mounted in the
+  // background while closed (RN Modal doesn't unmount on visible=false), so without this, opening
+  // the drawer after switching source on the main screen kept showing/editing whichever source was
+  // selected the very first time the drawer was ever opened — silently editing the wrong list.
   const [tabsSource, setTabsSource] = useState<'server' | 'local'>(includeLocalLibrary ? 'local' : 'server');
+  useEffect(() => {
+    if (visible) setTabsSource(includeLocalLibrary ? 'local' : 'server');
+  }, [visible, includeLocalLibrary]);
   const visibleTabs = tabsSource === 'local' ? visibleTabsLocal : visibleTabsServer;
 
   const handleRescan = async () => {
@@ -1098,13 +1105,17 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
       : result.reason ?? 'Export failed.');
   };
 
+  // Mixtapes has no local variant (a mixtape is a server entity whether or not any of its tracks
+  // happen to be local files), so it's not offered as a Local Library tab option at all.
+  const tabOptions = tabsSource === 'local' ? LOCAL_TABS : ALL_TABS;
+
   const toggle = (tab: LibraryTab) => {
     if (visibleTabs.includes(tab)) {
       if (visibleTabs.length <= 1) return;
       setVisibleTabs(visibleTabs.filter((t) => t !== tab), tabsSource);
     } else {
       const next = [...visibleTabs, tab].sort(
-        (a, b) => ALL_TABS.indexOf(a) - ALL_TABS.indexOf(b),
+        (a, b) => tabOptions.indexOf(a) - tabOptions.indexOf(b),
       );
       setVisibleTabs(next, tabsSource);
     }
@@ -1167,7 +1178,7 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
               </Pressable>
             ))}
           </View>
-          {ALL_TABS.map((tab) => {
+          {tabOptions.map((tab) => {
             const on = visibleTabs.includes(tab);
             return (
               <Pressable

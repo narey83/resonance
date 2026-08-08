@@ -87,7 +87,6 @@ export default function SettingsScreen({ navigation }: Props) {
     backendLogs, setBackendLogs,
     streamQuality, setStreamQuality,
     playerMode, setPlayerMode,
-    notifications, setNotification,
   } = useAppSettings();
 
   const [deviceName, setDeviceName] = useState<string>('');
@@ -167,90 +166,6 @@ export default function SettingsScreen({ navigation }: Props) {
         {Platform.OS === 'android' && floatingOverlay.supported && playerMode === 'bubble' && (
           <OverlayPermissionRow colors={colors} />
         )}
-      </View>
-
-      {/* Notifications */}
-      <SectionHeader title="Notifications" colors={colors} />
-      <View style={s.group}>
-        <SettingRow
-          label="Downloads complete"
-          subtitle="Alert when a download finishes"
-          colors={colors}
-        >
-          <Switch
-            disabled={!loaded}
-            onValueChange={(v) => setNotification('downloadsComplete', v)}
-            thumbColor={colors.textPrimary}
-            trackColor={{ false: colors.bgElevated, true: colors.accent }}
-            value={notifications.downloadsComplete}
-          />
-        </SettingRow>
-        <SettingRow
-          label="Uploads complete"
-          subtitle="Alert when an upload finishes"
-          colors={colors}
-        >
-          <Switch
-            disabled={!loaded}
-            onValueChange={(v) => setNotification('uploadComplete', v)}
-            thumbColor={colors.textPrimary}
-            trackColor={{ false: colors.bgElevated, true: colors.accent }}
-            value={notifications.uploadComplete}
-          />
-        </SettingRow>
-        <SettingRow
-          label="Share scan complete"
-          subtitle="Alert when the library re-scan finishes"
-          colors={colors}
-        >
-          <Switch
-            disabled={!loaded}
-            onValueChange={(v) => setNotification('shareScanComplete', v)}
-            thumbColor={colors.textPrimary}
-            trackColor={{ false: colors.bgElevated, true: colors.accent }}
-            value={notifications.shareScanComplete}
-          />
-        </SettingRow>
-        <SettingRow
-          label="Private messages"
-          subtitle="Play a sound for new private messages"
-          colors={colors}
-        >
-          <Switch
-            disabled={!loaded}
-            onValueChange={(v) => setNotification('privateMessage', v)}
-            thumbColor={colors.textPrimary}
-            trackColor={{ false: colors.bgElevated, true: colors.accent }}
-            value={notifications.privateMessage}
-          />
-        </SettingRow>
-        <SettingRow
-          label="Room mentions"
-          subtitle="Play a sound when you're mentioned in a room"
-          colors={colors}
-        >
-          <Switch
-            disabled={!loaded}
-            onValueChange={(v) => setNotification('roomMention', v)}
-            thumbColor={colors.textPrimary}
-            trackColor={{ false: colors.bgElevated, true: colors.accent }}
-            value={notifications.roomMention}
-          />
-        </SettingRow>
-        <SettingRow
-          label="Blocked-user alerts"
-          subtitle="Alert when a user is auto-blocked for ban evasion"
-          colors={colors}
-          last
-        >
-          <Switch
-            disabled={!loaded}
-            onValueChange={(v) => setNotification('userBlocked', v)}
-            thumbColor={colors.textPrimary}
-            trackColor={{ false: colors.bgElevated, true: colors.accent }}
-            value={notifications.userBlocked}
-          />
-        </SettingRow>
       </View>
 
       {/* Debugging */}

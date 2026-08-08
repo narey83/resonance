@@ -76,12 +76,12 @@ interface AppSettingsStore {
 }
 
 const DEFAULT_NOTIFICATIONS: NotificationPrefs = {
-  downloadsComplete: true,
+  downloadsComplete: false,
   uploadComplete:    false,
   shareScanComplete: false,
   privateMessage:    true,
   roomMention:       true,
-  userBlocked:       true,
+  userBlocked:       false,
 };
 
 export const useAppSettings = create<AppSettingsStore>((set, get) => ({
