@@ -34,6 +34,7 @@ import {
   ActivityIndicator,
   Alert,
   Clipboard,
+  Dimensions,
   FlatList,
   Keyboard,
   Modal,
@@ -1047,14 +1048,17 @@ function TrackActionSheet({
 function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { s, c } = useLibStyles();
   const {
-    visibleTabs, setVisibleTabs,
-    includeLocalLibrary, setIncludeLocalLibrary,
+    visibleTabsServer, visibleTabsLocal, setVisibleTabs,
+    includeLocalLibrary,
     mergeLocalAndServer, setMergeLocalAndServer,
   } = useLibrarySettings();
   const bumpLibraryRevision = useLibraryActivityStore((s) => s.bumpLibraryRevision);
   const [rescanning, setRescanning] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState({ done: 0, total: 0 });
+  // Which source's tab list this drawer is currently editing — defaults to whichever is on screen.
+  const [tabsSource, setTabsSource] = useState<'server' | 'local'>(includeLocalLibrary ? 'local' : 'server');
+  const visibleTabs = tabsSource === 'local' ? visibleTabsLocal : visibleTabsServer;
 
   const handleRescan = async () => {
     if (rescanning) return;
@@ -1080,12 +1084,12 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
   const toggle = (tab: LibraryTab) => {
     if (visibleTabs.includes(tab)) {
       if (visibleTabs.length <= 1) return;
-      setVisibleTabs(visibleTabs.filter((t) => t !== tab));
+      setVisibleTabs(visibleTabs.filter((t) => t !== tab), tabsSource);
     } else {
       const next = [...visibleTabs, tab].sort(
         (a, b) => ALL_TABS.indexOf(a) - ALL_TABS.indexOf(b),
       );
-      setVisibleTabs(next);
+      setVisibleTabs(next, tabsSource);
     }
   };
 
@@ -1094,25 +1098,10 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
       <Pressable style={s.overlay} onPress={onClose} />
       <View style={s.sheetContainer}>
         <View style={s.sheet}>
+        <ScrollView style={{ maxHeight: Dimensions.get('window').height - 200 }}>
           <View style={s.sheetHandle} />
           <Text style={s.sheetTitle}>Library Options</Text>
-
           <View style={s.sheetDivider} />
-          <Pressable
-            onPress={() => setIncludeLocalLibrary(!includeLocalLibrary)}
-            style={[s.sheetBtn, { justifyContent: 'space-between' }]}
-          >
-            <View>
-              <Text style={s.sheetBtnText}>Include Local Music</Text>
-              <Text style={s.sheetMetaSub}>Scan music from your device storage</Text>
-            </View>
-            <Switch
-              value={includeLocalLibrary}
-              onValueChange={setIncludeLocalLibrary}
-              thumbColor={includeLocalLibrary ? c.accent : c.textMuted}
-              trackColor={{ false: c.bgElevated, true: `${c.accent}88` }}
-            />
-          </Pressable>
 
           {includeLocalLibrary && (
             <Pressable
@@ -1183,29 +1172,41 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
           <Text style={[s.sheetMeta, { paddingHorizontal: Spacing.md, paddingTop: Spacing.xs }]}>
             Tabs to show
           </Text>
-          <ScrollView style={{ maxHeight: 300 }}>
-            {ALL_TABS.map((tab) => {
-              const on = visibleTabs.includes(tab);
-              return (
-                <Pressable
-                  key={tab}
-                  onPress={() => toggle(tab)}
-                  style={[s.sheetBtn, { justifyContent: 'space-between' }]}
-                >
-                  <Text style={s.sheetBtnText}>{tab}</Text>
-                  <Switch
-                    value={on}
-                    onValueChange={() => toggle(tab)}
-                    thumbColor={on ? c.accent : c.textMuted}
-                    trackColor={{ false: c.bgElevated, true: `${c.accent}88` }}
-                  />
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-          <Pressable style={s.sheetCancel} onPress={onClose}>
-            <Text style={s.sheetCancelText}>Done</Text>
-          </Pressable>
+          <View style={s.sourcePicker}>
+            {(['server', 'local'] as const).map((src) => (
+              <Pressable
+                key={src}
+                onPress={() => setTabsSource(src)}
+                style={[s.sourceBtn, tabsSource === src && s.sourceBtnActive]}
+              >
+                <Text style={[s.sourceBtnText, tabsSource === src && s.sourceBtnTextActive]}>
+                  {src === 'server' ? 'Server Library' : 'Local Library'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          {ALL_TABS.map((tab) => {
+            const on = visibleTabs.includes(tab);
+            return (
+              <Pressable
+                key={tab}
+                onPress={() => toggle(tab)}
+                style={[s.sheetBtn, { justifyContent: 'space-between' }]}
+              >
+                <Text style={s.sheetBtnText}>{tab}</Text>
+                <Switch
+                  value={on}
+                  onValueChange={() => toggle(tab)}
+                  thumbColor={on ? c.accent : c.textMuted}
+                  trackColor={{ false: c.bgElevated, true: `${c.accent}88` }}
+                />
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+        <Pressable style={s.sheetCancel} onPress={onClose}>
+          <Text style={s.sheetCancelText}>Done</Text>
+        </Pressable>
         </View>
       </View>
     </Modal>
@@ -2535,7 +2536,13 @@ type HomeProps = NativeStackScreenProps<LibraryStackParamList, 'LibraryHome'>;
 
 function LibraryHome({ navigation }: HomeProps) {
   const { s, c } = useLibStyles();
-  const { visibleTabs, loaded: settingsLoaded, load: loadSettings } = useLibrarySettings();
+  const {
+    visibleTabsServer, visibleTabsLocal, includeLocalLibrary,
+    loaded: settingsLoaded, load: loadSettings,
+  } = useLibrarySettings();
+  // Which tabs are shown depends on the active source; background caching (below) always
+  // targets the server list since it downloads server data regardless of what's on screen.
+  const visibleTabs = includeLocalLibrary ? visibleTabsLocal : visibleTabsServer;
   const { load: loadMixtapes } = useMixtapeStore();
   const [tab, setTab] = useState<LibraryTab>('Artists');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -2593,10 +2600,12 @@ function LibraryHome({ navigation }: HomeProps) {
     const justFinished = wasScanningRef.current;
     wasScanningRef.current = false;
     if (justFinished) dbg('[home] backend rescan finished — requesting cache sync');
-    sync(libraryRevision, false, visibleTabs);
-    // visibleTabs is a dependency: un-hiding a tab has to fetch the list behind it, which the
-    // store treats as a first fetch and so lets past the rate limit and the version gate.
-  }, [sync, libraryRevision, serverScanning, visibleTabs]);
+    sync(libraryRevision, false, visibleTabsServer);
+    // visibleTabsServer is a dependency: un-hiding a server tab has to fetch the list behind it,
+    // which the store treats as a first fetch and so lets past the rate limit and the version gate.
+    // Always the server list here (not the active-source `visibleTabs`) since this downloads
+    // server data into the on-device cache regardless of whether Local Library is on screen.
+  }, [sync, libraryRevision, serverScanning, visibleTabsServer]);
 
   // DEBUG (opt-in via "Library sync debug" setting): heartbeat that detects a frozen JS thread. A 1s
   // timer firing late means the JS engine stalled — either the OS suspended a backgrounded app, or
