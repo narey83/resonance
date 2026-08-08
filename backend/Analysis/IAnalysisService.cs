@@ -42,6 +42,13 @@ namespace resonance.Analysis
         /// <summary>Gets the state of the current or most recent scan.</summary>
         AnalysisScanState ScanState { get; }
 
+        /// <summary>
+        ///     Records that a client is actively streaming audio right now. Called from the
+        ///     stream endpoint so background analysis (e.g. the auto BPM check on new downloads)
+        ///     can wait for playback to go quiet instead of competing with it for CPU/decode.
+        /// </summary>
+        void RecordPlaybackActivity();
+
         /// <summary>Returns the analysis status of every audio file in the library.</summary>
         /// <returns>One record per track.</returns>
         IEnumerable<TrackAnalysisInfo> GetAllTracks();

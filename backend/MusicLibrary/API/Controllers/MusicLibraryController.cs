@@ -424,6 +424,10 @@ namespace resonance.MusicLibrary.API
                 return StatusCode(StatusCodes.Status403Forbidden);
             }
 
+            // Marks "someone is listening right now" so background analysis (the auto BPM check
+            // on new downloads) can back off instead of competing for decode/CPU with playback.
+            Analysis.RecordPlaybackActivity();
+
             var kbps = quality?.ToLowerInvariant() switch
             {
                 "low" => 96,

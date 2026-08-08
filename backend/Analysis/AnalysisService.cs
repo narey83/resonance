@@ -57,6 +57,21 @@ namespace resonance.Analysis
             "mp3", "flac", "ogg", "wav", "m4a", "aac", "opus", "wma", "aiff", "aif",
         };
 
+        // How recently a stream request must have landed to count as "still listening". Player
+        // buffering means a paused/idle stream can go quiet for a while between range requests,
+        // so this is generous rather than a tight heartbeat interval.
+        private static readonly TimeSpan PlaybackIdleWindow = TimeSpan.FromSeconds(45);
+
+        // Upper bound on how long the auto BPM check waits for playback to go quiet before
+        // running anyway — a busy library shouldn't let a bad tag sit uncorrected indefinitely
+        // just because someone's been listening all evening.
+        private static readonly TimeSpan MaxPlaybackWait = TimeSpan.FromMinutes(10);
+
+        // Ticks (DateTime.UtcNow.Ticks), not a DateTime — a plain field can't be updated
+        // atomically from the stream endpoint's request threads while a background analysis
+        // task reads it, so this goes through Interlocked instead of a lock.
+        private long lastPlaybackActivityTicks;
+
         public AnalysisService(
             IShareService shareService,
             IOptionsMonitor<resonance.Options> optionsMonitor,
@@ -299,6 +314,8 @@ namespace resonance.Analysis
 
         public void ClearKey(string maskedFilename) => UpdateTags(maskedFilename, t => t with { Key = null });
 
+        public void RecordPlaybackActivity() => Interlocked.Exchange(ref lastPlaybackActivityTicks, DateTime.UtcNow.Ticks);
+
         // Waveform/loudness results never touch a file's tags — unlike Bpm/Key, there's no
         // WriteFileTags → TriggerSync → LIBRARY_UPDATED chain to ride along on, so a row showing
         // one of these would otherwise sit stale until something else happened to refresh the
@@ -327,6 +344,42 @@ namespace resonance.Analysis
         {
             var ffmpegPath = await Ffmpeg.GetFfmpegPathAsync(ct);
             return await Analyzer.AnalyseAsync(originalFilename, ffmpegPath, metrics, Options.CurrentValue.Analysis, ct);
+        }
+
+        private bool IsPlaybackActive() =>
+            DateTime.UtcNow.Ticks - Interlocked.Read(ref lastPlaybackActivityTicks) < PlaybackIdleWindow.Ticks;
+
+        /// <summary>
+        ///     Polls until no client has streamed audio for <see cref="PlaybackIdleWindow"/>, so
+        ///     the auto BPM check's decode+Essentia pass never competes with someone actively
+        ///     listening. Gives up and proceeds anyway after <see cref="MaxPlaybackWait"/> so a
+        ///     bad tag can't be starved of correction by continuous listening.
+        /// </summary>
+        private async Task WaitForPlaybackIdleAsync()
+        {
+            if (!IsPlaybackActive())
+            {
+                return;
+            }
+
+            Log.Information("Auto BPM check: playback is active — waiting for it to go idle before analysing new tracks.");
+
+            var deadline = DateTime.UtcNow + MaxPlaybackWait;
+            while (IsPlaybackActive() && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(10));
+            }
+
+            if (IsPlaybackActive())
+            {
+                Log.Information(
+                    "Auto BPM check: gave up waiting for playback to go idle after {Minutes:F0} minutes — proceeding anyway.",
+                    MaxPlaybackWait.TotalMinutes);
+            }
+            else
+            {
+                Log.Information("Auto BPM check: playback went idle — proceeding.");
+            }
         }
 
         /// <summary>
@@ -375,6 +428,7 @@ namespace resonance.Analysis
                         return;
                     }
 
+                    await WaitForPlaybackIdleAsync();
                     await StartScanAsync(new AnalysisScanRequest(Metrics: AnalysisMetrics.Bpm, SkipAnalysed: true, OnlyFilenames: masked));
                 }
                 catch (InvalidOperationException)
