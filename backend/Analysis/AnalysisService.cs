@@ -316,6 +316,21 @@ namespace resonance.Analysis
 
         public void RecordPlaybackActivity() => Interlocked.Exchange(ref lastPlaybackActivityTicks, DateTime.UtcNow.Ticks);
 
+        /// <summary>
+        ///     Resolves a library path to the masked filename the tag-editing endpoints key on.
+        /// </summary>
+        /// <remarks>
+        ///     The analysis page lists rows from the paged library query, which knows paths and not
+        ///     masked names. Rather than resolve a name for every row on the page up front, it asks
+        ///     for one at the moment somebody edits that row's key or BPM.
+        /// </remarks>
+        /// <param name="path">An absolute or root-relative library path.</param>
+        /// <returns>The masked filename, or null if the path is not in the share.</returns>
+        public string ResolveMaskedFilename(string path) =>
+            string.IsNullOrWhiteSpace(path)
+                ? null
+                : ShareService.FindMaskedFilenames([MusicPath.ToRelative(path)]).FirstOrDefault();
+
         // Waveform/loudness results never touch a file's tags — unlike Bpm/Key, there's no
         // WriteFileTags → TriggerSync → LIBRARY_UPDATED chain to ride along on, so a row showing
         // one of these would otherwise sit stale until something else happened to refresh the
@@ -453,6 +468,32 @@ namespace resonance.Analysis
         }
 
         /// <summary>
+        ///     The masked filenames a scan request selects, with any <see cref="AnalysisScanRequest.OnlyPaths"/>
+        ///     resolved and folded in. Null means "the whole library"; empty means "nothing", which is
+        ///     also what an OnlyPaths selection that resolved to no shared file has to mean.
+        /// </summary>
+        private string[] Selection(AnalysisScanRequest request)
+        {
+            if (request.OnlyPaths == null)
+            {
+                return request.OnlyFilenames;
+            }
+
+            var resolved = ShareService
+                .FindMaskedFilenames(request.OnlyPaths.Select(MusicPath.ToRelative).Distinct(StringComparer.OrdinalIgnoreCase))
+                .ToArray();
+
+            if (resolved.Length < request.OnlyPaths.Length)
+            {
+                Log.Debug(
+                    "Analysis selection: {Resolved} of {Requested} path(s) are in the share.",
+                    resolved.Length, request.OnlyPaths.Length);
+            }
+
+            return (request.OnlyFilenames ?? []).Concat(resolved).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+
+        /// <summary>
         ///     Narrows the requested metrics to those this track is actually missing, so a rescan
         ///     of a mostly-analysed library only pays for the gaps.
         /// </summary>
@@ -491,9 +532,13 @@ namespace resonance.Analysis
                 // null  → scan all files
                 // []    → scan nothing (explicit empty selection)
                 // [...] → restrict to the named files
-                var only = request.OnlyFilenames == null
+                //
+                // OnlyPaths is the same selection expressed as library paths; resolving it here
+                // rather than on the request thread keeps the POST returning immediately.
+                var selection = Selection(request);
+                var only = selection == null
                     ? null
-                    : new HashSet<string>(request.OnlyFilenames, StringComparer.OrdinalIgnoreCase);
+                    : new HashSet<string>(selection, StringComparer.OrdinalIgnoreCase);
 
                 // Fetch the selection directly rather than listing the share and discarding it.
                 var tracks = (only == null ? GetAllTracks() : GetTracks(only)).ToList();
@@ -585,17 +630,28 @@ namespace resonance.Analysis
                 var channel = Channel.CreateBounded<(TrackAnalysisInfo Track, AnalysisMetrics Metrics)>(
                     new BoundedChannelOptions(cores * 2) { FullMode = BoundedChannelFullMode.Wait });
 
+                // Which tracks are being decoded right now, so a client can show "analysing…"
+                // against the specific rows in progress rather than just a count. Keyed by
+                // absolute path, matching what the library list hands clients — a masked filename
+                // would need resolving per row before a page could tell which of its rows these are.
+                // Local to this run, not an instance field — RunScanAsync only ever has one
+                // caller at a time (SyncRoot), so there's nothing to reset between runs.
+                var inFlightFiles = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>();
+
                 var tasks = Enumerable.Range(0, cores).Select(_ => Task.Run(async () =>
                 {
                     await foreach (var (track, metrics) in channel.Reader.ReadAllAsync(ct))
                     {
+                        // The share repository hands back paths in their stored form, which is
+                        // relative to the music root; ffmpeg needs the real one.
+                        var path = MusicPath.ToAbsolute(track.OriginalFilename);
+
                         Interlocked.Increment(ref inFlight);
+                        inFlightFiles.TryAdd(path, 0);
+                        SetState(true, false, false, total, analysed, skipped, failed,
+                            (double)(analysed + skipped + failed) / total, inFlight, request.Metrics.ToString(), inFlightFiles.Keys.ToList());
                         try
                         {
-                            // The share repository hands back paths in their stored form, which is
-                            // relative to the music root; ffmpeg needs the real one.
-                            var path = MusicPath.ToAbsolute(track.OriginalFilename);
-
                             var result = await Analyzer.AnalyseAsync(path, ffmpegPath, metrics, options, ct);
 
                             if (result == null)
@@ -639,11 +695,12 @@ namespace resonance.Analysis
                         finally
                         {
                             Interlocked.Decrement(ref inFlight);
+                            inFlightFiles.TryRemove(path, out var removedFromInFlight);
                         }
 
                         var done = analysed + skipped + failed;
                         SetState(true, false, false, total, analysed, skipped, failed,
-                            (double)done / total, inFlight, request.Metrics.ToString());
+                            (double)done / total, inFlight, request.Metrics.ToString(), inFlightFiles.Keys.ToList());
 
                         if (done % Math.Max(1, total / 10) == 0)
                         {
@@ -709,11 +766,11 @@ namespace resonance.Analysis
 
         private void SetState(
             bool scanning, bool completed, bool cancelled, int total, int analysed, int skipped, int failed,
-            double progress = 0, int inFlight = 0, string metrics = null)
+            double progress = 0, int inFlight = 0, string metrics = null, IReadOnlyList<string> inFlightPaths = null)
         {
             CurrentState = new AnalysisScanState(
                 scanning, completed, cancelled, total, analysed, skipped, failed, progress, inFlight,
-                metrics ?? CurrentState?.Metrics);
+                metrics ?? CurrentState?.Metrics, inFlightPaths ?? Array.Empty<string>());
         }
     }
 }

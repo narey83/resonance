@@ -65,6 +65,13 @@ namespace resonance.MusicLibrary
         // Case-insensitive LIKE operator
         private string Like => UsePostgres ? "ILIKE" : "LIKE";
 
+        // "Every metric this track could have, it has." Key and BPM are tags on the track row;
+        // waveform and loudness live in the analysis cache row. Written once, as a predicate over a
+        // named cache alias, so the list filter (correlated subquery) and the stats count (join)
+        // apply the identical rule.
+        private string FullyAnalysedExists =>
+            $"EXISTS (SELECT 1 FROM {TA} fa WHERE {CacheMatch("fa")} AND {FullyAnalysed("fa")})";
+
         // Shared by Upsert and UpsertMany so the column/conflict handling can't drift between them.
         private string UpsertSql => $@"
                 INSERT INTO {T}
@@ -349,7 +356,8 @@ namespace resonance.MusicLibrary
             string search, string artist, string album,
             string genre, int? year, string folder,
             bool missingKey, bool missingBpm, bool missingTitle, bool missingArtist, bool missingArtwork,
-            int limit, int offset, string sort = null, bool descending = false, string startsWith = null)
+            int limit, int offset, string sort = null, bool descending = false, string startsWith = null,
+            string key = null, string analysis = null)
         {
             using var conn = OpenConnection();
 
@@ -360,6 +368,7 @@ namespace resonance.MusicLibrary
             var hasGenre = !string.IsNullOrWhiteSpace(genre);
             var hasYear = year.HasValue;
             var hasFolder = !string.IsNullOrWhiteSpace(folder);
+            var hasKey = !string.IsNullOrWhiteSpace(key);
 
             if (hasSearch)
             {
@@ -414,6 +423,24 @@ namespace resonance.MusicLibrary
             if (missingArtwork)
             {
                 conditions.Add("has_artwork = 0");
+            }
+
+            if (hasKey)
+            {
+                conditions.Add($"{IEq("key_sig")} @key");
+            }
+
+            // The analysis page filters on "has all four metrics" rather than on one of them, which
+            // no missing* flag can express. Same predicate the stats count uses, so the list and the
+            // headline number can't disagree.
+            var analysed = analysis?.Trim().ToLowerInvariant();
+            if (analysed == "complete")
+            {
+                conditions.Add(FullyAnalysedExists);
+            }
+            else if (analysed == "incomplete")
+            {
+                conditions.Add($"NOT {FullyAnalysedExists}");
             }
 
             // A-Z rail: narrow to one letter bucket of the column the list is sorted by, so a
@@ -471,6 +498,11 @@ namespace resonance.MusicLibrary
             {
                 AddParam(countCmd, "@folder", MusicPath.ToRelative(folder));
                 AddParam(countCmd, "@folderPrefix", MusicPath.ToRelative(folder).TrimEnd('/') + "/%");
+            }
+
+            if (hasKey)
+            {
+                AddParam(countCmd, "@key", key);
             }
 
             if (hasAlpha && alphaLetter != "#")
@@ -564,6 +596,11 @@ namespace resonance.MusicLibrary
                 AddParam(cmd, "@folderPrefix", MusicPath.ToRelative(folder).TrimEnd('/') + "/%");
             }
 
+            if (hasKey)
+            {
+                AddParam(cmd, "@key", key);
+            }
+
             if (hasAlpha && alphaLetter != "#")
             {
                 AddParam(cmd, "@sw", alphaLetter);
@@ -606,6 +643,36 @@ namespace resonance.MusicLibrary
                     Genre: r.GetString(0),
                     TrackCount: r.GetInt32(1),
                     TotalDuration: r.IsDBNull(2) ? null : r.GetDouble(2)));
+            }
+
+            return results;
+        }
+
+        /// <summary>
+        ///     Returns the distinct musical keys present in the library, with track counts.
+        /// </summary>
+        /// <remarks>
+        ///     The analysis page's key filter matches a stored value exactly, so it has to offer the
+        ///     values that are actually stored: detection writes canonical short forms ("Am", "F#"),
+        ///     but a key inherited from a downloaded file's own tags can be spelled any number of
+        ///     ways, and offering a fixed list of 24 would silently never match those.
+        /// </remarks>
+        /// <returns>One entry per distinct key.</returns>
+        public IReadOnlyList<MusicKey> GetKeys()
+        {
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
+                SELECT MIN(key_sig) AS key_sig, COUNT(*) AS track_count
+                FROM {T}
+                WHERE key_sig IS NOT NULL AND key_sig != ''
+                GROUP BY {GrpBy("key_sig")}
+                ORDER BY {OrdBy("key_sig")}";
+            var results = new List<MusicKey>();
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                results.Add(new MusicKey(Key: r.GetString(0), TrackCount: r.GetInt32(1)));
             }
 
             return results;
@@ -679,6 +746,43 @@ namespace resonance.MusicLibrary
             }
 
             return (0, 0.0);
+        }
+
+        /// <summary>
+        ///     Counts how much of the library carries each analysis metric.
+        /// </summary>
+        /// <remarks>
+        ///     One join over the library, not a walk of it: the analysis page used to derive these
+        ///     six numbers client-side from a dump of every track (25MB, 27 seconds), which is the
+        ///     whole reason that page was slow to open.
+        /// </remarks>
+        /// <returns>The per-metric counts for the whole library.</returns>
+        public MusicAnalysisStats GetAnalysisStats()
+        {
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+
+            // SUM(CASE ...) rather than COUNT(*) FILTER: the same statement has to run on SQLite,
+            // where FILTER is a recent addition.
+            cmd.CommandText = $@"
+                SELECT COUNT(*),
+                       SUM(CASE WHEN {T}.key_sig IS NOT NULL AND {T}.key_sig <> '' THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN {T}.bpm IS NOT NULL THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN a.overall_peaks IS NOT NULL THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN a.lufs IS NOT NULL THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN {FullyAnalysed("a")} THEN 1 ELSE 0 END)
+                FROM {T}
+                LEFT JOIN {TA} a ON {CacheMatch("a")}";
+
+            using var r = cmd.ExecuteReader();
+            if (!r.Read())
+            {
+                return new MusicAnalysisStats(0, 0, 0, 0, 0, 0);
+            }
+
+            int At(int i) => r.IsDBNull(i) ? 0 : Convert.ToInt32(r.GetValue(i));
+
+            return new MusicAnalysisStats(At(0), At(1), At(2), At(3), At(4), At(5));
         }
 
         /// <summary>
@@ -1025,6 +1129,16 @@ namespace resonance.MusicLibrary
             BitRate: r.IsDBNull(21) ? null : r.GetInt32(21),
             SampleRate: r.IsDBNull(22) ? null : r.GetInt32(22),
             BitDepth: r.IsDBNull(23) ? null : r.GetInt32(23));
+
+        // Joins an analysis-cache row to its track. The file_size guard is what makes a stale
+        // cache entry (file replaced since it was analysed) not count as analysed.
+        private string CacheMatch(string cache) =>
+            $"{cache}.masked_filename = {T}.path AND {cache}.file_size = {T}.file_size";
+
+        // See FullyAnalysedExists. `cache` names an analysis row already matched by CacheMatch.
+        private string FullyAnalysed(string cache) =>
+            $"({T}.key_sig IS NOT NULL AND {T}.key_sig <> '' AND {T}.bpm IS NOT NULL "
+            + $"AND {cache}.overall_peaks IS NOT NULL AND {cache}.lufs IS NOT NULL)";
 
         // Case-insensitive equality (used in WHERE)
         private string IEq(string col) => UsePostgres ? $"{col} ILIKE" : $"{col} =";

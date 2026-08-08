@@ -60,6 +60,24 @@ namespace resonance.Analysis.API
         [ProducesResponseType(typeof(IEnumerable<TrackAnalysisInfo>), 200)]
         public IActionResult GetAll() => Ok(Analysis.GetAllTracks());
 
+        /// <summary>Resolves a library path to the masked filename the edit endpoints below take.</summary>
+        /// <returns></returns>
+        [HttpGet("masked")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(404)]
+        public IActionResult GetMaskedFilename([FromQuery] string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return BadRequest("path is required");
+            }
+
+            var masked = Analysis.ResolveMaskedFilename(path);
+            return masked == null ? NotFound() : Ok(new MaskedFilenameResponse(masked));
+        }
+
         /// <summary>Returns the current scan state.</summary>
         /// <returns></returns>
         [HttpGet("scan")]

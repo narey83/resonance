@@ -771,6 +771,17 @@
   background: color-mix(in srgb, var(--success) 10%, var(--bg-surface));
 }
 
+/* Being decoded right this second (from the scan's in-flight list), as opposed to
+   ka-track--updated, which marks a row the scan has just finished with. */
+.ka-track--scanning {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-surface));
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.ka-track--scanning:hover {
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-surface));
+}
+
 .ka-spin-icon { animation: ka-spin 0.8s linear infinite; }
 
 .ka-btn--scanning {

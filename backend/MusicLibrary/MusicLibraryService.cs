@@ -211,10 +211,12 @@ namespace resonance.MusicLibrary
         }
 
         // ── Public API ────────────────────────────────────────────────────────
-        public MusicLibraryQueryResult QueryTracks(string search, string artist, string album, string genre, int? year, string folder, bool missingKey, bool missingBpm, bool missingTitle, bool missingArtist, bool missingArtwork, int limit, int offset, string sort = null, bool descending = false, string startsWith = null)
-            => Repository.Query(search, artist, album, genre, year, folder, missingKey, missingBpm, missingTitle, missingArtist, missingArtwork, limit, offset, sort, descending, startsWith);
+        public MusicLibraryQueryResult QueryTracks(string search, string artist, string album, string genre, int? year, string folder, bool missingKey, bool missingBpm, bool missingTitle, bool missingArtist, bool missingArtwork, int limit, int offset, string sort = null, bool descending = false, string startsWith = null, string key = null, string analysis = null)
+            => Repository.Query(search, artist, album, genre, year, folder, missingKey, missingBpm, missingTitle, missingArtist, missingArtwork, limit, offset, sort, descending, startsWith, key, analysis);
 
         public System.Collections.Generic.IReadOnlyList<MusicGenre> GetGenres() => Repository.GetGenres();
+
+        public System.Collections.Generic.IReadOnlyList<MusicKey> GetKeys() => Repository.GetKeys();
 
         public System.Collections.Generic.IReadOnlyList<MusicYear> GetYears() => Repository.GetYears();
 
@@ -223,6 +225,8 @@ namespace resonance.MusicLibrary
         public MusicTrack GetTrack(string path) => Repository.GetByPath(path);
 
         public (int Total, double TotalDuration) GetStats() => Repository.GetStats();
+
+        public MusicAnalysisStats GetAnalysisStats() => Repository.GetAnalysisStats();
 
         public string GetLibraryVersion() => Repository.GetLibraryVersion();
 

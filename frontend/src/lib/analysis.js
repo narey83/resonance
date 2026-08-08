@@ -33,9 +33,17 @@ import api from './api';
 // that with a single set of endpoints rather than one per metric.
 export const METRICS = ['Bpm', 'Key', 'Waveform', 'Loudness'];
 
-export const getAll = async () => (await api.get('/analysis')).data;
+// Deliberately no getAll(): GET /analysis walks the whole share in memory and answered 25MB in
+// 27 seconds on a 50k-track library. Anything wanting rows takes them from the paged, indexed
+// /musiclibrary/tracks query instead (see musicLibrary.getTrackPage).
 
 export const getScanState = async () => (await api.get('/analysis/scan')).data;
+
+// The tag-editing endpoints below key on a masked filename, but the paged library query only
+// knows paths. Resolved one row at a time, when someone actually edits that row — resolving the
+// whole visible page up front would be 200 lookups nobody asked for.
+export const getMaskedFilename = async (path) =>
+  (await api.get('/analysis/masked', { params: { path } })).data.maskedFilename;
 
 // metrics is a comma-separated flags string, e.g. 'Bpm, Key'.
 export const startScan = async (request) => api.post('/analysis/scan', request);

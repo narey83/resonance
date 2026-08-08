@@ -226,13 +226,22 @@ namespace resonance.MusicLibrary.API
             [FromQuery] int offset = 0,
             [FromQuery] string sort = null,
             [FromQuery] bool descending = false,
-            [FromQuery] string startsWith = null)
+            [FromQuery] string startsWith = null,
+            [FromQuery] string key = null,
+            [FromQuery] string analysis = null)
         {
             limit = Math.Max(1, limit);
             offset = Math.Max(0, offset);
-            var result = Service.QueryTracks(search, artist, album, genre, year, folder, missingKey, missingBpm, missingTitle, missingArtist, missingArtwork, limit, offset, sort, descending, startsWith);
+            var result = Service.QueryTracks(search, artist, album, genre, year, folder, missingKey, missingBpm, missingTitle, missingArtist, missingArtwork, limit, offset, sort, descending, startsWith, key, analysis);
             return Ok(result with { Tracks = result.Tracks.Select(SignTrack).ToList() });
         }
+
+        /// <summary>Returns how much of the library carries each analysis metric.</summary>
+        /// <returns></returns>
+        [HttpGet("analysis-stats")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(typeof(MusicAnalysisStats), 200)]
+        public IActionResult GetAnalysisStats() => Ok(Service.GetAnalysisStats());
 
         /// <summary>Returns all genres grouped from the music library.</summary>
         /// <returns></returns>
@@ -242,6 +251,17 @@ namespace resonance.MusicLibrary.API
         public IActionResult GetGenres()
         {
             var (list, etag) = GetCachedListWithETag("genres", () => Service.GetGenres());
+            return NotModifiedOrNull(etag) ?? Ok(list);
+        }
+
+        /// <summary>Returns the distinct musical keys present in the library.</summary>
+        /// <returns></returns>
+        [HttpGet("keys")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(typeof(System.Collections.Generic.IReadOnlyList<MusicKey>), 200)]
+        public IActionResult GetKeys()
+        {
+            var (list, etag) = GetCachedListWithETag("keys", () => Service.GetKeys());
             return NotModifiedOrNull(etag) ?? Ok(list);
         }
 

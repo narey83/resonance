@@ -49,7 +49,7 @@ const RowWaveform = ({ track }) => {
 
     // Not cachedOnly: opening one row deliberately analyses that track if needed.
     analysisApi
-      .getWaveform(track.originalFilename)
+      .getWaveform(track.path)
       .then((data) => {
         if (cancelled) return;
         const parsed = toPeaks(data);
@@ -68,7 +68,7 @@ const RowWaveform = ({ track }) => {
     return () => {
       cancelled = true;
     };
-  }, [track.originalFilename]);
+  }, [track.path]);
 
   useEffect(() => {
     if (state !== 'ready') return;

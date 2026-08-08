@@ -107,6 +107,7 @@ namespace resonance.MusicLibrary
     }
 
     public record MusicGenre(string Genre, int TrackCount, double? TotalDuration);
+    public record MusicKey(string Key, int TrackCount);
     public record MusicYear(int Year, int TrackCount, int AlbumCount);
 
     public record MusicFolder(string Path, string Name, int TrackCount, string CoverPath, bool HasArtwork, long IndexedAt)
@@ -136,4 +137,14 @@ namespace resonance.MusicLibrary
         int Offset,
         int Limit,
         IReadOnlyList<MusicTrack> Tracks);
+
+    // How much of the library carries each analysis metric. Complete means all four at once, which
+    // is stricter than Keyed+Bpmed+Waveformed+Loudness would suggest — a track can have three.
+    public record MusicAnalysisStats(
+        int Total,
+        int Keyed,
+        int Bpmed,
+        int Waveformed,
+        int Loudness,
+        int Complete);
 }

@@ -53,13 +53,15 @@ namespace resonance.MusicLibrary
         bool IsLibraryPath(string path);
 
         (int Total, double TotalDuration) GetStats();
+        MusicAnalysisStats GetAnalysisStats();
         string GetLibraryVersion();
-        MusicLibraryQueryResult QueryTracks(string search, string artist, string album, string genre, int? year, string folder, bool missingKey, bool missingBpm, bool missingTitle, bool missingArtist, bool missingArtwork, int limit, int offset, string sort = null, bool descending = false, string startsWith = null);
+        MusicLibraryQueryResult QueryTracks(string search, string artist, string album, string genre, int? year, string folder, bool missingKey, bool missingBpm, bool missingTitle, bool missingArtist, bool missingArtwork, int limit, int offset, string sort = null, bool descending = false, string startsWith = null, string key = null, string analysis = null);
         IReadOnlyList<MusicAlbum> GetAlbums(string artistFilter = null);
         IReadOnlyList<MusicArtist> GetArtists();
         IReadOnlyList<MusicAlbum> GetRecentlyAdded(int limit);
         IReadOnlyList<MusicTrack> GetKeyedTracks();
         IReadOnlyList<MusicGenre> GetGenres();
+        IReadOnlyList<MusicKey> GetKeys();
         IReadOnlyList<MusicYear> GetYears();
         IReadOnlyList<MusicFolder> GetFolders();
 

@@ -88,5 +88,12 @@ namespace resonance.Analysis
 
         /// <summary>Clears a track's key tag.</summary>
         void ClearKey(string maskedFilename);
+
+        /// <summary>
+        ///     Resolves a library path to the masked filename the tag-editing members above key on.
+        /// </summary>
+        /// <param name="path">An absolute or root-relative library path.</param>
+        /// <returns>The masked filename, or null if the path is not in the share.</returns>
+        string ResolveMaskedFilename(string path);
     }
 }

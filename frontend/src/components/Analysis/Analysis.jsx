@@ -28,17 +28,20 @@
 // </copyright>
 
 import './Analysis.css';
+import { useLibraryActivity } from '../../context/LibraryActivityContext';
 import { usePlayer } from '../../context/PlayerContext';
+import useDebounce from '../../hooks/useDebounce';
 import * as analysisApi from '../../lib/analysis';
 import { METRICS } from '../../lib/analysis';
 import {
   CAMELOT_KEYS,
   camelotColour,
-  camelotSortWeight,
   harmonicNeighbours,
   toCamelot,
 } from '../../lib/camelot';
+import * as musicLibraryApi from '../../lib/musicLibrary';
 import { useKeyFormat } from '../../lib/useKeyFormat';
+import { usePagedList } from '../../lib/usePagedList';
 import KeyFormatToggle from '../Shared/KeyFormatToggle';
 import PageInfo from '../Shared/PageInfo';
 import RowWaveform from './RowWaveform';
@@ -73,10 +76,27 @@ import React, {
 } from 'react';
 import { toast } from 'react-toastify';
 
-// A track is "complete" only when every metric is present; the four are gathered in
-// one pass, so a partial track means that pass never ran or partly failed.
-const isComplete = (t) =>
-  t.hasKey && t.hasBpm && t.hasWaveform && t.hasLoudness;
+// One window of the library per request, the same size every other paged list here uses.
+const PAGE_SIZE = 200;
+
+// A library row carries everything this page shows, but names it the way the library does.
+// Rows are identified by path from here on: the paged query has no masked filenames, and one
+// is only resolved (per row, on demand) when an action actually needs it.
+const toRow = (t) => ({
+  album: t.album,
+  artist: t.artist,
+  bpm: t.bpm,
+  directory: t.directory,
+  filename: t.filename,
+  hasBpm: Boolean(t.bpm),
+  hasKey: Boolean(t.key),
+  hasLoudness: t.lufs != null,
+  hasWaveform: Boolean(t.hasWaveform),
+  key: t.key,
+  lufs: t.lufs,
+  path: t.path,
+  title: t.title,
+});
 
 const METRIC_META = {
   Bpm: { Icon: Activity, label: 'BPM' },
@@ -265,7 +285,7 @@ const TrackRow = ({
   onSetKey,
   onToggleSelect,
   recentlyUpdated,
-  scanningFiles,
+  scanning,
   selected,
   track,
 }) => {
@@ -277,22 +297,17 @@ const TrackRow = ({
   const compatible = focusKey
     ? harmonicNeighbours(focusKey).has(track.key) || track.key === focusKey
     : null;
-  const scanning = scanningFiles?.has(track.maskedFilename) ?? false;
-  const anyScanRunning = (scanningFiles?.size ?? 0) > 0 || globalScanning;
-  const wasUpdated = recentlyUpdated?.has(track.maskedFilename) ?? false;
+  const wasUpdated = recentlyUpdated?.has(track.path) ?? false;
   const { play, track: currentTrack } = usePlayer();
-  const localRelativePath = useMemo(() => {
-    const parts = track.directory.replaceAll('\\', '/').split('/');
-    return [...parts.slice(1), track.filename].join('/');
-  }, [track.directory, track.filename]);
-  const isPlaying = currentTrack?.localRelativePath === localRelativePath;
+  const isPlaying = currentTrack?.localRelativePath === track.path;
   const handlePlay = () =>
     play({
       filename: track.filename,
       username: null,
       size: 0,
       length: 0,
-      localRelativePath,
+      localRelativePath: track.path,
+      path: track.path,
       title: track.title || track.filename,
       artist: track.artist,
       album: track.album,
@@ -300,29 +315,29 @@ const TrackRow = ({
 
   const submit = () => {
     const k = keyInput.trim();
-    if (k) onSetKey(track.maskedFilename, fmtKey ? fmtKey(k) : k);
-    else if (track.key) onClearKey(track.maskedFilename);
+    if (k) onSetKey(track.path, fmtKey ? fmtKey(k) : k);
+    else if (track.key) onClearKey(track.path);
     setEditing(false);
   };
 
   const submitBpm = () => {
     const v = Number.parseInt(bpmInput, 10);
-    if (v > 0) onSetBpm(track.maskedFilename, v);
-    else if (track.bpm) onClearBpm(track.maskedFilename);
+    if (v > 0) onSetBpm(track.path, v);
+    else if (track.bpm) onClearBpm(track.path);
     setEditingBpm(false);
   };
 
   return (
     <>
       <div
-        className={`ka-track${selected ? ' ka-track--selected' : ''}${wasUpdated ? ' ka-track--updated' : ''}`}
+        className={`ka-track${selected ? ' ka-track--selected' : ''}${wasUpdated ? ' ka-track--updated' : ''}${scanning ? ' ka-track--scanning' : ''}`}
       >
         <div className="ka-track-check">
           <input
             checked={selected}
             className="ka-checkbox"
             disabled={globalScanning}
-            onChange={() => onToggleSelect(track.maskedFilename)}
+            onChange={() => onToggleSelect(track.path)}
             type="checkbox"
           />
         </div>
@@ -442,12 +457,12 @@ const TrackRow = ({
           </button>
           <button
             className="ka-icon-btn"
-            disabled={anyScanRunning}
-            onClick={() => onScan(track.maskedFilename)}
+            disabled={globalScanning}
+            onClick={() => onScan(track.path)}
             title={
               scanning
-                ? 'Scanning…'
-                : anyScanRunning
+                ? 'Analysing…'
+                : globalScanning
                   ? 'Scan in progress'
                   : 'Analyse track'
             }
@@ -473,7 +488,7 @@ const TrackRow = ({
           {track.key && !scanning && (
             <button
               className="ka-icon-btn ka-icon-btn--danger"
-              onClick={() => onClearKey(track.maskedFilename)}
+              onClick={() => onClearKey(track.path)}
               title="Clear key"
               type="button"
             >
@@ -495,6 +510,7 @@ const FolderGroup = ({
   fmtKey,
   focusKey,
   globalScanning,
+  inFlight,
   name,
   onClearBpm,
   onClearKey,
@@ -506,15 +522,17 @@ const FolderGroup = ({
   onToggle,
   onToggleSelect,
   recentlyUpdated,
-  scanningFiles,
   selected,
   tracks,
 }) => {
-  const trackIds = tracks.map((t) => t.maskedFilename);
+  const trackIds = tracks.map((t) => t.path);
   const allSelected =
     trackIds.length > 0 && trackIds.every((id) => selected.has(id));
   const someSelected = trackIds.some((id) => selected.has(id));
-  const anyScanRunning = (scanningFiles?.size ?? 0) > 0 || globalScanning;
+
+  // A collapsed folder still shows that something inside it is being decoded right now —
+  // otherwise the only sign of a running scan on a folder-grouped list is the global counter.
+  const folderScanning = trackIds.some((id) => inFlight.has(id));
 
   return (
     <div className="ka-folder-group">
@@ -552,16 +570,25 @@ const FolderGroup = ({
         </button>
         <button
           className="ka-icon-btn ka-folder-scan-btn"
-          disabled={anyScanRunning}
+          disabled={globalScanning}
           onClick={() => onScanFolder(dir, name)}
           title={
-            anyScanRunning
-              ? 'Scan in progress'
-              : 'Analyse unanalysed tracks in this folder'
+            folderScanning
+              ? 'Analysing tracks in this folder…'
+              : globalScanning
+                ? 'Scan in progress'
+                : 'Analyse unanalysed tracks in this folder'
           }
           type="button"
         >
-          <ScanLine size={13} />
+          {folderScanning ? (
+            <Loader2
+              className="ka-spin-icon"
+              size={13}
+            />
+          ) : (
+            <ScanLine size={13} />
+          )}
         </button>
       </div>
       {!collapsed &&
@@ -570,7 +597,7 @@ const FolderGroup = ({
             fmtKey={fmtKey}
             focusKey={focusKey}
             globalScanning={globalScanning}
-            key={t.maskedFilename}
+            key={t.path}
             onClearBpm={onClearBpm}
             onClearKey={onClearKey}
             onScan={onScan}
@@ -578,8 +605,8 @@ const FolderGroup = ({
             onSetKey={onSetKey}
             onToggleSelect={onToggleSelect}
             recentlyUpdated={recentlyUpdated}
-            scanningFiles={scanningFiles}
-            selected={selected.has(t.maskedFilename)}
+            scanning={inFlight.has(t.path)}
+            selected={selected.has(t.path)}
             track={t}
           />
         ))}
@@ -589,15 +616,10 @@ const FolderGroup = ({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-const FOLDERS_PER_PAGE = 20;
-
 // eslint-disable-next-line complexity
 const Analysis = () => {
-  const [tracks, setTracks] = useState([]);
   const [scanState, setScanState] = useState(null);
   const { fmtKey, format, setFormat } = useKeyFormat();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [sortKey, setSortKey] = useState('title');
@@ -606,13 +628,25 @@ const Analysis = () => {
   const [keyFilter, setKeyFilter] = useState('');
   const [focusKey, setFocusKey] = useState(null);
   const [selected, setSelected] = useState(new Set());
-  const [page, setPage] = useState(1);
   const [expandedFolders, setExpandedFolders] = useState(new Set());
-  const [scanningFiles, setScanningFiles] = useState(new Set());
-  const [recentlyUpdated, setRecentlyUpdated] = useState(new Map());
+  const [recentlyUpdated, setRecentlyUpdated] = useState(new Set());
+  const [stats, setStats] = useState(null);
+  const [keyOptions, setKeyOptions] = useState([]);
+
+  // A manual key/BPM edit is written to the file's tags; the library index only picks it up on
+  // the next (debounced) sync, so refetching straight after an edit would still hand back the
+  // old value. These hold the new one over the row until something authoritative replaces them.
+  const [edits, setEdits] = useState(new Map());
+
+  // Bumped whenever something this page did should be reflected in the rows it already holds
+  // (a scan finishing, the refresh button). Added to the library's own revision so a tag write
+  // from anywhere else refreshes the window too.
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const libraryRevision = useLibraryActivity()?.libraryRevision ?? 0;
+
   const pollRef = useRef(null);
-  const keySnapshotRef = useRef(new Map());
   const lastCompletedScanRef = useRef(null);
+  const inFlightRef = useRef(new Set());
   // true = "no scan pending finalization" (initial / already handled)
   // false = "a scan was started from this session and needs finalizing"
   const finalizingRef = useRef(true);
@@ -625,81 +659,133 @@ const Analysis = () => {
     [],
   );
 
-  const load = useCallback(async () => {
-    setError(null);
+  // Typing shouldn't fire a query per keystroke — the search runs server-side now.
+  const debouncedSearch = useDebounce(search, 250);
+
+  // Everything the list is narrowed and ordered by is a query parameter: the page holds one
+  // 200-row window at a time, so filtering or sorting what happens to be loaded would answer
+  // a different question from the one the toolbar asks.
+  const query = useMemo(
+    () => ({
+      analysis: filter === 'all' ? undefined : filter,
+      descending: sortDirection === 'desc',
+      key: keyFilter || undefined,
+      search: debouncedSearch.trim() || undefined,
+      sort: sortKey,
+    }),
+    [debouncedSearch, filter, keyFilter, sortDirection, sortKey],
+  );
+
+  const {
+    items,
+    loadMore,
+    loading,
+    loadingMore,
+    total: matching,
+  } = usePagedList(musicLibraryApi.getTrackPage, query, {
+    pageSize: PAGE_SIZE,
+    refreshToken: libraryRevision + refreshNonce,
+  });
+
+  const tracks = useMemo(
+    () =>
+      items.map((t) => {
+        const row = toRow(t);
+        const edit = edits.get(row.path);
+        return edit ? { ...row, ...edit } : row;
+      }),
+    [edits, items],
+  );
+
+  // Which rows are being decoded at this instant, straight from the scan state the page
+  // already polls. The backend reports absolute paths, the same form the library rows carry,
+  // so no resolving is needed to line the two up.
+  const inFlight = useMemo(
+    () => new Set(scanState?.inFlightPaths ?? []),
+    [scanState],
+  );
+
+  // A path that was in flight a moment ago and isn't now has just been written; that's the
+  // whole "recently updated" signal, no before/after diff of the library required.
+  // ponytail: grows for the length of one scan (reset when the next starts). A full-library
+  // run holds ~50k strings; bound it if that ever matters.
+  useEffect(() => {
+    const previous = inFlightRef.current;
+    const finished = [...previous].filter((p) => !inFlight.has(p));
+    inFlightRef.current = inFlight;
+    if (finished.length === 0) return;
+    setRecentlyUpdated((current) => new Set([...current, ...finished]));
+  }, [inFlight]);
+
+  const loadSummary = useCallback(async () => {
     try {
-      const [data, state] = await Promise.all([
-        analysisApi.getAll(),
-        analysisApi.getScanState().catch(() => null),
+      const [nextStats, keys] = await Promise.all([
+        musicLibraryApi.getAnalysisStats(),
+        musicLibraryApi.getKeys().catch(() => []),
       ]);
       if (!mountedRef.current) return;
-      setTracks(data ?? []);
-      setScanState(state);
-      if (state?.scanning) {
-        keySnapshotRef.current = new Map(
-          (data ?? []).map((t) => [
-            t.maskedFilename,
-            `${t.key ?? ''}|${t.bpm ?? ''}`,
-          ]),
-        );
-        finalizingRef.current = false;
-      }
+      setStats(nextStats);
+      setKeyOptions(keys ?? []);
     } catch {
-      if (mountedRef.current) setError('Failed to load analysis data.');
-    } finally {
-      if (mountedRef.current) setLoading(false);
+      /* the counts are a headline, not the page — the list still renders without them */
     }
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void loadSummary();
+  }, [libraryRevision, loadSummary, refreshNonce]);
 
-  // finalize scan: diff against snapshot, update tracks, clear spinners, toast result
-  const finalizeScan = useCallback(async () => {
-    try {
-      const data = await analysisApi.getAll();
-      if (!mountedRef.current) return;
-      const snapshot = keySnapshotRef.current;
-      const updated = new Map();
-      for (const t of data ?? []) {
-        const before = snapshot.get(t.maskedFilename);
-        const after = `${t.key ?? ''}|${t.bpm ?? ''}`;
-        if (before !== undefined && before !== after) {
-          updated.set(t.maskedFilename, {
-            before,
-            after,
-            title: t.title ?? t.filename,
-          });
-        }
-      }
+  const refresh = useCallback(() => setRefreshNonce((n) => n + 1), []);
 
-      setRecentlyUpdated(updated);
-      setTracks(data ?? []);
-      setScanningFiles(new Set());
-      setSelected(new Set());
-      // ensure no stale scanning state lingers regardless of backend/timing issues
-      setScanState((previous) =>
-        previous?.scanning ? { ...previous, scanning: false } : previous,
-      );
-      const lastScan = lastCompletedScanRef.current;
-      const analysed = lastScan?.analysed ?? updated.size;
-      const cancelled = lastScan?.cancelled ?? false;
-      if (cancelled) {
-        toast.warn(
-          `Scan cancelled — ${analysed} track${analysed === 1 ? '' : 's'} analysed`,
-        );
-      } else if (analysed > 0) {
-        toast.success(
-          `Scan complete — ${analysed} track${analysed === 1 ? '' : 's'} analysed`,
-        );
-      } else {
-        toast.info('Scan complete');
-      }
-    } catch {
-      /* ignore */
-    }
+  // Explicit "show me what the server has" — drops the optimistic overrides with it.
+  const hardRefresh = useCallback(() => {
+    setEdits(new Map());
+    refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    let cancelled = false;
+    analysisApi
+      .getScanState()
+      .then((state) => {
+        if (cancelled || !mountedRef.current) return;
+        setScanState(state);
+        // A scan already running when the page opens still needs finalizing when it ends.
+        if (state?.scanning) finalizingRef.current = false;
+      })
+      .catch(() => {
+        /* the scan bar simply stays hidden */
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  // finalize scan: pull the fresh values into the rows on screen and report the outcome
+  const finalizeScan = useCallback(() => {
+    setSelected(new Set());
+    setScanState((previous) =>
+      previous?.scanning ? { ...previous, scanning: false } : previous,
+    );
+    // A scan is the only other thing that rewrites key/BPM, so its results supersede any
+    // optimistic override still being held over a row.
+    setEdits(new Map());
+    refresh();
+
+    const lastScan = lastCompletedScanRef.current;
+    const analysed = lastScan?.analysed ?? 0;
+    if (lastScan?.cancelled) {
+      toast.warn(
+        `Scan cancelled — ${analysed} track${analysed === 1 ? '' : 's'} analysed`,
+      );
+    } else if (analysed > 0) {
+      toast.success(
+        `Scan complete — ${analysed} track${analysed === 1 ? '' : 's'} analysed`,
+      );
+    } else {
+      toast.info('Scan complete');
+    }
+  }, [refresh]);
 
   // fire finalizeScan after React has rendered the completed state
   useEffect(() => {
@@ -711,7 +797,7 @@ const Analysis = () => {
     ) {
       lastCompletedScanRef.current = scanState;
       finalizingRef.current = true;
-      void finalizeScan();
+      finalizeScan();
     }
   }, [finalizeScan, scanState]);
 
@@ -739,19 +825,15 @@ const Analysis = () => {
     return () => clearInterval(pollRef.current);
   }, [scanState?.scanning]);
 
-  const startScan = async (request, filenames) => {
-    keySnapshotRef.current = new Map(
-      tracks.map((t) => [t.maskedFilename, `${t.key ?? ''}|${t.bpm ?? ''}`]),
-    );
+  // paths, not masked filenames: the backend resolves them against the share in one query
+  // rather than the page doing a lookup per row before it can ask for anything.
+  const startScan = async (request, paths) => {
     finalizingRef.current = false;
-    setRecentlyUpdated(new Map());
-    setScanningFiles(filenames ? new Set(filenames) : new Set());
+    setRecentlyUpdated(new Set());
+    inFlightRef.current = new Set();
     setScanState(null);
     try {
-      await analysisApi.startScan({
-        ...request,
-        onlyFilenames: filenames ?? null,
-      });
+      await analysisApi.startScan({ ...request, onlyPaths: paths ?? null });
       const state = await analysisApi.getScanState();
       if (!mountedRef.current) return;
       setScanState(state);
@@ -759,33 +841,30 @@ const Analysis = () => {
     } catch {
       if (!mountedRef.current) return;
       toast.error('Failed to start scan.');
-      setScanningFiles(new Set());
     }
   };
 
   const handleStartScan = async (request) => {
     setShowSettings(false);
-    const filenames = selected.size > 0 ? Array.from(selected) : undefined;
-    await startScan(request, filenames);
+    const paths = selected.size > 0 ? Array.from(selected) : undefined;
+    await startScan(request, paths);
   };
 
-  const handleScanTrack = async (maskedFilename) => {
+  const handleScanTrack = async (path) => {
     if (scanState?.scanning) {
       toast.info('A scan is already running.');
       return;
     }
 
-    const filenames =
-      selected.size > 0
-        ? Array.from(new Set([maskedFilename, ...selected]))
-        : [maskedFilename];
+    const paths =
+      selected.size > 0 ? Array.from(new Set([path, ...selected])) : [path];
     await startScan(
       {
         metrics: METRICS.join(', '),
         skipAnalysed: false,
         resetAll: false,
       },
-      filenames,
+      paths,
     );
   };
 
@@ -806,61 +885,56 @@ const Analysis = () => {
     }
   };
 
-  const handleSetBpm = async (maskedFilename, bpm) => {
+  // A row action needs the masked filename the tag endpoints key on, and only the path is at
+  // hand — so resolve that one path now, rather than resolving a name for all 200 rows of a
+  // page nobody may touch. Failing here means the file isn't in the share, which is worth
+  // saying rather than silently doing nothing.
+  const editTags = async (path, action, patch, failure) => {
     try {
-      await analysisApi.setBpm(maskedFilename, bpm);
-      setTracks((previous) =>
-        previous.map((t) =>
-          t.maskedFilename === maskedFilename ? { ...t, bpm, hasBpm: true } : t,
-        ),
+      const masked = await analysisApi.getMaskedFilename(path);
+      await action(masked);
+      // No refetch here on purpose: WriteFileTags triggers a library sync, and its (debounced)
+      // LIBRARY_UPDATED is what brings the real row back. Asking now would only re-read the
+      // pre-edit value, which is exactly what the override above is covering for.
+      setEdits((previous) =>
+        new Map(previous).set(path, { ...previous.get(path), ...patch }),
       );
     } catch {
-      toast.error('Failed to set BPM.');
+      toast.error(failure);
     }
   };
 
-  const handleClearBpm = async (maskedFilename) => {
-    try {
-      await analysisApi.clearBpm(maskedFilename);
-      setTracks((previous) =>
-        previous.map((t) =>
-          t.maskedFilename === maskedFilename
-            ? { ...t, bpm: null, hasBpm: false }
-            : t,
-        ),
-      );
-    } catch {
-      toast.error('Failed to clear BPM.');
-    }
-  };
+  const handleSetBpm = (path, bpm) =>
+    editTags(
+      path,
+      (masked) => analysisApi.setBpm(masked, bpm),
+      { bpm, hasBpm: true },
+      'Failed to set BPM.',
+    );
 
-  const handleSetKey = async (maskedFilename, key) => {
-    try {
-      await analysisApi.setKey(maskedFilename, key);
-      setTracks((previous) =>
-        previous.map((t) =>
-          t.maskedFilename === maskedFilename ? { ...t, key, hasKey: true } : t,
-        ),
-      );
-    } catch {
-      toast.error('Failed to set key.');
-    }
-  };
+  const handleClearBpm = (path) =>
+    editTags(
+      path,
+      (masked) => analysisApi.clearBpm(masked),
+      { bpm: null, hasBpm: false },
+      'Failed to clear BPM.',
+    );
 
-  const handleClearKey = async (maskedFilename) => {
-    try {
-      await analysisApi.clearKey(maskedFilename);
-      setTracks((previous) =>
-        previous.map((t) =>
-          t.maskedFilename === maskedFilename
-            ? { ...t, key: null, hasKey: false }
-            : t,
-        ),
-      );
-    } catch {
-      toast.error('Failed to clear key.');
-    }
-  };
+  const handleSetKey = (path, key) =>
+    editTags(
+      path,
+      (masked) => analysisApi.setKey(masked, key),
+      { hasKey: true, key },
+      'Failed to set key.',
+    );
+
+  const handleClearKey = (path) =>
+    editTags(
+      path,
+      (masked) => analysisApi.clearKey(masked),
+      { hasKey: false, key: null },
+      'Failed to clear key.',
+    );
 
   const toggleSort = (col) => {
     if (sortKey === col)
@@ -871,84 +945,13 @@ const Analysis = () => {
     }
   };
 
-  const uniqueKeys = useMemo(() => {
-    const set = new Set(tracks.map((t) => t.key).filter(Boolean));
-    return Array.from(set).sort(
-      (a, b) => camelotSortWeight(a) - camelotSortWeight(b),
-    );
-  }, [tracks]);
-
-  const filtered = useMemo(() => {
-    let list = tracks;
-    if (filter === 'complete') list = list.filter((t) => isComplete(t));
-    else if (filter === 'incomplete') list = list.filter((t) => !isComplete(t));
-    else if (filter === 'updated')
-      list = list.filter((t) => recentlyUpdated.has(t.maskedFilename));
-    if (keyFilter) list = list.filter((t) => t.key === keyFilter);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter((t) => {
-        const camelot = toCamelot(t.key)?.toLowerCase() ?? '';
-        return (
-          (t.title ?? t.filename).toLowerCase().includes(q) ||
-          (t.artist ?? '').toLowerCase().includes(q) ||
-          (t.album ?? '').toLowerCase().includes(q) ||
-          (t.key ?? '').toLowerCase().includes(q) ||
-          (t.bpm ? String(t.bpm) : '').includes(q) ||
-          camelot.includes(q)
-        );
-      });
-    }
-
-    return [...list].sort((a, b) => {
-      let cmp;
-      if (sortKey === 'key') {
-        cmp = camelotSortWeight(a.key) - camelotSortWeight(b.key);
-      } else if (sortKey === 'bpm') {
-        cmp = (a.bpm ?? 0) - (b.bpm ?? 0);
-      } else if (sortKey === 'artist') {
-        cmp = (a.artist ?? '').localeCompare(b.artist ?? '');
-      } else {
-        cmp = (a.title ?? a.filename).localeCompare(b.title ?? b.filename);
-      }
-
-      return sortDirection === 'asc' ? cmp : -cmp;
-    });
-  }, [
-    filter,
-    keyFilter,
-    recentlyUpdated,
-    search,
-    sortDirection,
-    sortKey,
-    tracks,
-  ]);
-
-  const stats = useMemo(() => {
-    const total = tracks.length;
-    const complete = tracks.filter((t) => isComplete(t)).length;
-    return {
-      total,
-      complete,
-      incomplete: total - complete,
-      keyed: tracks.filter((t) => t.hasKey).length,
-      bpmed: tracks.filter((t) => t.hasBpm).length,
-      waved: tracks.filter((t) => t.hasWaveform).length,
-      loud: tracks.filter((t) => t.hasLoudness).length,
-      pct: total > 0 ? Math.round((complete / total) * 100) : 0,
-    };
-  }, [tracks]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [filter, keyFilter, search, sortDirection, sortKey]);
   useEffect(() => {
     setSelected(new Set());
-  }, [filter, keyFilter]);
+  }, [debouncedSearch, filter, keyFilter, sortDirection, sortKey]);
 
-  const allGrouped = useMemo(() => {
+  const groups = useMemo(() => {
     const map = new Map();
-    for (const t of filtered) {
+    for (const t of tracks) {
       if (!map.has(t.directory)) map.set(t.directory, []);
       map.get(t.directory).push(t);
     }
@@ -960,33 +963,20 @@ const Analysis = () => {
         tracks: directoryTracks,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [filtered]);
+  }, [tracks]);
 
-  const totalPages = Math.ceil(allGrouped.length / FOLDERS_PER_PAGE);
-
-  const pagedGroups = useMemo(
-    () =>
-      allGrouped.slice((page - 1) * FOLDERS_PER_PAGE, page * FOLDERS_PER_PAGE),
-    [allGrouped, page],
-  );
-
-  const pageAllTracks = useMemo(
-    () => pagedGroups.flatMap((g) => g.tracks),
-    [pagedGroups],
-  );
-
-  const toggleSelect = useCallback((maskedFilename) => {
+  const toggleSelect = useCallback((path) => {
     setSelected((previous) => {
       const next = new Set(previous);
-      if (next.has(maskedFilename)) next.delete(maskedFilename);
-      else next.add(maskedFilename);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
       return next;
     });
   }, []);
 
   const toggleSelectAll = useCallback(() => {
     setSelected((previous) => {
-      const pageIds = pageAllTracks.map((t) => t.maskedFilename);
+      const pageIds = tracks.map((t) => t.path);
       const allSelected = pageIds.every((id) => previous.has(id));
       if (allSelected) {
         const deselected = new Set(previous);
@@ -998,7 +988,7 @@ const Analysis = () => {
       for (const id of pageIds) allAdded.add(id);
       return allAdded;
     });
-  }, [pageAllTracks]);
+  }, [tracks]);
 
   const toggleFolder = useCallback((folderPath) => {
     setExpandedFolders((previous) => {
@@ -1018,16 +1008,27 @@ const Analysis = () => {
     });
   }, []);
 
+  // The folder's tracks are asked for by folder rather than taken from the loaded window: a
+  // folder can easily run past the end of it, and scanning "this folder" has to mean all of it.
   const handleScanFolder = async (folderPath, folderName) => {
     if (scanState?.scanning) {
       toast.info('A scan is already running.');
       return;
     }
 
-    const allDirectoryIds = tracks
-      .filter((t) => t.directory === folderPath)
-      .map((t) => t.maskedFilename);
-    if (allDirectoryIds.length === 0) {
+    let paths = [];
+    try {
+      const { tracks: folderTracks } = await musicLibraryApi.getTracks({
+        folder: folderPath,
+        limit: 10_000,
+      });
+      paths = (folderTracks ?? []).map((t) => t.path);
+    } catch {
+      toast.error('Could not list that folder.');
+      return;
+    }
+
+    if (paths.length === 0) {
       toast.warn(`No tracks found in folder: ${folderName}`);
       return;
     }
@@ -1038,26 +1039,25 @@ const Analysis = () => {
         skipAnalysed: true,
         resetAll: false,
       },
-      allDirectoryIds,
+      paths,
     );
   };
 
   const allExpanded =
-    pagedGroups.length > 0 &&
-    pagedGroups.every((g) => expandedFolders.has(g.dir));
+    groups.length > 0 && groups.every((g) => expandedFolders.has(g.dir));
 
   const toggleAllFolders = useCallback(() => {
     setExpandedFolders((previous) => {
       const toggled = new Set(previous);
-      if (pagedGroups.every((g) => toggled.has(g.dir))) {
-        for (const g of pagedGroups) toggled.delete(g.dir);
+      if (groups.every((g) => toggled.has(g.dir))) {
+        for (const g of groups) toggled.delete(g.dir);
       } else {
-        for (const g of pagedGroups) toggled.add(g.dir);
+        for (const g of groups) toggled.add(g.dir);
       }
 
       return toggled;
     });
-  }, [pagedGroups]);
+  }, [groups]);
 
   // eslint-disable-next-line react/no-unstable-nested-components
   const SortIcon = ({ col }) => {
@@ -1069,7 +1069,7 @@ const Analysis = () => {
     );
   };
 
-  if (loading) {
+  if (loading && tracks.length === 0) {
     return (
       <div className="ka-state-center">
         <div className="ka-spinner" />
@@ -1078,29 +1078,22 @@ const Analysis = () => {
     );
   }
 
-  if (error) {
-    return (
-      <div className="ka-state-center">
-        <AlertCircle
-          size={32}
-          style={{ opacity: 0.3 }}
-        />
-        <span>{error}</span>
-        <button
-          className="ka-btn hover-fx"
-          onClick={load}
-          type="button"
-        >
-          <RefreshCw size={13} /> Retry
-        </button>
-      </div>
-    );
-  }
-
   const scanning = scanState?.scanning;
   const processed = scanState
     ? scanState.analysed + scanState.skipped + scanState.failed
     : 0;
+  const coverage = stats ?? {
+    bpmed: 0,
+    complete: 0,
+    keyed: 0,
+    loudness: 0,
+    total: 0,
+    waveformed: 0,
+  };
+  const pct =
+    coverage.total > 0
+      ? Math.round((coverage.complete / coverage.total) * 100)
+      : 0;
 
   return (
     <div className="ka-root">
@@ -1137,34 +1130,36 @@ const Analysis = () => {
       {/* ── Stats bar ── */}
       <div className="ka-stats-bar">
         <div className="ka-stat">
-          <span className="ka-stat-value">{stats.total}</span>
+          <span className="ka-stat-value">{coverage.total}</span>
           <span className="ka-stat-label">Tracks</span>
         </div>
         <div className="ka-stat ka-stat--keyed">
-          <span className="ka-stat-value">{stats.keyed}</span>
+          <span className="ka-stat-value">{coverage.keyed}</span>
           <span className="ka-stat-label">Key</span>
         </div>
         <div className="ka-stat ka-stat--keyed">
-          <span className="ka-stat-value">{stats.bpmed}</span>
+          <span className="ka-stat-value">{coverage.bpmed}</span>
           <span className="ka-stat-label">BPM</span>
         </div>
         <div className="ka-stat ka-stat--keyed">
-          <span className="ka-stat-value">{stats.waved}</span>
+          <span className="ka-stat-value">{coverage.waveformed}</span>
           <span className="ka-stat-label">Waveform</span>
         </div>
         <div className="ka-stat ka-stat--keyed">
-          <span className="ka-stat-value">{stats.loud}</span>
+          <span className="ka-stat-value">{coverage.loudness}</span>
           <span className="ka-stat-label">Loudness</span>
         </div>
         <div className="ka-stat ka-stat--unkeyed">
-          <span className="ka-stat-value">{stats.incomplete}</span>
+          <span className="ka-stat-value">
+            {coverage.total - coverage.complete}
+          </span>
           <span className="ka-stat-label">Incomplete</span>
         </div>
         <div className="ka-stat-bar-wrap">
           <div className="ka-stat-bar">
             <div
               className="ka-stat-bar-fill"
-              style={{ width: `${stats.pct}%` }}
+              style={{ width: `${pct}%` }}
             />
           </div>
         </div>
@@ -1221,7 +1216,7 @@ const Analysis = () => {
         />
         <button
           className="ka-btn hover-fx"
-          onClick={load}
+          onClick={hardRefresh}
           title="Refresh"
           type="button"
         >
@@ -1286,18 +1281,9 @@ const Analysis = () => {
                   : 'Incomplete'}
             </button>
           ))}
-          {recentlyUpdated.size > 0 && (
-            <button
-              className={`ka-filter-btn ka-filter-btn--updated hover-fx${filter === 'updated' ? ' active' : ''}`}
-              onClick={() => setFilter('updated')}
-              type="button"
-            >
-              Updated ({recentlyUpdated.size})
-            </button>
-          )}
         </div>
 
-        {uniqueKeys.length > 0 && (
+        {keyOptions.length > 0 && (
           <select
             className="ka-select ka-select--sm"
             onChange={({ target }) => {
@@ -1307,7 +1293,7 @@ const Analysis = () => {
             value={keyFilter}
           >
             <option value="">All Keys</option>
-            {uniqueKeys.map((k) => {
+            {keyOptions.map(({ key: k, trackCount }) => {
               const c = toCamelot(k);
               const label =
                 format === 'camelot'
@@ -1322,7 +1308,7 @@ const Analysis = () => {
                   key={k}
                   value={k}
                 >
-                  {label}
+                  {label} ({trackCount})
                 </option>
               );
             })}
@@ -1330,12 +1316,11 @@ const Analysis = () => {
         )}
 
         <span className="ka-count">
-          {filtered.length} track{filtered.length === 1 ? '' : 's'} ·{' '}
-          {allGrouped.length} folder{allGrouped.length === 1 ? '' : 's'}
-          {totalPages > 1 && ` · page ${page}/${totalPages}`}
+          {tracks.length} of {matching} track{matching === 1 ? '' : 's'} ·{' '}
+          {groups.length} folder{groups.length === 1 ? '' : 's'}
         </span>
 
-        {pagedGroups.length > 0 && (
+        {groups.length > 0 && (
           <button
             className="ka-btn ka-btn--sm hover-fx"
             onClick={toggleAllFolders}
@@ -1352,8 +1337,7 @@ const Analysis = () => {
         <div className="ka-col-check">
           <input
             checked={
-              pageAllTracks.length > 0 &&
-              pageAllTracks.every((t) => selected.has(t.maskedFilename))
+              tracks.length > 0 && tracks.every((t) => selected.has(t.path))
             }
             className="ka-checkbox"
             disabled={scanning}
@@ -1362,8 +1346,8 @@ const Analysis = () => {
               if (element)
                 element.indeterminate =
                   !scanning &&
-                  pageAllTracks.some((t) => selected.has(t.maskedFilename)) &&
-                  !pageAllTracks.every((t) => selected.has(t.maskedFilename));
+                  tracks.some((t) => selected.has(t.path)) &&
+                  !tracks.every((t) => selected.has(t.path));
             }}
             title={
               selected.size > 0
@@ -1414,26 +1398,27 @@ const Analysis = () => {
 
       {/* ── Track list ── */}
       <div className="ka-track-list">
-        {filtered.length === 0 ? (
+        {tracks.length === 0 ? (
           <div className="ka-state-center">
             <Music
               size={36}
               style={{ opacity: 0.2 }}
             />
             <span>
-              {tracks.length === 0
+              {coverage.total === 0
                 ? 'No audio tracks found. Make sure your library is scanned.'
                 : 'No tracks match your filter.'}
             </span>
           </div>
         ) : (
-          pagedGroups.map((g) => (
+          groups.map((g) => (
             <FolderGroup
               collapsed={!expandedFolders.has(g.dir)}
               dir={g.dir}
               fmtKey={fmtKey}
               focusKey={focusKey}
               globalScanning={scanning}
+              inFlight={inFlight}
               key={g.dir}
               name={g.name}
               onClearBpm={handleClearBpm}
@@ -1446,7 +1431,6 @@ const Analysis = () => {
               onToggle={toggleFolder}
               onToggleSelect={toggleSelect}
               recentlyUpdated={recentlyUpdated}
-              scanningFiles={scanningFiles}
               selected={selected}
               tracks={g.tracks}
             />
@@ -1454,48 +1438,32 @@ const Analysis = () => {
         )}
       </div>
 
-      {/* ── Pagination ── */}
-      {totalPages > 1 && (
+      {/* ── Paging ── one 200-row window at a time, appended on demand ── */}
+      {tracks.length > 0 && (
         <div className="ka-pagination">
-          <button
-            className="ka-page-btn hover-fx"
-            disabled={page === 1}
-            onClick={() => setPage(1)}
-            title="First page"
-            type="button"
-          >
-            «
-          </button>
-          <button
-            className="ka-page-btn hover-fx"
-            disabled={page === 1}
-            onClick={() => setPage((p) => p - 1)}
-            type="button"
-          >
-            ‹ Prev
-          </button>
           <span className="ka-page-info">
-            Folders {(page - 1) * FOLDERS_PER_PAGE + 1}–
-            {Math.min(page * FOLDERS_PER_PAGE, allGrouped.length)} of{' '}
-            {allGrouped.length}
+            Showing {tracks.length} of {matching}
           </span>
-          <button
-            className="ka-page-btn hover-fx"
-            disabled={page === totalPages}
-            onClick={() => setPage((p) => p + 1)}
-            type="button"
-          >
-            Next ›
-          </button>
-          <button
-            className="ka-page-btn hover-fx"
-            disabled={page === totalPages}
-            onClick={() => setPage(totalPages)}
-            title="Last page"
-            type="button"
-          >
-            »
-          </button>
+          {tracks.length < matching && (
+            <button
+              className="ka-page-btn hover-fx"
+              disabled={loadingMore}
+              onClick={loadMore}
+              type="button"
+            >
+              {loadingMore ? (
+                <>
+                  <Loader2
+                    className="ka-spin-icon"
+                    size={12}
+                  />{' '}
+                  Loading…
+                </>
+              ) : (
+                `Load ${Math.min(PAGE_SIZE, matching - tracks.length)} more ›`
+              )}
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -30,6 +30,7 @@
 namespace resonance.Analysis
 {
     using System;
+    using System.Collections.Generic;
 
     /// <summary>
     ///     The individual metrics the analyser can produce. A scan requests any combination;
@@ -68,7 +69,14 @@ namespace resonance.Analysis
         WaveformData Waveform = null,
         LoudnessData Loudness = null);
 
-    /// <summary>State of an in-progress analysis scan.</summary>
+    /// <summary>
+    ///     State of an in-progress analysis scan.
+    /// </summary>
+    /// <remarks>
+    ///     <see cref="InFlightPaths"/> holds the absolute library paths being decoded right now — the
+    ///     same form <c>MusicTrack.Path</c> uses — so a client can mark the exact rows in progress by
+    ///     comparing against what the library list already gave it, with nothing to resolve first.
+    /// </remarks>
     public record AnalysisScanState(
         bool Scanning,
         bool Completed,
@@ -79,7 +87,8 @@ namespace resonance.Analysis
         int Failed,
         double Progress,
         int InFlight = 0,
-        string Metrics = null);
+        string Metrics = null,
+        IReadOnlyList<string> InFlightPaths = null);
 
     /// <summary>Per-track analysis status, one row per audio file in the library.</summary>
     public record TrackAnalysisInfo(
@@ -118,12 +127,19 @@ namespace resonance.Analysis
     ///     automatic post-download check sets this false — a blank BPM is often correct (ambient,
     ///     spoken word), not something to fabricate a value for.
     /// </param>
+    /// <param name="OnlyPaths">
+    ///     The same restriction as <see cref="OnlyFilenames"/>, expressed as library paths and
+    ///     resolved to masked filenames server-side. Clients reading the paged library query only
+    ///     ever see paths; making each of them resolve names first would be a round-trip per row.
+    ///     Merged with <see cref="OnlyFilenames"/> when both are given.
+    /// </param>
     public record AnalysisScanRequest(
         AnalysisMetrics Metrics = AnalysisMetrics.All,
         bool SkipAnalysed = true,
         bool ResetAll = false,
         string[] OnlyFilenames = null,
-        bool AllowBpmFabrication = true);
+        bool AllowBpmFabrication = true,
+        string[] OnlyPaths = null);
 
     /// <summary>API response shape for waveform data.</summary>
     public record WaveformResponse(
@@ -138,4 +154,7 @@ namespace resonance.Analysis
 
     /// <summary>Request body for manually setting a track's BPM and/or key.</summary>
     public record SetAnalysisRequest(uint? Bpm = null, string Key = null);
+
+    /// <summary>API response shape for a resolved masked filename.</summary>
+    public record MaskedFilenameResponse(string MaskedFilename);
 }
