@@ -645,7 +645,7 @@ const Analysis = () => {
   const libraryRevision = useLibraryActivity()?.libraryRevision ?? 0;
 
   const pollRef = useRef(null);
-  const lastCompletedScanRef = useRef(null);
+  const wasScanningRef = useRef(false);
   const inFlightRef = useRef(new Set());
   // true = "no scan pending finalization" (initial / already handled)
   // false = "a scan was started from this session and needs finalizing"
@@ -750,6 +750,7 @@ const Analysis = () => {
       .then((state) => {
         if (cancelled || !mountedRef.current) return;
         setScanState(state);
+        wasScanningRef.current = Boolean(state?.scanning);
         // A scan already running when the page opens still needs finalizing when it ends.
         if (state?.scanning) finalizingRef.current = false;
       })
@@ -772,19 +773,8 @@ const Analysis = () => {
     setEdits(new Map());
     refresh();
 
-    const lastScan = lastCompletedScanRef.current;
-    const analysed = lastScan?.analysed ?? 0;
-    if (lastScan?.cancelled) {
-      toast.warn(
-        `Scan cancelled — ${analysed} track${analysed === 1 ? '' : 's'} analysed`,
-      );
-    } else if (analysed > 0) {
-      toast.success(
-        `Scan complete — ${analysed} track${analysed === 1 ? '' : 's'} analysed`,
-      );
-    } else {
-      toast.info('Scan complete');
-    }
+    // The finish/cancel toast itself is AnalysisWatcher's job now (it fires app-wide,
+    // not only while this page happens to be open) — this just resets the page's state.
   }, [refresh]);
 
   // fire finalizeScan after React has rendered the completed state
@@ -795,35 +785,39 @@ const Analysis = () => {
       !scanState.scanning &&
       (scanState.completed || scanState.cancelled)
     ) {
-      lastCompletedScanRef.current = scanState;
       finalizingRef.current = true;
       finalizeScan();
     }
   }, [finalizeScan, scanState]);
 
-  // poll while scan is running — only updates scanState; completion detected above
+  // Poll continuously (not only once a scan is already under way) so a scan the
+  // automatic post-download check starts while this page is just sitting open still
+  // shows up — completion is detected separately, above.
   useEffect(() => {
-    if (scanState?.scanning) {
-      pollRef.current = setInterval(async () => {
-        try {
-          const state = await analysisApi.getScanState();
-          if (!mountedRef.current) {
-            clearInterval(pollRef.current);
-            return;
-          }
-
-          setScanState(state);
-          if (!state.scanning) clearInterval(pollRef.current);
-        } catch {
-          /* ignore */
+    pollRef.current = setInterval(async () => {
+      try {
+        const state = await analysisApi.getScanState();
+        if (!mountedRef.current) {
+          clearInterval(pollRef.current);
+          return;
         }
-      }, 1_500);
-    } else {
-      clearInterval(pollRef.current);
-    }
+
+        // A scan that started without this page's own startScan() (i.e. the automatic
+        // check) still needs finalizing when it ends.
+        if (state.scanning && !wasScanningRef.current) {
+          finalizingRef.current = false;
+        }
+
+        wasScanningRef.current = state.scanning;
+
+        setScanState(state);
+      } catch {
+        /* ignore */
+      }
+    }, 2_000);
 
     return () => clearInterval(pollRef.current);
-  }, [scanState?.scanning]);
+  }, []);
 
   // paths, not masked filenames: the backend resolves them against the share in one query
   // rather than the page doing a lookup per row before it can ask for anything.
@@ -836,6 +830,7 @@ const Analysis = () => {
       await analysisApi.startScan({ ...request, onlyPaths: paths ?? null });
       const state = await analysisApi.getScanState();
       if (!mountedRef.current) return;
+      wasScanningRef.current = Boolean(state?.scanning);
       setScanState(state);
       // completion effect fires finalizeScan after this state update renders
     } catch {
