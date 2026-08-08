@@ -269,6 +269,18 @@ namespace resonance.Analysis
                     {
                         key = k.GetString();
                     }
+
+                    // The Python side catches its own exceptions per-metric (bpmError/keyError)
+                    // rather than crashing the whole call, so a real detection failure otherwise
+                    // surfaces as nothing more than a silently-missing value on this side.
+                    var missingBpm = metrics.HasFlag(AnalysisMetrics.Bpm) && !bpm.HasValue;
+                    var missingKey = metrics.HasFlag(AnalysisMetrics.Key) && key == null;
+                    if (missingBpm || missingKey)
+                    {
+                        Log.Warning("Essentia produced no {Missing} for '{File}': {Raw}",
+                            missingBpm && missingKey ? "bpm/key" : missingBpm ? "bpm" : "key",
+                            filePath, essentia.Value.GetRawText());
+                    }
                 }
             }
 
