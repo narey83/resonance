@@ -468,22 +468,6 @@ export const clearAndroidAutoTree = async (): Promise<void> => {
   await push();
 };
 
-// A node that turned out to be empty, or that we could not load at all, is a dead end in the car:
-// tapping it opens a blank screen. Take it out of the lists it appears in so it stops being
-// offered — the car picks the change up next time it draws that list.
-const dropFromParents = (mediaId: string) => {
-  let removed = false;
-  for (const [parentId, children] of Object.entries(tree)) {
-    const kept = children.filter((c) => c.mediaId !== mediaId);
-    if (kept.length !== children.length) {
-      tree[parentId] = kept;
-      removed = true;
-    }
-  }
-  delete tree[mediaId];
-  if (removed) void push();
-};
-
 // Native emitted `remote-browse` for a node we haven't loaded.
 export const handleAndroidAutoBrowse = async (mediaId: string): Promise<void> => {
   if (!mediaId) return;
@@ -523,14 +507,12 @@ export const handleAndroidAutoBrowse = async (mediaId: string): Promise<void> =>
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       await loadNode(mediaId);
-      if (tree[mediaId]?.length === 0) dropFromParents(mediaId);
       return;
     } catch (e) {
       remoteLog(attempt === 0 ? 'warn' : 'error', `[aa] browse ${mediaId} failed (attempt ${attempt + 1}) — ${String(e)}`);
       await new Promise((r) => setTimeout(r, 700));
     }
   }
-  dropFromParents(mediaId);
 };
 
 // Native emitted `remote-play-id` — the user tapped a track in the car.
