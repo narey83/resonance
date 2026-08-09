@@ -62,7 +62,6 @@ import { emitTransferComplete } from '../lib/transferEvents';
 import * as transfersAPI from '../lib/transfers';
 import { parseUtcDate } from '../lib/util';
 import * as ytdlpAPI from '../lib/ytdlp';
-import AnalysisWatcher from './Analysis/AnalysisWatcher';
 import AppContext from './AppContext';
 import Browse from './Browse/Browse';
 import Chat from './Chat/Chat';
@@ -1496,7 +1495,6 @@ const App = () => {
           {connectionOverlay}
 
           <MetadataLookupWatcher />
-          <AnalysisWatcher />
 
           {notificationPanelOpen && (
             <NotificationCentre

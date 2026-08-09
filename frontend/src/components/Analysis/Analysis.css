@@ -474,6 +474,12 @@
   font-weight: 400;
 }
 
+.ka-badge--loading {
+  border-color: var(--border);
+  color: var(--text-muted);
+  background: transparent;
+}
+
 .ka-badge--minor { font-style: italic; }
 
 .ka-badge--dim {

@@ -84,7 +84,7 @@ namespace resonance.MusicLibrary
                      @genre, @bpm, @key, @comment, @art, @tagtypes, @bitrate, @samplerate, @bitdepth)
                 ON CONFLICT(path) DO UPDATE SET
                     filename=excluded.filename, directory=excluded.directory, extension=excluded.extension,
-                    file_size=excluded.file_size, file_modified=excluded.file_modified, indexed_at=excluded.indexed_at,
+                    file_size=excluded.file_size, file_modified=excluded.file_modified,
                     duration=excluded.duration, title=excluded.title, artist=excluded.artist,
                     album_artist=excluded.album_artist, album=excluded.album, year=excluded.year,
                     track_number=excluded.track_number, disc_number=excluded.disc_number,

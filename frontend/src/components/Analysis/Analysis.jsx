@@ -225,14 +225,27 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
 
 // ── Badges ────────────────────────────────────────────────────────────────────
 
-const BpmBadge = ({ bpm }) => {
+const LoadingBadge = () => (
+  <span
+    className="ka-badge ka-badge--loading"
+    title="Analysing…"
+  >
+    <Loader2
+      className="ka-spin-icon"
+      size={11}
+    />
+  </span>
+);
+
+const BpmBadge = ({ bpm, scanning }) => {
+  if (scanning) return <LoadingBadge />;
   if (!bpm) return <span className="ka-badge ka-badge--empty">—</span>;
   return <span className="ka-badge ka-badge--bpm">{bpm}</span>;
 };
 
 // Waveform and loudness are cached blobs rather than values worth showing inline,
 // so they read as presence dots instead of badges.
-const CacheDots = ({ track }) => (
+const CacheDots = ({ scanning, track }) => (
   <span className="ka-dots">
     <span
       className={`ka-dot${track.hasWaveform ? ' on' : ''}`}
@@ -241,19 +254,29 @@ const CacheDots = ({ track }) => (
       <AudioWaveform size={11} />
     </span>
     <span
-      className={`ka-dot${track.hasLoudness ? ' on' : ''}`}
+      className={`ka-dot${scanning || track.hasLoudness ? ' on' : ''}`}
       title={
-        track.hasLoudness
-          ? `${track.lufs.toFixed(1)} LUFS`
-          : 'No loudness measurement'
+        scanning
+          ? 'Analysing…'
+          : track.hasLoudness
+            ? `${track.lufs.toFixed(1)} LUFS`
+            : 'No loudness measurement'
       }
     >
-      <Gauge size={11} />
+      {scanning ? (
+        <Loader2
+          className="ka-spin-icon"
+          size={11}
+        />
+      ) : (
+        <Gauge size={11} />
+      )}
     </span>
   </span>
 );
 
-const KeyBadge = ({ compatible, fmtKey, keyValue }) => {
+const KeyBadge = ({ compatible, fmtKey, keyValue, scanning }) => {
+  if (scanning) return <LoadingBadge />;
   if (!keyValue) return <span className="ka-badge ka-badge--empty">—</span>;
   const code = toCamelot(keyValue);
   const colour = camelotColour(code);
@@ -397,6 +420,7 @@ const TrackRow = ({
                 compatible={compatible}
                 fmtKey={fmtKey}
                 keyValue={track.key}
+                scanning={scanning}
               />
             </button>
           )}
@@ -425,12 +449,18 @@ const TrackRow = ({
               title="Click to edit BPM"
               type="button"
             >
-              <BpmBadge bpm={track.bpm} />
+              <BpmBadge
+                bpm={track.bpm}
+                scanning={scanning}
+              />
             </button>
           )}
         </div>
         <div className="ka-track-cache">
-          <CacheDots track={track} />
+          <CacheDots
+            scanning={scanning}
+            track={track}
+          />
         </div>
         <div className="ka-track-info">
           <span
@@ -772,9 +802,6 @@ const Analysis = () => {
     // optimistic override still being held over a row.
     setEdits(new Map());
     refresh();
-
-    // The finish/cancel toast itself is AnalysisWatcher's job now (it fires app-wide,
-    // not only while this page happens to be open) — this just resets the page's state.
   }, [refresh]);
 
   // fire finalizeScan after React has rendered the completed state
