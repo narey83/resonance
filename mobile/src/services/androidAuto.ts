@@ -48,10 +48,18 @@ import { type PlayRecord } from '../api/libraryActivity';
 import * as mixtapes from '../api/mixtapes';
 import type { MixtapeTrack } from '../api/mixtapes';
 import {
+  getAllLocalTracks,
   getLocalAlbums,
   getLocalAlbumTracks,
+  getLocalArtists,
+  getLocalArtistAlbums,
+  getLocalArtistTracks,
   getLocalFolders,
   getLocalFolderTracks,
+  getLocalGenres,
+  getLocalGenreTracks,
+  getLocalYears,
+  getLocalYearTracks,
   isLocalPath,
 } from './localMusicLibrary';
 import { useAuthStore } from '../store/auth';
@@ -92,8 +100,14 @@ const TAB_MIXTAPES = 'aa:mixtapes';
 const TAB_LOVED = 'aa:loved';
 const TAB_FOLDERS = 'aa:folders';
 const TAB_LOCAL = 'aa:local';
+const TAB_LOCAL_ARTISTS = 'aa:local:artists';
 const TAB_LOCAL_ALBUMS = 'aa:local:albums';
+const TAB_LOCAL_TRACKS = 'aa:local:tracks';
 const TAB_LOCAL_FOLDERS = 'aa:local:folders';
+const TAB_LOCAL_GENRES = 'aa:local:genres';
+const TAB_LOCAL_YEARS = 'aa:local:years';
+const TAB_LOCAL_LOVED = 'aa:local:loved';
+const TAB_LOCAL_HISTORY = 'aa:local:history';
 const PREFIX_FOLDER = 'aa:folder:';
 const PREFIX_ARTIST = 'aa:artist:';
 const PREFIX_ALBUM = 'aa:album:';   // aa:album:<artist>|<album>, both URI-encoded
@@ -102,6 +116,9 @@ const PREFIX_YEAR = 'aa:year:';
 const PREFIX_MIXTAPE = 'aa:mixtape:';
 const PREFIX_LOCAL_ALBUM = 'aa:local:album:';
 const PREFIX_LOCAL_FOLDER = 'aa:local:folder:';
+const PREFIX_LOCAL_ARTIST = 'aa:local:artist:';
+const PREFIX_LOCAL_GENRE = 'aa:local:genre:';
+const PREFIX_LOCAL_YEAR = 'aa:local:year:';
 
 // Accumulating tree — every change re-pushes the full dict to native.
 const tree: BrowseTree = {};
@@ -225,6 +242,15 @@ const mixtapeTrackToTrack = (t: MixtapeTrack): MusicTrack => ({
 
 const albumNodeId = (a: MusicAlbum) =>
   `${PREFIX_ALBUM}${encodeURIComponent(a.albumArtist ?? a.artist)}|${encodeURIComponent(a.album)}`;
+const localAlbumNodeId = (a: MusicAlbum) => `${PREFIX_LOCAL_ALBUM}${encodeURIComponent(a.album)}`;
+
+// A local PlayRecord carries no coverPath, and local artwork is rendered straight from
+// track.coverPath (no server URL to resolve it from) — so unlike playRecordToTrack, hasArtwork
+// must stay false rather than best-effort true.
+const localPlayRecordToTrack = (r: PlayRecord): MusicTrack => ({
+  ...playRecordToTrack(r),
+  hasArtwork: false,
+});
 
 const recordTracks = (nodeId: string, tracks: MusicTrack[]) => {
   tracksByNode.set(nodeId, tracks);
@@ -406,20 +432,73 @@ const loadNode = async (mediaId: string): Promise<void> => {
     tree[mediaId] = chunked(mediaId, res.tracks.map(playableItem));
     recordTracks(mediaId, res.tracks);
   } else if (mediaId === TAB_LOCAL) {
-    tree[mediaId] = chunked(mediaId, [
+    // Same views as the phone's local Library tabs, minus Mixtapes (server-only).
+    tree[mediaId] = [
+      browsable(TAB_LOCAL_ARTISTS, 'Artists'),
       browsable(TAB_LOCAL_ALBUMS, 'Albums'),
+      browsable(TAB_LOCAL_TRACKS, 'Tracks'),
       browsable(TAB_LOCAL_FOLDERS, 'Folders'),
-    ]);
+      browsable(TAB_LOCAL_GENRES, 'Genres'),
+      browsable(TAB_LOCAL_YEARS, 'Years'),
+      browsable(TAB_LOCAL_LOVED, 'Loved'),
+      browsable(TAB_LOCAL_HISTORY, 'History'),
+    ];
+  } else if (mediaId === TAB_LOCAL_ARTISTS) {
+    const artists = await getLocalArtists();
+    tree[mediaId] = chunked(mediaId, artists.map((a) =>
+      browsable(PREFIX_LOCAL_ARTIST + encodeURIComponent(a.artist), a.artist, plural(a.trackCount, 'track'), a.coverPath ?? undefined),
+    ));
   } else if (mediaId === TAB_LOCAL_ALBUMS) {
     const albums = await getLocalAlbums();
     tree[mediaId] = chunked(mediaId, albums.map((a) =>
-      browsable(PREFIX_LOCAL_ALBUM + encodeURIComponent(a.album), a.album, a.artist || undefined),
+      browsable(localAlbumNodeId(a), a.album, a.artist || undefined, a.coverPath ?? undefined),
     ));
+  } else if (mediaId === TAB_LOCAL_TRACKS) {
+    const tracks = await getAllLocalTracks();
+    tree[mediaId] = chunked(mediaId, tracks.map(localPlayableItem));
+    recordTracks(mediaId, tracks);
   } else if (mediaId === TAB_LOCAL_FOLDERS) {
     const folders = await getLocalFolders();
     tree[mediaId] = chunked(mediaId, folders.map((f) =>
       browsable(PREFIX_LOCAL_FOLDER + encodeURIComponent(f.path), f.name, undefined, f.coverPath ?? undefined),
     ));
+  } else if (mediaId === TAB_LOCAL_GENRES) {
+    const genres = await getLocalGenres();
+    tree[mediaId] = chunked(mediaId, genres.map((g) =>
+      browsable(PREFIX_LOCAL_GENRE + encodeURIComponent(g.genre), g.genre, plural(g.trackCount, 'track')),
+    ));
+  } else if (mediaId === TAB_LOCAL_YEARS) {
+    const years = await getLocalYears();
+    tree[mediaId] = chunked(mediaId, years.map((y) =>
+      browsable(PREFIX_LOCAL_YEAR + y.year, String(y.year), plural(y.trackCount, 'track')),
+    ));
+  } else if (mediaId === TAB_LOCAL_LOVED) {
+    await useLocalLibraryActivityStore.getState().load();
+    const { lovedPaths } = useLocalLibraryActivityStore.getState();
+    const byPath = new Map((await getAllLocalTracks()).map((t) => [t.path, t]));
+    const loved = [...lovedPaths].map((p) => byPath.get(p)).filter((t): t is MusicTrack => !!t);
+    tree[mediaId] = chunked(mediaId, loved.map(localPlayableItem));
+    recordTracks(mediaId, loved);
+  } else if (mediaId === TAB_LOCAL_HISTORY) {
+    await useLocalLibraryActivityStore.getState().load();
+    const { recentPlays } = useLocalLibraryActivityStore.getState();
+    const byPath = new Map((await getAllLocalTracks()).map((t) => [t.path, t]));
+    const history = recentPlays.map((r) => byPath.get(r.path) ?? localPlayRecordToTrack(r));
+    tree[mediaId] = chunked(mediaId, history.map(localPlayableItem));
+    recordTracks(mediaId, history);
+  } else if (mediaId.startsWith(PREFIX_LOCAL_ARTIST)) {
+    const artist = decodeURIComponent(mediaId.slice(PREFIX_LOCAL_ARTIST.length));
+    const albums = await getLocalArtistAlbums(artist);
+    if (albums.length === 0) {
+      // Same untagged-artist fallback as the server tree: no album tag means no album nodes.
+      const tracks = await getLocalArtistTracks(artist);
+      tree[mediaId] = chunked(mediaId, tracks.map(localPlayableItem));
+      recordTracks(mediaId, tracks);
+    } else {
+      tree[mediaId] = chunked(mediaId, albums.map((a) =>
+        browsable(localAlbumNodeId(a), a.album, a.artist, a.coverPath ?? undefined),
+      ));
+    }
   } else if (mediaId.startsWith(PREFIX_LOCAL_ALBUM)) {
     const album = decodeURIComponent(mediaId.slice(PREFIX_LOCAL_ALBUM.length));
     const tracks = await getLocalAlbumTracks(album);
@@ -428,6 +507,15 @@ const loadNode = async (mediaId: string): Promise<void> => {
   } else if (mediaId.startsWith(PREFIX_LOCAL_FOLDER)) {
     const folder = decodeURIComponent(mediaId.slice(PREFIX_LOCAL_FOLDER.length));
     const tracks = await getLocalFolderTracks(folder);
+    tree[mediaId] = chunked(mediaId, tracks.map(localPlayableItem));
+    recordTracks(mediaId, tracks);
+  } else if (mediaId.startsWith(PREFIX_LOCAL_GENRE)) {
+    const genre = decodeURIComponent(mediaId.slice(PREFIX_LOCAL_GENRE.length));
+    const tracks = await getLocalGenreTracks(genre);
+    tree[mediaId] = chunked(mediaId, tracks.map(localPlayableItem));
+    recordTracks(mediaId, tracks);
+  } else if (mediaId.startsWith(PREFIX_LOCAL_YEAR)) {
+    const tracks = await getLocalYearTracks(Number(mediaId.slice(PREFIX_LOCAL_YEAR.length)));
     tree[mediaId] = chunked(mediaId, tracks.map(localPlayableItem));
     recordTracks(mediaId, tracks);
   } else {
