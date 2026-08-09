@@ -35,14 +35,19 @@
 
 import './Rooms.css';
 import UsernameLink from '../Shared/UsernameLink';
-import React, { useMemo } from 'react';
-import { Flag, Icon, List, Popup } from 'semantic-ui-react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import React, { useMemo, useRef } from 'react';
+import { Flag, Icon, Popup } from 'semantic-ui-react';
 
 const getDetails = (user) => {
   return user.countryCode ?? '?';
 };
 
+const ROW_HEIGHT = 30;
+
 const RoomUserList = ({ users }) => {
+  const scrollRef = useRef(null);
+
   const getFlag = (user) => {
     if (!(user || {}).countryCode)
       return (
@@ -72,23 +77,48 @@ const RoomUserList = ({ users }) => {
     return [...filtered.online, ...filtered.offline];
   }, [users]);
 
+  const virtualizer = useVirtualizer({
+    count: sortedUsers.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 15,
+  });
+
   return (
-    <List>
-      {sortedUsers.map((user) => (
-        <List.Item
-          className={user.self ? 'room-user-self' : ''}
-          key={user.username}
-        >
-          <List.Content style={{ opacity: user.status === 'Online' ? 1 : 0.5 }}>
-            <Popup
-              content={getDetails(user)}
-              trigger={getFlag(user)}
-            />
-            <UsernameLink username={user.username} />
-          </List.Content>
-        </List.Item>
-      ))}
-    </List>
+    <div
+      className="list"
+      ref={scrollRef}
+    >
+      <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+        {virtualizer.getVirtualItems().map((vRow) => {
+          const user = sortedUsers[vRow.index];
+          return (
+            <div
+              className={`item${user.self ? ' room-user-self' : ''}`}
+              key={user.username}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                transform: `translateY(${vRow.start}px)`,
+              }}
+            >
+              <div
+                className="content"
+                style={{ opacity: user.status === 'Online' ? 1 : 0.5 }}
+              >
+                <Popup
+                  content={getDetails(user)}
+                  trigger={getFlag(user)}
+                />
+                <UsernameLink username={user.username} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 };
 
