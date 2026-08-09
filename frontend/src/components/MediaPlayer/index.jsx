@@ -1078,46 +1078,6 @@ const MediaPlayer = () => {
                 )}
               </div>
 
-              <div className="mp-seeker-menu">
-                <button
-                  className={
-                    seekerEnabled
-                      ? 'mp-seeker-menu-btn mp-seeker-menu-btn--active hover-fx'
-                      : 'mp-seeker-menu-btn hover-fx'
-                  }
-                  onClick={toggleSeekerEnabled}
-                  title={
-                    seekerEnabled ? 'Turn off waveform' : 'Turn on waveform'
-                  }
-                  type="button"
-                >
-                  <AudioWaveform size={12} />
-                  Waveform
-                </button>
-                {seekerEnabled && (
-                  <>
-                    <button
-                      className="mp-seeker-menu-btn hover-fx"
-                      onClick={cycleSeekerHeight}
-                      title="Make taller"
-                      type="button"
-                    >
-                      <MoveVertical size={12} />
-                      Taller
-                    </button>
-                    <button
-                      className="mp-seeker-menu-btn hover-fx"
-                      onClick={cycleSeekerZoom}
-                      title="Zoom in, following the playhead"
-                      type="button"
-                    >
-                      <ZoomIn size={12} />
-                      {seekerZoom}×
-                    </button>
-                  </>
-                )}
-              </div>
-
               <div className="mp-expanded-scrub-row">
                 <span className="mp-expanded-time">
                   {formatSeconds(effectiveTime)}
@@ -1170,6 +1130,46 @@ const MediaPlayer = () => {
                 <span className="mp-expanded-time">
                   {formatSeconds(displayDuration)}
                 </span>
+              </div>
+
+              <div className="mp-seeker-menu">
+                <button
+                  className={
+                    seekerEnabled
+                      ? 'mp-seeker-menu-btn mp-seeker-menu-btn--active hover-fx'
+                      : 'mp-seeker-menu-btn hover-fx'
+                  }
+                  onClick={toggleSeekerEnabled}
+                  title={
+                    seekerEnabled ? 'Turn off waveform' : 'Turn on waveform'
+                  }
+                  type="button"
+                >
+                  <AudioWaveform size={12} />
+                  Waveform
+                </button>
+                {seekerEnabled && (
+                  <>
+                    <button
+                      className="mp-seeker-menu-btn hover-fx"
+                      onClick={cycleSeekerHeight}
+                      title="Make taller"
+                      type="button"
+                    >
+                      <MoveVertical size={12} />
+                      Taller
+                    </button>
+                    <button
+                      className="mp-seeker-menu-btn hover-fx"
+                      onClick={cycleSeekerZoom}
+                      title="Zoom in, following the playhead"
+                      type="button"
+                    >
+                      <ZoomIn size={12} />
+                      {seekerZoom}×
+                    </button>
+                  </>
+                )}
               </div>
 
               <div className="mp-expanded-controls">
@@ -1343,43 +1343,6 @@ const MediaPlayer = () => {
       )}
 
       {/* ── Seekable scrubber ───────────────────────────────── */}
-      <div className="mp-seeker-menu mp-seeker-menu--mini">
-        <button
-          className={
-            seekerEnabled
-              ? 'mp-seeker-menu-btn mp-seeker-menu-btn--active hover-fx'
-              : 'mp-seeker-menu-btn hover-fx'
-          }
-          onClick={toggleSeekerEnabled}
-          title={seekerEnabled ? 'Turn off waveform' : 'Turn on waveform'}
-          type="button"
-        >
-          <AudioWaveform size={12} />
-          Waveform
-        </button>
-        {seekerEnabled && (
-          <>
-            <button
-              className="mp-seeker-menu-btn hover-fx"
-              onClick={cycleSeekerHeight}
-              title="Make taller"
-              type="button"
-            >
-              <MoveVertical size={12} />
-              Taller
-            </button>
-            <button
-              className="mp-seeker-menu-btn hover-fx"
-              onClick={cycleSeekerZoom}
-              title="Zoom in, following the playhead"
-              type="button"
-            >
-              <ZoomIn size={12} />
-              {seekerZoom}×
-            </button>
-          </>
-        )}
-      </div>
       <div className="media-player-scrub-wrap">
         {seekerEnabled && (
           <WaveformSeekBar
@@ -1436,6 +1399,43 @@ const MediaPlayer = () => {
             </div>
           )}
         </div>
+      </div>
+      <div className="mp-seeker-menu mp-seeker-menu--mini">
+        <button
+          className={
+            seekerEnabled
+              ? 'mp-seeker-menu-btn mp-seeker-menu-btn--active hover-fx'
+              : 'mp-seeker-menu-btn hover-fx'
+          }
+          onClick={toggleSeekerEnabled}
+          title={seekerEnabled ? 'Turn off waveform' : 'Turn on waveform'}
+          type="button"
+        >
+          <AudioWaveform size={12} />
+          Waveform
+        </button>
+        {seekerEnabled && (
+          <>
+            <button
+              className="mp-seeker-menu-btn hover-fx"
+              onClick={cycleSeekerHeight}
+              title="Make taller"
+              type="button"
+            >
+              <MoveVertical size={12} />
+              Taller
+            </button>
+            <button
+              className="mp-seeker-menu-btn hover-fx"
+              onClick={cycleSeekerZoom}
+              title="Zoom in, following the playhead"
+              type="button"
+            >
+              <ZoomIn size={12} />
+              {seekerZoom}×
+            </button>
+          </>
+        )}
       </div>
 
       {/* ── Main bar ─────────────────────────────────────────── */}

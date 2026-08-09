@@ -57,7 +57,7 @@
   flex-shrink: 0;
 }
 
-/* Small menu row of seeker controls (style cycle, resize) sitting above the
+/* Small menu row of seeker controls (style cycle, resize) sitting below the
    waveform/scrubber, rather than floating on top of it. */
 .mp-seeker-menu {
   display: flex;
