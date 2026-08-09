@@ -79,7 +79,7 @@ import { toast } from 'react-toastify';
 
 const RESUME_POSITION_KEY = 'resonance-player-position';
 const SEEKER_HEIGHTS = [40, 70, 110, 150];
-const SEEKER_ZOOMS = [1, 16, 32, 64, 128];
+const SEEKER_ZOOMS = [1, 16, 32, 64, 128, 192];
 
 const CAST_CONTENT_TYPES = {
   mp3: 'audio/mpeg',
