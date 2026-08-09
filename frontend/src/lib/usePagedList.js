@@ -108,11 +108,23 @@ export const usePagedList = (
     busyRef.current = true;
     setLoading(true);
 
+    // Reopening the same view/query (e.g. navigating away and back) should land where the user
+    // left off, not back at row 200 — request as many rows as were loaded last time instead of
+    // just one page, so the scroll-restore code in Library.jsx has something to land on.
+    let initialLimit = pageSize;
+    try {
+      const savedCount = sessionStorage.getItem(`resonance-paged-count:${key}`);
+      if (savedCount)
+        initialLimit = Math.max(pageSize, Number(savedCount) || 0);
+    } catch {
+      /* ignore */
+    }
+
     (async () => {
       try {
         const page = await fetchRef.current({
           ...JSON.parse(key),
-          limit: pageSize,
+          limit: initialLimit,
           offset: 0,
         });
         apply(generation, page, false);
@@ -160,6 +172,21 @@ export const usePagedList = (
     // listing it here would fire this one redundantly alongside it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshToken]);
+
+  // ponytail: unbounded — a query scrolled 40k rows deep re-requests 40k rows on return instead
+  // of resuming incrementally. Cap it if that shows up as a real complaint; today it's symmetric
+  // with what the user already tolerated once.
+  useEffect(() => {
+    if (items.length === 0) return;
+    try {
+      sessionStorage.setItem(
+        `resonance-paged-count:${key}`,
+        String(items.length),
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [items, key]);
 
   const loadMore = useCallback(() => {
     if (

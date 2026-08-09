@@ -64,6 +64,7 @@ describe('usePagedList', () => {
       ReactDOM.unmountComponentAtNode(container);
     });
     container.remove();
+    sessionStorage.clear();
   });
 
   // The analysis writes BPM and key into a track's tags, so rows already on screen are stale the
@@ -141,5 +142,41 @@ describe('usePagedList', () => {
     });
 
     expect(calls).toHaveLength(before);
+  });
+
+  // Leaving a view and coming back (the library tab switch) remounts the hook with the same
+  // query. Without this, it always asks for one page, the list is too short to hold the
+  // scroll offset the user left at, and Library.jsx's restore code clamps to the top.
+  it('requests as many rows as were loaded last time for the same query', async () => {
+    expect.assertions(1);
+    sessionStorage.setItem(
+      'resonance-paged-count:{"folder":"/TECHNO ZONE"}',
+      '6',
+    );
+    const seen = [];
+    const Probe = makeProbe(seen);
+    const calls = [];
+    const fetchPage = (query) => {
+      calls.push(query);
+      return Promise.resolve({
+        items: Array.from({ length: query.limit }, (_, index) => ({
+          label: `row${query.offset + index}`,
+        })),
+        total: TOTAL,
+      });
+    };
+
+    await act(async () => {
+      ReactDOM.render(
+        React.createElement(Probe, { fetchPage, refreshToken: 0 }),
+        container,
+      );
+    });
+
+    expect(calls[0]).toEqual({
+      folder: '/TECHNO ZONE',
+      limit: 6,
+      offset: 0,
+    });
   });
 });
