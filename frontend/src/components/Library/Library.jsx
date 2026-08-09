@@ -2140,7 +2140,7 @@ const SearchView = ({
   } = usePagedList(
     getTrackPage,
     { search: debouncedQuery || undefined, sort: 'title' },
-    { enabled: searchEnabled },
+    { enabled: searchEnabled, pageSize: 20 },
   );
 
   const { items: matchedArtists } = usePagedList(
