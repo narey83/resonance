@@ -42,6 +42,7 @@ import {
   ChevronUp,
   Heart,
   ListFilter,
+  Loader2,
   Play,
   Save,
   Trash2,
@@ -203,6 +204,20 @@ const TrackTable = ({
   const [isEditMode, setIsEditMode] = useState(false);
   const containerRef = useRef(null);
   const lastClickIndex = useRef(null);
+
+  // Which rows' WaveformPreview is currently running an analysis — surfaced here so the
+  // key/BPM/LUFS cells can show the same spinner the waveform cell already does, instead of
+  // looking done while the row's own metrics are still mid-decode.
+  const [analysingPaths, setAnalysingPaths] = useState(() => new Set());
+  const handleAnalysingChange = useCallback((path, isAnalysing) => {
+    setAnalysingPaths((previous) => {
+      if (previous.has(path) === isAnalysing) return previous;
+      const next = new Set(previous);
+      if (isAnalysing) next.add(path);
+      else next.delete(path);
+      return next;
+    });
+  }, []);
 
   // Server mode: the rows arrived already filtered and ordered by the query, so re-doing either
   // here would only re-apply it to the window we happen to hold — and get it wrong.
@@ -854,6 +869,9 @@ const TrackTable = ({
                       <WaveformPreview
                         hasWaveform={track.hasWaveform}
                         height={24}
+                        onAnalysingChange={(isAnalysing) =>
+                          handleAnalysingChange(track.path, isAnalysing)
+                        }
                         onSeek={
                           track.duration
                             ? (fraction) =>
@@ -875,17 +893,41 @@ const TrackTable = ({
                     {shows.has('album') && (
                       <div className="jb-tt-album">{track.album || '–'}</div>
                     )}
-                    {shows.has('key') && (
-                      <div className="jb-tt-key">{track.key || '–'}</div>
-                    )}
-                    {shows.has('bpm') && (
-                      <div className="jb-tt-bpm">{track.bpm || '–'}</div>
-                    )}
-                    {shows.has('lufs') && (
-                      <div className="jb-tt-lufs">
-                        {track.lufs != null ? track.lufs.toFixed(1) : '–'}
-                      </div>
-                    )}
+                    {shows.has('key') &&
+                      (analysingPaths.has(track.path) ? (
+                        <div className="jb-tt-key">
+                          <Loader2
+                            className="jb-spin"
+                            size={12}
+                          />
+                        </div>
+                      ) : (
+                        <div className="jb-tt-key">{track.key || '–'}</div>
+                      ))}
+                    {shows.has('bpm') &&
+                      (analysingPaths.has(track.path) ? (
+                        <div className="jb-tt-bpm">
+                          <Loader2
+                            className="jb-spin"
+                            size={12}
+                          />
+                        </div>
+                      ) : (
+                        <div className="jb-tt-bpm">{track.bpm || '–'}</div>
+                      ))}
+                    {shows.has('lufs') &&
+                      (analysingPaths.has(track.path) ? (
+                        <div className="jb-tt-lufs">
+                          <Loader2
+                            className="jb-spin"
+                            size={12}
+                          />
+                        </div>
+                      ) : (
+                        <div className="jb-tt-lufs">
+                          {track.lufs != null ? track.lufs.toFixed(1) : '–'}
+                        </div>
+                      ))}
                     {shows.has('ext') && (
                       <div className="jb-tt-ext">
                         {track.extension?.toUpperCase() || '–'}

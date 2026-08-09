@@ -176,6 +176,7 @@ const WaveformPreview = ({
   hasWaveform,
   height = 22,
   mono = false,
+  onAnalysingChange,
   onSeek,
   path,
   width = 132,
@@ -185,6 +186,18 @@ const WaveformPreview = ({
   const [peaks, setPeaks] = useState(() => cache.get(path) ?? null);
   const [analysing, setAnalysing] = useState(false);
   const [error, setError] = useState(null);
+
+  // Lets a row's other cells (key/BPM/LUFS) show the same spinner this one does, instead of
+  // looking finished while the analysis this button started is still running. `onAnalysingChange`
+  // is deliberately not a dependency: the caller passes a fresh inline closure every render, and
+  // re-running this on every one of those would toggle it off and back on for no reason.
+  useEffect(() => {
+    onAnalysingChange?.(analysing);
+    return () => {
+      if (analysing) onAnalysingChange?.(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysing]);
 
   // Only fetch once the row is actually on screen; the virtualiser mounts a
   // little beyond the viewport, and offscreen rows need not cost a request.
