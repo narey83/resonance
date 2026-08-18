@@ -108,7 +108,7 @@
   --log-warning: var(--warning);
   --log-error: var(--danger);
 
-  --log-ts-width: 74px;
+  --log-ts-width: 158px;
   --log-lvl-width: 34px;
   --log-ctx-width: 178px;
 }
@@ -291,7 +291,8 @@
   flex-direction: column;
   left: 0;
   max-height: 380px;
-  min-width: 262px;
+  max-width: 420px;
+  min-width: 340px;
   position: absolute;
   top: calc(100% + 5px);
   z-index: 30;

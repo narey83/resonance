@@ -110,10 +110,6 @@ const formatTimestamp = (ts) =>
     .replace('T', ' ')
     .replace(/\.\d{3}Z$/, 'Z');
 
-// Rows carry the time only; the date lives on a separator row, which buys back the ~90px the
-// repeated date used to eat on every single line.
-const formatTime = (ts) => parseUtcDate(ts).toISOString().slice(11, 19);
-
 const dayOf = (ts) => parseUtcDate(ts).toISOString().slice(0, 10);
 
 // The backend has no unique/monotonic id on a log record, so this composite stands in for one —
@@ -229,7 +225,7 @@ const LogRow = ({ expanded, log, messageFilter, onToggle, regexMode }) => {
         className="logs-row-ts"
         title={formatTimestamp(log.timestamp)}
       >
-        {formatTime(log.timestamp)}
+        {formatTimestamp(log.timestamp)}
       </div>
       <div className="logs-row-lvl">
         <span className={`logs-level-tag logs-level-tag--${level}`}>
@@ -568,7 +564,7 @@ const ServerLevelMenu = ({ framework, level, onChange }) => {
 
 const ColumnHead = () => (
   <div className="logs-col-head logs-col-head--desktop">
-    <div className="logs-row-ts">Time</div>
+    <div className="logs-row-ts">Timestamp</div>
     <div className="logs-row-lvl">Lvl</div>
     <div className="logs-row-ctx">Context</div>
     <div className="logs-row-msg">Message</div>
