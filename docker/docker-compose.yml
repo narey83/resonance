@@ -49,7 +49,16 @@ services:
     working_dir: /src
     # --no-launch-profile: launchSettings.json hardcodes a host-only RESONANCE_APP_DIR
     # and would override the container env below. We supply the container values here.
-    command: dotnet watch --project backend/resonance.csproj run --no-launch-profile
+    #
+    # --no-hot-reload: hot reload patches IL in the already-running process without
+    # re-running Program.Main, so it never re-executes startup-only code -- DI
+    # registration, EF OnModelCreating, the schema-init script that runs CREATE INDEX.
+    # dotnet watch still reports "changes applied" for these, but nothing actually
+    # changes until the process restarts, which is what made watch look broken (e.g.
+    # the LogEntries trigram index: watch said applied, index never existed in
+    # Postgres). Forcing a full restart on every change is slower per-iteration but
+    # is the only way changes to that kind of code reliably take effect.
+    command: dotnet watch --project backend/resonance.csproj run --no-launch-profile --no-hot-reload
     environment:
       DOTNET_USE_POLLING_FILE_WATCHER: "1"
       ASPNETCORE_ENVIRONMENT: Development
