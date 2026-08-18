@@ -48,10 +48,6 @@ const VERSION_KEY = '__sync_version__';
 const MIN_AUTO_SYNC_INTERVAL_MS = 3 * 60_000;
 let lastAutoSyncAt = 0;
 
-// Which lists we've actually pulled this session. A tab the user just un-hid has no cached data, so
-// it must fetch immediately rather than wait out the rate limit or be skipped by the version gate.
-const fetchedKeys = new Set<string>();
-
 const withCap = <T>(p: Promise<T>, label: string): Promise<T> =>
   Promise.race([
     p,
@@ -137,8 +133,11 @@ export const useLibrarySync = create<LibrarySyncState>((set, get) => ({
     const endpoints = tabs?.length ? ENDPOINTS.filter((e) => tabs.includes(e.tab)) : ENDPOINTS;
     if (endpoints.length === 0) { dbg('skip — no visible tabs need a server list'); return; }
 
-    // A list we've never fetched can't be served from cache, so it overrides both gates below.
-    const needsFirstFetch = endpoints.some((e) => !fetchedKeys.has(e.key));
+    // A list with no on-device cache can't be served offline, so it overrides both gates below.
+    // Checked against the persisted cache (not session state) so a cold start with a populated
+    // cache can still reach the version gate instead of unconditionally forcing a full sync.
+    const cacheChecks = await Promise.all(endpoints.map((e) => hasListCache(e.key)));
+    const needsFirstFetch = cacheChecks.some((has) => !has);
 
     if (!force && !needsFirstFetch && st.hasSyncedOnce && st.syncedRevision === revision) {
       dbg(`skip — already fresh in-session for rev=${revision}`);
@@ -250,7 +249,6 @@ export const useLibrarySync = create<LibrarySyncState>((set, get) => ({
       }
       dbg(`${ep.label} status=${status} net=${netMs}ms proc=${procMs}ms total=${Date.now() - te}ms${note}`);
 
-      if (status === 200 || status === 304) fetchedKeys.add(ep.key);
       completed += 1;
       // Only bump cacheVersion when the list actually changed (200) — a 304 leaves the cache
       // untouched, so re-reading/re-rendering the visible tab for it is pure waste.

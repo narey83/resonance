@@ -38,7 +38,7 @@ import { useMixtapesHub } from '../store/mixtapeStore';
 import { useLibraryActivityHub } from '../store/libraryActivityStore';
 import { enableRemoteLogging, disableRemoteLogging } from '../api/remoteLogger';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
-import { initNotifications, useNotificationHub } from '../services/notificationService';
+import { initNotifications, useNotificationHub, usePushNotifications } from '../services/notificationService';
 import { useConnectionMonitor } from '../services/connectionMonitor';
 import { OverlayProgressRing, useFloatingOverlay } from '../hooks/useFloatingOverlay';
 import { PerfProfiler, usePerfProbe } from '../lib/perfProbe';
@@ -52,6 +52,7 @@ function AuthenticatedApp() {
   useMixtapesHub();
   useLibraryActivityHub();
   useNotificationHub();
+  usePushNotifications();
   useConnectionMonitor();
   usePerfProbe();
   const playerMode = useAppSettings((s) => s.playerMode);

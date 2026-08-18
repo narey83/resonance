@@ -36,13 +36,14 @@
  */
 
 import { useEffect } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { requireOptionalNativeModule } from 'expo';
 import { HubConnectionState } from '@microsoft/signalr';
 import { useAppSettings } from '../store/appSettingsStore';
-import { useAuthStore } from '../store/auth';
+import { useAuthStore, getDeviceId } from '../store/auth';
 import { createApplicationHubConnection } from '../api/applicationHub';
 import { attachHubLogging, remoteLog } from '../api/remoteLogger';
+import { registerPushToken } from '../api/pushTokens';
 import { useConversationStore } from '../store/conversationStore';
 import { useRoomStore } from '../store/roomStore';
 import { useBlockedUsersStore } from '../store/blockedUsersStore';
@@ -138,6 +139,42 @@ export async function notifyUserBlocked(username: string, ip: string) {
   if (!notifications.userBlocked) return;
   await send('Ban evasion blocked', `"${username}" was auto-blocked — same IP (${ip}) as a blocked user.`);
 }
+
+// Hook — mount once at the top of the authenticated app to register this device's FCM push
+// token with the backend, so a library change can reach it via a background push even while
+// the app is backgrounded or killed (the SignalR hub in libraryActivityStore only reaches a
+// live, connected app). Re-registers on token rotation (device re-registration, app reinstall).
+export const usePushNotifications = () => {
+  useEffect(() => {
+    let subscription: { remove: () => void } | null = null;
+    let cancelled = false;
+
+    const register = async (token: string) => {
+      try {
+        const deviceId = await getDeviceId();
+        await registerPushToken(token, deviceId, Platform.OS);
+      } catch {}
+    };
+
+    (async () => {
+      const N = await getModule();
+      if (!N || cancelled) return;
+
+      try {
+        const { data } = await N.getDevicePushTokenAsync();
+        if (!cancelled) await register(data);
+      } catch {}
+
+      if (cancelled) return;
+      subscription = N.addPushTokenListener((newToken) => { register(newToken.data); });
+    })();
+
+    return () => {
+      cancelled = true;
+      subscription?.remove();
+    };
+  }, []);
+};
 
 // Hook — mount once at the top of the authenticated app to trigger native notifications
 export const useNotificationHub = () => {

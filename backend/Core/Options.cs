@@ -2926,6 +2926,12 @@ namespace resonance
             public PushbulletOptions Pushbullet { get; init; } = new PushbulletOptions();
 
             /// <summary>
+            ///     Gets Firebase Cloud Messaging options.
+            /// </summary>
+            [Validate]
+            public FcmOptions Fcm { get; init; } = new FcmOptions();
+
+            /// <summary>
             ///     Gets yt-dlp options.
             /// </summary>
             [Validate]
@@ -3487,6 +3493,70 @@ namespace resonance
                     if (Enabled && string.IsNullOrWhiteSpace(AccessToken))
                     {
                         results.Add(new ValidationResult($"The Enabled field is true, but no AccessToken has been specified."));
+                    }
+
+                    return results;
+                }
+            }
+
+            /// <summary>
+            ///     Firebase Cloud Messaging integration options. Used to push a wake-and-sync message to
+            ///     the mobile app when the music library changes, even while it's backgrounded or killed.
+            /// </summary>
+            public class FcmOptions : IValidatableObject
+            {
+                /// <summary>
+                ///     Gets a value indicating whether the FCM integration is enabled.
+                /// </summary>
+                [Argument(default, "fcm")]
+                [EnvironmentVariable("FCM")]
+                [Description("enable Firebase Cloud Messaging push notifications")]
+                public bool Enabled { get; init; } = false;
+
+                /// <summary>
+                ///     Gets the Firebase project id.
+                /// </summary>
+                [Argument(default, "fcm-project-id")]
+                [EnvironmentVariable("FCM_PROJECT_ID")]
+                [Description("Firebase project id")]
+                public string ProjectId { get; init; }
+
+                /// <summary>
+                ///     Gets the path to a service account credentials JSON file. Takes precedence over
+                ///     <see cref="CredentialsJson"/> when both are set.
+                /// </summary>
+                [Argument(default, "fcm-credentials-file")]
+                [EnvironmentVariable("FCM_CREDENTIALS_FILE")]
+                [Description("path to a Firebase service account credentials JSON file")]
+                public string CredentialsFile { get; init; }
+
+                /// <summary>
+                ///     Gets the service account credentials as a raw JSON blob, for deployments where
+                ///     mounting a credentials file isn't convenient.
+                /// </summary>
+                [Argument(default, "fcm-credentials-json")]
+                [EnvironmentVariable("FCM_CREDENTIALS_JSON")]
+                [Description("Firebase service account credentials, as a raw JSON blob")]
+                [Secret]
+                public string CredentialsJson { get; init; }
+
+                /// <summary>
+                ///     Extended validation.
+                /// </summary>
+                /// <param name="validationContext"></param>
+                /// <returns></returns>
+                public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+                {
+                    var results = new List<ValidationResult>();
+
+                    if (Enabled && string.IsNullOrWhiteSpace(ProjectId))
+                    {
+                        results.Add(new ValidationResult("The Enabled field is true, but no ProjectId has been specified."));
+                    }
+
+                    if (Enabled && string.IsNullOrWhiteSpace(CredentialsFile) && string.IsNullOrWhiteSpace(CredentialsJson))
+                    {
+                        results.Add(new ValidationResult("The Enabled field is true, but neither CredentialsFile nor CredentialsJson has been specified."));
                     }
 
                     return results;

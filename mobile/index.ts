@@ -32,8 +32,12 @@ import TrackPlayer from 'react-native-track-player';
 
 import App from './App';
 import PlaybackService from './src/services/playback-service';
+import { registerBackgroundPushTask } from './src/services/backgroundPushTask';
 
 // Must be registered before registerRootComponent
 TrackPlayer.registerPlaybackService(() => PlaybackService);
+
+// Must be defined at module scope, before the app finishes loading — see backgroundPushTask.ts.
+registerBackgroundPushTask();
 
 registerRootComponent(App);

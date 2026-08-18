@@ -896,6 +896,7 @@ namespace resonance
             services.AddSingleton<resonance.MusicLibrary.Activity.ILibraryActivityService, resonance.MusicLibrary.Activity.LibraryActivityService>();
             services.AddSingleton<AppUserService>();
             services.AddSingleton<SessionService>();
+            services.AddSingleton<PushTokenService>();
             services.AddSingleton<LoginRateLimiter>();
             services.AddSingleton<MobilePairingService>();
             services.AddSingleton<PermissionService>();
@@ -1000,6 +1001,8 @@ namespace resonance
             services.AddSingleton<IFTPService, FTPService>();
 
             services.AddSingleton<IPushbulletService, PushbulletService>();
+
+            services.AddSingleton<resonance.Integrations.Fcm.IFcmPushService, resonance.Integrations.Fcm.FcmPushService>();
 
             services.AddSingleton<resonance.Dlna.DlnaService>();
             services.AddHostedService(p => p.GetRequiredService<resonance.Dlna.DlnaService>());

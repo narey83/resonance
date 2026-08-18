@@ -38,8 +38,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
-import { useAuthStore } from '../../store/auth';
+import { useAuthStore, getDeviceId } from '../../store/auth';
 import { logout } from '../../api/session';
+import { unregisterPushToken } from '../../api/pushTokens';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MoreStackParamList } from '../../navigation/MainTabs';
 
@@ -101,6 +102,7 @@ export default function MoreScreen({ navigation }: Props) {
   );
 
   const handleLogout = async () => {
+    try { const deviceId = await getDeviceId(); await unregisterPushToken(deviceId); } catch {}
     try { if (refreshToken) await logout(refreshToken); } catch {}
     await clearTokens();
   };

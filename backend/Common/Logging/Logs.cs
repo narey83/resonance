@@ -132,6 +132,7 @@ namespace resonance
             public const string Scripts = "Integrations / Scripts";
             public const string FTP = "Integrations / FTP";
             public const string Pushbullet = "Integrations / Pushbullet";
+            public const string Fcm = "Integrations / FCM";
             public const string YtDlp = "Integrations / yt-dlp";
         }
     }
