@@ -62,6 +62,22 @@ public class LogsDbContext : DbContext
 
         modelBuilder.Entity<LogEntry>()
             .HasIndex(e => new { e.Level, e.Timestamp });
+
+        // The log viewer's search box resolves to Message.Contains(...), i.e. a leading-wildcard
+        // LIKE that no btree index can serve -- every search was a full table scan, timing out
+        // once the table grew past what a 30s command timeout could scan (see LogsController.Get).
+        // Bounded by retention (LogPersistenceService.RunRetentionAsync), unlike the Transfers table,
+        // so a trigram index here isn't at risk of the build itself exceeding the schema-init timeout
+        // the way Transfer.Filename was. Depends on the pg_trgm extension created during startup
+        // (see Program.cs, ahead of AddDbContext<TransfersDbContext>).
+        if (Database.IsNpgsql())
+        {
+            modelBuilder.Entity<LogEntry>()
+                .HasIndex(e => e.Message)
+                .HasDatabaseName("IDX_LogEntries_MessageTrgm")
+                .HasMethod("gin")
+                .HasOperators("gin_trgm_ops");
+        }
     }
 }
 
