@@ -124,7 +124,18 @@ namespace resonance.Dlna
 
         public void Dispose()
         {
-            cts?.Cancel();
+            // Registered as both a singleton and (via AddHostedService(sp => sp.GetRequiredService<...>()))
+            // an IHostedService resolved from that same singleton, so the DI container disposes this
+            // instance twice on shutdown. Cancel() on an already-disposed CancellationTokenSource throws,
+            // unlike Dispose() itself which is idempotent — matches the same fix in YtDlpService.Dispose().
+            try
+            {
+                cts?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+
             cts?.Dispose();
             httpListener?.Close();
         }
