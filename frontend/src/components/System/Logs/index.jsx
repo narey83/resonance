@@ -53,7 +53,6 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Pagination } from 'semantic-ui-react';
 
 const MAX_LOGS = 500;
 const PER_PAGE = 50;
@@ -1046,12 +1045,17 @@ const HistoryTab = () => {
   const [regexMode, setRegexMode] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState(today);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [expanded, setExpanded] = useState(new Set());
+
+  const scrollRef = useRef(null);
+  const mobileScrollRef = useRef(null);
+  const fetchingRef = useRef(false);
+  const resultsRef = useRef([]);
+  resultsRef.current = results;
 
   const filtersRef = useRef();
   filtersRef.current = {
@@ -1063,8 +1067,15 @@ const HistoryTab = () => {
     regexMode,
   };
 
-  const fetch = async (pg = page) => {
-    setLoading(true);
+  // reset fetches from offset 0 and replaces `results` (filters changed); otherwise this
+  // appends the next PER_PAGE-sized page after whatever is already loaded — the log files
+  // are scanned linearly on the server, so pulling everything at once would both stall the
+  // request and hand the DOM a page-choking number of rows to render at once.
+  const fetchPage = async (reset) => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+    if (reset) setLoading(true);
+    else setLoadingMore(true);
 
     const {
       activeContexts: ctx,
@@ -1094,7 +1105,7 @@ const HistoryTab = () => {
 
     try {
       const { logs: items, totalCount: tc } = await getLogs({
-        offset: (pg - 1) * PER_PAGE,
+        offset: reset ? 0 : resultsRef.current.length,
         limit: PER_PAGE,
         level: allLevels ? undefined : activeLevels,
         context: ctx.length > 0 ? ctx : undefined,
@@ -1103,36 +1114,36 @@ const HistoryTab = () => {
         to: to ? new Date(to + 'T23:59:59').toISOString() : undefined,
       });
 
-      const tp = Math.ceil(tc / PER_PAGE);
-      setResults(items);
+      setResults((prev) => (reset ? items : [...prev, ...items]));
       setTotalCount(tc);
-      setTotalPages(Number.isNaN(tp) ? 0 : tp);
-      setExpanded(new Set());
+      if (reset) setExpanded(new Set());
     } catch {
-      setResults([]);
-      setTotalCount(0);
-      setTotalPages(0);
+      if (reset) {
+        setResults([]);
+        setTotalCount(0);
+      }
     }
 
+    fetchingRef.current = false;
     setLoading(false);
+    setLoadingMore(false);
+  };
+
+  const resetScroll = () => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    if (mobileScrollRef.current) mobileScrollRef.current.scrollTop = 0;
   };
 
   useEffect(() => {
-    fetch(1);
-    setPage(1);
+    fetchPage(true);
     getLogContexts()
       .then(setKnownContexts)
       .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handlePageChange = (_, { activePage }) => {
-    setPage(activePage);
-    fetch(activePage);
-  };
-
   const applyFilters = () => {
-    setPage(1);
-    fetch(1);
+    resetScroll();
+    fetchPage(true);
   };
 
   const toggleLevel = (level) =>
@@ -1155,8 +1166,8 @@ const HistoryTab = () => {
     setDateFrom('');
     setDateTo(today);
     setTimeout(() => {
-      setPage(1);
-      fetch(1);
+      resetScroll();
+      fetchPage(true);
     }, 0);
   };
 
@@ -1177,6 +1188,66 @@ const HistoryTab = () => {
     dateFrom ||
     dateTo !== today ||
     !Object.values(levels).every(Boolean);
+
+  // Flattened list of date separators + log rows, so the virtualizer can measure both.
+  const rows = useMemo(() => {
+    const out = [];
+    let lastDay = null;
+
+    for (const log of results) {
+      const day = dayOf(log.timestamp);
+
+      if (day !== lastDay) {
+        out.push({ day, type: 'date' });
+        lastDay = day;
+      }
+
+      out.push({ log, type: 'log' });
+    }
+
+    return out;
+  }, [results]);
+
+  const hasMore = results.length < totalCount;
+
+  const desktopVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (index) => (rows[index]?.type === 'date' ? 26 : 22),
+    overscan: 12,
+    measureElement:
+      typeof window !== 'undefined'
+        ? (el) => el?.getBoundingClientRect().height
+        : undefined,
+  });
+
+  const mobileVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => mobileScrollRef.current,
+    estimateSize: (index) => (rows[index]?.type === 'date' ? 26 : 52),
+    overscan: 5,
+    measureElement:
+      typeof window !== 'undefined'
+        ? (el) => el?.getBoundingClientRect().height
+        : undefined,
+  });
+
+  const desktopLastIndex =
+    desktopVirtualizer.getVirtualItems().at(-1)?.index ?? -1;
+  const mobileLastIndex =
+    mobileVirtualizer.getVirtualItems().at(-1)?.index ?? -1;
+
+  // Infinite scroll: once the last rendered row is within reach of what's loaded, pull the
+  // next page. Fires again automatically once the appended rows push the "end" further out.
+  useEffect(() => {
+    if (!hasMore || loading || loadingMore) return;
+    if (desktopLastIndex >= rows.length - 1) fetchPage(false);
+  }, [desktopLastIndex, rows.length, hasMore, loading, loadingMore]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!hasMore || loading || loadingMore) return;
+    if (mobileLastIndex >= rows.length - 1) fetchPage(false);
+  }, [mobileLastIndex, rows.length, hasMore, loading, loadingMore]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -1243,72 +1314,122 @@ const HistoryTab = () => {
 
       <ColumnHead />
 
-      <div className="logs-history-body">
+      <div
+        className="logs-history-body"
+        ref={scrollRef}
+      >
         {loading && <LoaderSegment />}
-        {!loading && results.length === 0 && (
+        {!loading && rows.length === 0 && (
           <div className="logs-history-empty">
             No log entries match the current filters.
           </div>
         )}
-        {!loading &&
-          results.map((log, i) => {
-            const key = `${log.timestamp}-${log.context}-${log.level}-${i}`;
-            const day = dayOf(log.timestamp);
-            const newDay = i === 0 || day !== dayOf(results[i - 1].timestamp);
-            return (
-              <React.Fragment key={key}>
-                {newDay && <DateSeparator day={day} />}
-                <LogRow
-                  expanded={expanded.has(key)}
-                  log={log}
-                  messageFilter={regexError ? '' : messageFilter}
-                  onToggle={() => toggleExpanded(key)}
-                  regexMode={regexMode}
-                />
-              </React.Fragment>
-            );
-          })}
+        {!loading && rows.length > 0 && (
+          <div
+            style={{
+              height: `${desktopVirtualizer.getTotalSize()}px`,
+              position: 'relative',
+            }}
+          >
+            {desktopVirtualizer.getVirtualItems().map((vRow) => {
+              const row = rows[vRow.index];
+              const key =
+                row.type === 'date'
+                  ? `date-${row.day}`
+                  : `${row.log.timestamp}-${row.log.context}-${row.log.level}-${vRow.index}`;
+              return (
+                <div
+                  data-index={vRow.index}
+                  key={vRow.key}
+                  ref={desktopVirtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    transform: `translateY(${vRow.start}px)`,
+                  }}
+                >
+                  {row.type === 'date' ? (
+                    <DateSeparator day={row.day} />
+                  ) : (
+                    <LogRow
+                      expanded={expanded.has(key)}
+                      log={row.log}
+                      messageFilter={regexError ? '' : messageFilter}
+                      onToggle={() => toggleExpanded(key)}
+                      regexMode={regexMode}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      <div className="logs-history-body logs-history-mobile">
+      <div
+        className="logs-history-body logs-history-mobile"
+        ref={mobileScrollRef}
+      >
         {loading && <LoaderSegment />}
-        {!loading && results.length === 0 && (
+        {!loading && rows.length === 0 && (
           <div className="logs-history-empty">
             No log entries match the current filters.
           </div>
         )}
-        {!loading &&
-          results.map((log, i) => {
-            const key = `${log.timestamp}-${log.context}-${log.level}-${i}`;
-            return (
-              <LogCard
-                expanded={expanded.has(key)}
-                key={key}
-                log={log}
-                messageFilter={regexError ? '' : messageFilter}
-                onToggle={() => toggleExpanded(key)}
-                regexMode={regexMode}
-              />
-            );
-          })}
+        {!loading && rows.length > 0 && (
+          <div
+            style={{
+              height: `${mobileVirtualizer.getTotalSize()}px`,
+              position: 'relative',
+            }}
+          >
+            {mobileVirtualizer.getVirtualItems().map((vRow) => {
+              const row = rows[vRow.index];
+              const key =
+                row.type === 'date'
+                  ? `date-${row.day}`
+                  : `${row.log.timestamp}-${row.log.context}-${row.log.level}-${vRow.index}`;
+              return (
+                <div
+                  data-index={vRow.index}
+                  key={vRow.key}
+                  ref={mobileVirtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    transform: `translateY(${vRow.start}px)`,
+                  }}
+                >
+                  {row.type === 'date' ? (
+                    <DateSeparator day={row.day} />
+                  ) : (
+                    <LogCard
+                      expanded={expanded.has(key)}
+                      log={row.log}
+                      messageFilter={regexError ? '' : messageFilter}
+                      onToggle={() => toggleExpanded(key)}
+                      regexMode={regexMode}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="logs-pagination">
         <span className="logs-pagination-count">
-          {totalCount.toLocaleString()} {totalCount === 1 ? 'entry' : 'entries'}
+          {results.length.toLocaleString()} of{' '}
+          {totalCount.toLocaleString()}{' '}
+          {totalCount === 1 ? 'entry' : 'entries'}
         </span>
-        {totalPages > 1 && (
-          <Pagination
-            activePage={page}
-            boundaryRange={1}
-            ellipsisItem={null}
-            firstItem={null}
-            lastItem={null}
-            onPageChange={handlePageChange}
-            siblingRange={2}
-            size="mini"
-            totalPages={totalPages}
-          />
+        {loadingMore && (
+          <span className="logs-pagination-more">Loading more…</span>
         )}
       </div>
     </>
