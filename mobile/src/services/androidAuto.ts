@@ -540,13 +540,16 @@ export const buildAndroidAutoTree = async (): Promise<void> => {
   const auth = useAuthStore.getState();
   if (!auth.isReady) await auth.hydrate();
   if (!isAuthed()) { buildWhenAuthed(); return; }
+  const startedAt = Date.now();
   const results = await Promise.allSettled([
     loadNode(TAB_SERVER),
     loadNode(TAB_LOCAL),
   ]);
-  results.forEach((r) => {
-    if (r.status === 'rejected') remoteLog('error', `[aa] root load failed — ${String(r.reason)}`);
+  const labels = [TAB_SERVER, TAB_LOCAL];
+  results.forEach((r, i) => {
+    if (r.status === 'rejected') remoteLog('error', `[aa] root load failed for ${labels[i]} — ${String(r.reason)}`);
   });
+  remoteLog('info', `[aa] root branches settled in ${Date.now() - startedAt}ms`);
 };
 
 // Clear the tree on logout so a stale library isn't served to the car.

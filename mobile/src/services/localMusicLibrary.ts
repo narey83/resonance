@@ -341,7 +341,9 @@ export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
     _backgroundScan = (async () => {
       const BATCH = 32;
       const total = stale.length;
+      const tScan = Date.now();
       let skipped = 0;
+      dbg(`[local-scan] starting — ${total} stale of ${assets.length} total`);
       _onScanProgress?.({ done: 0, total });
       try {
         for (let i = 0; i < stale.length; i += BATCH) {
@@ -366,6 +368,7 @@ export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
         // Only pin the signature when every file parsed cleanly — otherwise leave it stale
         // so the next entry re-runs this path and retries the skipped files (self-healing).
         if (skipped === 0) persistSignature();
+        dbg(`[local-scan] finished — ${total} files in ${Date.now() - tScan}ms, ${skipped} batches skipped`);
       } finally {
         // Always clear, even on an unexpected throw, so a failed scan can restart on the
         // next getAllLocalTracks() call — a stuck non-null promise would otherwise make
