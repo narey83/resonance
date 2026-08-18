@@ -593,6 +593,7 @@ namespace resonance
             Log.Information("Instance Name: {InstanceName}", OptionsAtStartup.InstanceName);
 
             Log.Information("Configuring application...");
+            Log.Information("dotnet-watch-restart-smoke-test: --no-hot-reload is working");
 
             Log.Information("Using application directory {AppDirectory}", AppDirectory);
             Log.Information("Storing application data in {DataDirectory}", DataDirectory);
