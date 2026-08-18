@@ -898,11 +898,6 @@
   color: var(--text-primary);
 }
 
-.logs-tab--active {
-  border-bottom-color: var(--accent);
-  color: var(--accent);
-}
-
 /* ─── Copy / exception ───────────────────────────────────────────────────── */
 
 .logs-copy-btn {
@@ -990,25 +985,6 @@
   font-size: 11px;
 }
 
-.logs-history-body {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.logs-history-mobile {
-  display: none;
-}
-
-@media (max-width: 600px) {
-  .logs-history-body:not(.logs-history-mobile) {
-    display: none;
-  }
-
-  .logs-history-mobile {
-    display: block;
-  }
-}
-
 .logs-history-empty {
   color: var(--text-muted);
   font-size: 12px;
@@ -1016,28 +992,37 @@
   text-align: center;
 }
 
-.logs-pagination {
+/* ─── Live-tail jump-to-latest ────────────────────────────────────────────── */
+
+.logs-jump-latest {
   align-items: center;
-  background: var(--bg-elevated);
-  border-top: 1px solid var(--border);
+  background: var(--accent);
+  border: none;
+  border-radius: 5px;
+  color: #fff;
+  cursor: pointer;
   display: flex;
-  flex-shrink: 0;
-  gap: 10px;
-  justify-content: flex-end;
+  font-size: 11px;
+  font-weight: 600;
+  gap: 4px;
+  justify-content: center;
+  margin: 4px auto;
   padding: 4px 10px;
+  position: sticky;
+  top: 4px;
+  width: fit-content;
+  z-index: 2;
 }
 
-.logs-pagination-count {
-  color: var(--text-muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  margin-right: auto;
+.logs-jump-latest:hover {
+  background: var(--accent-hover);
 }
 
-.logs-pagination-more {
+.logs-load-more-hint {
   color: var(--text-muted);
   font-size: 11px;
-  font-style: italic;
+  padding: 8px 12px;
+  text-align: center;
 }
 
 /* ─── Events list (shares the System tab chrome) ─────────────────────────── */

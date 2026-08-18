@@ -35,7 +35,6 @@
 
 import '../System.css';
 import { urlBase } from '../../../config';
-import { createLogsHubConnection } from '../../../lib/hubFactory';
 import {
   getHttpCaptureHar,
   getLogContexts,
@@ -47,15 +46,16 @@ import { downloadFile, parseUtcDate } from '../../../lib/util';
 import { LoaderSegment } from '../../Shared';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import React, {
-  useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
 
-const MAX_LOGS = 500;
 const PER_PAGE = 50;
+const TAIL_POLL_INTERVAL_MS = 7_000;
+const TAIL_POLL_LIMIT = 200;
 
 const LEVEL_LABELS = {
   Debug: 'DBG',
@@ -115,6 +115,14 @@ const formatTimestamp = (ts) =>
 const formatTime = (ts) => parseUtcDate(ts).toISOString().slice(11, 19);
 
 const dayOf = (ts) => parseUtcDate(ts).toISOString().slice(0, 10);
+
+// The backend has no unique/monotonic id on a log record, so this composite stands in for one —
+// used both as the React/virtualizer row key and as the cross-request dedupe key where the live
+// tail poll and the scroll-back page fetches overlap at their inclusive from/to boundaries.
+const logKey = (log) =>
+  `${log.timestamp}|${log.context}|${log.level}|${log.message}`;
+
+const rowKey = (row) => (row.type === 'date' ? `date-${row.day}` : logKey(row.log));
 
 const formatDay = (day) => {
   const today = new Date().toISOString().slice(0, 10);
@@ -566,241 +574,247 @@ const ColumnHead = () => (
   </div>
 );
 
-// ─── Live tab ─────────────────────────────────────────────────────────────────
+// ─── Logs feed ────────────────────────────────────────────────────────────────
 
-const LiveTab = ({ onChangeServerLevel, serverLevel }) => {
-  const [connected, setConnected] = useState(false);
-  const [logs, setLogs] = useState([]);
-  const [levels, setLevels] = useState({
-    Debug: true,
-    Information: true,
-    Warning: true,
-    Error: true,
-  });
-  const [seenContexts, setSeenContexts] = useState([]);
-  const [knownContexts, setKnownContexts] = useState([]);
-  const [activeContexts, setActiveContexts] = useState([]);
-  const [messageFilter, setMessageFilter] = useState('');
-  const [regexMode, setRegexMode] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [pendingCount, setPendingCount] = useState(0);
-  const [expanded, setExpanded] = useState(new Set());
-  const [tick, setTick] = useState(0);
+// Shared by every fetch (initial load, scroll-back page, tail poll) — level/context/search
+// params are identical across all three; only offset/limit/from/to differ per call site.
+const buildLogQueryParams = ({ activeContexts, levels, messageFilter, regexMode }) => {
+  const activeLevels = Object.entries(levels)
+    .filter(([, on]) => on)
+    .map(([name]) => name);
 
-  const scrollRef = useRef(null);
-  const mobileScrollRef = useRef(null);
-  const isPausedRef = useRef(false);
-  const pendingLogsRef = useRef([]);
+  const allLevels = activeLevels.length === LEVEL_ORDER.length;
 
-  useEffect(() => {
-    isPausedRef.current = isPaused;
-  }, [isPaused]);
-
-  useEffect(() => {
-    getLogContexts()
-      .then(setKnownContexts)
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    let unmounted = false;
-    const logsHub = createLogsHubConnection();
-
-    logsHub.on('buffer', (buffer) => {
-      const newLogs = buffer.reverse().slice(0, MAX_LOGS);
-      setConnected(true);
-      setLogs(newLogs);
-      setSeenContexts([
-        ...new Set(newLogs.map((l) => l.context).filter(Boolean)),
-      ]);
-    });
-
-    logsHub.on('log', (log) => {
-      setConnected(true);
-
-      if (isPausedRef.current) {
-        pendingLogsRef.current = [log, ...pendingLogsRef.current].slice(
-          0,
-          MAX_LOGS,
-        );
-        setPendingCount((n) => n + 1);
-        return;
-      }
-
-      setLogs((prev) => [log, ...prev].slice(0, MAX_LOGS));
-      setSeenContexts((prev) =>
-        log.context && !prev.includes(log.context)
-          ? [...prev, log.context]
-          : prev,
-      );
-    });
-
-    logsHub.onreconnecting(() => setConnected(false));
-    logsHub.onclose(() => {
-      if (!unmounted) setConnected(false);
-    });
-    logsHub.onreconnected(() => setConnected(true));
-    logsHub.start().catch(() => {});
-
-    const tickInterval = setInterval(() => setTick((t) => t + 1), 10_000);
-
-    return () => {
-      unmounted = true;
-      clearInterval(tickInterval);
-      logsHub.stop().catch(() => {});
-    };
-  }, []);
-
-  const previousLogsLengthRef = useRef(0);
-  useEffect(() => {
-    if (!isPaused && logs.length > previousLogsLengthRef.current) {
-      if (scrollRef.current) scrollRef.current.scrollTop = 0;
-      if (mobileScrollRef.current) mobileScrollRef.current.scrollTop = 0;
-    }
-
-    previousLogsLengthRef.current = logs.length;
-  }, [logs.length, isPaused]);
-
-  let regexError = false;
+  let searchOk = true;
 
   if (regexMode && messageFilter) {
     try {
       // eslint-disable-next-line no-new
       new RegExp(messageFilter, 'i');
     } catch {
-      regexError = true;
+      searchOk = false;
     }
   }
 
-  // Matching is split from level/context selection so each pill can show how many entries it
-  // *would* reveal — the old UI gave no hint what was hiding behind a disabled filter.
-  const matched = useMemo(() => {
-    let compiledRe = null;
-    let reError = false;
-    if (regexMode && messageFilter) {
-      try {
-        compiledRe = new RegExp(messageFilter, 'i');
-      } catch {
-        reError = true;
-      }
-    }
+  return {
+    context: activeContexts.length > 0 ? activeContexts : undefined,
+    level: allLevels ? undefined : activeLevels,
+    search: messageFilter && searchOk ? messageFilter : undefined,
+  };
+};
 
-    if (!messageFilter) return logs;
+const LogsFeed = ({ onChangeServerLevel, serverLevel }) => {
+  const [levels, setLevels] = useState({ ...ALL_LEVELS_ON });
+  const [knownContexts, setKnownContexts] = useState([]);
+  const [activeContexts, setActiveContexts] = useState([]);
+  const [messageFilter, setMessageFilter] = useState('');
+  const [regexMode, setRegexMode] = useState(false);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [entries, setEntries] = useState([]);
+  const [expanded, setExpanded] = useState(new Set());
+  const [loadingInitial, setLoadingInitial] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasMoreOlder, setHasMoreOlder] = useState(true);
+  const [pendingCount, setPendingCount] = useState(0);
 
-    return logs.filter((log) => {
-      if (regexMode) return !reError && compiledRe?.test(log.message ?? '');
-      return (log.message ?? '')
-        .toLowerCase()
-        .includes(messageFilter.toLowerCase());
-    });
-  }, [logs, messageFilter, regexMode, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const scrollRef = useRef(null);
+  const mobileScrollRef = useRef(null);
+  const entriesRef = useRef([]);
+  entriesRef.current = entries;
 
-  const levelCounts = useMemo(() => {
-    const counts = {};
+  const filtersRef = useRef();
+  filtersRef.current = {
+    activeContexts,
+    dateFrom,
+    dateTo,
+    levels,
+    messageFilter,
+    regexMode,
+  };
 
-    for (const log of matched) {
-      if (activeContexts.length > 0 && !activeContexts.includes(log.context))
-        continue;
-      counts[log.level] = (counts[log.level] ?? 0) + 1;
-    }
+  // Everything currently represented in entries + pendingRef, so the tail poll and the
+  // scroll-back page fetches never double-insert the record they inclusively overlap on.
+  const seenKeysRef = useRef(new Set());
+  // Tailed entries that arrived while scrolled away from the top — held back so a live update
+  // never yanks the list out from under someone reading older rows.
+  const pendingRef = useRef([]);
+  const atTopRef = useRef(true);
+  const fetchingOlderRef = useRef(false);
+  const pollInFlightRef = useRef(false);
+  // Bumped on every filter reset; async fetches discard their result if a newer reset has
+  // already happened by the time they resolve.
+  const generationRef = useRef(0);
+  // Consumed by the layout effect below to snap scroll to top only right after a top-prepend —
+  // bottom (scroll-back) appends never touch scroll position.
+  const pendingTopResetRef = useRef(false);
 
-    return counts;
-  }, [activeContexts, matched]);
-
-  const contextCounts = useMemo(() => {
-    const counts = {};
-
-    for (const log of matched) {
-      if (!levels[log.level] || !log.context) continue;
-      counts[log.context] = (counts[log.context] ?? 0) + 1;
-    }
-
-    return counts;
-  }, [levels, matched]);
-
-  const filtered = useMemo(
-    () =>
-      matched.filter(
-        (log) =>
-          levels[log.level] &&
-          (activeContexts.length === 0 || activeContexts.includes(log.context)),
-      ),
-    [activeContexts, levels, matched],
-  );
-
-  // Flattened list of date separators + log rows, so the virtualizer can measure both.
-  const rows = useMemo(() => {
-    const out = [];
-    let lastDay = null;
-
-    for (const log of filtered) {
-      const day = dayOf(log.timestamp);
-
-      if (day !== lastDay) {
-        out.push({ day, type: 'date' });
-        lastDay = day;
-      }
-
-      out.push({ log, type: 'log' });
-    }
-
-    return out;
-  }, [filtered]);
-
-  // Every context the backend can emit, plus anything streaming in that predates the registry.
-  const allContexts = useMemo(
-    () =>
-      [...new Set([...knownContexts, ...seenContexts])].sort((a, b) =>
-        a.localeCompare(b),
-      ),
-    [knownContexts, seenContexts],
-  );
-
-  const desktopVirtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: (index) => (rows[index]?.type === 'date' ? 26 : 22),
-    overscan: 12,
-    measureElement:
-      typeof window !== 'undefined'
-        ? (el) => el?.getBoundingClientRect().height
-        : undefined,
-  });
-
-  const mobileVirtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => mobileScrollRef.current,
-    estimateSize: (index) => (rows[index]?.type === 'date' ? 26 : 52),
-    overscan: 5,
-    measureElement:
-      typeof window !== 'undefined'
-        ? (el) => el?.getBoundingClientRect().height
-        : undefined,
-  });
-
-  const jumpToLatest = useCallback(() => {
-    const pending = pendingLogsRef.current;
-    pendingLogsRef.current = [];
-
-    if (pending.length > 0) {
-      setLogs((prev) => [...pending, ...prev].slice(0, MAX_LOGS));
-      setSeenContexts((prev) => {
-        const newCtxs = pending.map((l) => l.context).filter(Boolean);
-        const merged = [...new Set([...newCtxs, ...prev])];
-        return merged;
-      });
-    }
-
+  const resetScroll = () => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
     if (mobileScrollRef.current) mobileScrollRef.current.scrollTop = 0;
-    setPendingCount(0);
-    setIsPaused(false);
-  }, []);
+  };
 
-  const togglePause = useCallback(() => {
-    if (isPaused) jumpToLatest();
-    else setIsPaused(true);
-  }, [isPaused, jumpToLatest]);
+  const dedupeAndMark = (items) => {
+    const fresh = [];
+
+    for (const item of items) {
+      const key = logKey(item);
+      if (seenKeysRef.current.has(key)) continue;
+      seenKeysRef.current.add(key);
+      fresh.push(item);
+    }
+
+    return fresh;
+  };
+
+  const resetAndFetch = async () => {
+    const gen = ++generationRef.current;
+
+    seenKeysRef.current = new Set();
+    pendingRef.current = [];
+    atTopRef.current = true;
+    setPendingCount(0);
+    setEntries([]);
+    setExpanded(new Set());
+    setHasMoreOlder(true);
+    resetScroll();
+    setLoadingInitial(true);
+
+    const { dateFrom: from, dateTo: to } = filtersRef.current;
+
+    try {
+      const { logs: items } = await getLogs({
+        offset: 0,
+        limit: PER_PAGE,
+        from: from ? new Date(from).toISOString() : undefined,
+        to: to ? new Date(to + 'T23:59:59').toISOString() : undefined,
+        ...buildLogQueryParams(filtersRef.current),
+      });
+
+      if (gen !== generationRef.current) return;
+
+      setEntries(dedupeAndMark(items));
+      setHasMoreOlder(items.length === PER_PAGE);
+    } catch {
+      if (gen !== generationRef.current) return;
+      setEntries([]);
+      setHasMoreOlder(false);
+    } finally {
+      if (gen === generationRef.current) setLoadingInitial(false);
+    }
+  };
+
+  // Scroll-back: cursor-paginated on the oldest loaded record's timestamp rather than a raw
+  // offset, so it stays correct regardless of how many new entries the tail poll has prepended
+  // in the meantime. +1 on the limit absorbs the guaranteed one-record overlap at the inclusive
+  // `to` boundary; a short page (< limit) means there's nothing further back to load.
+  const fetchOlderPage = async () => {
+    if (fetchingOlderRef.current) return;
+    fetchingOlderRef.current = true;
+    const gen = generationRef.current;
+    setLoadingOlder(true);
+
+    const { dateFrom: from } = filtersRef.current;
+    const oldest = entriesRef.current.at(-1)?.timestamp;
+
+    try {
+      const { logs: items } = await getLogs({
+        offset: 0,
+        limit: PER_PAGE + 1,
+        from: from ? new Date(from).toISOString() : undefined,
+        to: oldest,
+        ...buildLogQueryParams(filtersRef.current),
+      });
+
+      if (gen !== generationRef.current) return;
+
+      const fresh = dedupeAndMark(items);
+      if (fresh.length > 0) setEntries((prev) => [...prev, ...fresh]);
+      setHasMoreOlder(items.length === PER_PAGE + 1);
+    } catch {
+      if (gen === generationRef.current) setHasMoreOlder(false);
+    } finally {
+      if (gen === generationRef.current) setLoadingOlder(false);
+      // eslint-disable-next-line require-atomic-updates
+      fetchingOlderRef.current = false;
+    }
+  };
+
+  // Tail: polls for anything at-or-newer than the current newest-loaded record (inclusive, so
+  // dedupeAndMark drops the re-sent boundary record). Merges straight in while pinned to the
+  // top; otherwise queues in pendingRef so a mid-read scroll position never gets disturbed.
+  const poll = async () => {
+    if (pollInFlightRef.current || entriesRef.current.length === 0) return;
+    pollInFlightRef.current = true;
+    const gen = generationRef.current;
+
+    const { dateTo: to } = filtersRef.current;
+    const newest = entriesRef.current[0]?.timestamp;
+
+    try {
+      const { logs: items } = await getLogs({
+        offset: 0,
+        limit: TAIL_POLL_LIMIT,
+        from: newest,
+        to: to ? new Date(to + 'T23:59:59').toISOString() : undefined,
+        ...buildLogQueryParams(filtersRef.current),
+      });
+
+      if (gen !== generationRef.current) return;
+
+      const fresh = dedupeAndMark(items);
+      if (fresh.length === 0) return;
+
+      if (atTopRef.current) {
+        pendingTopResetRef.current = true;
+        setEntries((prev) => [...fresh, ...prev]);
+      } else {
+        pendingRef.current = [...fresh, ...pendingRef.current];
+        setPendingCount((n) => n + fresh.length);
+      }
+    } catch {
+      // transient — the next interval tick retries
+    } finally {
+      // eslint-disable-next-line require-atomic-updates
+      pollInFlightRef.current = false;
+    }
+  };
+
+  const flushPending = () => {
+    const pending = pendingRef.current;
+    pendingRef.current = [];
+    setPendingCount(0);
+    if (pending.length > 0) {
+      pendingTopResetRef.current = true;
+      setEntries((prev) => [...pending, ...prev]);
+    }
+  };
+
+  const handleScroll = (e) => {
+    const wasAtTop = atTopRef.current;
+    atTopRef.current = e.target.scrollTop <= 4;
+    if (!wasAtTop && atTopRef.current && pendingRef.current.length > 0) {
+      flushPending();
+    }
+  };
+
+  useLayoutEffect(() => {
+    if (!pendingTopResetRef.current) return;
+    pendingTopResetRef.current = false;
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    if (mobileScrollRef.current) mobileScrollRef.current.scrollTop = 0;
+  }, [entries]);
+
+  useEffect(() => {
+    resetAndFetch();
+    getLogContexts()
+      .then(setKnownContexts)
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const applyFilters = () => {
+    resetAndFetch();
+  };
 
   const toggleLevel = (level) =>
     setLevels((prev) => ({ ...prev, [level]: !prev[level] }));
@@ -819,12 +833,155 @@ const LiveTab = ({ onChangeServerLevel, serverLevel }) => {
     setLevels({ ...ALL_LEVELS_ON });
     setActiveContexts([]);
     setMessageFilter('');
+    setDateFrom('');
+    setDateTo('');
+    setTimeout(() => {
+      resetAndFetch();
+    }, 0);
   };
+
+  let regexError = false;
+
+  if (regexMode && messageFilter) {
+    try {
+      // eslint-disable-next-line no-new
+      new RegExp(messageFilter, 'i');
+    } catch {
+      regexError = true;
+    }
+  }
 
   const hasFilters =
     activeContexts.length > 0 ||
     messageFilter ||
+    dateFrom ||
+    dateTo ||
     !Object.values(levels).every(Boolean);
+
+  // No client-side re-filtering needed here (unlike the old Live tab) — entries only ever
+  // contains records the server already matched against the active filters.
+  const levelCounts = useMemo(() => {
+    const counts = {};
+
+    for (const log of entries) {
+      counts[log.level] = (counts[log.level] ?? 0) + 1;
+    }
+
+    return counts;
+  }, [entries]);
+
+  const contextCounts = useMemo(() => {
+    const counts = {};
+
+    for (const log of entries) {
+      if (!log.context) continue;
+      counts[log.context] = (counts[log.context] ?? 0) + 1;
+    }
+
+    return counts;
+  }, [entries]);
+
+  // Every context the backend can emit, plus anything loaded that predates the registry.
+  const allContexts = useMemo(
+    () =>
+      [
+        ...new Set([
+          ...knownContexts,
+          ...entries.map((log) => log.context).filter(Boolean),
+        ]),
+      ].sort((a, b) => a.localeCompare(b)),
+    [knownContexts, entries],
+  );
+
+  // Flattened list of date separators + log rows, so the virtualizer can measure both.
+  const rows = useMemo(() => {
+    const out = [];
+    let lastDay = null;
+
+    for (const log of entries) {
+      const day = dayOf(log.timestamp);
+
+      if (day !== lastDay) {
+        out.push({ day, type: 'date' });
+        lastDay = day;
+      }
+
+      out.push({ log, type: 'log' });
+    }
+
+    return out;
+  }, [entries]);
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  // A dateTo strictly in the past can never gain a newer match, so tailing simply doesn't poll
+  // — an explicit dateTo also has no special-case handling for "stop showing new rows": once
+  // wall-clock passes it, poll responses naturally stop matching, same as any other filter.
+  const tailingEnabled = !(dateTo && dateTo < todayStr);
+
+  const desktopVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    getItemKey: (index) => rowKey(rows[index]),
+    estimateSize: (index) => (rows[index]?.type === 'date' ? 26 : 22),
+    overscan: 12,
+    measureElement:
+      typeof window !== 'undefined'
+        ? (el) => el?.getBoundingClientRect().height
+        : undefined,
+  });
+
+  const mobileVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => mobileScrollRef.current,
+    getItemKey: (index) => rowKey(rows[index]),
+    estimateSize: (index) => (rows[index]?.type === 'date' ? 26 : 52),
+    overscan: 5,
+    measureElement:
+      typeof window !== 'undefined'
+        ? (el) => el?.getBoundingClientRect().height
+        : undefined,
+  });
+
+  const desktopLastIndex =
+    desktopVirtualizer.getVirtualItems().at(-1)?.index ?? -1;
+  const mobileLastIndex =
+    mobileVirtualizer.getVirtualItems().at(-1)?.index ?? -1;
+
+  // Infinite scroll-back: once the last rendered row is within reach of what's loaded, pull the
+  // next page. Fires again automatically once the appended rows push the "end" further out.
+  useEffect(() => {
+    if (!hasMoreOlder || loadingInitial || loadingOlder) return;
+    if (desktopLastIndex >= rows.length - 1) fetchOlderPage();
+  }, [desktopLastIndex, rows.length, hasMoreOlder, loadingInitial, loadingOlder]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!hasMoreOlder || loadingInitial || loadingOlder) return;
+    if (mobileLastIndex >= rows.length - 1) fetchOlderPage();
+  }, [mobileLastIndex, rows.length, hasMoreOlder, loadingInitial, loadingOlder]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Tail poll: skips while the tab is backgrounded (no point paying for a full-file-scan the
+  // user can't see), and fires one catch-up poll immediately on becoming visible again rather
+  // than waiting out a stale interval.
+  useEffect(() => {
+    if (!tailingEnabled) return undefined;
+
+    const tick = () => {
+      if (!document.hidden) poll();
+    };
+
+    const id = setInterval(tick, TAIL_POLL_INTERVAL_MS);
+
+    const onVisible = () => {
+      if (!document.hidden) poll();
+    };
+
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [tailingEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Only nag when it is actionable: a level is switched on that the server never emits. Either
   // lowering the server level or switching that filter off clears it, so it can't become wallpaper.
@@ -833,7 +990,76 @@ const LiveTab = ({ onChangeServerLevel, serverLevel }) => {
     (level, index) => levels[level] && index < serverFloor,
   );
 
-  if (!connected) return <LoaderSegment />;
+  const renderScroll = (mobile) => {
+    const virtualizer = mobile ? mobileVirtualizer : desktopVirtualizer;
+    const Row = mobile ? LogCard : LogRow;
+
+    return (
+      <div
+        className={`logs-scroll logs-scroll--${mobile ? 'mobile' : 'desktop'}`}
+        onScroll={handleScroll}
+        ref={mobile ? mobileScrollRef : scrollRef}
+      >
+        {pendingCount > 0 && (
+          <button
+            className="logs-jump-latest"
+            onClick={flushPending}
+            type="button"
+          >
+            ↑ {pendingCount} new — jump to latest
+          </button>
+        )}
+        {loadingInitial && <LoaderSegment />}
+        {!loadingInitial && rows.length === 0 && (
+          <div className="logs-history-empty">
+            No log entries match the current filters.
+          </div>
+        )}
+        {!loadingInitial && rows.length > 0 && (
+          <div
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              position: 'relative',
+            }}
+          >
+            {virtualizer.getVirtualItems().map((vRow) => {
+              const row = rows[vRow.index];
+              const key = rowKey(row);
+              return (
+                <div
+                  data-index={vRow.index}
+                  key={vRow.key}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    transform: `translateY(${vRow.start}px)`,
+                  }}
+                >
+                  {row.type === 'date' ? (
+                    <DateSeparator day={row.day} />
+                  ) : (
+                    <Row
+                      expanded={expanded.has(key)}
+                      log={row.log}
+                      messageFilter={regexError ? '' : messageFilter}
+                      onToggle={() => toggleExpanded(key)}
+                      regexMode={regexMode}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {loadingOlder && (
+          <div className="logs-load-more-hint">Loading more…</div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <>
@@ -855,11 +1081,38 @@ const LiveTab = ({ onChangeServerLevel, serverLevel }) => {
 
           <SearchBox
             onChange={setMessageFilter}
+            onSubmit={applyFilters}
             regexError={regexError}
             regexMode={regexMode}
             toggleRegex={() => setRegexMode((prev) => !prev)}
             value={messageFilter}
           />
+
+          <div className="logs-date-range">
+            <input
+              className="opt-input logs-date-input"
+              onChange={(e) => setDateFrom(e.target.value)}
+              title="From date"
+              type="date"
+              value={dateFrom}
+            />
+            <span className="logs-date-sep-text">→</span>
+            <input
+              className="opt-input logs-date-input"
+              onChange={(e) => setDateTo(e.target.value)}
+              title="To date (blank = live-tail with no upper bound)"
+              type="date"
+              value={dateTo}
+            />
+          </div>
+
+          <button
+            className="logs-primary-btn"
+            onClick={applyFilters}
+            type="button"
+          >
+            Search
+          </button>
 
           {hasFilters && (
             <button
@@ -876,28 +1129,19 @@ const LiveTab = ({ onChangeServerLevel, serverLevel }) => {
 
           <span
             className="logs-count"
-            title="Matching entries out of those buffered"
+            title="Entries currently loaded in this session"
           >
-            <strong>{filtered.length.toLocaleString()}</strong>
-            <span className="logs-count-sep">/</span>
-            {logs.length.toLocaleString()}
+            <strong>{entries.length.toLocaleString()}</strong>
           </span>
 
           <span
-            className={`logs-live-dot${isPaused ? ' logs-live-dot--paused' : ''}`}
-            title={isPaused ? 'Stream paused' : 'Streaming live'}
+            className={`logs-live-dot${tailingEnabled ? '' : ' logs-live-dot--paused'}`}
+            title={
+              tailingEnabled
+                ? 'Tailing live'
+                : 'Tailing paused — end date is in the past'
+            }
           />
-
-          <button
-            className={`logs-pause-btn${isPaused ? ' logs-pause-btn--paused' : ''}`}
-            onClick={togglePause}
-            title={isPaused ? 'Resume live stream' : 'Pause live stream'}
-            type="button"
-          >
-            {isPaused
-              ? `▶ Resume${pendingCount > 0 ? ` · ${pendingCount}` : ''}`
-              : '❚❚ Pause'}
-          </button>
         </div>
 
         {suppressedLevels.length > 0 && (
@@ -931,506 +1175,8 @@ const LiveTab = ({ onChangeServerLevel, serverLevel }) => {
 
       <ColumnHead />
 
-      <div
-        className="logs-scroll logs-scroll--desktop"
-        ref={scrollRef}
-      >
-        {rows.length === 0 && (
-          <div className="logs-history-empty">
-            {logs.length === 0
-              ? 'Waiting for log events…'
-              : 'No entries match the current filters.'}
-          </div>
-        )}
-        <div
-          style={{
-            height: `${desktopVirtualizer.getTotalSize()}px`,
-            position: 'relative',
-          }}
-        >
-          {desktopVirtualizer.getVirtualItems().map((vRow) => {
-            const row = rows[vRow.index];
-            const key =
-              row.type === 'date'
-                ? `date-${row.day}`
-                : `${row.log.timestamp}-${row.log.context}-${row.log.level}`;
-            return (
-              <div
-                data-index={vRow.index}
-                key={vRow.key}
-                ref={desktopVirtualizer.measureElement}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  transform: `translateY(${vRow.start}px)`,
-                }}
-              >
-                {row.type === 'date' ? (
-                  <DateSeparator day={row.day} />
-                ) : (
-                  <LogRow
-                    expanded={expanded.has(key)}
-                    log={row.log}
-                    messageFilter={messageFilter}
-                    onToggle={() => toggleExpanded(key)}
-                    regexMode={regexMode}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div
-        className="logs-scroll logs-scroll--mobile"
-        ref={mobileScrollRef}
-      >
-        <div
-          style={{
-            height: `${mobileVirtualizer.getTotalSize()}px`,
-            position: 'relative',
-          }}
-        >
-          {mobileVirtualizer.getVirtualItems().map((vRow) => {
-            const row = rows[vRow.index];
-            const key =
-              row.type === 'date'
-                ? `date-${row.day}`
-                : `${row.log.timestamp}-${row.log.context}-${row.log.level}`;
-            return (
-              <div
-                data-index={vRow.index}
-                key={vRow.key}
-                ref={mobileVirtualizer.measureElement}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  transform: `translateY(${vRow.start}px)`,
-                }}
-              >
-                {row.type === 'date' ? (
-                  <DateSeparator day={row.day} />
-                ) : (
-                  <LogCard
-                    expanded={expanded.has(key)}
-                    log={row.log}
-                    messageFilter={messageFilter}
-                    onToggle={() => toggleExpanded(key)}
-                    regexMode={regexMode}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </>
-  );
-};
-
-// ─── History tab ──────────────────────────────────────────────────────────────
-
-const HistoryTab = () => {
-  const today = new Date().toISOString().slice(0, 10);
-
-  const [levels, setLevels] = useState({ ...ALL_LEVELS_ON });
-  const [knownContexts, setKnownContexts] = useState([]);
-  const [activeContexts, setActiveContexts] = useState([]);
-  const [messageFilter, setMessageFilter] = useState('');
-  const [regexMode, setRegexMode] = useState(false);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState(today);
-  const [totalCount, setTotalCount] = useState(0);
-  const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [expanded, setExpanded] = useState(new Set());
-
-  const scrollRef = useRef(null);
-  const mobileScrollRef = useRef(null);
-  const fetchingRef = useRef(false);
-  const resultsRef = useRef([]);
-  resultsRef.current = results;
-
-  const filtersRef = useRef();
-  filtersRef.current = {
-    activeContexts,
-    dateFrom,
-    dateTo,
-    levels,
-    messageFilter,
-    regexMode,
-  };
-
-  // reset fetches from offset 0 and replaces `results` (filters changed); otherwise this
-  // appends the next PER_PAGE-sized page after whatever is already loaded — the log files
-  // are scanned linearly on the server, so pulling everything at once would both stall the
-  // request and hand the DOM a page-choking number of rows to render at once.
-  const fetchPage = async (reset) => {
-    if (fetchingRef.current) return;
-    fetchingRef.current = true;
-    if (reset) setLoading(true);
-    else setLoadingMore(true);
-
-    const {
-      activeContexts: ctx,
-      dateFrom: from,
-      dateTo: to,
-      levels: lvl,
-      messageFilter: msg,
-      regexMode: rx,
-    } = filtersRef.current;
-
-    const activeLevels = Object.entries(lvl)
-      .filter(([, on]) => on)
-      .map(([name]) => name);
-
-    const allLevels = activeLevels.length === LEVEL_ORDER.length;
-
-    let reError = false;
-
-    if (rx && msg) {
-      try {
-        // eslint-disable-next-line no-new
-        new RegExp(msg, 'i');
-      } catch {
-        reError = true;
-      }
-    }
-
-    try {
-      const { logs: items, totalCount: tc } = await getLogs({
-        offset: reset ? 0 : resultsRef.current.length,
-        limit: PER_PAGE,
-        level: allLevels ? undefined : activeLevels,
-        context: ctx.length > 0 ? ctx : undefined,
-        search: msg && !reError ? msg : undefined,
-        from: from ? new Date(from).toISOString() : undefined,
-        to: to ? new Date(to + 'T23:59:59').toISOString() : undefined,
-      });
-
-      setResults((prev) => (reset ? items : [...prev, ...items]));
-      setTotalCount(tc);
-      if (reset) setExpanded(new Set());
-    } catch {
-      if (reset) {
-        setResults([]);
-        setTotalCount(0);
-      }
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-      // eslint-disable-next-line require-atomic-updates
-      fetchingRef.current = false;
-    }
-  };
-
-  const resetScroll = () => {
-    if (scrollRef.current) scrollRef.current.scrollTop = 0;
-    if (mobileScrollRef.current) mobileScrollRef.current.scrollTop = 0;
-  };
-
-  useEffect(() => {
-    fetchPage(true);
-    getLogContexts()
-      .then(setKnownContexts)
-      .catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const applyFilters = () => {
-    resetScroll();
-    fetchPage(true);
-  };
-
-  const toggleLevel = (level) =>
-    setLevels((prev) => ({ ...prev, [level]: !prev[level] }));
-
-  const toggleExpanded = (key) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-
-      return next;
-    });
-
-  const clearAll = () => {
-    setLevels({ ...ALL_LEVELS_ON });
-    setActiveContexts([]);
-    setMessageFilter('');
-    setDateFrom('');
-    setDateTo(today);
-    setTimeout(() => {
-      resetScroll();
-      fetchPage(true);
-    }, 0);
-  };
-
-  let regexError = false;
-
-  if (regexMode && messageFilter) {
-    try {
-      // eslint-disable-next-line no-new
-      new RegExp(messageFilter, 'i');
-    } catch {
-      regexError = true;
-    }
-  }
-
-  const hasFilters =
-    activeContexts.length > 0 ||
-    messageFilter ||
-    dateFrom ||
-    dateTo !== today ||
-    !Object.values(levels).every(Boolean);
-
-  // Flattened list of date separators + log rows, so the virtualizer can measure both.
-  const rows = useMemo(() => {
-    const out = [];
-    let lastDay = null;
-
-    for (const log of results) {
-      const day = dayOf(log.timestamp);
-
-      if (day !== lastDay) {
-        out.push({ day, type: 'date' });
-        lastDay = day;
-      }
-
-      out.push({ log, type: 'log' });
-    }
-
-    return out;
-  }, [results]);
-
-  const hasMore = results.length < totalCount;
-
-  const desktopVirtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: (index) => (rows[index]?.type === 'date' ? 26 : 22),
-    overscan: 12,
-    measureElement:
-      typeof window !== 'undefined'
-        ? (el) => el?.getBoundingClientRect().height
-        : undefined,
-  });
-
-  const mobileVirtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => mobileScrollRef.current,
-    estimateSize: (index) => (rows[index]?.type === 'date' ? 26 : 52),
-    overscan: 5,
-    measureElement:
-      typeof window !== 'undefined'
-        ? (el) => el?.getBoundingClientRect().height
-        : undefined,
-  });
-
-  const desktopLastIndex =
-    desktopVirtualizer.getVirtualItems().at(-1)?.index ?? -1;
-  const mobileLastIndex =
-    mobileVirtualizer.getVirtualItems().at(-1)?.index ?? -1;
-
-  // Infinite scroll: once the last rendered row is within reach of what's loaded, pull the
-  // next page. Fires again automatically once the appended rows push the "end" further out.
-  useEffect(() => {
-    if (!hasMore || loading || loadingMore) return;
-    if (desktopLastIndex >= rows.length - 1) fetchPage(false);
-  }, [desktopLastIndex, rows.length, hasMore, loading, loadingMore]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!hasMore || loading || loadingMore) return;
-    if (mobileLastIndex >= rows.length - 1) fetchPage(false);
-  }, [mobileLastIndex, rows.length, hasMore, loading, loadingMore]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  return (
-    <>
-      <div className="logs-toolbar">
-        <div className="logs-toolbar-row">
-          <LevelFilter
-            levels={levels}
-            onToggle={toggleLevel}
-          />
-
-          <ContextPicker
-            active={activeContexts}
-            all={knownContexts}
-            onChange={setActiveContexts}
-          />
-
-          <SearchBox
-            onChange={setMessageFilter}
-            onSubmit={applyFilters}
-            regexError={regexError}
-            regexMode={regexMode}
-            toggleRegex={() => setRegexMode((prev) => !prev)}
-            value={messageFilter}
-          />
-
-          <div className="logs-date-range">
-            <input
-              className="opt-input logs-date-input"
-              onChange={(e) => setDateFrom(e.target.value)}
-              title="From date"
-              type="date"
-              value={dateFrom}
-            />
-            <span className="logs-date-sep-text">→</span>
-            <input
-              className="opt-input logs-date-input"
-              onChange={(e) => setDateTo(e.target.value)}
-              title="To date"
-              type="date"
-              value={dateTo}
-            />
-          </div>
-
-          <button
-            className="logs-primary-btn"
-            onClick={applyFilters}
-            type="button"
-          >
-            Search
-          </button>
-
-          {hasFilters && (
-            <button
-              className="logs-ghost-btn"
-              onClick={clearAll}
-              title="Reset all filters"
-              type="button"
-            >
-              Reset
-            </button>
-          )}
-        </div>
-      </div>
-
-      <ColumnHead />
-
-      <div
-        className="logs-history-body"
-        ref={scrollRef}
-      >
-        {loading && <LoaderSegment />}
-        {!loading && rows.length === 0 && (
-          <div className="logs-history-empty">
-            No log entries match the current filters.
-          </div>
-        )}
-        {!loading && rows.length > 0 && (
-          <div
-            style={{
-              height: `${desktopVirtualizer.getTotalSize()}px`,
-              position: 'relative',
-            }}
-          >
-            {desktopVirtualizer.getVirtualItems().map((vRow) => {
-              const row = rows[vRow.index];
-              const key =
-                row.type === 'date'
-                  ? `date-${row.day}`
-                  : `${row.log.timestamp}-${row.log.context}-${row.log.level}-${vRow.index}`;
-              return (
-                <div
-                  data-index={vRow.index}
-                  key={vRow.key}
-                  ref={desktopVirtualizer.measureElement}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    transform: `translateY(${vRow.start}px)`,
-                  }}
-                >
-                  {row.type === 'date' ? (
-                    <DateSeparator day={row.day} />
-                  ) : (
-                    <LogRow
-                      expanded={expanded.has(key)}
-                      log={row.log}
-                      messageFilter={regexError ? '' : messageFilter}
-                      onToggle={() => toggleExpanded(key)}
-                      regexMode={regexMode}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <div
-        className="logs-history-body logs-history-mobile"
-        ref={mobileScrollRef}
-      >
-        {loading && <LoaderSegment />}
-        {!loading && rows.length === 0 && (
-          <div className="logs-history-empty">
-            No log entries match the current filters.
-          </div>
-        )}
-        {!loading && rows.length > 0 && (
-          <div
-            style={{
-              height: `${mobileVirtualizer.getTotalSize()}px`,
-              position: 'relative',
-            }}
-          >
-            {mobileVirtualizer.getVirtualItems().map((vRow) => {
-              const row = rows[vRow.index];
-              const key =
-                row.type === 'date'
-                  ? `date-${row.day}`
-                  : `${row.log.timestamp}-${row.log.context}-${row.log.level}-${vRow.index}`;
-              return (
-                <div
-                  data-index={vRow.index}
-                  key={vRow.key}
-                  ref={mobileVirtualizer.measureElement}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    transform: `translateY(${vRow.start}px)`,
-                  }}
-                >
-                  {row.type === 'date' ? (
-                    <DateSeparator day={row.day} />
-                  ) : (
-                    <LogCard
-                      expanded={expanded.has(key)}
-                      log={row.log}
-                      messageFilter={regexError ? '' : messageFilter}
-                      onToggle={() => toggleExpanded(key)}
-                      regexMode={regexMode}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <div className="logs-pagination">
-        <span className="logs-pagination-count">
-          {`${results.length.toLocaleString()} of ${totalCount.toLocaleString()} ${totalCount === 1 ? 'entry' : 'entries'}`}
-        </span>
-        {loadingMore && (
-          <span className="logs-pagination-more">Loading more…</span>
-        )}
-      </div>
+      {renderScroll(false)}
+      {renderScroll(true)}
     </>
   );
 };
@@ -1449,7 +1195,6 @@ const openPopout = () =>
   );
 
 const Logs = () => {
-  const [mode, setMode] = useState('live');
   const [exporting, setExporting] = useState(false);
   const [levels, setLevels] = useState({ framework: null, level: null });
 
@@ -1490,20 +1235,6 @@ const Logs = () => {
   return (
     <div className="logs">
       <div className="logs-tabs">
-        <button
-          className={`logs-tab hover-fx${mode === 'live' ? ' logs-tab--active' : ''}`}
-          onClick={() => setMode('live')}
-          type="button"
-        >
-          Live
-        </button>
-        <button
-          className={`logs-tab hover-fx${mode === 'history' ? ' logs-tab--active' : ''}`}
-          onClick={() => setMode('history')}
-          type="button"
-        >
-          History
-        </button>
         <span style={{ flex: 1 }} />
         <ServerLevelMenu
           framework={levels.framework}
@@ -1531,13 +1262,10 @@ const Logs = () => {
         </button>
       </div>
 
-      {mode === 'live' && (
-        <LiveTab
-          onChangeServerLevel={changeServerLevel}
-          serverLevel={levels.level}
-        />
-      )}
-      {mode === 'history' && <HistoryTab />}
+      <LogsFeed
+        onChangeServerLevel={changeServerLevel}
+        serverLevel={levels.level}
+      />
     </div>
   );
 };
