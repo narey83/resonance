@@ -893,8 +893,6 @@ namespace resonance
             services.AddDbContext<UsersDbContext>(connectionStringDictionary[Database.Users]);
             services.AddDbContext<resonance.MusicLibrary.Activity.LibraryActivityDbContext>(connectionStringDictionary[Database.LibraryActivity]);
             services.AddDbContext<Resonance.Integrations.YtDlp.Data.YtDlpDbContext>(connectionStringDictionary[Database.YtDlp]);
-            services.AddDbContext<resonance.Core.LogStore.LogsDbContext>(connectionStringDictionary[Database.AppLogs]);
-            services.AddHostedService<resonance.Core.LogStore.LogPersistenceService>();
             services.AddSingleton<resonance.MusicLibrary.Activity.ILibraryActivityService, resonance.MusicLibrary.Activity.LibraryActivityService>();
             services.AddSingleton<AppUserService>();
             services.AddSingleton<SessionService>();
@@ -1641,6 +1639,21 @@ namespace resonance
                         config => config.File(
                             Path.Combine(LogDirectory, $"{AppName}-.log"),
                             outputTemplate: outputTemplate,
+                            rollingInterval: RollingInterval.Day,
+                            retainedFileTimeLimit: TimeSpan.FromDays(OptionsAtStartup.Retention.Logs))))
+
+                // Structured feed for the log viewer (LogsController / LogFileReader), replacing what
+                // used to be a Postgres LogEntries table -- that table's search timed out once it grew
+                // (leading-wildcard LIKE, no usable index) and even a trigram index took too long to
+                // build in place. One JSON object per line so the viewer can parse Level/SourceContext/
+                // SubContext/Exception back out reliably; the plain-text sink above stays untouched for
+                // human tailing/grepping.
+                .WriteTo.Async(config =>
+                    config.Conditional(
+                        e => OptionsAtStartup.Logger.Disk,
+                        config => config.File(
+                            new Serilog.Formatting.Json.JsonFormatter(renderMessage: true),
+                            Path.Combine(LogDirectory, $"{AppName}-.jsonl"),
                             rollingInterval: RollingInterval.Day,
                             retainedFileTimeLimit: TimeSpan.FromDays(OptionsAtStartup.Retention.Logs))))
                 .WriteTo.Conditional(

@@ -542,6 +542,15 @@ const SCHEMA = [
         placeholder: '0',
         type: 'duration',
       },
+      {
+        description:
+          'How many days of application log files to keep on disk before the oldest are deleted. Default: 30.',
+        label: 'Application Logs (days)',
+        min: 1,
+        path: ['retention', 'logs'],
+        placeholder: '30',
+        type: 'number',
+      },
     ],
     group: 'System',
     title: 'Retention',

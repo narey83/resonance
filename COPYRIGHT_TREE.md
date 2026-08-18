@@ -165,8 +165,7 @@ Per-file copyright attribution for every source file in the project, generated f
       - HttpCaptureEntry.cs — John Narey
       - RequestCaptureMiddleware.cs — John Narey
     - **Logs/**
-      - LogPersistenceService.cs — John Narey
-      - LogsDbContext.cs — John Narey
+      - LogFileReader.cs — John Narey
     - **Preferences/**
       - PreferencesService.cs — John Narey
     - **Security/**

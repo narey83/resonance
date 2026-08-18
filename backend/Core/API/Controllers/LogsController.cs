@@ -36,12 +36,10 @@
 namespace resonance.Core.API
 {
     using System;
-    using System.Linq;
     using Asp.Versioning;
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.AspNetCore.SignalR;
-    using Microsoft.EntityFrameworkCore;
     using resonance.Core.LogStore;
     using Serilog;
 
@@ -55,18 +53,16 @@ namespace resonance.Core.API
     [Consumes("application/json")]
     public class LogsController : ControllerBase
     {
-        public LogsController(IHubContext<LogsHub> logHub, IDbContextFactory<LogsDbContext> logsDbContextFactory)
+        public LogsController(IHubContext<LogsHub> logHub)
         {
             LogHub = logHub;
-            LogsDbContextFactory = logsDbContextFactory;
         }
 
         private IHubContext<LogsHub> LogHub { get; }
-        private IDbContextFactory<LogsDbContext> LogsDbContextFactory { get; }
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", resonance.Logs.Application);
 
         /// <summary>
-        ///     Gets a paginated, filtered list of historical log entries from persistent storage.
+        ///     Gets a paginated, filtered list of historical log entries from the daily log files.
         /// </summary>
         /// <returns></returns>
         [HttpGet]
@@ -92,51 +88,16 @@ namespace resonance.Core.API
 
             try
             {
-                using var ctx = LogsDbContextFactory.CreateDbContext();
-                var query = ctx.LogEntries.AsNoTracking().AsQueryable();
-
-                if (level?.Length > 0)
-                {
-                    query = query.Where(e => level.Contains(e.Level));
-                }
-
-                if (context?.Length > 0)
-                {
-                    query = query.Where(e => context.Contains(e.Context));
-                }
-
-                if (!string.IsNullOrWhiteSpace(search))
-                {
-                    query = query.Where(e => e.Message.Contains(search));
-                }
-
-                if (from.HasValue)
-                {
-                    query = query.Where(e => e.Timestamp >= from.Value);
-                }
-
-                if (to.HasValue)
-                {
-                    query = query.Where(e => e.Timestamp <= to.Value);
-                }
-
-                var total = query.Count();
-
-                var items = query
-                    .OrderByDescending(e => e.Timestamp)
-                    .ThenByDescending(e => e.Id)
-                    .Skip(offset)
-                    .Take(limit)
-                    .Select(e => new LogRecord
-                    {
-                        Timestamp = e.Timestamp,
-                        Level = e.Level,
-                        Context = e.Context,
-                        SubContext = e.SubContext,
-                        Message = e.Message,
-                        Exception = e.Exception,
-                    })
-                    .ToList();
+                var (items, total) = LogFileReader.Query(
+                    Program.LogDirectory,
+                    level,
+                    context,
+                    search,
+                    from,
+                    to,
+                    offset,
+                    limit,
+                    HttpContext.RequestAborted);
 
                 Response.Headers["X-Total-Count"] = total.ToString();
                 return Ok(items);
@@ -229,9 +190,8 @@ namespace resonance.Core.API
 
             // Log through Serilog ONLY. The delegating sink in Program.cs already builds a LogRecord
             // from every event, enqueues it on LogBuffer and raises LogEmitted — so doing that here
-            // as well wrote two identical rows for every entry a client sent. Confirmed against the
-            // database: consecutive ids, identical timestamps to the millisecond, on every remote
-            // log line the mobile app and the browser produced.
+            // as well wrote two identical entries for every entry a client sent (identical timestamps
+            // to the millisecond, confirmed on every remote log line the mobile app and browser sent).
             var remoteLog = Log.ForContext("SourceContext", context);
             switch (level)
             {
