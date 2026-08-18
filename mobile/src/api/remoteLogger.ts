@@ -29,7 +29,7 @@
 
 import type { HubConnection } from '@microsoft/signalr';
 import { apiClient } from './client';
-import { getDeviceName } from '../store/auth';
+import { getLogSubContext } from './deviceLogContext';
 import { useAppSettings } from '../store/appSettingsStore';
 
 type LogLevel = 'info' | 'warn' | 'error';
@@ -129,7 +129,7 @@ export function attachHubLogging(hub: HubConnection, name: string) {
 }
 
 export async function enableRemoteLogging() {
-  logSubContext = await getDeviceName();
+  logSubContext = await getLogSubContext();
   if (intercepting) return;
   intercepting = true;
 

@@ -31,6 +31,7 @@ import React, { Profiler, useEffect } from 'react';
 import { AppState } from 'react-native';
 import type { AxiosError } from 'axios';
 import { apiClient } from '../api/client';
+import { getLogSubContext } from '../api/deviceLogContext';
 import { useAppSettings } from '../store/appSettingsStore';
 
 // Why this exists: "the app feels unresponsive, especially after coming back to it" is a symptom
@@ -247,8 +248,11 @@ function report() {
   const interesting = stalls > 0 || slowCommits > 0 || worstHttpMs > 1_000
     || worstInteractionMs > 0 || worstBlockMs > 0 || resumedAt !== null;
   if (interesting) {
-    apiClient
-      .post('/logs', { level: 'info', message: summary(), context: 'Mobile/Perf' })
+    const message = summary();
+    getLogSubContext()
+      .then((subContext) =>
+        apiClient.post('/logs', { level: 'info', message, context: 'Mobile', subContext }),
+      )
       .catch(() => { /* fire-and-forget; never retry, never queue */ });
   }
   // The resume label covers one window only, so later summaries aren't misread as post-resume.
