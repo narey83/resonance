@@ -117,6 +117,12 @@ namespace resonance
 
         private static readonly TimeSpan ShareScanDebounceDelay = TimeSpan.FromMinutes(3);
 
+        // brief disconnects are common and self-heal via ResumeParkedUploads, so a peer going offline doesn't purge
+        // their parked uploads right away; only a peer who is still offline after this long has their queue
+        // cleared, so a dropped connection followed by a quick reconnect never triggers the request-storm behavior
+        // described in UploadService.UploadAsync.
+        private static readonly TimeSpan ParkedUploadPurgeGracePeriod = TimeSpan.FromMinutes(5);
+
 #pragma warning disable SA1306 // Field names should begin with lower-case letter
         private static int EnqueueQueueDepth = 0;
         private static double CurrentEnqueueLatency = 0;
@@ -1765,11 +1771,12 @@ namespace resonance
 
         private void Client_UserStatusChanged(object sender, UserStatus args)
         {
-            // a peer returning is the cue to restart the uploads that were parked while they were away. uploads to an
-            // offline peer are left queued rather than failed (see UploadService.UploadAsync), so without this their
-            // queue would sit idle until they happened to re-request a file.
+            // a peer going offline is the cue to eventually clear out the uploads parked for them, once we're sure
+            // it isn't just a brief disconnect (see PurgeParkedUploadsAfterGracePeriodAsync). a peer returning is the
+            // cue to restart uploads that were parked for a fresh disconnect (see UploadService.UploadAsync).
             if (args.Presence == UserPresence.Offline)
             {
+                _ = PurgeParkedUploadsAfterGracePeriodAsync(args.Username);
                 return;
             }
 
@@ -1780,6 +1787,25 @@ namespace resonance
             catch (Exception ex)
             {
                 Log.Warning(ex, "Failed to resume parked uploads to {Username}: {Message}", args.Username, ex.Message);
+            }
+        }
+
+        private async Task PurgeParkedUploadsAfterGracePeriodAsync(string username)
+        {
+            try
+            {
+                await Task.Delay(ParkedUploadPurgeGracePeriod);
+
+                // re-check presence rather than purging unconditionally; the peer may have already reconnected
+                // (and had their uploads resumed) during the grace period.
+                if (Users.TryGetCachedPresence(username, out var presence) && presence == UserPresence.Offline)
+                {
+                    Transfers.Uploads.PurgeParkedUploads(username);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Failed to purge parked uploads to {Username}: {Message}", username, ex.Message);
             }
         }
 

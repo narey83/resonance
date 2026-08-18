@@ -106,6 +106,14 @@ namespace resonance.Transfers.Uploads
         int ResumeParkedUploads(string username);
 
         /// <summary>
+        ///     Cancels any uploads to the specified <paramref name="username"/> that are parked because the user was
+        ///     offline when the upload was last attempted.
+        /// </summary>
+        /// <param name="username">The username of the user.</param>
+        /// <returns>The number of uploads that were cancelled.</returns>
+        int PurgeParkedUploads(string username);
+
+        /// <summary>
         ///     Finds a single upload matching the specified <paramref name="expression"/>.
         /// </summary>
         /// <param name="expression">The expression to use to match uploads.</param>
@@ -837,6 +845,38 @@ namespace resonance.Transfers.Uploads
             }
 
             return parked.Count;
+        }
+
+        /// <summary>
+        ///     Cancels any uploads to the specified <paramref name="username"/> that are parked because the user was
+        ///     offline when the upload was last attempted.
+        /// </summary>
+        /// <param name="username">The username of the user.</param>
+        /// <returns>The number of uploads that were cancelled.</returns>
+        public int PurgeParkedUploads(string username)
+        {
+            if (string.IsNullOrEmpty(username))
+            {
+                return 0;
+            }
+
+            var parked = List(
+                t => t.Username == username && t.EndedAt == null && t.State == (TransferStates.Queued | TransferStates.Locally),
+                includeRemoved: false);
+
+            if (parked.Count == 0)
+            {
+                return 0;
+            }
+
+            var cancelled = parked.Count(t => TryCancel(t.Id));
+
+            if (cancelled > 0)
+            {
+                Log.Information("Cancelled {Count} parked upload(s) to {Username}, who is offline", cancelled, username);
+            }
+
+            return cancelled;
         }
 
         /// <summary>
