@@ -872,17 +872,6 @@ const LogsFeed = ({ onChangeServerLevel, serverLevel }) => {
     return counts;
   }, [entries]);
 
-  const contextCounts = useMemo(() => {
-    const counts = {};
-
-    for (const log of entries) {
-      if (!log.context) continue;
-      counts[log.context] = (counts[log.context] ?? 0) + 1;
-    }
-
-    return counts;
-  }, [entries]);
-
   // Every context the backend can emit, plus anything loaded that predates the registry.
   const allContexts = useMemo(
     () =>
@@ -1099,7 +1088,6 @@ const LogsFeed = ({ onChangeServerLevel, serverLevel }) => {
           <ContextPicker
             active={activeContexts}
             all={allContexts}
-            counts={contextCounts}
             onChange={setActiveContexts}
           />
 
