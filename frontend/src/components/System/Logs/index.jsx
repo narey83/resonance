@@ -1122,11 +1122,12 @@ const HistoryTab = () => {
         setResults([]);
         setTotalCount(0);
       }
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+      // eslint-disable-next-line require-atomic-updates
+      fetchingRef.current = false;
     }
-
-    fetchingRef.current = false;
-    setLoading(false);
-    setLoadingMore(false);
   };
 
   const resetScroll = () => {
@@ -1424,9 +1425,7 @@ const HistoryTab = () => {
 
       <div className="logs-pagination">
         <span className="logs-pagination-count">
-          {results.length.toLocaleString()} of{' '}
-          {totalCount.toLocaleString()}{' '}
-          {totalCount === 1 ? 'entry' : 'entries'}
+          {`${results.length.toLocaleString()} of ${totalCount.toLocaleString()} ${totalCount === 1 ? 'entry' : 'entries'}`}
         </span>
         {loadingMore && (
           <span className="logs-pagination-more">Loading more…</span>
