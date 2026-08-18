@@ -956,7 +956,12 @@ const LogsFeed = ({ onChangeServerLevel, serverLevel }) => {
   // Infinite scroll-back: once the last rendered row is within reach of what's loaded, pull the
   // next page. Fires again automatically once the appended rows push the "end" further out.
   useEffect(() => {
-    if (!hasMoreOlder || loadingInitial || loadingOlder) return;
+    // rows.length === 0 before the first page has loaded would otherwise satisfy
+    // "last index >= rows.length - 1" trivially (-1 >= -1) and fire an unbounded fetch.
+    if (!hasMoreOlder || loadingInitial || loadingOlder || rows.length === 0) {
+      return;
+    }
+
     if (desktopLastIndex >= rows.length - 1) fetchOlderPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -968,7 +973,10 @@ const LogsFeed = ({ onChangeServerLevel, serverLevel }) => {
   ]);
 
   useEffect(() => {
-    if (!hasMoreOlder || loadingInitial || loadingOlder) return;
+    if (!hasMoreOlder || loadingInitial || loadingOlder || rows.length === 0) {
+      return;
+    }
+
     if (mobileLastIndex >= rows.length - 1) fetchOlderPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
