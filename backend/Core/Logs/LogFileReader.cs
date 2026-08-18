@@ -75,6 +75,18 @@ public static class LogFileReader
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            // A file that hasn't been written to since before `from` cannot contain any line
+            // timestamped >= from (a record's Timestamp can never exceed its file's last-write
+            // time), so it can be skipped without opening it -- this is what keeps the live-tail
+            // poll (always from-bounded, no `to`) cheap: once a day's file stops being the one
+            // actively written to, this check turns it into a single stat() call instead of a
+            // full read. Safe regardless of `to` or the file's rolling-boundary semantics, since
+            // it only ever skips files that provably cannot match.
+            if (from.HasValue && File.GetLastWriteTimeUtc(file) < from.Value)
+            {
+                continue;
+            }
+
             // a day's lines are written oldest-first; buffer the day so it can be walked newest-first,
             // keeping the overall newest-first order across days without a true reverse file read.
             var day = new List<LogRecord>();
