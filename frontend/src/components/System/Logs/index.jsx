@@ -122,7 +122,8 @@ const dayOf = (ts) => parseUtcDate(ts).toISOString().slice(0, 10);
 const logKey = (log) =>
   `${log.timestamp}|${log.context}|${log.level}|${log.message}`;
 
-const rowKey = (row) => (row.type === 'date' ? `date-${row.day}` : logKey(row.log));
+const rowKey = (row) =>
+  row.type === 'date' ? `date-${row.day}` : logKey(row.log);
 
 const formatDay = (day) => {
   const today = new Date().toISOString().slice(0, 10);
@@ -578,7 +579,12 @@ const ColumnHead = () => (
 
 // Shared by every fetch (initial load, scroll-back page, tail poll) — level/context/search
 // params are identical across all three; only offset/limit/from/to differ per call site.
-const buildLogQueryParams = ({ activeContexts, levels, messageFilter, regexMode }) => {
+const buildLogQueryParams = ({
+  activeContexts,
+  levels,
+  messageFilter,
+  regexMode,
+}) => {
   const activeLevels = Object.entries(levels)
     .filter(([, on]) => on)
     .map(([name]) => name);
@@ -890,7 +896,7 @@ const LogsFeed = ({ onChangeServerLevel, serverLevel }) => {
           ...entries.map((log) => log.context).filter(Boolean),
         ]),
       ].sort((a, b) => a.localeCompare(b)),
-    [knownContexts, entries],
+    [entries, knownContexts],
   );
 
   // Flattened list of date separators + log rows, so the virtualizer can measure both.
@@ -952,12 +958,26 @@ const LogsFeed = ({ onChangeServerLevel, serverLevel }) => {
   useEffect(() => {
     if (!hasMoreOlder || loadingInitial || loadingOlder) return;
     if (desktopLastIndex >= rows.length - 1) fetchOlderPage();
-  }, [desktopLastIndex, rows.length, hasMoreOlder, loadingInitial, loadingOlder]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    desktopLastIndex,
+    rows.length,
+    hasMoreOlder,
+    loadingInitial,
+    loadingOlder,
+  ]);
 
   useEffect(() => {
     if (!hasMoreOlder || loadingInitial || loadingOlder) return;
     if (mobileLastIndex >= rows.length - 1) fetchOlderPage();
-  }, [mobileLastIndex, rows.length, hasMoreOlder, loadingInitial, loadingOlder]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    mobileLastIndex,
+    rows.length,
+    hasMoreOlder,
+    loadingInitial,
+    loadingOlder,
+  ]);
 
   // Tail poll: skips while the tab is backgrounded (no point paying for a full-file-scan the
   // user can't see), and fires one catch-up poll immediately on becoming visible again rather
