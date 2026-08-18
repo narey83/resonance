@@ -29,6 +29,7 @@
 
 namespace resonance.Users.API
 {
+    using System.ComponentModel.DataAnnotations;
     using System.Security.Claims;
     using Asp.Versioning;
     using Microsoft.AspNetCore.Authorization;
@@ -102,16 +103,21 @@ namespace resonance.Users.API
         /// <summary>
         ///     Gets or sets the FCM device push token.
         /// </summary>
+        [Required]
+        [StringLength(4096, MinimumLength = 1)]
         public string Token { get; set; }
 
         /// <summary>
         ///     Gets or sets the stable per-install device id (Android ID / iOS identifierForVendor).
         /// </summary>
+        [Required]
+        [StringLength(256, MinimumLength = 1)]
         public string DeviceId { get; set; }
 
         /// <summary>
         ///     Gets or sets the device platform ("android" or "ios"), informational only.
         /// </summary>
+        [StringLength(32)]
         public string Platform { get; set; }
     }
 }

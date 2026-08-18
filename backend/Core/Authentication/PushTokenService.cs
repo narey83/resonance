@@ -36,6 +36,12 @@ using Microsoft.EntityFrameworkCore;
 
 public class PushTokenService
 {
+    // Bounds how many FCM sends one library change fans out into per account. A user with a
+    // legitimate need for more than this has bigger problems than push notifications; a
+    // malicious account spamming fake device ids just evicts its own oldest entries instead of
+    // growing the table or the fan-out without limit.
+    private const int MaxDevicesPerUser = 10;
+
     public PushTokenService(IDbContextFactory<UsersDbContext> contextFactory)
     {
         ContextFactory = contextFactory;
@@ -52,6 +58,12 @@ public class PushTokenService
 
         if (existing is null)
         {
+            var forUser = db.PushTokens.Where(t => t.Username == username).OrderBy(t => t.UpdatedAt).ToList();
+            if (forUser.Count >= MaxDevicesPerUser)
+            {
+                db.PushTokens.RemoveRange(forUser.Take(forUser.Count - MaxDevicesPerUser + 1));
+            }
+
             db.PushTokens.Add(new PushToken
             {
                 Username = username,
