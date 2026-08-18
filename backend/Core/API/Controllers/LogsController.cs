@@ -193,6 +193,11 @@ namespace resonance.Core.API
             // as well wrote two identical entries for every entry a client sent (identical timestamps
             // to the millisecond, confirmed on every remote log line the mobile app and browser sent).
             var remoteLog = Log.ForContext("SourceContext", context);
+
+            if (!string.IsNullOrWhiteSpace(entry.SubContext))
+            {
+                remoteLog = remoteLog.ForContext("SubContext", entry.SubContext);
+            }
             switch (level)
             {
                 case "Error": remoteLog.Error("{RemoteMessage}", entry.Message); break;
@@ -220,5 +225,6 @@ namespace resonance.Core.API
         public string Level { get; init; }
         public string Message { get; init; }
         public string Context { get; init; }
+        public string SubContext { get; init; }
     }
 }

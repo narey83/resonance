@@ -39,7 +39,11 @@ interface QueuedEntry {
   message: string;
 }
 
-let logContext = 'Mobile';
+// Fixed so every device buckets under the same "Mobile" filter chip server-side; the device
+// itself goes in subContext instead, so entries stay distinguishable without fragmenting the
+// context registry into one dynamic value per device.
+const LOG_CONTEXT = 'Mobile';
+let logSubContext = '';
 let queue: QueuedEntry[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let intercepting = false;
@@ -93,7 +97,12 @@ async function flush() {
   // resume, when a backlog built up while the app was away flushes in one burst.
   for (const e of entries) {
     try {
-      await apiClient.post('/logs', { level: e.level, message: e.message, context: logContext });
+      await apiClient.post('/logs', {
+        level: e.level,
+        message: e.message,
+        context: LOG_CONTEXT,
+        subContext: logSubContext,
+      });
     } catch {
       // Fire-and-forget: drop on network error to avoid feedback loops.
     }
@@ -120,7 +129,7 @@ export function attachHubLogging(hub: HubConnection, name: string) {
 }
 
 export async function enableRemoteLogging() {
-  logContext = `Mobile / ${await getDeviceName()}`;
+  logSubContext = await getDeviceName();
   if (intercepting) return;
   intercepting = true;
 

@@ -136,17 +136,27 @@ const formatDay = (day) => {
 };
 
 // Contexts read as "Group / Leaf". Dimming the group lets the eye scan the part that differs.
-const ContextLabel = ({ context }) => {
+// subContext carries finer-grained identity (which device, which peer, ...) that would otherwise
+// fragment the context registry into one entry per instance if baked into context itself.
+const ContextLabel = ({ context, subContext }) => {
   if (!context) return null;
 
   const split = context.lastIndexOf(' / ');
 
-  if (split === -1) return <span className="logs-ctx-leaf">{context}</span>;
+  const label =
+    split === -1 ? (
+      <span className="logs-ctx-leaf">{context}</span>
+    ) : (
+      <>
+        <span className="logs-ctx-group">{context.slice(0, split + 3)}</span>
+        <span className="logs-ctx-leaf">{context.slice(split + 3)}</span>
+      </>
+    );
 
   return (
     <>
-      <span className="logs-ctx-group">{context.slice(0, split + 3)}</span>
-      <span className="logs-ctx-leaf">{context.slice(split + 3)}</span>
+      {label}
+      {subContext && <span className="logs-ctx-sub"> · {subContext}</span>}
     </>
   );
 };
@@ -171,8 +181,11 @@ const groupContexts = (contexts) => {
 // ─── Shared row/card renderers ────────────────────────────────────────────────
 
 const copyLog = (log) => {
+  const context = log.subContext
+    ? `${log.context ?? ''} · ${log.subContext}`
+    : log.context ?? '';
   const parts = [
-    `${formatTimestamp(log.timestamp)} [${LEVEL_LABELS[log.level] ?? log.level}] ${log.context ?? ''}`,
+    `${formatTimestamp(log.timestamp)} [${LEVEL_LABELS[log.level] ?? log.level}] ${context}`,
     log.message ?? '',
   ];
 
@@ -234,9 +247,14 @@ const LogRow = ({ expanded, log, messageFilter, onToggle, regexMode }) => {
       </div>
       <div
         className="logs-row-ctx"
-        title={log.context}
+        title={
+          log.subContext ? `${log.context} · ${log.subContext}` : log.context
+        }
       >
-        <ContextLabel context={log.context} />
+        <ContextLabel
+          context={log.context}
+          subContext={log.subContext}
+        />
       </div>
       <div className="logs-row-msg">
         {highlight(log.message, messageFilter, regexMode)}
@@ -262,7 +280,10 @@ const LogCard = ({ expanded, log, messageFilter, onToggle, regexMode }) => {
         <span className="logs-card-ts">{formatTimestamp(log.timestamp)}</span>
         {log.context && (
           <span className="logs-card-ctx">
-            <ContextLabel context={log.context} />
+            <ContextLabel
+              context={log.context}
+              subContext={log.subContext}
+            />
           </span>
         )}
         <CopyButton log={log} />
