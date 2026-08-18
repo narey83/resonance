@@ -108,6 +108,11 @@ services:
       WATCHPACK_POLLING: "true"
       # craco proxies /api and /hub to localhost:5030 — correct under host networking.
       DANGEROUSLY_DISABLE_HOST_CHECK: "true"
+      # Silences "[DEP0060] DeprecationWarning: The `util._extend` API is deprecated" --
+      # that's webpack-dev-server's bundled http-proxy-middleware -> http-proxy@1.18.1
+      # calling util._extend internally (an upstream issue, not our code); Node 22 just
+      # surfaces it more visibly than older Node did. util._extend still works fine.
+      NODE_OPTIONS: "--no-deprecation"
     volumes:
       - ${RESONANCE_SRC:-/home/narey/projects/resonance}/frontend:/src/frontend
       # node_modules built fresh in-container (host's were built with a different node); isolated on scratch.
