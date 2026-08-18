@@ -37,7 +37,7 @@ using TagLib;
 
 public static class YtDlpTagWriter
 {
-    private static readonly ILogger Log = Serilog.Log.ForContext(typeof(YtDlpTagWriter));
+    private static readonly ILogger Log = Serilog.Log.ForContext("SourceContext", resonance.Logs.Integrations.YtDlp);
 
     private static readonly string[] ThumbnailExtensions = [".jpg", ".jpeg", ".webp", ".png"];
 

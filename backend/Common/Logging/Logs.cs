@@ -53,6 +53,8 @@ namespace resonance
         public const string Browser = "Browser";
         public const string Mobile = "Mobile";
         public const string Dlna = "DLNA";
+        public const string SystemStats = "System Stats";
+        public const string DiskSpace = "Disk Space";
 
         /// <summary>
         ///     Gets every context defined in this registry, sorted.

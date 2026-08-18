@@ -46,7 +46,7 @@ namespace resonance.Common
     {
         private const string DockerSocketPath = "/var/run/docker.sock";
 
-        private static readonly Serilog.ILogger Log = Serilog.Log.ForContext(typeof(SystemStats));
+        private static readonly Serilog.ILogger Log = Serilog.Log.ForContext("SourceContext", resonance.Logs.SystemStats);
 
         private static readonly HttpClient Docker = new HttpClient(new SocketsHttpHandler
         {

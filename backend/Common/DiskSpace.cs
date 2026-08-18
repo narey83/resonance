@@ -37,7 +37,7 @@ namespace resonance.Common
     /// </summary>
     public static class DiskSpace
     {
-        private static readonly Serilog.ILogger Log = Serilog.Log.ForContext(typeof(DiskSpace));
+        private static readonly Serilog.ILogger Log = Serilog.Log.ForContext("SourceContext", resonance.Logs.DiskSpace);
 
         /// <summary>
         ///     Gets the available and total bytes on the volume containing <paramref name="path"/>. Returns false if the check fails.
