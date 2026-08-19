@@ -38,7 +38,6 @@ using Microsoft.Extensions.Options;
 namespace resonance.Core.API
 {
     using System;
-    using System.Diagnostics;
     using System.Threading.Tasks;
     using Asp.Versioning;
     using Microsoft.AspNetCore.Authorization;
@@ -113,8 +112,11 @@ namespace resonance.Core.API
         [Authorize(Policy = AuthPolicy.JwtOnly, Roles = AuthRole.AdministratorOnly)]
         public IActionResult Restart()
         {
+            // defer the relaunch until this process has actually shut down and released its singleton
+            // mutex (see Program.cs) -- starting the new process now races it against this one, which is
+            // still holding the mutex during its graceful shutdown, and the new process always loses.
+            Program.RestartRequested = true;
             Program.MasterCancellationTokenSource.Cancel();
-            Process.Start(Process.GetCurrentProcess().MainModule.FileName, Environment.CommandLine);
             Lifetime.StopApplication();
 
             return NoContent();

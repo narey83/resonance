@@ -41,6 +41,7 @@ namespace resonance
     using System.Collections.Generic;
     using System.ComponentModel;
     using System.ComponentModel.DataAnnotations;
+    using System.Diagnostics;
     using System.IO;
     using System.Linq;
     using System.Net;
@@ -295,6 +296,16 @@ namespace resonance
         ///     (POSIX signals, a restart from the API, etc) should cancel this source.
         /// </remarks>
         public static CancellationTokenSource MasterCancellationTokenSource { get; } = new CancellationTokenSource();
+
+        /// <summary>
+        ///     Gets or sets a value indicating whether the application should relaunch itself after shutdown completes.
+        /// </summary>
+        /// <remarks>
+        ///     Set by the restart API endpoint. The relaunch is deferred until after the singleton mutex is
+        ///     released (see the shutdown <c>finally</c> block below) so the new process doesn't lose the mutex
+        ///     race against this one, which is still shutting down.
+        /// </remarks>
+        public static bool RestartRequested { get; set; }
 
         /// <summary>
         ///     Gets the settings store used to persist configuration to the database.
@@ -764,6 +775,18 @@ namespace resonance
                 catch (Exception)
                 {
                     // Ignore disposal errors to prevent masking other exceptions
+                }
+
+                if (RestartRequested)
+                {
+                    try
+                    {
+                        Process.Start(Process.GetCurrentProcess().MainModule.FileName, Environment.CommandLine);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Fatal(ex, "Failed to relaunch the application after restart");
+                    }
                 }
 
                 Serilog.Log.CloseAndFlush();
