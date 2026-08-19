@@ -57,6 +57,7 @@ public sealed class FfmpegService : IFfmpegService, IDisposable
 
     private string? ffmpegPath;
     private string? ffprobePath;
+    private int disposed;
 
     public FfmpegService(IOptionsMonitor<resonance.Options> options, IHttpClientFactory httpClientFactory)
     {
@@ -162,6 +163,13 @@ public sealed class FfmpegService : IFfmpegService, IDisposable
 
     public void Dispose()
     {
+        // registered as both IFfmpegService and (via the same instance) IHostedService, so the DI
+        // container tracks it as a disposable under two descriptors and disposes it twice on shutdown
+        if (Interlocked.Exchange(ref disposed, 1) != 0)
+        {
+            return;
+        }
+
         cts.Cancel();
         cts.Dispose();
         gate.Dispose();
