@@ -198,6 +198,7 @@ namespace resonance.Core.API
             {
                 remoteLog = remoteLog.ForContext("SubContext", entry.SubContext);
             }
+
             switch (level)
             {
                 case "Error": remoteLog.Error("{RemoteMessage}", entry.Message); break;
