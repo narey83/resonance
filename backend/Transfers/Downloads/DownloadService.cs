@@ -47,6 +47,7 @@ namespace resonance.Transfers.Downloads
     using System.Net;
     using System.Threading;
     using System.Threading.Tasks;
+    using Dapper;
     using Microsoft.EntityFrameworkCore;
     using resonance.Common;
     using resonance.Events;
@@ -105,7 +106,14 @@ namespace resonance.Transfers.Downloads
         /// <param name="includeRemoved">Optionally include downloads that have been removed previously.</param>
         /// <returns>The list of downloads matching the specified expression, or all downloads if no expression is specified.</returns>
         List<Transfer> List(Expression<Func<Transfer, bool>> expression = null, bool includeRemoved = false);
-        string GetPeerAddress(string username);
+
+        /// <summary>
+        ///     Gets the last known peer addresses for the specified <paramref name="usernames"/>, falling back to
+        ///     persisted network info for users not seen with an in-progress transfer since the application started.
+        /// </summary>
+        /// <param name="usernames">The usernames of the peers.</param>
+        /// <returns>A dictionary of username to IP address string, containing only usernames for which an address is known.</returns>
+        IReadOnlyDictionary<string, string> GetPeerAddresses(IEnumerable<string> usernames);
 
         /// <summary>
         ///     Removes <see cref="TransferStates.Completed"/> downloads older than the specified <paramref name="age"/>.
@@ -182,7 +190,8 @@ namespace resonance.Transfers.Downloads
             IRelayService relayService,
             IFTPService ftpClient,
             EventBus eventBus,
-            ITransferErrorNotificationService errorNotifications)
+            ITransferErrorNotificationService errorNotifications,
+            ConnectionStringDictionary connectionStrings)
         {
             Client = soulseekClient;
             OptionsMonitor = optionsMonitor;
@@ -192,6 +201,7 @@ namespace resonance.Transfers.Downloads
             Relay = relayService;
             EventBus = eventBus;
             ErrorNotifications = errorNotifications;
+            TransfersConnectionString = connectionStrings[Database.Transfers];
 
             Clock.EveryMinute += (_, _) => Task.Run(() => CleanupEnqueueSemaphoresAsync());
         }
@@ -216,6 +226,7 @@ namespace resonance.Transfers.Downloads
         /// </summary>
         private ConcurrentDictionary<Guid, CancellationTokenSource> CancellationTokens { get; } = new ConcurrentDictionary<Guid, CancellationTokenSource>();
         private ConcurrentDictionary<string, string> PeerAddresses { get; } = new ConcurrentDictionary<string, string>();
+        private string TransfersConnectionString { get; }
         private ISoulseekClient Client { get; }
         private IDbContextFactory<TransfersDbContext> ContextFactory { get; }
         private IFTPService FTP { get; }
@@ -712,12 +723,54 @@ namespace resonance.Transfers.Downloads
         }
 
         /// <summary>
-        ///     Gets the last known IP address for the specified <paramref name="username"/>.
+        ///     Gets the last known IP addresses for the specified <paramref name="usernames"/>, falling back to
+        ///     persisted network info (<c>transfers."TransferNetworkInfo"</c>) for any not seen with an in-progress
+        ///     download since the application started.
         /// </summary>
-        /// <param name="username">The username for which to retrieve the address.</param>
-        /// <returns>The peer address, or null if not known.</returns>
-        public string GetPeerAddress(string username) =>
-            PeerAddresses.TryGetValue(username, out var addr) ? addr : null;
+        /// <param name="usernames">The usernames for which to retrieve addresses.</param>
+        /// <returns>A dictionary of username to IP address string, containing only usernames for which an address is known.</returns>
+        public IReadOnlyDictionary<string, string> GetPeerAddresses(IEnumerable<string> usernames)
+        {
+            var result = new Dictionary<string, string>();
+            var missing = new List<string>();
+
+            foreach (var username in usernames.Distinct())
+            {
+                if (PeerAddresses.TryGetValue(username, out var addr))
+                {
+                    result[username] = addr;
+                }
+                else
+                {
+                    missing.Add(username);
+                }
+            }
+
+            if (missing.Count > 0)
+            {
+                try
+                {
+                    using var conn = new Npgsql.NpgsqlConnection(TransfersConnectionString);
+
+                    var rows = conn.Query<(string Username, string IpAddress)>(
+                        @"SELECT ""Username"", ""IpAddress"" FROM transfers.""TransferNetworkInfo""
+                          WHERE ""Username"" = ANY(@Usernames) AND ""IpAddress"" IS NOT NULL AND ""IpAddress"" <> ''",
+                        new { Usernames = missing.ToArray() });
+
+                    foreach (var (username, ip) in rows)
+                    {
+                        result[username] = ip;
+                        PeerAddresses.TryAdd(username, ip);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug(ex, "Failed to look up persisted peer addresses for {Count} user(s)", missing.Count);
+                }
+            }
+
+            return result;
+        }
 
         /// <summary>
         ///     Finds a single download matching the specified <paramref name="expression"/>.

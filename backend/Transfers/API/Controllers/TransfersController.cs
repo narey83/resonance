@@ -465,10 +465,12 @@ namespace resonance.Transfers.API
 
             downloads = CapCompleted(downloads);
 
+            var peerAddresses = Transfers.Downloads.GetPeerAddresses(downloads.Select(t => t.Username));
+
             var response = downloads.GroupBy(t => t.Username).Select(grouping => new UserResponse()
             {
                 Username = grouping.Key,
-                PeerAddress = Transfers.Downloads.GetPeerAddress(grouping.Key),
+                PeerAddress = peerAddresses.GetValueOrDefault(grouping.Key),
                 Directories = grouping.GroupBy(g => g.Filename.DirectoryName()).Select(d => new DirectoryResponse()
                 {
                     Directory = d.Key,
@@ -611,10 +613,12 @@ namespace resonance.Transfers.API
 
             uploads = CapCompleted(uploads);
 
+            var peerAddresses = Transfers.Uploads.GetPeerAddresses(uploads.Select(t => t.Username));
+
             var response = uploads.GroupBy(t => t.Username).Select(grouping => new UserResponse()
             {
                 Username = grouping.Key,
-                PeerAddress = Transfers.Uploads.GetPeerAddress(grouping.Key),
+                PeerAddress = peerAddresses.GetValueOrDefault(grouping.Key),
                 Directories = grouping.GroupBy(g => g.Filename.DirectoryName()).Select(d => new DirectoryResponse()
                 {
                     Directory = d.Key,
