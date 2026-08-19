@@ -95,6 +95,7 @@ public class BlockedUsersService
     private string IpsTable => UsePostgres ? "blocked.\"Ips\"" : "BlockedIps";
     private string PlacesTable => UsePostgres ? "blocked.\"Places\"" : "BlockedPlaces";
     private string UserIpsTable => UsePostgres ? "blocked.\"UserIps\"" : "BlockedUserIps";
+    private string DeniedFoldersTable => UsePostgres ? "blocked.\"DeniedFolders\"" : "BlockedDeniedFolders";
 
     /// <summary>
     ///     Gets a value indicating whether <paramref name="username"/> is blocked, regardless of scope.
@@ -155,6 +156,86 @@ public class BlockedUsersService
         }
 
         return IsPlaceBlocked(snapshot, ipAddress);
+    }
+
+    /// <summary>
+    ///     Gets a value indicating whether <paramref name="directory"/> has been permanently
+    ///     denied to <paramref name="username"/>. Denials are exact-match on the remote
+    ///     directory path and are independent of <see cref="BlockedUserOptions"/> — a denied
+    ///     folder stays denied regardless of the general blocking toggles.
+    /// </summary>
+    /// <returns>A value indicating whether the folder is denied to the user.</returns>
+    public bool IsFolderDenied(string username, string directory)
+        => username is not null
+            && directory is not null
+            && current.DeniedFolders.TryGetValue(username, out var directories)
+            && directories.Contains(directory);
+
+    /// <summary>
+    ///     Gets the folders that have been permanently denied, optionally limited to a single user.
+    /// </summary>
+    /// <returns>The matching denied folders, most recently denied first.</returns>
+    public IReadOnlyList<DeniedFolder> GetDeniedFolders(string username = null)
+    {
+        using var conn = CreateConnection();
+
+        var sql = $"SELECT \"Username\" AS {nameof(DeniedFolder.Username)}, \"Directory\" AS {nameof(DeniedFolder.Directory)}, " +
+            $"\"DeniedAt\" AS {nameof(DeniedFolder.DeniedAt)}, \"Reason\" AS {nameof(DeniedFolder.Reason)} FROM {DeniedFoldersTable}";
+
+        if (!string.IsNullOrWhiteSpace(username))
+        {
+            sql += " WHERE LOWER(\"Username\") = LOWER(@Username)";
+        }
+
+        sql += " ORDER BY \"DeniedAt\" DESC";
+
+        return conn.Query<DeniedFolder>(sql, new { Username = username }).ToList();
+    }
+
+    /// <summary>
+    ///     Permanently denies <paramref name="directory"/> to <paramref name="username"/>, so
+    ///     future requests for files under it are rejected even after any in-flight transfers
+    ///     are cancelled.
+    /// </summary>
+    /// <returns>The user's updated list of denied folders.</returns>
+    public IReadOnlyList<DeniedFolder> DenyFolder(string username, string directory, string reason = null)
+    {
+        using (var conn = CreateConnection())
+        {
+            conn.Execute(
+                $"DELETE FROM {DeniedFoldersTable} WHERE LOWER(\"Username\") = LOWER(@Username) AND \"Directory\" = @Directory",
+                new { Username = username, Directory = directory });
+            conn.Execute(
+                $"INSERT INTO {DeniedFoldersTable} (\"Username\", \"Directory\", \"DeniedAt\", \"Reason\") VALUES (@Username, @Directory, @DeniedAt, @Reason)",
+                new { Username = username, Directory = directory, DeniedAt = DateTime.UtcNow, Reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim() });
+        }
+
+        Log.Information("Denied folder {Directory} to {Username}", directory, username);
+        Reload();
+        return GetDeniedFolders(username);
+    }
+
+    /// <summary>
+    ///     Removes a previously denied folder, allowing <paramref name="username"/> to request
+    ///     it again.
+    /// </summary>
+    /// <returns>The user's updated list of denied folders.</returns>
+    public IReadOnlyList<DeniedFolder> AllowFolder(string username, string directory)
+    {
+        using (var conn = CreateConnection())
+        {
+            var removed = conn.Execute(
+                $"DELETE FROM {DeniedFoldersTable} WHERE LOWER(\"Username\") = LOWER(@Username) AND \"Directory\" = @Directory",
+                new { Username = username, Directory = directory });
+
+            if (removed > 0)
+            {
+                Log.Information("Allowed folder {Directory} for {Username}", directory, username);
+            }
+        }
+
+        Reload();
+        return GetDeniedFolders(username);
     }
 
     public IReadOnlyList<BlockedUser> GetAll()
@@ -605,7 +686,15 @@ public class BlockedUsersService
             var places = conn.Query<BlockedPlace>(
                 $"SELECT \"Id\" AS {nameof(BlockedPlace.Id)}, \"Country\" AS {nameof(BlockedPlace.Country)}, \"City\" AS {nameof(BlockedPlace.City)} FROM {PlacesTable}").ToList();
 
-            current = new Snapshot(usernames, options, blockedUserIps, ipRanges, places);
+            var deniedFolders = conn.Query<(string Username, string Directory)>(
+                    $"SELECT \"Username\", \"Directory\" FROM {DeniedFoldersTable}")
+                .GroupBy(r => r.Username, StringComparer.OrdinalIgnoreCase)
+                .ToImmutableDictionary(
+                    g => g.Key,
+                    g => g.Select(r => r.Directory).ToImmutableHashSet(StringComparer.Ordinal),
+                    StringComparer.OrdinalIgnoreCase);
+
+            current = new Snapshot(usernames, options, blockedUserIps, ipRanges, places, deniedFolders);
         }
     }
 
@@ -640,6 +729,7 @@ public class BlockedUsersService
             "\"BlockedAt\" TIMESTAMPTZ NOT NULL, " +
             "\"Reason\" TEXT NULL)");
         conn.Execute($"CREATE TABLE IF NOT EXISTS {UserIpsTable} (\"Username\" TEXT NOT NULL, \"Ip\" TEXT NOT NULL, \"LastSeen\" TIMESTAMPTZ NOT NULL, PRIMARY KEY (\"Username\", \"Ip\"))");
+        conn.Execute($"CREATE TABLE IF NOT EXISTS {DeniedFoldersTable} (\"Username\" TEXT NOT NULL, \"Directory\" TEXT NOT NULL, \"DeniedAt\" TIMESTAMPTZ NOT NULL, \"Reason\" TEXT NULL, PRIMARY KEY (\"Username\", \"Directory\"))");
     }
 
     private sealed record Snapshot(
@@ -647,13 +737,15 @@ public class BlockedUsersService
         BlockedUserOptions Options,
         ImmutableHashSet<string> BlockedUserIps,
         IReadOnlyList<IPAddressRange> IpRanges,
-        IReadOnlyList<BlockedPlace> Places)
+        IReadOnlyList<BlockedPlace> Places,
+        ImmutableDictionary<string, ImmutableHashSet<string>> DeniedFolders)
     {
         public static Snapshot Empty { get; } = new(
             ImmutableHashSet<string>.Empty.WithComparer(StringComparer.OrdinalIgnoreCase),
             new BlockedUserOptions(),
             ImmutableHashSet<string>.Empty,
             [],
-            []);
+            [],
+            ImmutableDictionary<string, ImmutableHashSet<string>>.Empty.WithComparers(StringComparer.OrdinalIgnoreCase));
     }
 }

@@ -146,13 +146,13 @@ const cancelUploadDirectory = async ({ directory, files, username }) => {
   if (count === 0) return;
   if (
     !window.confirm(
-      `Cancel ${count} queued/active upload${count === 1 ? '' : 's'} of this folder to ${username}? They can request it again later.`,
+      `Cancel ${count} queued/active upload${count === 1 ? '' : 's'} of this folder to ${username}? This folder will be permanently denied to them — they won't be able to request it again.`,
     )
   )
     return;
 
   await transfersLibrary
-    .cancelAll({ direction: 'upload', directory, username })
+    .cancelAll({ deny: true, direction: 'upload', directory, username })
     .catch(() => {});
 };
 

@@ -64,15 +64,18 @@ export const cancel = ({ direction, username, id, remove = false }) => {
 };
 
 // Kill switch: cancels every incomplete transfer for a user, or just one of their folders.
+// `deny` only applies to uploads with a `directory`: it permanently denies that folder to the
+// user going forward, instead of just cancelling what's currently queued/in-flight.
 export const cancelAll = ({
   direction,
   username,
   directory,
   remove = false,
+  deny,
 }) => {
   return api.delete(
     `/transfers/${direction}s/${encodeURIComponent(username)}`,
-    { params: { directory, remove } },
+    { params: { directory, remove, deny } },
   );
 };
 

@@ -791,6 +791,12 @@ namespace resonance
                     throw new DownloadEnqueueException("File not shared.");
                 }
 
+                if (Blocked.IsFolderDenied(username, filename.DirectoryName()))
+                {
+                    Log.Information("Rejected enqueue request for {Username}; folder {Directory} is denied", username, filename.DirectoryName());
+                    throw new DownloadEnqueueException("File not shared.");
+                }
+
                 /*
                     for limits to work properly (and to help alleviate strain from the db, make incoming requests 'fair' among competing users),
                     we need to ensure that we process only one request per user at a time.

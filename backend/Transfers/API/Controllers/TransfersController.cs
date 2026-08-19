@@ -248,17 +248,23 @@ namespace resonance.Transfers.API
         ///     Cancels all incomplete uploads to the specified user, optionally limited to a single directory.
         /// </summary>
         /// <remarks>
-        ///     Cancelled uploads are dispositioned as completed, so the peer is free to request the same files again.
+        ///     Cancelled uploads are dispositioned as completed, so the peer is free to request the same files
+        ///     again — unless <paramref name="deny"/> is set (the default when a <paramref name="directory"/> is
+        ///     given), in which case that directory is permanently denied to the user going forward.
         /// </remarks>
         /// <param name="username">The username of the upload destination.</param>
         /// <param name="directory">The remote directory to limit the cancellation to; all directories if omitted.</param>
         /// <param name="remove">A value indicating whether the tracked uploads should be removed after cancellation.</param>
+        /// <param name="deny">
+        ///     A value indicating whether <paramref name="directory"/> should be permanently denied to the user;
+        ///     ignored if <paramref name="directory"/> is omitted, since there'd be nothing specific to deny.
+        /// </param>
         /// <returns>The number of uploads cancelled.</returns>
         /// <response code="200">The uploads were cancelled successfully.</response>
         [HttpDelete("uploads/{username}")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(typeof(int), 200)]
-        public IActionResult CancelUploads([FromRoute, UrlEncoded, Required] string username, [FromQuery] string directory = null, [FromQuery] bool remove = false)
+        public IActionResult CancelUploads([FromRoute, UrlEncoded, Required] string username, [FromQuery] string directory = null, [FromQuery] bool remove = false, [FromQuery] bool deny = true)
         {
             if (Program.IsRelayAgent)
             {
@@ -280,8 +286,47 @@ namespace resonance.Transfers.API
                 }
             }
 
+            if (deny && directory is not null)
+            {
+                Blocked.DenyFolder(username, directory);
+            }
+
             Log.Information("Cancelled {Count} uploads to {Username}{Directory}", matches.Count, username, directory is null ? string.Empty : $" in {directory}");
             return Ok(matches.Count);
+        }
+
+        /// <summary>
+        ///     Gets the folders permanently denied to the specified user.
+        /// </summary>
+        /// <param name="username">The username to list denied folders for.</param>
+        /// <returns>The user's denied folders.</returns>
+        /// <response code="200">The denied folders were retrieved successfully.</response>
+        [HttpGet("uploads/{username}/denied")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(typeof(IReadOnlyList<resonance.Users.Blocking.DeniedFolder>), 200)]
+        public IActionResult GetDeniedFolders([FromRoute, UrlEncoded, Required] string username)
+            => Ok(Blocked.GetDeniedFolders(username));
+
+        /// <summary>
+        ///     Removes a previously denied folder, allowing the user to request it again.
+        /// </summary>
+        /// <param name="username">The username the folder was denied to.</param>
+        /// <param name="directory">The remote directory to allow again.</param>
+        /// <returns>The user's updated list of denied folders.</returns>
+        /// <response code="200">The folder was allowed successfully.</response>
+        /// <response code="400">The directory was not specified.</response>
+        [HttpDelete("uploads/{username}/denied")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(typeof(IReadOnlyList<resonance.Users.Blocking.DeniedFolder>), 200)]
+        [ProducesResponseType(400)]
+        public IActionResult AllowFolder([FromRoute, UrlEncoded, Required] string username, [FromQuery, Required] string directory)
+        {
+            if (string.IsNullOrWhiteSpace(directory))
+            {
+                return BadRequest("A directory is required");
+            }
+
+            return Ok(Blocked.AllowFolder(username, directory));
         }
 
         /// <summary>
