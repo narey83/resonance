@@ -357,7 +357,7 @@ public class UpnpService : IDisposable
                 if (!wasMapped)
                 {
                     Log.Information(
-                        "UPnP mapping active: {External}:{Port} → :{Port} ({Protocol})",
+                        "UPnP mapping active: {ExternalIp}:{Port} ({Protocol})",
                         externalIp?.ToString() ?? "?",
                         port,
                         protocol.ToString().ToUpperInvariant());
