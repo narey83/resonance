@@ -147,7 +147,7 @@ namespace resonance
                     continue;
                 }
 
-                if (propType.IsArray || (propType.IsGenericType && propType.GetGenericTypeDefinition() == typeof(Dictionary<,>)))
+                if (propType != typeof(string) && typeof(IEnumerable).IsAssignableFrom(propType))
                 {
                     if (leftVal.ToJson() != rightVal.ToJson())
                     {
