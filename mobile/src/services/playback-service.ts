@@ -31,6 +31,7 @@ import TrackPlayer, { Event, State } from 'react-native-track-player';
 import {
   buildAndroidAutoTree,
   handleAndroidAutoBrowse,
+  handleAndroidAutoBrowseDiag,
   playAndroidAutoMediaId,
   handleAndroidAutoLove,
 } from './androidAuto';
@@ -61,6 +62,11 @@ export default async function () {
   (TrackPlayer.addEventListener as (e: string, cb: () => void) => void)(
     'remote-love',
     () => handleAndroidAutoLove(),
+  );
+  // Android Auto: native flagged a browse-caching anomaly — remote-log it, don't act on it.
+  (TrackPlayer.addEventListener as (e: string, cb: (event: { mediaId: string; reason: string }) => void) => void)(
+    'remote-browse-diag',
+    (event) => handleAndroidAutoBrowseDiag(event),
   );
 
   // Build the car's menu now rather than waiting to be asked. The car requests the root the

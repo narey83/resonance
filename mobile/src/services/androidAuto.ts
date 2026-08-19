@@ -573,6 +573,14 @@ const reportBrowseFailed = async (mediaId: string, why: string): Promise<void> =
   }
 };
 
+// Native emitted `remote-browse-diag` — a browse-caching anomaly worth remote logging (native
+// isn't waiting on a reply here, this is purely diagnostic). See MusicService.kt for the emit
+// sites: a watchdog timeout, a stale empty cache entry we evicted, or — the canary for the
+// "folders open empty" bug — a cached node that answered empty without ever asking JS.
+export const handleAndroidAutoBrowseDiag = (event: { mediaId: string; reason: string }): void => {
+  remoteLog('warn', `[aa] diag ${event.reason} for ${event.mediaId}`);
+};
+
 // Native emitted `remote-browse` for a node we haven't loaded.
 export const handleAndroidAutoBrowse = async (mediaId: string): Promise<void> => {
   if (!mediaId) return;

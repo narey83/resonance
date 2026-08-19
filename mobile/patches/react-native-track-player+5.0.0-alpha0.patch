@@ -79,17 +79,21 @@ index fb92033..f472b97 100644
          artist = bundle.getString("artist")
          album = bundle.getString("album")
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicEvents.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicEvents.kt
-index 2f9f28f..eafb80c 100644
+index 2f9f28f..42aaf77 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicEvents.kt
 +++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicEvents.kt
-@@ -34,6 +34,7 @@ class MusicEvents(private val reactContext: ReactContext) : BroadcastReceiver()
+@@ -34,7 +34,11 @@ class MusicEvents(private val reactContext: ReactContext) : BroadcastReceiver()
          const val BUTTON_JUMP_FORWARD = "remote-jump-forward"
          const val BUTTON_JUMP_BACKWARD = "remote-jump-backward"
          const val BUTTON_DUCK = "remote-duck"
 +        const val BUTTON_LOVE = "remote-love"
          const val BUTTON_BROWSE = "remote-browse"
++        // Diagnostic-only: informs JS of a browse-caching anomaly worth remote-logging. Native does
++        // not wait on a response — JS just forwards it to the remote log.
++        const val BUTTON_BROWSE_DIAG = "remote-browse-diag"
  
          // Playback Events
+         const val PLAYBACK_PLAY_WHEN_READY_CHANGED = "playback-play-when-ready-changed"
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
 index 13a6c60..49c2fd4 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
@@ -121,7 +125,7 @@ index 13a6c60..49c2fd4 100644
      // which causes an exception. We can work around this using a wrapper.
      private fun launchInScope(block: suspend () -> Unit) {
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
-index b495b5a..9ada5e2 100644
+index b495b5a..e82923e 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
 +++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
 @@ -19,7 +19,9 @@ import androidx.media3.common.Player
@@ -296,7 +300,7 @@ index b495b5a..9ada5e2 100644
              )
              mediaSession.setAvailableCommands(
                  mediaSession.mediaNotificationControllerInfo!!,
-@@ -677,6 +783,217 @@ class MusicService : HeadlessJsMediaService() {
+@@ -677,6 +783,231 @@ class MusicService : HeadlessJsMediaService() {
          reactContext?.emitDeviceEvent(event, data?.let { Arguments.fromBundle(it) })
      }
  
@@ -427,6 +431,20 @@ index b495b5a..9ada5e2 100644
 +    @MainThread
 +    fun browseFailed(mediaId: String): String {
 +        android.util.Log.w("ResoAA", "JS reported browse failed parent=$mediaId")
++        // loadNode always pushes tree[mediaId] via setBrowseTree before checking whether it came
++        // back empty, so a transient "loaded but empty" result already merged an empty list into
++        // browseTree by the time we get here. Left in place, that stale [] answers every future
++        // onGetChildren for this node straight from cache (see the children != null fast path
++        // below) without ever asking JS again — which is exactly the "folder opens empty" bug.
++        // Evict it so the node reads as unloaded (null) again and gets a real retry next open.
++        if (browseTree[mediaId]?.isEmpty() == true) {
++            browseTree.remove(mediaId)
++            android.util.Log.w("ResoAA", "evicted stale empty cache for parent=$mediaId")
++            emit(MusicEvents.BUTTON_BROWSE_DIAG, Bundle().apply {
++                putString("mediaId", mediaId)
++                putString("reason", "evicted-stale-empty-cache")
++            })
++        }
 +        pendingChildren.remove(mediaId)?.set(LibraryResult.ofError(LibraryResult.RESULT_ERROR_IO))
 +        return "ok"
 +    }
@@ -514,7 +532,7 @@ index b495b5a..9ada5e2 100644
      @SuppressLint("VisibleForTests")
      @MainThread
      private fun emitList(event: String, data: List<Bundle> = emptyList()) {
-@@ -905,13 +1222,15 @@ class MusicService : HeadlessJsMediaService() {
+@@ -905,13 +1236,15 @@ class MusicService : HeadlessJsMediaService() {
                      onStartCommand(null, 0, 0)
                  }
              }
@@ -532,7 +550,7 @@ index b495b5a..9ada5e2 100644
                      .setAvailableSessionCommands(
                          sessionCommands
                              ?: MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
-@@ -937,6 +1256,8 @@ class MusicService : HeadlessJsMediaService() {
+@@ -937,6 +1270,8 @@ class MusicService : HeadlessJsMediaService() {
                      CustomCommandButton.JUMP_FORWARD.customAction -> { it.seekForward() }
                      CustomCommandButton.NEXT.customAction -> { it.seekToNext() }
                      CustomCommandButton.PREVIOUS.customAction -> { it.seekToPrevious() }
@@ -541,7 +559,7 @@ index b495b5a..9ada5e2 100644
                  }
              }
              return super.onCustomCommand(session, controller, command, args)
-@@ -976,6 +1297,102 @@ class MusicService : HeadlessJsMediaService() {
+@@ -976,6 +1311,116 @@ class MusicService : HeadlessJsMediaService() {
              }
              return super.onSetRating(session, controller, rating)
          }
@@ -586,6 +604,10 @@ index b495b5a..9ada5e2 100644
 +                    delay(BROWSE_WATCHDOG_MS)
 +                    pendingChildren.remove(parentId)?.let {
 +                        android.util.Log.w("ResoAA", "no answer from JS for parent=$parentId — failing the request")
++                        emit(MusicEvents.BUTTON_BROWSE_DIAG, Bundle().apply {
++                            putString("mediaId", parentId)
++                            putString("reason", "watchdog-timeout")
++                        })
 +                        it.set(LibraryResult.ofError(LibraryResult.RESULT_ERROR_IO))
 +                    }
 +                }
@@ -601,6 +623,16 @@ index b495b5a..9ada5e2 100644
 +                else all.drop(page * pageSize).take(pageSize)
 +            if (slice.isEmpty()) servedEmpty.add(parentId) else servedEmpty.remove(parentId)
 +            android.util.Log.i("ResoAA", "onGetChildren parent=$parentId page=$page pageSize=$pageSize have=${all.size} returning=${slice.size} browser=${browser.packageName}")
++            // This node was already in the cache, so we answered without asking JS at all — a
++            // canary for the caching bug browseFailed() now guards against: if a cached node reads
++            // as empty here, the car will show it as empty this and every future open until
++            // something overwrites it with real content.
++            if (all.isEmpty() && page == 0) {
++                emit(MusicEvents.BUTTON_BROWSE_DIAG, Bundle().apply {
++                    putString("mediaId", parentId)
++                    putString("reason", "served-empty-from-cache")
++                })
++            }
 +            return Futures.immediateFuture(
 +                LibraryResult.ofItemList(ImmutableList.copyOf(slice), params)
 +            )
@@ -644,7 +676,7 @@ index b495b5a..9ada5e2 100644
      }
  
      private fun getPendingIntentFlags(): Int {
-@@ -1029,5 +1446,12 @@ class MusicService : HeadlessJsMediaService() {
+@@ -1029,5 +1474,12 @@ class MusicService : HeadlessJsMediaService() {
  
          const val DEFAULT_JUMP_INTERVAL = 15.0
          const val DEFAULT_STOP_FOREGROUND_GRACE_PERIOD = 5
