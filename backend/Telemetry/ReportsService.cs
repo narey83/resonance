@@ -2158,12 +2158,14 @@ public class ReportsService
             return new Dictionary<string, int>();
         }
 
+        // ANY(@Ids), not IN @Ids: Dapper's IN-list expansion doesn't fire here (binds Ids as a
+        // single array parameter instead), which Npgsql sends as bare "$1" and Postgres rejects.
         string sql = UsePostgres
             ? @"
                 WITH RECURSIVE chain AS (
                     SELECT ""Id""::text AS ""HeadId"", ""Id"", ""RetryOfId""
                     FROM transfers.""Transfers""
-                    WHERE ""Id""::text IN @Ids
+                    WHERE ""Id""::text = ANY(@Ids)
                     UNION ALL
                     SELECT chain.""HeadId"", t.""Id"", t.""RetryOfId""
                     FROM transfers.""Transfers"" t
