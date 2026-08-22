@@ -289,14 +289,14 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
               </Text>
             </Pressable>
           )}
-          <Pressable
-            onLongPress={() => handleReply(item)}
-            style={[s.bubble, isSelf ? s.bubbleSelf : s.bubbleOther]}
-          >
+          <View style={[s.bubble, isSelf ? s.bubbleSelf : s.bubbleOther]}>
             {showSender && !isSelf && (
               <Text style={s.senderName}>{item.username}</Text>
             )}
-            <Text style={[s.messageText, isSelf && s.messageTextSelf]}>
+            <Text
+              selectable
+              style={[s.messageText, isSelf && s.messageTextSelf]}
+            >
               <Linkify text={displayText} />
             </Text>
             {previewUrl && <LinkPreviewCard url={previewUrl} />}
@@ -318,8 +318,17 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
                 </Text>
               </Pressable>
             )}
-            <Text style={[s.timestamp, isSelf && s.timestampSelf]}>{timeStr}</Text>
-          </Pressable>
+            <View style={s.bubbleFooter}>
+              <Text style={[s.timestamp, isSelf && s.timestampSelf]}>{timeStr}</Text>
+              <Pressable hitSlop={8} onPress={() => handleReply(item)}>
+                <Ionicons
+                  color={isSelf ? 'rgba(255,255,255,0.75)' : colors.textMuted}
+                  name="arrow-undo-outline"
+                  size={13}
+                />
+              </Pressable>
+            </View>
+          </View>
         </View>
       </View>
     );
@@ -473,7 +482,8 @@ function makeStyles(c: ThemeColors) {
     senderName:      { fontSize: Typography.xs, color: c.accent, marginBottom: 2, fontWeight: '600' },
     messageText:     { fontSize: Typography.base, color: c.textPrimary, lineHeight: 20 },
     messageTextSelf: { color: '#fff' },
-    timestamp:       { fontSize: Typography.xs, color: c.textMuted, alignSelf: 'flex-end', marginTop: 2 },
+    bubbleFooter:    { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-end', marginTop: 2 },
+    timestamp:       { fontSize: Typography.xs, color: c.textMuted },
     timestampSelf:   { color: 'rgba(255,255,255,0.65)' },
 
     headerActions:   { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
