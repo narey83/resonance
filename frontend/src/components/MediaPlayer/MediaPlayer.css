@@ -481,9 +481,9 @@
 .mp-processing-modal {
   display: flex;
   flex-direction: column;
-  width: 560px;
+  width: 820px;
   max-width: calc(100vw - 32px);
-  height: 420px;
+  height: 600px;
   max-height: calc(100vh - 64px);
   background: var(--player-bg, #252836);
   border: 1px solid var(--player-border, rgba(255, 255, 255, 0.1));
