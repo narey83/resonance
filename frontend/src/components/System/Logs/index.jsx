@@ -308,7 +308,7 @@ const DateSeparator = ({ day }) => (
 
 // ─── Shared toolbar controls ──────────────────────────────────────────────────
 
-const LevelFilter = ({ counts, levels, onToggle, suppressedBelow }) => (
+const LevelFilter = ({ levels, onToggle, suppressedBelow }) => (
   <div className="logs-level-group">
     {LEVEL_ORDER.map((level) => {
       const on = levels[level];
@@ -329,9 +329,6 @@ const LevelFilter = ({ counts, levels, onToggle, suppressedBelow }) => (
           type="button"
         >
           <span className="logs-level-pill-label">{LEVEL_LABELS[level]}</span>
-          {counts?.[level] > 0 && (
-            <span className="logs-level-pill-count">{counts[level]}</span>
-          )}
         </button>
       );
     })}
@@ -881,18 +878,6 @@ const LogsFeed = ({ onChangeServerLevel, serverLevel }) => {
     dateTo ||
     !Object.values(levels).every(Boolean);
 
-  // No client-side re-filtering needed here (unlike the old Live tab) — entries only ever
-  // contains records the server already matched against the active filters.
-  const levelCounts = useMemo(() => {
-    const counts = {};
-
-    for (const log of entries) {
-      counts[log.level] = (counts[log.level] ?? 0) + 1;
-    }
-
-    return counts;
-  }, [entries]);
-
   // Every context the backend can emit, plus anything loaded that predates the registry.
   const allContexts = useMemo(
     () =>
@@ -1100,7 +1085,6 @@ const LogsFeed = ({ onChangeServerLevel, serverLevel }) => {
       <div className="logs-toolbar">
         <div className="logs-toolbar-row">
           <LevelFilter
-            counts={levelCounts}
             levels={levels}
             onToggle={toggleLevel}
             suppressedBelow={serverLevel ? serverFloor : undefined}

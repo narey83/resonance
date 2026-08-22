@@ -33,6 +33,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 
@@ -45,6 +46,17 @@ using System.Threading;
 /// </summary>
 public static class LogFileReader
 {
+    // Caches the parsed lines of the single most-recently-written ("hot") log file -- i.e. the
+    // current day's file, always the first entry once Query()'s file list is sorted newest-first
+    // -- so that the live-tail poll (GET /logs?from=<last-seen>, called every few seconds for as
+    // long as the Logs page is open) doesn't re-read and re-parse the whole, ever-growing file
+    // from byte 0 on every request. Only ever holds one file's records: older, already-rolled
+    // files are immutable and read fresh each time (see ReadFileRecords), so this can't grow into
+    // "the whole retention window in memory" -- it's replaced wholesale the moment a different
+    // file becomes hot (day rollover) or is asked for as the hot file.
+    private static readonly object HotFileLock = new();
+    private static HotFileCache hotFile;
+
     /// <summary>
     ///     Queries the daily log files in <paramref name="logDirectory"/>, newest day first.
     /// </summary>
@@ -69,10 +81,13 @@ public static class LogFileReader
         }
 
         var files = Directory.GetFiles(logDirectory, $"{Program.AppName}-????????.jsonl")
-            .OrderByDescending(f => f, StringComparer.Ordinal);
+            .OrderByDescending(f => f, StringComparer.Ordinal)
+            .ToList();
 
-        foreach (var file in files)
+        for (var fileIndex = 0; fileIndex < files.Count; fileIndex++)
         {
+            var file = files[fileIndex];
+
             cancellationToken.ThrowIfCancellationRequested();
 
             // A file that hasn't been written to since before `from` cannot contain any line
@@ -87,22 +102,16 @@ public static class LogFileReader
                 continue;
             }
 
-            // a day's lines are written oldest-first; buffer the day so it can be walked newest-first,
-            // keeping the overall newest-first order across days without a true reverse file read.
-            var day = new List<LogRecord>();
+            // a day's lines are written oldest-first; the record lists below keep that order so
+            // they can be walked newest-first, preserving the overall newest-first order across
+            // days without a true reverse file read.
+            var day = fileIndex == 0
+                ? GetHotFileRecords(file, from, cancellationToken)
+                : ReadFileRecords(file);
 
-            foreach (var line in File.ReadLines(file))
+            for (var i = day.Count - 1; i >= 0; i--)
             {
-                if (string.IsNullOrWhiteSpace(line))
-                {
-                    continue;
-                }
-
-                if (!TryParseLine(line, out var record))
-                {
-                    // partially-written line (e.g. process was killed mid-write) or unrelated content
-                    continue;
-                }
+                var record = day[i];
 
                 if (levels?.Length > 0 && !levels.Contains(record.Level))
                 {
@@ -129,14 +138,9 @@ public static class LogFileReader
                     continue;
                 }
 
-                day.Add(record);
-            }
-
-            for (var i = day.Count - 1; i >= 0; i--)
-            {
                 if (total >= offset && items.Count < limit)
                 {
-                    items.Add(day[i]);
+                    items.Add(record);
                 }
 
                 total++;
@@ -144,6 +148,151 @@ public static class LogFileReader
         }
 
         return (items, total);
+    }
+
+    /// <summary>
+    ///     Fully reads and parses a rolled-over (no longer written to) log file. No caching: it's
+    ///     immutable once rolled, so there's no repeated-reread cost to save, and caching it would
+    ///     only grow memory use unbounded as more days accumulate.
+    /// </summary>
+    private static List<LogRecord> ReadFileRecords(string file)
+    {
+        var records = new List<LogRecord>();
+
+        foreach (var line in File.ReadLines(file))
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            if (TryParseLine(line, out var record))
+            {
+                records.Add(record);
+            }
+
+            // else: partially-written line (e.g. process was killed mid-write) or unrelated content
+        }
+
+        return records;
+    }
+
+    /// <summary>
+    ///     Returns the parsed records in the hot (current day's, actively-written) log file that
+    ///     are at or after <paramref name="from"/> (or every record, if <paramref name="from"/> is
+    ///     null), reading only the bytes appended since the last call rather than the whole file.
+    /// </summary>
+    private static List<LogRecord> GetHotFileRecords(string file, DateTime? from, CancellationToken cancellationToken)
+    {
+        lock (HotFileLock)
+        {
+            if (hotFile is null || hotFile.Path != file)
+            {
+                // A different file is now hot (day rollover, or the first call this run) --
+                // drop whatever was cached for the old one; nothing else references it.
+                hotFile = new HotFileCache { Path = file };
+            }
+
+            long length;
+
+            try
+            {
+                length = new FileInfo(file).Length;
+            }
+            catch (IOException)
+            {
+                // file briefly missing/locked (e.g. mid-rollover) -- fall back to whatever is cached
+                return RecordsSince(hotFile.Records, from);
+            }
+
+            if (length < hotFile.Position)
+            {
+                // shouldn't happen under normal day-rotation (files only ever grow), but don't
+                // wedge on stale state if it's ever truncated or replaced out from under us
+                hotFile = new HotFileCache { Path = file };
+            }
+
+            if (length > hotFile.Position)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                stream.Seek(hotFile.Position, SeekOrigin.Begin);
+
+                var chunk = new byte[length - hotFile.Position];
+                var read = 0;
+
+                while (read < chunk.Length)
+                {
+                    var n = stream.Read(chunk, read, chunk.Length - read);
+
+                    if (n == 0)
+                    {
+                        break; // file shrank/was replaced mid-read; use what we got, retry the rest next call
+                    }
+
+                    read += n;
+                }
+
+                // Only consume up through the last complete line -- a line still being written
+                // by the file sink has no trailing '\n' yet. '\n' is always a single UTF-8 byte
+                // and never part of a multi-byte sequence, so cutting here is always a safe,
+                // character-boundary-correct place to resume from on the next call.
+                var lastNewline = Array.LastIndexOf(chunk, (byte)'\n', read - 1 >= 0 ? read - 1 : 0);
+
+                if (read > 0 && lastNewline >= 0)
+                {
+                    // TrimEnd('\r') matches File.ReadLines/StreamReader.ReadLine, which strip both
+                    // \n and \r\n line endings -- without it, a CRLF-written file (the default on
+                    // Windows) would leave a trailing \r on every parsed line.
+                    foreach (var line in Encoding.UTF8.GetString(chunk, 0, lastNewline + 1).Split('\n'))
+                    {
+                        var trimmed = line.TrimEnd('\r');
+
+                        if (string.IsNullOrWhiteSpace(trimmed))
+                        {
+                            continue;
+                        }
+
+                        if (TryParseLine(trimmed, out var record))
+                        {
+                            hotFile.Records.Add(record);
+                        }
+                    }
+
+                    hotFile.Position += lastNewline + 1;
+                }
+            }
+
+            return RecordsSince(hotFile.Records, from);
+        }
+    }
+
+    /// <summary>
+    ///     Copies out the suffix of <paramref name="records"/> (chronological, oldest-first) at or
+    ///     after <paramref name="from"/>, or the whole list if <paramref name="from"/> is null.
+    ///     Every call to Query() has to hand back its own copy rather than <paramref name="records"/>
+    ///     itself -- the cache is mutated under lock by later calls, and List&lt;T&gt; isn't safe to
+    ///     read from concurrently with that. Scoping the copy to just the matching suffix (found by
+    ///     walking backward from the newest entry, since the list is already in that order) is what
+    ///     keeps a live-tail poll's per-request cost proportional to what's new since its `from`,
+    ///     rather than to how many records the current day has accumulated in total.
+    /// </summary>
+    private static List<LogRecord> RecordsSince(List<LogRecord> records, DateTime? from)
+    {
+        if (!from.HasValue)
+        {
+            return new List<LogRecord>(records);
+        }
+
+        var startIndex = records.Count;
+
+        while (startIndex > 0 && records[startIndex - 1].Timestamp >= from.Value)
+        {
+            startIndex--;
+        }
+
+        return records.GetRange(startIndex, records.Count - startIndex);
     }
 
     private static bool TryParseLine(string line, out LogRecord record)
@@ -182,5 +331,14 @@ public static class LogFileReader
         {
             return false;
         }
+    }
+
+    private sealed class HotFileCache
+    {
+        public List<LogRecord> Records { get; } = new();
+
+        public string Path { get; init; }
+
+        public long Position { get; set; }
     }
 }
