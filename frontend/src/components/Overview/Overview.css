@@ -1131,6 +1131,25 @@ html.amoled {
   gap: 4px;
 }
 
+.kpi-card-group {
+  flex-direction: row;
+  padding: 0;
+}
+
+.kpi-group-stat {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kpi-group-divider {
+  width: 1px;
+  background: var(--border);
+}
+
 .kpi-card-label {
   font-size: 11px;
   color: var(--text-muted);

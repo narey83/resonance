@@ -139,6 +139,36 @@ const KpiCard = ({ delta, label, loading, sub, value }) => (
   </div>
 );
 
+const KpiGroupStat = ({ delta, label, loading, sub, value }) => (
+  <div className="kpi-group-stat">
+    <div className="kpi-card-label">{label}</div>
+    {loading ? (
+      <div className="kpi-card-loading" />
+    ) : (
+      <>
+        <div className="kpi-card-value">
+          {value}
+          <DeltaBadge delta={delta} />
+        </div>
+        <div
+          className="kpi-card-sub"
+          style={{ visibility: sub ? 'visible' : 'hidden' }}
+        >
+          {sub || ' '}
+        </div>
+      </>
+    )}
+  </div>
+);
+
+const KpiGroupCard = ({ primary, secondary }) => (
+  <div className="kpi-card kpi-card-group">
+    <KpiGroupStat {...primary} />
+    <div className="kpi-group-divider" />
+    <KpiGroupStat {...secondary} />
+  </div>
+);
+
 const KpiCards = ({ downloads, loading, prevSummary, summary, uploads }) => {
   const kpis = extractKpis(summary);
   const prev = extractKpis(prevSummary);
@@ -160,43 +190,47 @@ const KpiCards = ({ downloads, loading, prevSummary, summary, uploads }) => {
 
   return (
     <div className="kpi-cards">
-      <KpiCard
-        delta={kpis && prev ? pctChange(kpis.dlBytes, prev.dlBytes) : null}
-        label="Downloaded"
-        loading={loading}
-        sub={
-          liveDownSpeed > 0 ? `${formatBitrate(liveDownSpeed)} now` : undefined
-        }
-        value={kpis ? formatBytes(kpis.dlBytes) : '—'}
+      <KpiGroupCard
+        primary={{
+          delta: kpis && prev ? pctChange(kpis.dlBytes, prev.dlBytes) : null,
+          label: 'Downloaded',
+          loading,
+          sub:
+            liveDownSpeed > 0
+              ? `${formatBitrate(liveDownSpeed)} now`
+              : undefined,
+          value: kpis ? formatBytes(kpis.dlBytes) : '—',
+        }}
+        secondary={{
+          delta: kpis && prev ? pctChange(kpis.dlCount, prev.dlCount) : null,
+          label: 'Download Transfers',
+          loading,
+          sub:
+            kpis?.dlSuccessRate == null
+              ? undefined
+              : `${kpis.dlSuccessRate}% success · ${kpis.dlFailed.toLocaleString()} failed`,
+          value: kpis ? kpis.dlCount.toLocaleString() : '—',
+        }}
       />
-      <KpiCard
-        delta={kpis && prev ? pctChange(kpis.ulBytes, prev.ulBytes) : null}
-        label="Uploaded"
-        loading={loading}
-        sub={liveUpSpeed > 0 ? `${formatBitrate(liveUpSpeed)} now` : undefined}
-        value={kpis ? formatBytes(kpis.ulBytes) : '—'}
-      />
-      <KpiCard
-        delta={kpis && prev ? pctChange(kpis.dlCount, prev.dlCount) : null}
-        label="Download Transfers"
-        loading={loading}
-        sub={
-          kpis?.dlSuccessRate == null
-            ? undefined
-            : `${kpis.dlSuccessRate}% success · ${kpis.dlFailed.toLocaleString()} failed`
-        }
-        value={kpis ? kpis.dlCount.toLocaleString() : '—'}
-      />
-      <KpiCard
-        delta={kpis && prev ? pctChange(kpis.ulCount, prev.ulCount) : null}
-        label="Upload Transfers"
-        loading={loading}
-        sub={
-          kpis?.ulSuccessRate == null
-            ? undefined
-            : `${kpis.ulSuccessRate}% success · ${kpis.ulFailed.toLocaleString()} failed`
-        }
-        value={kpis ? kpis.ulCount.toLocaleString() : '—'}
+      <KpiGroupCard
+        primary={{
+          delta: kpis && prev ? pctChange(kpis.ulBytes, prev.ulBytes) : null,
+          label: 'Uploaded',
+          loading,
+          sub:
+            liveUpSpeed > 0 ? `${formatBitrate(liveUpSpeed)} now` : undefined,
+          value: kpis ? formatBytes(kpis.ulBytes) : '—',
+        }}
+        secondary={{
+          delta: kpis && prev ? pctChange(kpis.ulCount, prev.ulCount) : null,
+          label: 'Upload Transfers',
+          loading,
+          sub:
+            kpis?.ulSuccessRate == null
+              ? undefined
+              : `${kpis.ulSuccessRate}% success · ${kpis.ulFailed.toLocaleString()} failed`,
+          value: kpis ? kpis.ulCount.toLocaleString() : '—',
+        }}
       />
       <KpiCard
         label="Peers"
