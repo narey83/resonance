@@ -47,15 +47,25 @@
 // each hop its own rail, colour and live packet, and every detail tile below
 // belongs to exactly one hop.
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useDeferredFocusEffect } from '../../hooks/useDeferredEffect';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 import { getApplicationState, AppState } from '../../api/application';
-import { connectToSoulseek, disconnectFromSoulseek } from '../../api/server';
+import {
+  connectToSoulseek,
+  deleteSoulseekPicture,
+  disconnectFromSoulseek,
+  getSoulseekStatus,
+  setSoulseekStatus,
+  soulseekPictureUrl,
+  uploadSoulseekPicture,
+  SoulseekStatus,
+} from '../../api/server';
 import { useConnectionStore } from '../../services/connectionMonitor';
 import { useAuthStore } from '../../store/auth';
 import { fmtBytes, fmtDate, fmtNum, fmtSpeed, Card, SectionHeader, StatRow, StatTileData } from '../../components/overview/shared';
@@ -187,7 +197,7 @@ function makeDiskStyles(c: ThemeColors) {
 export default function ConnectionScreen() {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
-  const { serverUrl, sessionId, role, tokenExpiresAt } = useAuthStore();
+  const { serverUrl, sessionId, role, isAdmin, tokenExpiresAt } = useAuthStore();
   const { status: linkStatus, latencyMs, lastError, isCellular } = useConnectionStore();
 
   const [appState, setAppState]     = useState<AppState | null>(null);
@@ -196,17 +206,36 @@ export default function ConnectionScreen() {
   const [error, setError]           = useState<string | null>(null);
   const [serverActionBusy, setServerActionBusy] = useState(false);
 
+  const [profile, setProfile]             = useState<SoulseekStatus | null>(null);
+  const [descDraft, setDescDraft]         = useState('');
+  const [savingDesc, setSavingDesc]       = useState(false);
+  const [pictureVersion, setPictureVersion] = useState(0);
+  const [uploadingPicture, setUploadingPicture] = useState(false);
+  // Only seed the tagline draft from the server once — every 15s poll below
+  // would otherwise stomp on text the user is mid-edit on.
+  const descSeededRef = useRef(false);
+
   const fetch = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setError(null);
-    try {
-      setAppState(await getApplicationState());
-    } catch {
+    const [appResult, profileResult] = await Promise.allSettled([
+      getApplicationState(),
+      getSoulseekStatus(),
+    ]);
+    if (appResult.status === 'fulfilled') {
+      setAppState(appResult.value);
+    } else {
       setError('Could not load server status.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
     }
+    if (profileResult.status === 'fulfilled') {
+      setProfile(profileResult.value);
+      if (!descSeededRef.current) {
+        setDescDraft(profileResult.value.description ?? '');
+        descSeededRef.current = true;
+      }
+    }
+    setLoading(false);
+    setRefreshing(false);
   }, []);
 
   useDeferredFocusEffect(useCallback(() => { fetch(); }, [fetch]));
@@ -294,6 +323,65 @@ export default function ConnectionScreen() {
       ],
     );
   }, [fetch]);
+
+  const handlePickPicture = useCallback(async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.92,
+    });
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+
+    setUploadingPicture(true);
+    try {
+      await uploadSoulseekPicture(result.assets[0].uri);
+      setPictureVersion(v => v + 1);
+      setProfile(p => (p ? { ...p, hasPicture: true } : p));
+    } catch {
+      Alert.alert('Error', 'Could not upload your profile photo.');
+    } finally {
+      setUploadingPicture(false);
+    }
+  }, []);
+
+  const handleRemovePicture = useCallback(() => {
+    Alert.alert(
+      'Remove profile photo?',
+      'Peers will no longer see a picture for your Soulseek account.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            setUploadingPicture(true);
+            try {
+              await deleteSoulseekPicture();
+              setPictureVersion(v => v + 1);
+              setProfile(p => (p ? { ...p, hasPicture: false } : p));
+            } catch {
+              Alert.alert('Error', 'Could not remove your profile photo.');
+            } finally {
+              setUploadingPicture(false);
+            }
+          },
+        },
+      ],
+    );
+  }, []);
+
+  const handleSaveDescription = useCallback(async () => {
+    setSavingDesc(true);
+    try {
+      const updated = await setSoulseekStatus({ description: descDraft });
+      setProfile(updated);
+    } catch {
+      Alert.alert('Error', 'Could not save your tagline.');
+    } finally {
+      setSavingDesc(false);
+    }
+  }, [descDraft]);
 
   // Only block on a spinner during a genuine cold load. If the link is down
   // there is nothing to wait for — the chain itself is the answer.
@@ -454,6 +542,85 @@ export default function ConnectionScreen() {
         ]}
       />
 
+      <SectionHeader title="Soulseek Profile" colors={colors} />
+      <Card colors={colors}>
+        <View style={s.profileRow}>
+          <Pressable
+            onPress={isAdmin ? handlePickPicture : undefined}
+            disabled={!isAdmin || uploadingPicture}
+            style={s.avatarWrap}
+          >
+            {profile?.hasPicture ? (
+              <Image
+                source={{ uri: soulseekPictureUrl(serverUrl, pictureVersion) ?? undefined }}
+                style={s.avatarImg}
+              />
+            ) : (
+              <View style={[s.avatarImg, s.avatarPlaceholder]}>
+                <Text style={s.avatarInitial}>
+                  {(appState?.user.username?.trim()?.[0] ?? '?').toUpperCase()}
+                </Text>
+              </View>
+            )}
+            {isAdmin && (
+              <View style={s.avatarBadge}>
+                {uploadingPicture ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons name="camera" size={12} color="#fff" />
+                )}
+              </View>
+            )}
+          </Pressable>
+
+          <View style={s.profileInfo}>
+            <Text style={s.profileUsername} numberOfLines={1}>{appState?.user.username ?? '—'}</Text>
+            {isAdmin ? (
+              profile?.hasPicture && (
+                <Pressable onPress={handleRemovePicture} disabled={uploadingPicture}>
+                  <Text style={s.removePictureText}>Remove photo</Text>
+                </Pressable>
+              )
+            ) : (
+              <Text style={s.profileHint}>Only administrators can change the photo or tagline</Text>
+            )}
+          </View>
+        </View>
+
+        <View style={s.taglineBlock}>
+          <Text style={s.hopLabel}>Tagline</Text>
+          {isAdmin ? (
+            <View style={s.taglineEditRow}>
+              <TextInput
+                style={s.taglineInput}
+                value={descDraft}
+                onChangeText={setDescDraft}
+                placeholder="What are you up to?"
+                placeholderTextColor={colors.textDim}
+                maxLength={120}
+              />
+              <Pressable
+                onPress={handleSaveDescription}
+                disabled={savingDesc || descDraft === (profile?.description ?? '')}
+                style={s.taglineSaveBtn}
+              >
+                {savingDesc ? (
+                  <ActivityIndicator size="small" color={colors.accent} />
+                ) : (
+                  <Ionicons
+                    name="checkmark"
+                    size={18}
+                    color={descDraft === (profile?.description ?? '') ? colors.textDim : colors.accent}
+                  />
+                )}
+              </Pressable>
+            </View>
+          ) : (
+            <Text style={s.taglineText}>{profile?.description || 'No tagline set'}</Text>
+          )}
+        </View>
+      </Card>
+
       <SectionHeader title="Download Folder" colors={colors} />
       {appState?.disk && appState.disk.totalBytes > 0 ? (
         <DiskGauge disk={appState.disk} colors={colors} />
@@ -532,5 +699,30 @@ function makeStyles(c: ThemeColors) {
     },
     soulseekActionBtnPressed: { opacity: 0.7 },
     soulseekActionText: { fontSize: Typography.base, fontWeight: '600' },
+
+    // Soulseek profile: picture + tagline, editable only by admins (the
+    // backend rejects both writes for anyone else).
+    profileRow:       { flexDirection: 'row', alignItems: 'center', padding: Spacing.md, gap: Spacing.md },
+    avatarWrap:       { width: 56, height: 56 },
+    avatarImg:        { width: 56, height: 56, borderRadius: 28 },
+    avatarPlaceholder: { backgroundColor: c.bgElevated, alignItems: 'center', justifyContent: 'center' },
+    avatarInitial:    { fontSize: Typography.xl, fontWeight: '700', color: c.textMuted },
+    avatarBadge:      {
+      position: 'absolute', right: -2, bottom: -2, width: 22, height: 22, borderRadius: 11,
+      backgroundColor: c.accent, alignItems: 'center', justifyContent: 'center',
+      borderWidth: 2, borderColor: c.bgSurface,
+    },
+    profileInfo:        { flex: 1, gap: 4 },
+    profileUsername:    { fontSize: Typography.md, fontWeight: '700', color: c.textPrimary },
+    profileHint:        { fontSize: Typography.xs, color: c.textMuted },
+    removePictureText:  { fontSize: Typography.xs, color: c.danger, fontWeight: '600' },
+    taglineBlock:       { paddingHorizontal: Spacing.md, paddingBottom: Spacing.md, gap: 6 },
+    taglineEditRow:     { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    taglineInput:       {
+      flex: 1, fontSize: Typography.base, color: c.textPrimary, backgroundColor: c.bgElevated,
+      borderRadius: Radius.md, paddingHorizontal: Spacing.sm, paddingVertical: 8,
+    },
+    taglineSaveBtn:     { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+    taglineText:        { fontSize: Typography.base, color: c.textPrimary },
   });
 }

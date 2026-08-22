@@ -47,3 +47,41 @@ export const disconnectFromSoulseek = (message = 'client disconnected from mobil
     data: JSON.stringify(message),
     headers: { 'Content-Type': 'application/json' },
   });
+
+// ── Soulseek profile (picture + tagline) ────────────────────────────────────
+// The backend gates the description and picture writes to administrators
+// only (see ServerController.SetStatus / UploadPicture / DeletePicture) —
+// setting presence has no such restriction. Callers should check
+// useAuthStore's `isAdmin` before showing edit controls.
+
+export interface SoulseekStatus {
+  presence:    string;
+  description: string;
+  hasPicture:  boolean;
+}
+
+export const getSoulseekStatus = () =>
+  apiClient.get<SoulseekStatus>('/server/status').then(r => r.data);
+
+export const setSoulseekStatus = (body: { presence?: 'Online' | 'Away'; description?: string }) =>
+  apiClient.put<SoulseekStatus>('/server/status', body).then(r => r.data);
+
+// The picture lives at a fixed path, so callers pass a cache-busting version
+// (e.g. a counter bumped after every change) to force a re-fetch. Built from
+// the raw server URL rather than apiClient, since <Image> needs an absolute
+// URI outside of axios and the endpoint is anonymous (no auth header needed).
+export const soulseekPictureUrl = (serverUrl: string | null, version: number): string | null =>
+  serverUrl ? `${serverUrl}/api/v0/server/picture?v=${version}` : null;
+
+export const uploadSoulseekPicture = async (uri: string): Promise<void> => {
+  const form = new FormData();
+  const filename = uri.split('/').pop() ?? 'picture.jpg';
+  const ext = filename.split('.').pop()?.toLowerCase() ?? 'jpg';
+  const type = ext === 'png' ? 'image/png' : 'image/jpeg';
+  form.append('file', { uri, name: filename, type } as any);
+  await apiClient.post('/server/picture', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+export const deleteSoulseekPicture = () => apiClient.delete('/server/picture');
