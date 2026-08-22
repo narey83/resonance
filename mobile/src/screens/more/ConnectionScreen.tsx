@@ -58,7 +58,7 @@ import { getApplicationState, AppState } from '../../api/application';
 import { connectToSoulseek, disconnectFromSoulseek } from '../../api/server';
 import { useConnectionStore } from '../../services/connectionMonitor';
 import { useAuthStore } from '../../store/auth';
-import { fmtBytes, fmtDate, fmtNum, fmtSpeed, Card, SectionHeader, StatRow, StatTileGrid } from '../../components/overview/shared';
+import { fmtBytes, fmtDate, fmtNum, fmtSpeed, Card, SectionHeader, StatRow, StatTileData } from '../../components/overview/shared';
 
 const RING     = 116;  // disk gauge diameter
 const RING_W   = 11;
@@ -83,6 +83,27 @@ function parseServerUrl(url: string | null): { host: string; secure: boolean } {
   const secure = url.startsWith('https://');
   const host = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
   return { host, secure };
+}
+
+// One stat per row rather than the 2-up tile grid used elsewhere — this
+// screen packs enough numbers (round trip, transport, ports, privileges…)
+// that pairing them side by side made them hard to scan at a glance.
+function InfoList({ items, colors }: { items: StatTileData[]; colors: ThemeColors }) {
+  return (
+    <Card colors={colors}>
+      {items.map((t, i) => (
+        <StatRow
+          key={t.key}
+          label={t.label}
+          value={t.value}
+          valueColor={t.valueColor}
+          sub={typeof t.sub === 'string' ? t.sub : undefined}
+          colors={colors}
+          last={i === items.length - 1}
+        />
+      ))}
+    </Card>
+  );
 }
 
 // ── Download folder gauge ───────────────────────────────────────────────────
@@ -367,9 +388,9 @@ export default function ConnectionScreen() {
       </Pressable>
 
       <SectionHeader title="App Connection" colors={colors} />
-      <StatTileGrid
+      <InfoList
         colors={colors}
-        tiles={[
+        items={[
           { key: 'host', label: 'Server', value: host },
           {
             key: 'secure',
@@ -396,9 +417,9 @@ export default function ConnectionScreen() {
       />
 
       <SectionHeader title="Soulseek Connection" colors={colors} />
-      <StatTileGrid
+      <InfoList
         colors={colors}
-        tiles={[
+        items={[
           { key: 'state', label: 'Status', value: slStatus, valueColor: slColor },
           ...(appState?.user.username ? [{ key: 'account', label: 'Account', value: appState.user.username, sub: appState.user.presence }] : []),
           ...(srv?.address ? [{ key: 'address', label: 'Server', value: srv.address, sub: srv.ipEndPoint ?? undefined }] : []),
@@ -443,9 +464,9 @@ export default function ConnectionScreen() {
       )}
 
       <SectionHeader title="Shared Library" colors={colors} />
-      <StatTileGrid
+      <InfoList
         colors={colors}
-        tiles={[
+        items={[
           { key: 'directories', label: 'Directories', value: fmtNum(appState?.shares.directories ?? 0) },
           { key: 'files', label: 'Files', value: fmtNum(appState?.shares.files ?? 0) },
           {
@@ -465,9 +486,9 @@ export default function ConnectionScreen() {
       />
 
       <SectionHeader title="Version" colors={colors} />
-      <StatTileGrid
+      <InfoList
         colors={colors}
-        tiles={[
+        items={[
           { key: 'running', label: 'Running', value: appState?.version.current ?? '—' },
           appState?.version.isUpdateAvailable && appState.version.latest
             ? { key: 'update', label: 'Update Available', value: appState.version.latest, valueColor: colors.warning }

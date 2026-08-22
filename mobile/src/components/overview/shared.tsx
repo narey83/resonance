@@ -115,21 +115,28 @@ export function StatRow({
   label,
   value,
   valueColor,
+  sub,
   last = false,
   colors,
 }: {
   label:      string;
   value:      string | React.ReactNode;
   valueColor?: string;
+  // Small caption under the label — e.g. "Certificate verified by OS" under
+  // "Transport". Optional so existing plain label/value callers are unaffected.
+  sub?:       string;
   last?:      boolean;
   colors:     ThemeColors;
 }) {
   const s = useMemo(() => makeRowStyles(colors, last), [colors, last]);
   return (
     <View style={s.row}>
-      <Text style={s.label}>{label}</Text>
+      <View style={s.labelCol}>
+        <Text style={s.label}>{label}</Text>
+        {sub ? <Text style={s.sub} numberOfLines={1}>{sub}</Text> : null}
+      </View>
       {typeof value === 'string' ? (
-        <Text style={[s.value, valueColor ? { color: valueColor } : null]}>{value}</Text>
+        <Text style={[s.value, valueColor ? { color: valueColor } : null]} numberOfLines={1}>{value}</Text>
       ) : value}
     </View>
   );
@@ -145,7 +152,9 @@ function makeRowStyles(c: ThemeColors, last: boolean) {
       borderBottomWidth: last ? 0 : 1,
       borderBottomColor: c.border,
     },
-    label: { fontSize: Typography.base, color: c.textMuted, flex: 1 },
+    labelCol: { flex: 1, gap: 2, marginRight: Spacing.sm },
+    label: { fontSize: Typography.base, color: c.textMuted },
+    sub:   { fontSize: Typography.xs, color: c.textDim },
     value: { fontSize: Typography.base, color: c.textPrimary, fontWeight: '500', textAlign: 'right', flexShrink: 1, marginLeft: Spacing.sm },
   });
 }
