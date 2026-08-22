@@ -8,9 +8,12 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0
 # ffmpeg       — Resonance shells out to it for audio analysis / conversion.
 # procps       — `ps`/diagnostics inside the container.
 # curl         — health checks / debugging.
+# xz-utils     — GNU tar shells out to `xz` to extract the .tar.xz archives that
+#                FfmpegService/yt-dlp's self-update downloads; without it, tar fails
+#                with "xz: Cannot exec" and every self-update silently no-ops.
 # python3+venv — host for Essentia (BPM and musical-key detection).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg curl procps python3 python3-venv \
+    && apt-get install -y --no-install-recommends ffmpeg curl procps xz-utils python3 python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # Essentia provides BPM and key detection (Analysis.EssentiaProfile='edma' by default),
