@@ -59,6 +59,37 @@ namespace resonance.Analysis
     public record LoudnessData(double IntegratedLufs, double TruePeak, double LoudnessRange);
 
     /// <summary>
+    ///     Everything the beat detector produced for a track, read as one bundle since it all
+    ///     comes from the same cached row: the theoretical grid's anchor, the raw detections, and
+    ///     the downbeat heuristic's best guess. See <see cref="AnalysisResult"/> for what each
+    ///     member means and where it comes from.
+    /// </summary>
+    public record BeatAnalysis(
+        double? BeatOffsetSeconds,
+        float[] Beats,
+        double? DownbeatOffsetSeconds,
+        double? DownbeatConfidence);
+
+    /// <summary>
+    ///     One detected beat measured against where the theoretical grid (bpm + beat offset)
+    ///     expected it. Diagnostic only — see <see cref="AudioAnalyzer.CompareBeatsToGrid"/>.
+    /// </summary>
+    public record BeatComparison(double Detected, double Expected, double ErrorSeconds, int ExpectedIndex, int IndexGap);
+
+    /// <summary>
+    ///     Aggregate view of <see cref="BeatComparison"/> across every detected beat: how tightly
+    ///     the detector tracks the theoretical grid, and how often it appears to have skipped or
+    ///     doubled a beat.
+    /// </summary>
+    public record BeatComparisonSummary(
+        int Count,
+        double MeanAbsErrorSeconds,
+        double MaxAbsErrorSeconds,
+        int SkippedBeats,
+        int ExtraBeats,
+        IReadOnlyList<BeatComparison> Comparisons);
+
+    /// <summary>
     ///     Everything one pass over a file produced. Any member may be null: a metric that
     ///     was not requested, or one whose detector was unavailable, is simply absent.
     /// </summary>
@@ -74,13 +105,32 @@ namespace resonance.Analysis
     ///     grid anchored at 0:00 instead of this value is offset by a constant amount for the
     ///     whole track.
     /// </param>
+    /// <param name="Beats">
+    ///     Every beat Essentia actually detected, in seconds — distinct from the theoretical
+    ///     grid <see cref="BeatOffsetSeconds"/> and <see cref="Bpm"/> imply. Kept independently
+    ///     so the two can be compared/displayed separately rather than one standing in for
+    ///     the other.
+    /// </param>
+    /// <param name="DownbeatOffsetSeconds">
+    ///     The first beat of the detected downbeat phase, in seconds — a heuristic (average
+    ///     per-beat energy grouped by position in a 4-beat cycle), not a dedicated detector; see
+    ///     <see cref="DownbeatConfidence"/>.
+    /// </param>
+    /// <param name="DownbeatConfidence">
+    ///     How much louder the winning downbeat phase was than the runner-up, in [0, 1]. Low by
+    ///     construction on four-on-the-floor material, where every beat carries similar energy —
+    ///     a low value means "no real signal to anchor a bar grid on", not detector error.
+    /// </param>
     public record AnalysisResult(
         uint? Bpm = null,
         double? BpmConfidence = null,
         string Key = null,
         WaveformData Waveform = null,
         LoudnessData Loudness = null,
-        double? BeatOffsetSeconds = null);
+        double? BeatOffsetSeconds = null,
+        float[] Beats = null,
+        double? DownbeatOffsetSeconds = null,
+        double? DownbeatConfidence = null);
 
     /// <summary>
     ///     State of an in-progress analysis scan.
@@ -164,13 +214,27 @@ namespace resonance.Analysis
     ///     The first detected beat, in seconds from track start — null if BPM has never been
     ///     detected for this track (only its tag is known) or detection produced no ticks.
     /// </param>
+    /// <param name="Beats">
+    ///     Every beat Essentia actually detected, in seconds — the raw detections, as distinct
+    ///     from the theoretical grid <see cref="BeatOffsetSeconds"/>/bpm imply. Null under the
+    ///     same conditions as <see cref="BeatOffsetSeconds"/>.
+    /// </param>
+    /// <param name="DownbeatOffsetSeconds">
+    ///     The first beat of the heuristically-detected downbeat phase, in seconds — see
+    ///     <see cref="AnalysisResult.DownbeatOffsetSeconds"/>. Null if too few beats were
+    ///     detected to attempt the heuristic.
+    /// </param>
+    /// <param name="DownbeatConfidence">See <see cref="AnalysisResult.DownbeatConfidence"/>.</param>
     public record WaveformResponse(
         int NumBars,
         float[] OverallPeaks,
         float[] LowPeaks,
         float[] MidPeaks,
         float[] HighPeaks,
-        double? BeatOffsetSeconds = null);
+        double? BeatOffsetSeconds = null,
+        float[] Beats = null,
+        double? DownbeatOffsetSeconds = null,
+        double? DownbeatConfidence = null);
 
     /// <summary>API response shape for loudness data.</summary>
     public record LoudnessResponse(double IntegratedLufs, double TruePeak, double LoudnessRange);

@@ -118,6 +118,139 @@ export const firstGridLineAt = (phase, lineSeconds, fromSeconds) => {
   return phase + Math.ceil((fromSeconds - phase) / lineSeconds) * lineSeconds;
 };
 
+/**
+ * The theoretical ("ghost") beat times within [fromSeconds, toSeconds) — the
+ * idealised clock beatOffsetSeconds/bpm imply, as distinct from the beats
+ * Essentia actually detected (see visibleBeats). Each position is computed
+ * directly from its index rather than by repeatedly adding secondsPerBeat to
+ * a running total, so float error from one line never carries into the next:
+ * the 10,000th ghost beat is exactly as accurate as the first.
+ * @param {number} beatOffsetSeconds the first detected beat, in seconds from
+ *   track start (0 if unknown).
+ * @param {number} secondsPerBeat 60 / bpm.
+ * @param {number} fromSeconds start of the range, inclusive.
+ * @param {number} toSeconds end of the range, exclusive.
+ * @returns {number[]} ghost beat times, in seconds, ascending.
+ */
+export const expectedBeats = (
+  beatOffsetSeconds,
+  secondsPerBeat,
+  fromSeconds,
+  toSeconds,
+) => {
+  if (!secondsPerBeat || toSeconds <= fromSeconds) return [];
+  const firstIndex = Math.ceil(
+    (fromSeconds - beatOffsetSeconds) / secondsPerBeat,
+  );
+  const out = [];
+  for (let index = firstIndex; ; index++) {
+    const time = beatOffsetSeconds + index * secondsPerBeat;
+    if (time >= toSeconds) break;
+    out.push(time);
+  }
+
+  return out;
+};
+
+/**
+ * The detected beats (Essentia's actual ticks) within [fromSeconds,
+ * toSeconds) — never mutates `beats`, and never invents or drops a detection;
+ * it only narrows to what the current viewport needs to draw. `beats` is
+ * assumed sorted ascending, which is how the backend stores Essentia's ticks.
+ * @param {Float32Array|number[]} beats detected beat times, in seconds, or
+ *   null/undefined if none were detected.
+ * @param {number} fromSeconds start of the range, inclusive.
+ * @param {number} toSeconds end of the range, exclusive.
+ * @returns {number[]} the detected beats inside the range, ascending.
+ */
+export const visibleBeats = (beats, fromSeconds, toSeconds) => {
+  if (!beats || !beats.length) return [];
+  const out = [];
+  for (const time of beats) {
+    if (time >= fromSeconds && time < toSeconds) out.push(time);
+    else if (time >= toSeconds) break;
+  }
+
+  return out;
+};
+
+/**
+ * Diagnostic-only comparison of detected beats against the theoretical grid
+ * their own bpm/beatOffsetSeconds imply — never corrects or mutates `beats`.
+ * Each detected beat is matched to its nearest grid index independently
+ * (rather than assuming detected beat i is grid position i), so one skipped
+ * or doubled beat doesn't cascade into every comparison after it: a jump in
+ * `indexGap` away from 1 is what actually reveals that skip/double, not a
+ * growing error alone. Mirrors the backend's AudioAnalyzer.CompareBeatsToGrid
+ * (kept independent since they run in different languages, but intentionally
+ * the same algorithm) — useful client-side for a debug overlay without a
+ * round trip.
+ * @param {Float32Array|number[]} beats detected beat times, in seconds.
+ * @param {number} bpm the track's detected tempo.
+ * @param {number} beatOffsetSeconds the first detected beat, in seconds.
+ * @returns {{count: number, meanAbsErrorSeconds: number, maxAbsErrorSeconds:
+ *   number, skippedBeats: number, extraBeats: number, comparisons: Array<
+ *   {detected: number, expected: number, errorSeconds: number,
+ *   expectedIndex: number, indexGap: number}>}} the per-beat comparisons and
+ *   summary statistics.
+ */
+export const compareBeats = (beats, bpm, beatOffsetSeconds) => {
+  const count = beats ? beats.length : 0;
+  if (!count || !bpm) {
+    return {
+      comparisons: [],
+      count: 0,
+      extraBeats: 0,
+      maxAbsErrorSeconds: 0,
+      meanAbsErrorSeconds: 0,
+      skippedBeats: 0,
+    };
+  }
+
+  const secondsPerBeat = 60 / bpm;
+  const comparisons = [];
+  let lastIndex = 0;
+  let skippedBeats = 0;
+  let extraBeats = 0;
+  let sumAbsError = 0;
+  let maxAbsErrorSeconds = 0;
+
+  for (let index = 0; index < count; index++) {
+    const detected = beats[index];
+    const expectedIndex = Math.round(
+      (detected - beatOffsetSeconds) / secondsPerBeat,
+    );
+    const expected = beatOffsetSeconds + expectedIndex * secondsPerBeat;
+    const errorSeconds = detected - expected;
+    const indexGap = index === 0 ? 1 : expectedIndex - lastIndex;
+
+    if (index > 0) {
+      if (indexGap > 1) skippedBeats += indexGap - 1;
+      else if (indexGap < 1) extraBeats++;
+    }
+
+    comparisons.push({
+      detected,
+      errorSeconds,
+      expected,
+      expectedIndex,
+      indexGap,
+    });
+    sumAbsError += Math.abs(errorSeconds);
+    maxAbsErrorSeconds = Math.max(maxAbsErrorSeconds, Math.abs(errorSeconds));
+    lastIndex = expectedIndex;
+  }
+
+  return {
+    comparisons,
+    count,
+    extraBeats,
+    maxAbsErrorSeconds,
+    meanAbsErrorSeconds: sumAbsError / count,
+    skippedBeats,
+  };
+};
+
 // A drawn bar spanning more than a handful of stored bars is an overview, and
 // there peak is the wrong summary: taking the maximum of ~1000 stored peaks lands
 // near the track's loudest moment nearly every time, so every bar draws full

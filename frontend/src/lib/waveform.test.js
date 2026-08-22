@@ -30,8 +30,11 @@
 import {
   beatGridPhase,
   beatGridSeconds,
+  compareBeats,
+  expectedBeats,
   firstGridLineAt,
   resamplePeaks,
+  visibleBeats,
   waveColours,
 } from './waveform';
 
@@ -110,6 +113,165 @@ describe('beatGridPhase / firstGridLineAt', () => {
       expect(line).toBeGreaterThanOrEqual(from - 1e-9);
       expect(line).toBeLessThan(from + BEAT);
     }
+  });
+});
+
+describe('expectedBeats', () => {
+  it('matches the direct-calculation formula, not accumulation', () => {
+    // BPM=128, beatOffset=2.137 -> 2.137, 2.606, 3.075, 3.544, 4.012, ...
+    const offset = 2.137;
+    // Start just before `offset` itself so the range covers indices 0..4
+    // exactly, without also picking up earlier ghost beats the formula
+    // legitimately extrapolates backward from the offset (negative indices).
+    const ghosts = expectedBeats(offset, BEAT, offset - 1e-6, offset + 4.5 * BEAT);
+    expect(ghosts).toHaveLength(5);
+    for (const [index, time] of ghosts.entries()) {
+      expect(time).toBeCloseTo(offset + index * BEAT, 9);
+    }
+
+    // The spec's own values are rounded to 3dp for readability (e.g. 3.0745
+    // shown as "3.075"), so compare at 2dp rather than treating the rounding
+    // itself as a mismatch.
+    const literalSpecValues = [2.137, 2.606, 3.075, 3.544, 4.012];
+    for (const [index, expected] of literalSpecValues.entries()) {
+      expect(ghosts[index]).toBeCloseTo(expected, 2);
+    }
+  });
+
+  it('never drifts across many beats, because each position is computed independently', () => {
+    // An accumulation bug (running += BEAT) compounds float error over
+    // thousands of additions; direct calculation from the index cannot.
+    const offset = 2.137;
+    const ghosts = expectedBeats(offset, BEAT, 0, offset + 20_000 * BEAT);
+    const last = ghosts.at(-1);
+    const lastIndex = Math.round((last - offset) / BEAT);
+    expect(last).toBeCloseTo(offset + lastIndex * BEAT, 9);
+  });
+
+  it('draws nothing before the requested viewport start', () => {
+    const ghosts = expectedBeats(2.137, BEAT, 10, 12);
+    expect(ghosts.every((t) => t >= 10)).toBe(true);
+  });
+
+  it('draws nothing at or past the requested viewport end', () => {
+    const ghosts = expectedBeats(2.137, BEAT, 10, 12);
+    expect(ghosts.every((t) => t < 12)).toBe(true);
+  });
+
+  it('handles a beat offset greater than one beat interval', () => {
+    // A late-locking intro: offset is many multiples of BEAT, not just one.
+    const offset = 47.3; // ~101 beats in
+    const ghosts = expectedBeats(offset, BEAT, 50, 52);
+    expect(ghosts.length).toBeGreaterThan(0);
+    for (const time of ghosts) {
+      const beatsFromOffset = (time - offset) / BEAT;
+      expect(beatsFromOffset).toBeCloseTo(Math.round(beatsFromOffset), 6);
+    }
+  });
+
+  it('reproduces the track-start grid for a zero/unknown offset', () => {
+    const ghosts = expectedBeats(0, BEAT, 10, 10 + 2 * BEAT);
+    expect(ghosts[0]).toBeCloseTo(Math.ceil(10 / BEAT) * BEAT, 9);
+  });
+
+  it('handles zoom/scroll as a plain change of viewport bounds', () => {
+    // "Zoom" and "scroll" are just a narrower/shifted [from, to) to this pure
+    // function — the same grid must survive both without special-casing.
+    const offset = 2.137;
+    const wholeTrack = expectedBeats(offset, BEAT, 0, 200);
+    const zoomedWindow = expectedBeats(offset, BEAT, 80, 90); // scrolled + zoomed in
+    const fromWholeTrack = wholeTrack.filter((t) => t >= 80 && t < 90);
+    expect(zoomedWindow).toEqual(fromWholeTrack);
+  });
+
+  it('returns nothing for an empty or inverted range', () => {
+    expect(expectedBeats(2.137, BEAT, 10, 10)).toEqual([]);
+    expect(expectedBeats(2.137, BEAT, 10, 5)).toEqual([]);
+  });
+
+  it('returns nothing without a usable bpm', () => {
+    expect(expectedBeats(2.137, 0, 0, 10)).toEqual([]);
+  });
+});
+
+describe('visibleBeats', () => {
+  const beats = Float32Array.from([1, 2.5, 4, 6.5, 9, 12]);
+
+  it('keeps only detected beats inside [from, to)', () => {
+    expect(Array.from(visibleBeats(beats, 2, 9))).toEqual([2.5, 4, 6.5]);
+  });
+
+  it('never mutates the source array', () => {
+    const before = Array.from(beats);
+    visibleBeats(beats, 2, 9);
+    expect(Array.from(beats)).toEqual(before);
+  });
+
+  it('handles missing/empty detection gracefully', () => {
+    expect(visibleBeats(null, 0, 10)).toEqual([]);
+    expect(visibleBeats(undefined, 0, 10)).toEqual([]);
+    expect(visibleBeats([], 0, 10)).toEqual([]);
+  });
+});
+
+describe('compareBeats', () => {
+  const bpm = 128;
+  const beat = 60 / bpm;
+  const offset = 2.137;
+  const onGrid = (count) =>
+    Array.from({ length: count }, (_, index) => offset + index * beat);
+
+  it('keeps detected and expected as separate values per beat, never overwriting either', () => {
+    const beats = onGrid(10);
+    const { comparisons } = compareBeats(beats, bpm, offset);
+    for (const [index, c] of comparisons.entries()) {
+      expect(c.detected).toBeCloseTo(beats[index], 9);
+      expect(c.expected).toBeCloseTo(offset + index * beat, 9);
+    }
+  });
+
+  it('never mutates the detected beats array', () => {
+    const beats = onGrid(10);
+    const before = [...beats];
+    compareBeats(beats, bpm, offset);
+    expect(beats).toEqual(before);
+  });
+
+  it('reports ~zero error when the detector stays on the theoretical grid', () => {
+    const { maxAbsErrorSeconds, meanAbsErrorSeconds, skippedBeats, extraBeats } =
+      compareBeats(onGrid(30), bpm, offset);
+    expect(meanAbsErrorSeconds).toBeCloseTo(0, 6);
+    expect(maxAbsErrorSeconds).toBeCloseTo(0, 6);
+    expect(skippedBeats).toBe(0);
+    expect(extraBeats).toBe(0);
+  });
+
+  it('flags a skipped beat as an index gap without cascading into later beats', () => {
+    const beats = onGrid(20).filter((_, index) => index !== 5);
+    const { count, skippedBeats, extraBeats, maxAbsErrorSeconds } = compareBeats(
+      beats,
+      bpm,
+      offset,
+    );
+    expect(count).toBe(19);
+    expect(skippedBeats).toBe(1);
+    expect(extraBeats).toBe(0);
+    expect(maxAbsErrorSeconds).toBeCloseTo(0, 6);
+  });
+
+  it('flags an inserted extra beat as a non-positive index gap', () => {
+    const beats = onGrid(20);
+    beats.splice(5, 0, offset + 4.5 * beat);
+    const { count, skippedBeats, extraBeats } = compareBeats(beats, bpm, offset);
+    expect(count).toBe(21);
+    expect(skippedBeats).toBe(0);
+    expect(extraBeats).toBe(1);
+  });
+
+  it('handles no beats or no bpm without throwing', () => {
+    expect(compareBeats([], bpm, offset).count).toBe(0);
+    expect(compareBeats(null, bpm, offset).count).toBe(0);
+    expect(compareBeats(onGrid(5), 0, offset).count).toBe(0);
   });
 });
 

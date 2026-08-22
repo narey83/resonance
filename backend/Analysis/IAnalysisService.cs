@@ -74,12 +74,13 @@ namespace resonance.Analysis
         Task<WaveformData> GetWaveformAsync(string path, CancellationToken ct, bool cachedOnly = false);
 
         /// <summary>
-        ///     Returns the cached beat-grid phase/origin (the first detected beat, in seconds from
-        ///     track start) — a byproduct of BPM detection, so this never triggers a decode of its
-        ///     own; it is only ever populated as a side effect of a BPM scan.
+        ///     Returns the cached beat detection results — the grid phase/origin, the raw detected
+        ///     beat timestamps, and the downbeat heuristic — a byproduct of BPM detection, so this
+        ///     never triggers a decode of its own; it is only ever populated as a side effect of a
+        ///     BPM scan.
         /// </summary>
-        /// <returns>The offset, or null if BPM has never been detected for this track.</returns>
-        double? GetBeatOffsetSeconds(string path);
+        /// <returns>The beat info; every member is null if BPM has never been detected.</returns>
+        BeatAnalysis GetBeatInfo(string path);
 
         /// <summary>Returns cached loudness, analysing the file if not yet cached.</summary>
         /// <returns>The measurements, or null if the file could not be decoded.</returns>

@@ -76,16 +76,26 @@ namespace resonance.Analysis
         }
 
         /// <summary>
-        ///     The first detected beat, in seconds from track start — read independently of
-        ///     <see cref="GetWaveform"/> because it comes from the BPM detector, not the waveform
-        ///     generator, and a track can have one without the other (e.g. a BPM-only rescan of a
-        ///     track whose waveform was already cached).
+        ///     Everything the beat detector produced — the grid anchor, the raw detections, and
+        ///     the downbeat heuristic — read independently of <see cref="GetWaveform"/> because it
+        ///     comes from the BPM detector, not the waveform generator, and a track can have one
+        ///     without the other (e.g. a BPM-only rescan of a track whose waveform was already
+        ///     cached).
         /// </summary>
-        /// <returns>The offset, or null if BPM has never been detected for this track.</returns>
-        public double? GetBeatOffsetSeconds(string path)
+        /// <returns>The beat info; every member is null if BPM has never been detected.</returns>
+        public BeatAnalysis GetBeatInfo(string path)
         {
-            var row = Read(path, "beat_offset_seconds");
-            return row == null || row[0] is DBNull ? null : Convert.ToDouble(row[0]);
+            var row = Read(path, "beat_offset_seconds, beats, downbeat_offset_seconds, downbeat_confidence");
+            if (row == null)
+            {
+                return new BeatAnalysis(null, null, null, null);
+            }
+
+            return new BeatAnalysis(
+                row[0] is DBNull ? null : Convert.ToDouble(row[0]),
+                row[1] is DBNull ? null : BlobToFloats((byte[])row[1]),
+                row[2] is DBNull ? null : Convert.ToDouble(row[2]),
+                row[3] is DBNull ? null : Convert.ToDouble(row[3]));
         }
 
         public LoudnessData GetLoudness(string path)
@@ -144,8 +154,9 @@ namespace resonance.Analysis
             cmd.CommandText = @"
                 INSERT INTO analysis.track_analysis
                     (masked_filename, file_size, num_bars, overall_peaks, low_peaks, mid_peaks, high_peaks,
-                     lufs, true_peak, lra, beat_offset_seconds, analysed_at)
-                VALUES (@m, @s, @n, @op, @lp, @mp, @hp, @lufs, @tp, @lra, @bo, @t)
+                     lufs, true_peak, lra, beat_offset_seconds, beats, downbeat_offset_seconds,
+                     downbeat_confidence, analysed_at)
+                VALUES (@m, @s, @n, @op, @lp, @mp, @hp, @lufs, @tp, @lra, @bo, @bts, @dbo, @dbc, @t)
                 ON CONFLICT(masked_filename) DO UPDATE SET
                     file_size            = EXCLUDED.file_size,
                     num_bars             = COALESCE(EXCLUDED.num_bars,             analysis.track_analysis.num_bars),
@@ -157,6 +168,9 @@ namespace resonance.Analysis
                     true_peak            = COALESCE(EXCLUDED.true_peak,            analysis.track_analysis.true_peak),
                     lra                  = COALESCE(EXCLUDED.lra,                  analysis.track_analysis.lra),
                     beat_offset_seconds  = COALESCE(EXCLUDED.beat_offset_seconds,  analysis.track_analysis.beat_offset_seconds),
+                    beats                = COALESCE(EXCLUDED.beats,                analysis.track_analysis.beats),
+                    downbeat_offset_seconds = COALESCE(EXCLUDED.downbeat_offset_seconds, analysis.track_analysis.downbeat_offset_seconds),
+                    downbeat_confidence  = COALESCE(EXCLUDED.downbeat_confidence,  analysis.track_analysis.downbeat_confidence),
                     analysed_at          = EXCLUDED.analysed_at";
 
             var w = result.Waveform;
@@ -172,6 +186,9 @@ namespace resonance.Analysis
             AddParam(cmd, "@tp", (object)l?.TruePeak ?? DBNull.Value);
             AddParam(cmd, "@lra", (object)l?.LoudnessRange ?? DBNull.Value);
             AddParam(cmd, "@bo", (object)result.BeatOffsetSeconds ?? DBNull.Value);
+            AddParam(cmd, "@bts", (object)(result.Beats == null ? null : FloatsToBlob(result.Beats)) ?? DBNull.Value);
+            AddParam(cmd, "@dbo", (object)result.DownbeatOffsetSeconds ?? DBNull.Value);
+            AddParam(cmd, "@dbc", (object)result.DownbeatConfidence ?? DBNull.Value);
             AddParam(cmd, "@t", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
             cmd.ExecuteNonQuery();
         }
@@ -292,9 +309,15 @@ namespace resonance.Analysis
                     true_peak        DOUBLE PRECISION,
                     lra              DOUBLE PRECISION,
                     beat_offset_seconds DOUBLE PRECISION,
+                    beats            BYTEA,
+                    downbeat_offset_seconds DOUBLE PRECISION,
+                    downbeat_confidence     DOUBLE PRECISION,
                     analysed_at      BIGINT NOT NULL
                 );
-                ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS beat_offset_seconds DOUBLE PRECISION;";
+                ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS beat_offset_seconds DOUBLE PRECISION;
+                ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS beats BYTEA;
+                ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS downbeat_offset_seconds DOUBLE PRECISION;
+                ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS downbeat_confidence DOUBLE PRECISION;";
             cmd.ExecuteNonQuery();
 
             MigrateLegacyTables(conn);

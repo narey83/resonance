@@ -1,5 +1,6 @@
 namespace Resonance.Tests.Analysis;
 
+using System.Linq;
 using global::resonance.Analysis;
 
 public class AudioAnalyzerTests
@@ -118,5 +119,97 @@ public class AudioAnalyzerTests
     public void Returns_Null_When_The_Summary_Is_Missing(string? stderr)
     {
         Assert.Null(AudioAnalyzer.ParseLoudness(stderr));
+    }
+
+    // ── CompareBeatsToGrid ────────────────────────────────────────────────────
+
+    private const double Bpm128 = 128;
+    private const double Offset = 2.137;
+    private static double SecondsPerBeat => 60.0 / Bpm128;
+
+    private static float[] PerfectGrid(int count) =>
+        Enumerable.Range(0, count).Select(i => (float)(Offset + (i * SecondsPerBeat))).ToArray();
+
+    [Fact]
+    public void Reports_Zero_Error_When_Beats_Sit_Exactly_On_The_Grid()
+    {
+        var summary = AudioAnalyzer.CompareBeatsToGrid(PerfectGrid(20), Bpm128, Offset);
+
+        Assert.Equal(20, summary.Count);
+        Assert.Equal(0, summary.MeanAbsErrorSeconds, 4);
+        Assert.Equal(0, summary.MaxAbsErrorSeconds, 4);
+        Assert.Equal(0, summary.SkippedBeats);
+        Assert.Equal(0, summary.ExtraBeats);
+        Assert.All(summary.Comparisons, c => Assert.Equal(1, c.IndexGap));
+    }
+
+    [Fact]
+    public void Reports_Small_Nonzero_Error_When_Detection_Jitters_Around_The_Grid()
+    {
+        // Deterministic "jitter" rather than random, so the test is reproducible: alternating
+        // +8ms/-8ms around the true grid position, as a real detector's small timing noise would.
+        var beats = PerfectGrid(20);
+        for (var i = 0; i < beats.Length; i++)
+        {
+            beats[i] += i % 2 == 0 ? 0.008f : -0.008f;
+        }
+
+        var summary = AudioAnalyzer.CompareBeatsToGrid(beats, Bpm128, Offset);
+
+        Assert.Equal(0, summary.SkippedBeats);
+        Assert.Equal(0, summary.ExtraBeats);
+        Assert.InRange(summary.MeanAbsErrorSeconds, 0.007, 0.009);
+        Assert.InRange(summary.MaxAbsErrorSeconds, 0.007, 0.009);
+    }
+
+    [Fact]
+    public void Detects_A_Skipped_Beat_As_An_Index_Gap_Without_Corrupting_Later_Comparisons()
+    {
+        // A clean grid with beat index 5 missing entirely — a detector that failed to fire once.
+        var beats = PerfectGrid(20).Where((_, i) => i != 5).ToArray();
+
+        var summary = AudioAnalyzer.CompareBeatsToGrid(beats, Bpm128, Offset);
+
+        Assert.Equal(19, summary.Count);
+        Assert.Equal(1, summary.SkippedBeats);
+        Assert.Equal(0, summary.ExtraBeats);
+        // Re-syncs at the very next beat — every comparison stays near-zero error rather than
+        // the gap cascading into a growing offset for the rest of the track.
+        Assert.Equal(0, summary.MeanAbsErrorSeconds, 4);
+        Assert.Equal(0, summary.MaxAbsErrorSeconds, 4);
+    }
+
+    [Fact]
+    public void Detects_An_Extra_Inserted_Beat_As_A_Non_Positive_Index_Gap()
+    {
+        // A spurious extra detection halfway between two real grid beats.
+        var beats = PerfectGrid(20).ToList();
+        beats.Insert(5, (float)(Offset + (4.5 * SecondsPerBeat)));
+
+        var summary = AudioAnalyzer.CompareBeatsToGrid(beats.ToArray(), Bpm128, Offset);
+
+        Assert.Equal(21, summary.Count);
+        Assert.Equal(0, summary.SkippedBeats);
+        Assert.Equal(1, summary.ExtraBeats);
+    }
+
+    [Fact]
+    public void Handles_A_Single_Beat_Without_Skip_Or_Extra_Counts()
+    {
+        var summary = AudioAnalyzer.CompareBeatsToGrid(PerfectGrid(1), Bpm128, Offset);
+
+        Assert.Equal(1, summary.Count);
+        Assert.Equal(0, summary.SkippedBeats);
+        Assert.Equal(0, summary.ExtraBeats);
+    }
+
+    [Fact]
+    public void Handles_No_Beats_Without_Throwing()
+    {
+        var summary = AudioAnalyzer.CompareBeatsToGrid([], Bpm128, Offset);
+
+        Assert.Equal(0, summary.Count);
+        Assert.Equal(0, summary.MeanAbsErrorSeconds);
+        Assert.Equal(0, summary.MaxAbsErrorSeconds);
     }
 }

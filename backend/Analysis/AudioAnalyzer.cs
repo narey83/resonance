@@ -30,9 +30,11 @@
 namespace resonance.Analysis
 {
     using System;
+    using System.Collections.Generic;
     using System.Diagnostics;
     using System.Globalization;
     using System.IO;
+    using System.Linq;
     using System.Text.Json;
     using System.Text.RegularExpressions;
     using System.Threading;
@@ -107,10 +109,45 @@ namespace resonance.Analysis
                         bpm, ticks, conf, _, _ = es.RhythmExtractor2013(method=method)(audio)
                         out['bpm'] = float(bpm)
                         out['bpmConfidence'] = float(conf)
-                        # ticks[0] is the first detected beat, in seconds from the start of
-                        # this decode — the beat-grid phase/origin, not just the interval.
-                        if len(ticks) > 0:
-                            out['beatOffset'] = float(ticks[0])
+                        beats = [float(t) for t in ticks]
+                        if beats:
+                            # beats[0] is the first detected beat, in seconds from the start
+                            # of this decode — the beat-grid phase/origin, not just the
+                            # interval. The full list is kept too (below) so the frontend can
+                            # show actual detected beats distinctly from the theoretical grid
+                            # beatOffset/bpm imply.
+                            out['beatOffset'] = beats[0]
+                            out['beats'] = beats
+
+                        # Downbeat: no dedicated detector is available in this Essentia build
+                        # (Meter() exists but its own docstring says "experimental, do not
+                        # use"; there is nothing like madmom's DBNDownBeatTracker here). This
+                        # is a heuristic built on BeatsLoudness (a real, non-experimental
+                        # primitive): average each beat's energy by its position in a 4-beat
+                        # cycle, and take the loudest phase as the downbeat candidate.
+                        # Deliberately weak on four-on-the-floor house/techno, where every
+                        # beat carries a kick and all four phases read equally loud —
+                        # downbeatConfidence is designed to come out low there rather than
+                        # assert a guess, since the margin between the best and next-best
+                        # phase is the whole signal.
+                        if len(beats) >= 8:
+                            try:
+                                loudness, _ = es.BeatsLoudness(beats=beats)(audio)
+                                sums = [0.0, 0.0, 0.0, 0.0]
+                                counts = [0, 0, 0, 0]
+                                for i, l in enumerate(loudness):
+                                    phase = i % 4
+                                    sums[phase] += float(l)
+                                    counts[phase] += 1
+                                averages = [s / c if c else 0.0 for s, c in zip(sums, counts)]
+                                ranked = sorted(range(4), key=lambda p: averages[p], reverse=True)
+                                best, runner_up = ranked[0], ranked[1]
+                                out['downbeatOffset'] = beats[best]
+                                total = averages[best] + 1e-9
+                                out['downbeatConfidence'] = max(
+                                    0.0, min(1.0, (averages[best] - averages[runner_up]) / total))
+                            except Exception as e:
+                                out['downbeatError'] = str(e)
                     except Exception as e:
                         out['bpmError'] = str(e)
 
@@ -208,6 +245,58 @@ namespace resonance.Analysis
                 double.Parse(lra.Groups[1].Value, CultureInfo.InvariantCulture));
         }
 
+        // ── Beat diagnostics ──────────────────────────────────────────────────
+
+        /// <summary>
+        ///     Compares detected beat timestamps against the theoretical grid their own bpm and
+        ///     first-beat offset imply — diagnostic only, never used to correct <paramref
+        ///     name="beats"/> itself. Each beat is matched to its nearest grid index independently
+        ///     (rather than assuming beat i of the array is grid position i), so a beat the
+        ///     detector skipped or doubled earlier in the track doesn't cascade into every
+        ///     comparison after it: a jump in <see cref="BeatComparison.IndexGap"/> from 1 is what
+        ///     actually reveals that skip/double, not a growing error alone.
+        /// </summary>
+        /// <returns>The per-beat comparisons and summary statistics. Exposed for testing.</returns>
+        public static BeatComparisonSummary CompareBeatsToGrid(float[] beats, double bpm, double beatOffsetSeconds)
+        {
+            var secondsPerBeat = 60.0 / bpm;
+            var comparisons = new List<BeatComparison>(beats.Length);
+            var lastIndex = 0;
+            var skipped = 0;
+            var extra = 0;
+            var sumAbsError = 0.0;
+            var maxAbsError = 0.0;
+
+            for (var i = 0; i < beats.Length; i++)
+            {
+                var detected = (double)beats[i];
+                var expectedIndex = (int)Math.Round((detected - beatOffsetSeconds) / secondsPerBeat);
+                var expected = beatOffsetSeconds + (expectedIndex * secondsPerBeat);
+                var error = detected - expected;
+
+                var gap = i == 0 ? 1 : expectedIndex - lastIndex;
+                if (i > 0)
+                {
+                    if (gap > 1)
+                    {
+                        skipped += gap - 1;
+                    }
+                    else if (gap < 1)
+                    {
+                        extra++;
+                    }
+                }
+
+                comparisons.Add(new BeatComparison(detected, expected, error, expectedIndex, gap));
+                sumAbsError += Math.Abs(error);
+                maxAbsError = Math.Max(maxAbsError, Math.Abs(error));
+                lastIndex = expectedIndex;
+            }
+
+            return new BeatComparisonSummary(
+                beats.Length, beats.Length > 0 ? sumAbsError / beats.Length : 0, maxAbsError, skipped, extra, comparisons);
+        }
+
         /// <summary>
         ///     Runs every requested metric over a single decode of <paramref name="filePath"/>.
         /// </summary>
@@ -251,6 +340,9 @@ namespace resonance.Analysis
             uint? bpm = null;
             double? bpmConfidence = null;
             double? beatOffset = null;
+            float[] beats = null;
+            double? downbeatOffset = null;
+            double? downbeatConfidence = null;
             string key = null;
             if (metrics.HasFlag(AnalysisMetrics.Bpm) || metrics.HasFlag(AnalysisMetrics.Key))
             {
@@ -275,6 +367,21 @@ namespace resonance.Analysis
                         beatOffset = o.GetDouble();
                     }
 
+                    if (essentia.Value.TryGetProperty("beats", out var bts) && bts.ValueKind == JsonValueKind.Array)
+                    {
+                        beats = bts.EnumerateArray().Select(e => (float)e.GetDouble()).ToArray();
+                    }
+
+                    if (essentia.Value.TryGetProperty("downbeatOffset", out var dbo))
+                    {
+                        downbeatOffset = dbo.GetDouble();
+                    }
+
+                    if (essentia.Value.TryGetProperty("downbeatConfidence", out var dbc))
+                    {
+                        downbeatConfidence = dbc.GetDouble();
+                    }
+
                     if (essentia.Value.TryGetProperty("key", out var k))
                     {
                         key = k.GetString();
@@ -291,10 +398,24 @@ namespace resonance.Analysis
                             missingBpm && missingKey ? "bpm/key" : missingBpm ? "bpm" : "key",
                             filePath, essentia.Value.GetRawText());
                     }
+
+                    // Diagnostic only, never surfaced to the API or used to correct anything —
+                    // how well the raw detected beats track the theoretical grid their own bpm
+                    // and beatOffset imply. Debug level: this is for inspecting a specific
+                    // track's detection quality on demand, not something every scan should emit.
+                    if (bpm.HasValue && beatOffset.HasValue && beats is { Length: > 1 } && Log.IsEnabled(Serilog.Events.LogEventLevel.Debug))
+                    {
+                        var summary = CompareBeatsToGrid(beats, bpm.Value, beatOffset.Value);
+                        Log.Debug(
+                            "Beat detection vs theoretical grid for '{File}': {Count} beats, " +
+                            "meanErr={MeanMs:F1}ms, maxErr={MaxMs:F1}ms, skipped={Skipped}, extra={Extra}",
+                            filePath, summary.Count, summary.MeanAbsErrorSeconds * 1000,
+                            summary.MaxAbsErrorSeconds * 1000, summary.SkippedBeats, summary.ExtraBeats);
+                    }
                 }
             }
 
-            return new AnalysisResult(bpm, bpmConfidence, key, waveform, loudness, beatOffset);
+            return new AnalysisResult(bpm, bpmConfidence, key, waveform, loudness, beatOffset, beats, downbeatOffset, downbeatConfidence);
         }
 
         // ── Decode ────────────────────────────────────────────────────────────

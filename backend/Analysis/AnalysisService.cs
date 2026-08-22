@@ -293,7 +293,7 @@ namespace resonance.Analysis
             }
         }
 
-        public double? GetBeatOffsetSeconds(string path) => Store.GetBeatOffsetSeconds(path);
+        public BeatAnalysis GetBeatInfo(string path) => Store.GetBeatInfo(path);
 
         public async Task<LoudnessData> GetLoudnessAsync(string path, CancellationToken ct)
         {

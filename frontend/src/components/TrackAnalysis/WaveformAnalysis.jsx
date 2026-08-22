@@ -33,7 +33,11 @@ import api from '../../lib/api';
 import { getLocalStreamUrl } from '../../lib/files';
 import { fuzzyFilter } from '../../lib/fuzzy';
 import { getTracks } from '../../lib/musicLibrary';
-import { beatGridPhase, beatGridSeconds } from '../../lib/waveform';
+import {
+  beatGridPhase,
+  beatGridSeconds,
+  visibleBeats,
+} from '../../lib/waveform';
 import {
   Activity,
   AudioWaveform,
@@ -394,41 +398,115 @@ const drawSilhouette = (
   context.globalCompositeOperation = 'source-over';
 };
 
-const drawBpmGrid = (
+// Three independent, separately-toggleable layers over the same waveform —
+// see WaveformAnalysis's showGhostGrid/showDetectedBeats/showDownbeats state.
+// Kept as one function (rather than three) only because they share the same
+// time->pixel mapping and canvas save/restore; each layer's own draw/skip
+// logic is otherwise self-contained, so adding a fourth (e.g. phrase lines)
+// later doesn't touch the other three.
+const drawBeatOverlay = (
   canvas,
-  bpm,
-  duration,
-  zoom = 1,
-  scrollFraction = 0,
-  beatOffsetSeconds = 0,
+  {
+    beatOffsetSeconds = 0,
+    beats = null,
+    bpm,
+    downbeatOffsetSeconds = null,
+    duration,
+    scrollFraction = 0,
+    showDetectedBeats = false,
+    showDownbeats = false,
+    showGhostGrid = true,
+    zoom = 1,
+  },
 ) => {
   if (!bpm || !duration) return;
   const context = canvas.getContext('2d');
   const visibleDuration = duration / zoom;
   const startTime = scrollFraction * (duration - visibleDuration);
+  const endTime = startTime + visibleDuration;
   const pixelsPerSecond = canvas.width / visibleDuration;
-  // Zoomed out, a line per beat lands every pixel or two and aliases into
-  // Moiré bands rather than reading as a grid — widen it, or skip it.
-  const lineSeconds = beatGridSeconds(bpm, pixelsPerSecond, 8);
-  if (!lineSeconds) return;
+  const secondsPerBeat = 60 / bpm;
+  const xAt = (time) => (time - startTime) * pixelsPerSecond;
 
-  // Anchored to the first detected beat, not to track start — see the same
-  // note in WaveformSeekBar's drawBeatGrid.
-  const phase = beatGridPhase(beatOffsetSeconds, lineSeconds);
+  // Ghost grid: the theoretical clock beatOffsetSeconds/bpm imply. Dashed and
+  // low-opacity by design — it's a reference to check the detected beats
+  // and waveform transients against, not something that should visually
+  // compete with them. Widens to bar/phrase spacing at low zoom (same
+  // Moiré-avoidance as before) rather than becoming a solid smear.
+  if (showGhostGrid) {
+    const lineSeconds = beatGridSeconds(bpm, pixelsPerSecond, 8);
+    if (lineSeconds) {
+      const phase = beatGridPhase(beatOffsetSeconds, lineSeconds);
+      context.save();
+      context.strokeStyle = 'rgba(255,255,255,0.22)';
+      context.lineWidth = 1;
+      context.setLineDash([2, 3]);
+      for (let time = phase; time < duration; time += lineSeconds) {
+        if (time < startTime || time > endTime) continue;
+        const x = Math.round(xAt(time)) + 0.5;
+        context.beginPath();
+        context.moveTo(x, 0);
+        context.lineTo(x, canvas.height);
+        context.stroke();
+      }
 
-  context.save();
-  context.strokeStyle = 'rgba(255,255,255,0.22)';
-  context.lineWidth = 1;
-  for (let time = phase; time < duration; time += lineSeconds) {
-    if (time < startTime || time > startTime + visibleDuration) continue;
-    const x = Math.round((time - startTime) * pixelsPerSecond) + 0.5;
-    context.beginPath();
-    context.moveTo(x, 0);
-    context.lineTo(x, canvas.height);
-    context.stroke();
+      context.restore();
+    }
   }
 
-  context.restore();
+  // Downbeats: stronger line at the heuristic bar boundary (see
+  // AudioAnalyzer's downbeat heuristic on the backend) — 4/4 only for now.
+  // Skipped below the same legibility floor as the ghost grid so it never
+  // becomes a denser comb than the beat grid it's meant to stand out from.
+  if (showDownbeats && downbeatOffsetSeconds != null) {
+    const barSeconds = secondsPerBeat * 4;
+    if (barSeconds * pixelsPerSecond >= 8) {
+      const phase = beatGridPhase(downbeatOffsetSeconds, barSeconds);
+      context.save();
+      context.strokeStyle = 'rgba(255,196,64,0.55)';
+      context.lineWidth = 2;
+      for (let time = phase; time < duration; time += barSeconds) {
+        if (time < startTime || time > endTime) continue;
+        const x = Math.round(xAt(time)) + 0.5;
+        context.beginPath();
+        context.moveTo(x, 0);
+        context.lineTo(x, canvas.height);
+        context.stroke();
+      }
+
+      context.restore();
+    }
+  }
+
+  // Detected beats: Essentia's actual ticks, as short solid markers rather
+  // than full-height lines — distinct from the ghost grid's theoretical
+  // lines so the two can be visually compared (do they land on top of each
+  // other, or is the detector early/late/skipping?). Only drawn once the
+  // beat-level grid itself would be legible (not widened to bar/phrase);
+  // past that point individual markers would just be a solid bar of ticks.
+  if (showDetectedBeats && beats && beats.length) {
+    const beatLevelLegible =
+      beatGridSeconds(bpm, pixelsPerSecond, 8) <= secondsPerBeat * 1.01;
+    if (beatLevelLegible) {
+      context.save();
+      context.strokeStyle = 'rgba(255,255,255,0.9)';
+      context.fillStyle = 'rgba(255,255,255,0.9)';
+      context.lineWidth = 1;
+      const markerHeight = Math.min(24, canvas.height * 0.2);
+      for (const time of visibleBeats(beats, startTime, endTime)) {
+        const x = Math.round(xAt(time)) + 0.5;
+        context.beginPath();
+        context.moveTo(x, canvas.height - markerHeight);
+        context.lineTo(x, canvas.height);
+        context.stroke();
+        context.beginPath();
+        context.arc(x, canvas.height - markerHeight, 2.5, 0, Math.PI * 2);
+        context.fill();
+      }
+
+      context.restore();
+    }
+  }
 };
 
 const getTrackLabel = (track) =>
@@ -538,12 +616,22 @@ const WaveformAnalysis = () => {
   const [libraryTracks, setLibraryTracks] = useState([]);
   const [selectedTrack, setSelectedTrack] = useState(null);
   const [mode, setMode] = useState('amplitude');
-  const [showBpmGrid, setShowBpmGrid] = useState(false);
+  const [showGhostGrid, setShowGhostGrid] = useState(false);
+  const [showDetectedBeats, setShowDetectedBeats] = useState(false);
+  const [showDownbeats, setShowDownbeats] = useState(false);
   const [showKeyBadge, setShowKeyBadge] = useState(true);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [audioDuration, setAudioDuration] = useState(0);
   const [zoom, setZoom] = useState(1);
+  // Whether the current track's fetched data actually has beats/a downbeat
+  // guess to show — separate from the show* toggles above (those are what
+  // the user *wants* shown; these are what's *available* to show), so the
+  // toolbar buttons can disable themselves the same way the BPM/key ones do.
+  const [beatDataAvailable, setBeatDataAvailable] = useState({
+    beats: false,
+    downbeat: false,
+  });
 
   const waveformContainerRef = useRef(null);
   const canvasRef = useRef(null);
@@ -620,24 +708,32 @@ const WaveformAnalysis = () => {
       );
     }
 
-    if (showBpmGrid && selectedTrack?.bpm && data.duration) {
-      drawBpmGrid(
-        canvas,
-        selectedTrack.bpm,
-        data.duration,
-        z,
-        sf,
-        data.beatOffsetSeconds || 0,
-      );
+    if (
+      (showGhostGrid || showDetectedBeats || showDownbeats) &&
+      selectedTrack?.bpm &&
+      data.duration
+    ) {
+      drawBeatOverlay(canvas, {
+        beatOffsetSeconds: data.beatOffsetSeconds || 0,
+        beats: data.beats,
+        bpm: selectedTrack.bpm,
+        downbeatOffsetSeconds: data.downbeatOffsetSeconds,
+        duration: data.duration,
+        scrollFraction: sf,
+        showDetectedBeats,
+        showDownbeats,
+        showGhostGrid,
+        zoom: z,
+      });
     }
-  }, [showBpmGrid, selectedTrack?.bpm]);
+  }, [showGhostGrid, showDetectedBeats, showDownbeats, selectedTrack?.bpm]);
 
   // Redraw when mode changes (without re-analysing audio)
   useEffect(() => {
     if (CANVAS_MODES.includes(mode)) drawCanvas();
   }, [drawCanvas, mode]);
 
-  // Redraw on showBpmGrid / key badge changes
+  // Redraw on beat-overlay toggle / key badge changes
   useEffect(() => {
     drawCanvas();
   }, [drawCanvas]);
@@ -735,6 +831,7 @@ const WaveformAnalysis = () => {
       wavesurferRef.current = null;
       frequencyDataRef.current = null;
       setAudioDuration(0);
+      setBeatDataAvailable({ beats: false, downbeat: false });
       setLoading(true);
 
       const analyse = async () => {
@@ -743,6 +840,9 @@ const WaveformAnalysis = () => {
           let bands = null;
           let duration = null;
           let beatOffsetSeconds = 0;
+          let beats = null;
+          let downbeatOffsetSeconds = null;
+          let downbeatConfidence = null;
           try {
             const res = await api.get('/analysis/waveform', {
               params: { path: selectedTrack.path },
@@ -756,6 +856,15 @@ const WaveformAnalysis = () => {
                 highPeaks: new Float32Array(res.data.highPeaks),
               };
               beatOffsetSeconds = res.data.beatOffsetSeconds || 0;
+              // Detected beats and the downbeat heuristic are independent of
+              // the waveform bands — kept as their own values rather than
+              // folded into `bands` so a comparison against the ghost grid
+              // never has to reach through the peaks data to find them.
+              beats = res.data.beats?.length
+                ? new Float32Array(res.data.beats)
+                : null;
+              downbeatOffsetSeconds = res.data.downbeatOffsetSeconds ?? null;
+              downbeatConfidence = res.data.downbeatConfidence ?? null;
             }
           } catch {
             /* not cached — fall through to browser analysis */
@@ -813,6 +922,9 @@ const WaveformAnalysis = () => {
             trackPath: selectedTrack.path,
             duration: duration ?? selectedTrack.duration ?? 0,
             beatOffsetSeconds,
+            beats,
+            downbeatOffsetSeconds,
+            downbeatConfidence,
             highPeaks: bands.highPeaks,
             lowPeaks: bands.lowPeaks,
             midPeaks: bands.midPeaks,
@@ -820,6 +932,10 @@ const WaveformAnalysis = () => {
           };
 
           setAudioDuration(frequencyDataRef.current.duration);
+          setBeatDataAvailable({
+            beats: Boolean(beats?.length),
+            downbeat: downbeatOffsetSeconds != null,
+          });
           setLoading(false);
           drawCanvas();
         } catch (error) {
@@ -886,6 +1002,11 @@ const WaveformAnalysis = () => {
     audioDuration > 0
       ? `${String(minutes)}:${String(seconds).padStart(2, '0')}`
       : '';
+  const downbeatConfidencePct = frequencyDataRef.current?.downbeatConfidence;
+  const downbeatConfidenceLabel =
+    downbeatConfidencePct == null
+      ? 'unknown'
+      : `${Math.round(downbeatConfidencePct * 100)}%`;
 
   return (
     <div className="wa-root">
@@ -914,14 +1035,46 @@ const WaveformAnalysis = () => {
 
             <div className="wa-overlay-group">
               <button
-                className={`wa-overlay-btn hover-fx${showBpmGrid ? ' wa-overlay-btn--active' : ''}`}
+                className={`wa-overlay-btn hover-fx${showGhostGrid ? ' wa-overlay-btn--active' : ''}`}
                 disabled={!selectedTrack?.bpm}
-                onClick={() => setShowBpmGrid((c) => !c)}
-                title={selectedTrack?.bpm ? 'BPM grid' : 'No BPM data'}
+                onClick={() => setShowGhostGrid((c) => !c)}
+                title={
+                  selectedTrack?.bpm
+                    ? 'Ghost grid — the theoretical beat clock (bpm + phase), not what was detected'
+                    : 'No BPM data'
+                }
                 type="button"
               >
                 <Grid3x3 size={12} />
-                BPM grid
+                Ghost grid
+              </button>
+              <button
+                className={`wa-overlay-btn hover-fx${showDetectedBeats ? ' wa-overlay-btn--active' : ''}`}
+                disabled={!beatDataAvailable.beats}
+                onClick={() => setShowDetectedBeats((c) => !c)}
+                title={
+                  beatDataAvailable.beats
+                    ? "Detected beats — Essentia's actual ticks, compare against the ghost grid"
+                    : 'No detected-beat data — run a BPM scan for this track'
+                }
+                type="button"
+              >
+                <AudioWaveform size={12} />
+                Detected beats
+              </button>
+              <button
+                className={`wa-overlay-btn hover-fx${showDownbeats ? ' wa-overlay-btn--active' : ''}`}
+                disabled={!beatDataAvailable.downbeat}
+                onClick={() => setShowDownbeats((c) => !c)}
+                title={
+                  beatDataAvailable.downbeat
+                    ? `Downbeats — heuristic bar-1 guess (confidence ${downbeatConfidenceLabel}), not a dedicated detector`
+                    : 'No downbeat data — needs at least 8 detected beats'
+                }
+                type="button"
+              >
+                <BarChart2 size={12} />
+                Downbeats
               </button>
               <button
                 className={`wa-overlay-btn hover-fx${showKeyBadge ? ' wa-overlay-btn--active' : ''}`}
