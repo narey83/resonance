@@ -27,7 +27,13 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import { beatGridSeconds, resamplePeaks, waveColours } from './waveform';
+import {
+  beatGridPhase,
+  beatGridSeconds,
+  firstGridLineAt,
+  resamplePeaks,
+  waveColours,
+} from './waveform';
 
 // 128bpm: 0.469s a beat. The scales below are what the player's seek bar
 // actually works at — a 5 minute track across ~900px is 3 pixels a second.
@@ -59,6 +65,51 @@ describe('beatGridSeconds', () => {
   it('draws nothing without a tempo', () => {
     expect(beatGridSeconds(undefined, 60, 8)).toBe(0);
     expect(beatGridSeconds(0, 60, 8)).toBe(0);
+  });
+});
+
+describe('beatGridPhase / firstGridLineAt', () => {
+  it('reproduces the old track-start anchor when there is no detected offset', () => {
+    expect(beatGridPhase(0, BEAT)).toBeCloseTo(0);
+    expect(firstGridLineAt(0, BEAT, 10)).toBeCloseTo(
+      Math.ceil(10 / BEAT) * BEAT,
+    );
+  });
+
+  it('anchors the grid to the first detected beat instead of 0:00', () => {
+    // A 2s intro before the beat locks in — every grid line must land at
+    // 2 + k*BEAT, not at a multiple of BEAT from track start.
+    const offset = 2.137;
+    const phase = beatGridPhase(offset, BEAT);
+    for (let k = 0; k < 20; k++) {
+      const line = firstGridLineAt(phase, BEAT, offset + (k - 5) * BEAT - 1e-6);
+      const beatsFromOffset = (line - offset) / BEAT;
+      expect(beatsFromOffset).toBeCloseTo(Math.round(beatsFromOffset));
+    }
+  });
+
+  it('still finds the phase when the offset is larger than the line spacing', () => {
+    // beatOffsetSeconds is a raw seconds value; lineSeconds may have widened
+    // to a bar or phrase (4x/16x BEAT) at low zoom, so the offset routinely
+    // exceeds it many times over.
+    const barSeconds = BEAT * 4;
+    const offset = 47.3; // ~101 beats in
+    const phase = beatGridPhase(offset, barSeconds);
+    expect(phase).toBeGreaterThanOrEqual(0);
+    expect(phase).toBeLessThan(barSeconds);
+    expect((offset - phase) / barSeconds).toBeCloseTo(
+      Math.round((offset - phase) / barSeconds),
+    );
+  });
+
+  it('returns the first line at or after the requested time, never before', () => {
+    const offset = 0.75;
+    const phase = beatGridPhase(offset, BEAT);
+    for (const from of [0, 0.1, 0.75, 0.76, 5, 100.2]) {
+      const line = firstGridLineAt(phase, BEAT, from);
+      expect(line).toBeGreaterThanOrEqual(from - 1e-9);
+      expect(line).toBeLessThan(from + BEAT);
+    }
   });
 });
 

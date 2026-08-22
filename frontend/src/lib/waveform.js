@@ -86,6 +86,38 @@ export const beatGridSeconds = (bpm, pixelsPerSecond, minSpacing) => {
   return 0;
 };
 
+/**
+ * Where the grid's first line sits within one `lineSeconds` period, anchored
+ * to the track's actual first detected beat rather than to 0:00. A track's
+ * rhythm rarely starts exactly at the top of the file — an intro, a pickup,
+ * a moment of silence — so a grid drawn at multiples of the beat interval
+ * from t=0 is offset from the real beats by a constant amount for the whole
+ * track. Beat position (interval) and beat phase (origin) are independent:
+ * this only ever needs the offset modulo the current line spacing, since bar
+ * and phrase lines are themselves whole multiples of a beat.
+ * @param {number} beatOffsetSeconds the first detected beat, in seconds from
+ *   track start (0 if unknown, which reproduces the old track-start anchor).
+ * @param {number} lineSeconds seconds between grid lines, from beatGridSeconds.
+ * @returns {number} the phase, in [0, lineSeconds).
+ */
+export const beatGridPhase = (beatOffsetSeconds, lineSeconds) => {
+  if (!lineSeconds) return 0;
+  return ((beatOffsetSeconds % lineSeconds) + lineSeconds) % lineSeconds;
+};
+
+/**
+ * The first grid line at or after `fromSeconds`, on the beat-anchored grid
+ * described by `phase`/`lineSeconds` (see beatGridPhase).
+ * @param {number} phase the grid's phase, from beatGridPhase.
+ * @param {number} lineSeconds seconds between grid lines.
+ * @param {number} fromSeconds where the caller wants the first line at or after.
+ * @returns {number} the time, in seconds, of that line.
+ */
+export const firstGridLineAt = (phase, lineSeconds, fromSeconds) => {
+  if (!lineSeconds) return fromSeconds;
+  return phase + Math.ceil((fromSeconds - phase) / lineSeconds) * lineSeconds;
+};
+
 // A drawn bar spanning more than a handful of stored bars is an overview, and
 // there peak is the wrong summary: taking the maximum of ~1000 stored peaks lands
 // near the track's loudest moment nearly every time, so every bar draws full

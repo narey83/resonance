@@ -31,7 +31,9 @@ import api from '../../lib/api';
 import { analyzeTrack } from '../../lib/musicLibrary';
 import { formatSeconds } from '../../lib/util';
 import {
+  beatGridPhase,
   beatGridSeconds,
+  firstGridLineAt,
   maxOf,
   resamplePeaks,
   waveColours,
@@ -112,6 +114,7 @@ const WaveformSeekBar = ({
         primeWaveformCache(track.path, data);
 
         peaksRef.current = {
+          beatOffsetSeconds: data.beatOffsetSeconds || 0,
           overall: new Float32Array(data.overallPeaks),
         };
         setReady(true);
@@ -313,11 +316,10 @@ const WaveformSeekBar = ({
     // light and AMOLED each get a palette that suits the panel they're drawn on.
     const colours = getColours(canvas);
 
-    // Beat grid, anchored at track start — there's no detected downbeat/phase
-    // offset stored per track, only a single averaged BPM, so this assumes beat
-    // 1 lands at 0:00. Correct BPM + a beat starting right at the top of the
-    // track means the kicks should sit right on these lines; an intro/pickup
-    // before the beat locks in will drift the two apart even with correct BPM.
+    // Beat grid, anchored to the first detected beat (from BPM analysis) rather
+    // than to track start — a silent or non-rhythmic intro before the beat
+    // locks in would otherwise offset every line by a constant amount for the
+    // whole track even with a perfectly correct BPM.
     const drawBeatGrid = () => {
       // One line per beat at zoom 1 is a line every pixel or two — a second
       // comb at almost exactly the waveform's own period, which is where the
@@ -328,7 +330,8 @@ const WaveformSeekBar = ({
         8 * dprScale,
       );
       if (!lineSeconds) return;
-      const firstBeat = Math.ceil(drawStart / lineSeconds) * lineSeconds;
+      const phase = beatGridPhase(peaks.beatOffsetSeconds || 0, lineSeconds);
+      const firstBeat = firstGridLineAt(phase, lineSeconds, drawStart);
       context.save();
       context.strokeStyle = colours.grid;
       context.lineWidth = 1;

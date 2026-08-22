@@ -62,12 +62,25 @@ namespace resonance.Analysis
     ///     Everything one pass over a file produced. Any member may be null: a metric that
     ///     was not requested, or one whose detector was unavailable, is simply absent.
     /// </summary>
+    /// <param name="Bpm">The detected (octave-folded) tempo.</param>
+    /// <param name="BpmConfidence">Essentia's confidence in <paramref name="Bpm"/>.</param>
+    /// <param name="Key">The detected musical key.</param>
+    /// <param name="Waveform">The waveform band peaks.</param>
+    /// <param name="Loudness">The EBU R128 loudness measurements.</param>
+    /// <param name="BeatOffsetSeconds">
+    ///     The first detected beat, in seconds from the start of the track — the beat grid's
+    ///     phase/origin. Distinct from BPM (the interval between beats): a track with a silent
+    ///     or non-rhythmic intro has this greater than zero even when the tempo is exact, and a
+    ///     grid anchored at 0:00 instead of this value is offset by a constant amount for the
+    ///     whole track.
+    /// </param>
     public record AnalysisResult(
         uint? Bpm = null,
         double? BpmConfidence = null,
         string Key = null,
         WaveformData Waveform = null,
-        LoudnessData Loudness = null);
+        LoudnessData Loudness = null,
+        double? BeatOffsetSeconds = null);
 
     /// <summary>
     ///     State of an in-progress analysis scan.
@@ -142,12 +155,22 @@ namespace resonance.Analysis
         string[] OnlyPaths = null);
 
     /// <summary>API response shape for waveform data.</summary>
+    /// <param name="NumBars">How many bars each peaks array holds.</param>
+    /// <param name="OverallPeaks">The overall (unfiltered) peak per bar.</param>
+    /// <param name="LowPeaks">The bass-band peak per bar.</param>
+    /// <param name="MidPeaks">The mid-band peak per bar.</param>
+    /// <param name="HighPeaks">The high-band peak per bar.</param>
+    /// <param name="BeatOffsetSeconds">
+    ///     The first detected beat, in seconds from track start — null if BPM has never been
+    ///     detected for this track (only its tag is known) or detection produced no ticks.
+    /// </param>
     public record WaveformResponse(
         int NumBars,
         float[] OverallPeaks,
         float[] LowPeaks,
         float[] MidPeaks,
-        float[] HighPeaks);
+        float[] HighPeaks,
+        double? BeatOffsetSeconds = null);
 
     /// <summary>API response shape for loudness data.</summary>
     public record LoudnessResponse(double IntegratedLufs, double TruePeak, double LoudnessRange);

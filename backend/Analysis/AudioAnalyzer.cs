@@ -104,9 +104,13 @@ namespace resonance.Analysis
                         out['keyError'] = str(e)
                 if 'bpm' in want:
                     try:
-                        bpm, _, conf, _, _ = es.RhythmExtractor2013(method=method)(audio)
+                        bpm, ticks, conf, _, _ = es.RhythmExtractor2013(method=method)(audio)
                         out['bpm'] = float(bpm)
                         out['bpmConfidence'] = float(conf)
+                        # ticks[0] is the first detected beat, in seconds from the start of
+                        # this decode — the beat-grid phase/origin, not just the interval.
+                        if len(ticks) > 0:
+                            out['beatOffset'] = float(ticks[0])
                     except Exception as e:
                         out['bpmError'] = str(e)
 
@@ -246,6 +250,7 @@ namespace resonance.Analysis
 
             uint? bpm = null;
             double? bpmConfidence = null;
+            double? beatOffset = null;
             string key = null;
             if (metrics.HasFlag(AnalysisMetrics.Bpm) || metrics.HasFlag(AnalysisMetrics.Key))
             {
@@ -263,6 +268,11 @@ namespace resonance.Analysis
                     if (essentia.Value.TryGetProperty("bpmConfidence", out var c))
                     {
                         bpmConfidence = c.GetDouble();
+                    }
+
+                    if (essentia.Value.TryGetProperty("beatOffset", out var o))
+                    {
+                        beatOffset = o.GetDouble();
                     }
 
                     if (essentia.Value.TryGetProperty("key", out var k))
@@ -284,7 +294,7 @@ namespace resonance.Analysis
                 }
             }
 
-            return new AnalysisResult(bpm, bpmConfidence, key, waveform, loudness);
+            return new AnalysisResult(bpm, bpmConfidence, key, waveform, loudness, beatOffset);
         }
 
         // ── Decode ────────────────────────────────────────────────────────────

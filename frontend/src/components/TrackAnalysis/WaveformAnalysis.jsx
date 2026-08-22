@@ -33,7 +33,7 @@ import api from '../../lib/api';
 import { getLocalStreamUrl } from '../../lib/files';
 import { fuzzyFilter } from '../../lib/fuzzy';
 import { getTracks } from '../../lib/musicLibrary';
-import { beatGridSeconds } from '../../lib/waveform';
+import { beatGridPhase, beatGridSeconds } from '../../lib/waveform';
 import {
   Activity,
   AudioWaveform,
@@ -394,7 +394,14 @@ const drawSilhouette = (
   context.globalCompositeOperation = 'source-over';
 };
 
-const drawBpmGrid = (canvas, bpm, duration, zoom = 1, scrollFraction = 0) => {
+const drawBpmGrid = (
+  canvas,
+  bpm,
+  duration,
+  zoom = 1,
+  scrollFraction = 0,
+  beatOffsetSeconds = 0,
+) => {
   if (!bpm || !duration) return;
   const context = canvas.getContext('2d');
   const visibleDuration = duration / zoom;
@@ -405,10 +412,14 @@ const drawBpmGrid = (canvas, bpm, duration, zoom = 1, scrollFraction = 0) => {
   const lineSeconds = beatGridSeconds(bpm, pixelsPerSecond, 8);
   if (!lineSeconds) return;
 
+  // Anchored to the first detected beat, not to track start — see the same
+  // note in WaveformSeekBar's drawBeatGrid.
+  const phase = beatGridPhase(beatOffsetSeconds, lineSeconds);
+
   context.save();
   context.strokeStyle = 'rgba(255,255,255,0.22)';
   context.lineWidth = 1;
-  for (let time = 0; time < duration; time += lineSeconds) {
+  for (let time = phase; time < duration; time += lineSeconds) {
     if (time < startTime || time > startTime + visibleDuration) continue;
     const x = Math.round((time - startTime) * pixelsPerSecond) + 0.5;
     context.beginPath();
@@ -610,7 +621,14 @@ const WaveformAnalysis = () => {
     }
 
     if (showBpmGrid && selectedTrack?.bpm && data.duration) {
-      drawBpmGrid(canvas, selectedTrack.bpm, data.duration, z, sf);
+      drawBpmGrid(
+        canvas,
+        selectedTrack.bpm,
+        data.duration,
+        z,
+        sf,
+        data.beatOffsetSeconds || 0,
+      );
     }
   }, [showBpmGrid, selectedTrack?.bpm]);
 
@@ -724,6 +742,7 @@ const WaveformAnalysis = () => {
           // Try pre-computed data from backend first
           let bands = null;
           let duration = null;
+          let beatOffsetSeconds = 0;
           try {
             const res = await api.get('/analysis/waveform', {
               params: { path: selectedTrack.path },
@@ -736,6 +755,7 @@ const WaveformAnalysis = () => {
                 midPeaks: new Float32Array(res.data.midPeaks),
                 highPeaks: new Float32Array(res.data.highPeaks),
               };
+              beatOffsetSeconds = res.data.beatOffsetSeconds || 0;
             }
           } catch {
             /* not cached — fall through to browser analysis */
@@ -792,6 +812,7 @@ const WaveformAnalysis = () => {
           frequencyDataRef.current = {
             trackPath: selectedTrack.path,
             duration: duration ?? selectedTrack.duration ?? 0,
+            beatOffsetSeconds,
             highPeaks: bands.highPeaks,
             lowPeaks: bands.lowPeaks,
             midPeaks: bands.midPeaks,

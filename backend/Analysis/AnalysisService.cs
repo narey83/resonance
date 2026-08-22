@@ -293,6 +293,8 @@ namespace resonance.Analysis
             }
         }
 
+        public double? GetBeatOffsetSeconds(string path) => Store.GetBeatOffsetSeconds(path);
+
         public async Task<LoudnessData> GetLoudnessAsync(string path, CancellationToken ct)
         {
             var cached = Store.GetLoudness(path);

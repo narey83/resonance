@@ -75,6 +75,19 @@ namespace resonance.Analysis
                 NumBars: Convert.ToInt32(row[0]));
         }
 
+        /// <summary>
+        ///     The first detected beat, in seconds from track start — read independently of
+        ///     <see cref="GetWaveform"/> because it comes from the BPM detector, not the waveform
+        ///     generator, and a track can have one without the other (e.g. a BPM-only rescan of a
+        ///     track whose waveform was already cached).
+        /// </summary>
+        /// <returns>The offset, or null if BPM has never been detected for this track.</returns>
+        public double? GetBeatOffsetSeconds(string path)
+        {
+            var row = Read(path, "beat_offset_seconds");
+            return row == null || row[0] is DBNull ? null : Convert.ToDouble(row[0]);
+        }
+
         public LoudnessData GetLoudness(string path)
         {
             var row = Read(path, "lufs, true_peak, lra");
@@ -131,19 +144,20 @@ namespace resonance.Analysis
             cmd.CommandText = @"
                 INSERT INTO analysis.track_analysis
                     (masked_filename, file_size, num_bars, overall_peaks, low_peaks, mid_peaks, high_peaks,
-                     lufs, true_peak, lra, analysed_at)
-                VALUES (@m, @s, @n, @op, @lp, @mp, @hp, @lufs, @tp, @lra, @t)
+                     lufs, true_peak, lra, beat_offset_seconds, analysed_at)
+                VALUES (@m, @s, @n, @op, @lp, @mp, @hp, @lufs, @tp, @lra, @bo, @t)
                 ON CONFLICT(masked_filename) DO UPDATE SET
-                    file_size     = EXCLUDED.file_size,
-                    num_bars      = COALESCE(EXCLUDED.num_bars,      analysis.track_analysis.num_bars),
-                    overall_peaks = COALESCE(EXCLUDED.overall_peaks, analysis.track_analysis.overall_peaks),
-                    low_peaks     = COALESCE(EXCLUDED.low_peaks,     analysis.track_analysis.low_peaks),
-                    mid_peaks     = COALESCE(EXCLUDED.mid_peaks,     analysis.track_analysis.mid_peaks),
-                    high_peaks    = COALESCE(EXCLUDED.high_peaks,    analysis.track_analysis.high_peaks),
-                    lufs          = COALESCE(EXCLUDED.lufs,          analysis.track_analysis.lufs),
-                    true_peak     = COALESCE(EXCLUDED.true_peak,     analysis.track_analysis.true_peak),
-                    lra           = COALESCE(EXCLUDED.lra,           analysis.track_analysis.lra),
-                    analysed_at   = EXCLUDED.analysed_at";
+                    file_size            = EXCLUDED.file_size,
+                    num_bars             = COALESCE(EXCLUDED.num_bars,             analysis.track_analysis.num_bars),
+                    overall_peaks        = COALESCE(EXCLUDED.overall_peaks,        analysis.track_analysis.overall_peaks),
+                    low_peaks            = COALESCE(EXCLUDED.low_peaks,            analysis.track_analysis.low_peaks),
+                    mid_peaks            = COALESCE(EXCLUDED.mid_peaks,            analysis.track_analysis.mid_peaks),
+                    high_peaks           = COALESCE(EXCLUDED.high_peaks,           analysis.track_analysis.high_peaks),
+                    lufs                 = COALESCE(EXCLUDED.lufs,                 analysis.track_analysis.lufs),
+                    true_peak            = COALESCE(EXCLUDED.true_peak,            analysis.track_analysis.true_peak),
+                    lra                  = COALESCE(EXCLUDED.lra,                  analysis.track_analysis.lra),
+                    beat_offset_seconds  = COALESCE(EXCLUDED.beat_offset_seconds,  analysis.track_analysis.beat_offset_seconds),
+                    analysed_at          = EXCLUDED.analysed_at";
 
             var w = result.Waveform;
             var l = result.Loudness;
@@ -157,6 +171,7 @@ namespace resonance.Analysis
             AddParam(cmd, "@lufs", (object)l?.IntegratedLufs ?? DBNull.Value);
             AddParam(cmd, "@tp", (object)l?.TruePeak ?? DBNull.Value);
             AddParam(cmd, "@lra", (object)l?.LoudnessRange ?? DBNull.Value);
+            AddParam(cmd, "@bo", (object)result.BeatOffsetSeconds ?? DBNull.Value);
             AddParam(cmd, "@t", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
             cmd.ExecuteNonQuery();
         }
@@ -276,8 +291,10 @@ namespace resonance.Analysis
                     lufs             DOUBLE PRECISION,
                     true_peak        DOUBLE PRECISION,
                     lra              DOUBLE PRECISION,
+                    beat_offset_seconds DOUBLE PRECISION,
                     analysed_at      BIGINT NOT NULL
-                )";
+                );
+                ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS beat_offset_seconds DOUBLE PRECISION;";
             cmd.ExecuteNonQuery();
 
             MigrateLegacyTables(conn);
