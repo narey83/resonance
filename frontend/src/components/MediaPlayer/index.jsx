@@ -37,6 +37,7 @@ import './MediaPlayer.css';
 import { useLibraryActivity } from '../../context/LibraryActivityContext';
 import { usePlayer } from '../../context/PlayerContext';
 import { useCast } from '../../hooks/useCast';
+import useTrackLoudness from '../../hooks/useTrackLoudness';
 import {
   applyAmbientColour,
   clearAmbientColour,
@@ -51,6 +52,7 @@ import { getToken, isPassthroughEnabled } from '../../lib/token';
 import { formatAttributes, formatSeconds, getFileName } from '../../lib/util';
 import AlbumArt from '../Library/components/AlbumArt';
 import LoudnessMeter from './LoudnessMeter';
+import PerformanceMode from './PerformanceMode';
 import WaveformSeekBar from './WaveformSeekBar';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -281,6 +283,7 @@ const MediaPlayer = () => {
     track,
   } = usePlayer();
   const activity = useLibraryActivity();
+  const trackLoudness = useTrackLoudness(track?.path);
   const audioRef = useRef(null);
   const playerRef = useRef(null);
   const repeatRef = useRef(false);
@@ -1668,7 +1671,14 @@ const MediaPlayer = () => {
           {!googleCast.connected && track && (
             <LoudnessMeter
               audioRef={audioRef}
-              track={track}
+              loudness={trackLoudness}
+            />
+          )}
+
+          {!googleCast.connected && track && (
+            <PerformanceMode
+              audioRef={audioRef}
+              targetLufs={trackLoudness?.integratedLufs ?? null}
             />
           )}
 
