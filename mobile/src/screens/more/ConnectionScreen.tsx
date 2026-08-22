@@ -48,15 +48,17 @@
 // belongs to exactly one hop.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
 import { useDeferredFocusEffect } from '../../hooks/useDeferredEffect';
 import { useTheme } from '../../context/ThemeContext';
-import { Spacing, Typography, ThemeColors } from '../../theme';
+import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 import { getApplicationState, AppState } from '../../api/application';
+import { connectToSoulseek, disconnectFromSoulseek } from '../../api/server';
 import { useConnectionStore } from '../../services/connectionMonitor';
 import { useAuthStore } from '../../store/auth';
-import { fmtBytes, fmtDate, fmtNum, fmtSpeed, Card, ChainLink, ChainNode, SectionHeader, StatRow, StatTileGrid } from '../../components/overview/shared';
+import { fmtBytes, fmtDate, fmtNum, fmtSpeed, Card, SectionHeader, StatRow, StatTileGrid } from '../../components/overview/shared';
 
 const RING     = 116;  // disk gauge diameter
 const RING_W   = 11;
@@ -171,6 +173,7 @@ export default function ConnectionScreen() {
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError]           = useState<string | null>(null);
+  const [serverActionBusy, setServerActionBusy] = useState(false);
 
   const fetch = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -234,6 +237,43 @@ export default function ConnectionScreen() {
     !slUp && nextAttempt ? `Retry ${fmtDate(nextAttempt)}` : null,
   ].filter(Boolean) as string[];
 
+  const handleSignIn = useCallback(async () => {
+    setServerActionBusy(true);
+    try {
+      await connectToSoulseek();
+      await fetch(true);
+    } catch {
+      Alert.alert('Error', 'Could not connect to the Soulseek network.');
+    } finally {
+      setServerActionBusy(false);
+    }
+  }, [fetch]);
+
+  const handleSignOut = useCallback(() => {
+    Alert.alert(
+      'Sign out of Soulseek?',
+      'This disconnects from the Soulseek network and stops reconnect attempts. Active transfers will be interrupted.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            setServerActionBusy(true);
+            try {
+              await disconnectFromSoulseek();
+              await fetch(true);
+            } catch {
+              Alert.alert('Error', 'Could not disconnect from the Soulseek network.');
+            } finally {
+              setServerActionBusy(false);
+            }
+          },
+        },
+      ],
+    );
+  }, [fetch]);
+
   // Only block on a spinner during a genuine cold load. If the link is down
   // there is nothing to wait for — the chain itself is the answer.
   if (loading && !appState && appUp) {
@@ -251,47 +291,59 @@ export default function ConnectionScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(); }} tintColor={colors.accent} />}
     >
       <Card colors={colors}>
-        <View style={s.chain}>
-          <ChainNode
-            icon="phone-portrait-outline"
-            title="This device"
-            sub={role ? `Signed in as ${role.toLowerCase()}` : 'Mobile app'}
-            color={linkStatus === 'offline' ? colors.danger : colors.accent}
-            colors={colors}
-          />
-          <ChainLink
-            title="APP CONNECTION"
-            status={appStatus}
-            chips={appChips}
-            color={appColor}
-            live={appUp}
-            colors={colors}
-          />
-          <ChainNode
-            icon="server-outline"
-            title="Resonance"
-            sub={host}
-            color={appUp ? appColor : colors.danger}
-            colors={colors}
-          />
-          <ChainLink
-            title="SOULSEEK CONNECTION"
-            status={slStatus}
-            chips={slChips}
-            color={slColor}
-            live={slUp}
-            colors={colors}
-          />
-          <ChainNode
-            icon="globe-outline"
-            title="Soulseek"
-            sub={srv?.address ?? 'Not connected'}
-            color={slColor}
-            colors={colors}
-          />
+        <View style={s.chainRow}>
+          <View style={s.chainNode}>
+            <View style={[s.chainDot, { borderColor: linkStatus === 'offline' ? colors.danger : colors.accent, backgroundColor: (linkStatus === 'offline' ? colors.danger : colors.accent) + '1f' }]}>
+              <Ionicons name="phone-portrait-outline" size={16} color={linkStatus === 'offline' ? colors.danger : colors.accent} />
+            </View>
+            <Text style={s.chainNodeLabel} numberOfLines={1}>This device</Text>
+          </View>
+          <View style={[s.chainRail, { backgroundColor: appColor + (appUp ? '44' : '99') }]} />
+          <View style={s.chainNode}>
+            <View style={[s.chainDot, { borderColor: appUp ? appColor : colors.danger, backgroundColor: (appUp ? appColor : colors.danger) + '1f' }]}>
+              <Ionicons name="server-outline" size={16} color={appUp ? appColor : colors.danger} />
+            </View>
+            <Text style={s.chainNodeLabel} numberOfLines={1}>Resonance</Text>
+          </View>
+          <View style={[s.chainRail, { backgroundColor: slColor + (slUp ? '44' : '99') }]} />
+          <View style={s.chainNode}>
+            <View style={[s.chainDot, { borderColor: slColor, backgroundColor: slColor + '1f' }]}>
+              <Ionicons name="globe-outline" size={16} color={slColor} />
+            </View>
+            <Text style={s.chainNodeLabel} numberOfLines={1}>Soulseek</Text>
+          </View>
+        </View>
+
+        <View style={s.hopLine}>
+          <Text style={[s.hopLineText, { color: appColor }]} numberOfLines={1}>
+            {appStatus}{appChips.length ? ` · ${appChips.join(' · ')}` : ''}
+          </Text>
+        </View>
+        <View style={s.hopLine}>
+          <Text style={[s.hopLineText, { color: slColor }]} numberOfLines={1}>
+            {slStatus}{slChips.length ? ` · ${slChips.join(' · ')}` : ''}
+          </Text>
         </View>
         {error && <Text style={s.cardError}>{error}</Text>}
       </Card>
+
+      <Pressable
+        onPress={slUp ? handleSignOut : handleSignIn}
+        disabled={serverActionBusy || slPending}
+        style={({ pressed }) => [
+          s.soulseekActionBtn,
+          { borderColor: slUp ? colors.danger : colors.border },
+          pressed && s.soulseekActionBtnPressed,
+        ]}
+      >
+        {serverActionBusy || slPending ? (
+          <ActivityIndicator size="small" color={colors.textMuted} />
+        ) : (
+          <Text style={[s.soulseekActionText, { color: slUp ? colors.danger : colors.accent }]}>
+            {slUp ? 'Sign Out of Soulseek' : 'Sign In to Soulseek'}
+          </Text>
+        )}
+      </Pressable>
 
       <SectionHeader title="App Connection" colors={colors} />
       <StatTileGrid
@@ -410,7 +462,27 @@ function makeStyles(c: ThemeColors) {
     scroll:    { flex: 1, backgroundColor: c.bgPrimary },
     container: { padding: Spacing.lg, gap: Spacing.sm, paddingBottom: Spacing.xxl },
     center:    { flex: 1, backgroundColor: c.bgPrimary, justifyContent: 'center', alignItems: 'center', gap: Spacing.md },
-    chain:     { paddingVertical: Spacing.md, paddingRight: Spacing.sm },
     cardError: { fontSize: Typography.sm, color: c.danger, paddingHorizontal: Spacing.md, paddingBottom: Spacing.md },
+
+    // Compact single-line chain: three icon nodes joined by short rails, with
+    // each hop's status + detail chips collapsed onto one truncated line
+    // below (the full detail lives in the tile sections further down).
+    chainRow:       { flexDirection: 'row', alignItems: 'center', padding: Spacing.md, paddingBottom: Spacing.sm },
+    chainNode:      { alignItems: 'center', gap: 4 },
+    chainDot:       { width: 32, height: 32, borderRadius: 16, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+    chainNodeLabel: { fontSize: Typography.xs, color: c.textMuted, maxWidth: 72 },
+    chainRail:      { flex: 1, height: 2, marginHorizontal: Spacing.xs, borderRadius: Radius.full },
+    hopLine:        { paddingHorizontal: Spacing.md, paddingBottom: Spacing.xs },
+    hopLineText:    { fontSize: Typography.sm, fontWeight: '600', fontVariant: ['tabular-nums'] },
+
+    soulseekActionBtn: {
+      backgroundColor: c.bgSurface,
+      borderRadius: Radius.lg,
+      borderWidth: 1,
+      padding: Spacing.sm,
+      alignItems: 'center',
+    },
+    soulseekActionBtnPressed: { opacity: 0.7 },
+    soulseekActionText: { fontSize: Typography.base, fontWeight: '600' },
   });
 }
