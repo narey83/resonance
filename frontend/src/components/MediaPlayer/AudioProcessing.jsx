@@ -28,24 +28,26 @@
 // </copyright>
 
 import PerformanceMode from './PerformanceMode';
-import React, { useState } from 'react';
+import { X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
-// Launcher for the player's Web Audio processing chain. The "Processing"
-// button opens a small popover listing every available processor as its
-// own row — just Performance Mode today, with room for more (an EQ, a
-// filter, whatever gets decided later) to be added as sibling list items
-// without touching this shell. This component only manages the popover's
-// open/closed state and a shared "is anything on" indicator on the button;
-// it has no idea what a compressor or limiter is — that's each item's own
-// business (see PerformanceMode.jsx).
+// Launcher + modal for the player's Web Audio processing chain: a list of
+// processors on the left (just Performance Mode today — more can be added
+// as siblings later), the selected one's settings on the right. This shell
+// only tracks which processor is selected, whether the modal is open, and
+// an aggregate "is anything on" flag for the button — it has no idea what a
+// compressor or limiter is, that's each processor's own business (see
+// PerformanceMode.jsx).
 //
-// Item components stay mounted for as long as this does (i.e. for as long
-// as the player has a track loaded) — closing the popover only hides it via
-// CSS, it does not unmount the items, so closing it can't silently disable
-// whatever processing is running.
+// The modal is always in the DOM (visibility toggled via CSS), not
+// conditionally mounted, so every processor stays alive and running
+// regardless of whether the modal happens to be open.
 const AudioProcessing = ({ audioRef, targetLufs }) => {
   const [open, setOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState('performance');
   const [activeById, setActiveById] = useState({});
+  const [detailNode, setDetailNode] = useState(null);
 
   const setActive = (id, active) => {
     setActiveById((previous) =>
@@ -54,6 +56,16 @@ const AudioProcessing = ({ audioRef, targetLufs }) => {
   };
 
   const anyActive = Object.values(activeById).some(Boolean);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [open]);
 
   return (
     <div className="mp-processing">
@@ -66,15 +78,50 @@ const AudioProcessing = ({ audioRef, targetLufs }) => {
         Processing
       </button>
 
-      <div
-        className={`mp-processing-panel${open ? '' : ' mp-processing-panel--hidden'}`}
-      >
-        <PerformanceMode
-          audioRef={audioRef}
-          onActiveChange={(active) => setActive('performance', active)}
-          targetLufs={targetLufs}
-        />
-      </div>
+      {createPortal(
+        <div
+          aria-label="Audio processing"
+          className={`mp-processing-overlay${open ? '' : ' mp-processing-overlay--hidden'}`}
+          onClick={() => setOpen(false)}
+          role="dialog"
+        >
+          <div
+            className="mp-processing-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mp-processing-modal-header">
+              <span>Audio Processing</span>
+              <button
+                className="mp-processing-modal-close hover-fx"
+                onClick={() => setOpen(false)}
+                title="Close"
+                type="button"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="mp-processing-modal-body">
+              <div className="mp-processing-modal-list">
+                <PerformanceMode
+                  audioRef={audioRef}
+                  detailContainerNode={detailNode}
+                  isSelected={selectedId === 'performance'}
+                  onActiveChange={(active) => setActive('performance', active)}
+                  onSelect={() => setSelectedId('performance')}
+                  targetLufs={targetLufs}
+                />
+              </div>
+
+              <div
+                className="mp-processing-modal-detail"
+                ref={setDetailNode}
+              />
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 };
