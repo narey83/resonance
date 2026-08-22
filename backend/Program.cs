@@ -1870,6 +1870,28 @@ namespace resonance
                 var freshDb = ctx.Database.EnsureCreated();
                 if (!freshDb)
                 {
+                    // RetryOfId was added after first release; EnsureCreated won't alter an existing
+                    // table. Must run before the create-script loop below, which (re)creates the index
+                    // on this column and would otherwise fail against a table that doesn't have it yet.
+                    if (typeof(T) == typeof(resonance.Transfers.TransfersDbContext))
+                    {
+                        if (ctx.Database.IsNpgsql())
+                        {
+                            ctx.Database.ExecuteSqlRaw("ALTER TABLE transfers.\"Transfers\" ADD COLUMN IF NOT EXISTS \"RetryOfId\" uuid");
+                        }
+                        else
+                        {
+                            try
+                            {
+                                ctx.Database.ExecuteSqlRaw("ALTER TABLE Transfers ADD COLUMN RetryOfId TEXT");
+                            }
+                            catch (Exception)
+                            {
+                                // column already exists; SQLite has no ADD COLUMN IF NOT EXISTS
+                            }
+                        }
+                    }
+
                     var schema = ctx.Model.GetDefaultSchema();
                     if (!string.IsNullOrEmpty(schema))
                     {

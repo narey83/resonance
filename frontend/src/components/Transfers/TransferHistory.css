@@ -146,6 +146,46 @@
   white-space: nowrap;
 }
 
+/* A retried transfer's final row stays in its resolved state color (ok/error); this note is the
+   only thing that hints a failure preceded it, so it's deliberately muted rather than alarming. */
+.th-retry-note {
+  background: none;
+  border: none;
+  color: var(--text-muted, #8b949e);
+  cursor: pointer;
+  display: block;
+  font-size: 0.75rem;
+  padding: 0;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.th-retry-note:hover {
+  color: inherit;
+}
+
+.th-attempts-row td {
+  background: var(--bg-elevated, #161b22);
+  padding: 6px 10px 10px 30px;
+}
+
+.th-attempts-loading {
+  color: var(--text-muted, #8b949e);
+  font-size: 0.8125rem;
+}
+
+.th-attempts-table {
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  width: 100%;
+}
+
+.th-attempts-table td {
+  border-bottom: none;
+  padding: 3px 10px 3px 0;
+}
+
 .th-empty,
 .th-error {
   color: var(--text-muted, #8b949e);

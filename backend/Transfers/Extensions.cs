@@ -57,6 +57,7 @@ namespace resonance.Transfers
                 AverageSpeed = t.AverageSpeed,
                 Exception = t.Exception?.Message,
                 Attempts = transfer.Attempts,
+                RetryOfId = transfer.RetryOfId,
             };
         }
     }

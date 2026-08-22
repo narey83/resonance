@@ -109,6 +109,12 @@ namespace resonance.Transfers
                 .HasIndex(t => t.BatchId)
                 .HasDatabaseName("IDX_Transfers_BatchId");
 
+            // walks the retry chain backwards from a terminal transfer to its prior failed attempt(s)
+            modelBuilder
+                .Entity<Transfer>()
+                .HasIndex(t => t.RetryOfId)
+                .HasDatabaseName("IDX_Transfers_RetryOfId");
+
             // covers the check for existing records when enqueueing uploads and downloads
             modelBuilder
                 .Entity<Transfer>()

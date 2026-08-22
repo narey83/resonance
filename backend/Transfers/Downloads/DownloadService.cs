@@ -281,6 +281,8 @@ namespace resonance.Transfers.Downloads
 
             if (existing != default)
             {
+                transfer.RetryOfId = RetryLinking.FindPriorFailedAttempt([existing], transfer.Filename)?.Id;
+
                 Log.Debug("Superseding transfer record for {Filename} from {Username}", transfer.Filename, transfer.Username);
                 existing.Removed = true;
             }
@@ -513,6 +515,13 @@ namespace resonance.Transfers.Downloads
                             we have to persist these changes to the database at this time so the record shows up on the UI,
                             otherwise the transfers only show up as they are enqueued.
                         */
+
+                        // if the most recent not-yet-removed record for this file ended in failure, link this
+                        // attempt to it so the history UI can present the eventual outcome as a retry rather
+                        // than as two unrelated transfers. A prior success is a deliberate re-download, not
+                        // a retry, so it is intentionally not linked.
+                        var priorFailedAttempt = RetryLinking.FindPriorFailedAttempt(existingRecordsNotYetRemoved, file.Filename);
+
                         var transfer = new Transfer()
                         {
                             Id = transferId,
@@ -524,6 +533,7 @@ namespace resonance.Transfers.Downloads
                             RequestedAt = DateTime.UtcNow,
                             State = TransferStates.Queued | TransferStates.Locally,
                             DestinationFolder = string.IsNullOrWhiteSpace(destinationFolder) ? null : destinationFolder.Trim(),
+                            RetryOfId = priorFailedAttempt?.Id,
                         };
 
                         context.Add(transfer);

@@ -206,6 +206,17 @@ export const getTransferHistory = async ({
   };
 };
 
+/**
+ * The full chain of attempts leading up to a transfer, oldest first: the failed attempt(s) that
+ * were retried, if any, followed by the transfer itself.
+ */
+export const getTransferAttempts = async (id) => {
+  const res = await api.get(
+    `/telemetry/reports/transfers/history/${encodeURIComponent(id)}/attempts`,
+  );
+  return res.data;
+};
+
 export const getUserEventCounts = async ({ usernames, start } = {}) => {
   const q = start ? `?start=${encodeURIComponent(start)}` : '';
   return (

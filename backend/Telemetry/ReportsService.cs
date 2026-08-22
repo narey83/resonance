@@ -1155,9 +1155,13 @@ public class ReportsService
                 ? "AND (\"Filename\" ILIKE @Search ESCAPE '\\' OR \"Username\" ILIKE @Search ESCAPE '\\')"
                 : string.Empty;
 
+            // Retried-and-superseded attempts are hidden from this list -- a later row's RetryOfId
+            // points back at them -- so the failure appears as a footnote on the successful retry
+            // rather than as its own unresolved-looking row. See GetPriorFailedAttemptCounts.
             var where = $@"
                 WHERE ""EndedAt"" IS NOT NULL
                     AND ""EndedAt"" BETWEEN @Start AND @End
+                    AND NOT EXISTS (SELECT 1 FROM transfers.""Transfers"" retry WHERE retry.""RetryOfId"" = t.""Id"")
                     {dirClause}
                     {stateClause}
                     {searchClause}
@@ -1165,35 +1169,36 @@ public class ReportsService
 
             sql = $@"
                 SELECT
-                    ""Id""::text AS ""Id"",
-                    ""Username"",
-                    ""Direction"",
-                    ""Filename"",
-                    ""Size"",
-                    ""StateDescription"",
+                    t.""Id""::text AS ""Id"",
+                    t.""Username"",
+                    t.""Direction"",
+                    t.""Filename"",
+                    t.""Size"",
+                    t.""StateDescription"",
                     CASE
-                        WHEN STRPOS(""Exception"", ' (') > 0 AND RIGHT(TRIM(""Exception""), 1) = ')'
-                        THEN TRIM(SUBSTR(""Exception"", 1, STRPOS(""Exception"", ' (') - 1))
-                        WHEN STRPOS(""Exception"", ': ') > 0
-                        THEN TRIM(SUBSTR(""Exception"", STRPOS(""Exception"", ': ') + 2))
-                        ELSE COALESCE(TRIM(""Exception""), '')
+                        WHEN STRPOS(t.""Exception"", ' (') > 0 AND RIGHT(TRIM(t.""Exception""), 1) = ')'
+                        THEN TRIM(SUBSTR(t.""Exception"", 1, STRPOS(t.""Exception"", ' (') - 1))
+                        WHEN STRPOS(t.""Exception"", ': ') > 0
+                        THEN TRIM(SUBSTR(t.""Exception"", STRPOS(t.""Exception"", ': ') + 2))
+                        ELSE COALESCE(TRIM(t.""Exception""), '')
                     END AS Exception,
-                    ""RequestedAt"",
-                    ""EnqueuedAt"",
-                    ""StartedAt"",
-                    ""EndedAt"",
-                    ""BytesTransferred"",
-                    ""AverageSpeed""
-                FROM transfers.""Transfers""
+                    t.""RequestedAt"",
+                    t.""EnqueuedAt"",
+                    t.""StartedAt"",
+                    t.""EndedAt"",
+                    t.""BytesTransferred"",
+                    t.""AverageSpeed"",
+                    t.""RetryOfId""::text AS ""RetryOfId""
+                FROM transfers.""Transfers"" t
                 {where}
-                ORDER BY ""EndedAt"" {sortOrder}
+                ORDER BY t.""EndedAt"" {sortOrder}
                 LIMIT @Limit
                 OFFSET @Offset
             ";
 
             countSql = $@"
-                SELECT COUNT(*) AS ""Count"", COALESCE(SUM(""BytesTransferred""), 0) AS ""Bytes""
-                FROM transfers.""Transfers""
+                SELECT COUNT(*) AS ""Count"", COALESCE(SUM(t.""BytesTransferred""), 0) AS ""Bytes""
+                FROM transfers.""Transfers"" t
                 {where}
             ";
         }
@@ -1208,6 +1213,7 @@ public class ReportsService
             var where = $@"
                 WHERE EndedAt IS NOT NULL
                     AND EndedAt BETWEEN @Start AND @End
+                    AND NOT EXISTS (SELECT 1 FROM Transfers retry WHERE retry.RetryOfId = t.Id)
                     {dirClause}
                     {stateClause}
                     {searchClause}
@@ -1215,35 +1221,36 @@ public class ReportsService
 
             sql = $@"
                 SELECT
-                    Id,
-                    Username,
-                    Direction,
-                    Filename,
-                    Size,
-                    StateDescription,
+                    t.Id,
+                    t.Username,
+                    t.Direction,
+                    t.Filename,
+                    t.Size,
+                    t.StateDescription,
                     CASE
-                        WHEN INSTR(Exception, ' (') > 0 AND SUBSTR(TRIM(Exception), -1) = ')'
-                        THEN TRIM(SUBSTR(Exception, 1, INSTR(Exception, ' (') - 1))
-                        WHEN INSTR(Exception, ': ') > 0
-                        THEN TRIM(SUBSTR(Exception, INSTR(Exception, ': ') + 2))
-                        ELSE COALESCE(TRIM(Exception), '')
+                        WHEN INSTR(t.Exception, ' (') > 0 AND SUBSTR(TRIM(t.Exception), -1) = ')'
+                        THEN TRIM(SUBSTR(t.Exception, 1, INSTR(t.Exception, ' (') - 1))
+                        WHEN INSTR(t.Exception, ': ') > 0
+                        THEN TRIM(SUBSTR(t.Exception, INSTR(t.Exception, ': ') + 2))
+                        ELSE COALESCE(TRIM(t.Exception), '')
                     END AS Exception,
-                    RequestedAt,
-                    EnqueuedAt,
-                    StartedAt,
-                    EndedAt,
-                    BytesTransferred,
-                    AverageSpeed
-                FROM Transfers
+                    t.RequestedAt,
+                    t.EnqueuedAt,
+                    t.StartedAt,
+                    t.EndedAt,
+                    t.BytesTransferred,
+                    t.AverageSpeed,
+                    t.RetryOfId
+                FROM Transfers t
                 {where}
-                ORDER BY EndedAt {sortOrder}
+                ORDER BY t.EndedAt {sortOrder}
                 LIMIT @Limit
                 OFFSET @Offset
             ";
 
             countSql = $@"
-                SELECT COUNT(*) AS Count, COALESCE(SUM(BytesTransferred), 0) AS Bytes
-                FROM Transfers
+                SELECT COUNT(*) AS Count, COALESCE(SUM(t.BytesTransferred), 0) AS Bytes
+                FROM Transfers t
                 {where}
             ";
         }
@@ -1266,7 +1273,108 @@ public class ReportsService
         // A named type with aliased columns, not a ValueTuple: Dapper maps by column name, and
         // bare COUNT(*)/SUM() come back as "count"/"coalesce" in Postgres, which binds to neither.
         var totals = connection.QuerySingle<HistoryTotals>(countSql, param);
+
+        if (items.Count > 0)
+        {
+            var priorFailedAttempts = GetPriorFailedAttemptCounts(connection, items.Select(i => i.Id));
+            items = items
+                .Select(i => i with { PriorFailedAttempts = priorFailedAttempts.GetValueOrDefault(i.Id, 0) })
+                .ToList();
+        }
+
         return (items, totals.Count, totals.Bytes);
+    }
+
+    /// <summary>
+    ///     Returns the full chain of attempts leading up to the given transfer, oldest first, by walking
+    ///     backwards through <c>RetryOfId</c>. A transfer that isn't a retry of anything returns a single-item
+    ///     chain containing only itself.
+    /// </summary>
+    /// <returns></returns>
+    public List<UserTransferRecord> GetTransferAttempts(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            throw new ArgumentException("Id is required", nameof(id));
+        }
+
+        string sql;
+        if (UsePostgres)
+        {
+            sql = @"
+                WITH RECURSIVE chain AS (
+                    SELECT * FROM transfers.""Transfers"" WHERE ""Id""::text = @Id
+                    UNION ALL
+                    SELECT t.* FROM transfers.""Transfers"" t
+                    JOIN chain ON t.""Id"" = chain.""RetryOfId""
+                )
+                SELECT
+                    ""Id""::text AS ""Id"",
+                    ""Username"",
+                    ""Direction"",
+                    ""Filename"",
+                    ""Size"",
+                    ""StateDescription"",
+                    CASE
+                        WHEN STRPOS(""Exception"", ' (') > 0 AND RIGHT(TRIM(""Exception""), 1) = ')'
+                        THEN TRIM(SUBSTR(""Exception"", 1, STRPOS(""Exception"", ' (') - 1))
+                        WHEN STRPOS(""Exception"", ': ') > 0
+                        THEN TRIM(SUBSTR(""Exception"", STRPOS(""Exception"", ': ') + 2))
+                        ELSE COALESCE(TRIM(""Exception""), '')
+                    END AS Exception,
+                    ""RequestedAt"",
+                    ""EnqueuedAt"",
+                    ""StartedAt"",
+                    ""EndedAt"",
+                    ""BytesTransferred"",
+                    ""AverageSpeed"",
+                    ""RetryOfId""::text AS ""RetryOfId""
+                FROM chain
+                ORDER BY ""RequestedAt"" ASC
+            ";
+        }
+        else
+        {
+            sql = @"
+                WITH RECURSIVE chain AS (
+                    SELECT * FROM Transfers WHERE Id = @Id
+                    UNION ALL
+                    SELECT t.* FROM Transfers t
+                    JOIN chain ON t.Id = chain.RetryOfId
+                )
+                SELECT
+                    Id,
+                    Username,
+                    Direction,
+                    Filename,
+                    Size,
+                    StateDescription,
+                    CASE
+                        WHEN INSTR(Exception, ' (') > 0 AND SUBSTR(TRIM(Exception), -1) = ')'
+                        THEN TRIM(SUBSTR(Exception, 1, INSTR(Exception, ' (') - 1))
+                        WHEN INSTR(Exception, ': ') > 0
+                        THEN TRIM(SUBSTR(Exception, INSTR(Exception, ': ') + 2))
+                        ELSE COALESCE(TRIM(Exception), '')
+                    END AS Exception,
+                    RequestedAt,
+                    EnqueuedAt,
+                    StartedAt,
+                    EndedAt,
+                    BytesTransferred,
+                    AverageSpeed,
+                    RetryOfId
+                FROM chain
+                ORDER BY RequestedAt ASC
+            ";
+        }
+
+        using var connection = OpenConnection(Database.Transfers);
+        var items = connection.Query<UserTransferRecord>(sql, new { Id = id }).ToList();
+
+        // annotate each attempt with how many failures preceded it within its own chain
+        return items
+            .Select((item, index) => item with { PriorFailedAttempts = index })
+            .ToList();
     }
 
     /// <summary>
@@ -2036,6 +2144,54 @@ public class ReportsService
         }
     }
 
+    /// <summary>
+    ///     Counts, for each of the given transfer <paramref name="ids"/>, how many prior attempts at the same
+    ///     file failed before it -- walking backwards through the <c>RetryOfId</c> self-reference. A transfer
+    ///     that isn't a retry of anything is not included in the result (treat a missing key as zero).
+    /// </summary>
+    private Dictionary<string, int> GetPriorFailedAttemptCounts(DbConnection connection, IEnumerable<string> ids)
+    {
+        var idList = ids.ToList();
+
+        if (idList.Count == 0)
+        {
+            return new Dictionary<string, int>();
+        }
+
+        string sql = UsePostgres
+            ? @"
+                WITH RECURSIVE chain AS (
+                    SELECT ""Id""::text AS ""HeadId"", ""Id"", ""RetryOfId""
+                    FROM transfers.""Transfers""
+                    WHERE ""Id""::text IN @Ids
+                    UNION ALL
+                    SELECT chain.""HeadId"", t.""Id"", t.""RetryOfId""
+                    FROM transfers.""Transfers"" t
+                    JOIN chain ON t.""Id"" = chain.""RetryOfId""
+                )
+                SELECT ""HeadId"" AS ""Id"", COUNT(*) - 1 AS ""Count""
+                FROM chain
+                GROUP BY ""HeadId""
+            "
+            : @"
+                WITH RECURSIVE chain AS (
+                    SELECT Id AS HeadId, Id, RetryOfId
+                    FROM Transfers
+                    WHERE Id IN @Ids
+                    UNION ALL
+                    SELECT chain.HeadId, t.Id, t.RetryOfId
+                    FROM Transfers t
+                    JOIN chain ON t.Id = chain.RetryOfId
+                )
+                SELECT HeadId AS Id, COUNT(*) - 1 AS ""Count""
+                FROM chain
+                GROUP BY HeadId
+            ";
+
+        return connection.Query<RetryChainCountRow>(sql, new { Ids = idList })
+            .ToDictionary(r => r.Id, r => r.Count);
+    }
+
     private DbConnection OpenConnection(Database database)
     {
         DbConnection conn = new NpgsqlConnection(ConnectionStrings[database]);
@@ -2082,5 +2238,11 @@ public class ReportsService
     {
         public int Count { get; init; }
         public long Bytes { get; init; }
+    }
+
+    private sealed record RetryChainCountRow
+    {
+        public string Id { get; init; }
+        public int Count { get; init; }
     }
 }

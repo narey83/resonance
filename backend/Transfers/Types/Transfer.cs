@@ -90,6 +90,13 @@ namespace resonance.Transfers
 
         public DateTime? NextAttemptAt { get; set; } = null;
 
+        /// <summary>
+        ///     The <see cref="Id"/> of the transfer this one retries, if this record was created to supersede
+        ///     an earlier attempt at the same file that ended in a failure. Null for a transfer that isn't a
+        ///     retry (including a fresh, intentional re-transfer of a file that previously succeeded).
+        /// </summary>
+        public Guid? RetryOfId { get; set; } = null;
+
         // IpAddress, Country, City, IsVpn are stored in the DB but accessed only via raw SQL.
         [JsonIgnore]
         public bool Removed { get; set; }

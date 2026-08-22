@@ -332,6 +332,8 @@ namespace resonance.Transfers.Uploads
 
             if (existing != default)
             {
+                transfer.RetryOfId = RetryLinking.FindPriorFailedAttempt([existing], transfer.Filename)?.Id;
+
                 Log.Debug("Superseding transfer record for {Filename} from {Username}", transfer.Filename, transfer.Username);
                 existing.Removed = true;
             }
@@ -795,6 +797,13 @@ namespace resonance.Transfers.Uploads
                     we're cleared to enqueue! create a new transfer record, and automatically mark any existing records
                     we found as 'removed' to clean up the UI
                 */
+
+                // if the most recent not-yet-removed record for this file ended in failure, link this attempt
+                // to it so the history UI can present the eventual outcome as a retry rather than as two
+                // unrelated transfers. A prior success is a deliberate re-upload, not a retry, so it is
+                // intentionally not linked.
+                var priorFailedAttempt = RetryLinking.FindPriorFailedAttempt(existingRecords, filename);
+
                 var transfer = new Transfer()
                 {
                     Id = id,
@@ -805,6 +814,7 @@ namespace resonance.Transfers.Uploads
                     StartOffset = 0, // potentially updated later during handshaking
                     RequestedAt = DateTime.UtcNow,
                     State = TransferStates.Queued | TransferStates.Locally,
+                    RetryOfId = priorFailedAttempt?.Id,
                 };
 
                 context.Add(transfer);

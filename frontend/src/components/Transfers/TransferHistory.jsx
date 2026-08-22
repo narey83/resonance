@@ -28,7 +28,7 @@
 // </copyright>
 
 import './TransferHistory.css';
-import { getTransferHistory } from '../../lib/reports';
+import { getTransferAttempts, getTransferHistory } from '../../lib/reports';
 import { formatBitrate, formatBytes } from '../../lib/util';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -74,6 +74,11 @@ const formatWhen = (value) => {
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
 };
 
+const retryNote = (count) =>
+  count === 1
+    ? 'Retried after 1 failed attempt'
+    : `Retried after ${count} failed attempts`;
+
 const TransferHistory = () => {
   const [direction, setDirection] = useState('');
   const [state, setState] = useState('');
@@ -87,6 +92,12 @@ const TransferHistory = () => {
   const [totalBytes, setTotalBytes] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Attempt history for a retried transfer is fetched on demand (one row expanded at a time)
+  // rather than bundled into every page load, since most rows have no retries to show.
+  const [expandedId, setExpandedId] = useState(null);
+  const [attempts, setAttempts] = useState([]);
+  const [attemptsLoading, setAttemptsLoading] = useState(false);
 
   // Only the newest request may write to state. Filter changes arrive faster than a count over
   // 1.6M rows returns, so without this an older, slower response can land last and overwrite the
@@ -137,7 +148,32 @@ const TransferHistory = () => {
 
   useEffect(() => {
     load();
+    setExpandedId(null);
+    setAttempts([]);
   }, [load]);
+
+  const toggleAttempts = useCallback(
+    async (item) => {
+      if (expandedId === item.id) {
+        setExpandedId(null);
+        return;
+      }
+
+      setExpandedId(item.id);
+      setAttempts([]);
+      setAttemptsLoading(true);
+
+      try {
+        const result = await getTransferAttempts(item.id);
+        setAttempts(result ?? []);
+      } catch {
+        setAttempts([]);
+      } finally {
+        setAttemptsLoading(false);
+      }
+    },
+    [expandedId],
+  );
 
   const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
   const firstRow = total === 0 ? 0 : page * PAGE_SIZE + 1;
@@ -231,32 +267,85 @@ const TransferHistory = () => {
           </thead>
           <tbody>
             {items.map((item) => (
-              <tr key={item.id}>
-                <td className="th-nowrap">{formatWhen(item.endedAt)}</td>
-                <td>{item.direction}</td>
-                <td className="th-nowrap">{item.username}</td>
-                <td
-                  className="th-file"
-                  title={item.filename}
-                >
-                  {shortName(item.filename)}
-                </td>
-                <td className="th-right th-nowrap">{formatBytes(item.size)}</td>
-                <td className="th-right th-nowrap">
-                  {formatSpeed(item.averageSpeed)}
-                </td>
-                <td className={stateClass(item.stateDescription)}>
-                  {item.stateDescription}
-                  {item.exception ? (
-                    <span
-                      className="th-exception"
-                      title={item.exception}
-                    >
-                      {item.exception}
-                    </span>
-                  ) : null}
-                </td>
-              </tr>
+              <React.Fragment key={item.id}>
+                <tr>
+                  <td className="th-nowrap">{formatWhen(item.endedAt)}</td>
+                  <td>{item.direction}</td>
+                  <td className="th-nowrap">{item.username}</td>
+                  <td
+                    className="th-file"
+                    title={item.filename}
+                  >
+                    {shortName(item.filename)}
+                  </td>
+                  <td className="th-right th-nowrap">
+                    {formatBytes(item.size)}
+                  </td>
+                  <td className="th-right th-nowrap">
+                    {formatSpeed(item.averageSpeed)}
+                  </td>
+                  <td className={stateClass(item.stateDescription)}>
+                    {item.stateDescription}
+                    {item.exception ? (
+                      <span
+                        className="th-exception"
+                        title={item.exception}
+                      >
+                        {item.exception}
+                      </span>
+                    ) : null}
+                    {item.priorFailedAttempts > 0 ? (
+                      <button
+                        className="th-retry-note"
+                        onClick={() => toggleAttempts(item)}
+                        type="button"
+                      >
+                        {retryNote(item.priorFailedAttempts)}
+                        {expandedId === item.id ? ' ▲' : ' ▾'}
+                      </button>
+                    ) : null}
+                  </td>
+                </tr>
+
+                {expandedId === item.id ? (
+                  <tr className="th-attempts-row">
+                    <td colSpan={7}>
+                      {attemptsLoading ? (
+                        <div className="th-attempts-loading">
+                          Loading attempts…
+                        </div>
+                      ) : (
+                        <table className="th-attempts-table">
+                          <tbody>
+                            {attempts.map((attempt) => (
+                              <tr key={attempt.id}>
+                                <td className="th-nowrap">
+                                  {formatWhen(attempt.endedAt)}
+                                </td>
+                                <td
+                                  className={stateClass(
+                                    attempt.stateDescription,
+                                  )}
+                                >
+                                  {attempt.stateDescription}
+                                  {attempt.exception ? (
+                                    <span
+                                      className="th-exception"
+                                      title={attempt.exception}
+                                    >
+                                      {attempt.exception}
+                                    </span>
+                                  ) : null}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </td>
+                  </tr>
+                ) : null}
+              </React.Fragment>
             ))}
           </tbody>
         </table>

@@ -82,6 +82,19 @@ public record UserTransferRecord
     public DateTime? EndedAt { get; init; }
     public long BytesTransferred { get; init; }
     public double AverageSpeed { get; init; }
+
+    /// <summary>
+    ///     The <see cref="Id"/> of the transfer this one retried, if any. Set only when the prior attempt at
+    ///     the same file ended in failure -- a deliberate re-transfer of a file that previously succeeded is
+    ///     not linked.
+    /// </summary>
+    public string RetryOfId { get; init; }
+
+    /// <summary>
+    ///     The number of prior failed attempts in this transfer's retry chain, walking backwards through
+    ///     <see cref="RetryOfId"/>. Zero for a transfer that isn't a retry of anything.
+    /// </summary>
+    public int PriorFailedAttempts { get; init; }
 }
 
 public record TransferFileSummary

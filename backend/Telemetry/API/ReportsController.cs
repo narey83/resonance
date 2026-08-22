@@ -802,6 +802,38 @@ public class ReportsController : ControllerBase
     }
 
     /// <summary>
+    ///     Gets the full chain of attempts leading up to the given transfer, oldest first -- the failed
+    ///     attempt(s) that were retried, if any, followed by the transfer itself.
+    /// </summary>
+    /// <param name="id">The id of the transfer, as returned by the transfer history endpoint.</param>
+    /// <returns></returns>
+    /// <response code="200">The request completed successfully.</response>
+    /// <response code="400">Bad request.</response>
+    /// <response code="500">An error occurred.</response>
+    [HttpGet("transfers/history/{id}/attempts")]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
+    [ProducesResponseType(typeof(List<UserTransferRecord>), 200)]
+    [ProducesResponseType(typeof(string), 400)]
+    [ProducesResponseType(typeof(string), 500)]
+    public IActionResult GetTransferAttempts([FromRoute] string id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return BadRequest("Id is required");
+        }
+
+        try
+        {
+            return Ok(Telemetry.Reports.GetTransferAttempts(id));
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error fetching transfer attempts for {Id}: {Message}", id, ex.Message);
+            return StatusCode(500, ex.Message);
+        }
+    }
+
+    /// <summary>
     ///     Gets paginated browse event timestamps for the specified user.
     /// </summary>
     /// <param name="username">The username of the user.</param>
