@@ -58,13 +58,18 @@ const UsernameLink = ({
   const history = useHistory();
   const [showReport, setShowReport] = useState(false);
 
+  // None of these actions make sense pointed at yourself — you can't message,
+  // browse, block, or (see below) usefully report on your own username — so
+  // a self entry renders as a plain, controls-free label.
+  const showControls = !self;
+
   // The report pulls admin-only analytics endpoints, so the button only makes
   // sense — and only works — for administrators. It also only makes sense for
   // someone else: it shows what THIS SERVER has observed a peer doing, keyed
   // purely by their claimed username — Soulseek doesn't authenticate that
   // string beyond the name itself, so a same-named peer's activity can end up
   // filed under it too. There's nothing here to show reliably about yourself.
-  const canReport = isAdmin() && !self;
+  const canReport = isAdmin() && showControls;
 
   // Subscribe so the icon flips live when this user is (un)blocked anywhere,
   // including from another client.
@@ -106,59 +111,63 @@ const UsernameLink = ({
       >
         {username}
       </span>
-      <span
-        aria-hidden="true"
-        className="ulink-sep"
-      />
-      {canReport && (
-        <button
-          className="ulink-icon-btn hover-fx"
-          disabled={active === 'report'}
-          onClick={openReport}
-          title={active === 'report' ? 'Viewing report' : 'User report'}
-          type="button"
-        >
-          <BarChart3
-            size={12}
-            strokeWidth={1.75}
+      {showControls && (
+        <>
+          <span
+            aria-hidden="true"
+            className="ulink-sep"
           />
-        </button>
+          {canReport && (
+            <button
+              className="ulink-icon-btn hover-fx"
+              disabled={active === 'report'}
+              onClick={openReport}
+              title={active === 'report' ? 'Viewing report' : 'User report'}
+              type="button"
+            >
+              <BarChart3
+                size={12}
+                strokeWidth={1.75}
+              />
+            </button>
+          )}
+          <button
+            className="ulink-icon-btn hover-fx"
+            disabled={active === 'chat'}
+            onClick={(e) => go(e, '/chat')}
+            title={active === 'chat' ? 'In this chat' : 'Chat'}
+            type="button"
+          >
+            <MessageSquare
+              size={12}
+              strokeWidth={1.75}
+            />
+          </button>
+          <button
+            className="ulink-icon-btn hover-fx"
+            disabled={active === 'browse'}
+            onClick={(e) => go(e, '/browse')}
+            title={active === 'browse' ? 'Browsing this user' : 'Browse files'}
+            type="button"
+          >
+            <FolderSearch
+              size={12}
+              strokeWidth={1.75}
+            />
+          </button>
+          <button
+            className={`ulink-icon-btn hover-fx${blocked ? ' ulink-blocked' : ''}`}
+            onClick={toggleBlocked}
+            title={blocked ? 'Unblock user' : 'Block user'}
+            type="button"
+          >
+            <Ban
+              size={12}
+              strokeWidth={1.75}
+            />
+          </button>
+        </>
       )}
-      <button
-        className="ulink-icon-btn hover-fx"
-        disabled={active === 'chat'}
-        onClick={(e) => go(e, '/chat')}
-        title={active === 'chat' ? 'In this chat' : 'Chat'}
-        type="button"
-      >
-        <MessageSquare
-          size={12}
-          strokeWidth={1.75}
-        />
-      </button>
-      <button
-        className="ulink-icon-btn hover-fx"
-        disabled={active === 'browse'}
-        onClick={(e) => go(e, '/browse')}
-        title={active === 'browse' ? 'Browsing this user' : 'Browse files'}
-        type="button"
-      >
-        <FolderSearch
-          size={12}
-          strokeWidth={1.75}
-        />
-      </button>
-      <button
-        className={`ulink-icon-btn hover-fx${blocked ? ' ulink-blocked' : ''}`}
-        onClick={toggleBlocked}
-        title={blocked ? 'Unblock user' : 'Block user'}
-        type="button"
-      >
-        <Ban
-          size={12}
-          strokeWidth={1.75}
-        />
-      </button>
       {showReport && (
         <UserReportWindow
           onClose={() => setShowReport(false)}
