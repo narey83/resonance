@@ -851,34 +851,27 @@ const Rooms = ({ history }) => {
 
                     return (
                       <div
-                        className={`room-msg-row${item.showHeader ? '' : ' room-msg-row--cont'}`}
+                        className={`chat-msg-row${m.self ? ' chat-msg-row--self' : ''}`}
                         key={key}
                         onContextMenu={(e) => openContextMenu(e, m)}
                       >
-                        {item.showHeader ? (
+                        {!m.self && (
                           <div
-                            className="chat-bubble-avatar room-msg-avatar"
+                            className={`chat-bubble-avatar${item.showHeader ? '' : ' chat-bubble-avatar--ghost'}`}
                             style={{ background: avatarColor(m.username) }}
                           >
                             {avatarInitial(m.username)}
                           </div>
-                        ) : (
-                          <div className="room-msg-gutter">
-                            <span className="room-msg-time-ghost">
-                              {formatTimestamp(m.timestamp)}
-                            </span>
-                          </div>
                         )}
-                        <div className="room-msg-body">
-                          {item.showHeader && (
+                        <div className="chat-bubble-col">
+                          {!m.self && item.showHeader && (
                             <div className="room-msg-header">
                               <UsernameLink username={m.username} />
-                              <span className="room-msg-time">
-                                {formatTimestamp(m.timestamp)}
-                              </span>
                             </div>
                           )}
-                          <div className="room-msg-text">
+                          <div
+                            className={`chat-bubble${m.self ? ' chat-bubble--self' : ' chat-bubble--other'}`}
+                          >
                             {m.self
                               ? showSelfInLang
                                 ? selfInLang
@@ -900,7 +893,7 @@ const Rooms = ({ history }) => {
                           )}
                           {selfForeign && (
                             <button
-                              className="chat-translate-note"
+                              className="chat-translate-note chat-translate-note--self"
                               onClick={() => toggleShowOriginal(key)}
                               type="button"
                             >
@@ -909,10 +902,13 @@ const Rooms = ({ history }) => {
                                 : `Sent in ${translation.languageName(selfSourceLang)} · ${selfExact ? 'Show original' : `Show in ${translation.languageName(targetLang)}`}`}
                             </button>
                           )}
+                          <span className="chat-bubble-time">
+                            {formatTimestamp(m.timestamp)}
+                          </span>
                         </div>
-                        <div className="room-msg-actions">
+                        <div className="chat-msg-actions">
                           <button
-                            className="room-msg-action-btn hover-fx"
+                            className="chat-msg-action-btn hover-fx"
                             onClick={() => handleReply(m)}
                             title="Reply"
                             type="button"
