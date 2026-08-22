@@ -112,7 +112,10 @@ const RoomUserList = ({ users }) => {
                   content={getDetails(user)}
                   trigger={getFlag(user)}
                 />
-                <UsernameLink username={user.username} />
+                <UsernameLink
+                  self={user.self}
+                  username={user.username}
+                />
               </div>
             </div>
           );

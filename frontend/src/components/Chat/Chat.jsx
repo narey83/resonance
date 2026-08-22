@@ -41,10 +41,13 @@ import { onPrivateMessage } from '../../lib/chatEvents';
 import * as prefs from '../../lib/prefs';
 import * as translation from '../../lib/translation';
 import EmojiPickerButton from '../Shared/EmojiPickerButton';
+import Linkify from '../Shared/Linkify';
+import LinkPreviewCard from '../Shared/LinkPreviewCard';
 import UsernameLink from '../Shared/UsernameLink';
 import {
   avatarColor,
   avatarInitial,
+  findFirstUrl,
   formatTime,
   groupByDate,
 } from './chatUtils';
@@ -887,6 +890,17 @@ const Chat = ({ history, location }) => {
                         ? captured.lang
                         : backTranslation?.detectedSourceLanguage;
                       const showSelfInLang = selfForeign && viewingOriginal;
+                      const displayText =
+                        item.type === 'msg'
+                          ? item.isSelf
+                            ? showSelfInLang
+                              ? selfInLang
+                              : item.msg.message
+                            : showTranslated
+                              ? tr.text
+                              : item.msg.message
+                          : null;
+                      const previewUrl = findFirstUrl(displayText);
                       return (
                         <div
                           data-index={vRow.index}
@@ -931,13 +945,10 @@ const Chat = ({ history, location }) => {
                                 <div
                                   className={`chat-bubble${item.isSelf ? ' chat-bubble--self' : ' chat-bubble--other'}`}
                                 >
-                                  {item.isSelf
-                                    ? showSelfInLang
-                                      ? selfInLang
-                                      : item.msg.message
-                                    : showTranslated
-                                      ? tr.text
-                                      : item.msg.message}
+                                  <Linkify text={displayText} />
+                                  {previewUrl && (
+                                    <LinkPreviewCard url={previewUrl} />
+                                  )}
                                 </div>
                                 {canTranslate && translatedDiffers && (
                                   <button

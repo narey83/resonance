@@ -836,6 +836,24 @@ namespace resonance
                     ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
                 });
 
+            // a client for fetching link-preview metadata from URLs posted in chat. Access it via
+            // 'HttpClientFactory.CreateClient("LinkPreview")'. Its connect callback resolves the target
+            // itself and refuses private/loopback/link-local addresses (including on redirect hops), since
+            // this one — unlike the others above — fetches addresses supplied by other Soulseek users.
+            services.AddHttpClient("LinkPreview", client =>
+                {
+                    client.Timeout = TimeSpan.FromSeconds(6);
+                    client.MaxResponseContentBufferSize = 2 * 1_024 * 1_024;
+                    client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; ResonanceBot/1.0; +link-preview)");
+                })
+                .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+                {
+                    AllowAutoRedirect = true,
+                    MaxAutomaticRedirections = 5,
+                    AutomaticDecompression = DecompressionMethods.All,
+                    ConnectCallback = LinkPreview.SsrfGuard.ConnectAsync,
+                });
+
             // add a partially configured instance of SoulseekClient. the Application instance will
             // complete configuration at startup.
             services.AddSingleton<ISoulseekClient, SoulseekClient>(_ =>

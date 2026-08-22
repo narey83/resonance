@@ -47,13 +47,24 @@ import { useHistory } from 'react-router-dom';
 // component render it. Needed where the link lives in a transient container (the
 // map tooltip): the caller can dismiss that container and still keep the modal
 // mounted, which wouldn't survive if the modal hung off this subtree.
-const UsernameLink = ({ active, className, onReport, style, username }) => {
+const UsernameLink = ({
+  active,
+  className,
+  onReport,
+  self,
+  style,
+  username,
+}) => {
   const history = useHistory();
   const [showReport, setShowReport] = useState(false);
 
   // The report pulls admin-only analytics endpoints, so the button only makes
-  // sense — and only works — for administrators.
-  const canReport = isAdmin();
+  // sense — and only works — for administrators. It also only makes sense for
+  // someone else: it shows what THIS SERVER has observed a peer doing, keyed
+  // purely by their claimed username — Soulseek doesn't authenticate that
+  // string beyond the name itself, so a same-named peer's activity can end up
+  // filed under it too. There's nothing here to show reliably about yourself.
+  const canReport = isAdmin() && !self;
 
   // Subscribe so the icon flips live when this user is (un)blocked anywhere,
   // including from another client.

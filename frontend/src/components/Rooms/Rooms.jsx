@@ -40,8 +40,15 @@ import { activeRoomKey } from '../../config';
 import * as prefs from '../../lib/prefs';
 import * as rooms from '../../lib/rooms';
 import * as translation from '../../lib/translation';
-import { avatarColor, avatarInitial, groupByDate } from '../Chat/chatUtils';
+import {
+  avatarColor,
+  avatarInitial,
+  findFirstUrl,
+  groupByDate,
+} from '../Chat/chatUtils';
 import EmojiPickerButton from '../Shared/EmojiPickerButton';
+import Linkify from '../Shared/Linkify';
+import LinkPreviewCard from '../Shared/LinkPreviewCard';
 import UsernameLink from '../Shared/UsernameLink';
 import RoomUserList from './RoomUserList';
 import {
@@ -848,6 +855,14 @@ const Rooms = ({ history }) => {
                       ? captured.lang
                       : backTranslation?.detectedSourceLanguage;
                     const showSelfInLang = selfForeign && viewingOriginal;
+                    const displayText = m.self
+                      ? showSelfInLang
+                        ? selfInLang
+                        : m.message
+                      : showTranslated
+                        ? tr.text
+                        : m.message;
+                    const previewUrl = findFirstUrl(displayText);
 
                     return (
                       <div
@@ -872,13 +887,8 @@ const Rooms = ({ history }) => {
                           <div
                             className={`chat-bubble${m.self ? ' chat-bubble--self' : ' chat-bubble--other'}`}
                           >
-                            {m.self
-                              ? showSelfInLang
-                                ? selfInLang
-                                : m.message
-                              : showTranslated
-                                ? tr.text
-                                : m.message}
+                            <Linkify text={displayText} />
+                            {previewUrl && <LinkPreviewCard url={previewUrl} />}
                           </div>
                           {canTranslate && translatedDiffers && (
                             <button

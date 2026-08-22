@@ -76,6 +76,44 @@ export const formatDateLabel = (timestamp) => {
   });
 };
 
+const URL_PATTERN = /https?:\/\/[^\s"')<>\]]+/gi;
+
+// Trailing punctuation (a period ending the sentence, a closing paren that
+// wasn't part of the URL, …) reads as part of the match but isn't part of
+// the link, so it's peeled off and put back as plain text.
+const stripTrailingPunctuation = (url) => url.replace(/[!),.:;?\]]+$/, '');
+
+export const findFirstUrl = (text) => {
+  if (!text) return null;
+  const match = text.match(URL_PATTERN);
+  return match ? stripTrailingPunctuation(match[0]) : null;
+};
+
+// Splits message text into a mix of plain strings and `{ url }` segments, so
+// the caller can render each URL as a link without touching the rest of the
+// text (and without ever passing raw text through dangerouslySetInnerHTML).
+export const linkifyText = (text) => {
+  if (!text) return [text];
+
+  const parts = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(URL_PATTERN)) {
+    const raw = match[0];
+    const url = stripTrailingPunctuation(raw);
+    const trailing = raw.slice(url.length);
+
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    parts.push({ url });
+    if (trailing) parts.push(trailing);
+    lastIndex = match.index + raw.length;
+  }
+
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+
+  return parts.length > 0 ? parts : [text];
+};
+
 export const groupByDate = (messages) => {
   const groups = [];
   let currentLabel = null;
