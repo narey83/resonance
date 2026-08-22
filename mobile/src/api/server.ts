@@ -38,6 +38,12 @@ export const connectToSoulseek = () => apiClient.put('/server');
 // The backend binds this as [FromBody] string, i.e. a raw JSON string, not an
 // object — JSON.stringify-ing the message ourselves (rather than passing the
 // bare string, which axios would send unquoted and fail model binding) is
-// required, matching the frontend's exact call shape.
+// required, matching the frontend's exact call shape. Axios only infers a
+// application/json Content-Type when it does the stringifying itself; since
+// the body here arrives pre-stringified, the header has to be set explicitly
+// or the controller's [Consumes("application/json")] rejects the request.
 export const disconnectFromSoulseek = (message = 'client disconnected from mobile app') =>
-  apiClient.delete('/server', { data: JSON.stringify(message) });
+  apiClient.delete('/server', {
+    data: JSON.stringify(message),
+    headers: { 'Content-Type': 'application/json' },
+  });
