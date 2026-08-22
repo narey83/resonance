@@ -30,15 +30,17 @@
 import { getMediaAudioGraph } from '../../lib/mediaAudioGraph';
 import { PerformanceAudioProcessor } from '../../lib/PerformanceAudioProcessor';
 import * as prefs from '../../lib/prefs';
-import { Settings2 } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 
-// DJ-style playback control: reduces the perceived-volume jump between
-// differently-mastered tracks and stops peaks from clipping. Replaces the
-// old standalone "Norm" toggle — Loudness Normalise is now one of three
-// stages inside this chain (see PerformanceAudioProcessor) rather than a
-// separate control.
-const PerformanceMode = ({ audioRef, targetLufs }) => {
+// One row in the "Processing" menu (see AudioProcessing.jsx, which mounts
+// this and any future processors as siblings) — DJ-style compression,
+// output limiting and loudness levelling. Fully self-contained: owns its
+// own PerformanceAudioProcessor lifecycle, its own persisted settings, and
+// its own expand/collapse UI. AudioProcessing knows nothing about
+// compressors or limiters — it just renders this as a list item and reads
+// back whether it's on via onActiveChange.
+const PerformanceMode = ({ audioRef, onActiveChange, targetLufs }) => {
   const processorRef = useRef(null);
   const [enabled, setEnabled] = useState(() =>
     prefs.get('mediaPlayer.performanceMode', false),
@@ -58,7 +60,9 @@ const PerformanceMode = ({ audioRef, targetLufs }) => {
   // per mount and torn down (bypassed, not destroyed — see
   // PerformanceAudioProcessor.dispose) on unmount; the enabled/compression/
   // protection/normalize effects below push state into it as the user
-  // changes them, without recreating it.
+  // changes them, without recreating it. Mounted for as long as the player
+  // has a track loaded, independent of whether the Processing panel is
+  // open — closing the panel must not silently disable this.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return undefined;
@@ -96,11 +100,17 @@ const PerformanceMode = ({ audioRef, targetLufs }) => {
     processorRef.current?.setLoudnessNormalize(normalize, targetLufs);
   }, [normalize, targetLufs]);
 
-  const toggleEnabled = () => {
+  useEffect(() => {
+    onActiveChange?.(enabled);
+    return () => onActiveChange?.(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled]);
+
+  const toggleEnabled = (event) => {
+    event.stopPropagation();
     setEnabled((previous) => {
       const next = !previous;
       prefs.set('mediaPlayer.performanceMode', next);
-      if (!next) setExpanded(false);
       return next;
     });
   };
@@ -128,35 +138,30 @@ const PerformanceMode = ({ audioRef, targetLufs }) => {
   };
 
   return (
-    <div className="mp-performance">
-      <button
-        className={`mp-performance-btn${enabled ? ' mp-performance-btn--active' : ''}`}
-        onClick={toggleEnabled}
-        title="Performance Mode: DJ-style compression, output limiting and loudness levelling"
-        type="button"
+    <div className="mp-processing-item">
+      <div
+        className="mp-processing-item-header"
+        onClick={() => setExpanded((previous) => !previous)}
       >
-        Performance {enabled ? 'ON' : 'OFF'}
-      </button>
+        <ChevronRight
+          className={`mp-processing-item-chevron${expanded ? ' mp-processing-item-chevron--open' : ''}`}
+          size={12}
+        />
+        <span className="mp-processing-item-name">Performance Mode</span>
+        <input
+          checked={enabled}
+          onChange={toggleEnabled}
+          onClick={(event) => event.stopPropagation()}
+          type="checkbox"
+        />
+      </div>
 
-      {enabled && (
-        <button
-          aria-expanded={expanded}
-          aria-label="Performance Mode settings"
-          className={`mp-performance-settings-btn${expanded ? ' mp-performance-settings-btn--active' : ''}`}
-          onClick={() => setExpanded((previous) => !previous)}
-          title="Performance Mode settings"
-          type="button"
-        >
-          <Settings2 size={13} />
-        </button>
-      )}
-
-      {enabled && expanded && (
-        <div className="mp-performance-panel">
-          <label className="mp-performance-row">
+      {expanded && (
+        <div className="mp-processing-item-body">
+          <label className="mp-processing-row">
             <span>Compression</span>
             <input
-              className="mp-performance-slider"
+              className="mp-processing-slider"
               max={100}
               min={0}
               onChange={changeCompression}
@@ -164,7 +169,7 @@ const PerformanceMode = ({ audioRef, targetLufs }) => {
               value={Math.round(compression * 100)}
             />
           </label>
-          <label className="mp-performance-row mp-performance-row--toggle">
+          <label className="mp-processing-row mp-processing-row--toggle">
             <span>Output Protection</span>
             <input
               checked={protection}
@@ -172,7 +177,7 @@ const PerformanceMode = ({ audioRef, targetLufs }) => {
               type="checkbox"
             />
           </label>
-          <label className="mp-performance-row mp-performance-row--toggle">
+          <label className="mp-processing-row mp-processing-row--toggle">
             <span>Loudness Normalise</span>
             <input
               checked={normalize}

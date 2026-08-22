@@ -427,15 +427,14 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Performance Mode ────────────────────────────────────────────── */
-.mp-performance {
+/* ── Audio processing menu ───────────────────────────────────────── */
+.mp-processing {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
 }
 
-.mp-performance-btn {
+.mp-processing-btn {
   display: flex;
   align-items: center;
   height: 20px;
@@ -452,52 +451,30 @@
               color var(--dur-fast, 120ms) var(--ease-standard, ease);
 }
 
-.mp-performance-btn:hover {
+.mp-processing-btn:hover {
   color: #fff;
   background: rgba(0, 0, 0, 0.55);
 }
 
-.mp-performance-btn--active {
+.mp-processing-btn--active {
   color: #fff;
   background: var(--art-accent, var(--player-fill, #4d9fff));
 }
 
-.mp-performance-settings-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border-radius: 5px;
-  color: var(--player-text-dim, rgba(255, 255, 255, 0.4));
-  background: rgba(0, 0, 0, 0.35);
-  border: none;
-  cursor: pointer;
-  transition: background var(--dur-fast, 120ms) var(--ease-standard, ease),
-              color var(--dur-fast, 120ms) var(--ease-standard, ease);
-}
-
-.mp-performance-settings-btn:hover {
-  color: #fff;
-  background: rgba(0, 0, 0, 0.55);
-}
-
-.mp-performance-settings-btn--active {
-  color: #fff;
-  background: rgba(0, 0, 0, 0.55);
-}
-
-.mp-performance-panel {
+/* The panel stays in the DOM and is hidden via display:none rather than
+   unmounted — each processor row inside it (see PerformanceMode.jsx) owns a
+   live Web Audio processing chain that must keep running while the popover
+   is closed, not just while it happens to be visible. */
+.mp-processing-panel {
   position: absolute;
   bottom: 100%;
   right: 0;
   margin-bottom: 8px;
-  width: 200px;
-  padding: 10px 12px;
+  width: 220px;
+  padding: 6px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 2px;
   background: var(--player-bg, #252836);
   border: 1px solid var(--player-border, rgba(255, 255, 255, 0.1));
   border-radius: 8px;
@@ -506,7 +483,64 @@
   animation: mp-queue-open 0.18s ease-out;
 }
 
-.mp-performance-row {
+.mp-processing-panel--hidden {
+  display: none;
+}
+
+.mp-processing-item + .mp-processing-item {
+  border-top: 1px solid var(--player-border, rgba(255, 255, 255, 0.07));
+  margin-top: 2px;
+  padding-top: 2px;
+}
+
+.mp-processing-item-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 4px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background var(--dur-fast, 120ms) var(--ease-standard, ease);
+}
+
+.mp-processing-item-header:hover {
+  background: var(--player-hover-bg, rgba(255, 255, 255, 0.06));
+}
+
+.mp-processing-item-chevron {
+  flex-shrink: 0;
+  color: var(--player-text-dim, rgba(255, 255, 255, 0.4));
+  transition: transform var(--dur-fast, 120ms) var(--ease-standard, ease);
+}
+
+.mp-processing-item-chevron--open {
+  transform: rotate(90deg);
+}
+
+.mp-processing-item-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--player-text-muted, rgba(255, 255, 255, 0.7));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mp-processing-item-header input[type='checkbox'] {
+  accent-color: var(--art-accent, var(--player-fill, #4d9fff));
+  cursor: pointer;
+}
+
+.mp-processing-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 8px 10px 22px;
+}
+
+.mp-processing-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -515,19 +549,15 @@
   color: var(--player-text-muted, rgba(255, 255, 255, 0.6));
 }
 
-.mp-performance-row--toggle input {
+.mp-processing-row--toggle input {
   accent-color: var(--art-accent, var(--player-fill, #4d9fff));
   cursor: pointer;
 }
 
-.mp-performance-slider {
+.mp-processing-slider {
   flex: 1;
   cursor: pointer;
   accent-color: var(--art-accent, var(--player-fill, #4d9fff));
-}
-
-@container (max-width: 720px) {
-  .mp-performance-settings-btn { display: none; }
 }
 
 .media-player-close-btn { color: var(--player-text-dim, rgba(255, 255, 255, 0.4)); }
@@ -1365,8 +1395,8 @@
 
 /* Narrow bar (small window, or queue panel open): the transport and the
    right-hand widgets never shrink, so drop the least-useful ones rather than
-   let the track info squeeze down to an ellipsis. Mute + the Performance
-   Mode toggle stay. */
+   let the track info squeeze down to an ellipsis. Mute + the Processing
+   button stay. */
 @container (max-width: 980px) {
   .media-player-volume,
   .mp-loudness-meter-track,

@@ -51,8 +51,8 @@ import { ensureSigned } from '../../lib/streamSignatures';
 import { getToken, isPassthroughEnabled } from '../../lib/token';
 import { formatAttributes, formatSeconds, getFileName } from '../../lib/util';
 import AlbumArt from '../Library/components/AlbumArt';
+import AudioProcessing from './AudioProcessing';
 import LoudnessMeter from './LoudnessMeter';
-import PerformanceMode from './PerformanceMode';
 import WaveformSeekBar from './WaveformSeekBar';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -1676,7 +1676,7 @@ const MediaPlayer = () => {
           )}
 
           {!googleCast.connected && track && (
-            <PerformanceMode
+            <AudioProcessing
               audioRef={audioRef}
               targetLufs={trackLoudness?.integratedLufs ?? null}
             />
