@@ -551,6 +551,18 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         job.FailedTracks -= failed.Count;
         job.State = YtDlpJobState.Active;
+
+        // job came from the in-memory cache, not this DbContext — mutating it alone never
+        // persists. Load and update the tracked row too, or the state reverts to whatever's
+        // in the database on the next restart, orphaning the just-requeued tracks (their job
+        // no longer looks Active, so StartAsync never resumes them).
+        var dbJob = await db.Jobs.FindAsync(jobId);
+        if (dbJob != null)
+        {
+            dbJob.FailedTracks = job.FailedTracks;
+            dbJob.State = YtDlpJobState.Active;
+        }
+
         await db.SaveChangesAsync();
         await BroadcastJobsAsync();
         await EmitEventAsync(jobId, "info", $"Retrying {failed.Count} failed track(s): {job.Title ?? job.Url}", job);
