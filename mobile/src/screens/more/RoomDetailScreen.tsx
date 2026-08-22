@@ -56,6 +56,8 @@ import UserActionSheet from '../../components/UserActionSheet';
 import Linkify, { findFirstUrl } from '../../components/Linkify';
 import LinkPreviewCard from '../../components/LinkPreviewCard';
 import { LIST_PERF_PROPS } from '../../lib/listPerf';
+import { haptics } from '../../lib/haptics';
+import * as Clipboard from 'expo-clipboard';
 
 type Props = NativeStackScreenProps<RoomsStackParamList, 'RoomDetail'>;
 
@@ -134,6 +136,15 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
     const label = item.self ? 'You' : item.username;
     setText((prev) => `${prev}[${label}] ${item.message} --> `);
     inputRef.current?.focus();
+  };
+
+  // A plain-text long-press-to-copy instead of relying on Text's native
+  // `selectable` overlay: on this Android device that overlay could get
+  // stuck open (its handles/toolbar not dismissing on an outside tap) once
+  // shown from inside this screen's nested Pressable/FlatList hierarchy.
+  const handleCopy = async (message: string) => {
+    await Clipboard.setStringAsync(message);
+    haptics.light();
   };
 
   const handleLeave = useCallback(() => {
@@ -289,14 +300,14 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
               </Text>
             </Pressable>
           )}
-          <View style={[s.bubble, isSelf ? s.bubbleSelf : s.bubbleOther]}>
+          <Pressable
+            onLongPress={() => handleCopy(item.message)}
+            style={[s.bubble, isSelf ? s.bubbleSelf : s.bubbleOther]}
+          >
             {showSender && !isSelf && (
               <Text style={s.senderName}>{item.username}</Text>
             )}
-            <Text
-              selectable
-              style={[s.messageText, isSelf && s.messageTextSelf]}
-            >
+            <Text style={[s.messageText, isSelf && s.messageTextSelf]}>
               <Linkify text={displayText} />
             </Text>
             {previewUrl && <LinkPreviewCard url={previewUrl} />}
@@ -328,7 +339,7 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
                 />
               </Pressable>
             </View>
-          </View>
+          </Pressable>
         </View>
       </View>
     );
