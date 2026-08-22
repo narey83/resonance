@@ -122,7 +122,11 @@ public sealed class FfmpegService : IFfmpegService, IDisposable
 
             // yt-dlp/FFmpeg-Builds uses a rolling "latest" tag — published_at is the version identifier.
             var latest = release.GetProperty("published_at").GetString()?.Trim();
-            var updateAvailable = !string.IsNullOrEmpty(current) && !string.IsNullOrEmpty(latest) && current != latest;
+
+            // No local tracking file means we've never self-managed this copy (e.g. it was found
+            // via the legacy tools-dir fallback below) — that's an unknown, not "up to date", so
+            // report it as needing an update rather than silently claiming currency.
+            var updateAvailable = string.IsNullOrEmpty(current) || (!string.IsNullOrEmpty(latest) && current != latest);
             return (current, latest, updateAvailable);
         }
         catch (Exception ex)
@@ -305,9 +309,22 @@ public sealed class FfmpegService : IFfmpegService, IDisposable
         }
     }
 
+    // True when the resolved binary lives somewhere this service is allowed to replace: its own
+    // managed dir, or the legacy yt-dlp tools dir it reuses an existing download from (tier 2/3 in
+    // EnsureAsync). False for an explicitly-configured path or a bare system/PATH binary — those
+    // are the user's own choice and must never be silently overwritten.
     private bool IsUsingManagedCopy()
-        => ffmpegPath != null
-            && string.Equals(Path.GetDirectoryName(ffmpegPath), managedDir, StringComparison.OrdinalIgnoreCase);
+    {
+        if (ffmpegPath == null)
+        {
+            return false;
+        }
+
+        var dir = Path.GetDirectoryName(ffmpegPath);
+        var legacyToolsDir = Path.Combine(resonance.Program.AppDirectory, "tools");
+        return string.Equals(dir, managedDir, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(dir, legacyToolsDir, StringComparison.OrdinalIgnoreCase);
+    }
 
     private async Task EnsureAsync(CancellationToken cancellationToken)
     {
