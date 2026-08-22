@@ -42,6 +42,7 @@ import {
   getLogs,
   setLogLevel,
 } from '../../../lib/logs';
+import * as prefs from '../../../lib/prefs';
 import { downloadFile, parseUtcDate } from '../../../lib/util';
 import { LoaderSegment } from '../../Shared';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -56,6 +57,16 @@ import React, {
 const PER_PAGE = 50;
 const TAIL_POLL_INTERVAL_MS = 7_000;
 const TAIL_POLL_LIMIT = 200;
+
+// Desktop column widths -- draggable via the handles in ColumnHead, persisted across sessions.
+// Message has no entry: it's the flexible remainder column and always fills whatever's left.
+const COLUMN_WIDTHS_PREF_KEY = 'resonance-logs-col-widths';
+const COLUMN_DEFAULTS = { ts: 158, lvl: 34, ctx: 178 };
+const COLUMN_LIMITS = {
+  ts: { min: 100, max: 260 },
+  lvl: { min: 28, max: 70 },
+  ctx: { min: 60, max: 500 },
+};
 
 const LEVEL_LABELS = {
   Debug: 'DBG',
@@ -580,11 +591,85 @@ const ServerLevelMenu = ({ framework, level, onChange }) => {
   );
 };
 
-const ColumnHead = () => (
+// Drags via pointer capture so the handle keeps tracking the pointer even once it's moved off
+// the (few-pixel-wide) hit target -- and works the same for mouse, touch, and pen. Resizing
+// updates state on every move for live feedback; persisting to prefs only happens once, on
+// release, so a drag doesn't spam localStorage/PATCH /preferences dozens of times a second.
+const ColumnResizeHandle = ({ column, onResize, width }) => {
+  const dragRef = useRef(null);
+
+  const handlePointerDown = (e) => {
+    e.preventDefault();
+    dragRef.current = {
+      lastWidth: width,
+      startWidth: width,
+      startX: e.clientX,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e) => {
+    if (!dragRef.current) return;
+    const { max, min } = COLUMN_LIMITS[column];
+    const next = Math.min(
+      max,
+      Math.max(
+        min,
+        Math.round(
+          dragRef.current.startWidth + (e.clientX - dragRef.current.startX),
+        ),
+      ),
+    );
+    dragRef.current.lastWidth = next;
+    onResize(column, next, false);
+  };
+
+  const handlePointerUp = (e) => {
+    if (dragRef.current) onResize(column, dragRef.current.lastWidth, true);
+    dragRef.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
+  return (
+    <div
+      aria-orientation="vertical"
+      className="logs-col-resize"
+      onDoubleClick={() => onResize(column, COLUMN_DEFAULTS[column], true)}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      role="separator"
+      title="Drag to resize, double-click to reset"
+    />
+  );
+};
+
+const ColumnHead = ({ onResize, widths }) => (
   <div className="logs-col-head logs-col-head--desktop">
-    <div className="logs-row-ts">Timestamp</div>
-    <div className="logs-row-lvl">Lvl</div>
-    <div className="logs-row-ctx">Context</div>
+    <div className="logs-row-ts">
+      Timestamp
+      <ColumnResizeHandle
+        column="ts"
+        onResize={onResize}
+        width={widths.ts}
+      />
+    </div>
+    <div className="logs-row-lvl">
+      Lvl
+      <ColumnResizeHandle
+        column="lvl"
+        onResize={onResize}
+        width={widths.lvl}
+      />
+    </div>
+    <div className="logs-row-ctx">
+      Context
+      <ColumnResizeHandle
+        column="ctx"
+        onResize={onResize}
+        width={widths.ctx}
+      />
+    </div>
     <div className="logs-row-msg">Message</div>
   </div>
 );
@@ -623,7 +708,12 @@ const buildLogQueryParams = ({
   };
 };
 
-const LogsFeed = ({ onChangeServerLevel, serverLevel }) => {
+const LogsFeed = ({
+  colWidths,
+  onChangeServerLevel,
+  onResizeColumn,
+  serverLevel,
+}) => {
   const [levels, setLevels] = useState({ ...ALL_LEVELS_ON });
   const [knownContexts, setKnownContexts] = useState([]);
   const [activeContexts, setActiveContexts] = useState([]);
@@ -1190,7 +1280,10 @@ const LogsFeed = ({ onChangeServerLevel, serverLevel }) => {
         )}
       </div>
 
-      <ColumnHead />
+      <ColumnHead
+        onResize={onResizeColumn}
+        widths={colWidths}
+      />
 
       {renderScroll(false)}
       {renderScroll(true)}
@@ -1214,6 +1307,18 @@ const openPopout = () =>
 const Logs = () => {
   const [exporting, setExporting] = useState(false);
   const [levels, setLevels] = useState({ framework: null, level: null });
+  const [colWidths, setColWidths] = useState(() => ({
+    ...COLUMN_DEFAULTS,
+    ...prefs.get(COLUMN_WIDTHS_PREF_KEY, {}),
+  }));
+
+  const resizeColumn = (column, width, persist) => {
+    setColWidths((prev) => {
+      const next = { ...prev, [column]: width };
+      if (persist) prefs.set(COLUMN_WIDTHS_PREF_KEY, next);
+      return next;
+    });
+  };
 
   useEffect(() => {
     getLogLevel()
@@ -1250,7 +1355,14 @@ const Logs = () => {
   };
 
   return (
-    <div className="logs">
+    <div
+      className="logs"
+      style={{
+        '--log-ctx-width': `${colWidths.ctx}px`,
+        '--log-lvl-width': `${colWidths.lvl}px`,
+        '--log-ts-width': `${colWidths.ts}px`,
+      }}
+    >
       <div className="logs-tabs">
         <span style={{ flex: 1 }} />
         <ServerLevelMenu
@@ -1280,7 +1392,9 @@ const Logs = () => {
       </div>
 
       <LogsFeed
+        colWidths={colWidths}
         onChangeServerLevel={changeServerLevel}
+        onResizeColumn={resizeColumn}
         serverLevel={levels.level}
       />
     </div>
