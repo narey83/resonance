@@ -27,7 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -53,6 +53,8 @@ import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import type { RoomsStackParamList } from '../../navigation/MainTabs';
 import UserActionSheet from '../../components/UserActionSheet';
+import Linkify, { findFirstUrl } from '../../components/Linkify';
+import LinkPreviewCard from '../../components/LinkPreviewCard';
 import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
 type Props = NativeStackScreenProps<RoomsStackParamList, 'RoomDetail'>;
@@ -108,6 +110,7 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
   const [sending, setSending] = useState(false);
   const [showUsers, setShowUsers] = useState(false);
   const [actionUser, setActionUser] = useState<string | null>(null);
+  const inputRef = useRef<TextInput>(null);
 
   // Same keyboard-stacking pattern as ChatConversationScreen: an animated spacer
   // reserves scroll space equal to the live keyboard height (paired with
@@ -125,6 +128,12 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
   const openUserActions = (username: string) => {
     setShowUsers(false);
     setActionUser(username);
+  };
+
+  const handleReply = (item: RoomMessage) => {
+    const label = item.self ? 'You' : item.username;
+    setText((prev) => `${prev}[${label}] ${item.message} --> `);
+    inputRef.current?.focus();
   };
 
   const handleLeave = useCallback(() => {
@@ -252,6 +261,14 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
     const selfInLang = captured ? captured.original : backTr?.text;
     const selfSourceLang = captured ? captured.lang : backTr?.detectedSourceLanguage;
     const showSelfInLang = selfForeign && !!originals[msgKey];
+    const displayText = isSelf
+      ? showSelfInLang
+        ? selfInLang!
+        : item.message
+      : showTranslated
+        ? tr!.text
+        : item.message;
+    const previewUrl = findFirstUrl(displayText);
 
     return (
       <View>
@@ -260,30 +277,29 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
             <Text style={s.daySeparatorText}>{formatDayLabel(item.timestamp)}</Text>
           </View>
         )}
-        <Pressable
-          style={[s.messageRow, isSelf ? s.messageRowSelf : s.messageRowOther]}
-          onLongPress={isSelf ? undefined : () => openUserActions(item.username)}
-        >
+        <View style={[s.messageRow, isSelf ? s.messageRowSelf : s.messageRowOther]}>
           {!isSelf && (
-            <View style={[s.avatarSmall, !showSender && s.avatarInvisible]}>
+            <Pressable
+              disabled={!showSender}
+              onPress={() => openUserActions(item.username)}
+              style={[s.avatarSmall, !showSender && s.avatarInvisible]}
+            >
               <Text style={s.avatarInitial}>
                 {item.username.charAt(0).toUpperCase()}
               </Text>
-            </View>
+            </Pressable>
           )}
-          <View style={[s.bubble, isSelf ? s.bubbleSelf : s.bubbleOther]}>
+          <Pressable
+            onLongPress={() => handleReply(item)}
+            style={[s.bubble, isSelf ? s.bubbleSelf : s.bubbleOther]}
+          >
             {showSender && !isSelf && (
               <Text style={s.senderName}>{item.username}</Text>
             )}
             <Text style={[s.messageText, isSelf && s.messageTextSelf]}>
-              {isSelf
-                ? showSelfInLang
-                  ? selfInLang
-                  : item.message
-                : showTranslated
-                  ? tr!.text
-                  : item.message}
+              <Linkify text={displayText} />
             </Text>
+            {previewUrl && <LinkPreviewCard url={previewUrl} />}
             {canTranslate && translatedDiffers && (
               <Pressable onPress={() => toggleOriginal(msgKey)}>
                 <Text style={s.translateNote}>
@@ -303,8 +319,8 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
               </Pressable>
             )}
             <Text style={[s.timestamp, isSelf && s.timestampSelf]}>{timeStr}</Text>
-          </View>
-        </Pressable>
+          </Pressable>
+        </View>
       </View>
     );
   };
@@ -370,6 +386,7 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
             onSubmitEditing={handleSend}
             placeholder={reply ? 'Reply in their language…' : `Message ${roomName}…`}
             placeholderTextColor={colors.textMuted}
+            ref={inputRef}
             returnKeyType="send"
             style={s.input}
             value={text}

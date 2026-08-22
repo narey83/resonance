@@ -27,7 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Platform,
   Pressable,
@@ -51,6 +51,8 @@ import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import type { ChatStackParamList } from '../../navigation/MainTabs';
 import UserActionSheet from '../../components/UserActionSheet';
 import UserAvatar from '../../components/UserAvatar';
+import Linkify, { findFirstUrl } from '../../components/Linkify';
+import LinkPreviewCard from '../../components/LinkPreviewCard';
 import { useUserInfoStore } from '../../store/userInfoStore';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatConversation'>;
@@ -130,6 +132,13 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [actionUser, setActionUser] = useState<string | null>(null);
+  const inputRef = useRef<TextInput>(null);
+
+  const handleReply = (item: PrivateMessage) => {
+    const label = item.direction === 'Out' ? 'You' : item.username;
+    setText((prev) => `${prev}[${label}] ${item.message} --> `);
+    inputRef.current?.focus();
+  };
 
   // Reserves scroll space below the (inverted) list's newest message equal to
   // the live keyboard height, so it isn't left hidden behind the keyboard —
@@ -264,6 +273,14 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
     const selfInLang = captured ? captured.original : backTr?.text;
     const selfSourceLang = captured ? captured.lang : backTr?.detectedSourceLanguage;
     const showSelfInLang = selfForeign && !!originals[msgKey];
+    const displayText = isSelf
+      ? showSelfInLang
+        ? selfInLang!
+        : item.message
+      : showTranslated
+        ? tr!.text
+        : item.message;
+    const previewUrl = findFirstUrl(displayText);
 
     return (
       <View>
@@ -278,19 +295,17 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
               <Ionicons color={colors.accent} name="person" size={14} />
             </View>
           )}
-          <View style={[s.bubble, isSelf ? s.bubbleSelf : s.bubbleOther]}>
+          <Pressable
+            onLongPress={() => handleReply(item)}
+            style={[s.bubble, isSelf ? s.bubbleSelf : s.bubbleOther]}
+          >
             {showSender && (
               <Text style={s.senderName}>{item.username}</Text>
             )}
             <Text style={[s.messageText, isSelf && s.messageTextSelf]}>
-              {isSelf
-                ? showSelfInLang
-                  ? selfInLang
-                  : item.message
-                : showTranslated
-                  ? tr!.text
-                  : item.message}
+              <Linkify text={displayText} />
             </Text>
+            {previewUrl && <LinkPreviewCard url={previewUrl} />}
             {canTranslate && translatedDiffers && (
               <Pressable onPress={() => toggleOriginal(msgKey)}>
                 <Text style={s.translateNote}>
@@ -310,7 +325,7 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
               </Pressable>
             )}
             <Text style={[s.timestamp, isSelf && s.timestampSelf]}>{timeStr}</Text>
-          </View>
+          </Pressable>
         </View>
       </View>
     );
@@ -350,6 +365,7 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
             onSubmitEditing={handleSend}
             placeholder={reply ? 'Reply in their language…' : 'Message…'}
             placeholderTextColor={colors.textMuted}
+            ref={inputRef}
             returnKeyType="send"
             style={s.input}
             value={text}
