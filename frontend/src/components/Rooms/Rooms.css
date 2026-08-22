@@ -100,6 +100,14 @@
   flex-direction: column;
 }
 
+/* The shared chat-bubble-avatar defaults to bottom-aligned (right for a
+   lone PM bubble with no header above it). Rooms adds a username line above
+   the bubble, so a header row's avatar needs to sit at the top instead,
+   next to that line, rather than sinking to the bottom of the taller block. */
+.chat-bubble-avatar--top {
+  align-self: flex-start;
+}
+
 /* Username line above the first bubble in a sender's run (not shown for
    self, or for a message continuing the same sender's previous run). */
 .room-msg-header {

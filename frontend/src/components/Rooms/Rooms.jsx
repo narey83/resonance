@@ -872,7 +872,7 @@ const Rooms = ({ history }) => {
                       >
                         {!m.self && (
                           <div
-                            className={`chat-bubble-avatar${item.showHeader ? '' : ' chat-bubble-avatar--ghost'}`}
+                            className={`chat-bubble-avatar${item.showHeader ? ' chat-bubble-avatar--top' : ' chat-bubble-avatar--ghost'}`}
                             style={{ background: avatarColor(m.username) }}
                           >
                             {avatarInitial(m.username)}
