@@ -115,6 +115,20 @@ namespace resonance.Transfers
                 .HasIndex(t => t.RetryOfId)
                 .HasDatabaseName("IDX_Transfers_RetryOfId");
 
+            // self-referencing: guards against a stray/corrupt RetryOfId ever pointing at a row that
+            // doesn't exist. No uniqueness constraint -- app-level locking (DownloadService/UploadService
+            // EnqueueAsync and AddOrSupersede) is what prevents two live transfers from both linking to
+            // the same failed parent; this FK is integrity-only. No cascading delete: Transfer rows are
+            // never hard-deleted (Remove() is a soft delete via the Removed flag), so there is nothing to
+            // cascade, and Restrict makes that assumption explicit rather than silent.
+            modelBuilder
+                .Entity<Transfer>()
+                .HasOne<Transfer>()
+                .WithMany()
+                .HasForeignKey(t => t.RetryOfId)
+                .HasConstraintName("FK_Transfers_Transfers_RetryOfId")
+                .OnDelete(DeleteBehavior.Restrict);
+
             // covers the check for existing records when enqueueing uploads and downloads
             modelBuilder
                 .Entity<Transfer>()

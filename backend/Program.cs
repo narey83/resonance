@@ -1878,6 +1878,23 @@ namespace resonance
                         if (ctx.Database.IsNpgsql())
                         {
                             ctx.Database.ExecuteSqlRaw("ALTER TABLE transfers.\"Transfers\" ADD COLUMN IF NOT EXISTS \"RetryOfId\" uuid");
+
+                            // Postgres has no ADD CONSTRAINT IF NOT EXISTS, so a rerun on an
+                            // already-migrated DB is expected to throw here; that's caught and ignored.
+                            // NOT VALID skips checking the (currently all-NULL, since the column is
+                            // brand new) existing rows -- a full-table scan this shared, resource-
+                            // constrained Postgres host doesn't need just to reconfirm something already
+                            // implied by every row being NULL.
+                            try
+                            {
+                                ctx.Database.ExecuteSqlRaw(
+                                    "ALTER TABLE transfers.\"Transfers\" ADD CONSTRAINT \"FK_Transfers_Transfers_RetryOfId\" " +
+                                    "FOREIGN KEY (\"RetryOfId\") REFERENCES transfers.\"Transfers\" (\"Id\") ON DELETE RESTRICT NOT VALID");
+                            }
+                            catch (Exception)
+                            {
+                                // constraint already exists
+                            }
                         }
                         else
                         {
@@ -1889,6 +1906,12 @@ namespace resonance
                             {
                                 // column already exists; SQLite has no ADD COLUMN IF NOT EXISTS
                             }
+
+                            // SQLite can't ALTER TABLE to add a foreign key after creation (would
+                            // require rebuilding the table); the FK only applies to fresh SQLite
+                            // databases created via EnsureCreated from the current model. Production
+                            // always uses Postgres (ConnectionStringDictionary.UsePostgres is hardcoded
+                            // true), so this only affects a hypothetical existing SQLite install.
                         }
                     }
 

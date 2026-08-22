@@ -321,25 +321,46 @@ namespace resonance.Transfers.Uploads
         /// <param name="transfer">The transfer to add.</param>
         public void AddOrSupersede(Transfer transfer)
         {
-            using var context = ContextFactory.CreateDbContext();
+            // Shares EnqueueAsync's per-(username, filename) lock (same lock name, rather than a lock
+            // of its own) so the two can never race each other for the same user's file. Matches
+            // EnqueueAsync's own semantics for lock contention: skip the work rather than wait for it.
+            var lockName = $"{nameof(EnqueueAsync)}:{transfer.Username}:{transfer.Filename}";
 
-            var existing = context.Transfers
-                .Where(t => t.Direction == TransferDirection.Upload)
-                .Where(t => t.Username == transfer.Username)
-                .Where(t => t.Filename == transfer.Filename)
-                .Where(t => !t.Removed)
-                .FirstOrDefault();
-
-            if (existing != default)
+            if (!Locks.TryAdd(lockName, true))
             {
-                transfer.RetryOfId = RetryLinking.FindPriorFailedAttempt([existing], transfer.Filename)?.Id;
-
-                Log.Debug("Superseding transfer record for {Filename} from {Username}", transfer.Filename, transfer.Username);
-                existing.Removed = true;
+                Log.Debug("Ignoring concurrent AddOrSupersede for {Filename} to {Username}; lock {LockName} already held", transfer.Filename, transfer.Username, lockName);
+                return;
             }
 
-            context.Add(transfer);
-            context.SaveChanges();
+            try
+            {
+                using var context = ContextFactory.CreateDbContext();
+
+                var existing = context.Transfers
+                    .Where(t => t.Direction == TransferDirection.Upload)
+                    .Where(t => t.Username == transfer.Username)
+                    .Where(t => t.Filename == transfer.Filename)
+                    .Where(t => !t.Removed)
+                    .FirstOrDefault();
+
+                if (existing != default)
+                {
+                    transfer.RetryOfId = RetryLinking.FindPriorFailedAttempt([existing], transfer.Filename)?.Id;
+
+                    Log.Debug("Superseding transfer record for {Filename} from {Username}", transfer.Filename, transfer.Username);
+                    existing.Removed = true;
+                }
+
+                context.Add(transfer);
+                context.SaveChanges();
+            }
+            finally
+            {
+                if (Locks.TryRemove(lockName, out _))
+                {
+                    Log.Debug("Released lock {LockName}", lockName);
+                }
+            }
         }
 
         /// <summary>

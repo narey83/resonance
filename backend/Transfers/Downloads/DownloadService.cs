@@ -270,25 +270,37 @@ namespace resonance.Transfers.Downloads
         /// <param name="transfer"></param>
         public void AddOrSupersede(Transfer transfer)
         {
-            using var context = ContextFactory.CreateDbContext();
+            // Shares EnqueueAsync's per-user semaphore (rather than a lock of its own) so the two can
+            // never race each other for the same user's records -- see GetOrAddUserSemaphoreAsync.
+            var userSemaphore = GetOrAddUserSemaphoreAsync(transfer.Username, CancellationToken.None).GetAwaiter().GetResult();
+            userSemaphore.Wait();
 
-            var existing = context.Transfers
-                .Where(t => t.Direction == TransferDirection.Download)
-                .Where(t => t.Username == transfer.Username)
-                .Where(t => t.Filename == transfer.Filename)
-                .Where(t => !t.Removed)
-                .FirstOrDefault();
-
-            if (existing != default)
+            try
             {
-                transfer.RetryOfId = RetryLinking.FindPriorFailedAttempt([existing], transfer.Filename)?.Id;
+                using var context = ContextFactory.CreateDbContext();
 
-                Log.Debug("Superseding transfer record for {Filename} from {Username}", transfer.Filename, transfer.Username);
-                existing.Removed = true;
+                var existing = context.Transfers
+                    .Where(t => t.Direction == TransferDirection.Download)
+                    .Where(t => t.Username == transfer.Username)
+                    .Where(t => t.Filename == transfer.Filename)
+                    .Where(t => !t.Removed)
+                    .FirstOrDefault();
+
+                if (existing != default)
+                {
+                    transfer.RetryOfId = RetryLinking.FindPriorFailedAttempt([existing], transfer.Filename)?.Id;
+
+                    Log.Debug("Superseding transfer record for {Filename} from {Username}", transfer.Filename, transfer.Username);
+                    existing.Removed = true;
+                }
+
+                context.Add(transfer);
+                context.SaveChanges();
             }
-
-            context.Add(transfer);
-            context.SaveChanges();
+            finally
+            {
+                userSemaphore.Release();
+            }
         }
 
         /// <summary>
@@ -363,23 +375,11 @@ namespace resonance.Transfers.Downloads
             List<Transfer> enqueued = [];
             List<string> failed = [];
 
-            SemaphoreSlim userSemaphore;
-            Task userSemaphoreWaitTask;
-
             Log.Debug("Awaiting enqueue semaphore sync root");
-            await EnqueueSemaphoreSyncRoot.WaitAsync(cancellationToken);
+            var userSemaphore = await GetOrAddUserSemaphoreAsync(username, cancellationToken);
+            Log.Debug("Acquired enqueue semaphore sync root");
 
-            try
-            {
-                Log.Debug("Acquired enqueue semaphore sync root");
-                userSemaphore = EnqueueSemaphores.GetOrAdd(username, (username) => new SemaphoreSlim(initialCount: 1, maxCount: 1));
-                userSemaphoreWaitTask = userSemaphore.WaitAsync(cancellationToken);
-            }
-            finally
-            {
-                EnqueueSemaphoreSyncRoot.Release();
-                Log.Debug("Released enqueue semaphore sync root");
-            }
+            var userSemaphoreWaitTask = userSemaphore.WaitAsync(cancellationToken);
 
             Log.Debug("Awaiting enqueue semaphore for user {Username}", username);
             await userSemaphoreWaitTask;
@@ -1553,6 +1553,27 @@ namespace resonance.Transfers.Downloads
                     TryActivateNextPending(username);
                 }
             });
+        }
+
+        /// <summary>
+        ///     Gets (creating one if necessary) the semaphore that serializes access to a given user's
+        ///     transfer records for both <see cref="EnqueueAsync"/> and <see cref="AddOrSupersede"/>, so
+        ///     that no two calls -- through either method, in any combination -- can concurrently read and
+        ///     supersede the same existing record. This is what guarantees a failed transfer can never end
+        ///     up with two live retries both linking back to it.
+        /// </summary>
+        private async Task<SemaphoreSlim> GetOrAddUserSemaphoreAsync(string username, CancellationToken cancellationToken)
+        {
+            await EnqueueSemaphoreSyncRoot.WaitAsync(cancellationToken);
+
+            try
+            {
+                return EnqueueSemaphores.GetOrAdd(username, (username) => new SemaphoreSlim(initialCount: 1, maxCount: 1));
+            }
+            finally
+            {
+                EnqueueSemaphoreSyncRoot.Release();
+            }
         }
 
         private async Task CleanupEnqueueSemaphoresAsync()
