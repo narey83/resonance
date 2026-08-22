@@ -3585,6 +3585,26 @@ namespace resonance
                 public string ExecutablePath { get; init; } = "yt-dlp";
 
                 /// <summary>
+                ///     Gets a value indicating whether yt-dlp should periodically check for and
+                ///     install a newer release in the background. yt-dlp ships frequent fixes for
+                ///     YouTube-side breakage (signature/player-client changes), so a stale binary
+                ///     is a common cause of downloads suddenly failing.
+                /// </summary>
+                [Argument(default, "ytdlp-auto-update")]
+                [EnvironmentVariable("YTDLP_AUTO_UPDATE")]
+                [Description("periodically auto-update yt-dlp to the latest release")]
+                public bool AutoUpdate { get; init; } = true;
+
+                /// <summary>
+                ///     Gets the interval, in days, between background yt-dlp update checks.
+                /// </summary>
+                [Argument(default, "ytdlp-update-interval-days")]
+                [EnvironmentVariable("YTDLP_UPDATE_INTERVAL_DAYS")]
+                [Description("days between background yt-dlp update checks")]
+                [Range(1, 30)]
+                public int UpdateIntervalDays { get; init; } = 3;
+
+                /// <summary>
                 ///     Gets the path to the ffmpeg executable.
                 /// </summary>
                 [Argument(default, "ytdlp-ffmpeg")]

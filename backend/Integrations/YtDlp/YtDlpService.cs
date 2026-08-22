@@ -229,6 +229,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         _ = Task.Run(() => RunSubscriptionPollLoopAsync(cts.Token), CancellationToken.None);
         _ = Task.Run(() => RunAutoRetryLoopAsync(cts.Token), CancellationToken.None);
         _ = Task.Run(() => RunRescanFlushLoopAsync(cts.Token), CancellationToken.None);
+        _ = Task.Run(() => RunAutoUpdateLoopAsync(cts.Token), CancellationToken.None);
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
@@ -1159,6 +1160,8 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         {
             Enabled = opts.Enabled,
             ExecutablePath = opts.ExecutablePath,
+            AutoUpdate = opts.AutoUpdate,
+            UpdateIntervalDays = opts.UpdateIntervalDays,
             FfmpegPath = opts.FfmpegPath,
             AudioFormat = job.AudioFormatOverride ?? opts.AudioFormat,
             AudioQuality = job.AudioQualityOverride ?? opts.AudioQuality,
@@ -3113,6 +3116,43 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         foreach (var track in retried)
         {
             _ = Task.Run(() => RunWorkerAsync(track, cts.Token), CancellationToken.None);
+        }
+    }
+
+    // Checks immediately on startup (so a binary that went stale while the service was down gets
+    // fixed on restart) and then on the configured interval thereafter.
+    private async Task RunAutoUpdateLoopAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var opts = options.CurrentValue.Integrations.YtDlp;
+            if (opts.Enabled && opts.AutoUpdate)
+            {
+                try
+                {
+                    var (_, _, updateAvailable) = await CheckForUpdateAsync(cancellationToken);
+                    if (updateAvailable)
+                    {
+                        var newVersion = await UpdateYtDlpAsync(cancellationToken);
+                        Log.Information("YtDlp: auto-updated to {Version}", newVersion);
+                        await EmitEventAsync(null, "info", $"yt-dlp auto-updated to {newVersion}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "YtDlp: background update check failed: {Message}", ex.Message);
+                }
+            }
+
+            var intervalDays = Math.Clamp(options.CurrentValue.Integrations.YtDlp.UpdateIntervalDays, 1, 30);
+            try
+            {
+                await Task.Delay(TimeSpan.FromDays(intervalDays), cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
         }
     }
 

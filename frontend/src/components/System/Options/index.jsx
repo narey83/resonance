@@ -745,6 +745,22 @@ const SCHEMA = [
       },
       {
         description:
+          'Periodically download and install a newer yt-dlp release in the background. yt-dlp ships frequent fixes for YouTube-side breakage, so a stale binary is a common cause of downloads suddenly failing with 403 errors.',
+        label: 'Auto-update yt-dlp',
+        path: ['integrations', 'yt_dlp', 'auto_update'],
+        type: 'toggle',
+      },
+      {
+        description: 'Days between background yt-dlp update checks.',
+        label: 'Update Interval (days)',
+        max: 30,
+        min: 1,
+        path: ['integrations', 'yt_dlp', 'update_interval_days'],
+        placeholder: '3',
+        type: 'number',
+      },
+      {
+        description:
           'Path to the ffmpeg executable — required for audio extraction.',
         label: 'ffmpeg Executable',
         path: ['integrations', 'yt_dlp', 'ffmpeg_path'],
