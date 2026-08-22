@@ -314,15 +314,36 @@ export default function ConnectionScreen() {
           </View>
         </View>
 
-        <View style={s.hopLine}>
-          <Text style={[s.hopLineText, { color: appColor }]} numberOfLines={1}>
-            {appStatus}{appChips.length ? ` · ${appChips.join(' · ')}` : ''}
-          </Text>
+        <View style={s.hopBlock}>
+          <View style={s.hopHeadRow}>
+            <Text style={s.hopLabel}>App</Text>
+            <Text style={[s.hopStatus, { color: appColor }]} numberOfLines={1}>{appStatus}</Text>
+          </View>
+          {appChips.length > 0 && (
+            <View style={s.chipRow}>
+              {appChips.map(c => (
+                <View key={c} style={[s.chip, { borderColor: appColor + '55', backgroundColor: appColor + '14' }]}>
+                  <Text style={[s.chipText, { color: appColor }]} numberOfLines={1}>{c}</Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
-        <View style={s.hopLine}>
-          <Text style={[s.hopLineText, { color: slColor }]} numberOfLines={1}>
-            {slStatus}{slChips.length ? ` · ${slChips.join(' · ')}` : ''}
-          </Text>
+
+        <View style={[s.hopBlock, s.hopBlockLast]}>
+          <View style={s.hopHeadRow}>
+            <Text style={s.hopLabel}>Soulseek</Text>
+            <Text style={[s.hopStatus, { color: slColor }]} numberOfLines={1}>{slStatus}</Text>
+          </View>
+          {slChips.length > 0 && (
+            <View style={s.chipRow}>
+              {slChips.map(c => (
+                <View key={c} style={[s.chip, { borderColor: slColor + '55', backgroundColor: slColor + '14' }]}>
+                  <Text style={[s.chipText, { color: slColor }]} numberOfLines={1}>{c}</Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
         {error && <Text style={s.cardError}>{error}</Text>}
       </Card>
@@ -464,16 +485,22 @@ function makeStyles(c: ThemeColors) {
     center:    { flex: 1, backgroundColor: c.bgPrimary, justifyContent: 'center', alignItems: 'center', gap: Spacing.md },
     cardError: { fontSize: Typography.sm, color: c.danger, paddingHorizontal: Spacing.md, paddingBottom: Spacing.md },
 
-    // Compact single-line chain: three icon nodes joined by short rails, with
-    // each hop's status + detail chips collapsed onto one truncated line
-    // below (the full detail lives in the tile sections further down).
+    // Compact chain: three icon nodes joined by short rails in one row, with
+    // each hop's status and detail chips given their own block below (the
+    // full detail also lives in the tile sections further down).
     chainRow:       { flexDirection: 'row', alignItems: 'center', padding: Spacing.md, paddingBottom: Spacing.sm },
     chainNode:      { alignItems: 'center', gap: 4 },
     chainDot:       { width: 32, height: 32, borderRadius: 16, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
     chainNodeLabel: { fontSize: Typography.xs, color: c.textMuted, maxWidth: 72 },
     chainRail:      { flex: 1, height: 2, marginHorizontal: Spacing.xs, borderRadius: Radius.full },
-    hopLine:        { paddingHorizontal: Spacing.md, paddingBottom: Spacing.xs },
-    hopLineText:    { fontSize: Typography.sm, fontWeight: '600', fontVariant: ['tabular-nums'] },
+    hopBlock:       { paddingHorizontal: Spacing.md, paddingBottom: Spacing.md, gap: 6 },
+    hopBlockLast:   { paddingBottom: Spacing.sm },
+    hopHeadRow:     { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.sm },
+    hopLabel:       { fontSize: Typography.xs, color: c.textMuted, fontWeight: '600', letterSpacing: 0.6, textTransform: 'uppercase' },
+    hopStatus:      { fontSize: Typography.base, fontWeight: '600', flexShrink: 1 },
+    chipRow:        { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },
+    chip:           { borderWidth: 1, borderRadius: Radius.full, paddingHorizontal: Spacing.sm, paddingVertical: 3 },
+    chipText:       { fontSize: Typography.xs, fontWeight: '600', fontVariant: ['tabular-nums'] },
 
     soulseekActionBtn: {
       backgroundColor: c.bgSurface,
