@@ -154,7 +154,7 @@ const UpnpStatusSection = ({ upnp }) => {
             {likelyCgnat && (
               <span
                 style={{
-                  color: 'var(--amber, #d69e2e)',
+                  color: 'var(--warning, #d69e2e)',
                   display: 'block',
                   marginTop: 4,
                 }}

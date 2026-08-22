@@ -105,6 +105,7 @@
 
 .status-icon.connected { color: var(--success); }
 .status-icon.disconnected { color: var(--danger); }
+.status-icon--warning { color: var(--warning); }
 
 .status-chip {
   display: inline-flex;

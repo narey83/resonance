@@ -1081,6 +1081,7 @@ const App = () => {
               shares={shares}
               system={system}
               uploads={uploads}
+              upnp={applicationState?.upnp}
               user={user}
             />
             <MapPage />
@@ -1139,6 +1140,7 @@ const App = () => {
                 shares={shares}
                 system={system}
                 uploads={uploads}
+                upnp={applicationState?.upnp}
                 user={user}
               />
             )}

@@ -71,6 +71,7 @@ const StatusStrip = ({
   shares,
   system,
   uploads,
+  upnp,
   user,
 }) => {
   const [rescanning, setRescanning] = useState(false);
@@ -238,6 +239,17 @@ const StatusStrip = ({
       setUploadingPicture(false);
     }
   };
+
+  // A UPnP mapping made against the router's own WAN IP means nothing if that IP
+  // isn't actually the address the internet sees us as (carrier-grade NAT) — in
+  // that case a live "port open" reading from a single third-party probe can be
+  // a fluke, so don't present it as trustworthy.
+  const cgnatMismatch = Boolean(
+    upnp?.isMapped &&
+      networkInfo?.ip &&
+      upnp?.externalIPAddress &&
+      networkInfo.ip !== upnp.externalIPAddress,
+  );
 
   const isConnected = server?.isLoggedIn;
 
@@ -580,11 +592,19 @@ const StatusStrip = ({
                 ? 'Checking listening port…'
                 : portStatus === 'error'
                   ? 'Port check failed — click to retry'
-                  : `Listening port ${portStatus.port} is ${portStatus.isOpen ? 'open (reachable)' : 'closed (not reachable from the internet)'} — click to re-check`
+                  : portStatus.isOpen && cgnatMismatch
+                    ? `The port test reported port ${portStatus.port} open, but your router's UPnP-mapped IP (${upnp.externalIPAddress}) differs from your internet-facing IP (${networkInfo.ip}) — likely carrier-grade NAT. That single-probe "open" result can't be trusted; incoming connections are probably still unreachable. Click to re-check.`
+                    : `Listening port ${portStatus.port} is ${portStatus.isOpen ? 'open (reachable)' : 'closed (not reachable from the internet)'} — click to re-check`
             }
             type="button"
           >
-            {portStatus.isOpen ? (
+            {portStatus.isOpen && cgnatMismatch ? (
+              <Plug
+                className="status-icon status-icon--warning"
+                size={13}
+                strokeWidth={1.75}
+              />
+            ) : portStatus.isOpen ? (
               <PlugZap
                 className="status-icon connected"
                 size={13}
@@ -603,7 +623,9 @@ const StatusStrip = ({
                 : portStatus === 'error'
                   ? 'Port ?'
                   : portStatus.isOpen
-                    ? 'Port open'
+                    ? cgnatMismatch
+                      ? 'Port open?'
+                      : 'Port open'
                     : 'Port closed'}
             </span>
           </button>
