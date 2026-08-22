@@ -317,4 +317,72 @@ public class LogFileReaderTests
             dir.Delete(recursive: true);
         }
     }
+
+    [Fact]
+    public void Query_UnfilteredInitialLoad_ReturnsExactTotal_AcrossManyRolledOverFiles()
+    {
+        var dir = Directory.CreateTempSubdirectory("resonance-logfilereader");
+
+        try
+        {
+            // Three rolled-over (non-hot) days plus a hot day, none individually huge, but the
+            // page-fills-from-the-newest-file-alone shape is what exercises the count-only path
+            // for everything older -- this proves it still adds up to the exact total, not an
+            // approximation, once files beyond the filled page stop being fully parsed.
+            for (var day = 1; day <= 3; day++)
+            {
+                var lines = string.Concat(Enumerable.Range(0, 300)
+                    .Select(i => Line($"2026-09-0{day}T{i / 3600:D2}:{i / 60 % 60:D2}:{i % 60:D2}.000Z", "Information", $"day{day} entry {i}") + "\n"));
+                File.WriteAllText(HotFileName(dir, $"2026090{day}"), lines);
+            }
+
+            var hotLines = string.Concat(Enumerable.Range(0, 10)
+                .Select(i => Line($"2026-09-04T00:00:{i:D2}.000Z", "Information", $"hot entry {i}") + "\n"));
+            File.WriteAllText(HotFileName(dir, "20260904"), hotLines);
+
+            // The hot day's 10 records alone fill this page, so all three older 300-line days are
+            // beyond it -- they only need to contribute to `total`, not to `items`.
+            var (items, total) = Query(dir.FullName, limit: 10);
+
+            Assert.Equal(10, items.Count);
+            Assert.Equal(910, total); // 10 hot + 3*300 older
+            Assert.All(items, r => Assert.StartsWith("hot entry", r.Message));
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Query_UnfilteredTotal_ExcludesAMalformedTrailingLine_InARolledOverFile_BeyondTheFilledPage()
+    {
+        var dir = Directory.CreateTempSubdirectory("resonance-logfilereader");
+
+        try
+        {
+            // An older file whose last line got cut off mid-write (e.g. the process was killed) --
+            // ReadFileRecords/TryParseLine would silently drop it, and the count-only fast path
+            // (which only fully parses a rolled-over file's *last* line, since that's the only one
+            // that could possibly be incomplete) has to agree, or `total` would overcount.
+            var olderLines = string.Concat(Enumerable.Range(0, 5)
+                .Select(i => Line($"2026-09-01T00:00:0{i}.000Z", "Information", $"entry {i}") + "\n"));
+            olderLines += """{"Timestamp":"2026-09-01T00:00:06.000Z","Level":"Information","Proper""";
+            File.WriteAllText(HotFileName(dir, "20260901"), olderLines);
+
+            var hotLines = string.Concat(Enumerable.Range(0, 5)
+                .Select(i => Line($"2026-09-02T00:00:0{i}.000Z", "Information", $"hot entry {i}") + "\n"));
+            File.WriteAllText(HotFileName(dir, "20260902"), hotLines);
+
+            // Page fills entirely from the hot day, so the older day takes the count-only path.
+            var (items, total) = Query(dir.FullName, limit: 5);
+
+            Assert.Equal(5, items.Count);
+            Assert.Equal(10, total); // 5 hot + 5 valid older (the truncated 6th line excluded)
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
 }

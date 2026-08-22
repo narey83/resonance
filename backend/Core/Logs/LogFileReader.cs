@@ -102,6 +102,23 @@ public static class LogFileReader
                 continue;
             }
 
+            // Once the requested page is already full, a file only affects the response through
+            // `total` -- unless some filter could still exclude a subset of its lines from the
+            // count, in which case we still have to look at each one to know which. With no such
+            // filter active, `total` just needs a line count, which skips the JSON parse (the
+            // dominant cost) entirely. This is what keeps an unfiltered "give me the newest N"
+            // load proportional to the retention window's byte size rather than its full JSON
+            // volume -- the gap that matters at real scale (millions of lines across 30 days).
+            var pageAlreadyFull = items.Count >= limit;
+            var filterCouldExcludeLines = levels?.Length > 0 || contexts?.Length > 0
+                || !string.IsNullOrWhiteSpace(search) || from.HasValue || to.HasValue;
+
+            if (fileIndex > 0 && pageAlreadyFull && !filterCouldExcludeLines)
+            {
+                total += CountLines(file);
+                continue;
+            }
+
             // a day's lines are written oldest-first; the record lists below keep that order so
             // they can be walked newest-first, preserving the overall newest-first order across
             // days without a true reverse file read.
@@ -175,6 +192,41 @@ public static class LogFileReader
         }
 
         return records;
+    }
+
+    /// <summary>
+    ///     Counts the lines in a rolled-over log file that <see cref="ReadFileRecords"/> would
+    ///     have turned into a record, without actually parsing all of them -- used only once a
+    ///     request's page is already full and no active filter needs a line's fields to know
+    ///     whether it counts, so all that's left to determine is how many there are.
+    /// </summary>
+    private static int CountLines(string file)
+    {
+        var count = 0;
+        string lastNonBlank = null;
+
+        foreach (var line in File.ReadLines(file))
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            count++;
+            lastNonBlank = line;
+        }
+
+        // A rolled-over file is immutable, so the only line that could ever fail to parse (e.g.
+        // the process was killed mid-write) is the very last one -- everything before it was
+        // already flushed complete before that. Validating just that one keeps this exactly as
+        // correct as fully parsing every line would be, without paying JSON-parse cost for the
+        // rest -- the whole point, since that's the dominant per-line cost being skipped here.
+        if (lastNonBlank is not null && !TryParseLine(lastNonBlank, out _))
+        {
+            count--;
+        }
+
+        return count;
     }
 
     /// <summary>
