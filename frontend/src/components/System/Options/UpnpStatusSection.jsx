@@ -27,9 +27,10 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import * as networkAPI from '../../../lib/network';
 import * as upnpLibrary from '../../../lib/upnp';
 import { parseUtcDate } from '../../../lib/util';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 const button = (extra = {}) => ({
   padding: '3px 10px',
@@ -46,10 +47,27 @@ const button = (extra = {}) => ({
 const UpnpStatusSection = ({ upnp }) => {
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState(null);
+  const [publicIp, setPublicIp] = useState(null);
+
+  // Compare against the internet-facing IP so a mapping that only reaches the
+  // ISP's NAT layer (CGNAT) can be called out instead of just showing "working".
+  useEffect(() => {
+    if (!upnp?.isMapped) return;
+    networkAPI
+      .getNetworkInfo()
+      .then((info) => setPublicIp(info?.ip ?? null))
+      .catch(() => {});
+  }, [upnp?.isMapped]);
 
   if (!upnp?.isEnabled) {
     return null;
   }
+
+  const likelyCgnat =
+    upnp.isMapped &&
+    publicIp &&
+    upnp.externalIPAddress &&
+    publicIp !== upnp.externalIPAddress;
 
   const handleRetry = async () => {
     setRetrying(true);
@@ -131,6 +149,22 @@ const UpnpStatusSection = ({ upnp }) => {
                 }}
               >
                 {error}
+              </span>
+            )}
+            {likelyCgnat && (
+              <span
+                style={{
+                  color: 'var(--amber, #d69e2e)',
+                  display: 'block',
+                  marginTop: 4,
+                }}
+              >
+                ⚠ Likely carrier-grade NAT (CGNAT): the router maps the port on{' '}
+                {upnp.externalIPAddress}, but your internet-facing IP is{' '}
+                {publicIp}. The mapping only reaches your ISP's NAT layer, so
+                incoming connections from the internet will still fail — check
+                the "Port closed" indicator, and contact your ISP about a public
+                IP if this persists.
               </span>
             )}
           </div>
