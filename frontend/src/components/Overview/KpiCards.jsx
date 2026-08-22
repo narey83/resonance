@@ -41,6 +41,12 @@ const succeededOf = (directionData) => {
   return succeeded?.count ?? 0;
 };
 
+const failedOf = (directionData, succeeded) =>
+  sumCount(directionData) - succeeded;
+
+const successRateOf = (count, succeeded) =>
+  count > 0 ? ((succeeded / count) * 100).toFixed(1) : null;
+
 const extractKpis = (summary) => {
   if (!summary) return null;
 
@@ -51,10 +57,13 @@ const extractKpis = (summary) => {
   const ulBytes = sumBytes(ul);
   const dlCount = sumCount(dl);
   const ulCount = sumCount(ul);
-  const totalCount = dlCount + ulCount;
-  const totalSucceeded = succeededOf(dl) + succeededOf(ul);
-  const successRate =
-    totalCount > 0 ? ((totalSucceeded / totalCount) * 100).toFixed(1) : null;
+
+  const dlSucceeded = succeededOf(dl);
+  const ulSucceeded = succeededOf(ul);
+  const dlFailed = failedOf(dl, dlSucceeded);
+  const ulFailed = failedOf(ul, ulSucceeded);
+  const dlSuccessRate = successRateOf(dlCount, dlSucceeded);
+  const ulSuccessRate = successRateOf(ulCount, ulSucceeded);
 
   const dlSucc = dl.Succeeded ?? dl.succeeded;
   const ulSucc = ul.Succeeded ?? ul.succeeded;
@@ -73,9 +82,13 @@ const extractKpis = (summary) => {
     avgWait,
     distinctUsers,
     dlBytes,
-    successRate,
-    totalCount,
+    dlCount,
+    dlFailed,
+    dlSuccessRate,
     ulBytes,
+    ulCount,
+    ulFailed,
+    ulSuccessRate,
   };
 };
 
@@ -164,15 +177,26 @@ const KpiCards = ({ downloads, loading, prevSummary, summary, uploads }) => {
         value={kpis ? formatBytes(kpis.ulBytes) : '—'}
       />
       <KpiCard
-        delta={
-          kpis && prev ? pctChange(kpis.totalCount, prev.totalCount) : null
-        }
-        label="Transfers"
+        delta={kpis && prev ? pctChange(kpis.dlCount, prev.dlCount) : null}
+        label="Download Transfers"
         loading={loading}
         sub={
-          kpis?.successRate == null ? undefined : `${kpis.successRate}% success`
+          kpis?.dlSuccessRate == null
+            ? undefined
+            : `${kpis.dlSuccessRate}% success · ${kpis.dlFailed.toLocaleString()} failed`
         }
-        value={kpis ? kpis.totalCount.toLocaleString() : '—'}
+        value={kpis ? kpis.dlCount.toLocaleString() : '—'}
+      />
+      <KpiCard
+        delta={kpis && prev ? pctChange(kpis.ulCount, prev.ulCount) : null}
+        label="Upload Transfers"
+        loading={loading}
+        sub={
+          kpis?.ulSuccessRate == null
+            ? undefined
+            : `${kpis.ulSuccessRate}% success · ${kpis.ulFailed.toLocaleString()} failed`
+        }
+        value={kpis ? kpis.ulCount.toLocaleString() : '—'}
       />
       <KpiCard
         label="Peers"
