@@ -28,19 +28,17 @@
 // </copyright>
 
 import { getMediaAudioGraph } from '../../lib/mediaAudioGraph';
-import { PerformanceAudioProcessor } from '../../lib/PerformanceAudioProcessor';
 import * as prefs from '../../lib/prefs';
+import ProcessorRow from './ProcessorRow';
 import React, { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 
-// One entry in the Processing modal (see AudioProcessing.jsx, which mounts
-// this and any future processors as siblings) — DJ-style compression,
-// output limiting and loudness levelling. Fully self-contained: owns its
-// own PerformanceAudioProcessor lifecycle and persisted settings.
-// AudioProcessing knows nothing about compressors or limiters — it just
-// renders this component's list row on the left, portals its settings into
-// the right-hand pane when selected, and reads back whether it's on via
-// onActiveChange.
+// One entry in the Processing modal — a one-switch "DJ-style compression,
+// output limiting and loudness levelling" bundle. Unlike the other
+// processor views, this one is an orchestrator: it doesn't own Web Audio
+// nodes of its own, it drives the shared PerformanceProcessor (see
+// lib/dsp/PerformanceProcessor.js), which in turn enables/configures the
+// same Compressor and Limiter instances the standalone Compressor/Limiter
+// panels show — one processor, not two competing ones.
 const PerformanceMode = ({
   audioRef,
   detailContainerNode,
@@ -63,19 +61,11 @@ const PerformanceMode = ({
     prefs.get('mediaPlayer.performanceNormalize', true),
   );
 
-  // Attach a processor to this <audio> element's shared graph. Built once
-  // per mount and torn down (bypassed, not destroyed — see
-  // PerformanceAudioProcessor.dispose) on unmount; the enabled/compression/
-  // protection/normalize effects below push state into it as the user
-  // changes them, without recreating it. Mounted for as long as the player
-  // has a track loaded, independent of whether the Processing modal is
-  // open or which item is selected — neither may silently disable this.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return undefined;
 
-    const graph = getMediaAudioGraph(audio);
-    const processor = new PerformanceAudioProcessor(graph);
+    const processor = getMediaAudioGraph(audio).dsp.performance;
     processorRef.current = processor;
     processor.setCompressionAmount(compression);
     processor.setOutputProtection(protection);
@@ -86,8 +76,8 @@ const PerformanceMode = ({
       processor.dispose();
       processorRef.current = null;
     };
-    // Only the element identity should rebuild the processor — the
-    // parameter effects below handle every other change.
+    // Only the element identity should rebuild this — the parameter
+    // effects below handle every other change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioRef]);
 
@@ -114,7 +104,7 @@ const PerformanceMode = ({
   }, [enabled]);
 
   const toggleEnabled = (event) => {
-    event.stopPropagation();
+    event?.stopPropagation();
     setEnabled((previous) => {
       const next = !previous;
       prefs.set('mediaPlayer.performanceMode', next);
@@ -145,75 +135,63 @@ const PerformanceMode = ({
   };
 
   return (
-    <>
-      <div
-        className={`mp-processing-row${isSelected ? ' mp-processing-row--selected' : ''}`}
-        onClick={onSelect}
-      >
-        <span className="mp-processing-row-name">Performance Mode</span>
-        <input
-          checked={enabled}
-          onChange={toggleEnabled}
-          onClick={(event) => event.stopPropagation()}
-          type="checkbox"
-        />
+    <ProcessorRow
+      detailContainerNode={detailContainerNode}
+      enabled={enabled}
+      isSelected={isSelected}
+      name="Performance Mode"
+      onSelect={onSelect}
+      onToggleEnabled={toggleEnabled}
+    >
+      <div className="mp-processing-detail">
+        <div className="mp-processing-detail-header">
+          <span className="mp-processing-detail-title">Performance Mode</span>
+          <label className="mp-processing-detail-enable">
+            <input
+              checked={enabled}
+              onChange={toggleEnabled}
+              type="checkbox"
+            />
+            <span>{enabled ? 'On' : 'Off'}</span>
+          </label>
+        </div>
+
+        <p className="mp-processing-detail-description">
+          DJ-style compression, output limiting and loudness levelling — reduces
+          jumps in perceived volume between tracks and protects against
+          clipping. Drives the Compressor and Limiter below rather than a
+          separate copy of them.
+        </p>
+
+        <label className="mp-processing-setting">
+          <span>Compression</span>
+          <input
+            className="mp-processing-slider"
+            max={100}
+            min={0}
+            onChange={changeCompression}
+            type="range"
+            value={Math.round(compression * 100)}
+          />
+        </label>
+        <label className="mp-processing-setting mp-processing-setting--toggle">
+          <span>Output Protection</span>
+          <input
+            checked={protection}
+            onChange={toggleProtection}
+            type="checkbox"
+          />
+        </label>
+        <label className="mp-processing-setting mp-processing-setting--toggle">
+          <span>Loudness Normalise</span>
+          <input
+            checked={normalize}
+            onChange={toggleNormalize}
+            type="checkbox"
+          />
+        </label>
       </div>
-
-      {isSelected &&
-        detailContainerNode &&
-        createPortal(
-          <div className="mp-processing-detail">
-            <div className="mp-processing-detail-header">
-              <span className="mp-processing-detail-title">
-                Performance Mode
-              </span>
-              <label className="mp-processing-detail-enable">
-                <input
-                  checked={enabled}
-                  onChange={toggleEnabled}
-                  type="checkbox"
-                />
-                <span>{enabled ? 'On' : 'Off'}</span>
-              </label>
-            </div>
-
-            <p className="mp-processing-detail-description">
-              DJ-style compression, output limiting and loudness levelling —
-              reduces jumps in perceived volume between tracks and protects
-              against clipping.
-            </p>
-
-            <label className="mp-processing-setting">
-              <span>Compression</span>
-              <input
-                className="mp-processing-slider"
-                max={100}
-                min={0}
-                onChange={changeCompression}
-                type="range"
-                value={Math.round(compression * 100)}
-              />
-            </label>
-            <label className="mp-processing-setting mp-processing-setting--toggle">
-              <span>Output Protection</span>
-              <input
-                checked={protection}
-                onChange={toggleProtection}
-                type="checkbox"
-              />
-            </label>
-            <label className="mp-processing-setting mp-processing-setting--toggle">
-              <span>Loudness Normalise</span>
-              <input
-                checked={normalize}
-                onChange={toggleNormalize}
-                type="checkbox"
-              />
-            </label>
-          </div>,
-          detailContainerNode,
-        )}
-    </>
+    </ProcessorRow>
   );
 };
 

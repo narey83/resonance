@@ -38,19 +38,24 @@ import { act } from 'react-dom/test-utils';
 const SAMPLE_AMPLITUDE = 0.5;
 const EXPECTED_LABEL = 'live -6.7 LUFS';
 
-// Every node in the graph is only ever configured and connected, so one
-// shape covers the source, both filters and the gain.
+// Every plain node in the graph is only ever configured and connected, so
+// one shape covers the source, filters and gains.
+const stubParam = () => ({ setTargetAtTime: jest.fn(), value: 0 });
+
 const stubNode = () => ({
   connect: jest.fn(),
   disconnect: jest.fn(),
-  frequency: { value: 0 },
-  gain: { setTargetAtTime: jest.fn(), value: 1 },
+  frequency: stubParam(),
+  gain: { ...stubParam(), value: 1 },
+  Q: stubParam(),
   type: '',
 });
 
 // jsdom has no Web Audio, so there is nothing to spy on — and it has to be a
 // class rather than an arrow function because the graph module calls it with
-// `new`.
+// `new`. Covers everything mediaAudioGraph.js builds, including the DSP
+// processing rack (see lib/dsp/) — getMediaAudioGraph() always builds the
+// full chain, not just the analyser this component actually reads.
 class AudioContextStub {
   createAnalyser = () => ({
     connect: jest.fn(),
@@ -61,9 +66,33 @@ class AudioContextStub {
 
   createBiquadFilter = stubNode;
 
+  createChannelMerger = () => ({ connect: jest.fn(), disconnect: jest.fn() });
+
+  createChannelSplitter = () => ({
+    connect: jest.fn(),
+    disconnect: jest.fn(),
+  });
+
+  createDynamicsCompressor = () => ({
+    attack: stubParam(),
+    connect: jest.fn(),
+    disconnect: jest.fn(),
+    knee: stubParam(),
+    ratio: stubParam(),
+    release: stubParam(),
+    threshold: stubParam(),
+  });
+
   createGain = stubNode;
 
   createMediaElementSource = stubNode;
+
+  createWaveShaper = () => ({
+    connect: jest.fn(),
+    curve: null,
+    disconnect: jest.fn(),
+    oversample: '',
+  });
 
   currentTime = 0;
 

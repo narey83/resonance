@@ -27,18 +27,40 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { applyPreset, PRESETS } from '../../lib/dsp/presets';
+import { getMediaAudioGraph } from '../../lib/mediaAudioGraph';
+import CompressorView from './CompressorView';
+import EQView from './EQView';
+import FilterView from './FilterView';
+import LimiterView from './LimiterView';
 import PerformanceMode from './PerformanceMode';
+import SaturationView from './SaturationView';
+import StereoView from './StereoView';
 import { X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-// Launcher + modal for the player's Web Audio processing chain: a list of
-// processors on the left (just Performance Mode today — more can be added
-// as siblings later), the selected one's settings on the right. This shell
+// Every processor that can appear in the rack. Adding a new one is:
+// implement it under lib/dsp/, register it in mediaAudioGraph.js's chain,
+// add its view component, and add one entry here — this shell doesn't
+// need to change beyond that.
+const PROCESSORS = [
+  { Component: PerformanceMode, id: 'performance' },
+  { Component: EQView, id: 'eq' },
+  { Component: CompressorView, id: 'compressor' },
+  { Component: LimiterView, id: 'limiter' },
+  { Component: SaturationView, id: 'saturation' },
+  { Component: StereoView, id: 'stereo' },
+  { Component: FilterView, id: 'filter' },
+];
+
+// Launcher + modal for the player's Web Audio processing rack: a list of
+// processors on the left, the selected one's settings on the right, and a
+// preset dropdown that configures several processors at once. This shell
 // only tracks which processor is selected, whether the modal is open, and
-// an aggregate "is anything on" flag for the button — it has no idea what a
-// compressor or limiter is, that's each processor's own business (see
-// PerformanceMode.jsx).
+// an aggregate "is anything on" flag for the button — it has no idea what
+// a compressor or limiter is, that's each processor's own business (see
+// lib/dsp/ and each *View.jsx).
 //
 // The modal is always in the DOM (visibility toggled via CSS), not
 // conditionally mounted, so every processor stays alive and running
@@ -48,6 +70,7 @@ const AudioProcessing = ({ audioRef, targetLufs }) => {
   const [selectedId, setSelectedId] = useState('performance');
   const [activeById, setActiveById] = useState({});
   const [detailNode, setDetailNode] = useState(null);
+  const [presetId, setPresetId] = useState('');
 
   const setActive = (id, active) => {
     setActiveById((previous) =>
@@ -66,6 +89,24 @@ const AudioProcessing = ({ audioRef, targetLufs }) => {
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [open]);
+
+  const handleSelectPreset = (event) => {
+    const nextPresetId = event.target.value;
+    setPresetId(nextPresetId);
+    if (!nextPresetId) return;
+
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    applyPreset(getMediaAudioGraph(audio).dsp, nextPresetId);
+    // Presets act through the same processor instances every panel reads,
+    // so each panel's own subscription (enabled) and this shell's
+    // per-track effect (params, on next mount) pick the change up — this
+    // reset just clears the dropdown back to "choose a preset" rather than
+    // pretending to track which preset is still "active" after a manual
+    // tweak.
+    setPresetId('');
+  };
 
   return (
     <div className="mp-processing">
@@ -91,6 +132,22 @@ const AudioProcessing = ({ audioRef, targetLufs }) => {
           >
             <div className="mp-processing-modal-header">
               <span>Audio Processing</span>
+              <select
+                aria-label="Preset"
+                className="mp-processing-preset-select"
+                onChange={handleSelectPreset}
+                value={presetId}
+              >
+                <option value="">Preset…</option>
+                {PRESETS.map((preset) => (
+                  <option
+                    key={preset.id}
+                    value={preset.id}
+                  >
+                    {preset.name}
+                  </option>
+                ))}
+              </select>
               <button
                 className="mp-processing-modal-close hover-fx"
                 onClick={() => setOpen(false)}
@@ -103,14 +160,17 @@ const AudioProcessing = ({ audioRef, targetLufs }) => {
 
             <div className="mp-processing-modal-body">
               <div className="mp-processing-modal-list">
-                <PerformanceMode
-                  audioRef={audioRef}
-                  detailContainerNode={detailNode}
-                  isSelected={selectedId === 'performance'}
-                  onActiveChange={(active) => setActive('performance', active)}
-                  onSelect={() => setSelectedId('performance')}
-                  targetLufs={targetLufs}
-                />
+                {PROCESSORS.map(({ Component, id }) => (
+                  <Component
+                    audioRef={audioRef}
+                    detailContainerNode={detailNode}
+                    isSelected={selectedId === id}
+                    key={id}
+                    onActiveChange={(active) => setActive(id, active)}
+                    onSelect={() => setSelectedId(id)}
+                    targetLufs={id === 'performance' ? targetLufs : undefined}
+                  />
+                ))}
               </div>
 
               <div
