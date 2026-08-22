@@ -155,6 +155,15 @@ export const applyPreset = (dsp, presetId) => {
 
   const { config } = preset;
 
+  // Disabling Performance Mode FIRST, before configuring the granular
+  // processors below, matters: PerformanceProcessor.setEnabled(false) has
+  // its own side effect of disabling Compressor/Limiter (see its doc
+  // comment) — doing that AFTER this preset had already turned them on
+  // would silently undo the preset. Doing it first means whichever setting
+  // wins is always the preset's own, regardless of whether Performance
+  // Mode happened to be on going in.
+  dsp.performance.setEnabled(false);
+
   dsp.eq.setLow(config.eq.low);
   dsp.eq.setMid(config.eq.mid);
   dsp.eq.setHigh(config.eq.high);
@@ -178,10 +187,4 @@ export const applyPreset = (dsp, presetId) => {
   dsp.filter.setPosition(config.filter.position);
   dsp.filter.setResonance(config.filter.resonance);
   dsp.filter.setEnabled(config.filter.enabled);
-
-  // A preset always takes direct control of the granular processors above
-  // — Performance Mode's own toggle must be off so it can't clobber this
-  // the next time someone flips it (see PerformanceProcessor's doc comment
-  // on why it drives the same shared instances).
-  dsp.performance.setEnabled(false);
 };

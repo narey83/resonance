@@ -70,6 +70,31 @@ export class PerformanceProcessor {
     this.normalizeEnabled = true;
     this.compressionAmount = 0.5;
     this.targetLufs = null;
+    // Not an AudioProcessor subclass (see class doc), but the same
+    // problem applies: presets.js can flip `enabled` directly, and the
+    // panel showing this needs to hear about it — see EQProcessor etc.
+    // for the same pattern via AudioProcessor.subscribe().
+    this._listeners = new Set();
+  }
+
+  subscribe(listener) {
+    this._listeners.add(listener);
+    listener(this.snapshot());
+    return () => this._listeners.delete(listener);
+  }
+
+  snapshot() {
+    return {
+      compressionAmount: this.compressionAmount,
+      enabled: this.enabled,
+      normalizeEnabled: this.normalizeEnabled,
+      protectionEnabled: this.protectionEnabled,
+    };
+  }
+
+  _notify() {
+    const snap = this.snapshot();
+    for (const listener of this._listeners) listener(snap);
   }
 
   setEnabled(enabled) {
@@ -80,22 +105,26 @@ export class PerformanceProcessor {
     this.limiter.setEnabled(enabled && this.protectionEnabled);
     if (enabled) this.compressor.setAmount(this.compressionAmount);
     this._applyPreGain();
+    this._notify();
   }
 
   setCompressionAmount(amount) {
     this.compressionAmount = clamp(amount, 0, 1);
     if (this.enabled) this.compressor.setAmount(this.compressionAmount);
+    this._notify();
   }
 
   setOutputProtection(enabled) {
     this.protectionEnabled = enabled;
     if (this.enabled) this.limiter.setEnabled(enabled);
+    this._notify();
   }
 
   setLoudnessNormalize(enabled, targetLufs) {
     this.normalizeEnabled = enabled;
     this.targetLufs = targetLufs;
     if (this.enabled) this._applyPreGain();
+    this._notify();
   }
 
   _applyPreGain() {

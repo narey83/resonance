@@ -61,41 +61,42 @@ const PerformanceMode = ({
     prefs.get('mediaPlayer.performanceNormalize', true),
   );
 
+  // Params/enabled are restored once, centrally, when the graph is built
+  // (see mediaAudioGraph.js's restorePersistedState) — this just attaches
+  // to the already-initialized processor and mirrors its live state.
+  // Subscribing matters here specifically because presets.js can flip this
+  // processor's enabled/amount/protection directly (see presets.js) — this
+  // is what keeps the checkbox honest when that happens.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return undefined;
 
     const processor = getMediaAudioGraph(audio).dsp.performance;
     processorRef.current = processor;
-    processor.setCompressionAmount(compression);
-    processor.setOutputProtection(protection);
-    processor.setLoudnessNormalize(normalize, targetLufs);
-    processor.setEnabled(enabled);
 
-    return () => {
-      processor.dispose();
-      processorRef.current = null;
-    };
-    // Only the element identity should rebuild this — the parameter
-    // effects below handle every other change.
+    return processor.subscribe((snapshot) => {
+      setEnabled(snapshot.enabled);
+      setCompression(snapshot.compressionAmount);
+      setProtection(snapshot.protectionEnabled);
+      setNormalize(snapshot.normalizeEnabled);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioRef]);
 
-  useEffect(() => {
-    processorRef.current?.setEnabled(enabled);
-  }, [enabled]);
-
-  useEffect(() => {
-    processorRef.current?.setCompressionAmount(compression);
-  }, [compression]);
-
-  useEffect(() => {
-    processorRef.current?.setOutputProtection(protection);
-  }, [protection]);
+  useEffect(
+    () => () => processorRef.current?.dispose(),
+    // Bypass on unmount (track cleared, cast connected) — see
+    // PerformanceProcessor.dispose(). Runs once, on unmount only.
+    [],
+  );
 
   useEffect(() => {
     processorRef.current?.setLoudnessNormalize(normalize, targetLufs);
-  }, [normalize, targetLufs]);
+    // Only targetLufs needs to be reactive here — it changes on every
+    // track change independent of any user action. `normalize` itself is
+    // pushed directly from toggleNormalize below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetLufs]);
 
   useEffect(() => {
     onActiveChange?.(enabled);
@@ -107,6 +108,7 @@ const PerformanceMode = ({
     event?.stopPropagation();
     setEnabled((previous) => {
       const next = !previous;
+      processorRef.current?.setEnabled(next);
       prefs.set('mediaPlayer.performanceMode', next);
       return next;
     });
@@ -115,12 +117,14 @@ const PerformanceMode = ({
   const changeCompression = (event) => {
     const next = Number.parseInt(event.target.value, 10) / 100;
     setCompression(next);
+    processorRef.current?.setCompressionAmount(next);
     prefs.set('mediaPlayer.performanceCompression', next);
   };
 
   const toggleProtection = () => {
     setProtection((previous) => {
       const next = !previous;
+      processorRef.current?.setOutputProtection(next);
       prefs.set('mediaPlayer.performanceProtection', next);
       return next;
     });
@@ -129,6 +133,7 @@ const PerformanceMode = ({
   const toggleNormalize = () => {
     setNormalize((previous) => {
       const next = !previous;
+      processorRef.current?.setLoudnessNormalize(next, targetLufs);
       prefs.set('mediaPlayer.performanceNormalize', next);
       return next;
     });
