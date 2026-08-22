@@ -74,6 +74,7 @@ export const pauseJob = (jobId) => api.post(`/ytdlp/jobs/${jobId}/pause`);
 export const resumeJob = (jobId) => api.post(`/ytdlp/jobs/${jobId}/resume`);
 export const retryFailedTracks = (jobId) =>
   api.post(`/ytdlp/jobs/${jobId}/retry-failed`);
+export const retryAllFailed = () => api.post('/ytdlp/retry-all-failed');
 export const reconcileJob = (jobId) =>
   api.post(`/ytdlp/jobs/${jobId}/reconcile`);
 

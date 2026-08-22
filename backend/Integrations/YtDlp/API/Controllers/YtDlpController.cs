@@ -152,6 +152,13 @@ public class YtDlpController : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("retry-all-failed")]
+    public async Task<IActionResult> RetryAllFailed()
+    {
+        var jobsRetried = await Service.RetryAllFailedTracksAsync();
+        return Ok(new { jobsRetried });
+    }
+
     [HttpPost("jobs/{jobId:guid}/reconcile")]
     public async Task<IActionResult> ReconcileJob(Guid jobId)
     {

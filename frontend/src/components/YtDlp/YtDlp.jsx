@@ -35,7 +35,7 @@ import JobList from './JobList';
 import SearchPane from './SearchPane';
 import SubscriptionsPane from './SubscriptionsPane';
 import TagErrorList from './TagErrorList';
-import { AlertTriangle, Bell, List, ScrollText } from 'lucide-react';
+import { AlertTriangle, Bell, List, RotateCcw, ScrollText } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 
@@ -96,6 +96,20 @@ const handleRetryFailed = async (jobId) => {
     await ytdlp.retryFailedTracks(jobId);
   } catch (error) {
     toast.error(`Retry failed: ${error.message}`);
+  }
+};
+
+const handleRetryAllFailed = async () => {
+  try {
+    const res = await ytdlp.retryAllFailed();
+    const { jobsRetried } = res.data;
+    toast.success(
+      jobsRetried > 0
+        ? `Retrying failed tracks in ${jobsRetried} job${jobsRetried === 1 ? '' : 's'}`
+        : 'No failed tracks to retry',
+    );
+  } catch (error) {
+    toast.error(`Retry all failed: ${error.response?.data || error.message}`);
   }
 };
 
@@ -266,6 +280,8 @@ const YtDlp = ({ view }) => {
     0,
   );
 
+  const failedJobCount = jobs.filter((j) => j.failedTracks > 0).length;
+
   const handleTabChange = (tabId) => {
     if (tabId === 'events') setUnseenErrors(0);
     setActiveTab(tabId);
@@ -323,20 +339,38 @@ const YtDlp = ({ view }) => {
   const renderPanel = () => {
     if (activeTab === 'downloads')
       return (
-        <JobList
-          jobLogs={jobLogs}
-          jobs={jobs}
-          onCancel={handleCancelJob}
-          onPause={handlePauseJob}
-          onReconcile={handleReconcileJob}
-          onRemove={handleRemoveJob}
-          onResume={handleResumeJob}
-          onRetryFailed={handleRetryFailed}
-          onRetryJob={handleRetryJob}
-          onRetryTags={handleRetryTags}
-          onSubscribe={handleJobSubscribe}
-          subscriptions={subscriptions}
-        />
+        <>
+          {failedJobCount > 0 && (
+            <div className="ytdlp-downloads-toolbar">
+              <span className="ytdlp-events-count">
+                {failedJobCount} job{failedJobCount === 1 ? '' : 's'} with
+                failed tracks
+              </span>
+              <button
+                className="ytdlp-btn hover-fx"
+                onClick={handleRetryAllFailed}
+                title="Retry every failed track across all jobs"
+                type="button"
+              >
+                <RotateCcw size={13} /> Retry All Failed
+              </button>
+            </div>
+          )}
+          <JobList
+            jobLogs={jobLogs}
+            jobs={jobs}
+            onCancel={handleCancelJob}
+            onPause={handlePauseJob}
+            onReconcile={handleReconcileJob}
+            onRemove={handleRemoveJob}
+            onResume={handleResumeJob}
+            onRetryFailed={handleRetryFailed}
+            onRetryJob={handleRetryJob}
+            onRetryTags={handleRetryTags}
+            onSubscribe={handleJobSubscribe}
+            subscriptions={subscriptions}
+          />
+        </>
       );
     if (activeTab === 'subscriptions')
       return <SubscriptionsPane subscriptions={subscriptions} />;

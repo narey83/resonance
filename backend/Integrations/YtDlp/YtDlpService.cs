@@ -573,6 +573,20 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         }
     }
 
+    // Sweeps every job with at least one failed track, not just non-permanent ones like the
+    // background auto-retry sweep — this is an explicit user action, so it's allowed to retry
+    // things like age-restriction failures that only needed a cookie to be uploaded.
+    public async Task<int> RetryAllFailedTracksAsync()
+    {
+        var jobIds = jobs.Values.Where(j => j.FailedTracks > 0).Select(j => j.Id).ToList();
+        foreach (var jobId in jobIds)
+        {
+            await RetryFailedTracksAsync(jobId);
+        }
+
+        return jobIds.Count;
+    }
+
     public Task RetryTagWritingAsync(Guid trackId) => RewriteTagsAsync(trackId, overrides: null);
 
     public Task SetTrackTagsAsync(Guid trackId, string artist, string title, string? album)
