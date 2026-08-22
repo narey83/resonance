@@ -59,6 +59,12 @@ const UpnpStatusSection = ({ upnp }) => {
       .catch(() => {});
   }, [upnp?.isMapped]);
 
+  // A stale "Retry failed" message from an earlier click shouldn't linger once the
+  // background retry loop recovers the mapping on its own.
+  useEffect(() => {
+    if (upnp?.isMapped) setError(null);
+  }, [upnp?.isMapped]);
+
   if (!upnp?.isEnabled) {
     return null;
   }

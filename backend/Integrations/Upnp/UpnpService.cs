@@ -324,31 +324,38 @@ public class UpnpService : IDisposable
                     var mapping = await device.CreatePortMapAsync(
                         new Mapping(protocol, privatePort: port, publicPort: port, options.LeaseDuration, "resonance (Soulseek)"));
 
-                    // Some gateways (e.g. a NAT-PMP responder with no real backing implementation)
-                    // acknowledge the request without ever adding it to the NAT table, so a lack of
-                    // exception here isn't proof the mapping exists. Read it back to confirm.
-                    Mapping readBack;
-                    try
+                    // Some UPnP IGD implementations (SOAP) acknowledge AddPortMapping without ever
+                    // adding it to the NAT table, so a lack of exception here isn't proof the mapping
+                    // exists — read it back to confirm. NAT-PMP doesn't need this: its Map-port
+                    // response (RFC 6886) already *is* the router's authoritative confirmation, and
+                    // this gateway's NAT-PMP responder doesn't support querying mappings back out, so
+                    // a verification read here fails every time regardless of whether the mapping is
+                    // genuinely active.
+                    if (device.NatProtocol == NatProtocol.Upnp)
                     {
-                        readBack = await device.GetSpecificMappingAsync(protocol, port);
-                    }
-                    catch (Exception ex)
-                    {
-                        readBack = null;
-                        Log.Debug(ex, "Failed to verify UPnP mapping for port {Port} on {Gateway} ({NatProtocol}): {Message}", port, DeviceKey(device), device.NatProtocol, ex.Message);
-                    }
+                        Mapping readBack;
+                        try
+                        {
+                            readBack = await device.GetSpecificMappingAsync(protocol, port);
+                        }
+                        catch (Exception ex)
+                        {
+                            readBack = null;
+                            Log.Debug(ex, "Failed to verify UPnP mapping for port {Port} on {Gateway} ({NatProtocol}): {Message}", port, DeviceKey(device), device.NatProtocol, ex.Message);
+                        }
 
-                    // Lifetime == 0 means a permanent mapping; IsExpired() only means anything
-                    // for a leased one.
-                    if (readBack is null || (readBack.Lifetime != 0 && readBack.IsExpired()))
-                    {
-                        lastError = $"Gateway ({device.NatProtocol}) acknowledged the mapping request but it isn't present when read back";
-                        Log.Warning(
-                            "UPnP mapping for port {Port} on {Gateway} ({NatProtocol}) could not be verified after creation — treating as not mapped",
-                            port,
-                            DeviceKey(device),
-                            device.NatProtocol);
-                        continue;
+                        // Lifetime == 0 means a permanent mapping; IsExpired() only means anything
+                        // for a leased one.
+                        if (readBack is null || (readBack.Lifetime != 0 && readBack.IsExpired()))
+                        {
+                            lastError = $"Gateway ({device.NatProtocol}) acknowledged the mapping request but it isn't present when read back";
+                            Log.Warning(
+                                "UPnP mapping for port {Port} on {Gateway} ({NatProtocol}) could not be verified after creation — treating as not mapped",
+                                port,
+                                DeviceKey(device),
+                                device.NatProtocol);
+                            continue;
+                        }
                     }
 
                     anyMapped = true;
