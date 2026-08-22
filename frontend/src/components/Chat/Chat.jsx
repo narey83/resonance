@@ -50,7 +50,15 @@ import {
 } from './chatUtils';
 import SendMessageModal from './SendMessageModal';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Globe, Languages, MessageSquare, Plus, Send, X } from 'lucide-react';
+import {
+  Globe,
+  Languages,
+  MessageSquare,
+  Plus,
+  Reply,
+  Send,
+  X,
+} from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
@@ -520,6 +528,16 @@ const Chat = ({ history, location }) => {
     [message],
   );
 
+  const handleReply = useCallback(
+    (msg) => {
+      if (!msg) return;
+      const label = msg.direction === 'Out' ? 'You' : msg.username || active;
+      setMessage((previous) => `${previous}[${label}] ${msg.message} --> `);
+      setTimeout(() => inputRef.current?.focus(), 0);
+    },
+    [active],
+  );
+
   const deleteConversation = useCallback(
     async (username) => {
       try {
@@ -946,6 +964,19 @@ const Chat = ({ history, location }) => {
                                 <span className="chat-bubble-time">
                                   {formatTime(item.msg.timestamp)}
                                 </span>
+                              </div>
+                              <div className="chat-msg-actions">
+                                <button
+                                  className="chat-msg-action-btn hover-fx"
+                                  onClick={() => handleReply(item.msg)}
+                                  title="Reply"
+                                  type="button"
+                                >
+                                  <Reply
+                                    size={13}
+                                    strokeWidth={2}
+                                  />
+                                </button>
                               </div>
                             </div>
                           )}

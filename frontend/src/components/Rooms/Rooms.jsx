@@ -50,6 +50,7 @@ import {
   Languages,
   LogOut,
   Plus,
+  Reply,
   Search as SearchIcon,
   Send,
   Users,
@@ -480,14 +481,18 @@ const Rooms = ({ history }) => {
     setContextMenu({ left: event.clientX, top: event.clientY, msg });
   }, []);
 
-  const handleReply = useCallback(() => {
-    setMessage(
-      (previous) =>
-        `${previous}[${contextMenu.msg.username}] ${contextMenu.msg.message} --> `,
-    );
-    setContextMenu(null);
-    setTimeout(() => inputRef.current?.focus(), 0);
-  }, [contextMenu]);
+  const handleReply = useCallback(
+    (msg) => {
+      const target = msg || contextMenu?.msg;
+      if (!target) return;
+      setMessage(
+        (previous) => `${previous}[${target.username}] ${target.message} --> `,
+      );
+      setContextMenu(null);
+      setTimeout(() => inputRef.current?.focus(), 0);
+    },
+    [contextMenu],
+  );
 
   const handleUserProfile = useCallback(() => {
     history.push('/users', { user: contextMenu.msg.username });
@@ -905,6 +910,19 @@ const Rooms = ({ history }) => {
                             </button>
                           )}
                         </div>
+                        <div className="room-msg-actions">
+                          <button
+                            className="room-msg-action-btn hover-fx"
+                            onClick={() => handleReply(m)}
+                            title="Reply"
+                            type="button"
+                          >
+                            <Reply
+                              size={13}
+                              strokeWidth={2}
+                            />
+                          </button>
+                        </div>
                       </div>
                     );
                   })
@@ -994,7 +1012,7 @@ const Rooms = ({ history }) => {
           <div className="chat-ctx-username">{contextMenu.msg.username}</div>
           <button
             className="chat-ctx-item"
-            onClick={handleReply}
+            onClick={() => handleReply(contextMenu.msg)}
             type="button"
           >
             Reply

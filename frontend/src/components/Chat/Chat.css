@@ -248,6 +248,47 @@
   margin-bottom: 3px;
 }
 
+/* Per-message hover controls */
+.chat-msg-actions {
+  position: absolute;
+  top: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s;
+}
+
+.chat-msg-row:not(.chat-msg-row--self) .chat-msg-actions {
+  right: -32px;
+}
+
+.chat-msg-row--self .chat-msg-actions {
+  left: -32px;
+}
+
+.chat-msg-row:hover .chat-msg-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.chat-msg-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 50%;
+  transition: background 0.1s, color 0.1s;
+}
+
+.chat-msg-action-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--accent);
+}
+
 .chat-msg-row--self {
   flex-direction: row-reverse;
 }
@@ -277,6 +318,7 @@
   flex-direction: column;
   max-width: 62%;
   gap: 3px;
+  position: relative;
 }
 
 .chat-msg-row--self .chat-bubble-col {
