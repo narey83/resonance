@@ -1879,21 +1879,34 @@ namespace resonance
                         {
                             ctx.Database.ExecuteSqlRaw("ALTER TABLE transfers.\"Transfers\" ADD COLUMN IF NOT EXISTS \"RetryOfId\" uuid");
 
-                            // Postgres has no ADD CONSTRAINT IF NOT EXISTS, so a rerun on an
-                            // already-migrated DB is expected to throw here; that's caught and ignored.
-                            // NOT VALID skips checking the (currently all-NULL, since the column is
-                            // brand new) existing rows -- a full-table scan this shared, resource-
-                            // constrained Postgres host doesn't need just to reconfirm something already
-                            // implied by every row being NULL.
-                            try
+                            // Postgres has no ADD CONSTRAINT IF NOT EXISTS, so this used to just
+                            // attempt the ALTER unconditionally and swallow the expected failure on
+                            // every startup after the first. The app-level catch made that harmless,
+                            // but EF Core's own command-diagnostics logging still emitted a real ERR
+                            // line for the failed DbCommand on every single restart, forever -- a
+                            // false-positive error baked into the log on every deploy. Checking first
+                            // means the ALTER (and that noise) only happens the one time it's needed.
+                            var constraintExists = ctx.Database
+                                .SqlQueryRaw<int>("SELECT 1 FROM pg_constraint WHERE conname = 'FK_Transfers_Transfers_RetryOfId'")
+                                .AsEnumerable()
+                                .Any();
+
+                            if (!constraintExists)
                             {
-                                ctx.Database.ExecuteSqlRaw(
-                                    "ALTER TABLE transfers.\"Transfers\" ADD CONSTRAINT \"FK_Transfers_Transfers_RetryOfId\" " +
-                                    "FOREIGN KEY (\"RetryOfId\") REFERENCES transfers.\"Transfers\" (\"Id\") ON DELETE RESTRICT NOT VALID");
-                            }
-                            catch (Exception)
-                            {
-                                // constraint already exists
+                                // NOT VALID skips checking the (currently all-NULL, since the column
+                                // is brand new) existing rows -- a full-table scan this shared,
+                                // resource-constrained Postgres host doesn't need just to reconfirm
+                                // something already implied by every row being NULL.
+                                try
+                                {
+                                    ctx.Database.ExecuteSqlRaw(
+                                        "ALTER TABLE transfers.\"Transfers\" ADD CONSTRAINT \"FK_Transfers_Transfers_RetryOfId\" " +
+                                        "FOREIGN KEY (\"RetryOfId\") REFERENCES transfers.\"Transfers\" (\"Id\") ON DELETE RESTRICT NOT VALID");
+                                }
+                                catch (Exception)
+                                {
+                                    // lost a race with another concurrent caller adding it -- fine, it exists now either way
+                                }
                             }
                         }
                         else
