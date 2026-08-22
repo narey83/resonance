@@ -321,9 +321,7 @@ const MediaPlayer = () => {
   const [seekerZoom, setSeekerZoom] = useState(() =>
     prefs.get('mediaPlayer.seekerZoom', 1),
   );
-  const [waveformReady, setWaveformReady] = useState(false);
   const [waveformAnalysing, setWaveformAnalysing] = useState(false);
-  const [miniWaveformReady, setMiniWaveformReady] = useState(false);
   const [miniWaveformAnalysing, setMiniWaveformAnalysing] = useState(false);
   const [showCast, setShowCast] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -1081,17 +1079,14 @@ const MediaPlayer = () => {
                 )}
               </div>
 
-              <div className="mp-expanded-scrub-row">
-                <span className="mp-expanded-time">
-                  {formatSeconds(effectiveTime)}
-                </span>
+              <div className="mp-expanded-scrub-stack">
                 {seekerEnabled && (
                   <WaveformSeekBar
                     duration={displayDuration}
                     getCurrentTime={getCurrentTime}
                     height={seekerHeight}
                     onAnalysing={setWaveformAnalysing}
-                    onReady={setWaveformReady}
+                    onReady={() => {}}
                     onScratchEnd={handleScratchEnd}
                     onScratchMove={handleScratchMove}
                     onScratchStart={handleScratchStart}
@@ -1101,38 +1096,40 @@ const MediaPlayer = () => {
                     zoom={seekerZoom}
                   />
                 )}
-                <div
-                  aria-label="Seek"
-                  aria-valuemax={displayDuration}
-                  aria-valuemin={0}
-                  aria-valuenow={effectiveTime}
-                  className="mp-expanded-scrubber"
-                  onClick={handleSeek}
-                  onKeyDown={handleSeekKey}
-                  role="slider"
-                  style={{
-                    display: seekerEnabled && waveformReady ? 'none' : 'block',
-                  }}
-                  tabIndex={0}
-                >
+                <div className="mp-expanded-scrub-row">
+                  <span className="mp-expanded-time">
+                    {formatSeconds(effectiveTime)}
+                  </span>
                   <div
-                    className="media-player-scrubber-buffered"
-                    style={{ width: `${bufferedPct}%` }}
-                  />
-                  <div
-                    className="media-player-scrubber-fill"
-                    style={{ width: `${progressPct}%` }}
-                  />
-                  {seekerEnabled && waveformAnalysing && (
-                    <span className="mp-scrubber-analysing">
-                      <span className="media-player-spinner media-player-spinner--sm" />
-                      Analyzing waveform…
-                    </span>
-                  )}
+                    aria-label="Seek"
+                    aria-valuemax={displayDuration}
+                    aria-valuemin={0}
+                    aria-valuenow={effectiveTime}
+                    className="mp-expanded-scrubber"
+                    onClick={handleSeek}
+                    onKeyDown={handleSeekKey}
+                    role="slider"
+                    tabIndex={0}
+                  >
+                    <div
+                      className="media-player-scrubber-buffered"
+                      style={{ width: `${bufferedPct}%` }}
+                    />
+                    <div
+                      className="media-player-scrubber-fill"
+                      style={{ width: `${progressPct}%` }}
+                    />
+                    {seekerEnabled && waveformAnalysing && (
+                      <span className="mp-scrubber-analysing">
+                        <span className="media-player-spinner media-player-spinner--sm" />
+                        Analyzing waveform…
+                      </span>
+                    )}
+                  </div>
+                  <span className="mp-expanded-time">
+                    {formatSeconds(displayDuration)}
+                  </span>
                 </div>
-                <span className="mp-expanded-time">
-                  {formatSeconds(displayDuration)}
-                </span>
               </div>
 
               <div className="mp-seeker-menu">
@@ -1353,7 +1350,7 @@ const MediaPlayer = () => {
             getCurrentTime={getCurrentTime}
             height={seekerHeight}
             onAnalysing={setMiniWaveformAnalysing}
-            onReady={setMiniWaveformReady}
+            onReady={() => {}}
             onScratchEnd={handleScratchEnd}
             onScratchMove={handleScratchMove}
             onScratchStart={handleScratchStart}
@@ -1374,9 +1371,6 @@ const MediaPlayer = () => {
           onMouseLeave={handleScrubLeave}
           onMouseMove={handleScrubMove}
           role="slider"
-          style={{
-            display: seekerEnabled && miniWaveformReady ? 'none' : 'block',
-          }}
           tabIndex={0}
         >
           <div
