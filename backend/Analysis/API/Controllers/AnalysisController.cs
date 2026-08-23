@@ -147,7 +147,7 @@ namespace resonance.Analysis.API
             return Ok(new WaveformResponse(
                 data.NumBars, data.OverallPeaks, data.LowPeaks, data.MidPeaks, data.HighPeaks,
                 beatInfo.BeatOffsetSeconds, beatInfo.Beats, beatInfo.DownbeatOffsetSeconds, beatInfo.DownbeatConfidence,
-                data.DurationSeconds));
+                data.DurationSeconds, data.SampleRate, data.WaveformVersion));
         }
 
         /// <summary>Returns EBU R128 loudness for a local file, analysing it if not cached.</summary>

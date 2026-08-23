@@ -576,9 +576,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, [playQueue]);
 
   useEffect(() => {
-    if (storeAccessToken) buildAndroidAutoTree();
-    else clearAndroidAutoTree();
-   
+    // The browse tree is served from the same native service/session that setupPlayer binds, so
+    // pushing it before that bind completes throws "player not initialized" (RNTP rejects
+    // setBrowseTree until its service connection is up). ensurePlayerSetup() is memoised, so this
+    // just awaits whichever caller (UI or the headless service) started it first.
+    ensurePlayerSetup()
+      .then(() => (storeAccessToken ? buildAndroidAutoTree() : clearAndroidAutoTree()))
+      .catch(() => { /* player unavailable; androidAuto's push() logs specifics */ });
   }, [storeAccessToken]);
 
   const lovedPaths = useLibraryActivityStore((s) => s.lovedPaths);

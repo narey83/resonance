@@ -62,6 +62,13 @@ namespace resonance.Analysis
     {
         public const int SampleRate = 44100;
 
+        // Bumped whenever a change to ComputeBands/BarBounds would make a previously-stored
+        // waveform's bar content wrong for the current rendering assumptions (e.g. another
+        // bucketing fix like b545beb) — NOT for unrelated changes elsewhere in this class.
+        // A stored row with no version (every row analysed before this existed) is treated as
+        // LegacyValid, not Stale — see AnalysisValidity.
+        public const int CurrentWaveformVersion = 1;
+
         private const int TargetDsRate = 6_000;       // downsample rate for band filters
 
         // Bars scale with track length (~5ms/bar) rather than a fixed count, so a 10-minute
@@ -356,7 +363,12 @@ namespace resonance.Analysis
             if (metrics.HasFlag(AnalysisMetrics.Waveform))
             {
                 waveform = ComputeBands(pcm, SampleRate, BarsForDuration(pcm.Length, SampleRate))
-                    with { DurationSeconds = pcm.Length / (double)SampleRate };
+                    with
+                    {
+                        DurationSeconds = pcm.Length / (double)SampleRate,
+                        SampleRate = SampleRate,
+                        WaveformVersion = CurrentWaveformVersion,
+                    };
             }
 
             uint? bpm = null;

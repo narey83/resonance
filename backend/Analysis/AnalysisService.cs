@@ -617,14 +617,25 @@ namespace resonance.Analysis
 
                     foreach (var t in tracks)
                     {
-                        if (request.Metrics.HasFlag(AnalysisMetrics.Bpm) && t.HasBpm)
+                        // A file mid-upload to a Soulseek peer can hold a lock that briefly denies
+                        // this a write handle — on a full-library reset that's not a rare edge
+                        // case, it's expected to happen at least once. One inaccessible file
+                        // failing here must not abort the reset for the other tens of thousands.
+                        try
                         {
-                            ClearBpm(t.MaskedFilename);
-                        }
+                            if (request.Metrics.HasFlag(AnalysisMetrics.Bpm) && t.HasBpm)
+                            {
+                                ClearBpm(t.MaskedFilename);
+                            }
 
-                        if (request.Metrics.HasFlag(AnalysisMetrics.Key) && t.HasKey)
+                            if (request.Metrics.HasFlag(AnalysisMetrics.Key) && t.HasKey)
+                            {
+                                ClearKey(t.MaskedFilename);
+                            }
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
                         {
-                            ClearKey(t.MaskedFilename);
+                            Log.Warning("Could not clear tags for '{File}' during reset: {Error}", t.Filename, ex.Message);
                         }
                     }
 

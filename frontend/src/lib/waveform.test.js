@@ -34,7 +34,6 @@ import {
   expectedBeats,
   firstGridLineAt,
   resamplePeaks,
-  resolveWaveformDuration,
   visibleBeats,
   waveColours,
 } from './waveform';
@@ -124,7 +123,12 @@ describe('expectedBeats', () => {
     // Start just before `offset` itself so the range covers indices 0..4
     // exactly, without also picking up earlier ghost beats the formula
     // legitimately extrapolates backward from the offset (negative indices).
-    const ghosts = expectedBeats(offset, BEAT, offset - 1e-6, offset + 4.5 * BEAT);
+    const ghosts = expectedBeats(
+      offset,
+      BEAT,
+      offset - 1e-6,
+      offset + 4.5 * BEAT,
+    );
     expect(ghosts).toHaveLength(5);
     for (const [index, time] of ghosts.entries()) {
       expect(time).toBeCloseTo(offset + index * BEAT, 9);
@@ -181,7 +185,9 @@ describe('expectedBeats', () => {
     const offset = 2.137;
     const wholeTrack = expectedBeats(offset, BEAT, 0, 200);
     const zoomedWindow = expectedBeats(offset, BEAT, 80, 90); // scrolled + zoomed in
-    const fromWholeTrack = wholeTrack.filter((t) => t >= 80 && t < 90);
+    const fromWholeTrack = wholeTrack
+      .filter((t) => t >= 80)
+      .filter((t) => t < 90);
     expect(zoomedWindow).toEqual(fromWholeTrack);
   });
 
@@ -239,8 +245,12 @@ describe('compareBeats', () => {
   });
 
   it('reports ~zero error when the detector stays on the theoretical grid', () => {
-    const { maxAbsErrorSeconds, meanAbsErrorSeconds, skippedBeats, extraBeats } =
-      compareBeats(onGrid(30), bpm, offset);
+    const {
+      maxAbsErrorSeconds,
+      meanAbsErrorSeconds,
+      skippedBeats,
+      extraBeats,
+    } = compareBeats(onGrid(30), bpm, offset);
     expect(meanAbsErrorSeconds).toBeCloseTo(0, 6);
     expect(maxAbsErrorSeconds).toBeCloseTo(0, 6);
     expect(skippedBeats).toBe(0);
@@ -249,11 +259,8 @@ describe('compareBeats', () => {
 
   it('flags a skipped beat as an index gap without cascading into later beats', () => {
     const beats = onGrid(20).filter((_, index) => index !== 5);
-    const { count, skippedBeats, extraBeats, maxAbsErrorSeconds } = compareBeats(
-      beats,
-      bpm,
-      offset,
-    );
+    const { count, skippedBeats, extraBeats, maxAbsErrorSeconds } =
+      compareBeats(beats, bpm, offset);
     expect(count).toBe(19);
     expect(skippedBeats).toBe(1);
     expect(extraBeats).toBe(0);
@@ -263,7 +270,11 @@ describe('compareBeats', () => {
   it('flags an inserted extra beat as a non-positive index gap', () => {
     const beats = onGrid(20);
     beats.splice(5, 0, offset + 4.5 * beat);
-    const { count, skippedBeats, extraBeats } = compareBeats(beats, bpm, offset);
+    const { count, skippedBeats, extraBeats } = compareBeats(
+      beats,
+      bpm,
+      offset,
+    );
     expect(count).toBe(21);
     expect(skippedBeats).toBe(0);
     expect(extraBeats).toBe(1);
@@ -315,79 +326,6 @@ describe('resamplePeaks', () => {
     const out = resamplePeaks(spike(4), 16);
     expect(Math.max(...out)).toBeCloseTo(1);
     expect(out.filter((v) => v > 0).length).toBeLessThanOrEqual(4);
-  });
-});
-
-describe('resolveWaveformDuration', () => {
-  // Real values captured from "Cordial" (Z.I.P.P.O & Hiver), a VBR MP3 whose
-  // HTMLAudioElement.duration Chromium revises upward across playback while
-  // currentTime stays accurate — the bug this function fixes.
-  const analysisDuration = 400.704_4;
-  const trackLength = 400.728;
-  const initialAudioDuration = 400.704;
-  const finalAudioDuration = 402.361_7;
-
-  it('prefers the analysis duration when present, regardless of audio.duration', () => {
-    expect(
-      resolveWaveformDuration(
-        analysisDuration,
-        trackLength,
-        initialAudioDuration,
-      ),
-    ).toBe(analysisDuration);
-    expect(
-      resolveWaveformDuration(
-        analysisDuration,
-        trackLength,
-        finalAudioDuration,
-      ),
-    ).toBe(analysisDuration);
-  });
-
-  it('does not change when audio.duration is revised mid-playback (the durationchange bug)', () => {
-    const atStart = resolveWaveformDuration(
-      analysisDuration,
-      trackLength,
-      initialAudioDuration,
-    );
-    const atEnd = resolveWaveformDuration(
-      analysisDuration,
-      trackLength,
-      finalAudioDuration,
-    );
-    expect(atEnd).toBe(atStart);
-  });
-
-  it('falls back to track length when no analysis duration is stored yet', () => {
-    expect(resolveWaveformDuration(null, trackLength, finalAudioDuration)).toBe(
-      trackLength,
-    );
-    expect(
-      resolveWaveformDuration(undefined, trackLength, finalAudioDuration),
-    ).toBe(trackLength);
-  });
-
-  it('falls back to audio.duration only as a last resort', () => {
-    expect(resolveWaveformDuration(null, null, finalAudioDuration)).toBe(
-      finalAudioDuration,
-    );
-    expect(resolveWaveformDuration(undefined, undefined, 123.45)).toBe(123.45);
-  });
-
-  it('treats zero, negative, and non-finite values as absent at every tier', () => {
-    expect(resolveWaveformDuration(0, trackLength, finalAudioDuration)).toBe(
-      trackLength,
-    );
-    expect(resolveWaveformDuration(-5, trackLength, finalAudioDuration)).toBe(
-      trackLength,
-    );
-    expect(resolveWaveformDuration(Number.NaN, 0, finalAudioDuration)).toBe(
-      finalAudioDuration,
-    );
-    expect(resolveWaveformDuration(null, null, Number.POSITIVE_INFINITY)).toBe(
-      0,
-    );
-    expect(resolveWaveformDuration(null, null, 0)).toBe(0);
   });
 });
 

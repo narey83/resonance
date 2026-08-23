@@ -27,6 +27,14 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import {
+  analysisToPlaybackTime,
+  pixelToTime,
+  playbackToAnalysisTime,
+  resolveBeatAvailability,
+  resolveWaveformDuration,
+  timeToPixel,
+} from '../../lib/analysisTimeline';
 import api from '../../lib/api';
 import { analyzeTrack } from '../../lib/musicLibrary';
 import { formatSeconds } from '../../lib/util';
@@ -36,7 +44,6 @@ import {
   firstGridLineAt,
   maxOf,
   resamplePeaks,
-  resolveWaveformDuration,
   waveColours,
 } from '../../lib/waveform';
 import { primeWaveformCache } from '../Shared/WaveformPreview';
@@ -127,9 +134,11 @@ const WaveformSeekBar = ({
         // library rows' cache rather than let them keep showing "not analysed".
         primeWaveformCache(track.path, data);
 
+        const beatAvailability = resolveBeatAvailability(data);
         peaksRef.current = {
           analysisDuration: data.analysisDuration || null,
-          beatOffsetSeconds: data.beatOffsetSeconds || 0,
+          beatOffsetSeconds: beatAvailability.offsetSeconds,
+          beatsKnown: beatAvailability.known,
           overall: new Float32Array(data.overallPeaks),
         };
         setReady(true);
@@ -219,9 +228,12 @@ const WaveformSeekBar = ({
     // played/unplayed boundary visibly step rather than move smoothly. This
     // runs inside a requestAnimationFrame loop (below), so it's cheap to
     // read every frame.
+    // The playback clock (audio.currentTime) is converted to the analysis timeline right here,
+    // at the one point it enters waveform-positioning code — nothing downstream of `liveTime`
+    // touches audio.currentTime directly.
     const liveTime =
       getCurrentTime && waveformDuration
-        ? getCurrentTime()
+        ? playbackToAnalysisTime(getCurrentTime())
         : (progressPct / 100) * waveformDuration;
 
     // Pre-resample the whole track once, at a few grid "atoms" per drawn bar at
@@ -306,8 +318,16 @@ const WaveformSeekBar = ({
     const slots = numberSlots + 1;
     const drawStart = snappedSlot * slotSeconds;
     const drawEnd = drawStart + slots * slotSeconds;
-    const startFrac = waveformDuration ? drawStart / waveformDuration : 0;
-    const endFrac = waveformDuration ? drawEnd / waveformDuration : 1;
+    // A fraction of the stored array is the same time/duration relationship as a pixel
+    // position, just measured against a width of 1 instead of the canvas — timeToPixel(t,
+    // duration, 1) reduces to t/duration, so this stays the one canonical mapping rather than
+    // a parallel division.
+    const startFrac = waveformDuration
+      ? timeToPixel(drawStart, waveformDuration, 1)
+      : 0;
+    const endFrac = waveformDuration
+      ? timeToPixel(drawEnd, waveformDuration, 1)
+      : 1;
     // Resample the window from the cached grid (fullSlots), not the raw peaks
     // — this aggregates an already-quantised, per-frame-stable set of "atoms"
     // rather than freshly re-aggregating raw high-resolution samples, which is
@@ -320,10 +340,19 @@ const WaveformSeekBar = ({
     context.translate(-offsetPx, 0);
     const halfH = pixelHeight / 2;
     const pixelsPerSecond = barWidth / slotSeconds;
+    // The pixel width the current [drawStart, drawEnd) window is actually drawn across —
+    // `numberSlots`, not the `slots` overdraw count, matches `pixelsPerSecond` above exactly.
+    // Paired with `windowDuration`, this is the (duration, width) span every position in this
+    // window converts through via timeToPixel — the playhead and the beat grid below both use
+    // it rather than each recomputing time*pixelsPerSecond independently.
+    const windowWidthPx = numberSlots * barWidth;
     // Exact fractional playhead position. Colouring whole bars played/unplayed
     // instead (what this used to do) quantises the boundary to a bar, i.e. to
     // ~half a second of audio at zoom 1 — the played edge visibly hopped.
-    const playedX = Math.max(0, (liveTime - drawStart) * pixelsPerSecond);
+    const playedX = Math.max(
+      0,
+      timeToPixel(liveTime - drawStart, windowDuration, windowWidthPx),
+    );
     const clipToPlayed = () => {
       context.beginPath();
       context.rect(0, 0, playedX, pixelHeight);
@@ -334,11 +363,12 @@ const WaveformSeekBar = ({
     // light and AMOLED each get a palette that suits the panel they're drawn on.
     const colours = getColours(canvas);
 
-    // Beat grid, anchored to the first detected beat (from BPM analysis) rather
-    // than to track start — a silent or non-rhythmic intro before the beat
-    // locks in would otherwise offset every line by a constant amount for the
-    // whole track even with a perfectly correct BPM.
+    // Beat grid, anchored to the first REAL detected beat. Drawn only when beat analysis
+    // actually exists for this track (peaks.beatsKnown) — a BPM tag alone (track?.bpm) is not
+    // beat analysis, and previously drew a confident-looking grid anchored at a fabricated
+    // phase of 0 for tracks that had never had real beat detection run at all.
     const drawBeatGrid = () => {
+      if (!peaks.beatsKnown) return;
       // One line per beat at zoom 1 is a line every pixel or two — a second
       // comb at almost exactly the waveform's own period, which is where the
       // crawling Moiré came from. Widen to bar/phrase lines, or drop the grid.
@@ -348,7 +378,7 @@ const WaveformSeekBar = ({
         8 * dprScale,
       );
       if (!lineSeconds) return;
-      const phase = beatGridPhase(peaks.beatOffsetSeconds || 0, lineSeconds);
+      const phase = beatGridPhase(peaks.beatOffsetSeconds, lineSeconds);
       const firstBeat = firstGridLineAt(phase, lineSeconds, drawStart);
       context.save();
       context.strokeStyle = colours.grid;
@@ -357,7 +387,11 @@ const WaveformSeekBar = ({
         // Whole-pixel snapping only where the view is static — under a
         // scrolling sub-pixel offset it would make the grid jitter against
         // the bars it is supposed to line up with.
-        const rawX = (time - drawStart) * pixelsPerSecond;
+        const rawX = timeToPixel(
+          time - drawStart,
+          windowDuration,
+          windowWidthPx,
+        );
         const x = offsetPx ? rawX : Math.round(rawX) + 0.5;
         context.beginPath();
         context.moveTo(x, 0);
@@ -418,12 +452,14 @@ const WaveformSeekBar = ({
     return Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
   };
 
-  // Maps a fraction across the canvas to a track time, through whatever
-  // window is currently visible (the whole track at zoom=1, a following
-  // sub-range at zoom>1). Used for plain click/drag-to-seek.
+  // Maps a fraction across the canvas to an analysis-timeline time, through whatever window is
+  // currently visible (the whole track at zoom=1, a following sub-range at zoom>1). Used for
+  // plain click/drag-to-seek. `fraction` is a pixel position measured against a width of 1 —
+  // pixelToTime(fraction, windowDuration, 1) is the same canonical mapping as everywhere else,
+  // just relative to the window's own start.
   const timeFromFraction = (fraction) => {
     const { end, start } = windowRef.current;
-    return start + fraction * (end - start);
+    return start + pixelToTime(fraction, end - start, 1);
   };
 
   // Scratching needs a fixed, zoom-independent sensitivity — grabbing the
@@ -435,6 +471,10 @@ const WaveformSeekBar = ({
   const SCRATCH_PIXELS_PER_SECOND = 400;
   const dragStartRef = useRef({ clientX: 0, time: 0 });
 
+  // `dragStartRef.current.time` and every value derived from it below stay on the analysis
+  // timeline until the moment they're actually handed to onSeek/onScratch* — the single point
+  // each converts to the playback clock via analysisToPlaybackTime, matching the pixel ->
+  // pixelToTime -> analysis time -> analysisToPlaybackTime -> audio.currentTime chain.
   const handlePointerDown = (event) => {
     if (!waveformDuration) return;
     draggingRef.current = true;
@@ -442,9 +482,9 @@ const WaveformSeekBar = ({
     const time = timeFromFraction(fractionFromEvent(event));
     if (onScratchStart) {
       dragStartRef.current = { clientX: event.clientX, time };
-      onScratchStart(time);
+      onScratchStart(analysisToPlaybackTime(time));
     } else {
-      onSeek(time);
+      onSeek(analysisToPlaybackTime(time));
     }
   };
 
@@ -456,14 +496,13 @@ const WaveformSeekBar = ({
       const deltaTime =
         (event.clientX - dragStartRef.current.clientX) /
         SCRATCH_PIXELS_PER_SECOND;
-      onScratchMove(
-        Math.max(
-          0,
-          Math.min(waveformDuration, dragStartRef.current.time + deltaTime),
-        ),
+      const time = Math.max(
+        0,
+        Math.min(waveformDuration, dragStartRef.current.time + deltaTime),
       );
+      onScratchMove(analysisToPlaybackTime(time));
     } else {
-      onSeek(timeFromFraction(fraction));
+      onSeek(analysisToPlaybackTime(timeFromFraction(fraction)));
     }
   };
 
@@ -474,12 +513,11 @@ const WaveformSeekBar = ({
     const deltaTime =
       (event.clientX - dragStartRef.current.clientX) /
       SCRATCH_PIXELS_PER_SECOND;
-    onScratchEnd(
-      Math.max(
-        0,
-        Math.min(waveformDuration, dragStartRef.current.time + deltaTime),
-      ),
+    const time = Math.max(
+      0,
+      Math.min(waveformDuration, dragStartRef.current.time + deltaTime),
     );
+    onScratchEnd(analysisToPlaybackTime(time));
   };
 
   // Keyboard seek parity with the plain scrubber bar (±5s) — the canvas has
@@ -488,9 +526,13 @@ const WaveformSeekBar = ({
   const handleKeyDown = (event) => {
     if (!waveformDuration) return;
     const current = (progressPct / 100) * waveformDuration;
-    if (event.key === 'ArrowRight')
-      onSeek(Math.min(current + 5, waveformDuration));
-    if (event.key === 'ArrowLeft') onSeek(Math.max(current - 5, 0));
+    if (event.key === 'ArrowRight') {
+      onSeek(analysisToPlaybackTime(Math.min(current + 5, waveformDuration)));
+    }
+
+    if (event.key === 'ArrowLeft') {
+      onSeek(analysisToPlaybackTime(Math.max(current - 5, 0)));
+    }
   };
 
   // Not ready yet — the caller keeps its plain scrubber live and seekable in the

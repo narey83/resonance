@@ -29,6 +29,10 @@
 
 // Shared waveform rendering, so the library preview, the analysis row viewer and
 // the player's seek bar all draw a track the same way.
+//
+// Duration resolution and time<->pixel conversion live in ./analysisTimeline.js instead of
+// here — that module is the single authority for how a moment on the analysis timeline maps
+// to a pixel (or vice versa); this file only turns already-resolved values into drawn pixels.
 
 // Canvas can't read a CSS variable, so the band blend mode arrives as text like
 // any other theme token — a typo there would silently break the blending, so
@@ -318,45 +322,6 @@ export const maxOf = (array) => {
   let max = 0;
   for (const v of array) if (v > max) max = v;
   return max || 1;
-};
-
-/**
- * Picks the duration the waveform/playhead/beat-grid should be laid out against.
- *
- * `HTMLAudioElement.duration` is not a stable value for every format: a browser can revise a
- * streamed, variable-bitrate file's duration upward across several `durationchange` events as
- * more of it downloads, while `currentTime` stays accurate throughout. Since the stored waveform
- * bars are proportioned across the exact PCM the backend decoded, dividing `currentTime` by that
- * moving target — rather than by the fixed duration the bars actually represent — is what makes
- * the playhead (and anything else timed off it) drift away from the waveform as playback
- * progresses. Preferring a stable duration already tied to that same decode keeps everything
- * pinned to one timeline regardless of what the media element does afterwards.
- * @param {number|null|undefined} analysisDuration the `/analysis/waveform` response's
- *   `analysisDuration` (PCM length / analysis sample rate) — the timebase the bars were actually
- *   generated against. Preferred whenever present.
- * @param {number|null|undefined} trackLength a stable, non-live duration already known for the
- *   track (e.g. the library's own tag-derived length) — used when no analysis duration exists yet
- *   (a track whose waveform predates this field, or hasn't been analysed at all).
- * @param {number} audioDuration `HTMLAudioElement.duration` — a last resort only, since it's the
- *   one value in this list that can change mid-playback.
- * @returns {number} the duration to use for waveform/playhead/grid positioning, never negative.
- */
-export const resolveWaveformDuration = (
-  analysisDuration,
-  trackLength,
-  audioDuration,
-) => {
-  if (Number.isFinite(analysisDuration) && analysisDuration > 0) {
-    return analysisDuration;
-  }
-
-  if (Number.isFinite(trackLength) && trackLength > 0) {
-    return trackLength;
-  }
-
-  return Number.isFinite(audioDuration) && audioDuration > 0
-    ? audioDuration
-    : 0;
 };
 
 /**

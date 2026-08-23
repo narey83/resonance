@@ -29,6 +29,11 @@
 
 import './WaveformAnalysis.css';
 import { usePlayer } from '../../context/PlayerContext';
+import {
+  resolveBeatAvailability,
+  resolveWaveformDuration,
+  timeToPixel,
+} from '../../lib/analysisTimeline';
 import api from '../../lib/api';
 import { getLocalStreamUrl } from '../../lib/files';
 import { fuzzyFilter } from '../../lib/fuzzy';
@@ -407,8 +412,9 @@ const drawSilhouette = (
 const drawBeatOverlay = (
   canvas,
   {
-    beatOffsetSeconds = 0,
+    beatOffsetSeconds = null,
     beats = null,
+    beatsKnown = false,
     bpm,
     downbeatOffsetSeconds = null,
     duration,
@@ -426,14 +432,17 @@ const drawBeatOverlay = (
   const endTime = startTime + visibleDuration;
   const pixelsPerSecond = canvas.width / visibleDuration;
   const secondsPerBeat = 60 / bpm;
-  const xAt = (time) => (time - startTime) * pixelsPerSecond;
+  const xAt = (time) =>
+    timeToPixel(time - startTime, visibleDuration, canvas.width);
 
-  // Ghost grid: the theoretical clock beatOffsetSeconds/bpm imply. Dashed and
-  // low-opacity by design — it's a reference to check the detected beats
-  // and waveform transients against, not something that should visually
-  // compete with them. Widens to bar/phrase spacing at low zoom (same
+  // Ghost grid: the theoretical clock beatOffsetSeconds/bpm imply — only drawn when a real
+  // detected beat offset actually exists (beatsKnown). A BPM tag alone is not beat analysis:
+  // rendering this anchored at a fabricated phase of 0 for a track with no real detection
+  // previously shipped as a bug. Dashed and low-opacity by design when it does draw — it's a
+  // reference to check the detected beats and waveform transients against, not something that
+  // should visually compete with them. Widens to bar/phrase spacing at low zoom (same
   // Moiré-avoidance as before) rather than becoming a solid smear.
-  if (showGhostGrid) {
+  if (showGhostGrid && beatsKnown) {
     const lineSeconds = beatGridSeconds(bpm, pixelsPerSecond, 8);
     if (lineSeconds) {
       const phase = beatGridPhase(beatOffsetSeconds, lineSeconds);
@@ -714,8 +723,9 @@ const WaveformAnalysis = () => {
       data.duration
     ) {
       drawBeatOverlay(canvas, {
-        beatOffsetSeconds: data.beatOffsetSeconds || 0,
+        beatOffsetSeconds: data.beatOffsetSeconds,
         beats: data.beats,
+        beatsKnown: data.beatsKnown,
         bpm: selectedTrack.bpm,
         downbeatOffsetSeconds: data.downbeatOffsetSeconds,
         duration: data.duration,
@@ -838,8 +848,20 @@ const WaveformAnalysis = () => {
         try {
           // Try pre-computed data from backend first
           let bands = null;
-          let duration = null;
-          let beatOffsetSeconds = 0;
+          // Set only when the backend already had a cached analysis — the authoritative PCM
+          // duration the waveform bars were actually generated against, same field the main
+          // player's WaveformSeekBar uses via resolveWaveformDuration. Previously this stayed
+          // null on the cached-data path and silently fell through to `selectedTrack.duration`
+          // (a separate, tag-derived estimate) even when the real analysis duration was right
+          // there in the response — a second, un-unified duration source for this screen.
+          let analysisDuration = null;
+          // A one-time decodeAudioData duration, set only on the fallback path below when no
+          // cached analysis exists at all — stable (a full synchronous decode, not subject to
+          // the progressive-durationchange instability HTMLAudioElement.duration can have), but
+          // still ranked below the real analysis duration.
+          let decodedDuration = null;
+          let beatOffsetSeconds = null;
+          let beatsKnown = false;
           let beats = null;
           let downbeatOffsetSeconds = null;
           let downbeatConfidence = null;
@@ -855,7 +877,10 @@ const WaveformAnalysis = () => {
                 midPeaks: new Float32Array(res.data.midPeaks),
                 highPeaks: new Float32Array(res.data.highPeaks),
               };
-              beatOffsetSeconds = res.data.beatOffsetSeconds || 0;
+              analysisDuration = res.data.analysisDuration ?? null;
+              const beatAvailability = resolveBeatAvailability(res.data);
+              beatOffsetSeconds = beatAvailability.offsetSeconds;
+              beatsKnown = beatAvailability.known;
               // Detected beats and the downbeat heuristic are independent of
               // the waveform bands — kept as their own values rather than
               // folded into `bands` so a comparison against the ghost grid
@@ -913,16 +938,21 @@ const WaveformAnalysis = () => {
               audioBuffer.sampleRate,
               numberBars,
             );
-            duration = audioBuffer.duration;
+            decodedDuration = audioBuffer.duration;
           }
 
           if (abortController.signal.aborted) return;
 
           frequencyDataRef.current = {
             trackPath: selectedTrack.path,
-            duration: duration ?? selectedTrack.duration ?? 0,
+            duration: resolveWaveformDuration(
+              analysisDuration,
+              selectedTrack.duration,
+              decodedDuration,
+            ),
             beatOffsetSeconds,
             beats,
+            beatsKnown,
             downbeatOffsetSeconds,
             downbeatConfidence,
             highPeaks: bands.highPeaks,
@@ -1036,12 +1066,14 @@ const WaveformAnalysis = () => {
             <div className="wa-overlay-group">
               <button
                 className={`wa-overlay-btn hover-fx${showGhostGrid ? ' wa-overlay-btn--active' : ''}`}
-                disabled={!selectedTrack?.bpm}
+                disabled={!selectedTrack?.bpm || !beatDataAvailable.beats}
                 onClick={() => setShowGhostGrid((c) => !c)}
                 title={
-                  selectedTrack?.bpm
-                    ? 'Ghost grid — the theoretical beat clock (bpm + phase), not what was detected'
-                    : 'No BPM data'
+                  !selectedTrack?.bpm
+                    ? 'No BPM data'
+                    : beatDataAvailable.beats
+                      ? 'Ghost grid — the theoretical beat clock (bpm + phase), not what was detected'
+                      : 'No detected-beat data to anchor the grid to — a BPM tag alone is not beat analysis'
                 }
                 type="button"
               >
