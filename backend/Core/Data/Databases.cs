@@ -53,7 +53,8 @@ public class Database
     public static Database Music { get; } = new Database { Name = "music" };
     public static Database Analysis { get; } = new Database { Name = "analysis" };
     public static Database Mixtapes { get; } = new Database { Name = "mixtapes" };
-    public static Database[] List { get; } = [Search, Transfers, Messaging, Events, Users, LibraryActivity, Preferences, Settings, YtDlp, Music, Analysis, Mixtapes];
+    public static Database Logs { get; } = new Database { Name = "logs" };
+    public static Database[] List { get; } = [Search, Transfers, Messaging, Events, Users, LibraryActivity, Preferences, Settings, YtDlp, Music, Analysis, Mixtapes, Logs];
 
     public required string Name { get; init; }
 

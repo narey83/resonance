@@ -39,11 +39,25 @@ namespace resonance
 
     public record LogRecord
     {
+        /// <summary>
+        ///     The Postgres-backed row id, when this record came from <c>LogQueryService</c> --
+        ///     null for anything sourced from the JSONL files or the in-memory ring buffer, which
+        ///     have no equivalent stable id. What GET /logs?afterId=&lt;id&gt; keys off.
+        /// </summary>
+        public long? Id { get; init; }
+
         public DateTime Timestamp { get; init; }
         public string Context { get; init; }
         public string SubContext { get; init; }
         public string Level { get; init; }
         public string Message { get; init; }
         public string Exception { get; init; }
+
+        /// <summary>
+        ///     Any Serilog structured properties beyond <see cref="Context"/>/<see cref="SubContext"/>,
+        ///     pre-serialized as a JSON object string. Null for the common case (a plain templated
+        ///     message with nothing else attached) so most log events don't pay for this.
+        /// </summary>
+        public string Properties { get; init; }
     }
 }

@@ -934,6 +934,48 @@ namespace resonance
             services.AddDbContext<UsersDbContext>(connectionStringDictionary[Database.Users]);
             services.AddDbContext<resonance.MusicLibrary.Activity.LibraryActivityDbContext>(connectionStringDictionary[Database.LibraryActivity]);
             services.AddDbContext<Resonance.Integrations.YtDlp.Data.YtDlpDbContext>(connectionStringDictionary[Database.YtDlp]);
+
+            // Postgres-backed application logging (opt-in; see LoggerOptions.Postgres). The factory is
+            // registered unconditionally -- cheap, connects to nothing until actually used -- so
+            // LogsController can always take IDbContextFactory<LogsDbContext> as a plain constructor
+            // dependency rather than dealing with optional-DI resolution; it only ever queries through
+            // it when the option is on (checked per-request, so it can be flipped without a restart's
+            // worth of DI reshaping). Schema/partition setup and the write-path hosted service are
+            // what's actually gated below.
+            services.AddDbContextFactory<resonance.Core.LogStore.LogsDbContext>(options =>
+            {
+                options.UseNpgsql(connectionStringDictionary[Database.Logs]);
+
+                if (OptionsAtStartup.Flags.LogSQL)
+                {
+                    options
+                        .EnableSensitiveDataLogging()
+                        .EnableDetailedErrors()
+                        .LogTo(OptionsAtStartup.Debug ? Log.Debug : Log.Information, LogLevel.Information);
+                }
+            });
+
+            // Schema and partition setup use raw DDL (LogsSchemaInitializer), not AddDbContext<T>'s
+            // EnsureCreated()/GenerateCreateScript() path above -- native monthly range partitioning
+            // can't be expressed through EF's model at all. Deliberately NOT using that helper's
+            // catch-log-rethrow either: a failure here logs and disables itself instead of taking the
+            // whole app down, since console/JSONL logging must keep working regardless of whether
+            // Postgres is cooperating. That's the exact failure mode (a bad schema-init statement
+            // fatal to IHostedService.StartAsync) that killed the previous attempt at this -- see
+            // LogsSchemaInitializer's remarks for the full incident.
+            if (OptionsAtStartup.Logger.Postgres)
+            {
+                try
+                {
+                    resonance.Core.LogStore.LogsSchemaInitializer.Initialize(connectionStringDictionary[Database.Logs]);
+                    services.AddHostedService<resonance.Core.LogStore.LogPersistenceService>();
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Failed to initialize Postgres log storage; application logging will continue via JSONL/console only");
+                }
+            }
+
             services.AddSingleton<resonance.MusicLibrary.Activity.ILibraryActivityService, resonance.MusicLibrary.Activity.LibraryActivityService>();
             services.AddSingleton<AppUserService>();
             services.AddSingleton<SessionService>();
@@ -1653,6 +1695,50 @@ namespace resonance
             return app;
         }
 
+        // Serilog properties beyond SourceContext/SubContext (which already have dedicated LogRecord
+        // fields), pre-serialized as a JSON object -- feeds the Postgres log store's jsonb Properties
+        // column (see LogPersistenceService). Null for a plain templated message with nothing else
+        // attached, which is the overwhelming majority of events, so this costs nothing for those.
+        private static string BuildExtraPropertiesJson(LogEvent logEvent)
+        {
+            List<KeyValuePair<string, LogEventPropertyValue>> extra = null;
+
+            foreach (var property in logEvent.Properties)
+            {
+                if (property.Key == "SourceContext" || property.Key == "SubContext")
+                {
+                    continue;
+                }
+
+                extra ??= new List<KeyValuePair<string, LogEventPropertyValue>>();
+                extra.Add(property);
+            }
+
+            if (extra is null)
+            {
+                return null;
+            }
+
+            var formatter = new Serilog.Formatting.Json.JsonValueFormatter();
+            var writer = new StringWriter();
+            writer.Write('{');
+
+            for (var i = 0; i < extra.Count; i++)
+            {
+                if (i > 0)
+                {
+                    writer.Write(',');
+                }
+
+                Serilog.Formatting.Json.JsonValueFormatter.WriteQuotedJsonString(extra[i].Key, writer);
+                writer.Write(':');
+                formatter.Format(extra[i].Value, writer);
+            }
+
+            writer.Write('}');
+            return writer.ToString();
+        }
+
         private static void ConfigureGlobalLogger()
         {
             var noColor = OptionsAtStartup.Logger.NoColor || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("NO_COLOR"));
@@ -1721,6 +1807,7 @@ namespace resonance
                             Level = logEvent.Level.ToString(),
                             Message = message.TrimStart('"').TrimEnd('"'),
                             Exception = logEvent.Exception?.ToString(),
+                            Properties = BuildExtraPropertiesJson(logEvent),
                         };
 
                         LogBuffer.Enqueue(record);

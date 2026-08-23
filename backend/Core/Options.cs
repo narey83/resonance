@@ -1817,6 +1817,18 @@ namespace resonance
             [Description("disable console log colors")]
             [RequiresRestart]
             public bool NoColor { get; init; } = false;
+
+            /// <summary>
+            ///     Gets a value indicating whether application logs should also be persisted to
+            ///     PostgreSQL and served from there by the log viewer, instead of the JSONL files.
+            ///     Console and JSONL logging are unaffected either way -- this only switches where
+            ///     GET /logs reads from and whether the Postgres write path runs at all.
+            /// </summary>
+            [Argument(default, "postgres-logger")]
+            [EnvironmentVariable("POSTGRES_LOGGER")]
+            [Description("persist application logs to PostgreSQL and serve the log viewer from there")]
+            [RequiresRestart]
+            public bool Postgres { get; init; } = false;
         }
 
         /// <summary>

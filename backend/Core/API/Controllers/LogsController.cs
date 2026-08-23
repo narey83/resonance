@@ -36,10 +36,14 @@
 namespace resonance.Core.API
 {
     using System;
+    using System.Collections.Generic;
+    using System.Threading.Tasks;
     using Asp.Versioning;
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.AspNetCore.SignalR;
+    using Microsoft.EntityFrameworkCore;
+    using Microsoft.Extensions.Options;
     using resonance.Core.LogStore;
     using Serilog;
 
@@ -53,28 +57,34 @@ namespace resonance.Core.API
     [Consumes("application/json")]
     public class LogsController : ControllerBase
     {
-        public LogsController(IHubContext<LogsHub> logHub)
+        public LogsController(IHubContext<LogsHub> logHub, IDbContextFactory<LogsDbContext> logsDbContextFactory, IOptionsMonitor<resonance.Options> options)
         {
             LogHub = logHub;
+            LogsDbContextFactory = logsDbContextFactory;
+            Options = options;
         }
 
         private IHubContext<LogsHub> LogHub { get; }
+        private IDbContextFactory<LogsDbContext> LogsDbContextFactory { get; }
+        private IOptionsMonitor<resonance.Options> Options { get; }
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", resonance.Logs.Application);
 
         /// <summary>
-        ///     Gets a paginated, filtered list of historical log entries from the daily log files.
+        ///     Gets a paginated, filtered list of log entries, from PostgreSQL when
+        ///     <c>Logger.Postgres</c> is enabled or the daily JSONL log files otherwise.
         /// </summary>
         /// <returns></returns>
         [HttpGet]
         [Authorize(Policy = AuthPolicy.Any)]
-        public IActionResult Get(
+        public async Task<IActionResult> Get(
             [FromQuery] int offset = 0,
             [FromQuery] int limit = 100,
             [FromQuery] string[] level = null,
             [FromQuery] string[] context = null,
             [FromQuery] string search = null,
             [FromQuery] DateTime? from = null,
-            [FromQuery] DateTime? to = null)
+            [FromQuery] DateTime? to = null,
+            [FromQuery] long? afterId = null)
         {
             if (offset < 0)
             {
@@ -88,16 +98,38 @@ namespace resonance.Core.API
 
             try
             {
-                var (items, total) = LogFileReader.Query(
-                    Program.LogDirectory,
-                    level,
-                    context,
-                    search,
-                    from,
-                    to,
-                    offset,
-                    limit,
-                    HttpContext.RequestAborted);
+                List<LogRecord> items;
+                int total;
+
+                if (Options.CurrentValue.Logger.Postgres)
+                {
+                    await using var db = await LogsDbContextFactory.CreateDbContextAsync(HttpContext.RequestAborted);
+
+                    (items, total) = await LogQueryService.QueryAsync(
+                        db,
+                        afterId,
+                        level,
+                        context,
+                        search,
+                        from,
+                        to,
+                        offset,
+                        limit,
+                        HttpContext.RequestAborted);
+                }
+                else
+                {
+                    (items, total) = LogFileReader.Query(
+                        Program.LogDirectory,
+                        level,
+                        context,
+                        search,
+                        from,
+                        to,
+                        offset,
+                        limit,
+                        HttpContext.RequestAborted);
+                }
 
                 Response.Headers["X-Total-Count"] = total.ToString();
                 return Ok(items);
