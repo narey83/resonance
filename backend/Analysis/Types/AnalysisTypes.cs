@@ -48,12 +48,28 @@ namespace resonance.Analysis
     }
 
     /// <summary>Band peaks for the waveform display.</summary>
+    /// <param name="OverallPeaks">The overall (unfiltered) peak per bar.</param>
+    /// <param name="LowPeaks">The bass-band peak per bar.</param>
+    /// <param name="MidPeaks">The mid-band peak per bar.</param>
+    /// <param name="HighPeaks">The high-band peak per bar.</param>
+    /// <param name="NumBars">How many bars each peaks array holds.</param>
+    /// <param name="DurationSeconds">
+    ///     The duration of the decoded PCM the bars were generated from — <c>pcm.Length /
+    ///     AudioAnalyzer.SampleRate</c>, in seconds. This is the timebase the bars are laid out
+    ///     against, which is not necessarily what any given player's media element reports (a
+    ///     streamed, variable-bitrate file's <c>HTMLAudioElement.duration</c> can be revised by the
+    ///     browser mid-playback as more of the file downloads — see the frontend's
+    ///     <c>resolveWaveformDuration</c>). Null only for a legacy row analysed before this field
+    ///     existed and never rescanned since; <see cref="AnalysisStore.GetWaveform"/> backfills a
+    ///     close estimate for those from <see cref="NumBars"/> rather than leaving it unusable.
+    /// </param>
     public record WaveformData(
         float[] OverallPeaks,
         float[] LowPeaks,
         float[] MidPeaks,
         float[] HighPeaks,
-        int NumBars);
+        int NumBars,
+        double? DurationSeconds = null);
 
     /// <summary>EBU R128 loudness measurements.</summary>
     public record LoudnessData(double IntegratedLufs, double TruePeak, double LoudnessRange);
@@ -225,6 +241,7 @@ namespace resonance.Analysis
     ///     detected to attempt the heuristic.
     /// </param>
     /// <param name="DownbeatConfidence">See <see cref="AnalysisResult.DownbeatConfidence"/>.</param>
+    /// <param name="AnalysisDuration">See <see cref="WaveformData.DurationSeconds"/>.</param>
     public record WaveformResponse(
         int NumBars,
         float[] OverallPeaks,
@@ -234,7 +251,8 @@ namespace resonance.Analysis
         double? BeatOffsetSeconds = null,
         float[] Beats = null,
         double? DownbeatOffsetSeconds = null,
-        double? DownbeatConfidence = null);
+        double? DownbeatConfidence = null,
+        double? AnalysisDuration = null);
 
     /// <summary>API response shape for loudness data.</summary>
     public record LoudnessResponse(double IntegratedLufs, double TruePeak, double LoudnessRange);

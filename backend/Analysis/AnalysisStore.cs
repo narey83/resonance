@@ -61,18 +61,28 @@ namespace resonance.Analysis
 
         public WaveformData GetWaveform(string path)
         {
-            var row = Read(path, "num_bars, overall_peaks, low_peaks, mid_peaks, high_peaks");
+            var row = Read(path, "num_bars, overall_peaks, low_peaks, mid_peaks, high_peaks, waveform_duration_seconds");
             if (row == null || row[0] is DBNull || row[1] is DBNull)
             {
                 return null;
             }
+
+            var numBars = Convert.ToInt32(row[0]);
+
+            // A row analysed before waveform_duration_seconds existed has no stored value —
+            // recover a close estimate from num_bars rather than leaving callers with nothing to
+            // lay the waveform out against but a media element's own (possibly unstable) duration.
+            var durationSeconds = row[5] is DBNull
+                ? AudioAnalyzer.EstimateDurationFromBars(numBars)
+                : Convert.ToDouble(row[5]);
 
             return new WaveformData(
                 OverallPeaks: BlobToFloats((byte[])row[1]),
                 LowPeaks: BlobToFloats((byte[])row[2]),
                 MidPeaks: BlobToFloats((byte[])row[3]),
                 HighPeaks: BlobToFloats((byte[])row[4]),
-                NumBars: Convert.ToInt32(row[0]));
+                NumBars: numBars,
+                DurationSeconds: durationSeconds);
         }
 
         /// <summary>
@@ -154,9 +164,9 @@ namespace resonance.Analysis
             cmd.CommandText = @"
                 INSERT INTO analysis.track_analysis
                     (masked_filename, file_size, num_bars, overall_peaks, low_peaks, mid_peaks, high_peaks,
-                     lufs, true_peak, lra, beat_offset_seconds, beats, downbeat_offset_seconds,
-                     downbeat_confidence, analysed_at)
-                VALUES (@m, @s, @n, @op, @lp, @mp, @hp, @lufs, @tp, @lra, @bo, @bts, @dbo, @dbc, @t)
+                     waveform_duration_seconds, lufs, true_peak, lra, beat_offset_seconds, beats,
+                     downbeat_offset_seconds, downbeat_confidence, analysed_at)
+                VALUES (@m, @s, @n, @op, @lp, @mp, @hp, @wd, @lufs, @tp, @lra, @bo, @bts, @dbo, @dbc, @t)
                 ON CONFLICT(masked_filename) DO UPDATE SET
                     file_size            = EXCLUDED.file_size,
                     num_bars             = COALESCE(EXCLUDED.num_bars,             analysis.track_analysis.num_bars),
@@ -164,6 +174,7 @@ namespace resonance.Analysis
                     low_peaks            = COALESCE(EXCLUDED.low_peaks,            analysis.track_analysis.low_peaks),
                     mid_peaks            = COALESCE(EXCLUDED.mid_peaks,            analysis.track_analysis.mid_peaks),
                     high_peaks           = COALESCE(EXCLUDED.high_peaks,           analysis.track_analysis.high_peaks),
+                    waveform_duration_seconds = COALESCE(EXCLUDED.waveform_duration_seconds, analysis.track_analysis.waveform_duration_seconds),
                     lufs                 = COALESCE(EXCLUDED.lufs,                 analysis.track_analysis.lufs),
                     true_peak            = COALESCE(EXCLUDED.true_peak,            analysis.track_analysis.true_peak),
                     lra                  = COALESCE(EXCLUDED.lra,                  analysis.track_analysis.lra),
@@ -182,6 +193,7 @@ namespace resonance.Analysis
             AddParam(cmd, "@lp", (object)(w == null ? null : FloatsToBlob(w.LowPeaks)) ?? DBNull.Value);
             AddParam(cmd, "@mp", (object)(w == null ? null : FloatsToBlob(w.MidPeaks)) ?? DBNull.Value);
             AddParam(cmd, "@hp", (object)(w == null ? null : FloatsToBlob(w.HighPeaks)) ?? DBNull.Value);
+            AddParam(cmd, "@wd", (object)w?.DurationSeconds ?? DBNull.Value);
             AddParam(cmd, "@lufs", (object)l?.IntegratedLufs ?? DBNull.Value);
             AddParam(cmd, "@tp", (object)l?.TruePeak ?? DBNull.Value);
             AddParam(cmd, "@lra", (object)l?.LoudnessRange ?? DBNull.Value);
@@ -317,7 +329,8 @@ namespace resonance.Analysis
                 ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS beat_offset_seconds DOUBLE PRECISION;
                 ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS beats BYTEA;
                 ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS downbeat_offset_seconds DOUBLE PRECISION;
-                ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS downbeat_confidence DOUBLE PRECISION;";
+                ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS downbeat_confidence DOUBLE PRECISION;
+                ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS waveform_duration_seconds DOUBLE PRECISION;";
             cmd.ExecuteNonQuery();
 
             MigrateLegacyTables(conn);

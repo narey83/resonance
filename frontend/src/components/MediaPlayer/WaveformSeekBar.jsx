@@ -36,6 +36,7 @@ import {
   firstGridLineAt,
   maxOf,
   resamplePeaks,
+  resolveWaveformDuration,
   waveColours,
 } from '../../lib/waveform';
 import { primeWaveformCache } from '../Shared/WaveformPreview';
@@ -80,6 +81,19 @@ const WaveformSeekBar = ({
   const [hoverFraction, setHoverFraction] = useState(null);
   const draggingRef = useRef(false);
 
+  // The stable timeline the waveform/playhead/beat-grid are laid out against — the analysis's
+  // own PCM duration whenever it's known, falling back to another already-stable track duration,
+  // and only to the live media element's duration as a last resort. Deliberately NOT `duration`
+  // (that prop is `HTMLAudioElement.duration`, which a browser can revise mid-playback for a
+  // streamed, variable-bitrate file while `currentTime` stays accurate — dividing by a moving
+  // target is what makes the playhead drift away from the waveform's own, fixed timebase). See
+  // resolveWaveformDuration for why this ordering.
+  const waveformDuration = resolveWaveformDuration(
+    peaksRef.current?.analysisDuration,
+    track?.length,
+    duration,
+  );
+
   useEffect(() => {
     setReady(false);
     onReady(false);
@@ -114,6 +128,7 @@ const WaveformSeekBar = ({
         primeWaveformCache(track.path, data);
 
         peaksRef.current = {
+          analysisDuration: data.analysisDuration || null,
           beatOffsetSeconds: data.beatOffsetSeconds || 0,
           overall: new Float32Array(data.overallPeaks),
         };
@@ -205,9 +220,9 @@ const WaveformSeekBar = ({
     // runs inside a requestAnimationFrame loop (below), so it's cheap to
     // read every frame.
     const liveTime =
-      getCurrentTime && duration
+      getCurrentTime && waveformDuration
         ? getCurrentTime()
-        : (progressPct / 100) * duration;
+        : (progressPct / 100) * waveformDuration;
 
     // Pre-resample the whole track once, at a few grid "atoms" per drawn bar at
     // the current zoom, and cache it. Re-aggregating the shape straight
@@ -262,12 +277,15 @@ const WaveformSeekBar = ({
     // following) the current playback position, clamped so it never scrolls
     // past the track's start/end.
     let windowStart = 0;
-    let windowEnd = duration || 0;
-    if (zoom > 1 && duration) {
-      const zoomedDuration = duration / zoom;
+    let windowEnd = waveformDuration || 0;
+    if (zoom > 1 && waveformDuration) {
+      const zoomedDuration = waveformDuration / zoom;
       windowStart = Math.max(
         0,
-        Math.min(duration - zoomedDuration, liveTime - zoomedDuration / 2),
+        Math.min(
+          waveformDuration - zoomedDuration,
+          liveTime - zoomedDuration / 2,
+        ),
       );
       windowEnd = windowStart + zoomedDuration;
     }
@@ -288,8 +306,8 @@ const WaveformSeekBar = ({
     const slots = numberSlots + 1;
     const drawStart = snappedSlot * slotSeconds;
     const drawEnd = drawStart + slots * slotSeconds;
-    const startFrac = duration ? drawStart / duration : 0;
-    const endFrac = duration ? drawEnd / duration : 1;
+    const startFrac = waveformDuration ? drawStart / waveformDuration : 0;
+    const endFrac = waveformDuration ? drawEnd / waveformDuration : 1;
     // Resample the window from the cached grid (fullSlots), not the raw peaks
     // — this aggregates an already-quantised, per-frame-stable set of "atoms"
     // rather than freshly re-aggregating raw high-resolution samples, which is
@@ -418,7 +436,7 @@ const WaveformSeekBar = ({
   const dragStartRef = useRef({ clientX: 0, time: 0 });
 
   const handlePointerDown = (event) => {
-    if (!duration) return;
+    if (!waveformDuration) return;
     draggingRef.current = true;
     canvasRef.current.setPointerCapture(event.pointerId);
     const time = timeFromFraction(fractionFromEvent(event));
@@ -433,13 +451,16 @@ const WaveformSeekBar = ({
   const handlePointerMove = (event) => {
     const fraction = fractionFromEvent(event);
     setHoverFraction(fraction);
-    if (!draggingRef.current || !duration) return;
+    if (!draggingRef.current || !waveformDuration) return;
     if (onScratchMove) {
       const deltaTime =
         (event.clientX - dragStartRef.current.clientX) /
         SCRATCH_PIXELS_PER_SECOND;
       onScratchMove(
-        Math.max(0, Math.min(duration, dragStartRef.current.time + deltaTime)),
+        Math.max(
+          0,
+          Math.min(waveformDuration, dragStartRef.current.time + deltaTime),
+        ),
       );
     } else {
       onSeek(timeFromFraction(fraction));
@@ -454,7 +475,10 @@ const WaveformSeekBar = ({
       (event.clientX - dragStartRef.current.clientX) /
       SCRATCH_PIXELS_PER_SECOND;
     onScratchEnd(
-      Math.max(0, Math.min(duration, dragStartRef.current.time + deltaTime)),
+      Math.max(
+        0,
+        Math.min(waveformDuration, dragStartRef.current.time + deltaTime),
+      ),
     );
   };
 
@@ -462,9 +486,10 @@ const WaveformSeekBar = ({
   // no native seek behaviour of its own, so without this a keyboard-only
   // user could seek the plain bar but not the waveform.
   const handleKeyDown = (event) => {
-    if (!duration) return;
-    const current = (progressPct / 100) * duration;
-    if (event.key === 'ArrowRight') onSeek(Math.min(current + 5, duration));
+    if (!waveformDuration) return;
+    const current = (progressPct / 100) * waveformDuration;
+    if (event.key === 'ArrowRight')
+      onSeek(Math.min(current + 5, waveformDuration));
     if (event.key === 'ArrowLeft') onSeek(Math.max(current - 5, 0));
   };
 
@@ -480,9 +505,9 @@ const WaveformSeekBar = ({
     >
       <canvas
         aria-label="Seek"
-        aria-valuemax={duration}
+        aria-valuemax={waveformDuration}
         aria-valuemin={0}
-        aria-valuenow={(progressPct / 100) * duration}
+        aria-valuenow={(progressPct / 100) * waveformDuration}
         className="mp-waveform-canvas"
         onKeyDown={handleKeyDown}
         onPointerDown={handlePointerDown}

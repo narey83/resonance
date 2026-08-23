@@ -212,4 +212,35 @@ public class AudioAnalyzerTests
         Assert.Equal(0, summary.MeanAbsErrorSeconds);
         Assert.Equal(0, summary.MaxAbsErrorSeconds);
     }
+
+    // Regression coverage for the waveform/audio sync bug: a legacy row has no stored
+    // waveform_duration_seconds, so AnalysisStore.GetWaveform falls back to inverting num_bars.
+    // 80,141 is the real bar count a since-fixed track ("Cordial", 17,671,047 samples / 44,100Hz =
+    // 400.704014s of PCM) was analysed with; the inverse must land within a fraction of a bar of
+    // the true duration, not the multi-second drift a browser's own duration estimate can
+    // introduce.
+    [Fact]
+    public void EstimateDurationFromBars_Recovers_The_Original_Duration_To_Within_Half_A_Bar()
+    {
+        var estimated = AudioAnalyzer.EstimateDurationFromBars(80_141);
+
+        Assert.NotNull(estimated);
+        Assert.InRange(estimated!.Value, 400.704_014 - 0.0025, 400.704_014 + 0.0025);
+    }
+
+    [Theory]
+    [InlineData(500)]      // exactly MinBars — could be a genuine short clip or a clamp
+    [InlineData(200_000)]  // exactly MaxBars — same ambiguity at the top end
+    public void EstimateDurationFromBars_Refuses_To_Guess_At_The_Clamp_Boundary(int numBars)
+    {
+        Assert.Null(AudioAnalyzer.EstimateDurationFromBars(numBars));
+    }
+
+    [Theory]
+    [InlineData(501)]
+    [InlineData(199_999)]
+    public void EstimateDurationFromBars_Trusts_Values_Just_Inside_The_Clamp(int numBars)
+    {
+        Assert.NotNull(AudioAnalyzer.EstimateDurationFromBars(numBars));
+    }
 }

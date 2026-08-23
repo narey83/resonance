@@ -34,6 +34,7 @@ import {
   expectedBeats,
   firstGridLineAt,
   resamplePeaks,
+  resolveWaveformDuration,
   visibleBeats,
   waveColours,
 } from './waveform';
@@ -314,6 +315,79 @@ describe('resamplePeaks', () => {
     const out = resamplePeaks(spike(4), 16);
     expect(Math.max(...out)).toBeCloseTo(1);
     expect(out.filter((v) => v > 0).length).toBeLessThanOrEqual(4);
+  });
+});
+
+describe('resolveWaveformDuration', () => {
+  // Real values captured from "Cordial" (Z.I.P.P.O & Hiver), a VBR MP3 whose
+  // HTMLAudioElement.duration Chromium revises upward across playback while
+  // currentTime stays accurate — the bug this function fixes.
+  const analysisDuration = 400.704_4;
+  const trackLength = 400.728;
+  const initialAudioDuration = 400.704;
+  const finalAudioDuration = 402.361_7;
+
+  it('prefers the analysis duration when present, regardless of audio.duration', () => {
+    expect(
+      resolveWaveformDuration(
+        analysisDuration,
+        trackLength,
+        initialAudioDuration,
+      ),
+    ).toBe(analysisDuration);
+    expect(
+      resolveWaveformDuration(
+        analysisDuration,
+        trackLength,
+        finalAudioDuration,
+      ),
+    ).toBe(analysisDuration);
+  });
+
+  it('does not change when audio.duration is revised mid-playback (the durationchange bug)', () => {
+    const atStart = resolveWaveformDuration(
+      analysisDuration,
+      trackLength,
+      initialAudioDuration,
+    );
+    const atEnd = resolveWaveformDuration(
+      analysisDuration,
+      trackLength,
+      finalAudioDuration,
+    );
+    expect(atEnd).toBe(atStart);
+  });
+
+  it('falls back to track length when no analysis duration is stored yet', () => {
+    expect(resolveWaveformDuration(null, trackLength, finalAudioDuration)).toBe(
+      trackLength,
+    );
+    expect(
+      resolveWaveformDuration(undefined, trackLength, finalAudioDuration),
+    ).toBe(trackLength);
+  });
+
+  it('falls back to audio.duration only as a last resort', () => {
+    expect(resolveWaveformDuration(null, null, finalAudioDuration)).toBe(
+      finalAudioDuration,
+    );
+    expect(resolveWaveformDuration(undefined, undefined, 123.45)).toBe(123.45);
+  });
+
+  it('treats zero, negative, and non-finite values as absent at every tier', () => {
+    expect(resolveWaveformDuration(0, trackLength, finalAudioDuration)).toBe(
+      trackLength,
+    );
+    expect(resolveWaveformDuration(-5, trackLength, finalAudioDuration)).toBe(
+      trackLength,
+    );
+    expect(resolveWaveformDuration(Number.NaN, 0, finalAudioDuration)).toBe(
+      finalAudioDuration,
+    );
+    expect(resolveWaveformDuration(null, null, Number.POSITIVE_INFINITY)).toBe(
+      0,
+    );
+    expect(resolveWaveformDuration(null, null, 0)).toBe(0);
   });
 });
 

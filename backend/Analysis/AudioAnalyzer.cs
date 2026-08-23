@@ -298,6 +298,27 @@ namespace resonance.Analysis
         }
 
         /// <summary>
+        ///     Recovers an approximate PCM duration from a stored <paramref name="numBars"/> for a
+        ///     row analysed before <see cref="WaveformData.DurationSeconds"/> was persisted
+        ///     directly. Bars are laid out at a fixed <c>BarsPerSecond</c>, so inverting that
+        ///     gives back the original duration to within half a bar (2.5ms) — accurate enough to
+        ///     replace a browser's own duration estimate, without needing to redecode the file.
+        ///     Returns null when <paramref name="numBars"/> sits exactly on the min/max bar-count
+        ///     clamp, where the original count could have been rounded down/up from something else
+        ///     entirely and the inverse is unreliable. Exposed for testing.
+        /// </summary>
+        /// <returns>The estimated duration in seconds, or null if it can't be trusted.</returns>
+        public static double? EstimateDurationFromBars(int numBars)
+        {
+            if (numBars <= MinBars || numBars >= MaxBars)
+            {
+                return null;
+            }
+
+            return (double)numBars / BarsPerSecond;
+        }
+
+        /// <summary>
         ///     Runs every requested metric over a single decode of <paramref name="filePath"/>.
         /// </summary>
         /// <returns>The metrics that could be produced, or null if the file could not be decoded.</returns>
@@ -334,7 +355,8 @@ namespace resonance.Analysis
             WaveformData waveform = null;
             if (metrics.HasFlag(AnalysisMetrics.Waveform))
             {
-                waveform = ComputeBands(pcm, SampleRate, BarsForDuration(pcm.Length, SampleRate));
+                waveform = ComputeBands(pcm, SampleRate, BarsForDuration(pcm.Length, SampleRate))
+                    with { DurationSeconds = pcm.Length / (double)SampleRate };
             }
 
             uint? bpm = null;
