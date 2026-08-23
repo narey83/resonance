@@ -65,7 +65,7 @@ services:
       RESONANCE_APP_DIR: /src/backend
       # Config lives in the database (settings schema). The connection string is the one setting that
       # cannot live in the database it points at, so it is supplied here (override via host env in prod).
-      RESONANCE_DATABASE_CONNECTION_STRING: "${RESONANCE_DATABASE_CONNECTION_STRING:-Host=localhost;Database=resonance;Username=resonance;Password=resonance}"
+      RESONANCE_DATABASE_CONNECTION_STRING: "${RESONANCE_DATABASE_CONNECTION_STRING:-Host=postgres-db;Database=resonance;Username=resonance;Password=resonance}"
       HOME: /home/dev
       DOTNET_CLI_HOME: /home/dev
       NUGET_PACKAGES: /home/dev/.nuget
