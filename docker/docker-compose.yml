@@ -84,12 +84,37 @@ services:
     # local_lan_net is a macvlan (parent eno1) giving the container a fixed address
     # on the LAN itself (192.168.0.33) alongside its bridge-network addresses. Needed
     # by DLNA and UPnP (Mono.Nat) for SSDP multicast/gateway discovery; gw_priority
-    # pins it BELOW the bridge networks so it's never picked as the default route --
-    # UPnP discovers/uses it regardless of default-route status, but DLNA's own SSDP
-    # socket code binds explicitly (see DLNA_BIND_ADDRESS below) rather than relying
-    # on routing, since an unbound multicast join/send follows the default route.
+    # pins it BELOW the bridge networks so it's never picked as the default/primary
+    # network -- UPnP discovers/uses it regardless of default-route status, but DLNA's
+    # own SSDP socket code binds explicitly (see DLNA_BIND_ADDRESS below) rather than
+    # relying on routing, since an unbound multicast join/send follows the default route.
+    #
+    # resonance_backend_net is explicitly the highest-priority (primary) network,
+    # matching the expected architecture: general traffic, and critically Docker's
+    # port-publishing for 50300 below, go through it. Docker can only implement
+    # published ports via a bridge network, never via a macvlan -- if local_lan_net
+    # ends up primary instead, the 50300 publish doesn't just misroute, it silently
+    # fails to exist at all (confirmed via `iptables -t nat -L DOCKER`, no rule
+    # present). postgresql_net is deliberately left unprioritized (0); it only needs
+    # to reach postgres-db by name, not carry general or published-port traffic.
+    #
+    # KNOWN ISSUE: gw_priority below is parsed correctly by Compose (visible in
+    # `docker compose config`) but is NOT actually applied to the container -- the
+    # resulting network endpoints all show GwPriority=0 regardless (confirmed
+    # 2026-08-23, Docker Compose v5.1.0 / Engine 29.2.1). Every full recreate of this
+    # service (`docker compose up -d --no-deps backend`, not `restart`) silently
+    # reverts to Docker's own tiebreak, which has consistently picked local_lan_net --
+    # breaking the 50300 publish and rerouting general traffic through the macvlan.
+    # After any recreate, reapply by hand and verify:
+    #   docker network disconnect resonance_backend_net resonance-backend
+    #   docker network connect --ip 172.20.0.5 --gw-priority 100 resonance_backend_net resonance-backend
+    #   docker network disconnect local_lan_net resonance-backend
+    #   docker network connect --ip 192.168.0.33 --gw-priority -100 local_lan_net resonance-backend
+    #   # verify: docker exec resonance-backend cat /proc/net/route (default gw should be 172.20.0.1)
+    #   # verify: sudo iptables -t nat -L DOCKER -n | grep 50300 (should show to:172.20.0.5:50300)
     networks:
-      resonance_backend_net: {}
+      resonance_backend_net:
+        gw_priority: 100
       postgresql_net: {}
       local_lan_net:
         ipv4_address: 192.168.0.33
