@@ -3841,6 +3841,20 @@ namespace resonance
             [EnvironmentVariable("DLNA_ARTWORK")]
             [Description("include artwork in DLNA Browse responses")]
             public bool ServeArtwork { get; init; } = true;
+
+            /// <summary>
+            ///     Gets an optional explicit IP to advertise to DLNA clients and bind SSDP multicast to.
+            /// </summary>
+            /// <remarks>
+            ///     Needed when the host has multiple network interfaces and the one DLNA clients can
+            ///     actually reach isn't the OS default route -- e.g. docker/docker-compose.yml attaches
+            ///     backend to a LAN-facing network alongside container-only ones for exactly this reason.
+            ///     Empty auto-detects via the default route, which is correct for a single-interface host.
+            /// </remarks>
+            [EnvironmentVariable("DLNA_BIND_ADDRESS")]
+            [Description("explicit IP to advertise/bind for DLNA (empty = auto-detect via default route)")]
+            [RequiresRestart]
+            public string BindAddress { get; init; } = string.Empty;
         }
 
         public class LocationOptions

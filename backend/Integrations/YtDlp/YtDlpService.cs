@@ -1229,8 +1229,8 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     // itself. --plugin-dirs takes the *parent* of a "yt-dlp-plugins" folder, matching how
     // yt-dlp's own default search dirs work. Currently ships the bgutil PO-token provider
     // (backend/tools/yt-dlp-plugins), which talks to the bgutil-provider sidecar container
-    // (docker/docker-compose.yml) at its default http://127.0.0.1:4416. No-ops if the
-    // executable is a bare PATH name or the plugins folder isn't present next to it.
+    // (docker/docker-compose.yml). No-ops if the executable is a bare PATH name or the
+    // plugins folder isn't present next to it.
     private static string PluginDirsFlag(resonance.Options.IntegrationsOptions.YtDlpOptions opts)
     {
         var dir = Path.GetDirectoryName(opts.ExecutablePath);
@@ -1242,8 +1242,21 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         return $" --plugin-dirs \"{dir}\"";
     }
 
-    private static void AppendPluginDirs(System.Text.StringBuilder args, resonance.Options.IntegrationsOptions.YtDlpOptions opts) =>
+    // The bundled plugin's own default (http://127.0.0.1:4416) only resolves under host
+    // networking, where backend and the sidecar shared a loopback. docker/docker-compose.yml
+    // now runs both on a bridge network instead, so point it at the sidecar by container name.
+    // yt-dlp allows repeating --extractor-args for different extractors, so this is additive to
+    // ExtractorArgsFlag's user-configurable value, never a conflict with it.
+    private static string PoTokenProviderFlag(resonance.Options.IntegrationsOptions.YtDlpOptions opts) =>
+        string.IsNullOrEmpty(PluginDirsFlag(opts))
+            ? string.Empty
+            : " --extractor-args \"youtubepot-bgutilhttp:base_url=http://resonance-bgutil-pot-provider:4416\"";
+
+    private static void AppendPluginDirs(System.Text.StringBuilder args, resonance.Options.IntegrationsOptions.YtDlpOptions opts)
+    {
         args.Append(PluginDirsFlag(opts));
+        args.Append(PoTokenProviderFlag(opts));
+    }
 
     // yt-dlp rewrites the cookie file on every run to persist updated cookies, so concurrent
     // workers sharing the master file corrupt it. Each invocation gets a private throwaway
@@ -1492,7 +1505,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             {
                 StartInfo = new ProcessStartInfo(opts.ExecutablePath)
                 {
-                    Arguments = $"{flat}--dump-json{(jsRuntimeArg != null ? " " + jsRuntimeArg : string.Empty)}{ExtractorArgsFlag(opts)}{PluginDirsFlag(opts)} \"{job.Url}\"",
+                    Arguments = $"{flat}--dump-json{(jsRuntimeArg != null ? " " + jsRuntimeArg : string.Empty)}{ExtractorArgsFlag(opts)}{PluginDirsFlag(opts)}{PoTokenProviderFlag(opts)} \"{job.Url}\"",
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardOutput = true,

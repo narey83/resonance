@@ -2,14 +2,34 @@
 # project's source bind-mounted for hot reload. Editing code on the host triggers
 # rebuild/HMR inside the containers; you do NOT rebuild images for code changes.
 #
-# Postgres (the shared `postgres-db` container) is NOT part of this stack. It is
-# shared infrastructure; the backend reaches it via the host-published 5432, so
-# the existing connection string (Host=localhost) keeps working unchanged.
+# Networking: this stack runs on pre-existing EXTERNAL networks (created outside
+# this compose file) instead of host networking:
+#   - resonance_backend_net : backend, frontend, bgutil-provider, caddy (bridge)
+#   - postgresql_net        : backend only, to reach the shared postgres-db container by name (bridge)
+#   - resonance_caddy_proxy_net : caddy only, faces the outer/main reverse proxy (bridge)
+#   - local_lan_net         : backend only, a macvlan giving it a real LAN address (see below)
+# Services reach each other by container name/DNS on resonance_backend_net (e.g.
+# caddy -> http://resonance-backend:5030) rather than localhost, and postgres-db
+# is reached as `Host=postgres-db` (see backend's RESONANCE_DATABASE_CONNECTION_STRING
+# below) instead of the old `Host=localhost` + host-published port 5432.
 #
-# Host networking is used deliberately: Resonance does Soulseek P2P (tcp 50300),
-# DLNA SSDP multicast, and UPnP, all of which need direct host network access.
-# As a bonus every existing address is preserved — backend on :5030, frontend on
-# :3000 (Caddy already points there) — so no Caddyfile and no config changes.
+# Fixed 2026-08-23: postgresql_net's bridge interface had no working internet egress
+# on this host because it wasn't assigned to firewalld's `docker` zone (masquerade
+# was correctly configured in Docker's own iptables rules, but firewalld's default
+# `public` zone -- where an unassigned interface falls back to -- has masquerade off
+# and rejected the traffic first). Fixed at the host level with `firewall-cmd
+# --zone=docker --add-interface=<postgresql_net's bridge> --permanent`, matching how
+# resonance_backend_net and resonance_caddy_proxy_net were already configured. Not a
+# compose-level concern, but recorded here since the symptom (Soulseek server
+# connection failing with "No route to host" on every reconnect) showed up here.
+#
+# backend also gets a macvlan network (local_lan_net, see the backend service below)
+# giving it a real address on the LAN itself, alongside its bridge-network addresses.
+# DLNA and UPnP both need direct LAN access -- SSDP multicast and gateway discovery
+# don't work from behind a NAT'd bridge network -- but it deliberately is NOT the
+# default route, so general traffic (API, Postgres, internet) keeps using the bridge
+# networks. See the backend service's comments for how each integration is pointed
+# at it explicitly instead of relying on route selection.
 #
 # Containers run as uid:gid 1000:1000 (narey) so runtime files written into the
 # bind-mounted source (backend/data, logs) and downloads stay narey-owned.
@@ -28,6 +48,19 @@
 # Build contexts are local to this directory, so the stack is self-contained and
 # can live anywhere (e.g. /home/narey/containers/resonance) independent of the
 # source it bind-mounts.
+networks:
+  resonance_caddy_proxy_net:
+    name: resonance_caddy_proxy_net
+    external: true
+  resonance_backend_net:
+    name: resonance_backend_net
+    external: true
+  postgresql_net:
+    name: postgresql_net
+    external: true
+  local_lan_net:
+    name: local_lan_net
+    external: true
 
 services:
   backend:
@@ -36,7 +69,24 @@ services:
       dockerfile: backend.Dockerfile
     image: resonance-backend-dev
     container_name: resonance-backend
-    network_mode: host
+    # local_lan_net is a macvlan (parent eno1) giving the container a fixed address
+    # on the LAN itself (192.168.0.33) alongside its bridge-network addresses. Needed
+    # by DLNA and UPnP (Mono.Nat) for SSDP multicast/gateway discovery; gw_priority
+    # pins it BELOW the bridge networks so it's never picked as the default route --
+    # UPnP discovers/uses it regardless of default-route status, but DLNA's own SSDP
+    # socket code binds explicitly (see DLNA_BIND_ADDRESS below) rather than relying
+    # on routing, since an unbound multicast join/send follows the default route.
+    networks:
+      resonance_backend_net: {}
+      postgresql_net: {}
+      local_lan_net:
+        ipv4_address: 192.168.0.33
+        gw_priority: -100
+    # Only the Soulseek P2P listen port is published to the host; HTTP/HTTPS
+    # (5030/5031) are reached by caddy via resonance_backend_net instead.
+    ports:
+      - 50300:50300
+      - 50300:50300/udp
     user: "1000:1000"
     # docker group, for read access to docker.sock (system stats monitoring).
     group_add:
@@ -65,13 +115,21 @@ services:
       RESONANCE_APP_DIR: /src/backend
       # Config lives in the database (settings schema). The connection string is the one setting that
       # cannot live in the database it points at, so it is supplied here (override via host env in prod).
+      # Host=postgres-db resolves via postgresql_net's container DNS (see networks above).
       RESONANCE_DATABASE_CONNECTION_STRING: "${RESONANCE_DATABASE_CONNECTION_STRING:-Host=postgres-db;Database=resonance;Username=resonance;Password=resonance}"
       HOME: /home/dev
       DOTNET_CLI_HOME: /home/dev
       NUGET_PACKAGES: /home/dev/.nuget
       DLNA: "true"
       DLNA_FRIENDLY_NAME: "Resonance"
+      # local_lan_net's static IP (see networks above) -- DLNA's own SSDP socket code
+      # binds to this explicitly rather than relying on the OS default route.
+      DLNA_BIND_ADDRESS: "192.168.0.33"
       NO_COLOR: "1"
+      RESONANCE_DISK_LOGGER: "true"
+      RESONANCE_POSTGRES_LOGGER: "true"
+      # Used by Integrations/Scripts as the default script executable.
+      SHELL: "/usr/bin/bash"
     volumes:
       - ${RESONANCE_SRC:-/home/narey/projects/resonance}:/src
       # Isolate build artifacts from the host's own bin/obj (host scratch, narey-owned).
@@ -94,7 +152,8 @@ services:
   frontend:
     image: node:22
     container_name: resonance-frontend
-    network_mode: host
+    networks:
+      - resonance_backend_net
     user: "1000:1000"
     mem_limit: 3g
     cpus: 1
@@ -106,7 +165,9 @@ services:
       # Bind-mount file watching needs polling to fire reliably.
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
-      # craco proxies /api and /hub to localhost:5030 — correct under host networking.
+      # craco proxies /api and /hub to localhost:5030, which only works because
+      # caddy fronts this on resonance_backend_net rather than the browser
+      # hitting this dev server's proxy target directly across containers.
       DANGEROUSLY_DISABLE_HOST_CHECK: "true"
       # Silences "[DEP0060] DeprecationWarning: The `util._extend` API is deprecated" --
       # that's webpack-dev-server's bundled http-proxy-middleware -> http-proxy@1.18.1
@@ -124,25 +185,24 @@ services:
 
   # PO Token provider for yt-dlp's youtube extractor. YouTube increasingly requires a
   # Proof-of-Origin token (bound to SABR-only client responses) before it will serve
-  # real media URLs; this generates them on request. Host networking puts it at
-  # 127.0.0.1:4416, which is the bgutil:http plugin's built-in default base_url, so
-  # no extra config is needed on the yt-dlp side beyond --plugin-dirs.
+  # real media URLs; this generates them on request. Reachable from backend at
+  # http://resonance-bgutil-pot-provider:4416 on resonance_backend_net -- yt-dlp's
+  # plugin defaults to the old host-networking address (127.0.0.1:4416), so backend
+  # points it here explicitly via extractor-args (see YtDlpService.cs's
+  # PoTokenProviderFlag) rather than relying on that default.
   bgutil-provider:
     image: brainicism/bgutil-ytdlp-pot-provider
     container_name: resonance-bgutil-pot-provider
-    network_mode: host
+    networks:
+      - resonance_backend_net
     mem_limit: 256m
     cpus: 0.5
     restart: unless-stopped
 
   # Resonance's own reverse proxy. Owns all app routing, rate limiting, security
-  # headers and body limits. Unlike backend/frontend/bgutil-provider, this one
-  # is NOT on host networking — it sits on proxy_backend_net instead. The
-  # outer/main proxy (unchanged) keeps reaching it the same way it always
-  # did, via 192.168.0.254:8930 — published explicitly here since bridge
-  # networking no longer exposes it implicitly. This container still reaches
-  # backend/frontend (which ARE host-networked, for Soulseek P2P/DLNA/UPnP)
-  # via host.docker.internal.
+  # headers and body limits. Reaches backend/frontend by container name on
+  # resonance_backend_net; the outer/main proxy reaches this one via the published
+  # 192.168.0.254:8443.
   caddy:
     build:
       context: caddy
@@ -150,23 +210,25 @@ services:
     image: resonance-caddy
     container_name: resonance-caddy
     networks:
-      - proxy_backend_net
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - resonance_caddy_proxy_net
+      - resonance_backend_net
     ports:
-      - "192.168.0.254:8930:8930"
-      - "192.168.0.253:8443:8443"
-      - "192.168.0.253:8443:8443/udp"
+      - "192.168.0.254:8443:8443"
+      - "192.168.0.254:8443:8443/udp"
     mem_limit: 256m
     cpus: 0.5
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - /home/narey/containers/caddy/certs:/etc/caddy/certs:ro
+      - ./caddy/certs:/etc/caddy/certs
+      - ./caddy/site:/srv
+      - ./caddy/logs:/var/log/caddy
+      - caddy_data:/data
+      - caddy_config:/config
     depends_on:
       - backend
       - frontend
     restart: unless-stopped
 
-networks:
-  proxy_backend_net:
-    external: true
+volumes:
+  caddy_data:
+  caddy_config:

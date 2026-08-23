@@ -95,7 +95,7 @@ namespace resonance.Dlna
             }
 
             uuid = DeriveDeviceUuid();
-            localIp = GetLocalIpAddress();
+            localIp = string.IsNullOrWhiteSpace(options.BindAddress) ? GetLocalIpAddress() : options.BindAddress;
             log.Information("Starting DLNA server on {Ip}:{Port}", localIp, options.Port);
 
             cts = new CancellationTokenSource();
@@ -481,7 +481,11 @@ namespace resonance.Dlna
                 using var udp = new UdpClient();
                 udp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
                 udp.Client.Bind(new IPEndPoint(IPAddress.Any, SsdpPort));
-                udp.JoinMulticastGroup(SsdpMulticast, IPAddress.Any);
+
+                // The interface joined here is the one that actually receives multicast M-SEARCH
+                // queries from LAN clients; IPAddress.Any lets the OS pick, which follows the
+                // default route and is wrong when that's a container-only network (see localIp).
+                udp.JoinMulticastGroup(SsdpMulticast, IPAddress.Parse(localIp));
 
                 log.Debug("DLNA SSDP listener started");
 
@@ -598,6 +602,10 @@ namespace resonance.Dlna
 
             using var udp = new UdpClient();
             udp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+
+            // Outbound multicast otherwise leaves via whichever interface the OS considers the
+            // default route, same reasoning as the join in SsdpListenLoopAsync.
+            udp.Client.Bind(new IPEndPoint(IPAddress.Parse(localIp), 0));
             var bytes = Encoding.UTF8.GetBytes(sb.ToString());
             udp.Send(bytes, bytes.Length, new IPEndPoint(SsdpMulticast, SsdpPort));
         }
