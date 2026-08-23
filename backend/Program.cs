@@ -1759,6 +1759,7 @@ namespace resonance
                 .Enrich.WithProperty("ProcessId", ProcessId)
                 .Enrich.FromLogContext()
                 .Enrich.With<UtcTimestampEnricher>()
+                .Enrich.With<FrameworkContextNormalizer>()
                 .WriteTo.Console(
                     theme: noColor ? ConsoleTheme.None : SystemConsoleTheme.Literate,
                     applyThemeToRedirectedOutput: !noColor,
