@@ -14,14 +14,26 @@
 # below) instead of the old `Host=localhost` + host-published port 5432.
 #
 # Fixed 2026-08-23: postgresql_net's bridge interface had no working internet egress
-# on this host because it wasn't assigned to firewalld's `docker` zone (masquerade
-# was correctly configured in Docker's own iptables rules, but firewalld's default
-# `public` zone -- where an unassigned interface falls back to -- has masquerade off
-# and rejected the traffic first). Fixed at the host level with `firewall-cmd
-# --zone=docker --add-interface=<postgresql_net's bridge> --permanent`, matching how
-# resonance_backend_net and resonance_caddy_proxy_net were already configured. Not a
-# compose-level concern, but recorded here since the symptom (Soulseek server
-# connection failing with "No route to host" on every reconnect) showed up here.
+# on this host because it wasn't assigned to firewalld's `docker` zone (Docker's own
+# iptables MASQUERADE rule was correctly configured, but firewalld's default `public`
+# zone -- where an unassigned interface falls back to -- rejected the forwarded
+# traffic before it ever reached that rule). Fixed with `firewall-cmd --zone=docker
+# --add-interface=<postgresql_net's bridge> --permanent`, matching how
+# resonance_backend_net and resonance_caddy_proxy_net were already configured.
+#
+# Fixed the same day, same zone: initially added `masquerade: yes` alongside the
+# interface, assuming it was needed for the egress fix above. It wasn't -- Docker's
+# own MASQUERADE rule already covers that (scoped to traffic sourced from the
+# container subnet only). Firewalld's zone-level masquerade is broader: it was ALSO
+# rewriting the source address of genuinely external inbound traffic (real Soulseek
+# peers connecting to the published port 50300) to the bridge gateway address before
+# it reached the container -- a classic Docker+firewalld double-NAT interaction,
+# confirmed via tcpdump (a real peer's SYN showed its real IP on eno1, but the
+# bridge gateway's IP by the time it reached the container). Removed masquerade from
+# the zone (kept target: ACCEPT); egress still works via Docker's own rule, and real
+# peer IPs now reach the container untouched. Neither fix is a compose-level
+# concern, but recorded here since the symptoms (Soulseek failing to connect, then
+# every peer appearing to connect from the same bridge-gateway IP) showed up here.
 #
 # backend also gets a macvlan network (local_lan_net, see the backend service below)
 # giving it a real address on the LAN itself, alongside its bridge-network addresses.
