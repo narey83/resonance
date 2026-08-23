@@ -1,0 +1,22 @@
+# systemd unit for the dev server -- NOT deployed automatically by git pull.
+# Install once with:
+#   sudo cp docker/scripts/resonance-backend-netfix.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now resonance-backend-netfix.service
+# Expects fix-backend-network.sh and fix-backend-network-watch.sh to already be
+# present (executable) at /home/narey/containers/resonance/ -- copy them there
+# from this directory; they are not picked up from the git checkout path.
+[Unit]
+Description=Keep resonance-backend's default network on resonance_backend_net (Docker Compose gw_priority workaround)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=narey
+ExecStart=/home/narey/containers/resonance/fix-backend-network-watch.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

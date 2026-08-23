@@ -105,7 +105,12 @@ services:
     # service (`docker compose up -d --no-deps backend`, not `restart`) silently
     # reverts to Docker's own tiebreak, which has consistently picked local_lan_net --
     # breaking the 50300 publish and rerouting general traffic through the macvlan.
-    # After any recreate, reapply by hand and verify:
+    #
+    # Automated 2026-08-23: resonance-backend-netfix.service on the dev server watches
+    # for backend container starts and reapplies the correct priorities via
+    # docker/scripts/fix-backend-network.sh -- see that directory for the scripts and
+    # the systemd unit (installed manually on the host, not deployed by git pull).
+    # Manual reapply, if ever needed:
     #   docker network disconnect resonance_backend_net resonance-backend
     #   docker network connect --ip 172.20.0.5 --gw-priority 100 resonance_backend_net resonance-backend
     #   docker network disconnect local_lan_net resonance-backend
