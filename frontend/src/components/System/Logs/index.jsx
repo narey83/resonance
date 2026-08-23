@@ -45,6 +45,17 @@ import {
 import * as prefs from '../../../lib/prefs';
 import { downloadFile, parseUtcDate } from '../../../lib/util';
 import { LoaderSegment } from '../../Shared';
+import {
+  buildRows,
+  contextsOf,
+  dedupeAgainstSeen,
+  logKey,
+  mergeContexts,
+  mergeLiveEntries,
+  orderPollResults,
+  pollCursor,
+} from './liveLogState';
+import { useVisibilityAwarePolling } from './useVisibilityAwarePolling';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import React, {
   useEffect,
@@ -120,14 +131,6 @@ const formatTimestamp = (ts) =>
     .toISOString()
     .replace('T', ' ')
     .replace(/\.\d{3}Z$/, 'Z');
-
-const dayOf = (ts) => parseUtcDate(ts).toISOString().slice(0, 10);
-
-// The backend has no unique/monotonic id on a log record, so this composite stands in for one —
-// used both as the React/virtualizer row key and as the cross-request dedupe key where the live
-// tail poll and the scroll-back page fetches overlap at their inclusive from/to boundaries.
-const logKey = (log) =>
-  `${log.timestamp}|${log.context}|${log.level}|${log.message}`;
 
 const rowKey = (row) =>
   row.type === 'date' ? `date-${row.day}` : logKey(row.log);
@@ -721,7 +724,17 @@ const LogsFeed = ({
   const [regexMode, setRegexMode] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [entries, setEntries] = useState([]);
+  // Bounded live-tail window (see LIVE_MAX_ENTRIES) fed by the initial load and every poll,
+  // capped so live polling alone can never grow memory or per-poll work without limit.
+  const [liveEntries, setLiveEntries] = useState([]);
+  // Explicitly-scrolled-to older pages, kept separate from the bounded live window per design:
+  // scrolling back is a deliberate, human-paced action (unlike the 7s poll), so it's allowed to
+  // accumulate for as long as the user keeps requesting more, same as before this change.
+  const [historyEntries, setHistoryEntries] = useState([]);
+  // Rows/contexts for historyEntries, built incrementally (one history page at a time) rather
+  // than re-derived from the whole array on every scroll-back fetch -- see buildRows/contextsOf.
+  const [historyRows, setHistoryRows] = useState([]);
+  const [historyContexts, setHistoryContexts] = useState(new Set());
   const [expanded, setExpanded] = useState(new Set());
   const [loadingInitial, setLoadingInitial] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -730,8 +743,10 @@ const LogsFeed = ({
 
   const scrollRef = useRef(null);
   const mobileScrollRef = useRef(null);
-  const entriesRef = useRef([]);
-  entriesRef.current = entries;
+  const liveEntriesRef = useRef([]);
+  liveEntriesRef.current = liveEntries;
+  const historyEntriesRef = useRef([]);
+  historyEntriesRef.current = historyEntries;
 
   const filtersRef = useRef();
   filtersRef.current = {
@@ -743,15 +758,21 @@ const LogsFeed = ({
     regexMode,
   };
 
-  // Everything currently represented in entries + pendingRef, so the tail poll and the
-  // scroll-back page fetches never double-insert the record they inclusively overlap on.
+  // Everything currently represented in liveEntries + historyEntries + pendingRef, so the tail
+  // poll and the scroll-back page fetches never double-insert a record they overlap on.
   const seenKeysRef = useRef(new Set());
   // Tailed entries that arrived while scrolled away from the top — held back so a live update
-  // never yanks the list out from under someone reading older rows.
+  // never yanks the list out from under someone reading older rows. Capped the same as
+  // liveEntries (mergeLiveEntries applies the same bound) for the same reason: nothing should
+  // grow without limit purely from time passing while the tab sits scrolled away.
   const pendingRef = useRef([]);
   const atTopRef = useRef(true);
   const fetchingOlderRef = useRef(false);
   const pollInFlightRef = useRef(false);
+  // Running "day" at the end of history loaded so far, threaded from one fetchOlderPage call to
+  // the next (seeded from the live window's own boundary on the first page) so date separators
+  // stay correct across page boundaries without ever re-walking earlier pages. See buildRows.
+  const lastHistoryDayRef = useRef(null);
   // Bumped on every filter reset; async fetches discard their result if a newer reset has
   // already happened by the time they resolve.
   const generationRef = useRef(0);
@@ -759,22 +780,14 @@ const LogsFeed = ({
   // bottom (scroll-back) appends never touch scroll position.
   const pendingTopResetRef = useRef(false);
 
+  // O(liveEntries.length) — bounded by LIVE_MAX_ENTRIES, never by session length or history size.
+  const liveRowsResult = useMemo(() => buildRows(liveEntries), [liveEntries]);
+  const liveRows = liveRowsResult.rows;
+  const liveContexts = useMemo(() => contextsOf(liveEntries), [liveEntries]);
+
   const resetScroll = () => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
     if (mobileScrollRef.current) mobileScrollRef.current.scrollTop = 0;
-  };
-
-  const dedupeAndMark = (items) => {
-    const fresh = [];
-
-    for (const item of items) {
-      const key = logKey(item);
-      if (seenKeysRef.current.has(key)) continue;
-      seenKeysRef.current.add(key);
-      fresh.push(item);
-    }
-
-    return fresh;
   };
 
   const resetAndFetch = async () => {
@@ -783,8 +796,12 @@ const LogsFeed = ({
     seenKeysRef.current = new Set();
     pendingRef.current = [];
     atTopRef.current = true;
+    lastHistoryDayRef.current = null;
     setPendingCount(0);
-    setEntries([]);
+    setLiveEntries([]);
+    setHistoryEntries([]);
+    setHistoryRows([]);
+    setHistoryContexts(new Set());
     setExpanded(new Set());
     setHasMoreOlder(true);
     resetScroll();
@@ -803,11 +820,11 @@ const LogsFeed = ({
 
       if (gen !== generationRef.current) return;
 
-      setEntries(dedupeAndMark(items));
+      setLiveEntries(dedupeAgainstSeen(items, seenKeysRef.current));
       setHasMoreOlder(items.length === PER_PAGE);
     } catch {
       if (gen !== generationRef.current) return;
-      setEntries([]);
+      setLiveEntries([]);
       setHasMoreOlder(false);
     } finally {
       if (gen === generationRef.current) setLoadingInitial(false);
@@ -817,7 +834,10 @@ const LogsFeed = ({
   // Scroll-back: cursor-paginated on the oldest loaded record's timestamp rather than a raw
   // offset, so it stays correct regardless of how many new entries the tail poll has prepended
   // in the meantime. +1 on the limit absorbs the guaranteed one-record overlap at the inclusive
-  // `to` boundary; a short page (< limit) means there's nothing further back to load.
+  // `to` boundary; a short page (< limit) means there's nothing further back to load. Unlike the
+  // live window, history has no cap -- scrolling back is a deliberate, human-paced action, and
+  // each page only costs work proportional to that one page (see buildRows/contextsOf below),
+  // not to how much history has already been loaded.
   const fetchOlderPage = async () => {
     if (fetchingOlderRef.current) return;
     fetchingOlderRef.current = true;
@@ -825,7 +845,9 @@ const LogsFeed = ({
     setLoadingOlder(true);
 
     const { dateFrom: from } = filtersRef.current;
-    const oldest = entriesRef.current.at(-1)?.timestamp;
+    const lastLoaded =
+      historyEntriesRef.current.at(-1) ?? liveEntriesRef.current.at(-1);
+    const oldest = lastLoaded?.timestamp;
 
     try {
       const { logs: items } = await getLogs({
@@ -838,8 +860,18 @@ const LogsFeed = ({
 
       if (gen !== generationRef.current) return;
 
-      const fresh = dedupeAndMark(items);
-      if (fresh.length > 0) setEntries((prev) => [...prev, ...fresh]);
+      const fresh = dedupeAgainstSeen(items, seenKeysRef.current);
+
+      if (fresh.length > 0) {
+        const seedDay = lastHistoryDayRef.current ?? liveRowsResult.lastDay;
+        const { lastDay, rows: newRows } = buildRows(fresh, seedDay);
+
+        lastHistoryDayRef.current = lastDay;
+        setHistoryEntries((prev) => [...prev, ...fresh]);
+        setHistoryRows((prev) => [...prev, ...newRows]);
+        setHistoryContexts((prev) => new Set([...prev, ...contextsOf(fresh)]));
+      }
+
       setHasMoreOlder(items.length === PER_PAGE + 1);
     } catch {
       if (gen === generationRef.current) setHasMoreOlder(false);
@@ -850,37 +882,40 @@ const LogsFeed = ({
     }
   };
 
-  // Tail: polls for anything at-or-newer than the current newest-loaded record (inclusive, so
-  // dedupeAndMark drops the re-sent boundary record). Merges straight in while pinned to the
-  // top; otherwise queues in pendingRef so a mid-read scroll position never gets disturbed.
+  // Tail: polls for anything newer than the newest loaded record, using the Postgres afterId
+  // fast path (a pure indexed seek) when it's available -- see pollCursor. Merges straight into
+  // the bounded live window while pinned to the top; otherwise queues in pendingRef (also
+  // bounded) so a mid-read scroll position never gets disturbed.
   const poll = async () => {
-    if (pollInFlightRef.current || entriesRef.current.length === 0) return;
+    if (pollInFlightRef.current || liveEntriesRef.current.length === 0) return;
     pollInFlightRef.current = true;
     const gen = generationRef.current;
 
     const { dateTo: to } = filtersRef.current;
-    const newest = entriesRef.current[0]?.timestamp;
+    const cursor = pollCursor(liveEntriesRef.current[0]);
+    const usedAfterId = 'afterId' in cursor;
 
     try {
       const { logs: items } = await getLogs({
         offset: 0,
         limit: TAIL_POLL_LIMIT,
-        from: newest,
+        ...cursor,
         to: to ? new Date(to + 'T23:59:59').toISOString() : undefined,
         ...buildLogQueryParams(filtersRef.current),
       });
 
       if (gen !== generationRef.current) return;
 
-      const fresh = dedupeAndMark(items);
+      const ordered = orderPollResults(items, usedAfterId);
+      const fresh = dedupeAgainstSeen(ordered, seenKeysRef.current);
       if (fresh.length === 0) return;
 
       if (atTopRef.current) {
         pendingTopResetRef.current = true;
-        setEntries((prev) => [...fresh, ...prev]);
+        setLiveEntries((prev) => mergeLiveEntries(prev, fresh));
       } else {
-        pendingRef.current = [...fresh, ...pendingRef.current];
-        setPendingCount((n) => n + fresh.length);
+        pendingRef.current = mergeLiveEntries(pendingRef.current, fresh);
+        setPendingCount(pendingRef.current.length);
       }
     } catch {
       // transient — the next interval tick retries
@@ -896,7 +931,7 @@ const LogsFeed = ({
     setPendingCount(0);
     if (pending.length > 0) {
       pendingTopResetRef.current = true;
-      setEntries((prev) => [...pending, ...prev]);
+      setLiveEntries((prev) => mergeLiveEntries(prev, pending));
     }
   };
 
@@ -913,7 +948,7 @@ const LogsFeed = ({
     pendingTopResetRef.current = false;
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
     if (mobileScrollRef.current) mobileScrollRef.current.scrollTop = 0;
-  }, [entries]);
+  }, [liveEntries]);
 
   useEffect(() => {
     resetAndFetch();
@@ -968,36 +1003,23 @@ const LogsFeed = ({
     dateTo ||
     !Object.values(levels).every(Boolean);
 
-  // Every context the backend can emit, plus anything loaded that predates the registry.
+  // Every context the backend can emit, plus anything loaded that predates the registry. Built
+  // from the small per-segment context sets (liveContexts, historyContexts), not by re-scanning
+  // every loaded entry -- so this is bounded by the number of *distinct* contexts that exist
+  // (a small, fixed vocabulary), never by how many log entries or history pages are loaded.
   const allContexts = useMemo(
-    () =>
-      [
-        ...new Set([
-          ...knownContexts,
-          ...entries.map((log) => log.context).filter(Boolean),
-        ]),
-      ].sort((a, b) => a.localeCompare(b)),
-    [entries, knownContexts],
+    () => mergeContexts(knownContexts, liveContexts, historyContexts),
+    [historyContexts, knownContexts, liveContexts],
   );
 
-  // Flattened list of date separators + log rows, so the virtualizer can measure both.
-  const rows = useMemo(() => {
-    const out = [];
-    let lastDay = null;
-
-    for (const log of entries) {
-      const day = dayOf(log.timestamp);
-
-      if (day !== lastDay) {
-        out.push({ day, type: 'date' });
-        lastDay = day;
-      }
-
-      out.push({ log, type: 'log' });
-    }
-
-    return out;
-  }, [entries]);
+  // Flattened list of date separators + log rows, so the virtualizer can measure both. liveRows
+  // is already fully built (O(live window), recomputed per poll); historyRows is already fully
+  // built too (accumulated incrementally, one page at a time, in fetchOlderPage) -- so this is a
+  // reference-copy concatenation, not per-item logic, regardless of how large either side is.
+  const rows = useMemo(
+    () => [...liveRows, ...historyRows],
+    [historyRows, liveRows],
+  );
 
   const todayStr = new Date().toISOString().slice(0, 10);
   // A dateTo strictly in the past can never gain a newer match, so tailing simply doesn't poll
@@ -1068,29 +1090,11 @@ const LogsFeed = ({
     loadingOlder,
   ]);
 
-  // Tail poll: skips while the tab is backgrounded (no point paying for a full-file-scan the
-  // user can't see), and fires one catch-up poll immediately on becoming visible again rather
-  // than waiting out a stale interval.
-  useEffect(() => {
-    if (!tailingEnabled) return undefined;
-
-    const tick = () => {
-      if (!document.hidden) poll();
-    };
-
-    const id = setInterval(tick, TAIL_POLL_INTERVAL_MS);
-
-    const onVisible = () => {
-      if (!document.hidden) poll();
-    };
-
-    document.addEventListener('visibilitychange', onVisible);
-
-    return () => {
-      clearInterval(id);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, [tailingEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Tail poll: stops the timer itself (not just the work it would do) while the tab is
+  // backgrounded, and fires one catch-up poll immediately on becoming visible again rather than
+  // waiting out a stale interval. See useVisibilityAwarePolling for why it's a plain interval and
+  // never more than one at a time.
+  useVisibilityAwarePolling(poll, TAIL_POLL_INTERVAL_MS, tailingEnabled);
 
   // Only nag when it is actionable: a level is switched on that the server never emits. Either
   // lowering the server level or switching that filter off clears it, so it can't become wallpaper.
@@ -1238,7 +1242,9 @@ const LogsFeed = ({
             className="logs-count"
             title="Entries currently loaded in this session"
           >
-            <strong>{entries.length.toLocaleString()}</strong>
+            <strong>
+              {(liveEntries.length + historyEntries.length).toLocaleString()}
+            </strong>
           </span>
 
           <span

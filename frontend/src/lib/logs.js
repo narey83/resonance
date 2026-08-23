@@ -56,6 +56,7 @@ export const getLogs = async ({
   search,
   from,
   to,
+  afterId,
 } = {}) => {
   const params = new URLSearchParams({ offset, limit });
 
@@ -70,6 +71,8 @@ export const getLogs = async ({
   if (search) params.append('search', search);
   if (from) params.append('from', from);
   if (to) params.append('to', to);
+  if (afterId !== undefined && afterId !== null)
+    params.append('afterId', afterId);
 
   const response = await api.get(`/logs?${params}`);
 
