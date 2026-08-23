@@ -59,6 +59,12 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     // Per-track auto-retry rounds, in memory (resets on restart, which also grants a fresh budget).
     private const int MaxAutoRetryRounds = 10;
 
+    // Below this fraction of yt-dlp's own reported video duration, a "completed" download is
+    // treated as truncated rather than trusted. Guards against a process interrupted mid-download
+    // (e.g. a dotnet watch restart) leaving a partial file that yt-dlp's own resume check later
+    // reports as "already downloaded" and this service would otherwise adopt as done.
+    private const double TruncatedDownloadRatio = 0.5;
+
     private static readonly ILogger Log = Serilog.Log.ForContext("SourceContext", resonance.Logs.Integrations.YtDlp);
 
     // Coalesce post-publish library/share rescans: touched folders accumulate and are scanned at
@@ -1981,6 +1987,32 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         else
         {
             tagError = YtDlpTagWriter.Write(filePath, metadata, track.Url, out fileDuration);
+
+            if (tagError == null && fileDuration.HasValue && track.Duration is { } expectedDuration
+                && expectedDuration > 0 && fileDuration.Value < expectedDuration * TruncatedDownloadRatio)
+            {
+                var reason = $"downloaded file is only {FormatDuration(fileDuration.Value)}, expected ~{FormatDuration(expectedDuration)} — likely an interrupted download";
+                Log.Warning(
+                    "YtDlp: {Title} downloaded truncated ({Actual}s of {Expected}s expected) — discarding and retrying",
+                    track.Title, fileDuration.Value, expectedDuration);
+
+                try
+                {
+                    File.Delete(filePath);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning("YtDlp: failed to delete truncated file {File}: {Error}", filePath, ex.Message);
+                }
+
+                // Sidecars (thumbnail, .part, etc) share the same stem and must go too, otherwise
+                // a retry's yt-dlp invocation can still find and re-adopt the stale partial output.
+                RemoveStagingSidecars(filePath);
+
+                await HandleFailureAsync(track, reason, opts, db, job);
+                return;
+            }
+
             if (tagError != null)
             {
                 Log.Warning("YtDlp: tag writing failed for {File}: {Error}", filePath, tagError);
