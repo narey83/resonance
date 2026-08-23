@@ -81,12 +81,21 @@ public static class LogQueryService
 
         if (levels?.Length > 0)
         {
-            query = query.Where(e => levels.Contains(e.Level));
+            // Deliberately List<T>, not the string[] directly: `array.Contains(x)` resolves to
+            // MemoryExtensions' ReadOnlySpan-based overload (arrays implicitly convert to spans),
+            // and EF Core 8's parameter-extraction interpreter -- built before ReadOnlySpan-returning
+            // generic delegates like this were common -- can't instantiate a generic argument that's
+            // a ref struct, throwing a TypeLoadException at query time. List<T>.Contains is a plain
+            // instance method, sidestepping that overload resolution entirely. Confirmed live against
+            // Postgres: the bare array form 500s on every call, this form doesn't.
+            var levelList = levels.ToList();
+            query = query.Where(e => levelList.Contains(e.Level));
         }
 
         if (contexts?.Length > 0)
         {
-            query = query.Where(e => contexts.Contains(e.SourceContext));
+            var contextList = contexts.ToList();
+            query = query.Where(e => contextList.Contains(e.SourceContext));
         }
 
         if (!string.IsNullOrWhiteSpace(search))
