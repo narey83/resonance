@@ -44,6 +44,13 @@ namespace resonance
     ///     same normalized value -- not just whichever one happened to get individually patched.
     ///     Anything not matching a known prefix (i.e. every context this app sets itself) passes
     ///     through completely untouched.
+    ///
+    ///     Also shortens SubContext for the same known library prefixes, but to the leaf segment
+    ///     only (e.g. "Soulseek.Messaging.Handlers.PeerMessageHandler" -> "PeerMessageHandler") --
+    ///     the group already lives in the sibling SourceContext ("Soulseek"), so repeating it there
+    ///     would be redundant. Unlike SourceContext, SubContext also carries arbitrary non-namespace
+    ///     values (a device id, a username), so only prefixes known to be dotted library type names
+    ///     are touched; everything else passes through untouched.
     /// </summary>
     public class FrameworkContextNormalizer : ILogEventEnricher
     {
@@ -57,7 +64,18 @@ namespace resonance
             ("Npgsql", "Postgres"),
         };
 
+        private static readonly string[] KnownSubContextPrefixes =
+        {
+            "Soulseek",
+        };
+
         public void Enrich(LogEvent logEvent, ILogEventPropertyFactory propertyFactory)
+        {
+            EnrichSourceContext(logEvent, propertyFactory);
+            EnrichSubContext(logEvent, propertyFactory);
+        }
+
+        private static void EnrichSourceContext(LogEvent logEvent, ILogEventPropertyFactory propertyFactory)
         {
             if (!logEvent.Properties.TryGetValue("SourceContext", out var value)
                 || value is not ScalarValue { Value: string raw })
@@ -65,7 +83,7 @@ namespace resonance
                 return;
             }
 
-            var normalized = Normalize(raw);
+            var normalized = NormalizeGroupSlashLeaf(raw);
 
             if (ReferenceEquals(normalized, raw))
             {
@@ -75,17 +93,29 @@ namespace resonance
             logEvent.AddOrUpdateProperty(propertyFactory.CreateProperty("SourceContext", normalized));
         }
 
-        private static string Normalize(string raw)
+        private static void EnrichSubContext(LogEvent logEvent, ILogEventPropertyFactory propertyFactory)
+        {
+            if (!logEvent.Properties.TryGetValue("SubContext", out var value)
+                || value is not ScalarValue { Value: string raw })
+            {
+                return;
+            }
+
+            var leaf = LeafSegmentIfKnownPrefix(raw);
+
+            if (leaf is null || ReferenceEquals(leaf, raw))
+            {
+                return;
+            }
+
+            logEvent.AddOrUpdateProperty(propertyFactory.CreateProperty("SubContext", leaf));
+        }
+
+        private static string NormalizeGroupSlashLeaf(string raw)
         {
             foreach (var (prefix, group) in KnownPrefixes)
             {
-                if (raw.Length < prefix.Length || !raw.StartsWith(prefix, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                // "Microsoft.AspNetCoreSomethingElse" must not match the "Microsoft.AspNetCore" prefix
-                if (raw.Length > prefix.Length && raw[prefix.Length] != '.')
+                if (!MatchesPrefix(raw, prefix))
                 {
                     continue;
                 }
@@ -95,13 +125,42 @@ namespace resonance
                     return group;
                 }
 
-                var leaf = raw[(prefix.Length + 1)..];
-                var lastSegment = leaf[(leaf.LastIndexOf('.') + 1)..];
+                var lastSegment = LastSegment(raw[(prefix.Length + 1)..]);
 
                 return lastSegment.Length == 0 ? group : $"{group} / {lastSegment}";
             }
 
             return raw;
         }
+
+        private static string LeafSegmentIfKnownPrefix(string raw)
+        {
+            foreach (var prefix in KnownSubContextPrefixes)
+            {
+                if (!MatchesPrefix(raw, prefix) || raw.Length == prefix.Length)
+                {
+                    continue;
+                }
+
+                var lastSegment = LastSegment(raw[(prefix.Length + 1)..]);
+
+                return lastSegment.Length == 0 ? raw : lastSegment;
+            }
+
+            return null;
+        }
+
+        private static bool MatchesPrefix(string raw, string prefix)
+        {
+            if (raw.Length < prefix.Length || !raw.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            // "Microsoft.AspNetCoreSomethingElse" must not match the "Microsoft.AspNetCore" prefix
+            return raw.Length == prefix.Length || raw[prefix.Length] == '.';
+        }
+
+        private static string LastSegment(string dotted) => dotted[(dotted.LastIndexOf('.') + 1)..];
     }
 }

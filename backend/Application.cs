@@ -1152,7 +1152,7 @@ namespace resonance
                 return;
             }
 
-            var logger = Loggers.GetOrAdd(source, Log.ForContext("Context", "Soulseek").ForContext("SubContext", source));
+            var logger = Loggers.GetOrAdd(source, Log.ForContext("SourceContext", "Soulseek").ForContext("SubContext", source));
 
             var level = TranslateLogLevel(args.Level);
 

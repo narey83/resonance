@@ -15,11 +15,19 @@ public class FrameworkContextNormalizerTests
             new(name, new ScalarValue(value));
     }
 
-    private static LogEvent NewEvent(string? sourceContext)
+    private static LogEvent NewEvent(string? sourceContext, string? subContext = null)
     {
-        var properties = sourceContext is null
-            ? Array.Empty<LogEventProperty>()
-            : new[] { new LogEventProperty("SourceContext", new ScalarValue(sourceContext)) };
+        var properties = new List<LogEventProperty>();
+
+        if (sourceContext is not null)
+        {
+            properties.Add(new LogEventProperty("SourceContext", new ScalarValue(sourceContext)));
+        }
+
+        if (subContext is not null)
+        {
+            properties.Add(new LogEventProperty("SubContext", new ScalarValue(subContext)));
+        }
 
         return new LogEvent(
             DateTimeOffset.UtcNow,
@@ -36,6 +44,17 @@ public class FrameworkContextNormalizerTests
         new FrameworkContextNormalizer().Enrich(logEvent, new TestPropertyFactory());
 
         return logEvent.Properties.TryGetValue("SourceContext", out var value) && value is ScalarValue { Value: string s }
+            ? s
+            : null;
+    }
+
+    private static string? NormalizeSubContext(string subContext)
+    {
+        var logEvent = NewEvent(sourceContext: null, subContext: subContext);
+
+        new FrameworkContextNormalizer().Enrich(logEvent, new TestPropertyFactory());
+
+        return logEvent.Properties.TryGetValue("SubContext", out var value) && value is ScalarValue { Value: string s }
             ? s
             : null;
     }
@@ -82,5 +101,46 @@ public class FrameworkContextNormalizerTests
         new FrameworkContextNormalizer().Enrich(logEvent, new TestPropertyFactory());
 
         Assert.False(logEvent.Properties.ContainsKey("SourceContext"));
+    }
+
+    [Theory]
+    [InlineData("Soulseek.Messaging.Handlers.PeerMessageHandler", "PeerMessageHandler")]
+    [InlineData("Soulseek.Client", "Client")]
+    [InlineData("Soulseek.Diagnostics.DiagnosticFactory", "DiagnosticFactory")]
+    public void NormalizesSubContext_ForKnownLibraryPrefixes_ToLeafOnly(string raw, string expected)
+    {
+        Assert.Equal(expected, NormalizeSubContext(raw));
+    }
+
+    [Theory]
+    [InlineData("device-123")]
+    [InlineData("some-username")]
+    [InlineData("SoulseekLikeButNotIt")]
+    public void LeavesNonNamespaceSubContextValues_CompletelyUnchanged(string raw)
+    {
+        Assert.Equal(raw, NormalizeSubContext(raw));
+    }
+
+    [Fact]
+    public void LeavesEventsWithNoSubContext_Unaffected()
+    {
+        var logEvent = NewEvent(sourceContext: null);
+
+        new FrameworkContextNormalizer().Enrich(logEvent, new TestPropertyFactory());
+
+        Assert.False(logEvent.Properties.ContainsKey("SubContext"));
+    }
+
+    [Fact]
+    public void NormalizesSourceContextAndSubContext_Together_InOneEvent()
+    {
+        var logEvent = NewEvent("Soulseek", "Soulseek.Messaging.Handlers.PeerMessageHandler");
+
+        new FrameworkContextNormalizer().Enrich(logEvent, new TestPropertyFactory());
+
+        // "Soulseek" alone isn't a known SourceContext prefix (it's an app-set group name, not a
+        // framework namespace), so it passes through; SubContext is shortened to its leaf.
+        Assert.Equal("Soulseek", ((ScalarValue)logEvent.Properties["SourceContext"]).Value);
+        Assert.Equal("PeerMessageHandler", ((ScalarValue)logEvent.Properties["SubContext"]).Value);
     }
 }
