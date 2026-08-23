@@ -138,7 +138,11 @@ services:
       # binds to this explicitly rather than relying on the OS default route.
       DLNA_BIND_ADDRESS: "192.168.0.33"
       NO_COLOR: "1"
-      RESONANCE_DISK_LOGGER: "true"
+      # DB-only logging (deliberate switch, 2026-08-23): disk/JSONL logging off, Postgres
+      # is the sole log store and log-viewer source. Accepted tradeoff: log writes can
+      # occasionally hit a transient SaveChanges timeout under DB load on this small
+      # shared instance (see LogsDbContext).
+      RESONANCE_DISK_LOGGER: "false"
       RESONANCE_POSTGRES_LOGGER: "true"
       # Used by Integrations/Scripts as the default script executable.
       SHELL: "/usr/bin/bash"
