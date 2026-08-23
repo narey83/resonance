@@ -47,6 +47,8 @@ public class YtDlpEventRecord
 
     public string? JobTitle { get; set; }
 
+    public string? TrackTitle { get; set; }
+
     public string Level { get; set; } = "info";
 
     public string Message { get; set; } = string.Empty;

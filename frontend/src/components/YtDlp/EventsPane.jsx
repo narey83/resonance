@@ -87,6 +87,57 @@ const EventRow = ({ ev }) => (
   </div>
 );
 
+const TrackGroup = ({ track }) => {
+  const [open, setOpen] = useState(false);
+  const Chevron = open ? ChevronDown : ChevronRight;
+  const last = track.events.at(-1);
+  const hasError = track.events.some((e) => e.level === 'error');
+  const hasWarning = track.events.some((e) => e.level === 'warning');
+
+  return (
+    <div className="ytdlp-event-track">
+      <div
+        className="ytdlp-event-track-header"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Chevron
+          size={12}
+          strokeWidth={1.75}
+        />
+        <span
+          className="ytdlp-event-dot"
+          style={{ background: LEVEL_DOT[last.level] || LEVEL_DOT.raw }}
+        />
+        <span className="ytdlp-event-track-title">{track.title}</span>
+        <span
+          className="ytdlp-event-track-summary"
+          style={{ color: LEVEL_COLOR[last.level] || LEVEL_COLOR.raw }}
+        >
+          {last.message}
+        </span>
+        {track.events.length > 1 && (
+          <span className="ytdlp-event-group-count">{track.events.length}</span>
+        )}
+        {hasError && <span className="ytdlp-event-group-errors">error</span>}
+        {hasWarning && !hasError && (
+          <span className="ytdlp-event-group-warns">warning</span>
+        )}
+      </div>
+      {open && (
+        <div className="ytdlp-event-track-body">
+          {track.events.map((event_, index) => (
+            <EventRow
+              ev={event_}
+              // eslint-disable-next-line react/no-array-index-key
+              key={index}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const JobGroup = ({ defaultOpen, group, onClearJob }) => {
   const [open, setOpen] = useState(defaultOpen);
   const Chevron = open ? ChevronDown : ChevronRight;
@@ -105,7 +156,7 @@ const JobGroup = ({ defaultOpen, group, onClearJob }) => {
           strokeWidth={1.75}
         />
         <span className="ytdlp-event-group-title">{group.title}</span>
-        <span className="ytdlp-event-group-count">{group.events.length}</span>
+        <span className="ytdlp-event-group-count">{group.count}</span>
         {group.errorCount > 0 && (
           <span className="ytdlp-event-group-errors">
             {group.errorCount} error{group.errorCount > 1 ? 's' : ''}
@@ -132,11 +183,17 @@ const JobGroup = ({ defaultOpen, group, onClearJob }) => {
       </div>
       {open && (
         <div className="ytdlp-event-group-body">
-          {group.events.map((event_, index) => (
+          {group.generalEvents.map((event_, index) => (
             <EventRow
               ev={event_}
               // eslint-disable-next-line react/no-array-index-key
               key={index}
+            />
+          ))}
+          {group.trackGroups.map((track) => (
+            <TrackGroup
+              key={track.title}
+              track={track}
             />
           ))}
         </div>
@@ -175,19 +232,45 @@ const EventsPane = ({ events, onClear, onClearJob }) => {
           title:
             event_.jobTitle ||
             (key === '__system__' ? 'System' : key.slice(0, 8)),
-          events: [],
+          generalEvents: [],
+          trackMap: new Map(),
           errorCount: 0,
           warnCount: 0,
         });
       }
 
       const g = groupMap.get(key);
-      g.events.push(event_);
       if (event_.level === 'error') g.errorCount++;
       if (event_.level === 'warning') g.warnCount++;
+
+      // Several tracks download concurrently within one job, so their Downloading/ID3/Completed
+      // lines interleave in plain chronological order — cluster by track so each one reads as its
+      // own thread instead of a shuffled deck (this was confusing enough that a user reported it).
+      if (event_.trackTitle) {
+        if (!g.trackMap.has(event_.trackTitle)) {
+          g.trackMap.set(event_.trackTitle, {
+            title: event_.trackTitle,
+            events: [],
+          });
+        }
+
+        g.trackMap.get(event_.trackTitle).events.push(event_);
+      } else {
+        g.generalEvents.push(event_);
+      }
     }
 
-    return Array.from(groupMap.values());
+    return Array.from(groupMap.values()).map((g) => {
+      const trackGroups = Array.from(g.trackMap.values()).sort((a, b) => {
+        const aLast = a.events.at(-1).timestamp;
+        const bLast = b.events.at(-1).timestamp;
+        return new Date(bLast) - new Date(aLast);
+      });
+      const count =
+        g.generalEvents.length +
+        trackGroups.reduce((n, t) => n + t.events.length, 0);
+      return { ...g, trackGroups, count };
+    });
   }, [events, levelFilter]);
 
   // Fall back to "All" if the selected job's events have aged out of the buffer.
@@ -206,10 +289,7 @@ const EventsPane = ({ events, onClear, onClearJob }) => {
       endRef.current.scrollIntoView({ behavior: 'auto' });
     }
 
-    previousGroupCount.current = groups.reduce(
-      (n, g) => n + g.events.length,
-      0,
-    );
+    previousGroupCount.current = groups.reduce((n, g) => n + g.count, 0);
   }, [groups, autoScroll]);
 
   const handleScroll = (e) => {
@@ -217,7 +297,7 @@ const EventsPane = ({ events, onClear, onClearJob }) => {
     setAutoScroll(scrollHeight - scrollTop - clientHeight < 60);
   };
 
-  const totalEvents = groups.reduce((n, g) => n + g.events.length, 0);
+  const totalEvents = groups.reduce((n, g) => n + g.count, 0);
 
   return (
     <div className="ytdlp-events-root">

@@ -157,6 +157,10 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         // SubscriptionId was added after first release; EnsureCreated won't alter an existing table.
         await db.Database.ExecuteSqlRawAsync(
             "ALTER TABLE ytdlp.\"Jobs\" ADD COLUMN IF NOT EXISTS \"SubscriptionId\" uuid", cancellationToken);
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE ytdlp.\"Tracks\" ADD COLUMN IF NOT EXISTS \"ReportedDurationSeconds\" integer", cancellationToken);
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE ytdlp.\"Events\" ADD COLUMN IF NOT EXISTS \"TrackTitle\" text", cancellationToken);
 
         // Reset any tracks that were in-progress when the app last shut down
         var stuckTracks = await db.Tracks
@@ -222,7 +226,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         recentEvents.Reverse();
         foreach (var e in recentEvents)
         {
-            eventBuffer.Enqueue(new YtDlpEvent(e.Timestamp, e.JobId, e.JobTitle, e.Level, e.Message));
+            eventBuffer.Enqueue(new YtDlpEvent(e.Timestamp, e.JobId, e.JobTitle, e.Level, e.Message, e.TrackTitle));
         }
 
         // Load channel subscriptions into the hot cache and start the poll loop
@@ -1541,7 +1545,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 if (track != null)
                 {
                     tracksFound++;
-                    await EmitEventAsync(job.Id, "info", $"Found: {track.Title}", job);
+                    await EmitEventAsync(job.Id, "info", $"Found: {track.Title}", job, track.Title);
                     _ = Task.Run(() => RunWorkerAsync(track, cancellationToken), CancellationToken.None);
                 }
             }
@@ -1714,7 +1718,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
             if (skipReason != null)
             {
-                await EmitEventAsync(job.Id, "info", $"Skipped ({skipReason}): {title}", job);
+                await EmitEventAsync(job.Id, "info", $"Skipped ({skipReason}): {title}", job, title);
             }
 
             var track = new YtDlpTrack
@@ -1726,6 +1730,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 Uploader = uploader,
                 ThumbnailUrl = thumbnail,
                 Duration = duration,
+                ReportedDurationSeconds = duration,
                 PlaylistIndex = playlistIndex,
                 State = initialState,
                 Error = skipReason,
@@ -1820,7 +1825,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         await db.SaveChangesAsync(CancellationToken.None);
         await BroadcastJobsAsync();
-        await EmitEventAsync(track.JobId, "info", downloadMessage, job);
+        await EmitEventAsync(track.JobId, "info", downloadMessage, job, track.Title);
 
         var stagingDir = GetStagingDirectory(track.JobId);
         Directory.CreateDirectory(stagingDir);
@@ -1982,13 +1987,13 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         {
             tagError = "Downloaded file not found on disk — tags not written.";
             Log.Warning("YtDlp: {Error} ({File})", tagError, filePath ?? "<no path>");
-            await EmitEventAsync(track.JobId, "error", $"Tags not written for \"{track.Title}\": file not found", job);
+            await EmitEventAsync(track.JobId, "error", $"Tags not written for \"{track.Title}\": file not found", job, track.Title);
         }
         else
         {
             tagError = YtDlpTagWriter.Write(filePath, metadata, track.Url, out fileDuration);
 
-            if (tagError == null && fileDuration.HasValue && track.Duration is { } expectedDuration
+            if (tagError == null && fileDuration.HasValue && track.ReportedDurationSeconds is { } expectedDuration
                 && expectedDuration > 0 && fileDuration.Value < expectedDuration * TruncatedDownloadRatio)
             {
                 var reason = $"downloaded file is only {FormatDuration(fileDuration.Value)}, expected ~{FormatDuration(expectedDuration)} — likely an interrupted download";
@@ -2016,7 +2021,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             if (tagError != null)
             {
                 Log.Warning("YtDlp: tag writing failed for {File}: {Error}", filePath, tagError);
-                await EmitEventAsync(track.JobId, "error", $"Tag problem for \"{track.Title}\": {tagError}", job);
+                await EmitEventAsync(track.JobId, "error", $"Tag problem for \"{track.Title}\": {tagError}", job, track.Title);
             }
             else
             {
@@ -2045,7 +2050,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                     parts.Add($"genre={metadata.Genre}");
                 }
 
-                await EmitEventAsync(track.JobId, "info", $"ID3: {string.Join(" · ", parts)}", job);
+                await EmitEventAsync(track.JobId, "info", $"ID3: {string.Join(" · ", parts)}", job, track.Title);
             }
         }
 
@@ -2122,11 +2127,11 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         if (tagError != null)
         {
-            await EmitEventAsync(track.JobId, "warning", $"Tag error: {track.Title} — {tagError}", job);
+            await EmitEventAsync(track.JobId, "warning", $"Tag error: {track.Title} — {tagError}", job, track.Title);
         }
         else
         {
-            await EmitEventAsync(track.JobId, "success", $"Completed: {track.Title}", job);
+            await EmitEventAsync(track.JobId, "success", $"Completed: {track.Title}", job, track.Title);
         }
 
         await CheckJobCompletionAsync(track.JobId, db, job);
@@ -2174,7 +2179,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             return;
         }
 
-        await EmitEventAsync(track.JobId, "info", $"Skipped ({reason}): {track.Title}", job);
+        await EmitEventAsync(track.JobId, "info", $"Skipped ({reason}): {track.Title}", job, track.Title);
         await CheckJobCompletionAsync(track.JobId, db, job);
         await BroadcastJobsAsync();
     }
@@ -2237,10 +2242,10 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             return;
         }
 
-        if (track.AttemptCount < opts.MaxRetryAttempts)
+        if (!IsPermanentFailure(error) && track.AttemptCount < opts.MaxRetryAttempts)
         {
             Log.Warning("YtDlp: attempt {Attempt}/{Max} failed for {Title}, retrying", track.AttemptCount, opts.MaxRetryAttempts, track.Title);
-            await EmitEventAsync(track.JobId, "warning", $"Retry ({track.AttemptCount}/{opts.MaxRetryAttempts}): {track.Title} — {error}", job);
+            await EmitEventAsync(track.JobId, "warning", $"Retry ({track.AttemptCount}/{opts.MaxRetryAttempts}): {track.Title} — {error}", job, track.Title);
             track.State = YtDlpTrackState.Queued;
 
             var dbTrack = await db.Tracks.FindAsync(track.Id);
@@ -2295,7 +2300,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 return;
             }
 
-            await EmitEventAsync(track.JobId, "error", $"Failed: {track.Title} — {error}", job);
+            await EmitEventAsync(track.JobId, "error", $"Failed: {track.Title} — {error}", job, track.Title);
             await CheckJobCompletionAsync(track.JobId, db, job);
             await BroadcastJobsAsync();
         }
@@ -2537,11 +2542,11 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────
-    private async Task EmitEventAsync(Guid? jobId, string level, string message, YtDlpJob? job = null)
+    private async Task EmitEventAsync(Guid? jobId, string level, string message, YtDlpJob? job = null, string? trackTitle = null)
     {
         var timestamp = DateTime.UtcNow;
         var title = job?.Title ?? job?.Url;
-        var ev = new YtDlpEvent(timestamp, jobId, title, level, message);
+        var ev = new YtDlpEvent(timestamp, jobId, title, level, message, trackTitle);
         eventBuffer.Enqueue(ev);
         while (eventBuffer.Count > EventBufferMax)
         {
@@ -2561,6 +2566,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                     Timestamp = timestamp,
                     JobId = jobId,
                     JobTitle = title,
+                    TrackTitle = trackTitle,
                     Level = level,
                     Message = message,
                 });
@@ -2614,12 +2620,12 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
             track.FilePath = result.DestinationPath;
             Log.Information("YtDlp: converted {Title} to {Format}", track.Title, targetFormat);
-            await EmitEventAsync(track.JobId, "info", $"Converted to {targetFormat}: {track.Title}", job);
+            await EmitEventAsync(track.JobId, "info", $"Converted to {targetFormat}: {track.Title}", job, track.Title);
         }
         else
         {
             Log.Warning("YtDlp: conversion to {Format} failed for {Title}: {Error}", targetFormat, track.Title, result.Error);
-            await EmitEventAsync(track.JobId, "warning", $"Conversion to {targetFormat} failed for \"{track.Title}\" — keeping original", job);
+            await EmitEventAsync(track.JobId, "warning", $"Conversion to {targetFormat} failed for \"{track.Title}\" — keeping original", job, track.Title);
         }
     }
 

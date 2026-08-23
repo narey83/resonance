@@ -889,6 +889,55 @@
   margin-bottom: 8px;
 }
 
+/* Per-track threads within a job group — collapsed to their latest line by default so
+   concurrent downloads don't read as one shuffled stream. */
+.ytdlp-event-track {
+  margin-bottom: 1px;
+}
+
+.ytdlp-event-track-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  cursor: pointer;
+  border-radius: 4px;
+  user-select: none;
+  color: var(--text-muted, #718096);
+}
+
+.ytdlp-event-track-header:hover {
+  background: var(--bg-elevated);
+  margin: 0 -12px;
+  padding: 3px 16px;
+  border-radius: 0;
+}
+
+.ytdlp-event-track-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.ytdlp-event-track-summary {
+  flex: 1;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ytdlp-event-track-body {
+  padding-left: 14px;
+  border-left: 2px solid var(--border);
+  margin-left: 5px;
+}
+
 /* ── Subscriptions ──────────────────────────────────────────────────────── */
 .ytdlp-subs-root {
   display: flex;

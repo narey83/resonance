@@ -51,6 +51,12 @@ public class YtDlpTrack
     public string Uploader { get; init; } = string.Empty;
     public string? ThumbnailUrl { get; init; }
     public int? Duration { get; set; }
+
+    // yt-dlp's originally reported video duration, captured once at enumeration and never
+    // overwritten. Duration above gets replaced by the actual downloaded file's length on
+    // every completion, so a retry needs this untouched baseline to detect a repeat truncation
+    // — comparing against Duration would compare against the last (possibly bad) download.
+    public int? ReportedDurationSeconds { get; init; }
     public int? PlaylistIndex { get; init; }
     public string? UploadDate { get; init; }
     public YtDlpTrackState State { get; set; } = YtDlpTrackState.Queued;

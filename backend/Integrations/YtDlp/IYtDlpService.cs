@@ -80,7 +80,7 @@ public record YtDlpSubscriptionOverrides(
     string? ConvertOnCompletionFormat = null,
     string? UploadedAfter = null);
 
-public record YtDlpEvent(DateTime Timestamp, Guid? JobId, string? JobTitle, string Level, string Message);
+public record YtDlpEvent(DateTime Timestamp, Guid? JobId, string? JobTitle, string Level, string Message, string? TrackTitle = null);
 
 public record YtDlpSearchResult(
     string VideoId,
