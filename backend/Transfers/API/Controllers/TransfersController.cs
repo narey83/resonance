@@ -192,7 +192,7 @@ namespace resonance.Transfers.API
 
             try
             {
-                Transfers.Downloads.Remove(t => !t.Removed && TransferStateCategories.Completed.Contains(t.State));
+                Transfers.Downloads.Remove(t => !t.Removed);
                 return NoContent();
             }
             catch (Exception ex)
@@ -346,7 +346,7 @@ namespace resonance.Transfers.API
 
             try
             {
-                Transfers.Uploads.Remove(t => !t.Removed && TransferStateCategories.Completed.Contains(t.State));
+                Transfers.Uploads.Remove(t => !t.Removed);
                 return NoContent();
             }
             catch (Exception ex)
