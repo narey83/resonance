@@ -68,12 +68,13 @@ namespace resonance.Analysis
         // just because someone's been listening all evening.
         private static readonly TimeSpan MaxPlaybackWait = TimeSpan.FromMinutes(10);
 
-        // How often a running scan is allowed to broadcast a waveform/loudness update. Bpm/Key
-        // ride the tag-write's own (debounced) sync broadcast for free; Waveform/Loudness never
-        // touch a tag, so without a broadcast of their own an open Library row could sit on a
-        // stale "not analysed" waveform indefinitely after a scan quietly filled it in. Throttled
-        // rather than sent per track — a full-library scan can touch tens of thousands of rows.
-        private static readonly TimeSpan WaveformBroadcastThrottle = TimeSpan.FromSeconds(1);
+        // How often a running scan is allowed to broadcast a "something was analysed" update.
+        // Every metric goes through this now: Bpm/Key used to just ride the tag-write's own
+        // (debounced, up to 30s+) full-library sync broadcast, which left an open Library row
+        // showing a stale key/BPM long after the analysis that filled it in had actually
+        // finished. Throttled rather than sent per track — a full-library scan can touch tens of
+        // thousands of rows.
+        private static readonly TimeSpan AnalysisBroadcastThrottle = TimeSpan.FromSeconds(1);
 
         // One decode per file at a time, shared across every caller — the scan queue and the
         // on-demand single-track methods (GetWaveformAsync, GetLoudnessAsync) used to have no
@@ -88,7 +89,7 @@ namespace resonance.Analysis
         // atomically from the stream endpoint's request threads while a background analysis
         // task reads it, so this goes through Interlocked instead of a lock.
         private long lastPlaybackActivityTicks;
-        private long lastWaveformBroadcastTicks;
+        private long lastAnalysisBroadcastTicks;
 
         public AnalysisService(
             IShareService shareService,
@@ -746,28 +747,30 @@ namespace resonance.Analysis
 
                             if (result.Waveform != null || result.Loudness != null)
                             {
-                                // Not SaveAndNotify on every track — a full scan can touch thousands
-                                // of them, and broadcasting once per track would flood every
-                                // connected client with a refetch. Throttled to at most once a
-                                // second instead (see WaveformBroadcastThrottle), so an open Library
-                                // row still catches up in real time without that flood.
                                 Store.Save(path, result);
-
-                                var now = DateTime.UtcNow.Ticks;
-                                var last = Interlocked.Read(ref lastWaveformBroadcastTicks);
-                                if (now - last > WaveformBroadcastThrottle.Ticks &&
-                                    Interlocked.CompareExchange(ref lastWaveformBroadcastTicks, now, last) == last)
-                                {
-                                    // Not `_ =`: this runs inside the per-core Task.Run(async () => ...)
-                                    // lambda below, whose own Enumerable.Range parameter is named `_`.
-                                    var broadcastTask = Hub?.BroadcastLibraryUpdatedAsync(0, 1, 0);
-                                }
                             }
 
                             var produced = result.Bpm.HasValue || result.Key != null
                                 || result.Waveform != null || result.Loudness != null;
                             if (produced)
                             {
+                                // Not SaveAndNotify on every track — a full scan can touch thousands
+                                // of them, and broadcasting once per track would flood every
+                                // connected client with a refetch. Throttled to at most once a
+                                // second instead (see AnalysisBroadcastThrottle), so an open Library
+                                // row catches up in real time for whichever metric this pass
+                                // produced, rather than only Waveform/Loudness getting a fast path
+                                // and Bpm/Key waiting on the tag write's own debounced full sync.
+                                var now = DateTime.UtcNow.Ticks;
+                                var last = Interlocked.Read(ref lastAnalysisBroadcastTicks);
+                                if (now - last > AnalysisBroadcastThrottle.Ticks &&
+                                    Interlocked.CompareExchange(ref lastAnalysisBroadcastTicks, now, last) == last)
+                                {
+                                    // Not `_ =`: this runs inside the per-core Task.Run(async () => ...)
+                                    // lambda below, whose own Enumerable.Range parameter is named `_`.
+                                    var broadcastTask = Hub?.BroadcastLibraryUpdatedAsync(0, 1, 0);
+                                }
+
                                 Interlocked.Increment(ref analysed);
                             }
                             else
