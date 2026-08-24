@@ -27,11 +27,11 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import { useLibraryActivity } from '../../../context/LibraryActivityContext';
 import { usePlayer } from '../../../context/PlayerContext';
 import { getTracks } from '../../../lib/musicLibrary';
 import { formatSeconds } from '../../../lib/util';
-import { ChevronLeft, Heart, Play, Shuffle } from 'lucide-react';
+import TrackTable from './TrackTable';
+import { ChevronLeft, Play, Shuffle } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 
 const toQueue = (track) => ({
@@ -46,12 +46,7 @@ const toQueue = (track) => ({
 });
 
 const AlbumDetail = ({ album, onArtist, onBack, onContextMenu }) => {
-  const {
-    isPlaying: playerIsPlaying,
-    playQueue,
-    track: currentTrack,
-  } = usePlayer();
-  const activity = useLibraryActivity();
+  const { playQueue } = usePlayer();
   const [loading, setLoading] = useState(true);
   const [tracks, setTracks] = useState([]);
 
@@ -162,107 +157,11 @@ const AlbumDetail = ({ album, onArtist, onBack, onContextMenu }) => {
         </div>
       </div>
 
-      <div className="jb-album-detail-tracks">
-        {loading ? (
-          <div className="jb-state">
-            <div className="jb-spinner" />
-          </div>
-        ) : (
-          tracks.map((track, index) => {
-            const isPlaying =
-              currentTrack?.filename === track.path ||
-              currentTrack?.localRelativePath === track.path;
-            return (
-              <TrackRow
-                activity={activity}
-                albumArtist={album.artist}
-                index={index}
-                isPlaying={isPlaying}
-                key={track.path}
-                onContextMenu={
-                  onContextMenu
-                    ? (e) => onContextMenu(e, toQueue(track))
-                    : undefined
-                }
-                onPlay={() => playQueue(tracks.map(toQueue), index)}
-                playerIsPlaying={playerIsPlaying}
-                track={track}
-              />
-            );
-          })
-        )}
-      </div>
-    </div>
-  );
-};
-
-const TrackRow = ({
-  activity,
-  albumArtist,
-  index,
-  isPlaying,
-  onContextMenu,
-  onPlay,
-  playerIsPlaying,
-  track,
-}) => {
-  const isLoved = activity?.lovedPaths?.has(track.path) ?? false;
-
-  return (
-    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
-    <div
-      className={`jb-track-row${isPlaying ? ' jb-track-row--playing' : ''}`}
-      onContextMenu={onContextMenu}
-      onDoubleClick={onPlay}
-    >
-      <div className="jb-track-num">
-        {isPlaying ? (
-          <span
-            className={`jb-equalizer${playerIsPlaying ? '' : ' jb-equalizer--paused'}`}
-          >
-            <span />
-            <span />
-            <span />
-          </span>
-        ) : (
-          <>
-            <span className="jb-track-num-text">
-              {track.trackNumber ?? index + 1}
-            </span>
-            <button
-              className="jb-track-play-btn"
-              onClick={onPlay}
-              type="button"
-            >
-              <Play size={12} />
-            </button>
-          </>
-        )}
-      </div>
-      <div className="jb-track-info">
-        <div className="jb-track-title">{track.title || track.filename}</div>
-        {track.artist && track.artist !== albumArtist && (
-          <div className="jb-track-meta">{track.artist}</div>
-        )}
-      </div>
-      <div className="jb-track-duration">
-        {track.duration ? formatSeconds(track.duration) : '–'}
-      </div>
-      <button
-        className={`jb-love-btn${isLoved ? ' jb-love-btn--loved' : ''}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          activity?.toggleLove(track.path);
-        }}
-        title={isLoved ? 'Remove from loved' : 'Love this track'}
-        type="button"
-      >
-        <Heart
-          fill={isLoved ? 'currentColor' : 'none'}
-          size={13}
-          strokeWidth={1.75}
-        />
-      </button>
+      <TrackTable
+        loading={loading}
+        onContextMenu={onContextMenu}
+        tracks={tracks}
+      />
     </div>
   );
 };
