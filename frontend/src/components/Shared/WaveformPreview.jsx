@@ -75,14 +75,19 @@ const delay = (ms) =>
     setTimeout(resolve, ms);
   });
 
-// There is one analysis queue for the whole application, so clicking a second
-// track while the first is decoding is rejected outright with a 409. Wait for
-// the queue instead of making the user come back and click again.
-const startAnalysis = async (path) => {
+// There is one analysis queue for the whole application, so requesting a second track while the
+// first is decoding is rejected outright with a 409. Wait for the queue instead of leaving the
+// caller to notice and ask again — a caller that fires this once and swallows the error (the
+// "now playing" waveform used to) silently drops the request whenever anything else happens to
+// be analysing at that moment, permanently leaving that track's metrics blank until something
+// else happens to retrigger it. Exported so callers outside this module (currently the "now
+// playing" waveform's own BPM/key top-up) get the same reliability a click on the analyse button
+// does, without adopting analyseTrack's full queue-and-poll-for-peaks flow below.
+export const startAnalysis = async (path, metrics = ALL_METRICS) => {
   for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      await analyzeTrack([path], { metrics: ALL_METRICS, skipAnalysed: true });
+      await analyzeTrack([path], { metrics, skipAnalysed: true });
       return null;
     } catch (error) {
       if (error?.response?.status !== 409) {

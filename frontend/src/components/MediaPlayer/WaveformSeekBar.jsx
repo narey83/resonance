@@ -36,7 +36,6 @@ import {
   timeToPixel,
 } from '../../lib/analysisTimeline';
 import api from '../../lib/api';
-import { analyzeTrack } from '../../lib/musicLibrary';
 import { formatSeconds } from '../../lib/util';
 import {
   beatGridPhase,
@@ -46,7 +45,11 @@ import {
   resamplePeaks,
   waveColours,
 } from '../../lib/waveform';
-import { markAnalysing, primeWaveformCache } from '../Shared/WaveformPreview';
+import {
+  markAnalysing,
+  primeWaveformCache,
+  startAnalysis,
+} from '../Shared/WaveformPreview';
 import React, { useEffect, useRef, useState } from 'react';
 
 // The cached whole-track grid is sampled finer than the bars actually drawn, so
@@ -117,12 +120,12 @@ const WaveformSeekBar = ({
     // before it was ever scanned kept its blank BPM and key no matter how often you played
     // it. Playing is the clearest signal the user cares about this track, so top up the
     // metrics it's still missing. skipAnalysed lets the backend narrow the work to the
-    // actual gaps, making this free for a track that already has both, and a 409 just means
-    // a scan is already running — which will reach this track on its own.
-    const bpmKeyPromise = analyzeTrack([track.path], {
-      metrics: 'Bpm, Key',
-      skipAnalysed: true,
-    }).catch(() => {});
+    // actual gaps, making this free for a track that already has both. startAnalysis (not a
+    // bare fire-and-forget POST) retries on a 409 instead of dropping the request outright —
+    // there is one analysis queue for the whole application, so a request landing while
+    // anything else was analysing used to just vanish, leaving the key/BPM permanently blank
+    // for that play.
+    const bpmKeyPromise = startAnalysis(track.path, 'Bpm, Key');
 
     const waveformPromise = api
       .get('/analysis/waveform', { params: { path: track.path } })
