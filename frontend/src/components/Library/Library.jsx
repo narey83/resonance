@@ -314,7 +314,6 @@ const ContextMenu = ({
       </button>
 
       <div className="jb-context-sep" />
-      <div className="jb-context-section">Analyse</div>
 
       <button
         className="jb-context-item"
@@ -325,18 +324,7 @@ const ContextMenu = ({
         type="button"
       >
         <AudioWaveform size={13} />
-        Analyse everything
-      </button>
-      <button
-        className="jb-context-item"
-        onClick={() => {
-          onAnalyze(track, { metrics: TAG_METRICS });
-          onClose();
-        }}
-        type="button"
-      >
-        <KeyRound size={13} />
-        Key &amp; BPM only
+        Analyse track
       </button>
 
       <div className="jb-context-sep" />
@@ -1946,6 +1934,7 @@ const MixtapesView = ({
 const TracksView = ({
   alphaHandlerRef,
   onAlphaEnabled,
+  onAnalyzeTracks,
   onContextMenu,
   onDeleteTracks,
   onExportTracks,
@@ -2018,6 +2007,7 @@ const TracksView = ({
       <TrackTable
         {...trackTableProps}
         alphaHandlerRef={alphaHandlerRef}
+        onAnalyzeTracks={onAnalyzeTracks}
         onContextMenu={onContextMenu}
         onDeleteTracks={onDeleteTracks}
         onExportTracks={onExportTracks}
@@ -2027,7 +2017,13 @@ const TracksView = ({
   );
 };
 
-const LovedView = ({ allTracks, loading, lovedPaths, onContextMenu }) => {
+const LovedView = ({
+  allTracks,
+  loading,
+  lovedPaths,
+  onAnalyzeTracks,
+  onContextMenu,
+}) => {
   const activity = useLibraryActivity();
   const [confirmClear, setConfirmClear] = useState(false);
   const loved = allTracks.filter((t) => lovedPaths.has(t.path));
@@ -2079,6 +2075,7 @@ const LovedView = ({ allTracks, loading, lovedPaths, onContextMenu }) => {
       </div>
       <TrackTable
         loading={loading}
+        onAnalyzeTracks={onAnalyzeTracks}
         onContextMenu={onContextMenu}
         tracks={loved}
       />
@@ -2115,6 +2112,7 @@ const SearchView = ({
   folders = [],
   genres = [],
   mixtapes = [],
+  onAnalyzeTracks,
   onArtist,
   onContextMenu,
   onFolder,
@@ -2339,6 +2337,7 @@ const SearchView = ({
         >
           <TrackTable
             loadingMore={loadingMore}
+            onAnalyzeTracks={onAnalyzeTracks}
             onContextMenu={onContextMenu}
             onEndReached={loadMore}
             tracks={matchedTracks}
@@ -2674,6 +2673,7 @@ const IssuesView = ({
   alphaHandlerRef,
   initialIssue,
   onAlphaEnabled,
+  onAnalyzeTracks,
   onContextMenu,
   onCountChange,
 }) => {
@@ -2792,6 +2792,7 @@ const IssuesView = ({
         <TrackTable
           alphaHandlerRef={alphaHandlerRef}
           loading={loading}
+          onAnalyzeTracks={onAnalyzeTracks}
           onContextMenu={onContextMenu}
           tracks={tracks}
         />
@@ -3501,6 +3502,22 @@ const Library = () => {
     }
   }, []);
 
+  // Fed by TrackTable's own multi-select, so this operates on whatever tracks the view
+  // currently has loaded/selected rather than re-deriving a folder/album scope.
+  const handleAnalyzeTracks = useCallback(async (paths) => {
+    if (!paths.length) return;
+    try {
+      await analyzeTrack(paths, { metrics: ALL_METRICS });
+      toast.success(
+        `Analysis started for ${paths.length} ${paths.length === 1 ? 'track' : 'tracks'}`,
+      );
+    } catch (error) {
+      const message =
+        error?.response?.data || error?.message || 'Analysis failed';
+      toast.error(String(message));
+    }
+  }, []);
+
   const handleAnalyzeFolder = useCallback(async (folder, { metrics }) => {
     try {
       await analyzeFolder(folder.path, { metrics });
@@ -3766,6 +3783,7 @@ const Library = () => {
           return (
             <AlbumDetail
               album={selectedAlbum}
+              onAnalyzeTracks={handleAnalyzeTracks}
               onArtist={(artist) => goToArtist(artist)}
               onBack={() =>
                 setNavStack((s) => {
@@ -3807,6 +3825,7 @@ const Library = () => {
             alphaHandlerRef={alphaHandlerRef}
             initialIssue={current.params?.initialIssue}
             onAlphaEnabled={setAlphaEnabled}
+            onAnalyzeTracks={handleAnalyzeTracks}
             onContextMenu={openContextMenu}
             onCountChange={setIssueCounts}
           />
@@ -3817,6 +3836,7 @@ const Library = () => {
           <ArtistsView
             alphaHandlerRef={alphaHandlerRef}
             onAlphaEnabled={setAlphaEnabled}
+            onAnalyzeTracks={handleAnalyzeTracks}
             onContextMenu={openContextMenu}
             onPlayArtist={(a) => playQuery({ artist: a.artist })}
             scrollContainerRef={viewScrollRef}
@@ -3830,6 +3850,7 @@ const Library = () => {
           <TracksView
             alphaHandlerRef={alphaHandlerRef}
             onAlphaEnabled={setAlphaEnabled}
+            onAnalyzeTracks={handleAnalyzeTracks}
             onContextMenu={openContextMenu}
             onDeleteTracks={handleDeleteTracks}
             onExportTracks={
@@ -3845,6 +3866,7 @@ const Library = () => {
             allTracks={lovedTracks}
             loading={loadingLoved}
             lovedPaths={lovedPaths}
+            onAnalyzeTracks={handleAnalyzeTracks}
             onContextMenu={openContextMenu}
           />
         );
@@ -3860,6 +3882,7 @@ const Library = () => {
             initialSelected={current.params?.selected ?? null}
             loading={loadingGenres}
             onAlphaEnabled={setAlphaEnabled}
+            onAnalyzeTracks={handleAnalyzeTracks}
             onContextMenu={openContextMenu}
             onPlayGenre={(g) => playQuery({ genre: g.genre })}
             tileSize={tileSize}
@@ -3872,6 +3895,7 @@ const Library = () => {
           <YearView
             initialSelected={current.params?.selected ?? null}
             loading={loadingYears}
+            onAnalyzeTracks={handleAnalyzeTracks}
             onContextMenu={openContextMenu}
             onPlayYear={(y) => playQuery({ year: y.year })}
             tileSize={tileSize}
@@ -3889,6 +3913,7 @@ const Library = () => {
             loading={loadingFolders}
             mixtapes={playlists}
             onAlphaEnabled={setAlphaEnabled}
+            onAnalyzeTracks={handleAnalyzeTracks}
             onContextMenu={openContextMenu}
             onDeleteTracks={handleDeleteTracks}
             onFolderContextMenu={openFolderContextMenu}
@@ -3925,6 +3950,7 @@ const Library = () => {
             folders={folders}
             genres={genres}
             mixtapes={playlists}
+            onAnalyzeTracks={handleAnalyzeTracks}
             onArtist={goToArtist}
             onContextMenu={openContextMenu}
             onFolder={goToFolder}

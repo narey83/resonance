@@ -45,7 +45,13 @@ const toQueue = (track) => ({
   title: track.title || track.filename,
 });
 
-const AlbumDetail = ({ album, onArtist, onBack, onContextMenu }) => {
+const AlbumDetail = ({
+  album,
+  onAnalyzeTracks,
+  onArtist,
+  onBack,
+  onContextMenu,
+}) => {
   const { playQueue } = usePlayer();
   const [loading, setLoading] = useState(true);
   const [tracks, setTracks] = useState([]);
@@ -159,6 +165,7 @@ const AlbumDetail = ({ album, onArtist, onBack, onContextMenu }) => {
 
       <TrackTable
         loading={loading}
+        onAnalyzeTracks={onAnalyzeTracks}
         onContextMenu={onContextMenu}
         tracks={tracks}
       />

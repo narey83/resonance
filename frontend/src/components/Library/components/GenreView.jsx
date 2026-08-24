@@ -44,6 +44,7 @@ const GenreView = ({
   initialSelected = null,
   loading,
   onAlphaEnabled,
+  onAnalyzeTracks,
   onContextMenu,
   onPlayGenre,
   tileSize = 160,
@@ -192,6 +193,7 @@ const GenreView = ({
         <TrackTable
           {...trackTableProps}
           alphaHandlerRef={alphaHandlerRef}
+          onAnalyzeTracks={onAnalyzeTracks}
           onContextMenu={onContextMenu}
         />
       </div>

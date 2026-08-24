@@ -40,6 +40,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 const YearView = ({
   initialSelected = null,
   loading,
+  onAnalyzeTracks,
   onContextMenu,
   onPlayYear,
   tileSize = 160,
@@ -157,6 +158,7 @@ const YearView = ({
         />
         <TrackTable
           {...trackTableProps}
+          onAnalyzeTracks={onAnalyzeTracks}
           onContextMenu={onContextMenu}
         />
       </div>

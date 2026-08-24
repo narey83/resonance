@@ -173,6 +173,7 @@ const FolderView = ({
   loading,
   mixtapes = [],
   onAlphaEnabled,
+  onAnalyzeTracks,
   onContextMenu,
   onDeleteTracks,
   onFolderContextMenu,
@@ -342,6 +343,7 @@ const FolderView = ({
         <TrackTable
           {...trackTableProps}
           alphaHandlerRef={alphaHandlerRef}
+          onAnalyzeTracks={onAnalyzeTracks}
           onContextMenu={onContextMenu}
           onDeleteTracks={onDeleteTracks}
           tracks={tracks}

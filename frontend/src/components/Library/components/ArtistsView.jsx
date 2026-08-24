@@ -153,6 +153,7 @@ const ArtistDetail = ({
   alphaHandlerRef,
   artist,
   onAlphaEnabled,
+  onAnalyzeTracks,
   onBack,
   onContextMenu,
   onPlayArtist,
@@ -205,6 +206,7 @@ const ArtistDetail = ({
       <TrackTable
         {...trackTableProps}
         alphaHandlerRef={alphaHandlerRef}
+        onAnalyzeTracks={onAnalyzeTracks}
         onContextMenu={onContextMenu}
       />
     </div>
@@ -214,6 +216,7 @@ const ArtistDetail = ({
 const ArtistsView = ({
   alphaHandlerRef,
   onAlphaEnabled,
+  onAnalyzeTracks,
   onContextMenu,
   onPlayArtist,
   scrollContainerRef,
@@ -336,6 +339,7 @@ const ArtistsView = ({
         alphaHandlerRef={alphaHandlerRef}
         artist={selected}
         onAlphaEnabled={onAlphaEnabled}
+        onAnalyzeTracks={onAnalyzeTracks}
         onBack={() => setSelected(null)}
         onContextMenu={onContextMenu}
         onPlayArtist={onPlayArtist}

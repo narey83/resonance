@@ -38,9 +38,11 @@ import {
 import WaveformPreview from '../../Shared/WaveformPreview';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
+  AudioWaveform,
   ChevronDown,
   ChevronUp,
   Heart,
+  ListChecks,
   ListFilter,
   Loader2,
   Play,
@@ -147,6 +149,7 @@ const TrackTable = ({
   loading,
   loadingMore = false,
   onAlphaJump,
+  onAnalyzeTracks,
   onContextMenu,
   onDeleteTracks,
   onEndReached,
@@ -201,7 +204,11 @@ const TrackTable = ({
   const [selectedPaths, setSelectedPaths] = useState(new Set());
   const [deleting, setDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [analysing, setAnalysing] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+  // Right-click on a row that's part of the current multi-selection opens this instead of
+  // the caller's single-track menu — see the row's onContextMenu below.
+  const [bulkMenu, setBulkMenu] = useState(null);
   const containerRef = useRef(null);
   const lastClickIndex = useRef(null);
 
@@ -346,7 +353,9 @@ const TrackTable = ({
     setActiveCol(null);
   };
 
-  const selectMode = Boolean((onDeleteTracks || onExportTracks) && isEditMode);
+  const selectMode = Boolean(
+    (onDeleteTracks || onExportTracks || onAnalyzeTracks) && isEditMode,
+  );
   const someSelected = selectedPaths.size > 0;
   const allSelected =
     sortedTracks.length > 0 &&
@@ -415,6 +424,18 @@ const TrackTable = ({
       setExporting(false);
     }
   }, [exporting, onExportTracks, selectedPaths, sortedTracks]);
+
+  const handleAnalyzeSelected = useCallback(async () => {
+    if (!onAnalyzeTracks || analysing) return;
+    setAnalysing(true);
+    try {
+      await onAnalyzeTracks([...selectedPaths]);
+      setSelectedPaths(new Set());
+      setIsEditMode(false);
+    } finally {
+      setAnalysing(false);
+    }
+  }, [analysing, onAnalyzeTracks, selectedPaths]);
 
   const clearSelection = useCallback(() => {
     setSelectedPaths(new Set());
@@ -683,7 +704,7 @@ const TrackTable = ({
 
   return (
     <>
-      {(onDeleteTracks || onExportTracks) && (
+      {(onDeleteTracks || onExportTracks || onAnalyzeTracks) && (
         <div className="jb-tt-mode-bar">
           <button
             className={`jb-icon-btn${isEditMode ? ' jb-icon-btn--active' : ''}`}
@@ -694,7 +715,7 @@ const TrackTable = ({
             title={isEditMode ? 'Cancel' : 'Select tracks'}
             type="button"
           >
-            {isEditMode ? <X size={15} /> : <Trash2 size={15} />}
+            {isEditMode ? <X size={15} /> : <ListChecks size={15} />}
           </button>
         </div>
       )}
@@ -815,6 +836,18 @@ const TrackTable = ({
                     }
                     onContextMenu={(mouseEvent) => {
                       mouseEvent.preventDefault();
+                      if (
+                        selectMode &&
+                        selectedPaths.size > 1 &&
+                        selectedPaths.has(track.path)
+                      ) {
+                        setBulkMenu({
+                          x: mouseEvent.clientX,
+                          y: mouseEvent.clientY,
+                        });
+                        return;
+                      }
+
                       onContextMenu(mouseEvent, toQueue(track));
                     }}
                     onDoubleClick={
@@ -993,16 +1026,26 @@ const TrackTable = ({
           </span>
           <button
             className="jb-btn"
-            disabled={deleting || exporting}
+            disabled={deleting || exporting || analysing}
             onClick={clearSelection}
             type="button"
           >
             Clear
           </button>
+          {onAnalyzeTracks && (
+            <button
+              className="jb-btn"
+              disabled={deleting || exporting || analysing}
+              onClick={handleAnalyzeSelected}
+              type="button"
+            >
+              <AudioWaveform size={13} /> {analysing ? 'Analysing…' : 'Analyse'}
+            </button>
+          )}
           {onExportTracks && (
             <button
               className="jb-btn"
-              disabled={deleting || exporting}
+              disabled={deleting || exporting || analysing}
               onClick={handleExportSelected}
               type="button"
             >
@@ -1012,7 +1055,7 @@ const TrackTable = ({
           {onDeleteTracks && (
             <button
               className="jb-btn jb-btn--danger"
-              disabled={deleting || exporting}
+              disabled={deleting || exporting || analysing}
               onClick={handleDeleteSelected}
               type="button"
             >
@@ -1021,7 +1064,140 @@ const TrackTable = ({
           )}
         </div>
       )}
+
+      {bulkMenu && (
+        <BulkContextMenu
+          analysing={analysing}
+          deleting={deleting}
+          exporting={exporting}
+          onAnalyze={
+            onAnalyzeTracks
+              ? () => {
+                  handleAnalyzeSelected();
+                  setBulkMenu(null);
+                }
+              : undefined
+          }
+          onClear={() => {
+            clearSelection();
+            setBulkMenu(null);
+          }}
+          onClose={() => setBulkMenu(null)}
+          onDelete={
+            onDeleteTracks
+              ? () => {
+                  handleDeleteSelected();
+                  setBulkMenu(null);
+                }
+              : undefined
+          }
+          onExport={
+            onExportTracks
+              ? () => {
+                  handleExportSelected();
+                  setBulkMenu(null);
+                }
+              : undefined
+          }
+          selectedCount={selectedPaths.size}
+          x={bulkMenu.x}
+          y={bulkMenu.y}
+        />
+      )}
     </>
+  );
+};
+
+// A lightweight sibling to Library.jsx's ContextMenu, scoped to the tracks currently
+// selected via the checkbox/select-mode above (right-click a selected row to open it).
+// Kept local rather than routed through the caller's onContextMenu: that one is built
+// around a single track (playlists, rename, similar search…) and none of that applies
+// to a multi-track selection.
+const BulkContextMenu = ({
+  analysing,
+  deleting,
+  exporting,
+  onAnalyze,
+  onClear,
+  onClose,
+  onDelete,
+  onExport,
+  selectedCount,
+  x,
+  y,
+}) => {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const onDown = ({ target }) => {
+      if (!ref.current?.contains(target)) onClose();
+    };
+
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('contextmenu', onDown);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('contextmenu', onDown);
+    };
+  }, [onClose]);
+
+  const style = {
+    left: Math.min(x, window.innerWidth - 240),
+    top: Math.min(y, window.innerHeight - 200),
+  };
+  const label = `${selectedCount} track${selectedCount === 1 ? '' : 's'}`;
+
+  return (
+    <div
+      className="jb-context-menu"
+      ref={ref}
+      style={style}
+    >
+      <div className="jb-context-title">{label} selected</div>
+      <div className="jb-context-sep" />
+      {onAnalyze && (
+        <button
+          className="jb-context-item"
+          disabled={analysing}
+          onClick={onAnalyze}
+          type="button"
+        >
+          <AudioWaveform size={13} />
+          {analysing ? 'Analysing…' : `Analyse ${label}`}
+        </button>
+      )}
+      {onExport && (
+        <button
+          className="jb-context-item"
+          disabled={exporting}
+          onClick={onExport}
+          type="button"
+        >
+          <Save size={13} />
+          {exporting ? 'Exporting…' : `Export ${label} to USB`}
+        </button>
+      )}
+      {onDelete && (
+        <button
+          className="jb-context-item jb-context-item--danger"
+          disabled={deleting}
+          onClick={onDelete}
+          type="button"
+        >
+          <Trash2 size={13} />
+          {deleting ? 'Deleting…' : `Delete ${label}…`}
+        </button>
+      )}
+      <div className="jb-context-sep" />
+      <button
+        className="jb-context-item"
+        onClick={onClear}
+        type="button"
+      >
+        <X size={13} />
+        Clear selection
+      </button>
+    </div>
   );
 };
 
