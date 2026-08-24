@@ -118,14 +118,24 @@ const WaveformSeekBar = ({
 
     // The waveform request below only asks for waveform and loudness, so a track played
     // before it was ever scanned kept its blank BPM and key no matter how often you played
-    // it. Playing is the clearest signal the user cares about this track, so top up the
-    // metrics it's still missing. skipAnalysed lets the backend narrow the work to the
-    // actual gaps, making this free for a track that already has both. startAnalysis (not a
-    // bare fire-and-forget POST) retries on a 409 instead of dropping the request outright —
-    // there is one analysis queue for the whole application, so a request landing while
-    // anything else was analysing used to just vanish, leaving the key/BPM permanently blank
-    // for that play.
-    const bpmKeyPromise = startAnalysis(track.path, 'Bpm, Key');
+    // it. Playing is the clearest signal the user cares about this track, so top up whatever
+    // metrics it's still missing. skipAnalysed lets the backend narrow the work to the actual
+    // gaps, making this free for a track that already has everything.
+    //
+    // Deliberately the full metric set, not just Bpm/Key: when Waveform isn't part of a scan
+    // pass's own metrics, the backend caps the decode at a short leading window (fast, and
+    // plenty for BPM's beat tracking) instead of the whole file — see AudioAnalyzer.AnalyseAsync.
+    // Key detection needs real harmonic content to be reliable, and plenty of tracks (this
+    // library skews house/dance) open with a percussion-only intro well past that window, so a
+    // Bpm/Key-only request routinely got a BPM but not a key. Asking for everything means a track
+    // that still needs its waveform too (the common case here — a fresh, never-analysed track)
+    // gets the full decode Key needs, matching what the manual "Analyse" button already does.
+    //
+    // startAnalysis (not a bare fire-and-forget POST) also retries on a 409 instead of dropping
+    // the request outright — there is one analysis queue for the whole application, so a request
+    // landing while anything else was analysing used to just vanish, leaving the metrics
+    // permanently blank for that play.
+    const bpmKeyPromise = startAnalysis(track.path);
 
     const waveformPromise = api
       .get('/analysis/waveform', { params: { path: track.path } })
