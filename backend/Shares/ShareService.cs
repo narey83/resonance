@@ -333,64 +333,87 @@ namespace resonance.Shares
             // touching this same file — concurrent TagLib opens risk a torn write.
             using var fileLock = FileWriteLock.Acquire(originalFilename);
 
-            TagLib.File tagFile = null;
-            try
+            // TagLib.File.Create opens for exclusive read/write, which collides with the file
+            // still being actively streamed for playback — exactly the case an auto-analysis
+            // triggered by pressing play runs into, since the stream that triggered it is still
+            // open. That surfaced as an immediate, permanent failure (a bare IOException,
+            // "...being used by another process") for what is actually a transient condition:
+            // the reader will eventually finish or move on. Retried with backoff instead of
+            // failing outright the first time; RETRY_ATTEMPTS × RETRY_DELAY is deliberately
+            // generous — long enough to outlast a short buffering read, not remotely long enough
+            // to outlast a whole track streaming, which still fails and is logged same as before.
+            const int retryAttempts = 10;
+            var retryDelay = TimeSpan.FromSeconds(1);
+
+            for (var attempt = 1; attempt <= retryAttempts; attempt++)
             {
-                tagFile = TagLib.File.Create(originalFilename);
-                tagFile.Tag.Performers = string.IsNullOrWhiteSpace(tags.Artist) ? [] : [tags.Artist];
-                tagFile.Tag.AlbumArtists = string.IsNullOrWhiteSpace(tags.AlbumArtist) ? [] : [tags.AlbumArtist];
-                tagFile.Tag.Album = tags.Album ?? string.Empty;
-                tagFile.Tag.Title = tags.Title ?? string.Empty;
-                tagFile.Tag.Track = tags.TrackNumber;
-                tagFile.Tag.Disc = tags.DiscNumber;
-                tagFile.Tag.Year = tags.Year;
-                tagFile.Tag.Genres = string.IsNullOrWhiteSpace(tags.Genre) ? [] : [tags.Genre];
-                tagFile.Tag.BeatsPerMinute = tags.Bpm;
-                tagFile.Tag.Comment = tags.Comment ?? string.Empty;
-
-                // Enforce ID3v2.3 for MP3 files (set before key write which also sets v3)
-                if (tagFile.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3v2Enforce)
+                TagLib.File tagFile = null;
+                try
                 {
-                    id3v2Enforce.Version = 3;
-                }
+                    tagFile = TagLib.File.Create(originalFilename);
+                    tagFile.Tag.Performers = string.IsNullOrWhiteSpace(tags.Artist) ? [] : [tags.Artist];
+                    tagFile.Tag.AlbumArtists = string.IsNullOrWhiteSpace(tags.AlbumArtist) ? [] : [tags.AlbumArtist];
+                    tagFile.Tag.Album = tags.Album ?? string.Empty;
+                    tagFile.Tag.Title = tags.Title ?? string.Empty;
+                    tagFile.Tag.Track = tags.TrackNumber;
+                    tagFile.Tag.Disc = tags.DiscNumber;
+                    tagFile.Tag.Year = tags.Year;
+                    tagFile.Tag.Genres = string.IsNullOrWhiteSpace(tags.Genre) ? [] : [tags.Genre];
+                    tagFile.Tag.BeatsPerMinute = tags.Bpm;
+                    tagFile.Tag.Comment = tags.Comment ?? string.Empty;
 
-                // write/clear musical key: ID3v2 uses KeyTagHelper (forces v2.3 + UTF-16,
-                // writes TKEY only, removes legacy TXXX:KEY and COMM key frames);
-                // Xiph uses INITIALKEY directly
-                if (tags.Key != null)
+                    // Enforce ID3v2.3 for MP3 files (set before key write which also sets v3)
+                    if (tagFile.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3v2Enforce)
+                    {
+                        id3v2Enforce.Version = 3;
+                    }
+
+                    // write/clear musical key: ID3v2 uses KeyTagHelper (forces v2.3 + UTF-16,
+                    // writes TKEY only, removes legacy TXXX:KEY and COMM key frames);
+                    // Xiph uses INITIALKEY directly
+                    if (tags.Key != null)
+                    {
+                        if (tagFile.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3v2Write)
+                        {
+                            resonance.Analysis.KeyTagHelper.WriteKey(id3v2Write, tags.Key);
+                        }
+                        else if (tagFile.GetTag(TagLib.TagTypes.Xiph, true) is TagLib.Ogg.XiphComment xiphWrite)
+                        {
+                            xiphWrite.SetField("INITIALKEY", tags.Key);
+                        }
+                    }
+                    else
+                    {
+                        if (tagFile.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3v2Clear)
+                        {
+                            resonance.Analysis.KeyTagHelper.ClearKey(id3v2Clear);
+                        }
+                        else if (tagFile.GetTag(TagLib.TagTypes.Xiph) is TagLib.Ogg.XiphComment xiphClear)
+                        {
+                            xiphClear.RemoveField("INITIALKEY");
+                        }
+                    }
+
+                    // Match tag sanitization: leave a single clean tag rather than letting the legacy
+                    // ID3v1 block or a non-standard APEv2 block linger alongside the ID3v2.3 tag we wrote.
+                    // (TagSanitization's TagConsolidator strips these; without it a lookup write would
+                    // re-introduce the duplicate blocks it had just removed.)
+                    tagFile.RemoveTags(TagLib.TagTypes.Id3v1 | TagLib.TagTypes.Ape);
+
+                    tagFile.Save();
+                    break;
+                }
+                catch (System.IO.IOException) when (attempt < retryAttempts)
                 {
-                    if (tagFile.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3v2Write)
-                    {
-                        resonance.Analysis.KeyTagHelper.WriteKey(id3v2Write, tags.Key);
-                    }
-                    else if (tagFile.GetTag(TagLib.TagTypes.Xiph, true) is TagLib.Ogg.XiphComment xiphWrite)
-                    {
-                        xiphWrite.SetField("INITIALKEY", tags.Key);
-                    }
+                    Log.Debug(
+                        "Tag write for '{File}' hit a locked file (attempt {Attempt}/{Total}) — retrying.",
+                        originalFilename, attempt, retryAttempts);
+                    Thread.Sleep(retryDelay);
                 }
-                else
+                finally
                 {
-                    if (tagFile.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3v2Clear)
-                    {
-                        resonance.Analysis.KeyTagHelper.ClearKey(id3v2Clear);
-                    }
-                    else if (tagFile.GetTag(TagLib.TagTypes.Xiph) is TagLib.Ogg.XiphComment xiphClear)
-                    {
-                        xiphClear.RemoveField("INITIALKEY");
-                    }
+                    tagFile?.Dispose();
                 }
-
-                // Match tag sanitization: leave a single clean tag rather than letting the legacy
-                // ID3v1 block or a non-standard APEv2 block linger alongside the ID3v2.3 tag we wrote.
-                // (TagSanitization's TagConsolidator strips these; without it a lookup write would
-                // re-introduce the duplicate blocks it had just removed.)
-                tagFile.RemoveTags(TagLib.TagTypes.Id3v1 | TagLib.TagTypes.Ape);
-
-                tagFile.Save();
-            }
-            finally
-            {
-                tagFile?.Dispose();
             }
 
             // Every tag update must leave exactly one clean ID3v2.3 tag: the consolidator migrates

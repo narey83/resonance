@@ -60,14 +60,25 @@ export const primeWaveformCache = (path, data) => {
 // state throughout, instead of the same spinner a row that started the run itself gets.
 const runningListeners = new Set();
 
-// Analysis is queued, not synchronous, so a click watches the cached-only
-// endpoint until the peaks appear. ponytail: a fixed poll — worth replacing if
-// the analysis service ever pushes per-track progress over the hub.
-// Long enough to outlast a queue that is already busy with someone else's scan:
-// one track's own decode is seconds, but it waits its turn behind whatever is
-// ahead of it.
+// Analysis is queued, not synchronous, so a click watches the cached-only endpoint until the
+// peaks appear. ponytail: a fixed poll — worth replacing if the analysis service ever pushes
+// per-track progress over the hub.
 const POLL_INTERVAL_MS = 2_000;
-const POLL_ATTEMPTS = 300;
+
+// startAnalysis retries a 409 (queue busy) this many times before giving up — generous, since
+// there is one analysis queue for the whole application and a large bulk scan can legitimately
+// hold it for a while.
+const START_POLL_ATTEMPTS = 300;
+
+// waitForPeaks retries this many times once a scan has actually accepted the request. Shorter
+// than the above on purpose: one track's own decode is seconds once it's actually being
+// processed, so the only thing worth waiting out here is sitting behind a busy queue, not the
+// same 10-minute ceiling startAnalysis budgets for queue contention. Keeping it short matters
+// for a genuine per-file failure the backend can't fully rule out (e.g. a file staying locked
+// by something else, like still being actively streamed for playback, for longer than its own
+// retry-with-backoff covers) — that should surface as "not analysed, click to retry" in a
+// reasonable time instead of leaving the caller's spinner running for the full 10 minutes.
+const PEAKS_POLL_ATTEMPTS = 90;
 
 const delay = (ms) =>
   new Promise((resolve) => {
@@ -78,7 +89,7 @@ const delay = (ms) =>
 // first is decoding is rejected outright with a 409. Wait for the queue instead of leaving the
 // caller to notice and ask again.
 const startAnalysis = async (path) => {
-  for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
+  for (let attempt = 0; attempt < START_POLL_ATTEMPTS; attempt += 1) {
     try {
       // eslint-disable-next-line no-await-in-loop
       await analyzeTrack([path], { metrics: ALL_METRICS, skipAnalysed: true });
@@ -97,7 +108,7 @@ const startAnalysis = async (path) => {
 };
 
 const waitForPeaks = async (path) => {
-  for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
+  for (let attempt = 0; attempt < PEAKS_POLL_ATTEMPTS; attempt += 1) {
     // eslint-disable-next-line no-await-in-loop
     await delay(POLL_INTERVAL_MS);
 
