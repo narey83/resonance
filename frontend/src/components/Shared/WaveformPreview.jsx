@@ -54,6 +54,13 @@ export const primeWaveformCache = (path, data) => {
   for (const listener of listeners) listener(path);
 };
 
+// Separate from `listeners` above: that one fires when peaks *arrive*, this one fires when a
+// path *starts or stops* being analysed — a row already on screen when a run starts elsewhere
+// (its own mount-time `running.has(path)` check happened earlier and found nothing) would
+// otherwise never learn one is now in flight and sit there showing its idle "not analysed"
+// state throughout, instead of the same spinner a row that started the run itself gets.
+const runningListeners = new Set();
+
 // Analysis is queued, not synchronous, so a click watches the cached-only
 // endpoint until the peaks appear. ponytail: a fixed poll — worth replacing if
 // the analysis service ever pushes per-track progress over the hub.
@@ -135,9 +142,35 @@ export const analyseTrack = (path) => {
       error: peaks ? null : 'Analysis did not finish — click to retry',
       peaks,
     };
-  })().finally(() => running.delete(path));
+  })().finally(() => {
+    running.delete(path);
+    for (const listener of runningListeners) listener(path);
+  });
 
   running.set(path, run);
+  for (const listener of runningListeners) listener(path);
+  return run;
+};
+
+// For analysis that happens outside this module's own queue-and-poll flow — currently just the
+// "now playing" waveform, which fires its own request rather than sharing analyseTrack's polling
+// loop above. Lets that still mark the path as analysing so any row showing the same track gets
+// the same spinner a click on its own analyse button would have. `promise` can resolve to
+// anything; the row-facing result is read back off the shared cache once it settles, since
+// whatever populated that cache (primeWaveformCache) already wrote the real peaks there.
+export const markAnalysing = (path, promise) => {
+  if (running.has(path)) return running.get(path);
+
+  const run = promise
+    .catch(() => {})
+    .then(() => ({ error: null, peaks: cache.get(path) ?? null }))
+    .finally(() => {
+      running.delete(path);
+      for (const listener of runningListeners) listener(path);
+    });
+
+  running.set(path, run);
+  for (const listener of runningListeners) listener(path);
   return run;
 };
 
@@ -259,6 +292,29 @@ const WaveformPreview = ({
     listeners.add(listener);
     return () => {
       listeners.delete(listener);
+    };
+  }, [path]);
+
+  // Catches a run that starts *after* this row already mounted (e.g. the row was sitting idle
+  // and the "now playing" waveform then started analysing the same path) — the mount-time check
+  // above only catches a run already in flight when the row first appears.
+  useEffect(() => {
+    let cancelled = false;
+    const listener = (changed) => {
+      if (changed !== path || !running.has(path)) return;
+      setAnalysing(true);
+      running.get(path).then(({ error: runError, peaks: result }) => {
+        if (cancelled) return;
+        setPeaks(result);
+        setError(runError);
+        setAnalysing(false);
+      });
+    };
+
+    runningListeners.add(listener);
+    return () => {
+      cancelled = true;
+      runningListeners.delete(listener);
     };
   }, [path]);
 

@@ -46,7 +46,7 @@ import {
   resamplePeaks,
   waveColours,
 } from '../../lib/waveform';
-import { primeWaveformCache } from '../Shared/WaveformPreview';
+import { markAnalysing, primeWaveformCache } from '../Shared/WaveformPreview';
 import React, { useEffect, useRef, useState } from 'react';
 
 // The cached whole-track grid is sampled finer than the bars actually drawn, so
@@ -119,12 +119,12 @@ const WaveformSeekBar = ({
     // metrics it's still missing. skipAnalysed lets the backend narrow the work to the
     // actual gaps, making this free for a track that already has both, and a 409 just means
     // a scan is already running — which will reach this track on its own.
-    analyzeTrack([track.path], {
+    const bpmKeyPromise = analyzeTrack([track.path], {
       metrics: 'Bpm, Key',
       skipAnalysed: true,
     }).catch(() => {});
 
-    api
+    const waveformPromise = api
       .get('/analysis/waveform', { params: { path: track.path } })
       .then(({ data }) => {
         if (cancelled || !data?.overallPeaks?.length) return;
@@ -151,6 +151,11 @@ const WaveformSeekBar = ({
         if (cancelled) return;
         onAnalysing?.(false);
       });
+
+    // Lets any library row showing this same track pick up the spinner this triggered — the
+    // player runs its own request rather than sharing WaveformPreview's queue-poll loop, so
+    // without this a row already on screen never learned an analysis was in flight at all.
+    markAnalysing(track.path, Promise.all([bpmKeyPromise, waveformPromise]));
 
     return () => {
       cancelled = true;
