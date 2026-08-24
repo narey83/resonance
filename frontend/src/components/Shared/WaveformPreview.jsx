@@ -40,11 +40,10 @@ import React, { useEffect, useRef, useState } from 'react';
 const cache = new Map();
 const inFlight = new Map();
 
-// Rows already on screen when peaks arrive from somewhere else — playing a
-// track analyses it, since the player asks for its waveform without
-// cachedOnly — otherwise sat on their cached miss forever: the row is mounted,
-// so it never re-reads the cache, and `hasWaveform: false` from the list fetch
-// stops it asking again. Anything that learns a track's peaks calls
+// Rows already on screen when peaks arrive from somewhere else — playing a track analyses it
+// (via analyseTrack, same as every other trigger) — otherwise sat on their cached miss
+// forever: the row is mounted, so it never re-reads the cache, and `hasWaveform: false` from
+// the list fetch stops it asking again. Anything that learns a track's peaks calls
 // primeWaveformCache and the mounted row for that path redraws.
 const listeners = new Set();
 
@@ -77,17 +76,12 @@ const delay = (ms) =>
 
 // There is one analysis queue for the whole application, so requesting a second track while the
 // first is decoding is rejected outright with a 409. Wait for the queue instead of leaving the
-// caller to notice and ask again — a caller that fires this once and swallows the error (the
-// "now playing" waveform used to) silently drops the request whenever anything else happens to
-// be analysing at that moment, permanently leaving that track's metrics blank until something
-// else happens to retrigger it. Exported so callers outside this module (currently the "now
-// playing" waveform's own BPM/key top-up) get the same reliability a click on the analyse button
-// does, without adopting analyseTrack's full queue-and-poll-for-peaks flow below.
-export const startAnalysis = async (path, metrics = ALL_METRICS) => {
+// caller to notice and ask again.
+const startAnalysis = async (path) => {
   for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      await analyzeTrack([path], { metrics, skipAnalysed: true });
+      await analyzeTrack([path], { metrics: ALL_METRICS, skipAnalysed: true });
       return null;
     } catch (error) {
       if (error?.response?.status !== 409) {
@@ -128,9 +122,13 @@ const waitForPeaks = async (path) => {
 // instead of sitting there empty until something else happens to refetch.
 const running = new Map();
 
-// Runs the same full analysis (all 4 metrics) every "click to analyse" surface uses — the
-// canonical scan, not the narrow waveform-only endpoint — so BPM/key get filled in alongside
-// the waveform no matter which row started it. Exported for RowWaveform (Analysis page).
+// The one trigger every "analyse this track" surface shares — the manual button on a row's
+// waveform placeholder, the "now playing" waveform's own auto-analysis, RowWaveform on the
+// Analysis page. Always the full 4-metric scan, never a narrower one: a track played before
+// it was ever scanned used to top up just its BPM/key through a separate, narrower request,
+// which (see AudioAnalyzer.AnalyseAsync on the backend) decodes only a short leading window
+// instead of the whole file — fine for BPM's beat tracking, unreliable for key detection on
+// anything with a long intro. Sharing this one path means every trigger gets the same decode.
 export const analyseTrack = (path) => {
   if (running.has(path)) return running.get(path);
 
@@ -151,28 +149,6 @@ export const analyseTrack = (path) => {
     running.delete(path);
     for (const listener of runningListeners) listener(path);
   });
-
-  running.set(path, run);
-  for (const listener of runningListeners) listener(path);
-  return run;
-};
-
-// For analysis that happens outside this module's own queue-and-poll flow — currently just the
-// "now playing" waveform, which fires its own request rather than sharing analyseTrack's polling
-// loop above. Lets that still mark the path as analysing so any row showing the same track gets
-// the same spinner a click on its own analyse button would have. `promise` can resolve to
-// anything; the row-facing result is read back off the shared cache once it settles, since
-// whatever populated that cache (primeWaveformCache) already wrote the real peaks there.
-export const markAnalysing = (path, promise) => {
-  if (running.has(path)) return running.get(path);
-
-  const run = promise
-    .catch(() => {})
-    .then(() => ({ error: null, peaks: cache.get(path) ?? null }))
-    .finally(() => {
-      running.delete(path);
-      for (const listener of runningListeners) listener(path);
-    });
 
   running.set(path, run);
   for (const listener of runningListeners) listener(path);

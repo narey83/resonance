@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { getWaveform } from '../../lib/analysis';
 import {
   analysisToPlaybackTime,
   pixelToTime,
@@ -35,7 +36,6 @@ import {
   resolveWaveformDuration,
   timeToPixel,
 } from '../../lib/analysisTimeline';
-import api from '../../lib/api';
 import { formatSeconds } from '../../lib/util';
 import {
   beatGridPhase,
@@ -45,11 +45,7 @@ import {
   resamplePeaks,
   waveColours,
 } from '../../lib/waveform';
-import {
-  markAnalysing,
-  primeWaveformCache,
-  startAnalysis,
-} from '../Shared/WaveformPreview';
+import { analyseTrack, primeWaveformCache } from '../Shared/WaveformPreview';
 import React, { useEffect, useRef, useState } from 'react';
 
 // The cached whole-track grid is sampled finer than the bars actually drawn, so
@@ -116,59 +112,48 @@ const WaveformSeekBar = ({
     let cancelled = false;
     onAnalysing?.(true);
 
-    // The waveform request below only asks for waveform and loudness, so a track played
-    // before it was ever scanned kept its blank BPM and key no matter how often you played
-    // it. Playing is the clearest signal the user cares about this track, so top up whatever
-    // metrics it's still missing. skipAnalysed lets the backend narrow the work to the actual
-    // gaps, making this free for a track that already has everything.
-    //
-    // Deliberately the full metric set, not just Bpm/Key: when Waveform isn't part of a scan
-    // pass's own metrics, the backend caps the decode at a short leading window (fast, and
-    // plenty for BPM's beat tracking) instead of the whole file — see AudioAnalyzer.AnalyseAsync.
-    // Key detection needs real harmonic content to be reliable, and plenty of tracks (this
-    // library skews house/dance) open with a percussion-only intro well past that window, so a
-    // Bpm/Key-only request routinely got a BPM but not a key. Asking for everything means a track
-    // that still needs its waveform too (the common case here — a fresh, never-analysed track)
-    // gets the full decode Key needs, matching what the manual "Analyse" button already does.
-    //
-    // startAnalysis (not a bare fire-and-forget POST) also retries on a 409 instead of dropping
-    // the request outright — there is one analysis queue for the whole application, so a request
-    // landing while anything else was analysing used to just vanish, leaving the metrics
-    // permanently blank for that play.
-    const bpmKeyPromise = startAnalysis(track.path);
+    // One trigger for every metric — the exact same analyseTrack() the manual "Analyse"
+    // button uses, not a separate hand-rolled request. This used to be two independent
+    // requests (a narrow Bpm/Key-only one, plus this component's own Waveform/Loudness
+    // fetch), which could each land on a different decode window — see
+    // AudioAnalyzer.AnalyseAsync — and was how a played track routinely got its BPM but not
+    // its key. Sharing analyseTrack means one decode, the same retry-on-busy-queue behaviour,
+    // and the same running/broadcast bookkeeping every other analyse surface uses, so a
+    // library row showing this track picks up the same spinner a click on its own analyse
+    // button would.
+    analyseTrack(track.path).then(() => {
+      if (cancelled) return;
 
-    const waveformPromise = api
-      .get('/analysis/waveform', { params: { path: track.path } })
-      .then(({ data }) => {
-        if (cancelled || !data?.overallPeaks?.length) return;
+      // analyseTrack resolves once the peaks exist, but its own result is the reduced
+      // {high,low,mid,overall} shape library rows draw from — this component also needs
+      // analysisDuration/beat info for its timeline and beat grid, which only the raw
+      // response carries. cachedOnly: analyseTrack already guaranteed the data is there (or
+      // gave up trying), so this can only ever be a cheap read, never a second decode.
+      getWaveform(track.path, { cachedOnly: true })
+        .then((data) => {
+          if (cancelled || !data?.overallPeaks?.length) return;
 
-        // This request analyses the track if it wasn't already (no cachedOnly),
-        // so it's often the first place the peaks exist — hand them to the
-        // library rows' cache rather than let them keep showing "not analysed".
-        primeWaveformCache(track.path, data);
+          // Rows already on screen showing this track pick this up via primeWaveformCache's
+          // own broadcast rather than staying on their stale "not analysed" waveform.
+          primeWaveformCache(track.path, data);
 
-        const beatAvailability = resolveBeatAvailability(data);
-        peaksRef.current = {
-          analysisDuration: data.analysisDuration || null,
-          beatOffsetSeconds: beatAvailability.offsetSeconds,
-          beatsKnown: beatAvailability.known,
-          overall: new Float32Array(data.overallPeaks),
-        };
-        setReady(true);
-        onReady(true);
-      })
-      .catch(() => {
-        /* no cached waveform — caller falls back to the plain bar */
-      })
-      .finally(() => {
-        if (cancelled) return;
-        onAnalysing?.(false);
-      });
-
-    // Lets any library row showing this same track pick up the spinner this triggered — the
-    // player runs its own request rather than sharing WaveformPreview's queue-poll loop, so
-    // without this a row already on screen never learned an analysis was in flight at all.
-    markAnalysing(track.path, Promise.all([bpmKeyPromise, waveformPromise]));
+          const beatAvailability = resolveBeatAvailability(data);
+          peaksRef.current = {
+            analysisDuration: data.analysisDuration || null,
+            beatOffsetSeconds: beatAvailability.offsetSeconds,
+            beatsKnown: beatAvailability.known,
+            overall: new Float32Array(data.overallPeaks),
+          };
+          setReady(true);
+          onReady(true);
+        })
+        .catch(() => {
+          /* no cached waveform — caller falls back to the plain bar */
+        })
+        .finally(() => {
+          if (!cancelled) onAnalysing?.(false);
+        });
+    });
 
     return () => {
       cancelled = true;
