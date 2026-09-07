@@ -50,14 +50,19 @@ const entry = (id, timestamp, overrides = {}) => ({
 
 describe('mergeLiveEntries', () => {
   it('prepends fresh entries ahead of the existing live window', () => {
-    const prev = [entry(2, '2026-08-23T00:00:02Z'), entry(1, '2026-08-23T00:00:01Z')];
+    const prev = [
+      entry(2, '2026-08-23T00:00:02Z'),
+      entry(1, '2026-08-23T00:00:01Z'),
+    ];
     const fresh = [entry(3, '2026-08-23T00:00:03Z')];
 
     expect(mergeLiveEntries(prev, fresh).map((e) => e.id)).toEqual([3, 2, 1]);
   });
 
   it('never exceeds the configured maximum', () => {
-    const prev = Array.from({ length: 10 }, (_, i) => entry(10 - i, `t${10 - i}`));
+    const prev = Array.from({ length: 10 }, (_, i) =>
+      entry(10 - i, `t${10 - i}`),
+    );
     const fresh = [entry(11, 't11')];
 
     const merged = mergeLiveEntries(prev, fresh, 5);
@@ -66,7 +71,9 @@ describe('mergeLiveEntries', () => {
   });
 
   it('retains the newest entries and discards the oldest on overflow', () => {
-    const prev = Array.from({ length: 10 }, (_, i) => entry(10 - i, `t${10 - i}`));
+    const prev = Array.from({ length: 10 }, (_, i) =>
+      entry(10 - i, `t${10 - i}`),
+    );
     const fresh = [entry(11, 't11')];
 
     const merged = mergeLiveEntries(prev, fresh, 5);
@@ -76,7 +83,9 @@ describe('mergeLiveEntries', () => {
   });
 
   it('defaults to LIVE_MAX_ENTRIES when no explicit cap is given', () => {
-    const prev = Array.from({ length: LIVE_MAX_ENTRIES }, (_, i) => entry(i, `t${i}`));
+    const prev = Array.from({ length: LIVE_MAX_ENTRIES }, (_, i) =>
+      entry(i, `t${i}`),
+    );
     const fresh = [entry(LIVE_MAX_ENTRIES, `t${LIVE_MAX_ENTRIES}`)];
 
     expect(mergeLiveEntries(prev, fresh)).toHaveLength(LIVE_MAX_ENTRIES);
@@ -113,7 +122,12 @@ describe('dedupeAgainstSeen', () => {
     dedupeAgainstSeen([entry(1, 't1')], seen);
 
     // a JSONL-backed record (no id) is never conflated with a same-shaped Postgres one
-    const jsonlRecord = { timestamp: 't1', context: 'Application', level: 'Information', message: 'm1' };
+    const jsonlRecord = {
+      timestamp: 't1',
+      context: 'Application',
+      level: 'Information',
+      message: 'm1',
+    };
     const fresh = dedupeAgainstSeen([jsonlRecord], seen);
 
     expect(fresh).toHaveLength(1);
@@ -126,7 +140,12 @@ describe('pollCursor', () => {
   });
 
   it('falls back to the timestamp cursor when there is no id (JSONL-backed)', () => {
-    const record = { timestamp: '2026-08-23T00:00:00Z', context: 'Application', level: 'Information', message: 'm' };
+    const record = {
+      timestamp: '2026-08-23T00:00:00Z',
+      context: 'Application',
+      level: 'Information',
+      message: 'm',
+    };
 
     expect(pollCursor(record)).toEqual({ from: '2026-08-23T00:00:00Z' });
   });
@@ -160,20 +179,32 @@ describe('buildRows', () => {
 
     const { rows } = buildRows(entries);
 
-    expect(rows.map((r) => r.type)).toEqual(['date', 'log', 'log', 'date', 'log']);
+    expect(rows.map((r) => r.type)).toEqual([
+      'date',
+      'log',
+      'log',
+      'date',
+      'log',
+    ]);
     expect(rows[0].day).toBe('2026-08-23');
     expect(rows[3].day).toBe('2026-08-22');
   });
 
   it('does not repeat a separator for a day already opened by startDay', () => {
     // simulates a history page continuing the same day the live window ended on
-    const { rows } = buildRows([entry(1, '2026-08-23T01:00:00Z')], '2026-08-23');
+    const { rows } = buildRows(
+      [entry(1, '2026-08-23T01:00:00Z')],
+      '2026-08-23',
+    );
 
     expect(rows.map((r) => r.type)).toEqual(['log']);
   });
 
   it('opens a new separator when startDay differs from the first entry', () => {
-    const { rows } = buildRows([entry(1, '2026-08-22T23:00:00Z')], '2026-08-23');
+    const { rows } = buildRows(
+      [entry(1, '2026-08-22T23:00:00Z')],
+      '2026-08-23',
+    );
 
     expect(rows.map((r) => r.type)).toEqual(['date', 'log']);
     expect(rows[0].day).toBe('2026-08-22');
@@ -189,7 +220,10 @@ describe('buildRows', () => {
   });
 
   it('returns an empty result for an empty segment, preserving startDay', () => {
-    expect(buildRows([], '2026-08-20')).toEqual({ rows: [], lastDay: '2026-08-20' });
+    expect(buildRows([], '2026-08-20')).toEqual({
+      rows: [],
+      lastDay: '2026-08-20',
+    });
   });
 });
 
@@ -202,7 +236,9 @@ describe('contextsOf / mergeContexts', () => {
       entry(4, 't4', { context: null }),
     ];
 
-    expect(contextsOf(entries)).toEqual(new Set(['Application', 'Transfers / Uploads']));
+    expect(contextsOf(entries)).toEqual(
+      new Set(['Application', 'Transfers / Uploads']),
+    );
   });
 
   it('merges known contexts with any number of segment sets, sorted and deduped', () => {
@@ -212,7 +248,11 @@ describe('contextsOf / mergeContexts', () => {
       new Set(['Application']), // duplicate of a known context
     );
 
-    expect(merged).toEqual(['Application', 'Music / Library', 'Transfers / Uploads']);
+    expect(merged).toEqual([
+      'Application',
+      'Music / Library',
+      'Transfers / Uploads',
+    ]);
   });
 
   it('contexts recomputed after a real trim reflect only what actually survived', () => {

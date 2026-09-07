@@ -162,7 +162,13 @@ describe('useVisibilityAwarePolling', () => {
     const callback = jest.fn();
 
     act(() => {
-      ReactDOM.render(<Probe callback={callback} enabled={false} />, container);
+      ReactDOM.render(
+        <Probe
+          callback={callback}
+          enabled={false}
+        />,
+        container,
+      );
     });
     act(() => {
       jest.advanceTimersByTime(5_000);
