@@ -1,0 +1,13 @@
+# Line endings.
+#
+# This repo is LF everywhere, matching .editorconfig (end_of_line = lf).  Git for
+# Windows defaults to core.autocrlf=true, which rewrites the working tree to CRLF
+# on checkout; on Linux — where autocrlf is unset — every one of those files then
+# reads as modified, and prettier fails on each line.  Pinning eol here overrides
+# autocrlf on every platform, so the checkout matches the committed bytes no
+# matter which OS or local git config produced it.
+* text=auto eol=lf
+
+# Binaries: never normalise, never diff as text.
+*.png binary
+*.ico binary
