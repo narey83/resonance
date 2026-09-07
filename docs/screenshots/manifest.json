@@ -1,0 +1,40 @@
+{
+  "capturedAt": "2026-09-07T20:45:09.767Z",
+  "scale": 2,
+  "shots": [
+    {
+      "caption": "Audio converter",
+      "file": "converter.png",
+      "route": "converter"
+    },
+    {
+      "caption": "Duplicate detection",
+      "file": "duplicates.png",
+      "route": "duplicates"
+    },
+    {
+      "caption": "Music library",
+      "file": "library.png",
+      "route": "library"
+    },
+    {
+      "caption": "Overview dashboard",
+      "file": "overview.png",
+      "route": "overview"
+    },
+    {
+      "caption": "Soulseek search",
+      "file": "search.png",
+      "route": "searches"
+    },
+    {
+      "caption": "Track analysis",
+      "file": "track-analysis.png",
+      "route": "trackanalysis"
+    }
+  ],
+  "viewport": {
+    "height": 900,
+    "width": 1440
+  }
+}
