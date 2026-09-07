@@ -63,6 +63,7 @@
     "lint": "NODE_OPTIONS=--no-deprecation eslint .",
     "lint:fix": "NODE_OPTIONS=--no-deprecation eslint --fix .",
     "postinstall": "semantic-ui-css-patch",
+    "screenshots": "node scripts/capture-screenshots.mjs",
     "start": "craco start",
     "test": "craco test",
     "test-unattended": "craco test --watchAll false --passWithNoTests"
