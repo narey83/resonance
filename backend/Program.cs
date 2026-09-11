@@ -986,7 +986,11 @@ namespace resonance
             // what's actually gated below.
             services.AddDbContextFactory<resonance.Core.LogStore.LogsDbContext>(options =>
             {
-                options.UseNpgsql(connectionStringDictionary[Database.Logs]);
+                // Batch inserts run in the background with a 5,000-entry buffer, so they can afford to
+                // wait. Each month's partition carries a large trigram index on Message; the insert that
+                // triggers a merge of its pending list, or that lands while the disk is busy, could run
+                // past the 30-second default -- dropping the whole batch and logging two EF errors.
+                options.UseNpgsql(connectionStringDictionary[Database.Logs], npgsql => npgsql.CommandTimeout(120));
 
                 if (OptionsAtStartup.Flags.LogSQL)
                 {
