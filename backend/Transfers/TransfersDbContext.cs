@@ -152,6 +152,16 @@ namespace resonance.Transfers
                 .HasFilter("\"EndedAt\" IS NOT NULL")
                 .IncludeProperties(e => new { e.Direction, e.State, e.StateDescription, e.Size, e.Username, e.AverageSpeed, e.StartedAt, e.EnqueuedAt });
 
+            // The 90-day activity heatmap filters to successful transfers and aggregates the
+            // actual bytes moved. Keeping those operands in a small partial index avoids hundreds
+            // of thousands of random heap reads through IDX_Transfers_State.
+            modelBuilder
+                .Entity<Transfer>()
+                .HasIndex(e => e.EndedAt)
+                .HasDatabaseName("IDX_Transfers_Heatmap")
+                .HasFilter("\"State\" = 48 AND \"EndedAt\" IS NOT NULL")
+                .IncludeProperties(e => new { e.BytesTransferred, e.StartOffset });
+
             // covers the user report search, which resolves usernames with a leading-wildcard
             // ILIKE; the btree indexes above are all useless for that, leaving a scan of every
             // row. Postgres only: SQLite has no trigram support, and its LIKE is already

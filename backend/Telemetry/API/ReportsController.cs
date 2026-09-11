@@ -626,6 +626,7 @@ public class ReportsController : ControllerBase
     /// <param name="search">An optional term matched against the filename (and its path).</param>
     /// <param name="limit">The number of records to return (Default: 25).</param>
     /// <param name="offset">The record offset (if paginating).</param>
+    /// <param name="includeTotal">Whether to calculate the exact total count.</param>
     /// <returns></returns>
     /// <response code="200">The request completed successfully.</response>
     /// <response code="400">Bad request.</response>
@@ -643,7 +644,8 @@ public class ReportsController : ControllerBase
         [FromQuery] string sortOrder = "DESC",
         [FromQuery] string search = null,
         [FromQuery] int limit = 25,
-        [FromQuery] int offset = 0)
+        [FromQuery] int offset = 0,
+        [FromQuery] bool includeTotal = true)
     {
         if (string.IsNullOrWhiteSpace(username))
         {
@@ -697,7 +699,8 @@ public class ReportsController : ControllerBase
                 sortOrder: parsedSortOrder,
                 search: search,
                 limit: limit,
-                offset: offset);
+                offset: offset,
+                includeTotal: includeTotal);
 
             Response.Headers.Append("X-Total-Count", total.ToString());
             return Ok(items);
@@ -788,8 +791,8 @@ public class ReportsController : ControllerBase
                 limit: limit,
                 offset: offset);
 
-            // Same convention the other paginated report endpoints use; the byte total rides
-            // alongside so the page can show a volume for the current filter without a second call.
+            // This endpoint deliberately returns a cheap lower-bound count and page byte total;
+            // exact aggregates over the full transfer history made pagination wait on a table scan.
             Response.Headers.Append("X-Total-Count", total.ToString());
             Response.Headers.Append("X-Total-Bytes", totalBytes.ToString());
             return Ok(items);

@@ -994,9 +994,12 @@ namespace resonance
             services.AddSingleton<resonance.Users.Blocking.BlockedUsersService>();
 
             services.AddSingleton<PrometheusService>();
+
+            // Reports are cached on demand with stale-while-revalidate, with no background warmer. A
+            // blanket warmer continuously scanned the multi-million-row transfer table and starved normal
+            // requests and log persistence, even when its calls were serialized.
             services.AddSingleton<ReportsService>();
             services.AddSingleton<TelemetryService>();
-            services.AddHostedService<resonance.Telemetry.ReportsCacheWarmer>();
 
             services.AddSingleton<VPNService>();
             services.AddSingleton<UpnpService>();

@@ -154,6 +154,7 @@ export const getUserTransfers = async ({
   search,
   limit = 25,
   offset = 0,
+  includeTotal = true,
 } = {}) => {
   const q = buildParameters({
     direction,
@@ -163,6 +164,7 @@ export const getUserTransfers = async ({
     search,
     limit,
     offset,
+    includeTotal,
   });
   const res = await api.get(
     `/telemetry/reports/transfers/users/${encodeURIComponent(username)}/transfers?${q}`,
@@ -176,7 +178,8 @@ export const getUserTransfers = async ({
 /**
  * Every finished transfer across all peers, newest first. The transfers list endpoint only carries
  * in-flight transfers plus the most recent completions, so this is the only route to the rest of
- * the history. Returns the count and byte volume matching the filter alongside the page.
+ * the history. `total` is a lower bound used to indicate that another page exists; `totalBytes`
+ * covers the returned page rather than forcing a full-history aggregate on every request.
  */
 export const getTransferHistory = async ({
   direction,

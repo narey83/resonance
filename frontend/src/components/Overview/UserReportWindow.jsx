@@ -962,17 +962,65 @@ const UserReportWindow = ({ initialTab, onClose, seed, username }) => {
     if (!username) return undefined;
     let cancelled = false;
     setDetailLoading(true);
-    reportsAPI
-      .getUserDetail({ username })
-      .then((d) => {
+    setTrendLoading(true);
+    setTrend([]);
+    setEvents(null);
+    setFirstSeen(null);
+
+    const load = async () => {
+      try {
+        const d = await reportsAPI.getUserDetail({ username });
         if (!cancelled) setDetail(d);
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) setDetail(null);
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setDetailLoading(false);
-      });
+      }
+
+      // These panels are secondary. Run their database queries in sequence so opening a user
+      // report cannot add its own burst of expensive work when PostgreSQL is already busy.
+      const start = new Date(
+        Date.now() - TREND_DAYS * 86_400_000,
+      ).toISOString();
+
+      try {
+        const histogram = await reportsAPI.getHistogram({
+          username,
+          interval: TREND_INTERVAL_MINUTES,
+          start,
+        });
+        if (!cancelled) setTrend(buildTrend(histogram));
+      } catch {
+        if (!cancelled) setTrend([]);
+      } finally {
+        if (!cancelled) setTrendLoading(false);
+      }
+
+      try {
+        const counts = await reportsAPI.getUserEventCounts({
+          usernames: [username],
+        });
+        if (!cancelled) setEvents(counts?.[username] ?? null);
+      } catch {
+        // Optional panel; leave it empty when unavailable.
+      }
+
+      try {
+        const { items } = await reportsAPI.getUserTransfers({
+          username,
+          includeTotal: false,
+          limit: 1,
+          sortOrder: 'ASC',
+        });
+        if (!cancelled && items?.[0]) {
+          setFirstSeen(pick(items[0], 'RequestedAt'));
+        }
+      } catch {
+        // Optional field; the rest of the report remains usable.
+      }
+    };
+
+    load();
     return () => {
       cancelled = true;
     };
@@ -1003,51 +1051,6 @@ const UserReportWindow = ({ initialTab, onClose, seed, username }) => {
       });
       setPeerState('ok');
     });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [username]);
-
-  // Trend, event counts and the first-ever transfer are all secondary: render
-  // the modal without waiting on them, and let any of them fail silently.
-  useEffect(() => {
-    if (!username) return undefined;
-    let cancelled = false;
-    setTrendLoading(true);
-    setTrend([]);
-    setEvents(null);
-    setFirstSeen(null);
-
-    const start = new Date(Date.now() - TREND_DAYS * 86_400_000).toISOString();
-
-    reportsAPI
-      .getHistogram({ username, interval: TREND_INTERVAL_MINUTES, start })
-      .then((h) => {
-        if (!cancelled) setTrend(buildTrend(h));
-      })
-      .catch(() => {
-        if (!cancelled) setTrend([]);
-      })
-      .finally(() => {
-        if (!cancelled) setTrendLoading(false);
-      });
-
-    reportsAPI
-      .getUserEventCounts({ usernames: [username] })
-      .then((counts) => {
-        if (!cancelled) setEvents(counts?.[username] ?? null);
-      })
-      .catch(() => {});
-
-    reportsAPI
-      .getUserTransfers({ username, limit: 1, sortOrder: 'ASC' })
-      .then(({ items }) => {
-        if (!cancelled && items?.[0]) {
-          setFirstSeen(pick(items[0], 'RequestedAt'));
-        }
-      })
-      .catch(() => {});
 
     return () => {
       cancelled = true;

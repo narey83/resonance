@@ -76,7 +76,7 @@ const formatWhen = (value) => {
 
 const retryNote = (count) =>
   count === 1
-    ? 'Retried after 1 failed attempt'
+    ? 'Retried — show attempts'
     : `Retried after ${count} failed attempts`;
 
 const TransferHistory = () => {
@@ -89,7 +89,6 @@ const TransferHistory = () => {
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
-  const [totalBytes, setTotalBytes] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -134,7 +133,6 @@ const TransferHistory = () => {
 
       setItems(result.items ?? []);
       setTotal(result.total ?? 0);
-      setTotalBytes(result.totalBytes ?? 0);
     } catch (loadError) {
       if (id !== requestId.current) return;
       setError(
@@ -175,9 +173,9 @@ const TransferHistory = () => {
     [expandedId],
   );
 
-  const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+  const hasMore = total > (page + 1) * PAGE_SIZE;
   const firstRow = total === 0 ? 0 : page * PAGE_SIZE + 1;
-  const lastRow = Math.min(total, (page + 1) * PAGE_SIZE);
+  const lastRow = page * PAGE_SIZE + items.length;
 
   const chooseFilter = (setter) => (value) => {
     setter(value);
@@ -191,7 +189,7 @@ const TransferHistory = () => {
         <div className="th-summary">
           {loading && items.length === 0
             ? 'Loading…'
-            : `${total.toLocaleString()} transfers · ${formatBytes(totalBytes)}`}
+            : `${firstRow.toLocaleString()}–${lastRow.toLocaleString()} transfers`}
         </div>
       </div>
 
@@ -371,11 +369,10 @@ const TransferHistory = () => {
           ‹ Prev
         </button>
         <span className="th-pager-info">
-          {firstRow.toLocaleString()}–{lastRow.toLocaleString()} of{' '}
-          {total.toLocaleString()}
+          {firstRow.toLocaleString()}–{lastRow.toLocaleString()}
         </span>
         <button
-          disabled={page >= lastPage || loading}
+          disabled={!hasMore || loading}
           onClick={() => setPage((p) => p + 1)}
           type="button"
         >

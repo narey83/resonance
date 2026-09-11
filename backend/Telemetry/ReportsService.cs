@@ -40,6 +40,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Extensions.Caching.Memory;
@@ -55,7 +56,7 @@ public class ReportsService
 {
     private static readonly ConcurrentDictionary<string, byte> RefreshesInFlight = new();
     private static readonly ConcurrentDictionary<string, object> ColdMissGates = new();
-
+    private static readonly AsyncLocal<bool> SynchronousCacheRefresh = new();
     /// <summary>
     ///     Initializes a new instance of the <see cref="ReportsService"/> class.
     /// </summary>
@@ -63,6 +64,24 @@ public class ReportsService
     {
         ConnectionStrings = connectionStringDictionary;
         Cache = cache;
+    }
+
+    /// <summary>
+    ///     Runs a cache-warmer call without allowing stale entries to fan out onto background threads.
+    /// </summary>
+    internal void WarmCache(Action call)
+    {
+        var previous = SynchronousCacheRefresh.Value;
+        SynchronousCacheRefresh.Value = true;
+
+        try
+        {
+            call();
+        }
+        finally
+        {
+            SynchronousCacheRefresh.Value = previous;
+        }
     }
 
     private ConnectionStringDictionary ConnectionStrings { get; }
@@ -980,7 +999,8 @@ public class ReportsService
         SortOrder sortOrder = SortOrder.DESC,
         string search = null,
         int limit = 25,
-        int offset = 0)
+        int offset = 0,
+        bool includeTotal = true)
     {
         var s = Utc(start ?? DateTime.MinValue);
         var e = Utc(end ?? DateTime.MaxValue);
@@ -1104,13 +1124,15 @@ public class ReportsService
         };
 
         var items = connection.Query<UserTransferRecord>(sql, param).ToList();
-        var total = connection.QuerySingle<int>(countSql, param);
+        var total = includeTotal
+            ? connection.QuerySingle<int>(countSql, param)
+            : offset + items.Count;
         return (items, total);
     }
 
     /// <summary>
-    ///     Returns a paginated, filterable page of finished transfers across every user, together
-    ///     with the total count and byte volume matching the filter.
+    ///     Returns a paginated, filterable page of finished transfers across every user. The total
+    ///     is a lower bound used to indicate whether another page exists; bytes cover this page.
     /// </summary>
     /// <remarks>
     ///     The per-user report above answers "what did I exchange with this peer". This answers
@@ -1140,7 +1162,7 @@ public class ReportsService
         search = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
         state = string.IsNullOrWhiteSpace(state) ? null : state.Trim();
 
-        string sql, countSql;
+        string sql;
 
         if (UsePostgres)
         {
@@ -1157,7 +1179,7 @@ public class ReportsService
 
             // Retried-and-superseded attempts are hidden from this list -- a later row's RetryOfId
             // points back at them -- so the failure appears as a footnote on the successful retry
-            // rather than as its own unresolved-looking row. See GetPriorFailedAttemptCounts.
+            // rather than as its own unresolved-looking row. Retry details are fetched on demand.
             var where = $@"
                 WHERE ""EndedAt"" IS NOT NULL
                     AND ""EndedAt"" BETWEEN @Start AND @End
@@ -1166,7 +1188,6 @@ public class ReportsService
                     {stateClause}
                     {searchClause}
             ";
-
             sql = $@"
                 SELECT
                     t.""Id""::text AS ""Id"",
@@ -1194,12 +1215,6 @@ public class ReportsService
                 ORDER BY t.""EndedAt"" {sortOrder}
                 LIMIT @Limit
                 OFFSET @Offset
-            ";
-
-            countSql = $@"
-                SELECT COUNT(*) AS ""Count"", COALESCE(SUM(t.""BytesTransferred""), 0) AS ""Bytes""
-                FROM transfers.""Transfers"" t
-                {where}
             ";
         }
         else
@@ -1248,11 +1263,6 @@ public class ReportsService
                 OFFSET @Offset
             ";
 
-            countSql = $@"
-                SELECT COUNT(*) AS Count, COALESCE(SUM(t.BytesTransferred), 0) AS Bytes
-                FROM Transfers t
-                {where}
-            ";
         }
 
         using var connection = OpenConnection(Database.Transfers);
@@ -1264,25 +1274,29 @@ public class ReportsService
             Start = s,
             End = e,
             Search = search is not null ? "%" + EscapeLike(search) + "%" : null,
-            Limit = limit,
+            Limit = limit + 1,
             Offset = offset,
         };
 
         var items = connection.Query<UserTransferRecord>(sql, param).ToList();
-
-        // A named type with aliased columns, not a ValueTuple: Dapper maps by column name, and
-        // bare COUNT(*)/SUM() come back as "count"/"coalesce" in Postgres, which binds to neither.
-        var totals = connection.QuerySingle<HistoryTotals>(countSql, param);
+        var hasMore = items.Count > limit;
+        if (hasMore)
+        {
+            items.RemoveAt(items.Count - 1);
+        }
 
         if (items.Count > 0)
         {
-            var priorFailedAttempts = GetPriorFailedAttemptCounts(connection, items.Select(i => i.Id));
             items = items
-                .Select(i => i with { PriorFailedAttempts = priorFailedAttempts.GetValueOrDefault(i.Id, 0) })
+                .Select(i => i with { PriorFailedAttempts = string.IsNullOrWhiteSpace(i.RetryOfId) ? 0 : 1 })
                 .ToList();
         }
 
-        return (items, totals.Count, totals.Bytes);
+        // Total is deliberately a lower bound. The history UI only needs to know whether another
+        // page exists; an exact COUNT/SUM over millions of rows made every page wait on a full scan.
+        var visibleThrough = offset + items.Count;
+        var total = visibleThrough + (hasMore ? 1 : 0);
+        return (items, total, items.Sum(i => i.BytesTransferred));
     }
 
     /// <summary>
@@ -2099,6 +2113,20 @@ public class ReportsService
         {
             if (DateTime.UtcNow > cached.FreshUntil && RefreshesInFlight.TryAdd(cacheKey, 0))
             {
+                if (SynchronousCacheRefresh.Value)
+                {
+                    try
+                    {
+                        var refreshed = factory();
+                        Cache.Set(cacheKey, new StaleWhileRevalidateEntry(refreshed, DateTime.UtcNow + ttl), ttl * 6);
+                        return refreshed;
+                    }
+                    finally
+                    {
+                        RefreshesInFlight.TryRemove(cacheKey, out _);
+                    }
+                }
+
                 _ = Task.Run(() =>
                 {
                     try
@@ -2144,56 +2172,6 @@ public class ReportsService
         }
     }
 
-    /// <summary>
-    ///     Counts, for each of the given transfer <paramref name="ids"/>, how many prior attempts at the same
-    ///     file failed before it -- walking backwards through the <c>RetryOfId</c> self-reference. A transfer
-    ///     that isn't a retry of anything is not included in the result (treat a missing key as zero).
-    /// </summary>
-    private Dictionary<string, int> GetPriorFailedAttemptCounts(DbConnection connection, IEnumerable<string> ids)
-    {
-        var idList = ids.ToList();
-
-        if (idList.Count == 0)
-        {
-            return new Dictionary<string, int>();
-        }
-
-        // ANY(@Ids), not IN @Ids: Dapper's IN-list expansion doesn't fire here (binds Ids as a
-        // single array parameter instead), which Npgsql sends as bare "$1" and Postgres rejects.
-        string sql = UsePostgres
-            ? @"
-                WITH RECURSIVE chain AS (
-                    SELECT ""Id""::text AS ""HeadId"", ""Id"", ""RetryOfId""
-                    FROM transfers.""Transfers""
-                    WHERE ""Id""::text = ANY(@Ids)
-                    UNION ALL
-                    SELECT chain.""HeadId"", t.""Id"", t.""RetryOfId""
-                    FROM transfers.""Transfers"" t
-                    JOIN chain ON t.""Id"" = chain.""RetryOfId""
-                )
-                SELECT ""HeadId"" AS ""Id"", COUNT(*) - 1 AS ""Count""
-                FROM chain
-                GROUP BY ""HeadId""
-            "
-            : @"
-                WITH RECURSIVE chain AS (
-                    SELECT Id AS HeadId, Id, RetryOfId
-                    FROM Transfers
-                    WHERE Id IN @Ids
-                    UNION ALL
-                    SELECT chain.HeadId, t.Id, t.RetryOfId
-                    FROM Transfers t
-                    JOIN chain ON t.Id = chain.RetryOfId
-                )
-                SELECT HeadId AS Id, COUNT(*) - 1 AS ""Count""
-                FROM chain
-                GROUP BY HeadId
-            ";
-
-        return connection.Query<RetryChainCountRow>(sql, new { Ids = idList })
-            .ToDictionary(r => r.Id, r => r.Count);
-    }
-
     private DbConnection OpenConnection(Database database)
     {
         DbConnection conn = new NpgsqlConnection(ConnectionStrings[database]);
@@ -2236,15 +2214,4 @@ public class ReportsService
         public double AverageDuration { get; init; }
     }
 
-    private sealed record HistoryTotals
-    {
-        public int Count { get; init; }
-        public long Bytes { get; init; }
-    }
-
-    private sealed record RetryChainCountRow
-    {
-        public string Id { get; init; }
-        public int Count { get; init; }
-    }
 }

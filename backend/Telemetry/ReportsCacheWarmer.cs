@@ -134,6 +134,11 @@ public sealed class ReportsCacheWarmer : BackgroundService
         // Global (range-independent) cards.
         Warm(() => Reports.GetCatalogCoverage());
 
+        // The web heatmap deliberately uses a fixed 90-day window, independently of the range
+        // picker. Warm that one report explicitly without running every other report for 90 days.
+        var heatmapEnd = DateTime.UtcNow;
+        Warm(() => Reports.GetActivityHeatmap(heatmapEnd.AddDays(-90), heatmapEnd));
+
         foreach (var hours in RangeHours)
         {
             if (ct.IsCancellationRequested)
@@ -178,7 +183,7 @@ public sealed class ReportsCacheWarmer : BackgroundService
     {
         try
         {
-            call();
+            Reports.WarmCache(call);
         }
         catch (Exception ex)
         {
