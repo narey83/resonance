@@ -68,7 +68,7 @@ namespace resonance.MusicLibrary.API
         bool AnalyzeKey = true,
         bool AnalyzeBpm = true,
         string Metrics = null,
-        bool SkipAnalysed = false);
+        bool SkipAnalysed = true);
 
     public record AnalyzeFolderRequest(
         string Path,
@@ -685,7 +685,7 @@ namespace resonance.MusicLibrary.API
             {
                 await Analysis.StartScanAsync(new AnalysisScanRequest(
                     Metrics: metrics,
-                    SkipAnalysed: false,
+                    SkipAnalysed: true,
                     OnlyFilenames: maskedFilenames));
             }
             catch (InvalidOperationException ex)

@@ -883,7 +883,7 @@ const Analysis = () => {
     await startScan(
       {
         metrics: METRICS.join(', '),
-        skipAnalysed: false,
+        skipAnalysed: true,
         resetAll: false,
       },
       paths,

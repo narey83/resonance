@@ -30,7 +30,6 @@
 namespace resonance.Analysis
 {
     using System;
-    using System.Collections.Concurrent;
     using System.Collections.Generic;
     using System.Linq;
     using System.Threading;
@@ -75,15 +74,6 @@ namespace resonance.Analysis
         // finished. Throttled rather than sent per track — a full-library scan can touch tens of
         // thousands of rows.
         private static readonly TimeSpan AnalysisBroadcastThrottle = TimeSpan.FromSeconds(1);
-
-        // One decode per file at a time, shared across every caller — the scan queue and the
-        // on-demand single-track methods (GetWaveformAsync, GetLoudnessAsync) used to have no
-        // idea about each other, so playing a track while a scan was already touching it could
-        // start two ffmpeg/Essentia passes over the same file at once.
-        // ponytail: grows one entry per distinct path ever analysed and nothing is ever evicted —
-        // a SemaphoreSlim is a few dozen bytes, so even a 50k-track library tops out around a few
-        // MB. Evict here if a profile ever says otherwise.
-        private readonly ConcurrentDictionary<string, SemaphoreSlim> pathLocks = new();
 
         // Ticks (DateTime.UtcNow.Ticks), not a DateTime — a plain field can't be updated
         // atomically from the stream endpoint's request threads while a background analysis
@@ -256,78 +246,13 @@ namespace resonance.Analysis
             return true;
         }
 
-        public async Task<WaveformData> GetWaveformAsync(string path, CancellationToken ct, bool cachedOnly = false)
-        {
-            var cached = Store.GetWaveform(path);
-            if (cached != null || cachedOnly)
-            {
-                return cached;
-            }
-
-            var gate = LockFor(path);
-            await gate.WaitAsync(ct);
-            try
-            {
-                // Someone else (the scan queue, or another player/row) may have finished
-                // decoding this exact file while this call was waiting for the gate.
-                cached = Store.GetWaveform(path);
-                if (cached != null)
-                {
-                    return cached;
-                }
-
-                // A single-track miss also measures loudness, since the decode is already paid for
-                // and the player asks for both.
-                var result = await AnalyseOneAsync(
-                    path, AnalysisMetrics.Waveform | AnalysisMetrics.Loudness, ct);
-                if (result?.Waveform == null)
-                {
-                    return null;
-                }
-
-                SaveAndNotify(path, result);
-                return result.Waveform;
-            }
-            finally
-            {
-                gate.Release();
-            }
-        }
+        public Task<WaveformData> GetWaveformAsync(string path, CancellationToken ct, bool cachedOnly = false) =>
+            Task.FromResult(Store.GetWaveform(path));
 
         public BeatAnalysis GetBeatInfo(string path) => Store.GetBeatInfo(path);
 
-        public async Task<LoudnessData> GetLoudnessAsync(string path, CancellationToken ct)
-        {
-            var cached = Store.GetLoudness(path);
-            if (cached != null)
-            {
-                return cached;
-            }
-
-            var gate = LockFor(path);
-            await gate.WaitAsync(ct);
-            try
-            {
-                cached = Store.GetLoudness(path);
-                if (cached != null)
-                {
-                    return cached;
-                }
-
-                var result = await AnalyseOneAsync(path, AnalysisMetrics.Loudness, ct);
-                if (result?.Loudness == null)
-                {
-                    return null;
-                }
-
-                SaveAndNotify(path, result);
-                return result.Loudness;
-            }
-            finally
-            {
-                gate.Release();
-            }
-        }
+        public Task<LoudnessData> GetLoudnessAsync(string path, CancellationToken ct) =>
+            Task.FromResult(Store.GetLoudness(path));
 
         public void SetBpm(string maskedFilename, uint bpm) => Apply(maskedFilename, bpm, null);
 
@@ -384,17 +309,6 @@ namespace resonance.Analysis
                 ? null
                 : ShareService.FindMaskedFilenames([MusicPath.ToRelative(path)]).FirstOrDefault();
 
-        // Waveform/loudness results never touch a file's tags — unlike Bpm/Key, there's no
-        // WriteFileTags → TriggerSync → LIBRARY_UPDATED chain to ride along on, so a row showing
-        // one of these would otherwise sit stale until something else happened to refresh the
-        // list. Broadcasting here, right where the value lands in the DB, covers both on-demand
-        // single-track callers (GetWaveformAsync, GetLoudnessAsync).
-        private void SaveAndNotify(string path, AnalysisResult result)
-        {
-            Store.Save(path, result);
-            _ = Hub?.BroadcastLibraryUpdatedAsync(0, 1, 0);
-        }
-
         // ── Scan loop ─────────────────────────────────────────────────────────
         private void UpdateTags(string maskedFilename, Func<FileTags, FileTags> update)
         {
@@ -406,15 +320,6 @@ namespace resonance.Analysis
 
             ShareService.WriteFileTags(maskedFilename, update(existing));
         }
-
-        private async Task<AnalysisResult> AnalyseOneAsync(
-            string originalFilename, AnalysisMetrics metrics, CancellationToken ct)
-        {
-            var ffmpegPath = await Ffmpeg.GetFfmpegPathAsync(ct);
-            return await Analyzer.AnalyseAsync(originalFilename, ffmpegPath, metrics, Options.CurrentValue.Analysis, ct);
-        }
-
-        private SemaphoreSlim LockFor(string path) => pathLocks.GetOrAdd(path, _ => new SemaphoreSlim(1, 1));
 
         private bool IsPlaybackActive() =>
             DateTime.UtcNow.Ticks - Interlocked.Read(ref lastPlaybackActivityTicks) < PlaybackIdleWindow.Ticks;
@@ -481,10 +386,9 @@ namespace resonance.Analysis
         ///     <see cref="HasReliableBpm"/>), until someone runs a scan by hand.
         /// </summary>
         /// <remarks>
-        ///     <see cref="AnalysisScanRequest.AllowBpmFabrication"/> is false here: a track with no
-        ///     BPM tag at all is left alone (a blank BPM is often correct — ambient, spoken word —
-        ///     not something to fabricate a value for). Key/waveform/loudness have no such
-        ///     ambiguity, so they're always filled in for a new track.
+        ///     Automatic and user-requested scans deliberately share the same missing-metric
+        ///     policy, including filling a missing BPM. Reset-and-rescan is the only mode that
+        ///     overwrites an existing result.
         /// </remarks>
         private void OnNewTracksIndexed(IReadOnlyList<string> paths)
         {
@@ -506,7 +410,7 @@ namespace resonance.Analysis
 
                     await WaitForPlaybackIdleAsync();
                     await StartScanAsync(new AnalysisScanRequest(
-                        Metrics: AnalysisMetrics.All, SkipAnalysed: true, OnlyFilenames: masked, AllowBpmFabrication: false));
+                        Metrics: AnalysisMetrics.All, SkipAnalysed: true, OnlyFilenames: masked));
                 }
                 catch (InvalidOperationException)
                 {
@@ -552,11 +456,11 @@ namespace resonance.Analysis
         ///     Narrows the requested metrics to those this track is actually missing, so a rescan
         ///     of a mostly-analysed library only pays for the gaps.
         /// </summary>
-        private AnalysisMetrics MissingMetrics(TrackAnalysisInfo track, AnalysisMetrics requested, bool allowBpmFabrication)
+        private AnalysisMetrics MissingMetrics(TrackAnalysisInfo track, AnalysisMetrics requested)
         {
             var missing = AnalysisMetrics.None;
 
-            if (requested.HasFlag(AnalysisMetrics.Bpm) && !HasReliableBpm(track) && (allowBpmFabrication || track.HasBpm))
+            if (requested.HasFlag(AnalysisMetrics.Bpm) && !HasReliableBpm(track))
             {
                 missing |= AnalysisMetrics.Bpm;
             }
@@ -648,7 +552,7 @@ namespace resonance.Analysis
                 // is dropped from the queue entirely rather than decoded and discarded.
                 var queue = tracks
                     .Select(t => (Track: t, Metrics: request.SkipAnalysed && !request.ResetAll
-                        ? MissingMetrics(t, request.Metrics, request.AllowBpmFabrication)
+                        ? MissingMetrics(t, request.Metrics)
                         : request.Metrics))
                     .Where(x => x.Metrics != AnalysisMetrics.None)
                     .ToList();
@@ -718,20 +622,7 @@ namespace resonance.Analysis
                             (double)(analysed + skipped + failed) / total, inFlight, request.Metrics.ToString(), inFlightFiles.Keys.ToList());
                         try
                         {
-                            // Shared with the on-demand single-track methods below — without this,
-                            // playing a track a scan is already decoding started a second, fully
-                            // redundant ffmpeg/Essentia pass over the same file.
-                            var gate = LockFor(path);
-                            await gate.WaitAsync(ct);
-                            AnalysisResult result;
-                            try
-                            {
-                                result = await Analyzer.AnalyseAsync(path, ffmpegPath, metrics, options, ct);
-                            }
-                            finally
-                            {
-                                gate.Release();
-                            }
+                            var result = await Analyzer.AnalyseAsync(path, ffmpegPath, metrics, options, ct);
 
                             if (result == null)
                             {
@@ -754,8 +645,8 @@ namespace resonance.Analysis
                                 || result.Waveform != null || result.Loudness != null;
                             if (produced)
                             {
-                                // Not SaveAndNotify on every track — a full scan can touch thousands
-                                // of them, and broadcasting once per track would flood every
+                                // Do not broadcast on every track — a full scan can touch thousands
+                                // of them, and one update per track would flood every
                                 // connected client with a refetch. Throttled to at most once a
                                 // second instead (see AnalysisBroadcastThrottle), so an open Library
                                 // row catches up in real time for whichever metric this pass

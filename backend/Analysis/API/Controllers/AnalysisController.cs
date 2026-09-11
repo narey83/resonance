@@ -114,7 +114,7 @@ namespace resonance.Analysis.API
         public IActionResult CancelScan() =>
             Analysis.CancelScan() ? NoContent() : NotFound("No scan is in progress.");
 
-        /// <summary>Returns waveform band peaks for a local file, analysing it if not cached.</summary>
+        /// <summary>Returns cached waveform band peaks for a local file.</summary>
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         [HttpGet("waveform")]
         [Authorize(Policy = AuthPolicy.Any)]
@@ -150,7 +150,7 @@ namespace resonance.Analysis.API
                 data.DurationSeconds, data.SampleRate, data.WaveformVersion));
         }
 
-        /// <summary>Returns EBU R128 loudness for a local file, analysing it if not cached.</summary>
+        /// <summary>Returns cached EBU R128 loudness for a local file.</summary>
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         [HttpGet("loudness")]
         [Authorize(Policy = AuthPolicy.Any)]

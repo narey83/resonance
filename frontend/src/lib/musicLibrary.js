@@ -160,7 +160,7 @@ export const TAG_METRICS = 'Bpm, Key';
 // track is still missing, rather than redoing key/BPM it already has.
 export const analyzeTrack = async (
   paths,
-  { metrics = ALL_METRICS, skipAnalysed = false } = {},
+  { metrics = ALL_METRICS, skipAnalysed = true } = {},
 ) =>
   api.post('/musiclibrary/tracks/analyze', {
     metrics,

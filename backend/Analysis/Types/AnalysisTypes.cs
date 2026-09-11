@@ -245,12 +245,6 @@ namespace resonance.Analysis
     /// <param name="SkipAnalysed">Skip a track's metrics that are already present.</param>
     /// <param name="ResetAll">Clear existing results for the selection before scanning.</param>
     /// <param name="OnlyFilenames">Restricts the scan to these masked filenames; null scans everything.</param>
-    /// <param name="AllowBpmFabrication">
-    ///     Whether a track with no BPM tag at all should have one computed and written. True for
-    ///     every human-requested scan (someone asking to fill in blanks is the point). The
-    ///     automatic post-download check sets this false — a blank BPM is often correct (ambient,
-    ///     spoken word), not something to fabricate a value for.
-    /// </param>
     /// <param name="OnlyPaths">
     ///     The same restriction as <see cref="OnlyFilenames"/>, expressed as library paths and
     ///     resolved to masked filenames server-side. Clients reading the paged library query only
@@ -262,7 +256,6 @@ namespace resonance.Analysis
         bool SkipAnalysed = true,
         bool ResetAll = false,
         string[] OnlyFilenames = null,
-        bool AllowBpmFabrication = true,
         string[] OnlyPaths = null);
 
     /// <summary>API response shape for waveform data.</summary>

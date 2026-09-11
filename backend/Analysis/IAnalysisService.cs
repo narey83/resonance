@@ -62,13 +62,12 @@ namespace resonance.Analysis
         bool CancelScan();
 
         /// <summary>
-        ///     Returns cached waveform peaks, analysing the file if not yet cached — unless
-        ///     <paramref name="cachedOnly"/>, in which case an uncached track simply returns null.
+        ///     Returns cached waveform peaks. Analysis is started explicitly through
+        ///     <see cref="StartScanAsync"/> so every trigger uses the same four-metric pipeline.
         /// </summary>
         /// <remarks>
-        ///     Callers rendering a list must pass <paramref name="cachedOnly"/>. Analysing on
-        ///     demand is fine for the one track a player is on, but a virtualised library scrolling
-        ///     past thousands of rows would otherwise queue a full decode for every one of them.
+        ///     <paramref name="cachedOnly"/> remains for API compatibility; reads are always
+        ///     cache-only.
         /// </remarks>
         /// <returns>The peaks, or null if not cached (or undecodable).</returns>
         Task<WaveformData> GetWaveformAsync(string path, CancellationToken ct, bool cachedOnly = false);
@@ -82,7 +81,7 @@ namespace resonance.Analysis
         /// <returns>The beat info; every member is null if BPM has never been detected.</returns>
         BeatAnalysis GetBeatInfo(string path);
 
-        /// <summary>Returns cached loudness, analysing the file if not yet cached.</summary>
+        /// <summary>Returns cached loudness; an uncached track returns null.</summary>
         /// <returns>The measurements, or null if the file could not be decoded.</returns>
         Task<LoudnessData> GetLoudnessAsync(string path, CancellationToken ct);
 

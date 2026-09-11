@@ -32,7 +32,7 @@ sequenceDiagram
     Player-->>An: RecordPlaybackActivity() on every /stream request
     Note over An: polls every 10s while playback is active;<br/>gives up after 10 min regardless
     An->>An: MissingMetrics per track (Bpm | Key | Waveform | Loudness)
-    Note over An: Bpm only included if the tag is missing<br/>(AllowBpmFabrication=false) or fails FoldOctave
+    Note over An: Every missing metric is included; existing valid results are preserved
     An->>Ess: StartScanAsync (one decode per track, only the missing metrics)
     Ess-->>An: waveform bands, loudness (LUFS/peak/LRA), key, folded BPM
     An->>Tag: write corrected/detected BPM + key back to the tag
@@ -46,24 +46,20 @@ sequenceDiagram
 | Reads the raw tag on every sync | `backend/MusicLibrary/MusicLibraryService.cs` (`ReadTrack`) | `Bpm`/`Key` come straight from the file's own tags — no validation at this point, by design (this is also how a manually-corrected value flows back in after analysis writes it). |
 | Detects "new track" | `backend/MusicLibrary/MusicLibraryService.cs` (`RunSyncAsync`) | While reading new/changed files, collects the path of every *newly added* track, then raises `NewTracksIndexed` once the sync commits. |
 | Decides whether to trust an existing BPM tag | `backend/Analysis/AnalysisService.cs` (`HasReliableBpm`) | Runs the tag value through `AudioAnalyzer.FoldOctave` using the same `MinBpm`/`MaxBpm` window a computed detection is folded into (default 88–176). If folding would change the number, the tag is untrustworthy. |
-| Decides which metrics a track still needs | `backend/Analysis/AnalysisService.cs` (`MissingMetrics`) | Per track: Key/Waveform/Loudness are missing if not already cached; BPM is missing if the tag fails `HasReliableBpm` **and** (`AllowBpmFabrication` is true, or the tag already has *some* value). |
-| Reacts to the event | `backend/Analysis/AnalysisService.cs` (`OnNewTracksIndexed`) | Subscribed in `StartAsync`. Resolves the new tracks' masked filenames and requests `AnalysisMetrics.All` with `AllowBpmFabrication: false`. |
+| Decides which metrics a track still needs | `backend/Analysis/AnalysisService.cs` (`MissingMetrics`) | Per track: Key/Waveform/Loudness are missing if not already cached; BPM is missing if absent or if its tag fails `HasReliableBpm`. |
+| Reacts to the event | `backend/Analysis/AnalysisService.cs` (`OnNewTracksIndexed`) | Subscribed in `StartAsync`. Resolves the new tracks' masked filenames and requests the same missing-only `AnalysisMetrics.All` scan used by playback and the UI. |
 | Waits for a quiet moment | `backend/Analysis/AnalysisService.cs` (`WaitForPlaybackIdleAsync`, `RecordPlaybackActivity`) | The stream endpoint (`MusicLibraryController.StreamTrack`) calls `RecordPlaybackActivity()` on every request — web and mobile share the same endpoint. The auto check polls until 45 seconds have passed with no stream activity, or gives up after 10 minutes and runs anyway. |
 
-## What it will never do
+## Behaviour
 
-- **Never fabricates a BPM for an untagged track.** A blank BPM is often correct — ambient,
-  spoken word, sound effects. `AllowBpmFabrication: false` on the automatic request means a
-  track with *no* BPM tag is left alone; only a tag that's already present and implausible
-  gets corrected. Key, waveform, and loudness have no such ambiguity (every track has *some*
-  audio characteristics to measure), so those are always filled in for a new track.
+- **Uses one missing-only rule.** Playback, Library actions, the Analysis page, and automatic
+  post-download analysis all fill missing BPM, key, waveform, and loudness values. Existing
+  valid results are preserved; reset-and-rescan is the explicit overwrite path.
 - **Never runs while something is actively streaming.** The whole point is to avoid a
   CPU-heavy ffmpeg+Essentia decode competing with live playback on a small host. It waits,
   it doesn't skip — nothing is silently left unanalysed just because someone was listening.
 - **Never touches the whole library.** Only the tracks a given sync just added are scanned;
-  existing tracks are unaffected until someone runs a manual scan (which uses the same
-  `HasReliableBpm` check and `AllowBpmFabrication: true`, so it can also fill in blanks and
-  fix anything the automatic pass left alone).
+  existing tracks are unaffected until playback or a manual scan applies the same rule.
 
 ## Logging
 

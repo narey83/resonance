@@ -43,6 +43,7 @@ import {
   beatGridSeconds,
   visibleBeats,
 } from '../../lib/waveform';
+import { analyseTrack } from '../Shared/WaveformPreview';
 import {
   Activity,
   AudioWaveform,
@@ -866,8 +867,11 @@ const WaveformAnalysis = () => {
           let downbeatOffsetSeconds = null;
           let downbeatConfidence = null;
           try {
+            await analyseTrack(selectedTrack.path);
+            if (abortController.signal.aborted) return;
+
             const res = await api.get('/analysis/waveform', {
-              params: { path: selectedTrack.path },
+              params: { cachedOnly: true, path: selectedTrack.path },
               signal: abortController.signal,
             });
             if (res.data && !abortController.signal.aborted) {

@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { analyseTrack } from '../components/Shared/WaveformPreview';
 import api from '../lib/api';
 import { useEffect, useState } from 'react';
 
@@ -43,8 +44,12 @@ const useTrackLoudness = (trackPath) => {
     if (!trackPath) return undefined;
 
     let cancelled = false;
-    api
-      .get('/analysis/loudness', { params: { path: trackPath } })
+    // Playback uses the same four-metric, missing-only analysis path as every
+    // manual Analyse action. The GET that follows is a cache read only.
+    analyseTrack(trackPath)
+      .then(() =>
+        api.get('/analysis/loudness', { params: { path: trackPath } }),
+      )
       .then(({ data }) => {
         if (!cancelled) setLoudness(data);
       })
