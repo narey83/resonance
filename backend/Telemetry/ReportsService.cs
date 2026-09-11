@@ -1935,23 +1935,29 @@ public class ReportsService
             string sql;
             if (UsePostgres)
             {
+                // A peer active in the window is returning exactly when some transfer of theirs ended
+                // before it, so each active peer needs one index probe rather than every peer's
+                // first-ever transfer. Computing that MIN over the whole multi-million-row table on each
+                // request ran past the 30-second command timeout. MATERIALIZED keeps the probe to once
+                // per peer; inlined, the planner repeated it for each of the two counts.
                 sql = @"
-                    WITH firsts AS (
-                        SELECT ""Username"", MIN(""EndedAt"") AS FirstSeen
-                        FROM transfers.""Transfers""
-                        WHERE ""EndedAt"" IS NOT NULL
-                        GROUP BY ""Username""
-                    ),
-                    active AS (
+                    WITH active AS (
                         SELECT DISTINCT ""Username""
                         FROM transfers.""Transfers""
                         WHERE ""EndedAt"" IS NOT NULL AND ""EndedAt"" BETWEEN @Start AND @End
+                    ),
+                    flags AS MATERIALIZED (
+                        SELECT EXISTS (
+                            SELECT 1
+                            FROM transfers.""Transfers"" t
+                            WHERE t.""Username"" = a.""Username"" AND t.""EndedAt"" < @Start
+                        ) AS IsReturning
+                        FROM active a
                     )
                     SELECT
-                        COUNT(*) FILTER (WHERE f.FirstSeen >= @Start) AS NewPeers,
-                        COUNT(*) FILTER (WHERE f.FirstSeen < @Start) AS ReturningPeers
-                    FROM active a
-                    JOIN firsts f ON f.""Username"" = a.""Username""
+                        COUNT(*) FILTER (WHERE NOT IsReturning) AS NewPeers,
+                        COUNT(*) FILTER (WHERE IsReturning) AS ReturningPeers
+                    FROM flags
                 ";
             }
             else
