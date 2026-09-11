@@ -84,24 +84,6 @@ public class ReportsService
         Cache = cache;
     }
 
-    /// <summary>
-    ///     Runs a cache-warmer call without allowing stale entries to fan out onto background threads.
-    /// </summary>
-    internal void WarmCache(Action call)
-    {
-        var previous = SynchronousCacheRefresh.Value;
-        SynchronousCacheRefresh.Value = true;
-
-        try
-        {
-            call();
-        }
-        finally
-        {
-            SynchronousCacheRefresh.Value = previous;
-        }
-    }
-
     private ConnectionStringDictionary ConnectionStrings { get; }
     private IMemoryCache Cache { get; }
     private bool UsePostgres => ConnectionStrings.UsePostgres;
@@ -1280,7 +1262,6 @@ public class ReportsService
                 LIMIT @Limit
                 OFFSET @Offset
             ";
-
         }
 
         using var connection = OpenConnection(Database.Transfers);
@@ -2013,56 +1994,6 @@ public class ReportsService
         return cached?.Value as CoverageReport ?? new CoverageReport { Pending = true };
     }
 
-    private void RefreshCatalogCoverage()
-    {
-        try
-        {
-            string sql;
-            if (UsePostgres)
-            {
-                // Keep the DISTINCT in a subquery: COUNT(DISTINCT ...) forces a sort that spills to
-                // disk at this row count, while the subquery form can hash-aggregate.
-                sql = @"
-                    SELECT COUNT(*)
-                    FROM (
-                        SELECT DISTINCT LOWER(SUBSTRING(""Filename"" FROM '[^/\\]*$'))
-                        FROM transfers.""Transfers""
-                        WHERE ""Direction"" = 'Upload' AND ""State"" = 48
-                    ) basenames
-                ";
-            }
-            else
-            {
-                sql = @"
-                    SELECT COUNT(DISTINCT LOWER(SUBSTR(Filename, LENGTH(RTRIM(Filename, REPLACE(REPLACE(Filename, '/', ''), '\', ''))) + 1)))
-                    FROM Transfers
-                    WHERE Direction = 'Upload' AND State = 48
-                ";
-            }
-
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            var count = RunGated(() =>
-            {
-                using var connection = OpenConnection(Database.Transfers);
-                return connection.ExecuteScalar<long>(sql, commandTimeout: CoverageCommandTimeoutSeconds);
-            });
-
-            // No expiry: an old figure is still a good answer, so it is only ever replaced.
-            Cache.Set(CoverageCacheKey, new StaleWhileRevalidateEntry(new CoverageReport { UploadedFiles = count }, DateTime.UtcNow + CoverageFreshFor));
-            Log.Information("Catalog coverage refreshed in {Elapsed:F1}s: {Count} distinct uploaded files", stopwatch.Elapsed.TotalSeconds, count);
-        }
-        catch (Exception ex)
-        {
-            // back off, so a query that can't finish isn't restarted by every Overview load
-            Interlocked.Exchange(ref coverageRetryAfterTicks, (DateTime.UtcNow + CoverageRetryBackoff).Ticks);
-            Log.Warning("Catalog coverage refresh failed; retrying in {Backoff}: {Message}", CoverageRetryBackoff, ex.Message);
-        }
-        finally
-        {
-            RefreshesInFlight.TryRemove(CoverageCacheKey, out _);
-        }
-    }
-
     /// <summary>
     ///     Returns counts of social / discovery events (browses, private messages, room messages, mentions)
     ///     within the window.
@@ -2112,6 +2043,24 @@ public class ReportsService
             using var connection = OpenConnection(Database.Events);
             return connection.QueryFirstOrDefault<SocialActivity>(sql, new { Start = s, End = e }) ?? new SocialActivity();
         });
+    }
+
+    /// <summary>
+    ///     Runs a cache-warmer call without allowing stale entries to fan out onto background threads.
+    /// </summary>
+    internal void WarmCache(Action call)
+    {
+        var previous = SynchronousCacheRefresh.Value;
+        SynchronousCacheRefresh.Value = true;
+
+        try
+        {
+            call();
+        }
+        finally
+        {
+            SynchronousCacheRefresh.Value = previous;
+        }
     }
 
     // Longer TTL for wider time windows — no point refreshing a 30-day summary every 30s.
@@ -2175,6 +2124,56 @@ public class ReportsService
             .Replace("\\", "\\\\")
             .Replace("%", "\\%")
             .Replace("_", "\\_");
+
+    private void RefreshCatalogCoverage()
+    {
+        try
+        {
+            string sql;
+            if (UsePostgres)
+            {
+                // Keep the DISTINCT in a subquery: COUNT(DISTINCT ...) forces a sort that spills to
+                // disk at this row count, while the subquery form can hash-aggregate.
+                sql = @"
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT DISTINCT LOWER(SUBSTRING(""Filename"" FROM '[^/\\]*$'))
+                        FROM transfers.""Transfers""
+                        WHERE ""Direction"" = 'Upload' AND ""State"" = 48
+                    ) basenames
+                ";
+            }
+            else
+            {
+                sql = @"
+                    SELECT COUNT(DISTINCT LOWER(SUBSTR(Filename, LENGTH(RTRIM(Filename, REPLACE(REPLACE(Filename, '/', ''), '\', ''))) + 1)))
+                    FROM Transfers
+                    WHERE Direction = 'Upload' AND State = 48
+                ";
+            }
+
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var count = RunGated(() =>
+            {
+                using var connection = OpenConnection(Database.Transfers);
+                return connection.ExecuteScalar<long>(sql, commandTimeout: CoverageCommandTimeoutSeconds);
+            });
+
+            // No expiry: an old figure is still a good answer, so it is only ever replaced.
+            Cache.Set(CoverageCacheKey, new StaleWhileRevalidateEntry(new CoverageReport { UploadedFiles = count }, DateTime.UtcNow + CoverageFreshFor));
+            Log.Information("Catalog coverage refreshed in {Elapsed:F1}s: {Count} distinct uploaded files", stopwatch.Elapsed.TotalSeconds, count);
+        }
+        catch (Exception ex)
+        {
+            // back off, so a query that can't finish isn't restarted by every Overview load
+            Interlocked.Exchange(ref coverageRetryAfterTicks, (DateTime.UtcNow + CoverageRetryBackoff).Ticks);
+            Log.Warning("Catalog coverage refresh failed; retrying in {Backoff}: {Message}", CoverageRetryBackoff, ex.Message);
+        }
+        finally
+        {
+            RefreshesInFlight.TryRemove(CoverageCacheKey, out _);
+        }
+    }
 
     // Serve-stale-while-revalidate: an entry past its TTL is returned immediately and refreshed on
     // a background thread, so requests only block on the database the very first time a window is
@@ -2292,5 +2291,4 @@ public class ReportsService
         public double AverageWait { get; init; }
         public double AverageDuration { get; init; }
     }
-
 }

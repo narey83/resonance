@@ -436,6 +436,26 @@ namespace resonance
             return Task.CompletedTask;
         }
 
+        async Task IHostedService.StopAsync(CancellationToken cancellationToken)
+        {
+            ShuttingDown = true;
+            Log.Warning("Application is shutting down");
+
+            try
+            {
+                await ApplicationHub.BroadcastServerRestartingAsync();
+            }
+            catch
+            {
+            }
+
+            Clock.Stop();
+
+            Client.Disconnect("Shutting down", new ApplicationShutdownException("Shutting down"));
+            Client.Dispose();
+            Log.Information("Client stopped");
+        }
+
         private async Task InitializeAsync(CancellationToken cancellationToken)
         {
             await Program.DatabaseInitialization.WaitAsync(cancellationToken);
@@ -629,26 +649,6 @@ namespace resonance
             }
 
             _ = ApplicationHub.BroadcastServerReadyAsync();
-        }
-
-        async Task IHostedService.StopAsync(CancellationToken cancellationToken)
-        {
-            ShuttingDown = true;
-            Log.Warning("Application is shutting down");
-
-            try
-            {
-                await ApplicationHub.BroadcastServerRestartingAsync();
-            }
-            catch
-            {
-            }
-
-            Clock.Stop();
-
-            Client.Disconnect("Shutting down", new ApplicationShutdownException("Shutting down"));
-            Client.Dispose();
-            Log.Information("Client stopped");
         }
 
         /// <summary>

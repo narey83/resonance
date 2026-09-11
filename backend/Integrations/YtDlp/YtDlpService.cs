@@ -148,125 +148,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         return Task.CompletedTask;
     }
 
-    private async Task InitializeAsync(CancellationToken cancellationToken)
-    {
-        await resonance.Program.DatabaseInitialization.WaitAsync(cancellationToken);
-        jsRuntimeArg = await DetectJsRuntimeAsync();
-        if (jsRuntimeArg != null)
-        {
-            Log.Information("YtDlp: using JS runtime {Arg}", jsRuntimeArg);
-        }
-        else
-        {
-            Log.Warning("YtDlp: no JS runtime found — some YouTube videos may fail to download");
-        }
-
-        // The staging root lives inside the shared/library music tree, so register it as a
-        // system-managed share exclusion and keep the library scanner away from partial files
-        var stagingRoot = GetStagingRoot();
-        try
-        {
-            Directory.CreateDirectory(stagingRoot);
-        }
-        catch (Exception ex)
-        {
-            Log.Warning("YtDlp: could not create staging root {Path}: {Message}", stagingRoot, ex.Message);
-        }
-
-        shares.SetManagedShare(stagingRoot, "yt-dlp-staging", isExcluded: true);
-        library.ExcludeFromSync(stagingRoot);
-        Log.Information("YtDlp: staging directory is {Path} (excluded from shares and library)", stagingRoot);
-
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-
-        // SubscriptionId was added after first release; EnsureCreated won't alter an existing table.
-        await db.Database.ExecuteSqlRawAsync(
-            "ALTER TABLE ytdlp.\"Jobs\" ADD COLUMN IF NOT EXISTS \"SubscriptionId\" uuid", cancellationToken);
-        await db.Database.ExecuteSqlRawAsync(
-            "ALTER TABLE ytdlp.\"Tracks\" ADD COLUMN IF NOT EXISTS \"ReportedDurationSeconds\" integer", cancellationToken);
-        await db.Database.ExecuteSqlRawAsync(
-            "ALTER TABLE ytdlp.\"Events\" ADD COLUMN IF NOT EXISTS \"TrackTitle\" text", cancellationToken);
-
-        // Reset any tracks that were in-progress when the app last shut down
-        var stuckTracks = await db.Tracks
-            .Where(t => t.State == YtDlpTrackState.InProgress)
-            .ToListAsync(cancellationToken);
-
-        foreach (var t in stuckTracks)
-        {
-            t.State = YtDlpTrackState.Queued;
-        }
-
-        if (stuckTracks.Count > 0)
-        {
-            await db.SaveChangesAsync(cancellationToken);
-        }
-
-        // Load all jobs into the hot cache
-        var allJobs = await db.Jobs.OrderByDescending(j => j.RequestedAt).ToListAsync(cancellationToken);
-
-        foreach (var job in allJobs)
-        {
-            jobs[job.Id] = job;
-
-            if (job.State != YtDlpJobState.Enumerating && job.State != YtDlpJobState.Active)
-            {
-                continue;
-            }
-
-            var tracks = await db.Tracks
-                .Where(t => t.JobId == job.Id && t.State == YtDlpTrackState.Queued)
-                .ToListAsync(cancellationToken);
-
-            // If no pending tracks remain, the job finished while the service was down — close it out
-            var hasPending = tracks.Count > 0 || await db.Tracks
-                .AnyAsync(t => t.JobId == job.Id && t.State == YtDlpTrackState.InProgress, cancellationToken);
-
-            if (!hasPending)
-            {
-                Log.Information("YtDlp: job {Title} had no pending tracks on resume — finalizing", job.Title ?? job.Url);
-                await FinalizeJobAsync(job, db, cancellationToken);
-                continue;
-            }
-
-            job.State = YtDlpJobState.Active;
-            foreach (var track in tracks)
-            {
-                _ = Task.Run(() => RunWorkerAsync(track, cts.Token), CancellationToken.None);
-            }
-        }
-
-        if (allJobs.Count > 0)
-        {
-            await db.SaveChangesAsync(cancellationToken);
-        }
-
-        // Rehydrate the Events pane from the durable log so it survives restarts and buffer
-        // eviction. Load the most recent window (the buffer cap) oldest-first so the queue keeps
-        // chronological order (newest last).
-        var recentEvents = await db.Events
-            .OrderByDescending(e => e.Id)
-            .Take(EventBufferMax)
-            .ToListAsync(cancellationToken);
-        recentEvents.Reverse();
-        foreach (var e in recentEvents)
-        {
-            eventBuffer.Enqueue(new YtDlpEvent(e.Timestamp, e.JobId, e.JobTitle, e.Level, e.Message, e.TrackTitle));
-        }
-
-        // Load channel subscriptions into the hot cache and start the poll loop
-        var allSubs = await db.Subscriptions.OrderByDescending(s => s.CreatedAt).ToListAsync(cancellationToken);
-        foreach (var sub in allSubs)
-        {
-            subscriptions[sub.Id] = sub;
-        }
-
-        _ = Task.Run(() => RunSubscriptionPollLoopAsync(cts.Token), CancellationToken.None);
-        _ = Task.Run(() => RunAutoRetryLoopAsync(cts.Token), CancellationToken.None);
-        _ = Task.Run(() => RunRescanFlushLoopAsync(cts.Token), CancellationToken.None);
-        _ = Task.Run(() => RunAutoUpdateLoopAsync(cts.Token), CancellationToken.None);
-    }
-
     public Task StopAsync(CancellationToken cancellationToken)
     {
         cts.Cancel();
@@ -1454,6 +1335,125 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             || e.Contains("account associated with this video has been terminated")
             || e.Contains("removed by the uploader")
             || e.Contains("no longer available");
+    }
+
+    private async Task InitializeAsync(CancellationToken cancellationToken)
+    {
+        await resonance.Program.DatabaseInitialization.WaitAsync(cancellationToken);
+        jsRuntimeArg = await DetectJsRuntimeAsync();
+        if (jsRuntimeArg != null)
+        {
+            Log.Information("YtDlp: using JS runtime {Arg}", jsRuntimeArg);
+        }
+        else
+        {
+            Log.Warning("YtDlp: no JS runtime found — some YouTube videos may fail to download");
+        }
+
+        // The staging root lives inside the shared/library music tree, so register it as a
+        // system-managed share exclusion and keep the library scanner away from partial files
+        var stagingRoot = GetStagingRoot();
+        try
+        {
+            Directory.CreateDirectory(stagingRoot);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("YtDlp: could not create staging root {Path}: {Message}", stagingRoot, ex.Message);
+        }
+
+        shares.SetManagedShare(stagingRoot, "yt-dlp-staging", isExcluded: true);
+        library.ExcludeFromSync(stagingRoot);
+        Log.Information("YtDlp: staging directory is {Path} (excluded from shares and library)", stagingRoot);
+
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        // SubscriptionId was added after first release; EnsureCreated won't alter an existing table.
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE ytdlp.\"Jobs\" ADD COLUMN IF NOT EXISTS \"SubscriptionId\" uuid", cancellationToken);
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE ytdlp.\"Tracks\" ADD COLUMN IF NOT EXISTS \"ReportedDurationSeconds\" integer", cancellationToken);
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE ytdlp.\"Events\" ADD COLUMN IF NOT EXISTS \"TrackTitle\" text", cancellationToken);
+
+        // Reset any tracks that were in-progress when the app last shut down
+        var stuckTracks = await db.Tracks
+            .Where(t => t.State == YtDlpTrackState.InProgress)
+            .ToListAsync(cancellationToken);
+
+        foreach (var t in stuckTracks)
+        {
+            t.State = YtDlpTrackState.Queued;
+        }
+
+        if (stuckTracks.Count > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        // Load all jobs into the hot cache
+        var allJobs = await db.Jobs.OrderByDescending(j => j.RequestedAt).ToListAsync(cancellationToken);
+
+        foreach (var job in allJobs)
+        {
+            jobs[job.Id] = job;
+
+            if (job.State != YtDlpJobState.Enumerating && job.State != YtDlpJobState.Active)
+            {
+                continue;
+            }
+
+            var tracks = await db.Tracks
+                .Where(t => t.JobId == job.Id && t.State == YtDlpTrackState.Queued)
+                .ToListAsync(cancellationToken);
+
+            // If no pending tracks remain, the job finished while the service was down — close it out
+            var hasPending = tracks.Count > 0 || await db.Tracks
+                .AnyAsync(t => t.JobId == job.Id && t.State == YtDlpTrackState.InProgress, cancellationToken);
+
+            if (!hasPending)
+            {
+                Log.Information("YtDlp: job {Title} had no pending tracks on resume — finalizing", job.Title ?? job.Url);
+                await FinalizeJobAsync(job, db, cancellationToken);
+                continue;
+            }
+
+            job.State = YtDlpJobState.Active;
+            foreach (var track in tracks)
+            {
+                _ = Task.Run(() => RunWorkerAsync(track, cts.Token), CancellationToken.None);
+            }
+        }
+
+        if (allJobs.Count > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        // Rehydrate the Events pane from the durable log so it survives restarts and buffer
+        // eviction. Load the most recent window (the buffer cap) oldest-first so the queue keeps
+        // chronological order (newest last).
+        var recentEvents = await db.Events
+            .OrderByDescending(e => e.Id)
+            .Take(EventBufferMax)
+            .ToListAsync(cancellationToken);
+        recentEvents.Reverse();
+        foreach (var e in recentEvents)
+        {
+            eventBuffer.Enqueue(new YtDlpEvent(e.Timestamp, e.JobId, e.JobTitle, e.Level, e.Message, e.TrackTitle));
+        }
+
+        // Load channel subscriptions into the hot cache and start the poll loop
+        var allSubs = await db.Subscriptions.OrderByDescending(s => s.CreatedAt).ToListAsync(cancellationToken);
+        foreach (var sub in allSubs)
+        {
+            subscriptions[sub.Id] = sub;
+        }
+
+        _ = Task.Run(() => RunSubscriptionPollLoopAsync(cts.Token), CancellationToken.None);
+        _ = Task.Run(() => RunAutoRetryLoopAsync(cts.Token), CancellationToken.None);
+        _ = Task.Run(() => RunRescanFlushLoopAsync(cts.Token), CancellationToken.None);
+        _ = Task.Run(() => RunAutoUpdateLoopAsync(cts.Token), CancellationToken.None);
     }
 
     private async Task RewriteTagsAsync(Guid trackId, (string Artist, string Title, string? Album)? overrides)
