@@ -81,6 +81,8 @@ export interface MusicTrack extends Signed {
   genre: string | null;
   bpm: number | null;
   key: string | null;
+  /** Integrated loudness (LUFS) from analysis; null until the track has been analysed. */
+  lufs?: number | null;
   fileSize: number | null;
 }
 
@@ -248,8 +250,69 @@ export const renameFolder = async (path: string, newName: string): Promise<void>
 export const renameTrack = async (path: string, newFilename: string): Promise<void> =>
   apiClient.patch('/musiclibrary/tracks', { path, newFilename });
 
-export const analyzeFolder = async (path: string, { key = true, bpm = true } = {}): Promise<void> =>
-  apiClient.post('/musiclibrary/folders/analyze', { path, analyzeKey: key, analyzeBpm: bpm });
+// An analysis always measures all four -- they come from one decode of the file.
+const ALL_METRICS = 'Bpm, Key, Waveform, Loudness';
+
+/**
+ * Queues analysis of the given library tracks: the same scan the web Analysis page starts, limited
+ * to these paths. By default only what each track is missing is measured; `reset` clears all four
+ * and measures them again. There is one analysis queue for the whole server, so this rejects with
+ * a 409 while another analysis is running. An empty list is refused here rather than sent -- the
+ * server reads a missing selection as "the whole library".
+ */
+export const analyseTracks = async (paths: string[], { reset = false } = {}): Promise<void> => {
+  if (paths.length === 0) throw new Error('No tracks to analyse.');
+  await apiClient.post('/analysis/scan', {
+    metrics: ALL_METRICS,
+    skipAnalysed: !reset,
+    resetAll: reset,
+    onlyPaths: paths,
+  });
+};
+
+/** The server's analysis scan status (GET /analysis/scan). */
+export interface AnalysisScanState {
+  scanning: boolean;
+  completed: boolean;
+  cancelled: boolean;
+  total: number;
+  analysed: number;
+  skipped: number;
+  failed: number;
+  progress: number;
+  /** Absolute paths being decoded right now -- the same form as MusicTrack.path. */
+  inFlightPaths?: string[] | null;
+}
+
+export const getScanState = async (): Promise<AnalysisScanState> =>
+  (await apiClient.get<AnalysisScanState>('/analysis/scan')).data;
+
+/** The subset of the analysis waveform response the player draws. */
+export interface TrackWaveform {
+  numBars: number;
+  overallPeaks: number[];
+}
+
+// Stored waveforms run to ~75k bars a track (megabytes of JSON). The seek bar draws ~130, so the
+// server resamples to this many first: enough headroom to resample again on the phone, at ~10 KB.
+const WAVEFORM_BARS = 1024;
+
+/**
+ * A track's cached waveform peaks, or null if it hasn't been analysed yet. Read-only: this never
+ * starts an analysis, so it is cheap to ask for any track. Other failures are thrown, so callers
+ * can tell "no waveform" from "couldn't ask".
+ */
+export const getWaveform = async (path: string): Promise<TrackWaveform | null> => {
+  try {
+    const res = await apiClient.get<TrackWaveform>('/analysis/waveform', {
+      params: { path, cachedOnly: true, bars: WAVEFORM_BARS },
+    });
+    return res.data;
+  } catch (e) {
+    if ((e as { response?: { status?: number } })?.response?.status === 404) return null;
+    throw e;
+  }
+};
 
 export const deleteFolder = async (path: string): Promise<void> =>
   apiClient.delete('/musiclibrary/folders', { params: { path: btoa(path) } });

@@ -58,11 +58,13 @@ import type {
 import { Ionicons } from '@expo/vector-icons';
 
 import { makeScreenOptions, Radius, Spacing, ThemeColors, Typography } from '../../theme';
+import { requestAnalysis } from '../../services/trackAnalysis';
+import AnalysisBadge from '../../components/AnalysisBadge';
 import { useTheme } from '../../context/ThemeContext';
 import {
   getAlbums, getArtists, getFolders, getGenres, getYears, getTracks, getLovedTracks,
   getArtworkUrl, getTrackTitle, getTrackArtworkPath,
-  analyzeFolder, deleteFolder as deleteFolderApi,
+  deleteFolder as deleteFolderApi,
   renameFolder as renameFolderApi, renameTrack as renameTrackApi,
   seedCoverSignatures, seedTrackSignatures,
   cancelSync,
@@ -327,9 +329,10 @@ const SortControl = ({ options, sortBy, sortDir, onSort }: {
 // BPM keep their line when unknown, showing a dash, so rows stay the same height and the columns
 // line up. Shared across every track list so they render identically everywhere.
 const TrackMetaRight = React.memo(({ item }: { item: MusicTrack }) => {
-  const { s } = useLibStyles();
+  const { s, c } = useLibStyles();
   return (
     <View style={s.trackRight}>
+      <AnalysisBadge color={c.accent} path={item.path} />
       <Text style={[s.trackKey, !item.key && s.trackMetaMissing]} numberOfLines={1}>
         {item.key || '—'}
       </Text>
@@ -685,6 +688,10 @@ function FolderActionSheet({
 
   if (!folder) return null;
 
+  const folderLabel = `"${folder.name}"`;
+  const folderPaths = async () =>
+    ((await getTracks({ folder: folder.path, limit: 10000 })).tracks ?? []).map((t) => t.path);
+
   const handleSelectMixtape = async (playlistId: string) => {
     setShowPicker(false);
     onClose();
@@ -728,18 +735,13 @@ function FolderActionSheet({
             <View style={s.sheetDivider} />
             <SheetRow
               icon="analytics-outline"
-              label="Analyse all tracks (Key & BPM)"
-              onPress={() => { analyzeFolder(folder.path, { key: true, bpm: true }).catch(() => {}); onClose(); }}
+              label="Analyse all tracks"
+              onPress={() => { onClose(); requestAnalysis(folderLabel, folderPaths); }}
             />
             <SheetRow
-              icon="key-outline"
-              label="Analyse all tracks (Key only)"
-              onPress={() => { analyzeFolder(folder.path, { key: true, bpm: false }).catch(() => {}); onClose(); }}
-            />
-            <SheetRow
-              icon="pulse-outline"
-              label="Analyse all tracks (BPM only)"
-              onPress={() => { analyzeFolder(folder.path, { key: false, bpm: true }).catch(() => {}); onClose(); }}
+              icon="refresh-outline"
+              label="Re-analyse all tracks…"
+              onPress={() => { onClose(); requestAnalysis(folderLabel, folderPaths, { reset: true }); }}
             />
             <View style={s.sheetDivider} />
             <SheetRow icon="list" label="Add to Mixtape" onPress={() => setShowPicker(true)} />
@@ -800,6 +802,8 @@ function AlbumActionSheet({ album, onClose }: {
     } catch { return []; }
   };
 
+  const albumPaths = async () => (await fetchAlbumTracks()).map((t) => t.path);
+
   const withTracks = (fn: (tracks: MusicTrack[]) => void) => async () => {
     onClose();
     const tracks = await fetchAlbumTracks();
@@ -853,6 +857,16 @@ function AlbumActionSheet({ album, onClose }: {
             <SheetRow icon="play-skip-forward" label="Play Next" onPress={withTracks((t) => playNext(t))} />
             <SheetRow icon="add-circle-outline" label="Add to Queue" onPress={withTracks((t) => addToQueue(t))} />
             <SheetRow icon="list" label="Add to Mixtape" onPress={() => setShowPicker(true)} />
+            <SheetRow
+              icon="analytics-outline"
+              label="Analyse album"
+              onPress={() => { onClose(); requestAnalysis(`"${album.album || 'this album'}"`, albumPaths); }}
+            />
+            <SheetRow
+              icon="refresh-outline"
+              label="Re-analyse album…"
+              onPress={() => { onClose(); requestAnalysis(`"${album.album || 'this album'}"`, albumPaths, { reset: true }); }}
+            />
             {album.artist && (
               <>
                 <View style={s.sheetDivider} />
@@ -927,6 +941,7 @@ function TrackActionSheet({
     track.genre,
     track.key,
     track.bpm ? `${Math.round(track.bpm)} BPM` : null,
+    track.lufs != null ? `${track.lufs.toFixed(1)} LUFS` : null,
   ].filter(Boolean);
 
   const handleSelectPlaylist = async (playlistId: string) => {
@@ -988,6 +1003,23 @@ function TrackActionSheet({
             <SheetRow icon="play-skip-forward" label="Play Next" onPress={() => onPlayNext(track)} />
             <SheetRow icon="add-circle-outline" label="Add to Queue" onPress={() => onAddToQueue(track)} />
             <SheetRow icon="list" label="Add to Mixtape" onPress={() => setShowPicker(true)} />
+            {!isLocal && (
+              <>
+                <SheetRow
+                  icon="analytics-outline"
+                  label="Analyse track"
+                  onPress={() => { onClose(); requestAnalysis(`"${getTrackTitle(track)}"`, async () => [track.path]); }}
+                />
+                <SheetRow
+                  icon="refresh-outline"
+                  label="Re-analyse track…"
+                  onPress={() => {
+                    onClose();
+                    requestAnalysis(`"${getTrackTitle(track)}"`, async () => [track.path], { reset: true });
+                  }}
+                />
+              </>
+            )}
             {isLocal && (
               <SheetRow
                 icon={isLoved ? 'heart' : 'heart-outline'}
@@ -1907,6 +1939,7 @@ function LovedTab() {
         <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
         <RowArtistAlbum artist={item.artist} album={item.album} />
       </View>
+      <AnalysisBadge color={c.accent} path={item.path} />
       <Pressable onPress={() => toggleLove(item.path)} hitSlop={8} style={s.moreBtn}>
         <Ionicons name="heart" size={18} color="#e05a7a" />
       </Pressable>

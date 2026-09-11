@@ -62,6 +62,10 @@ import { useLocalLibraryActivityStore } from '../store/localLibraryActivityStore
 import { isLocalPath } from '../services/localMusicLibrary';
 import { usePlayerUI } from '../store/playerUIStore';
 import { haptics } from '../lib/haptics';
+import { useLiveTrack } from '../hooks/useLiveTrack';
+import { useTrackAnalysisStatus } from '../store/analysisProgressStore';
+import { useTrackWaveform } from '../hooks/useTrackWaveform';
+import { WaveformBars } from './WaveformBars';
 import { Radius, Spacing, ThemeColors, Typography } from '../theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -84,9 +88,12 @@ const fmt = (sec: number) => {
 
 // ── Progress bar ──────────────────────────────────────────────────────────────
 
+// Height of the waveform inside the 52px touch target.
+const WAVEFORM_HEIGHT = 40;
+
 const ProgressBar = ({
-  positionSec, durationSec, onSeek,
-}: { positionSec: number; durationSec: number; onSeek: (s: number) => void }) => {
+  positionSec, durationSec, onSeek, peaks,
+}: { positionSec: number; durationSec: number; onSeek: (s: number) => void; peaks?: Float32Array | null }) => {
   const [barWidth, setBarWidth] = useState(0);
   // While the user is dragging, `scrubFrac` (0..1) drives the UI so the bar follows the
   // finger and the position label updates live; null means "not scrubbing".
@@ -177,15 +184,45 @@ const ProgressBar = ({
             <Text style={{ color: '#fff', fontSize: Typography.xs, fontVariant: ['tabular-nums'] }}>{fmt(labelSec)}</Text>
           </View>
         )}
-        <View style={{ height: 5, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 3 }} />
-        <View style={{ position: 'absolute', height: 5, backgroundColor: '#fff', borderRadius: 3, width: `${progress * 100}%` }} />
-        <View style={{
-          position: 'absolute',
-          width: dragging ? 28 : 22, height: dragging ? 28 : 22, borderRadius: 14,
-          backgroundColor: '#fff', top: '50%',
-          marginTop: dragging ? -14 : -11, marginLeft: dragging ? -14 : -11,
-          left: `${progress * 100}%` as any,
-        }} />
+        {peaks && barWidth > 0 ? (
+          // Analysed track: the waveform is the seek bar. The dim copy is the whole track; the
+          // bright copy is clipped to the played portion, so a position tick only resizes the
+          // clip instead of redrawing the bars.
+          <>
+            <View pointerEvents="none">
+              <WaveformBars color="rgba(255,255,255,0.3)" height={WAVEFORM_HEIGHT} peaks={peaks} width={barWidth} />
+            </View>
+            <View
+              pointerEvents="none"
+              style={{
+                position: 'absolute', left: 0, top: (52 - WAVEFORM_HEIGHT) / 2,
+                height: WAVEFORM_HEIGHT, width: `${progress * 100}%`, overflow: 'hidden',
+              }}
+            >
+              <WaveformBars color="#fff" height={WAVEFORM_HEIGHT} peaks={peaks} width={barWidth} />
+            </View>
+            <View
+              pointerEvents="none"
+              style={{
+                position: 'absolute', top: (52 - WAVEFORM_HEIGHT) / 2 - 3, height: WAVEFORM_HEIGHT + 6,
+                width: dragging ? 3 : 2, marginLeft: dragging ? -1.5 : -1, borderRadius: 1.5,
+                backgroundColor: '#fff', left: `${progress * 100}%` as any,
+              }}
+            />
+          </>
+        ) : (
+          <>
+            <View style={{ height: 5, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 3 }} />
+            <View style={{ position: 'absolute', height: 5, backgroundColor: '#fff', borderRadius: 3, width: `${progress * 100}%` }} />
+            <View style={{
+              position: 'absolute',
+              width: dragging ? 28 : 22, height: dragging ? 28 : 22, borderRadius: 14,
+              backgroundColor: '#fff', top: '50%',
+              marginTop: dragging ? -14 : -11, marginLeft: dragging ? -14 : -11,
+              left: `${progress * 100}%` as any,
+            }} />
+          </>
+        )}
       </View>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 }}>
         <Text style={{ fontSize: Typography.xs, color: 'rgba(255,255,255,0.5)' }}>{fmt(labelSec)}</Text>
@@ -200,14 +237,17 @@ const ProgressBar = ({
 // keeps those ticks from re-rendering the entire ~1k-line overlay tree — which
 // matters most while the morph/drag animations want the JS thread, and lets the
 // overlay stay mounted-but-idle with zero per-tick cost.
-const ActiveProgressBar = ({ isGoogleCasting, castPositionSec, castDurationSec, onSeek }: {
+const ActiveProgressBar = ({ isGoogleCasting, castPositionSec, castDurationSec, onSeek, trackPath }: {
   isGoogleCasting: boolean; castPositionSec: number; castDurationSec: number; onSeek: (s: number) => void;
+  trackPath?: string | null;
 }) => {
   const { positionSec, durationSec } = usePlaybackPosition();
+  const peaks = useTrackWaveform(trackPath);
   return (
     <ProgressBar
       durationSec={isGoogleCasting ? castDurationSec : durationSec}
       onSeek={onSeek}
+      peaks={peaks}
       positionSec={isGoogleCasting ? castPositionSec : positionSec}
     />
   );
@@ -430,6 +470,9 @@ export default function PlayerOverlay() {
   const insets = useSafeAreaInsets();
 
   const { track, shuffle, queue, queueIndex, repeatMode, cycleRepeat, togglePlayPause, next, prev, seekTo, toggleShuffle, skipToIndex, stopPlayer } = usePlayer();
+  // BPM/key/genre can change while a track plays (an analysis writes new tags); this follows them.
+  const liveTrack = useLiveTrack(track);
+  const analysisStatus = useTrackAnalysisStatus(track?.path);
   const { isPlaying, isBuffering } = usePlaybackStatus();
   const {
     isCasting, isGoogleCasting, googleCastDeviceName, googleCastTitle,
@@ -704,6 +747,7 @@ export default function PlayerOverlay() {
   const artist     = track?.artist ?? '';
   const album      = track?.album  ?? '';
   const folder     = track ? (track.directory.split('/').filter(Boolean).pop() ?? track.directory) : '';
+  const tagTrack   = liveTrack ?? track;
 
   // ── Morph geometry ──
   // Background, chrome and hero all read off the single expandP value. In mini-bar
@@ -911,17 +955,26 @@ export default function PlayerOverlay() {
               </View>
 
               {/* Tags — sit just under the title/artist */}
-              {(track.key || track.bpm != null || track.genre || track.year != null) && (
+              {tagTrack && (analysisStatus || tagTrack.key || tagTrack.bpm != null || tagTrack.lufs != null || tagTrack.genre || tagTrack.year != null) && (
                 <View style={s.tagRow}>
-                  {track.key && (
+                  {analysisStatus && (
                     <View style={s.tag}>
-                      <Ionicons color="rgba(255,255,255,0.55)" name="musical-note" size={10} style={{ marginRight: 3 }} />
-                      <Text style={s.tagText}>{track.key}</Text>
+                      {analysisStatus === 'analysing'
+                        ? <ActivityIndicator color="rgba(255,255,255,0.8)" size="small" style={{ marginRight: 3, transform: [{ scale: 0.6 }] }} />
+                        : <Ionicons color="rgba(255,255,255,0.55)" name="time-outline" size={10} style={{ marginRight: 3 }} />}
+                      <Text style={s.tagText}>{analysisStatus === 'analysing' ? 'Analysing…' : 'Queued'}</Text>
                     </View>
                   )}
-                  {track.bpm != null && <View style={s.tag}><Text style={s.tagText}>{Math.round(track.bpm)} BPM</Text></View>}
-                  {track.genre && <View style={s.tag}><Text style={s.tagText}>{track.genre}</Text></View>}
-                  {track.year != null && <View style={s.tag}><Text style={s.tagText}>{track.year}</Text></View>}
+                  {tagTrack.key && (
+                    <View style={s.tag}>
+                      <Ionicons color="rgba(255,255,255,0.55)" name="musical-note" size={10} style={{ marginRight: 3 }} />
+                      <Text style={s.tagText}>{tagTrack.key}</Text>
+                    </View>
+                  )}
+                  {tagTrack.bpm != null && <View style={s.tag}><Text style={s.tagText}>{Math.round(tagTrack.bpm)} BPM</Text></View>}
+                  {tagTrack.lufs != null && <View style={s.tag}><Text style={s.tagText}>{tagTrack.lufs.toFixed(1)} LUFS</Text></View>}
+                  {tagTrack.genre && <View style={s.tag}><Text style={s.tagText}>{tagTrack.genre}</Text></View>}
+                  {tagTrack.year != null && <View style={s.tag}><Text style={s.tagText}>{tagTrack.year}</Text></View>}
                 </View>
               )}
 
@@ -960,7 +1013,7 @@ export default function PlayerOverlay() {
               </View>
 
               {/* Progress */}
-              <ActiveProgressBar castDurationSec={castDurationSec} castPositionSec={castPositionSec} isGoogleCasting={isGoogleCasting} onSeek={activeSeek} />
+              <ActiveProgressBar castDurationSec={castDurationSec} castPositionSec={castPositionSec} isGoogleCasting={isGoogleCasting} onSeek={activeSeek} trackPath={track?.path} />
 
               {/* Transport controls */}
               <View style={s.controls}>
