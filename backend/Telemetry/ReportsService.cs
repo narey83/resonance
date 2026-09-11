@@ -57,8 +57,19 @@ public class ReportsService
     private const string CoverageCacheKey = "reports:coverage";
     private const int CoverageCommandTimeoutSeconds = 600;
 
+    // Report queries aggregate over weeks of the multi-million-row transfer table. On the production
+    // host's spinning disks a cold one can run well past Npgsql's 30-second default, and a timeout
+    // caches nothing, so the next dashboard refresh starts the identical query again.
+    private const int ReportCommandTimeoutSeconds = 180;
+
     private static readonly ConcurrentDictionary<string, byte> RefreshesInFlight = new();
     private static readonly ConcurrentDictionary<string, object> ColdMissGates = new();
+
+    // At most two report queries touch the database at once. A dashboard load (and its 30-second
+    // auto-refresh) asks for ~10 reports together; run concurrently on a spinning disk with a cold
+    // cache they thrashed each other into the command timeout, none were cached, and every refresh
+    // repeated the whole burst. Queued, each finishes quickly and is then served from the cache.
+    private static readonly SemaphoreSlim ReportQueryGate = new(2, 2);
     private static readonly AsyncLocal<bool> SynchronousCacheRefresh = new();
     private static readonly TimeSpan CoverageFreshFor = TimeSpan.FromHours(6);
     private static readonly TimeSpan CoverageRetryBackoff = TimeSpan.FromMinutes(30);
@@ -2024,8 +2035,11 @@ public class ReportsService
             }
 
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            using var connection = OpenConnection(Database.Transfers);
-            var count = connection.ExecuteScalar<long>(sql, commandTimeout: CoverageCommandTimeoutSeconds);
+            var count = RunGated(() =>
+            {
+                using var connection = OpenConnection(Database.Transfers);
+                return connection.ExecuteScalar<long>(sql, commandTimeout: CoverageCommandTimeoutSeconds);
+            });
 
             // No expiry: an old figure is still a good answer, so it is only ever replaced.
             Cache.Set(CoverageCacheKey, new StaleWhileRevalidateEntry(new CoverageReport { UploadedFiles = count }, DateTime.UtcNow + CoverageFreshFor));
@@ -2095,6 +2109,19 @@ public class ReportsService
     }
 
     // Longer TTL for wider time windows — no point refreshing a 30-day summary every 30s.
+    private static T RunGated<T>(Func<T> query)
+    {
+        ReportQueryGate.Wait();
+        try
+        {
+            return query();
+        }
+        finally
+        {
+            ReportQueryGate.Release();
+        }
+    }
+
     private static TimeSpan GetCacheTtl(DateTime start, DateTime end)
     {
         var range = end - start;
@@ -2158,7 +2185,7 @@ public class ReportsService
                 {
                     try
                     {
-                        var refreshed = factory();
+                        var refreshed = RunGated(factory);
                         Cache.Set(cacheKey, new StaleWhileRevalidateEntry(refreshed, DateTime.UtcNow + ttl), ttl * 6);
                         return refreshed;
                     }
@@ -2172,7 +2199,7 @@ public class ReportsService
                 {
                     try
                     {
-                        Cache.Set(cacheKey, new StaleWhileRevalidateEntry(factory(), DateTime.UtcNow + ttl), ttl * 6);
+                        Cache.Set(cacheKey, new StaleWhileRevalidateEntry(RunGated(factory), DateTime.UtcNow + ttl), ttl * 6);
                     }
                     catch (Exception ex)
                     {
@@ -2202,7 +2229,7 @@ public class ReportsService
                     return (T)filled.Value;
                 }
 
-                var value = factory();
+                var value = RunGated(factory);
                 Cache.Set(cacheKey, new StaleWhileRevalidateEntry(value, DateTime.UtcNow + ttl), ttl * 6);
                 return value;
             }
@@ -2215,7 +2242,12 @@ public class ReportsService
 
     private DbConnection OpenConnection(Database database)
     {
-        DbConnection conn = new NpgsqlConnection(ConnectionStrings[database]);
+        var connectionString = new NpgsqlConnectionStringBuilder(ConnectionStrings[database])
+        {
+            CommandTimeout = ReportCommandTimeoutSeconds,
+        };
+
+        DbConnection conn = new NpgsqlConnection(connectionString.ConnectionString);
         conn.Open();
         return conn;
     }
