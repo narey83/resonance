@@ -51,7 +51,10 @@ export function ensurePlayerSetup(): Promise<void> {
           // Buffer generously so brief bandwidth dips (tunnels, weak cellular) don't stall:
           minBuffer:  30,  // keep ≥30 s buffered ahead
           maxBuffer:  120, // read up to 2 min ahead when bandwidth allows
-          playBuffer: 5,   // wait for 5 s buffered before (re)starting playback
+          // One second is enough to start promptly while minBuffer/maxBuffer continue filling
+          // ahead in the background. Five seconds made every tap feel artificially delayed even
+          // when the server delivered the first range immediately on the local network.
+          playBuffer: 1,
           backBuffer: 30,  // retain 30 s behind for instant back-seek
         });
       } catch {
