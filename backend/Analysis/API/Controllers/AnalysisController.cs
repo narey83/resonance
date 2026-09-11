@@ -46,6 +46,9 @@ namespace resonance.Analysis.API
     [Route("api/v{version:apiVersion}/[controller]")]
     public class AnalysisController : ControllerBase
     {
+        // A requested waveform size below this is raised to it; fewer bars stop reading as a waveform.
+        private const int MinWaveformBars = 16;
+
         public AnalysisController(IAnalysisService analysisService)
         {
             Analysis = analysisService;
@@ -122,7 +125,7 @@ namespace resonance.Analysis.API
         [ProducesResponseType(400)]
         [ProducesResponseType(404)]
         public async Task<IActionResult> GetWaveform(
-            [FromQuery] string path, CancellationToken ct, [FromQuery] bool cachedOnly = false)
+            [FromQuery] string path, CancellationToken ct, [FromQuery] bool cachedOnly = false, [FromQuery] int? bars = null)
         {
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -141,6 +144,22 @@ namespace resonance.Analysis.API
             if (data == null)
             {
                 return NotFound();
+            }
+
+            // Stored waveforms run to ~75k bars a track -- a few MB of JSON across the four bands. A
+            // client drawing a small fixed width (the mobile seek bar) asks for a few hundred bars and
+            // gets the same shape for a sliver of the transfer. Without `bars`, nothing changes.
+            if (bars is int wanted && wanted > 0 && wanted < data.NumBars)
+            {
+                wanted = System.Math.Max(wanted, MinWaveformBars);
+                data = data with
+                {
+                    NumBars = wanted,
+                    OverallPeaks = WaveformResampler.Resample(data.OverallPeaks, wanted),
+                    LowPeaks = WaveformResampler.Resample(data.LowPeaks, wanted),
+                    MidPeaks = WaveformResampler.Resample(data.MidPeaks, wanted),
+                    HighPeaks = WaveformResampler.Resample(data.HighPeaks, wanted),
+                };
             }
 
             var beatInfo = Analysis.GetBeatInfo(full);
