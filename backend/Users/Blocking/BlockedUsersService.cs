@@ -624,17 +624,25 @@ public class BlockedUsersService
     // feature existed). ON CONFLICT DO NOTHING makes re-running harmless.
     private void BackfillAllFromHistory()
     {
+        // One set-based statement for every blocked user. This used to run BackfillFromHistory per
+        // user, i.e. a full scan of the network-info table for each of thousands of blocked users,
+        // and it runs from the constructor while the HTTP pipeline is being built -- ~50 seconds of
+        // every boot before the UI could load. The join does the same work in well under a second.
         try
         {
-            List<string> usernames;
-            using (var conn = CreateConnection())
-            {
-                usernames = conn.Query<string>($"SELECT \"Username\" FROM {UsersTable}").ToList();
-            }
+            var networkTable = UsePostgres ? "transfers.\"TransferNetworkInfo\"" : "TransferNetworkInfo";
 
-            foreach (var username in usernames)
+            using var conn = CreateConnection();
+            var inserted = conn.Execute(
+                $"INSERT INTO {UserIpsTable} (\"Username\", \"Ip\", \"LastSeen\") " +
+                $"SELECT b.\"Username\", n.\"IpAddress\", n.\"LastSeen\" FROM {UsersTable} b " +
+                $"JOIN {networkTable} n ON LOWER(n.\"Username\") = LOWER(b.\"Username\") " +
+                "WHERE n.\"IpAddress\" IS NOT NULL AND n.\"IpAddress\" <> '' " +
+                "ON CONFLICT (\"Username\", \"Ip\") DO NOTHING");
+
+            if (inserted > 0)
             {
-                BackfillFromHistory(username);
+                Log.Debug("Backfilled {Count} historical IP(s) for blocked users", inserted);
             }
         }
         catch (Exception ex)

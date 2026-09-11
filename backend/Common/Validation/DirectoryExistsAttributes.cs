@@ -36,6 +36,7 @@
 namespace resonance.Validation
 {
     using System;
+    using System.Collections.Concurrent;
     using System.ComponentModel.DataAnnotations;
     using System.IO;
     using System.Linq;
@@ -55,6 +56,12 @@ namespace resonance.Validation
             EnsureWriteable = ensureWriteable;
             RelativeToApplicationDirectory = relativeToApplicationDirectory;
         }
+
+        // Directories that have already passed the write probe in this process. Options are validated in
+        // Main and again when the DI container first materializes them. On a disk that spins down when idle,
+        // the second probe blocked for 10-15 seconds behind the journal commit of the first (which has to
+        // wake the disk), holding up host construction and with it the HTTP server.
+        private static ConcurrentDictionary<string, bool> ProbedWriteable { get; } = new(StringComparer.Ordinal);
 
         private bool EnsureWriteable { get; set; }
         private bool RelativeToApplicationDirectory { get; set; }
@@ -98,7 +105,7 @@ namespace resonance.Validation
                 return new ValidationResult($"The {validationContext.DisplayName} field specifies a non-existent directory '{dir}'.");
             }
 
-            if (EnsureWriteable)
+            if (EnsureWriteable && !ProbedWriteable.ContainsKey(dir))
             {
                 try
                 {
@@ -106,6 +113,7 @@ namespace resonance.Validation
                     var probe = Path.Combine(dir, file);
                     File.WriteAllText(probe, string.Empty);
                     File.Delete(probe);
+                    ProbedWriteable.TryAdd(dir, true);
                 }
                 catch (Exception)
                 {

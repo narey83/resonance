@@ -83,35 +83,6 @@ namespace resonance.Mixtapes
             // than symlink folders, so they survive library moves and leave no artefacts on disk. This
             // provider re-contributes them on every scan; live edits apply immediately (see WriteMixtapeFolder).
             ShareService.RegisterVirtualShareProvider(BuildVirtualShares);
-
-            // Migrate legacy GUID-named folders to friendly names, then rebuild M3U/symlinks
-            var migrated = false;
-            foreach (var m in Repository.GetAll())
-            {
-                var legacyDir = LegacyMixtapeDir(m.Id);
-                var friendlyDir = MixtapeDir(m);
-                if (legacyDir != friendlyDir && Directory.Exists(legacyDir) && !Directory.Exists(friendlyDir))
-                {
-                    try
-                    {
-                        Directory.Move(legacyDir, friendlyDir);
-                        migrated = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Warning(ex, "Could not migrate mixtape folder {Old} → {New}", legacyDir, friendlyDir);
-                    }
-                }
-
-                var tracks = Repository.GetTracks(m.Id);
-                WriteMixtapeFolder(m, tracks);
-            }
-
-            // Flush stale UUID paths from the shares cache after any folder renames
-            if (migrated)
-            {
-                ShareService.RequestScan();
-            }
         }
 
         // All initialization (directory creation, managed share registration, migrations)
@@ -122,9 +93,38 @@ namespace resonance.Mixtapes
         private IShareService ShareService { get; }
         private IHubContext<MixtapesHub> Hub { get; }
 
-        // happens in the constructor; hosting this service just forces eager construction
-        // at startup so the mixtapes managed share exists before anyone opens the UI
-        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        // Serializes folder/playlist writes between the background startup rebuild and live edits.
+        private object FolderSyncRoot { get; } = new();
+
+        // Hosting this service forces eager construction, so the mixtapes managed share and virtual share
+        // provider exist before the first share scan. Rebuilding each mixtape's folder and playlist runs
+        // in the background: it touches the downloads disk, and doing it in the constructor held up host
+        // startup -- and with it the HTTP server -- by around ten seconds, even for a single mixtape.
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            resonance.Core.StartupProgress.Starting("mixtapes", "Mixtapes", "Rebuilding mixtape folders and playlists");
+
+            // blocking file I/O that can wait on the disk spinning up, so keep it off the thread pool
+            _ = Task.Factory.StartNew(
+                () =>
+                {
+                    try
+                    {
+                        RebuildFolders();
+                        resonance.Core.StartupProgress.Ready("mixtapes", "Mixtape folders are up to date");
+                    }
+                    catch (Exception ex)
+                    {
+                        resonance.Core.StartupProgress.Failed("mixtapes", ex.Message);
+                        Log.Error(ex, "Failed to rebuild mixtape folders");
+                    }
+                },
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
+
+            return Task.CompletedTask;
+        }
 
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -503,19 +503,67 @@ namespace resonance.Mixtapes
         /// </summary>
         private void WriteMixtapeFolder(Mixtape m, IReadOnlyList<MixtapeTrack> tracks)
         {
-            try
+            lock (FolderSyncRoot)
             {
-                var dir = MixtapeDir(m);
-                Directory.CreateDirectory(dir);
-                WriteM3U(dir, m.Name, tracks);
-                if (m.IsSoulseekShared)
+                try
                 {
-                    ShareService.ApplyVirtualDirectory(BuildVirtualDirectory(m, tracks));
+                    var dir = MixtapeDir(m);
+                    Directory.CreateDirectory(dir);
+                    WriteM3U(dir, m.Name, tracks);
+                    if (m.IsSoulseekShared)
+                    {
+                        ShareService.ApplyVirtualDirectory(BuildVirtualDirectory(m, tracks));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Could not write mixtape folder for {Id}", m.Id);
                 }
             }
-            catch (Exception ex)
+        }
+
+        /// <summary>
+        /// Migrates legacy GUID-named folders to friendly names, then rebuilds every mixtape's M3U and
+        /// virtual share directory. Runs in the background at startup, so it can overlap user edits:
+        /// each mixtape is re-read under the folder lock, so a concurrent edit is never overwritten
+        /// with the state from before it.
+        /// </summary>
+        private void RebuildFolders()
+        {
+            var migrated = false;
+            foreach (var id in Repository.GetAll().Select(m => m.Id))
             {
-                Log.Warning(ex, "Could not write mixtape folder for {Id}", m.Id);
+                lock (FolderSyncRoot)
+                {
+                    var m = Repository.GetById(id);
+                    if (m == null)
+                    {
+                        continue;
+                    }
+
+                    var legacyDir = LegacyMixtapeDir(m.Id);
+                    var friendlyDir = MixtapeDir(m);
+                    if (legacyDir != friendlyDir && Directory.Exists(legacyDir) && !Directory.Exists(friendlyDir))
+                    {
+                        try
+                        {
+                            Directory.Move(legacyDir, friendlyDir);
+                            migrated = true;
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Warning(ex, "Could not migrate mixtape folder {Old} → {New}", legacyDir, friendlyDir);
+                        }
+                    }
+
+                    WriteMixtapeFolder(m, Repository.GetTracks(m.Id));
+                }
+            }
+
+            // Flush stale UUID paths from the shares cache after any folder renames
+            if (migrated)
+            {
+                ShareService.RequestScan();
             }
         }
 
