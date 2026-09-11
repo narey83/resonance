@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { useLibraryActivity } from '../../context/LibraryActivityContext';
 import * as analysisApi from '../../lib/analysis';
 import { ALL_METRICS, analyzeTrack } from '../../lib/musicLibrary';
 import { drawWaveform, toPeaks } from '../../lib/waveform';
@@ -64,6 +65,10 @@ const runningListeners = new Set();
 // peaks appear. ponytail: a fixed poll — worth replacing if the analysis service ever pushes
 // per-track progress over the hub.
 const POLL_INTERVAL_MS = 2_000;
+
+// The server announces each finished analysis (LIBRARY_UPDATED -> libraryRevision), at most once
+// a second during a scan; a surface still showing no waveform asks again once those settle.
+const RECHECK_AFTER_UPDATE_MS = 1_500;
 
 // startAnalysis retries a 409 (queue busy) this many times before giving up — generous, since
 // there is one analysis queue for the whole application and a large bulk scan can legitimately
@@ -211,6 +216,8 @@ const WaveformPreview = ({
   const [peaks, setPeaks] = useState(() => cache.get(path) ?? null);
   const [analysing, setAnalysing] = useState(false);
   const [error, setError] = useState(null);
+  const libraryRevision = useLibraryActivity()?.libraryRevision ?? 0;
+  const seenRevision = useRef(libraryRevision);
 
   // Lets a row's other cells (key/BPM/LUFS) show the same spinner this one does, instead of
   // looking finished while the analysis this button started is still running. `onAnalysingChange`
@@ -247,6 +254,10 @@ const WaveformPreview = ({
         cancelled = true;
       };
     }
+
+    // A remembered miss is stale once the list says the track has a waveform: it was analysed
+    // after this row last asked (by another row, the Analysis page, the player or the phone app).
+    if (hasWaveform === true && cache.get(path) === null) cache.delete(path);
 
     if (cache.has(path)) {
       setPeaks(cache.get(path));
@@ -309,6 +320,29 @@ const WaveformPreview = ({
       runningListeners.delete(listener);
     };
   }, [path]);
+
+  // Surfaces without a list's `hasWaveform` (the player, mixtapes, play history) have no other way
+  // to hear about an analysis that finished elsewhere, so one still showing nothing asks again
+  // after the library changes. List rows are left to `hasWaveform` above, so a scan's steady
+  // stream of updates can't turn into a request per visible row.
+  useEffect(() => {
+    if (libraryRevision === seenRevision.current) return undefined;
+    seenRevision.current = libraryRevision;
+    if (hasWaveform !== undefined || peaks || analysing || !path)
+      return undefined;
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cache.get(path) === null) cache.delete(path);
+      fetchPeaks(path).then((result) => {
+        if (!cancelled && result) setPeaks(result);
+      });
+    }, RECHECK_AFTER_UPDATE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [analysing, hasWaveform, libraryRevision, path, peaks]);
 
   useEffect(() => {
     if (peaks) drawWaveform(canvasRef.current, peaks, { height, mono, width });
