@@ -886,12 +886,7 @@ namespace resonance.Transfers.Downloads
 
                 var cutoffDateTime = DateTime.UtcNow.AddMinutes(-age);
 
-                var pruned = context.Transfers
-                    .Where(t => t.Direction == TransferDirection.Download)
-                    .Where(t => !t.Removed)
-                    .Where(t => t.EndedAt.HasValue && t.EndedAt.Value < cutoffDateTime)
-                    .Where(t => statesSet.Contains((int)t.State))
-                    .ExecuteUpdate(r => r.SetProperty(c => c.Removed, true));
+                var pruned = TransferPruner.Prune(context, TransferDirection.Download, cutoffDateTime, statesSet);
 
                 if (pruned > 0)
                 {

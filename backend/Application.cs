@@ -1505,7 +1505,14 @@ namespace resonance
         private void Clock_EveryFiveMinutes(object sender, ClockEventArgs e)
         {
             _ = Task.Run(() => PruneSearches());
-            _ = Task.Run(() => PruneTransfers());
+
+            // The clock fires once as it starts. Transfer retention is maintenance work and must
+            // never compete with database/schema initialization or delay the application becoming
+            // usable. The next regular five-minute tick will handle it.
+            if (!e.FirstRun)
+            {
+                _ = Task.Run(() => PruneTransfers());
+            }
         }
 
         private void Clock_EveryThirtyMinutes(object sender, ClockEventArgs e)

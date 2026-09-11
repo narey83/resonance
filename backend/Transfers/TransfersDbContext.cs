@@ -162,6 +162,15 @@ namespace resonance.Transfers
                 .HasFilter("\"State\" = 48 AND \"EndedAt\" IS NOT NULL")
                 .IncludeProperties(e => new { e.BytesTransferred, e.StartOffset });
 
+            // Retention pruning only touches completed rows that have not already been soft-deleted.
+            // The partial index stays small and lets each SKIP LOCKED batch find candidates without
+            // scanning every active/removed transfer or waiting behind a transfer currently updating.
+            modelBuilder
+                .Entity<Transfer>()
+                .HasIndex(e => new { e.Direction, e.State, e.EndedAt })
+                .HasDatabaseName("IDX_Transfers_Prune")
+                .HasFilter("NOT \"Removed\" AND \"EndedAt\" IS NOT NULL");
+
             // covers the user report search, which resolves usernames with a leading-wildcard
             // ILIKE; the btree indexes above are all useless for that, leaving a scan of every
             // row. Postgres only: SQLite has no trigram support, and its LIKE is already
