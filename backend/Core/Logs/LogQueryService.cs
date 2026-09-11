@@ -60,11 +60,10 @@ public static class LogQueryService
     ///     fast path: <c>WHERE "Id" > @afterId ORDER BY "Id" LIMIT @limit</c>, a pure primary-key-index
     ///     seek with no separate COUNT query -- nothing consuming a poll needs an exact total across
     ///     all history, and computing one would turn a cheap seek back into a scan. Everything else
-    ///     (offset/level/context/search/from/to) behaves like the file-backed reader it replaces:
-    ///     newest first, an exact total, keyset-friendly via the caller re-deriving <c>from</c>/<c>to</c>
-    ///     from what it already has, same as it always could.
+    ///     (offset/level/context/search/from/to) returns newest first and fetches one extra record
+    ///     to expose a cheap lower-bound total without counting the entire log store.
     /// </summary>
-    /// <returns>The matching page of records, and the total number of records that matched.</returns>
+    /// <returns>The matching page of records, and a lower-bound total suitable for detecting another page.</returns>
     public static async Task<(List<LogRecord> Items, int Total)> QueryAsync(
         LogsDbContext context,
         long? afterId,
@@ -130,17 +129,21 @@ public static class LogQueryService
             return (items, items.Count);
         }
 
-        var total = await query.CountAsync(cancellationToken);
-
         var page = await query
             .OrderByDescending(e => e.Timestamp)
             .ThenByDescending(e => e.Id) // stable tie-break: many rows can share a millisecond at real volume
             .Skip(offset)
-            .Take(limit)
+            .Take(limit + 1)
             .Select(ToRecord)
             .ToListAsync(cancellationToken);
 
-        return (page, total);
+        var hasMore = page.Count > limit;
+        if (hasMore)
+        {
+            page.RemoveAt(page.Count - 1);
+        }
+
+        return (page, offset + page.Count + (hasMore ? 1 : 0));
     }
 
     // The old JSONL reader matched search terms as a literal substring (StringComparison.Ordinal) --

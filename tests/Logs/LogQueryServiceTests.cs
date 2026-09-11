@@ -64,7 +64,7 @@ public class LogQueryServiceTests
     }
 
     [Fact]
-    public async Task QueryAsync_WithoutAfterId_ReturnsNewestFirst_WithExactTotal()
+    public async Task QueryAsync_WithoutAfterId_ReturnsNewestFirst_WithLowerBoundTotal()
     {
         using var connection = LogsTestSupport.OpenConnection();
         using var context = Seed(
