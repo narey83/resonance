@@ -124,8 +124,33 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     }
 
     // ── IHostedService ──────────────────────────────────────────────────────
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public Task StartAsync(CancellationToken cancellationToken)
     {
+        resonance.Core.StartupProgress.Starting("ytdlp", "yt-dlp", "Loading jobs, events and subscriptions");
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await InitializeAsync(cts.Token);
+                resonance.Core.StartupProgress.Ready("ytdlp", "yt-dlp is ready");
+            }
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
+            {
+                resonance.Core.StartupProgress.Failed("ytdlp", "Startup was cancelled");
+            }
+            catch (Exception ex)
+            {
+                resonance.Core.StartupProgress.Failed("ytdlp", ex.Message);
+                Log.Error(ex, "YtDlp: background initialization failed");
+            }
+        }, CancellationToken.None);
+
+        return Task.CompletedTask;
+    }
+
+    private async Task InitializeAsync(CancellationToken cancellationToken)
+    {
+        await resonance.Program.DatabaseInitialization.WaitAsync(cancellationToken);
         jsRuntimeArg = await DetectJsRuntimeAsync();
         if (jsRuntimeArg != null)
         {

@@ -412,8 +412,33 @@ namespace resonance
             }
         }
 
-        async Task IHostedService.StartAsync(CancellationToken cancellationToken)
+        Task IHostedService.StartAsync(CancellationToken cancellationToken)
         {
+            StartupProgress.Starting("core", "Core services", "Recovering transfers and starting Soulseek");
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await InitializeAsync(cancellationToken);
+                    StartupProgress.Ready("core", "Core services are ready");
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    StartupProgress.Failed("core", "Startup was cancelled");
+                }
+                catch (Exception ex)
+                {
+                    StartupProgress.Failed("core", ex.Message);
+                    Log.Error(ex, "Core service initialization failed");
+                }
+            }, CancellationToken.None);
+
+            return Task.CompletedTask;
+        }
+
+        private async Task InitializeAsync(CancellationToken cancellationToken)
+        {
+            await Program.DatabaseInitialization.WaitAsync(cancellationToken);
             Log.Information("Application started");
 
             Log.Debug("Cleaning up any dangling records");

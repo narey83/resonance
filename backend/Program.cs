@@ -70,6 +70,7 @@ namespace resonance
     using Prometheus.SystemMetrics;
     using resonance.Authentication;
     using resonance.Configuration;
+    using resonance.Core;
     using resonance.Core.API;
     using resonance.Cryptography;
     using resonance.Events;
@@ -312,6 +313,11 @@ namespace resonance
         /// </summary>
         public static resonance.Core.Settings.SettingsService SettingsStore { get; private set; }
 
+        /// <summary>
+        ///     Gets a task that completes once the deferred schema/index checks for every database context have run.
+        /// </summary>
+        internal static Task DatabaseInitialization => DatabaseInitializationCompletion.Task;
+
         private static IConfigurationRoot Configuration { get; set; }
         private static OptionsAtStartup OptionsAtStartup { get; } = new OptionsAtStartup();
         private static string StableJwtKey { get; set; }
@@ -320,6 +326,8 @@ namespace resonance
         private static Mutex Mutex { get; set; }
         private static IDisposable DotNetRuntimeStats { get; set; }
         private static VolatileOverlayConfigurationSource<OptionsOverlay> VolatileOverlayConfigurationSource { get; set; } = new VolatileOverlayConfigurationSource<OptionsOverlay>();
+        private static List<Action<IServiceProvider>> DatabaseInitializers { get; } = [];
+        private static TaskCompletionSource DatabaseInitializationCompletion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         /// <summary>
         ///     Gets the shared database-backed configuration source that supersedes the legacy YAML file.
@@ -736,12 +744,6 @@ namespace resonance
 
                 var app = builder.Build();
 
-                // ensure built-in permission roles are always seeded (idempotent)
-                app.Services.GetRequiredService<PermissionService>().EnsureBuiltinRoles();
-
-                // clean up expired/revoked refresh token sessions from previous runs
-                app.Services.GetRequiredService<SessionService>().CleanupExpiredSessions();
-
                 // hack: services that exist only to subscribe to the event bus are not referenced by anything else
                 //       and are thus never instantiated.  force a reference here so they are created.
                 _ = app.Services.GetService<ScriptService>();
@@ -752,6 +754,42 @@ namespace resonance
                 app.Services.GetService<UpnpService>()?.Start();
 
                 app.ConfigureAspDotNetPipeline();
+
+                // Schema/index maintenance is idempotent but can take over a minute on the shared
+                // production database. Run it after building the host and never hold HTTP startup
+                // behind it; the startup endpoint/UI reports each context while it completes. The work
+                // is synchronous (EF DDL) and can block for a long time, so it runs on a dedicated thread
+                // rather than holding one of this two-core host's few thread-pool workers.
+                _ = Task.Factory.StartNew(
+                    () =>
+                    {
+                        try
+                        {
+                            Thread.Sleep(TimeSpan.FromSeconds(1));
+                            foreach (var initialize in DatabaseInitializers)
+                            {
+                                initialize(app.Services);
+                            }
+
+                            // Seeding the built-in permission roles (idempotent) and clearing expired/revoked sessions
+                            // both touch EF-managed tables that the checks above create on a fresh database, so they
+                            // run here rather than synchronously during host construction.
+                            app.Services.GetRequiredService<PermissionService>().EnsureBuiltinRoles();
+                            app.Services.GetRequiredService<SessionService>().CleanupExpiredSessions();
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error(ex, "Deferred database initialization failed: {Message}", ex.Message);
+                        }
+                        finally
+                        {
+                            // core services and yt-dlp wait on this; it must complete even when a step fails
+                            DatabaseInitializationCompletion.TrySetResult();
+                        }
+                    },
+                    CancellationToken.None,
+                    TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default);
 
                 if (OptionsAtStartup.Flags.NoStart)
                 {
@@ -904,12 +942,16 @@ namespace resonance
 
             services.AddDbContext<TransfersDbContext>(connectionStringDictionary[Database.Transfers]);
 
-            // TransferNetworkInfo is a custom (non-EF) table; create it after the transfers schema is ready.
+            // TransferNetworkInfo is a custom (non-EF) table. The EF schema check for TransfersDbContext now
+            // runs in the background after the host starts, so on a fresh database the schema isn't there
+            // yet; create it here rather than relying on that ordering.
             {
                 using var pgConn = new Npgsql.NpgsqlConnection(connectionStringDictionary[Database.Transfers]);
                 pgConn.Open();
                 using var pgCmd = pgConn.CreateCommand();
                 pgCmd.CommandText = """
+                    CREATE SCHEMA IF NOT EXISTS transfers;
+
                     CREATE TABLE IF NOT EXISTS transfers."TransferNetworkInfo" (
                         "Username"  TEXT NOT NULL,
                         "IpAddress" TEXT NOT NULL,
@@ -1979,126 +2021,173 @@ namespace resonance
                     }
                 });
 
-                /*
-                    instantiate the DbContext and make sure it is created
-                */
-                using var ctx = services
-                    .BuildServiceProvider()
-                    .GetRequiredService<IDbContextFactory<T>>()
-                    .CreateDbContext();
-
-                Log.Debug("Ensuring {Contex} is created", typeof(T).Name);
-
-                // All EF Core contexts share one database (one file for SQLite, one Postgres DB).
-                // EnsureCreated() short-circuits after the first context creates tables because
-                // HasTables() returns true globally. For all subsequent contexts we generate the
-                // DDL script and execute it with IF NOT EXISTS guards.
-                var freshDb = ctx.Database.EnsureCreated();
-                if (!freshDb)
+                var databaseServiceId = $"database-{typeof(T).Name}";
+                StartupProgress.Starting(databaseServiceId, $"Database: {typeof(T).Name}", "Waiting for background schema check");
+                DatabaseInitializers.Add(serviceProvider =>
                 {
-                    // RetryOfId was added after first release; EnsureCreated won't alter an existing
-                    // table. Must run before the create-script loop below, which (re)creates the index
-                    // on this column and would otherwise fail against a table that doesn't have it yet.
-                    if (typeof(T) == typeof(resonance.Transfers.TransfersDbContext))
+                    StartupProgress.Starting(databaseServiceId, $"Database: {typeof(T).Name}", "Checking schema and indexes");
+
+                    try
                     {
-                        if (ctx.Database.IsNpgsql())
+                        /*
+                            instantiate the DbContext and make sure it is created
+                        */
+                        using var ctx = serviceProvider
+                            .GetRequiredService<IDbContextFactory<T>>()
+                            .CreateDbContext();
+
+                        Log.Debug("Ensuring {Contex} is created", typeof(T).Name);
+
+                        // All EF Core contexts share one database (one file for SQLite, one Postgres DB).
+                        // EnsureCreated() short-circuits after the first context creates tables because
+                        // HasTables() returns true globally. For all subsequent contexts we generate the
+                        // DDL script and execute it with IF NOT EXISTS guards.
+                        var freshDb = ctx.Database.EnsureCreated();
+                        if (!freshDb)
                         {
-                            ctx.Database.ExecuteSqlRaw("ALTER TABLE transfers.\"Transfers\" ADD COLUMN IF NOT EXISTS \"RetryOfId\" uuid");
-
-                            // Postgres has no ADD CONSTRAINT IF NOT EXISTS, so this used to just
-                            // attempt the ALTER unconditionally and swallow the expected failure on
-                            // every startup after the first. The app-level catch made that harmless,
-                            // but EF Core's own command-diagnostics logging still emitted a real ERR
-                            // line for the failed DbCommand on every single restart, forever -- a
-                            // false-positive error baked into the log on every deploy. Checking first
-                            // means the ALTER (and that noise) only happens the one time it's needed.
-                            var constraintExists = ctx.Database
-                                .SqlQueryRaw<int>("SELECT 1 FROM pg_constraint WHERE conname = 'FK_Transfers_Transfers_RetryOfId'")
-                                .AsEnumerable()
-                                .Any();
-
-                            if (!constraintExists)
+                            // RetryOfId was added after first release; EnsureCreated won't alter an existing
+                            // table. Must run before the create-script loop below, which (re)creates the index
+                            // on this column and would otherwise fail against a table that doesn't have it yet.
+                            if (typeof(T) == typeof(resonance.Transfers.TransfersDbContext))
                             {
-                                // NOT VALID skips checking the (currently all-NULL, since the column
-                                // is brand new) existing rows -- a full-table scan this shared,
-                                // resource-constrained Postgres host doesn't need just to reconfirm
-                                // something already implied by every row being NULL.
+                                if (ctx.Database.IsNpgsql())
+                                {
+                                    // ADD COLUMN IF NOT EXISTS still takes an ACCESS EXCLUSIVE lock before it
+                                    // discovers the column is already there. On this hot, multi-million-row table
+                                    // that queued behind any long-running report query at boot, and every other
+                                    // transfer query then queued behind the ALTER until it timed out -- an
+                                    // app-wide stall on each restart. Only take the lock when there is work to do.
+                                    var columnExists = ctx.Database
+                                        .SqlQueryRaw<int>("SELECT 1 FROM information_schema.columns WHERE table_schema = 'transfers' AND table_name = 'Transfers' AND column_name = 'RetryOfId'")
+                                        .AsEnumerable()
+                                        .Any();
+
+                                    if (!columnExists)
+                                    {
+                                        ctx.Database.ExecuteSqlRaw("ALTER TABLE transfers.\"Transfers\" ADD COLUMN IF NOT EXISTS \"RetryOfId\" uuid");
+                                    }
+
+                                    // Postgres has no ADD CONSTRAINT IF NOT EXISTS, so this used to just
+                                    // attempt the ALTER unconditionally and swallow the expected failure on
+                                    // every startup after the first. The app-level catch made that harmless,
+                                    // but EF Core's own command-diagnostics logging still emitted a real ERR
+                                    // line for the failed DbCommand on every single restart, forever -- a
+                                    // false-positive error baked into the log on every deploy. Checking first
+                                    // means the ALTER (and that noise) only happens the one time it's needed.
+                                    var constraintExists = ctx.Database
+                                        .SqlQueryRaw<int>("SELECT 1 FROM pg_constraint WHERE conname = 'FK_Transfers_Transfers_RetryOfId'")
+                                        .AsEnumerable()
+                                        .Any();
+
+                                    if (!constraintExists)
+                                    {
+                                        // NOT VALID skips checking the (currently all-NULL, since the column
+                                        // is brand new) existing rows -- a full-table scan this shared,
+                                        // resource-constrained Postgres host doesn't need just to reconfirm
+                                        // something already implied by every row being NULL.
+                                        try
+                                        {
+                                            ctx.Database.ExecuteSqlRaw(
+                                                "ALTER TABLE transfers.\"Transfers\" ADD CONSTRAINT \"FK_Transfers_Transfers_RetryOfId\" " +
+                                                "FOREIGN KEY (\"RetryOfId\") REFERENCES transfers.\"Transfers\" (\"Id\") ON DELETE RESTRICT NOT VALID");
+                                        }
+                                        catch (Exception)
+                                        {
+                                            // lost a race with another concurrent caller adding it -- fine, it exists now either way
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    try
+                                    {
+                                        ctx.Database.ExecuteSqlRaw("ALTER TABLE Transfers ADD COLUMN RetryOfId TEXT");
+                                    }
+                                    catch (Exception)
+                                    {
+                                        // column already exists; SQLite has no ADD COLUMN IF NOT EXISTS
+                                    }
+
+                                    // SQLite can't ALTER TABLE to add a foreign key after creation (would
+                                    // require rebuilding the table); the FK only applies to fresh SQLite
+                                    // databases created via EnsureCreated from the current model. Production
+                                    // always uses Postgres (ConnectionStringDictionary.UsePostgres is hardcoded
+                                    // true), so this only affects a hypothetical existing SQLite install.
+                                }
+                            }
+
+                            var schema = ctx.Model.GetDefaultSchema();
+                            if (!string.IsNullOrEmpty(schema))
+                            {
+                                // Schema names are SQL identifiers, which can't be passed as parameters; the value
+                                // comes from our own compiled EF model (HasDefaultSchema), never from user input.
+        #pragma warning disable EF1002 // Risk of vulnerability to SQL injection.
+                                ctx.Database.ExecuteSqlRaw($"CREATE SCHEMA IF NOT EXISTS \"{schema}\"");
+        #pragma warning restore EF1002 // Risk of vulnerability to SQL injection.
+                            }
+
+                            var script = ctx.Database.GenerateCreateScript();
+
+                            // Npgsql emits DO $EF$...END $EF$; blocks for schema creation, which we handle
+                            // above. Strip them so the semicolon-split below works.
+                            script = System.Text.RegularExpressions.Regex.Replace(
+                                script,
+                                @"DO \$EF\$.*?END \$EF\$;",
+                                string.Empty,
+                                System.Text.RegularExpressions.RegexOptions.Singleline);
+
+                            script = System.Text.RegularExpressions.Regex.Replace(
+                                script, @"\bCREATE TABLE\b", "CREATE TABLE IF NOT EXISTS");
+                            script = System.Text.RegularExpressions.Regex.Replace(
+                                script, @"\bCREATE (UNIQUE )?INDEX\b", "CREATE $1INDEX IF NOT EXISTS");
+                            script = System.Text.RegularExpressions.Regex.Replace(
+                                script, @"\bCREATE SEQUENCE\b", "CREATE SEQUENCE IF NOT EXISTS");
+
+                            // Likewise, CREATE INDEX IF NOT EXISTS takes a SHARE lock on the table before
+                            // checking the name, blocking writes (and queueing behind long reads) on every
+                            // boot for indexes that already exist. Skip objects the catalog already has.
+                            var schemaName = string.IsNullOrEmpty(schema) ? "public" : schema;
+                            var existingRelations = ctx.Database.IsNpgsql()
+                                ? ctx.Database
+                                    .SqlQuery<string>($"SELECT c.relname AS \"Value\" FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = {schemaName}")
+                                    .AsEnumerable()
+                                    .ToHashSet(StringComparer.Ordinal)
+                                : new HashSet<string>();
+
+                            foreach (var statement in script.Split(";\n", StringSplitOptions.RemoveEmptyEntries))
+                            {
+                                var s = statement.Trim();
+                                if (string.IsNullOrEmpty(s))
+                                {
+                                    continue;
+                                }
+
+                                var created = System.Text.RegularExpressions.Regex.Match(
+                                    s, @"^CREATE (?:UNIQUE )?(?:INDEX|TABLE|SEQUENCE) IF NOT EXISTS (?:[^\s.]+\.)?""([^""]+)""");
+                                if (created.Success && existingRelations.Contains(created.Groups[1].Value))
+                                {
+                                    continue;
+                                }
+
                                 try
                                 {
-                                    ctx.Database.ExecuteSqlRaw(
-                                        "ALTER TABLE transfers.\"Transfers\" ADD CONSTRAINT \"FK_Transfers_Transfers_RetryOfId\" " +
-                                        "FOREIGN KEY (\"RetryOfId\") REFERENCES transfers.\"Transfers\" (\"Id\") ON DELETE RESTRICT NOT VALID");
+                                    ctx.Database.ExecuteSqlRaw(s);
                                 }
-                                catch (Exception)
+                                catch (Exception ex)
                                 {
-                                    // lost a race with another concurrent caller adding it -- fine, it exists now either way
+                                    Log.Warning("Schema init skipped a statement for {Type}: {Ex}", typeof(T).Name, ex.Message);
                                 }
                             }
                         }
-                        else
-                        {
-                            try
-                            {
-                                ctx.Database.ExecuteSqlRaw("ALTER TABLE Transfers ADD COLUMN RetryOfId TEXT");
-                            }
-                            catch (Exception)
-                            {
-                                // column already exists; SQLite has no ADD COLUMN IF NOT EXISTS
-                            }
 
-                            // SQLite can't ALTER TABLE to add a foreign key after creation (would
-                            // require rebuilding the table); the FK only applies to fresh SQLite
-                            // databases created via EnsureCreated from the current model. Production
-                            // always uses Postgres (ConnectionStringDictionary.UsePostgres is hardcoded
-                            // true), so this only affects a hypothetical existing SQLite install.
-                        }
+                        StartupProgress.Ready(databaseServiceId, "Schema and indexes are ready");
                     }
-
-                    var schema = ctx.Model.GetDefaultSchema();
-                    if (!string.IsNullOrEmpty(schema))
+                    catch (Exception ex)
                     {
-                        // Schema names are SQL identifiers, which can't be passed as parameters; the value
-                        // comes from our own compiled EF model (HasDefaultSchema), never from user input.
-#pragma warning disable EF1002 // Risk of vulnerability to SQL injection.
-                        ctx.Database.ExecuteSqlRaw($"CREATE SCHEMA IF NOT EXISTS \"{schema}\"");
-#pragma warning restore EF1002 // Risk of vulnerability to SQL injection.
+                        StartupProgress.Failed(databaseServiceId, ex.Message);
+                        Log.Error(ex, "Failed to initialize database context {ContextName}", typeof(T).Name);
                     }
-
-                    var script = ctx.Database.GenerateCreateScript();
-
-                    // Npgsql emits DO $EF$...END $EF$; blocks for schema creation, which we handle
-                    // above. Strip them so the semicolon-split below works.
-                    script = System.Text.RegularExpressions.Regex.Replace(
-                        script,
-                        @"DO \$EF\$.*?END \$EF\$;",
-                        string.Empty,
-                        System.Text.RegularExpressions.RegexOptions.Singleline);
-
-                    script = System.Text.RegularExpressions.Regex.Replace(
-                        script, @"\bCREATE TABLE\b", "CREATE TABLE IF NOT EXISTS");
-                    script = System.Text.RegularExpressions.Regex.Replace(
-                        script, @"\bCREATE (UNIQUE )?INDEX\b", "CREATE $1INDEX IF NOT EXISTS");
-                    script = System.Text.RegularExpressions.Regex.Replace(
-                        script, @"\bCREATE SEQUENCE\b", "CREATE SEQUENCE IF NOT EXISTS");
-
-                    foreach (var statement in script.Split(";\n", StringSplitOptions.RemoveEmptyEntries))
-                    {
-                        var s = statement.Trim();
-                        if (string.IsNullOrEmpty(s))
-                        {
-                            continue;
-                        }
-
-                        try
-                        {
-                            ctx.Database.ExecuteSqlRaw(s);
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Warning("Schema init skipped a statement for {Type}: {Ex}", typeof(T).Name, ex.Message);
-                        }
-                    }
-                }
+                });
 
                 return services;
             }

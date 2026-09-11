@@ -82,6 +82,7 @@ import Rooms from './Rooms/Rooms';
 import Searches from './Search/Searches';
 import Setup from './Setup';
 import ResonanceMark from './Shared/ResonanceMark';
+import StartupStatus from './StartupStatus';
 import DatabaseViewer from './System/DatabaseViewer';
 import Logs from './System/Logs';
 import System from './System/System';
@@ -250,6 +251,7 @@ const App = () => {
     status: 'online',
   });
   const [initialized, setInitialized] = useState(false);
+  const [startupStatus, setStartupStatus] = useState(null);
   const [setup, setSetup] = useState({
     error: undefined,
     pending: false,
@@ -415,6 +417,30 @@ const App = () => {
       cancelled = true;
       clearTimeout(timer);
       retryInitRef.current = null;
+    };
+  }, []);
+
+  // The API becomes available before heavyweight service recovery completes. Keep the app usable
+  // and surface that work as a small live banner instead of holding the entire UI on a spinner.
+  useEffect(() => {
+    let cancelled = false;
+    let timer;
+
+    const pollStartup = async () => {
+      try {
+        const status = await session.getStartup();
+        if (cancelled) return;
+        setStartupStatus(status);
+        if (!status.ready) timer = setTimeout(pollStartup, 1_000);
+      } catch {
+        if (!cancelled) timer = setTimeout(pollStartup, 2_000);
+      }
+    };
+
+    pollStartup();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
     };
   }, []);
 
@@ -1008,21 +1034,33 @@ const App = () => {
 
   if (!initialized && setup.required !== true)
     return (
-      <Loader
-        active
-        size="big"
-      />
+      <>
+        <StartupStatus status={startupStatus} />
+        <Loader
+          active
+          size="big"
+        />
+      </>
     );
 
-  if (setup.required) return <Setup onComplete={handleSetupComplete} />;
+  if (setup.required)
+    return (
+      <>
+        <StartupStatus status={startupStatus} />
+        <Setup onComplete={handleSetupComplete} />
+      </>
+    );
 
   if (!isLoggedIn) {
     return (
-      <LoginForm
-        error={login.error}
-        loading={login.pending}
-        onLoginAttempt={handleLogin}
-      />
+      <>
+        <StartupStatus status={startupStatus} />
+        <LoginForm
+          error={login.error}
+          loading={login.pending}
+          onLoginAttempt={handleLogin}
+        />
+      </>
     );
   }
 
@@ -1063,6 +1101,7 @@ const App = () => {
       <LibraryActivityProvider>
         <PlayerProvider>
           <div className="map-shell">
+            <StartupStatus status={startupStatus} />
             <StatusStrip
               brand={
                 <div className="status-brand">
@@ -1098,6 +1137,7 @@ const App = () => {
         <TagEditActivityProvider>
           <PlayTracker />
           <div className="app-shell">
+            <StartupStatus status={startupStatus} />
             {!isAgent && (
               <StatusStrip
                 brand={

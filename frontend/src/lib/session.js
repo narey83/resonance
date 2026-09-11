@@ -51,6 +51,10 @@ export const getInitialized = async () => {
   return (await api.get('/session/initialized')).data;
 };
 
+export const getStartup = async () => {
+  return (await api.get('/startup')).data;
+};
+
 const getDeviceName = () => {
   const ua = navigator.userAgent;
   let os;
