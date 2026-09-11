@@ -234,18 +234,22 @@ const AdminOverview = () => {
     };
   }, [analyticsRefresh]);
 
-  // Catalog coverage — load once on mount (not time-windowed)
+  // Catalog coverage — load on mount (not time-windowed). The server computes it in the
+  // background and reports `pending` until the first count lands, so check back until then.
   useEffect(() => {
     let cancelled = false;
+    let timer;
     const load = async () => {
       const cov = await reportsAPI.getCoverage().catch(() => null);
       if (cancelled) return;
       setCoverage(cov);
+      if (cov?.pending) timer = setTimeout(load, 15_000);
     };
 
     load();
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, []);
 
@@ -514,6 +518,7 @@ const AdminOverview = () => {
                         summary={summary}
                       />
                       <CoverageCard
+                        pending={coverage?.pending}
                         totalFiles={totalSharedFiles}
                         uploadedFiles={coverage?.uploadedFiles}
                       />

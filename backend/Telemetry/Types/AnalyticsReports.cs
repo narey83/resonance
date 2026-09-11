@@ -110,6 +110,12 @@ public record PeerRetention
 public record CoverageReport
 {
     public long UploadedFiles { get; init; }
+
+    /// <summary>
+    ///     Gets a value indicating whether the figure is still being computed for the first time
+    ///     (<see cref="UploadedFiles"/> is not meaningful yet).
+    /// </summary>
+    public bool Pending { get; init; }
 }
 
 /// <summary>

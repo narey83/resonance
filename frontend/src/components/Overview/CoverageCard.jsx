@@ -30,7 +30,7 @@
 import React from 'react';
 
 // Catalog reach: how much of the shared library has ever been uploaded at least once.
-const CoverageCard = ({ totalFiles, uploadedFiles }) => {
+const CoverageCard = ({ pending, totalFiles, uploadedFiles }) => {
   const uploaded = Number(uploadedFiles ?? 0);
   const total = Number(totalFiles ?? 0);
   const pct = total > 0 ? Math.min(100, (uploaded / total) * 100) : 0;
@@ -44,6 +44,9 @@ const CoverageCard = ({ totalFiles, uploadedFiles }) => {
       <div className="coverage-body">
         {total === 0 ? (
           <div className="dir-empty">No share data available</div>
+        ) : pending ? (
+          // Counted in the background from the full upload history; can take a minute after a restart.
+          <div className="dir-empty">Calculating…</div>
         ) : (
           <>
             <div className="coverage-headline">

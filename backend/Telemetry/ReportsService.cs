@@ -54,9 +54,16 @@ using Soulseek;
 /// </summary>
 public class ReportsService
 {
+    private const string CoverageCacheKey = "reports:coverage";
+    private const int CoverageCommandTimeoutSeconds = 600;
+
     private static readonly ConcurrentDictionary<string, byte> RefreshesInFlight = new();
     private static readonly ConcurrentDictionary<string, object> ColdMissGates = new();
     private static readonly AsyncLocal<bool> SynchronousCacheRefresh = new();
+    private static readonly TimeSpan CoverageFreshFor = TimeSpan.FromHours(6);
+    private static readonly TimeSpan CoverageRetryBackoff = TimeSpan.FromMinutes(30);
+    private static long coverageRetryAfterTicks;
+
     /// <summary>
     ///     Initializes a new instance of the <see cref="ReportsService"/> class.
     /// </summary>
@@ -1966,13 +1973,33 @@ public class ReportsService
     /// <summary>
     ///     Returns the number of distinct shared files that have ever been uploaded (catalog reach).
     /// </summary>
-    /// <returns></returns>
+    /// <remarks>
+    ///     Counting this reads every successful upload out of the multi-million-row transfer table,
+    ///     well past the 30-second command timeout on the production host. It used to be precomputed
+    ///     by <see cref="ReportsCacheWarmer"/>; with that gone, the first Overview load ran it on the
+    ///     request and timed out, and every retry started the same scan again. The figure changes
+    ///     slowly, so it is computed off-request (one at a time, with its own timeout) and served from
+    ///     the last result, or reported as pending until the first run completes.
+    /// </remarks>
+    /// <returns>The last computed coverage, or a pending report while the first one is computed.</returns>
     public CoverageReport GetCatalogCoverage()
     {
-        return Cache.GetOrCreate("reports:coverage", entry =>
-        {
-            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10);
+        var cached = Cache.Get<StaleWhileRevalidateEntry>(CoverageCacheKey);
 
+        if ((cached == null || DateTime.UtcNow > cached.FreshUntil)
+            && DateTime.UtcNow.Ticks >= Interlocked.Read(ref coverageRetryAfterTicks)
+            && RefreshesInFlight.TryAdd(CoverageCacheKey, 0))
+        {
+            _ = Task.Run(RefreshCatalogCoverage);
+        }
+
+        return cached?.Value as CoverageReport ?? new CoverageReport { Pending = true };
+    }
+
+    private void RefreshCatalogCoverage()
+    {
+        try
+        {
             string sql;
             if (UsePostgres)
             {
@@ -1996,10 +2023,24 @@ public class ReportsService
                 ";
             }
 
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             using var connection = OpenConnection(Database.Transfers);
-            var count = connection.ExecuteScalar<long>(sql);
-            return new CoverageReport { UploadedFiles = count };
-        });
+            var count = connection.ExecuteScalar<long>(sql, commandTimeout: CoverageCommandTimeoutSeconds);
+
+            // No expiry: an old figure is still a good answer, so it is only ever replaced.
+            Cache.Set(CoverageCacheKey, new StaleWhileRevalidateEntry(new CoverageReport { UploadedFiles = count }, DateTime.UtcNow + CoverageFreshFor));
+            Log.Information("Catalog coverage refreshed in {Elapsed:F1}s: {Count} distinct uploaded files", stopwatch.Elapsed.TotalSeconds, count);
+        }
+        catch (Exception ex)
+        {
+            // back off, so a query that can't finish isn't restarted by every Overview load
+            Interlocked.Exchange(ref coverageRetryAfterTicks, (DateTime.UtcNow + CoverageRetryBackoff).Ticks);
+            Log.Warning("Catalog coverage refresh failed; retrying in {Backoff}: {Message}", CoverageRetryBackoff, ex.Message);
+        }
+        finally
+        {
+            RefreshesInFlight.TryRemove(CoverageCacheKey, out _);
+        }
     }
 
     /// <summary>
