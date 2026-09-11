@@ -33,8 +33,12 @@ fi
 
 echo "$(date -u +%FT%TZ) Fixing: $CONTAINER default route gw hex was '$current_gw', expected '$EXPECTED_GW_HEX' (resonance_backend_net)"
 
+# No fixed --ip here: caddy and the other services reach the backend by name, and Docker derives the
+# 50300 publish from whatever address it holds. Pinning 172.20.0.5 failed with "Address already in use"
+# once another container (caddy) had been handed that address while the backend was down, leaving the
+# backend detached from this network entirely -- every /api request through caddy then returned 502.
 docker network disconnect resonance_backend_net "$CONTAINER" 2>/dev/null || true
-docker network connect --ip 172.20.0.5 --gw-priority 100 resonance_backend_net "$CONTAINER"
+docker network connect --gw-priority 100 resonance_backend_net "$CONTAINER"
 
 docker network disconnect local_lan_net "$CONTAINER" 2>/dev/null || true
 docker network connect --ip 192.168.0.33 --gw-priority -100 local_lan_net "$CONTAINER"

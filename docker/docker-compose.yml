@@ -112,11 +112,11 @@ services:
     # the systemd unit (installed manually on the host, not deployed by git pull).
     # Manual reapply, if ever needed:
     #   docker network disconnect resonance_backend_net resonance-backend
-    #   docker network connect --ip 172.20.0.5 --gw-priority 100 resonance_backend_net resonance-backend
+    #   docker network connect --gw-priority 100 resonance_backend_net resonance-backend
     #   docker network disconnect local_lan_net resonance-backend
     #   docker network connect --ip 192.168.0.33 --gw-priority -100 local_lan_net resonance-backend
     #   # verify: docker exec resonance-backend cat /proc/net/route (default gw should be 172.20.0.1)
-    #   # verify: sudo iptables -t nat -L DOCKER -n | grep 50300 (should show to:172.20.0.5:50300)
+    #   # verify: sudo iptables -t nat -L DOCKER -n | grep 50300 (should DNAT to the backend's resonance_backend_net IP)
     networks:
       resonance_backend_net:
         gw_priority: 100
