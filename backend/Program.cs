@@ -1907,8 +1907,43 @@ namespace resonance
                     $"A database connection string is required. Set the {environmentVariablePrefix}DATABASE_CONNECTION_STRING environment variable.");
             }
 
-            SettingsStore = new resonance.Core.Settings.SettingsService(connectionString);
-            DbConfigurationSource = new DbConfigurationSource(SettingsStore);
+            const int retryDelaySeconds = 5;
+            var attempt = 0;
+
+            // The settings table is the first database dependency touched during startup. Previously a
+            // stopped Postgres instance made this throw into Main's configuration catch, which returned
+            // normally. In the development container that leaves `dotnet watch` alive but idle, so Docker's
+            // restart policy never gets a stopped process to restart and the backend remains down even after
+            // Postgres recovers. Keep retrying this small, idempotent schema/readiness operation instead; once
+            // it succeeds, the remainder of startup runs from a known-good database connection.
+            while (true)
+            {
+                try
+                {
+                    var settingsStore = new resonance.Core.Settings.SettingsService(connectionString);
+                    _ = settingsStore.GetAll();
+
+                    SettingsStore = settingsStore;
+                    DbConfigurationSource = new DbConfigurationSource(settingsStore);
+
+                    if (attempt > 0)
+                    {
+                        Log.Information("Database is ready after {AttemptCount} failed startup attempt(s); continuing application startup", attempt);
+                    }
+
+                    return;
+                }
+                catch (Npgsql.NpgsqlException ex)
+                {
+                    attempt++;
+                    Log.Warning(
+                        "Database is not ready during startup (attempt {AttemptCount}): {Message}. Retrying in {RetryDelaySeconds} seconds",
+                        attempt,
+                        ex.Message,
+                        retryDelaySeconds);
+                    Thread.Sleep(TimeSpan.FromSeconds(retryDelaySeconds));
+                }
+            }
         }
 
         private static string[] BuildMultiValuedArguments() =>
