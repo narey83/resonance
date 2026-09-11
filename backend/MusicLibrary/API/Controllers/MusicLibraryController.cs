@@ -58,23 +58,17 @@ namespace resonance.MusicLibrary.API
     ///     <see cref="Paths"/> for a batch — a batch is one scan, not one per track.
     /// </summary>
     /// <remarks>
-    ///     <see cref="Metrics"/> is a comma-separated AnalysisMetrics flags string ("Bpm, Key,
-    ///     Waveform, Loudness"). The older AnalyzeKey/AnalyzeBpm booleans still work and are used
-    ///     when it is omitted.
+    ///     An analysis always measures key, BPM, loudness and waveform together; there is no
+    ///     per-metric choice. Older clients' <c>metrics</c>/<c>analyzeKey</c>/<c>analyzeBpm</c>
+    ///     fields are ignored.
     /// </remarks>
     public record AnalyzeTrackRequest(
         string Path = null,
         string[] Paths = null,
-        bool AnalyzeKey = true,
-        bool AnalyzeBpm = true,
-        string Metrics = null,
         bool SkipAnalysed = true);
 
-    public record AnalyzeFolderRequest(
-        string Path,
-        bool AnalyzeKey = true,
-        bool AnalyzeBpm = true,
-        string Metrics = null);
+    /// <summary>Request to analyse every track in a folder (all four metrics, like any analysis).</summary>
+    public record AnalyzeFolderRequest(string Path);
 
     public record DeleteTrackBatchRequest(string[] MaskedPaths);
 
@@ -594,7 +588,7 @@ namespace resonance.MusicLibrary.API
             }
         }
 
-        /// <summary>Triggers key and/or BPM analysis for a specific track.</summary>
+        /// <summary>Analyses one or more tracks: key, BPM, loudness and waveform together.</summary>
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         [HttpPost("tracks/analyze")]
         [Authorize(Policy = AuthPolicy.Any)]
@@ -614,12 +608,6 @@ namespace resonance.MusicLibrary.API
                 return BadRequest("Path or Paths is required.");
             }
 
-            var metrics = MetricsFrom(request);
-            if (metrics == AnalysisMetrics.None)
-            {
-                return BadRequest("At least one metric must be requested.");
-            }
-
             // One scan for the whole batch. A request per track would start a scan per track, and
             // since there is a single analysis queue every one after the first is rejected as
             // already-running — which is how analysing an album used to do only its first track.
@@ -635,7 +623,7 @@ namespace resonance.MusicLibrary.API
                 // SkipAnalysed lets a caller ask for everything and get only what the track is
                 // actually missing — one decode, no redoing the metrics it already has.
                 await Analysis.StartScanAsync(new AnalysisScanRequest(
-                    Metrics: metrics,
+                    Metrics: AnalysisMetrics.All,
                     SkipAnalysed: request.SkipAnalysed,
                     OnlyFilenames: masked));
             }
@@ -647,7 +635,7 @@ namespace resonance.MusicLibrary.API
             return Accepted();
         }
 
-        /// <summary>Triggers key and/or BPM analysis for all tracks in a folder.</summary>
+        /// <summary>Analyses every track in a folder: key, BPM, loudness and waveform together.</summary>
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         [HttpPost("folders/analyze")]
         [Authorize(Policy = AuthPolicy.Any)]
@@ -660,12 +648,6 @@ namespace resonance.MusicLibrary.API
             if (string.IsNullOrWhiteSpace(request?.Path))
             {
                 return BadRequest("Path is required.");
-            }
-
-            var metrics = MetricsFrom(request);
-            if (metrics == AnalysisMetrics.None)
-            {
-                return BadRequest("At least one metric must be requested.");
             }
 
             var result = Service.QueryTracks(null, null, null, null, null, request.Path, false, false, false, false, false, 10_000, 0);
@@ -684,7 +666,7 @@ namespace resonance.MusicLibrary.API
             try
             {
                 await Analysis.StartScanAsync(new AnalysisScanRequest(
-                    Metrics: metrics,
+                    Metrics: AnalysisMetrics.All,
                     SkipAnalysed: true,
                     OnlyFilenames: maskedFilenames));
             }
@@ -1078,25 +1060,6 @@ namespace resonance.MusicLibrary.API
         // would then change the ETag every refill and defeat conditional GETs (every client would
         // re-download in full). Instead XOR each row's hash (commutative → order doesn't matter) and
         // fold in the row count, so the ETag is stable as long as the underlying data is.
-        // An explicit Metrics string wins; otherwise fall back to the older key/bpm booleans.
-        private static AnalysisMetrics MetricsFrom(string metrics, bool key, bool bpm)
-        {
-            if (!string.IsNullOrWhiteSpace(metrics)
-                && Enum.TryParse<AnalysisMetrics>(metrics, ignoreCase: true, out var parsed))
-            {
-                return parsed;
-            }
-
-            return (key ? AnalysisMetrics.Key : AnalysisMetrics.None)
-                | (bpm ? AnalysisMetrics.Bpm : AnalysisMetrics.None);
-        }
-
-        private static AnalysisMetrics MetricsFrom(AnalyzeTrackRequest r) =>
-            MetricsFrom(r.Metrics, r.AnalyzeKey, r.AnalyzeBpm);
-
-        private static AnalysisMetrics MetricsFrom(AnalyzeFolderRequest r) =>
-            MetricsFrom(r.Metrics, r.AnalyzeKey, r.AnalyzeBpm);
-
         private static string ComputeListETag<T>(System.Collections.Generic.IReadOnlyList<T> list)
         {
             var acc = new byte[20];

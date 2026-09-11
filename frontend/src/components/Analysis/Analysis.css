@@ -860,32 +860,6 @@
   opacity: 1;
 }
 
-.ka-metric-picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.ka-metric-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg-surface);
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.ka-metric-chip.on {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-}
-
 /* ── Per-row waveform viewer ──────────────────────────────────────────────── */
 
 .ka-rowwave {

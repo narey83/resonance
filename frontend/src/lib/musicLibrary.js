@@ -154,7 +154,6 @@ export const getFolders = async () => {
 // than per-metric booleans. Pass an array of paths to analyse a batch as ONE scan:
 // a request per track would be rejected after the first, since there is one queue.
 export const ALL_METRICS = 'Bpm, Key, Waveform, Loudness';
-export const TAG_METRICS = 'Bpm, Key';
 
 // skipAnalysed: ask for every metric and let the backend decode only the ones the
 // track is still missing, rather than redoing key/BPM it already has.

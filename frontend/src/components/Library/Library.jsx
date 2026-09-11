@@ -56,7 +56,6 @@ import {
   getYears,
   renameFolder,
   renameTrack,
-  TAG_METRICS,
   triggerSync,
 } from '../../lib/musicLibrary';
 import * as prefs from '../../lib/prefs';
@@ -597,17 +596,6 @@ const FolderContextMenu = ({
         <AudioWaveform size={13} />
         Analyse all tracks
       </button>
-      <button
-        className="jb-context-item"
-        onClick={() => {
-          onAnalyzeFolder(folder, { metrics: TAG_METRICS });
-          onClose();
-        }}
-        type="button"
-      >
-        <KeyRound size={13} />
-        Key &amp; BPM only
-      </button>
 
       <div className="jb-context-sep" />
       <div className="jb-context-section">Add to mixtape</div>
@@ -844,17 +832,6 @@ const AlbumContextMenu = ({
       >
         <AudioWaveform size={13} />
         Analyse everything
-      </button>
-      <button
-        className="jb-context-item"
-        onClick={() => {
-          onAnalyze(album, { metrics: TAG_METRICS });
-          onClose();
-        }}
-        type="button"
-      >
-        <KeyRound size={13} />
-        Key &amp; BPM only
       </button>
 
       <div className="jb-context-sep" />

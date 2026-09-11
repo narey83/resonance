@@ -46,7 +46,6 @@ import KeyFormatToggle from '../Shared/KeyFormatToggle';
 import PageInfo from '../Shared/PageInfo';
 import RowWaveform from './RowWaveform';
 import {
-  Activity,
   AlertCircle,
   AudioWaveform,
   CheckCircle2,
@@ -55,7 +54,6 @@ import {
   ChevronUp,
   Folder,
   Gauge,
-  KeyRound,
   Loader2,
   Music,
   Play,
@@ -98,27 +96,11 @@ const toRow = (t) => ({
   title: t.title,
 });
 
-const METRIC_META = {
-  Bpm: { Icon: Activity, label: 'BPM' },
-  Key: { Icon: KeyRound, label: 'Key' },
-  Loudness: { Icon: Gauge, label: 'Loudness' },
-  Waveform: { Icon: AudioWaveform, label: 'Waveform' },
-};
-
 // ── Scan settings panel ───────────────────────────────────────────────────────
 
 const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
   const [skipTagged, setSkipTagged] = useState(true);
   const [resetAll, setResetAll] = useState(false);
-  const [metrics, setMetrics] = useState(() => new Set(METRICS));
-
-  const toggleMetric = (m) =>
-    setMetrics((previous) => {
-      const next = new Set(previous);
-      if (next.has(m)) next.delete(m);
-      else next.add(m);
-      return next;
-    });
 
   return (
     <div className="ka-panel">
@@ -135,26 +117,9 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
 
       <div className="ka-panel-body">
         <div className="ka-field">
-          <span className="ka-field-label">Metrics</span>
-          <div className="ka-metric-picker">
-            {METRICS.map((m) => {
-              const { Icon, label } = METRIC_META[m];
-              return (
-                <button
-                  className={`ka-metric-chip hover-fx${metrics.has(m) ? ' on' : ''}`}
-                  key={m}
-                  onClick={() => toggleMetric(m)}
-                  type="button"
-                >
-                  <Icon size={13} />
-                  {label}
-                </button>
-              );
-            })}
-          </div>
           <span className="ka-field-hint">
-            All selected metrics come from a single decode per track, so
-            scanning for four costs barely more than scanning for one.
+            Every track is analysed for key, BPM, loudness and waveform in a
+            single decode.
           </span>
         </div>
 
@@ -205,10 +170,10 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
         </button>
         <button
           className="ka-btn ka-btn--primary hover-fx"
-          disabled={scanning || metrics.size === 0}
+          disabled={scanning}
           onClick={() =>
             onStart({
-              metrics: METRICS.filter((m) => metrics.has(m)).join(', '),
+              metrics: METRICS.join(', '),
               skipAnalysed: skipTagged,
               resetAll,
             })

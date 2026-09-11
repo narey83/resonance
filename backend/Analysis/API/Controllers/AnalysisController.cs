@@ -101,7 +101,9 @@ namespace resonance.Analysis.API
                 // StartScanAsync only claims the single analysis queue and hands the scan to a
                 // background task, so awaiting it is quick. Discarding the task instead (as this used
                 // to) lost its "already in progress" exception, answering 202 for a scan that never ran.
-                await Analysis.StartScanAsync(request ?? new AnalysisScanRequest());
+                // An analysis always measures key, BPM, loudness and waveform together; there is no
+                // per-metric choice, so whatever a client asks for, the scan covers all four.
+                await Analysis.StartScanAsync((request ?? new AnalysisScanRequest()) with { Metrics = AnalysisMetrics.All });
                 return Accepted();
             }
             catch (System.InvalidOperationException)

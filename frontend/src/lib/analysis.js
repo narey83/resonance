@@ -45,7 +45,7 @@ export const getScanState = async () => (await api.get('/analysis/scan')).data;
 export const getMaskedFilename = async (path) =>
   (await api.get('/analysis/masked', { params: { path } })).data.maskedFilename;
 
-// metrics is a comma-separated flags string, e.g. 'Bpm, Key'.
+// The server always analyses key, BPM, loudness and waveform together, whatever `metrics` says.
 export const startScan = async (request) => api.post('/analysis/scan', request);
 
 export const cancelScan = async () => api.delete('/analysis/scan');
