@@ -471,6 +471,7 @@ namespace resonance.Core.API
 
             var (refreshToken, sessionId) = Sessions.CreateSession(user.Username, deviceName, deviceId, callerIp, existingSessionId);
             var jwt = Security.GenerateJwt(user.Username, user.Role, sessionId: sessionId);
+            Log.Information("Login succeeded for user {Username} from {IP}", user.Username, callerIp);
             return (new TokenResponse(jwt, refreshToken, sessionId), null);
         }
 
