@@ -98,8 +98,10 @@ namespace resonance.Analysis.API
         {
             try
             {
-                _ = Analysis.StartScanAsync(request ?? new AnalysisScanRequest());
-                await Task.Yield();
+                // StartScanAsync only claims the single analysis queue and hands the scan to a
+                // background task, so awaiting it is quick. Discarding the task instead (as this used
+                // to) lost its "already in progress" exception, answering 202 for a scan that never ran.
+                await Analysis.StartScanAsync(request ?? new AnalysisScanRequest());
                 return Accepted();
             }
             catch (System.InvalidOperationException)
