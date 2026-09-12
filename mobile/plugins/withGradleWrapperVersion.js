@@ -31,7 +31,7 @@ const { withDangerousMod } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
-// @react-native/gradle-plugin (as of RN 0.85.3 / 0.86.0) ships a
+// @react-native/gradle-plugin (as of RN 0.85.3 / 0.86.3) ships a
 // gradle-wrapper.properties pinned to Gradle 9.3.1 while its own
 // libs.versions.toml pins AGP 8.12.0, which requires Gradle 8.13.
 // That mismatch breaks the build with:

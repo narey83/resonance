@@ -28,6 +28,7 @@
       "expo-dev-client",
       "./plugins/withAndroidAuto",
       "./plugins/withFloatingOverlay",
+      "./plugins/withGradleProperties",
       "./plugins/withGradleWrapperVersion",
       "./plugins/withReleaseSideBySide",
       [
@@ -58,7 +59,13 @@
           "cameraPermission": "Allow $(PRODUCT_NAME) to use the camera to scan the sign-in code shown in Resonance on your computer.",
           "recordAudioAndroid": false
         }
-      ]
+      ],
+      "expo-audio",
+      "expo-secure-store",
+      "expo-sqlite",
+      "expo-status-bar",
+      "expo-font",
+      "expo-asset"
     ],
     "extra": {
       "eas": {

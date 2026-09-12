@@ -54,7 +54,11 @@ import kotlin.math.sqrt
 class FloatingOverlayModule(private val reactContext: ReactApplicationContext) :
   ReactContextBaseJavaModule(reactContext) {
 
-  override fun getName() = "FloatingOverlay"
+  override fun getName() = NAME
+
+  companion object {
+    const val NAME = "FloatingOverlay"
+  }
 
   private var windowManager: WindowManager? = null
   private var overlayView: LinearLayout? = null

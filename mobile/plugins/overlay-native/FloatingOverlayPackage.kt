@@ -6,15 +6,36 @@
 
 package com.resonance.mobile
 
-import com.facebook.react.ReactPackage
+import com.facebook.react.BaseReactPackage
 import com.facebook.react.bridge.NativeModule
 import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.module.model.ReactModuleInfo
+import com.facebook.react.module.model.ReactModuleInfoProvider
 import com.facebook.react.uimanager.ViewManager
 
-class FloatingOverlayPackage : ReactPackage {
-  override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> =
-    listOf(FloatingOverlayModule(reactContext))
+// BaseReactPackage rather than ReactPackage: under the new architecture ReactPackage's
+// createNativeModules is deprecated in favour of getModule, and BaseReactPackage is what
+// supplies the lazy module lookup the TurboModule registry expects.
+class FloatingOverlayPackage : BaseReactPackage() {
+  override fun getModule(name: String, reactContext: ReactApplicationContext): NativeModule? =
+    if (name == FloatingOverlayModule.NAME) FloatingOverlayModule(reactContext) else null
 
   override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> =
     emptyList()
+
+  // FloatingOverlayModule is a plain ReactContextBaseJavaModule, so it is neither a C++ nor a
+  // TurboModule, and it has nothing to do before JS asks for it.
+  override fun getReactModuleInfoProvider() = ReactModuleInfoProvider {
+    mapOf(
+      FloatingOverlayModule.NAME to
+        ReactModuleInfo(
+          FloatingOverlayModule.NAME,
+          FloatingOverlayModule::class.java.name,
+          /* canOverrideExistingModule = */ false,
+          /* needsEagerInit = */ false,
+          /* isCxxModule = */ false,
+          /* isTurboModule = */ false,
+        )
+    )
+  }
 }
