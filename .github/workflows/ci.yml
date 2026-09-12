@@ -109,9 +109,22 @@ jobs:
       - name: Build APK
         working-directory: mobile/android
         run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
-      # Gitea's act_runner artifact backend only implements the v3 protocol;
-      # upload-artifact@v4 fails with GHESNotSupportedError. Keep this at v3.
-      - uses: actions/upload-artifact@v3
+      # No single version of upload-artifact runs on both hosts, so pick per host:
+      # GitHub.com hard-fails v3 ("automatically failed because it uses a deprecated
+      # version") since 2025-01-30, while on Gitea v4 aborts with GHESNotSupportedError
+      # because Gitea identifies as GHES and v4 refuses to run there.
+      # github.server_url is https://github.com only on GitHub; on Gitea it is the
+      # instance's own URL.
+      - name: Upload APK (GitHub)
+        if: ${{ github.server_url == 'https://github.com' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: resonance-mobile-apk
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 14
+      - name: Upload APK (Gitea)
+        if: ${{ github.server_url != 'https://github.com' }}
+        uses: actions/upload-artifact@v3
         with:
           name: resonance-mobile-apk
           path: mobile/android/app/build/outputs/apk/release/app-release.apk
