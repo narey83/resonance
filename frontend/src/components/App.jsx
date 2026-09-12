@@ -42,6 +42,7 @@ import {
 } from '../context/LibraryActivityContext';
 import { PlayerProvider, usePlayer } from '../context/PlayerContext';
 import { TagEditActivityProvider } from '../context/TagEditActivityContext';
+import * as applicationAPI from '../lib/application';
 import { applyBlockedUsers } from '../lib/blockedUsers';
 import * as chatAPI from '../lib/chat';
 import { emitPrivateMessage } from '../lib/chatEvents';
@@ -152,6 +153,32 @@ const THEME_LABELS = { amoled: 'AMOLED', light: 'Light' };
 const ALL_THEME_CLASSES = ['amoled', 'dark', 'dim'];
 
 const INIT_MAX_ATTEMPTS = 30;
+const STATUS_STATE_CACHE_KEY = 'resonance-status-state';
+const NETWORK_INFO_CACHE_KEY = 'resonance-status-network';
+
+const readStatusCache = (key, fallback) => {
+  try {
+    const value = sessionStorage.getItem(key);
+    return value === null ? fallback : JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
+
+const writeStatusCache = (key, value) => {
+  try {
+    sessionStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* Status caching is only a rendering optimisation. */
+  }
+};
+
+const clearStatusCaches = () => {
+  sessionStorage.removeItem(STATUS_STATE_CACHE_KEY);
+  sessionStorage.removeItem(NETWORK_INFO_CACHE_KEY);
+  sessionStorage.removeItem('resonance-status-profile');
+  sessionStorage.removeItem('resonance-status-port');
+};
 
 const parseEventData = (raw) => {
   try {
@@ -261,7 +288,9 @@ const App = () => {
 
   // ── Hub-derived state ───────────────────────────────────────────────────────
   const [applicationOptions, setApplicationOptions] = useState({});
-  const [applicationState, setApplicationState] = useState({});
+  const [applicationState, setApplicationState] = useState(() =>
+    readStatusCache(STATUS_STATE_CACHE_KEY, {}),
+  );
 
   // ── UI state ────────────────────────────────────────────────────────────────
   const [chatUnread, setChatUnread] = useState(0);
@@ -271,7 +300,9 @@ const App = () => {
     const v = prefs.get('resonance-nav-collapsed', false);
     return v === true || v === 'true';
   });
-  const [networkInfo, setNetworkInfo] = useState(null);
+  const [networkInfo, setNetworkInfo] = useState(() =>
+    readStatusCache(NETWORK_INFO_CACHE_KEY, null),
+  );
   const [notifications, setNotifications] = useState([]);
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [notificationSettings, setNotificationSettings] = useState(
@@ -302,6 +333,7 @@ const App = () => {
   // ── Refs (mutable, don't trigger re-renders) ────────────────────────────────
   const roomBaselines = useRef({});
   const initAttemptRef = useRef(0);
+  const hasLiveApplicationStateRef = useRef(false);
   // "Retry now" hooks for the connection screen/overlay.
   const retryInitRef = useRef(null);
   const hubRetryRef = useRef(null);
@@ -382,7 +414,10 @@ const App = () => {
           if (!cancelled) setIsLoggedIn(true);
         } else if (session.isLoggedIn()) {
           const valid = await session.check(); // interceptor handles token refresh
-          if (!cancelled) setIsLoggedIn(valid);
+          if (!cancelled) {
+            setIsLoggedIn(valid);
+            if (!valid) clearStatusCaches();
+          }
         }
 
         if (!cancelled) {
@@ -478,6 +513,37 @@ const App = () => {
   }, []);
 
   // ══════════════════════════════════════════════════════════════════════════════
+  // Effect 3 — Bootstrap application state immediately, then keep it live via
+  // the hub below. Hub negotiation can take noticeably longer than a REST
+  // request; without this the status strip mounts with empty state and its
+  // items pop in only after the first STATE broadcast.
+  // ═══════════════════════════════════════════════════════════════════════════════════
+  useEffect(() => {
+    if (!isLoggedIn) {
+      hasLiveApplicationStateRef.current = false;
+      return undefined;
+    }
+
+    let cancelled = false;
+    applicationAPI
+      .getState()
+      .then((state) => {
+        // Never let a slower bootstrap response overwrite fresher hub state.
+        if (!cancelled && !hasLiveApplicationStateRef.current) {
+          setApplicationState(state);
+          writeStatusCache(STATUS_STATE_CACHE_KEY, state);
+        }
+      })
+      .catch(() => {
+        // The hub remains the retrying source of truth when REST is unavailable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn]);
+
+  // ════════════════════════════════════════════════════════════════════════════════
   // Effect 3 — Hub lifecycle, tied to isLoggedIn.
   // Cleanup runs automatically on logout, re-login, or unmount.
   // ══════════════════════════════════════════════════════════════════════════════
@@ -539,6 +605,7 @@ const App = () => {
       unstable_batchedUpdates(() => {
         if (pendingState !== null) {
           setApplicationState(pendingState);
+          writeStatusCache(STATUS_STATE_CACHE_KEY, pendingState);
           pendingState = null;
         }
 
@@ -554,6 +621,7 @@ const App = () => {
     };
 
     hub.on('STATE', (state) => {
+      hasLiveApplicationStateRef.current = true;
       const json = JSON.stringify(state);
       if (json === lastStateJson) return;
       lastStateJson = json;
@@ -725,7 +793,10 @@ const App = () => {
     const loadNetworkInfo = async () => {
       try {
         const info = await networkAPI.getNetworkInfo();
-        if (!cancelled) setNetworkInfo(info);
+        if (!cancelled) {
+          setNetworkInfo(info);
+          writeStatusCache(NETWORK_INFO_CACHE_KEY, info);
+        }
       } catch {
         /* silently ignore */
       }
@@ -900,6 +971,8 @@ const App = () => {
 
     setIsLoggedIn(false);
     setApplicationState({});
+    setNetworkInfo(null);
+    clearStatusCaches();
     setApplicationOptions({});
     setLogin({ error: undefined, pending: false });
     setConnection({ attempt: 0, since: null, status: 'online' });

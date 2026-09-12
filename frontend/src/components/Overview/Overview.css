@@ -83,6 +83,26 @@
   display: flex;
   align-items: center;
   gap: 5px;
+  flex-shrink: 0;
+}
+
+/* Keep live numeric values from reflowing every item to their right. These
+   slots are deliberately wide enough for their normal labels; the strip's
+   existing horizontal scrolling handles genuinely narrow viewports. */
+.status-strip-item--shares { width: 250px; }
+.status-strip-item--queue { width: 90px; }
+.status-strip-item--rates { width: 174px; }
+.status-strip-item--disk { width: 210px; }
+.status-strip-item--system { width: 130px; }
+
+.status-strip-item--shares .status-strip-text,
+.status-strip-item--queue .status-strip-text,
+.status-strip-item--disk .status-strip-text,
+.status-strip-item--system .status-strip-text {
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .status-strip-sep {
@@ -150,7 +170,7 @@
 .status-strip-speed {
   display: inline-block;
   font-variant-numeric: tabular-nums;
-  min-width: 68px;
+  width: 68px;
   text-align: right;
 }
 

@@ -58,6 +58,23 @@ import React, { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { toast } from 'react-toastify';
 
+const readCachedStatus = (key, fallback) => {
+  try {
+    const value = sessionStorage.getItem(key);
+    return value === null ? fallback : JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
+
+const cacheStatus = (key, value) => {
+  try {
+    sessionStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* Status caching is only a rendering optimisation. */
+  }
+};
+
 const StatusStrip = ({
   brand,
   disk,
@@ -74,15 +91,26 @@ const StatusStrip = ({
   upnp,
   user,
 }) => {
+  const cachedProfile = readCachedStatus('resonance-status-profile', {});
   const [rescanning, setRescanning] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
-  const [presence, setPresence] = useState('Online');
-  const [description, setDescription] = useState('');
-  const [descDraft, setDescDraft] = useState('');
+  const [presence, setPresence] = useState(
+    () => cachedProfile.presence ?? 'Online',
+  );
+  const [description, setDescription] = useState(
+    () => cachedProfile.description ?? '',
+  );
+  const [descDraft, setDescDraft] = useState(
+    () => cachedProfile.description ?? '',
+  );
   const [saving, setSaving] = useState(false);
-  const [portStatus, setPortStatus] = useState(null);
-  const [hasPicture, setHasPicture] = useState(false);
+  const [portStatus, setPortStatus] = useState(() =>
+    readCachedStatus('resonance-status-port', null),
+  );
+  const [hasPicture, setHasPicture] = useState(() =>
+    Boolean(cachedProfile.hasPicture),
+  );
   // bumped after every picture change to bust the browser cache of the fixed picture URL
   const [pictureVersion, setPictureVersion] = useState(0);
   const [uploadingPicture, setUploadingPicture] = useState(false);
@@ -139,6 +167,11 @@ const StatusStrip = ({
     session
       .getStatus()
       .then(({ description: d, hasPicture: hp, presence: p }) => {
+        cacheStatus('resonance-status-profile', {
+          description: d ?? '',
+          hasPicture: Boolean(hp),
+          presence: p ?? 'Online',
+        });
         setPresence(p ?? 'Online');
         setDescription(d ?? '');
         setDescDraft(d ?? '');
@@ -146,6 +179,14 @@ const StatusStrip = ({
       })
       .catch(() => {});
   }, [isLoggedIn]);
+
+  useEffect(() => {
+    cacheStatus('resonance-status-profile', {
+      description,
+      hasPicture,
+      presence,
+    });
+  }, [description, hasPicture, presence]);
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -166,10 +207,13 @@ const StatusStrip = ({
   }, [menuOpen]);
 
   const runPortCheck = async () => {
-    setPortStatus('checking');
+    // Keep the last-known result visible during the automatic refresh. On a
+    // first visit there is no cached result, so show the checking state.
+    if (!portStatus) setPortStatus('checking');
     try {
       const result = await serverAPI.checkPort();
       setPortStatus(result);
+      cacheStatus('resonance-status-port', result);
     } catch {
       setPortStatus('error');
     }
@@ -177,10 +221,12 @@ const StatusStrip = ({
 
   // Check the listening port once the client is logged in to the network.
   useEffect(() => {
-    if (!server?.isLoggedIn) {
+    if (server && !server.isLoggedIn) {
       setPortStatus(null);
       return;
     }
+
+    if (!server) return;
 
     runPortCheck();
   }, [server?.isLoggedIn]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -634,7 +680,7 @@ const StatusStrip = ({
 
       <div className="status-strip-sep" />
 
-      <div className="status-strip-item">
+      <div className="status-strip-item status-strip-item--shares">
         <FolderOpen
           className="status-icon"
           size={13}
@@ -669,7 +715,7 @@ const StatusStrip = ({
 
       <div className="status-strip-sep" />
 
-      <div className="status-strip-item">
+      <div className="status-strip-item status-strip-item--queue">
         <span className="status-strip-text">
           {queuedCount > 0 ? `${queuedCount} queued` : 'Queue empty'}
         </span>
@@ -677,7 +723,7 @@ const StatusStrip = ({
 
       <div className="status-strip-sep" />
 
-      <div className="status-strip-item">
+      <div className="status-strip-item status-strip-item--rates">
         <ArrowDown
           className="status-icon"
           size={12}
@@ -701,7 +747,7 @@ const StatusStrip = ({
         <>
           <div className="status-strip-sep" />
           <div
-            className="status-strip-item"
+            className="status-strip-item status-strip-item--disk"
             title={
               disk.downloadsBlocked
                 ? 'Downloads paused — free space is below the safe limit'
@@ -728,7 +774,7 @@ const StatusStrip = ({
         <>
           <div className="status-strip-sep" />
           <div
-            className="status-strip-item"
+            className="status-strip-item status-strip-item--system"
             title={`Host: ${formatBytes(system.hostMemoryUsedBytes)} of ${formatBytes(system.hostMemoryTotalBytes)} memory in use`}
           >
             <Cpu
