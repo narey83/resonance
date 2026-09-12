@@ -29,6 +29,9 @@
 
 import api from './api';
 
+const LOG_DEDUPE_MS = 60_000;
+const recentLogs = new Map();
+
 export const postLog = (level, ...args) => {
   const message = args
     .map((a) => {
@@ -44,6 +47,26 @@ export const postLog = (level, ...args) => {
       return String(a);
     })
     .join(' ');
+
+  // React can emit the same warning on every render. Forwarding each copy to
+  // the backend turns one UI bug into a high-volume database write storm, so
+  // send at most one identical entry per minute. Keep the map bounded while
+  // pruning expired entries.
+  const now = Date.now();
+  const fingerprint = `${level}|${message}`;
+  const lastSent = recentLogs.get(fingerprint);
+  if (lastSent != null && now - lastSent < LOG_DEDUPE_MS) return;
+
+  recentLogs.set(fingerprint, now);
+  if (recentLogs.size > 200) {
+    for (const [key, timestamp] of recentLogs) {
+      if (now - timestamp >= LOG_DEDUPE_MS) recentLogs.delete(key);
+    }
+
+    while (recentLogs.size > 200) {
+      recentLogs.delete(recentLogs.keys().next().value);
+    }
+  }
 
   api.post('/logs', { level, message }).catch(() => {});
 };
