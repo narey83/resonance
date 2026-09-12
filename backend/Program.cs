@@ -1535,6 +1535,21 @@ namespace resonance
                 await context.Response.WriteAsJsonAsync(context.Features.Get<IExceptionHandlerPathFeature>().Error.Message);
             }));
 
+            // A client that stalls while uploading a request body is a bad request, not an
+            // application fault. Handle it before ExceptionHandlerMiddleware sees it so routine
+            // slow-client disconnects don't become noisy unhandled-exception errors.
+            app.Use(async (context, next) =>
+            {
+                try
+                {
+                    await next(context);
+                }
+                catch (Microsoft.AspNetCore.Http.BadHttpRequestException ex)
+                {
+                    context.Response.StatusCode = ex.StatusCode;
+                }
+            });
+
             // Rewrite Connection.RemoteIpAddress from the proxy's X-Forwarded-For before anything reads it
             // (auth, rate limiting, session recording, request logging). Must run ahead of UseAuthentication.
             app.UseForwardedHeaders();
