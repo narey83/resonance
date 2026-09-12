@@ -18,12 +18,20 @@ fi
 # dotnet watch hot reload silently no-ops on rude edits, so always restart
 docker restart resonance-backend >/dev/null
 
-for i in $(seq 1 20); do
-  # Via the inner caddy; the backend container doesn't publish 5030 to the
-  # host. Must be the LAN address, not localhost: the port is published to
-  # 192.168.0.254:8930 only, so localhost always failed and this loop reported
-  # a healthy backend as dead.
-  code=$(curl -s -o /dev/null -w '%{http_code}' http://192.168.0.254:8930/api/v0/application || true)
+# Ask the container itself rather than going through a proxy or a published port.
+# This used to poll http://192.168.0.254:8930: the inner caddy does listen on :8930,
+# but that container publishes only 192.168.0.254:8443 to the host, so nothing ever
+# answers there and the loop always timed out and reported a healthy backend as dead.
+# The backend's own 5030 isn't on the host either -- it publishes only 50300, and its
+# other addresses are on resonance_backend_net / the local_lan_net macvlan
+# (192.168.0.33). docker exec sidesteps all of that. 401 counts as up: the app is
+# serving and authenticating, we just aren't sending credentials.
+#
+# dotnet watch runs with --no-hot-reload, so a restart is a full restore+build+start;
+# that measured ~110s on this box, hence the generous ceiling.
+for i in $(seq 1 40); do
+  code=$(docker exec resonance-backend \
+    curl -s -o /dev/null -w '%{http_code}' http://localhost:5030/api/v0/application 2>/dev/null || true)
   if [ "$code" = "200" ] || [ "$code" = "401" ]; then
     echo "backend up ($code) after ~$((i * 6))s"
     exit 0

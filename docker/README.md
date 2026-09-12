@@ -28,7 +28,9 @@ docker compose logs -f backend
 ```
 
 To manage it from Dockge, copy this directory to
-`/home/narey/containers/resonance/` and it appears as a stack.
+`/mnt/data/containers/resonance/` and it appears as a stack. (Stacks moved there
+from `/home/narey/containers/`; that is where the server's live copy of this
+compose file sits.)
 
 ## Cutover from systemd
 
