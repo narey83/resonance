@@ -94,6 +94,24 @@ const REFRESH_OPTIONS = [
   { label: '15m', ms: 900_000 },
 ];
 
+const runWithConcurrency = async (tasks, limit) => {
+  const results = Array.from({ length: tasks.length });
+  let next = 0;
+
+  const worker = async () => {
+    while (next < tasks.length) {
+      const index = next;
+      next += 1;
+      results[index] = await tasks[index]();
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, tasks.length) }, worker),
+  );
+  return results;
+};
+
 const getHistogramInterval = (hours) => {
   if (hours <= 1) return 1;
   if (hours <= 6) return 5;
@@ -256,6 +274,7 @@ const AdminOverview = () => {
   // Analytics — reload when range or refresh interval changes
   useEffect(() => {
     let cancelled = false;
+    let refreshTimer;
     setAnalyticsLoading(true);
     const end = new Date().toISOString();
     const start = new Date(Date.now() - range * 60 * 60 * 1_000).toISOString();
@@ -284,56 +303,73 @@ const AdminOverview = () => {
           queue,
           peerData,
           socialData,
-        ] = await Promise.all([
-          reportsAPI.getSummary({ end, start }).catch(() => null),
-          reportsAPI
-            .getHistogram({
-              end,
-              interval,
-              start,
-            })
-            .catch(() => null),
-          reportsAPI
-            .getLeaderboard({
-              direction: 'download',
-              end,
-              limit: 10,
-              sortBy: 'TotalBytes',
-              start,
-            })
-            .catch(() => null),
-          reportsAPI
-            .getLeaderboard({
-              direction: 'upload',
-              end,
-              limit: 10,
-              sortBy: 'TotalBytes',
-              start,
-            })
-            .catch(() => null),
-          reportsAPI
-            .getDirectories({ end, limit: 10, start })
-            .catch(() => null),
-          reportsAPI
-            .getExceptionsPareto({
-              direction: 'download',
-              end,
-              start,
-            })
-            .catch(() => null),
-          reportsAPI
-            .getExceptionsPareto({ direction: 'upload', end, start })
-            .catch(() => null),
-          reportsAPI.getTopFiles({ end, limit: 10, start }).catch(() => null),
-          reportsAPI
-            .getSummary({ end: prevEnd, start: prevStart })
-            .catch(() => null),
-          reportsAPI.getGeography({ end, limit: 8, start }).catch(() => null),
-          reportsAPI.getRetryFunnel({ end, start }).catch(() => null),
-          reportsAPI.getQueueWait({ end, start }).catch(() => null),
-          reportsAPI.getPeerRetention({ end, start }).catch(() => null),
-          reportsAPI.getSocialActivity({ end, start }).catch(() => null),
-        ]);
+        ] = await runWithConcurrency(
+          [
+            () => reportsAPI.getSummary({ end, start }).catch(() => null),
+            () =>
+              reportsAPI
+                .getHistogram({
+                  end,
+                  interval,
+                  start,
+                })
+                .catch(() => null),
+            () =>
+              reportsAPI
+                .getLeaderboard({
+                  direction: 'download',
+                  end,
+                  limit: 10,
+                  sortBy: 'TotalBytes',
+                  start,
+                })
+                .catch(() => null),
+            () =>
+              reportsAPI
+                .getLeaderboard({
+                  direction: 'upload',
+                  end,
+                  limit: 10,
+                  sortBy: 'TotalBytes',
+                  start,
+                })
+                .catch(() => null),
+            () =>
+              reportsAPI
+                .getDirectories({ end, limit: 10, start })
+                .catch(() => null),
+            () =>
+              reportsAPI
+                .getExceptionsPareto({
+                  direction: 'download',
+                  end,
+                  start,
+                })
+                .catch(() => null),
+            () =>
+              reportsAPI
+                .getExceptionsPareto({ direction: 'upload', end, start })
+                .catch(() => null),
+            () =>
+              reportsAPI
+                .getTopFiles({ end, limit: 10, start })
+                .catch(() => null),
+            () =>
+              reportsAPI
+                .getSummary({ end: prevEnd, start: prevStart })
+                .catch(() => null),
+            () =>
+              reportsAPI
+                .getGeography({ end, limit: 8, start })
+                .catch(() => null),
+            () => reportsAPI.getRetryFunnel({ end, start }).catch(() => null),
+            () => reportsAPI.getQueueWait({ end, start }).catch(() => null),
+            () => reportsAPI.getPeerRetention({ end, start }).catch(() => null),
+            () =>
+              reportsAPI.getSocialActivity({ end, start }).catch(() => null),
+          ],
+          2,
+        );
         if (cancelled) return;
         setSummary(sum);
         setHistogram(hist);
@@ -354,20 +390,21 @@ const AdminOverview = () => {
         if (!cancelled) {
           setAnalyticsLoading(false);
           setTransitioning(false);
+          if (refreshMs > 0) {
+            refreshTimer = setTimeout(
+              () => setAnalyticsRefresh((c) => c + 1),
+              refreshMs,
+            );
+          }
         }
       }
     };
 
     load();
 
-    const refreshId =
-      refreshMs > 0
-        ? setInterval(() => setAnalyticsRefresh((c) => c + 1), refreshMs)
-        : undefined;
-
     return () => {
       cancelled = true;
-      if (refreshId) clearInterval(refreshId);
+      clearTimeout(refreshTimer);
     };
   }, [analyticsRefresh, range, refreshMs]);
 

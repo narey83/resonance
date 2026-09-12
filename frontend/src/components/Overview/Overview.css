@@ -89,11 +89,11 @@
 /* Keep live numeric values from reflowing every item to their right. These
    slots are deliberately wide enough for their normal labels; the strip's
    existing horizontal scrolling handles genuinely narrow viewports. */
-.status-strip-item--shares { width: 250px; }
-.status-strip-item--queue { width: 90px; }
-.status-strip-item--rates { width: 174px; }
-.status-strip-item--disk { width: 210px; }
-.status-strip-item--system { width: 130px; }
+.status-strip-item--shares { width: 205px; }
+.status-strip-item--queue { width: 78px; }
+.status-strip-item--rates { width: 156px; }
+.status-strip-item--disk { width: 170px; }
+.status-strip-item--system { width: 112px; }
 
 .status-strip-item--shares .status-strip-text,
 .status-strip-item--queue .status-strip-text,
@@ -170,7 +170,7 @@
 .status-strip-speed {
   display: inline-block;
   font-variant-numeric: tabular-nums;
-  width: 68px;
+  width: 58px;
   text-align: right;
 }
 
