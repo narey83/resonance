@@ -28,7 +28,7 @@
 // </copyright>
 
 import useDebounce from '../../../hooks/useDebounce';
-import { getAlbumPage } from '../../../lib/musicLibrary';
+import { albumKey, getAlbumPage } from '../../../lib/musicLibrary';
 import { usePagedList } from '../../../lib/usePagedList';
 import { formatIndexedAt } from '../../../lib/util';
 import AlbumArt from './AlbumArt';
@@ -268,7 +268,7 @@ const AlbumsView = ({
                 const album = sorted[vRow.index];
                 return (
                   <div
-                    key={`${album.album}-${album.artist}`}
+                    key={albumKey(album)}
                     style={{
                       position: 'absolute',
                       top: 0,
@@ -320,7 +320,7 @@ const AlbumsView = ({
                     {tileRows[vRow.index].map((album) => (
                       <AlbumCard
                         album={album}
-                        key={`${album.album}-${album.artist}`}
+                        key={albumKey(album)}
                         onAlbum={onAlbum}
                         onContextMenu={onAlbumContextMenu}
                         onPlay={onPlayAlbum}

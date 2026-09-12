@@ -809,11 +809,41 @@ namespace resonance.MusicLibrary
         {
             using var conn = OpenConnection();
             var hasFilter = !string.IsNullOrWhiteSpace(artistFilter);
-            var where = hasFilter
-                ? $"WHERE {IEq("COALESCE(NULLIF(album_artist,''), artist)")} @artist"
+
+            // Filtered inside the CTE so the album_artist backfill below only considers
+            // tracks that survive the filter, matching the pre-CTE behaviour.
+            var whereInner = hasFilter
+                ? $" WHERE {IEq("COALESCE(NULLIF(album_artist,''), artist)")} @artist"
                 : string.Empty;
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $@"
+                -- A folder whose tracks disagree about album_artist (set on some, blank on
+                -- others) used to split into two groups: the tagged half keyed on the artist
+                -- name, the untagged half on the directory. Both then projected the same
+                -- album/artist/directory, so they rendered as two identical albums. Fill a
+                -- blank album_artist from its siblings in the same (album, directory) before
+                -- grouping so those halves land in one group.
+                --
+                -- Only when the siblings agree, hence the MIN = MAX guard: a compilation
+                -- folder can hold one album name over dozens of different album_artists, and
+                -- backfilling those blanks with an arbitrary one (MAX picks whatever sorts
+                -- last -- in this library, once a URL) would sweep every untagged track into
+                -- one unrelated artist's album. Where the siblings disagree, MIN <> MAX
+                -- leaves the value NULL and the blanks keep grouping by directory as before.
+                WITH t AS (
+                    SELECT *,
+                           COALESCE(
+                               NULLIF(album_artist,''),
+                               CASE WHEN MIN(NULLIF(album_artist,'')) OVER (
+                                            PARTITION BY {GrpBy("album")}, directory)
+                                       = MAX(NULLIF(album_artist,'')) OVER (
+                                            PARTITION BY {GrpBy("album")}, directory)
+                                    THEN MAX(NULLIF(album_artist,'')) OVER (
+                                            PARTITION BY {GrpBy("album")}, directory)
+                               END
+                           ) AS eff_album_artist
+                    FROM {T}{whereInner}
+                )
                 SELECT MIN(album) AS album,
                        CASE WHEN MAX(NULLIF(album_artist,'')) IS NOT NULL THEN MAX(NULLIF(album_artist,''))
                             WHEN COUNT(DISTINCT artist) > 1              THEN 'Various Artists'
@@ -826,8 +856,8 @@ namespace resonance.MusicLibrary
                        MAX(has_artwork)   AS has_art,
                        MIN(indexed_at)    AS indexed_at,
                        MIN(directory)     AS directory
-                FROM {T} {where}
-                GROUP BY {GrpBy("album")}, COALESCE(NULLIF(album_artist,''), directory)
+                FROM t
+                GROUP BY {GrpBy("album")}, COALESCE(eff_album_artist, directory)
                 HAVING MIN(album) IS NOT NULL AND MIN(album) != ''
                 ORDER BY {OrdBy("album")}";
             if (hasFilter)
@@ -892,6 +922,33 @@ namespace resonance.MusicLibrary
             using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $@"
+                -- A folder whose tracks disagree about album_artist (set on some, blank on
+                -- others) used to split into two groups: the tagged half keyed on the artist
+                -- name, the untagged half on the directory. Both then projected the same
+                -- album/artist/directory, so they rendered as two identical albums. Fill a
+                -- blank album_artist from its siblings in the same (album, directory) before
+                -- grouping so those halves land in one group.
+                --
+                -- Only when the siblings agree, hence the MIN = MAX guard: a compilation
+                -- folder can hold one album name over dozens of different album_artists, and
+                -- backfilling those blanks with an arbitrary one (MAX picks whatever sorts
+                -- last -- in this library, once a URL) would sweep every untagged track into
+                -- one unrelated artist's album. Where the siblings disagree, MIN <> MAX
+                -- leaves the value NULL and the blanks keep grouping by directory as before.
+                WITH t AS (
+                    SELECT *,
+                           COALESCE(
+                               NULLIF(album_artist,''),
+                               CASE WHEN MIN(NULLIF(album_artist,'')) OVER (
+                                            PARTITION BY {GrpBy("album")}, directory)
+                                       = MAX(NULLIF(album_artist,'')) OVER (
+                                            PARTITION BY {GrpBy("album")}, directory)
+                                    THEN MAX(NULLIF(album_artist,'')) OVER (
+                                            PARTITION BY {GrpBy("album")}, directory)
+                               END
+                           ) AS eff_album_artist
+                    FROM {T}
+                )
                 SELECT MIN(album) AS album,
                        CASE WHEN MAX(NULLIF(album_artist,'')) IS NOT NULL THEN MAX(NULLIF(album_artist,''))
                             WHEN COUNT(DISTINCT artist) > 1              THEN 'Various Artists'
@@ -904,8 +961,8 @@ namespace resonance.MusicLibrary
                        MAX(has_artwork) AS has_art,
                        MIN(indexed_at)  AS indexed_at,
                        MIN(directory)   AS directory
-                FROM {T}
-                GROUP BY {GrpBy("album")}, COALESCE(NULLIF(album_artist,''), directory)
+                FROM t
+                GROUP BY {GrpBy("album")}, COALESCE(eff_album_artist, directory)
                 HAVING MIN(album) IS NOT NULL AND MIN(album) != ''
                 ORDER BY MAX(indexed_at) DESC
                 LIMIT @limit";

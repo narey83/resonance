@@ -79,6 +79,18 @@ export const getIssueTracks = async (issue, limit = 500_000) => {
   return data;
 };
 
+// A React key for an album row. The server groups albums by (album, album_artist ?? directory), so
+// one album whose tracks disagree about album_artist splits into two rows that share album, artist
+// AND directory — identical keys, which React reports as duplicate children. albumArtist is what
+// actually differs between those two rows (set on one, absent on the other), so it belongs in the key.
+export const albumKey = (album) =>
+  [
+    album.album ?? '',
+    album.artist ?? '',
+    album.albumArtist ?? '',
+    album.directory ?? '',
+  ].join('|');
+
 // Omit `limit` for the whole list; supply it for one window (see getAlbumPage).
 export const getAlbums = async (artist, queryParameters = {}) => {
   const data = (

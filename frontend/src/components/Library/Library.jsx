@@ -37,6 +37,7 @@ import useResizablePanel from '../../hooks/useResizablePanel';
 import { createMixtapesHubConnection } from '../../lib/hubFactory';
 import * as mixtapesAPI from '../../lib/mixtapes';
 import {
+  albumKey,
   ALL_METRICS,
   analyzeFolder,
   analyzeTrack,
@@ -2477,7 +2478,7 @@ const HomeView = ({
             {recentlyAdded.map((album) => (
               <button
                 className="jb-home-album-card"
-                key={`${album.album}|${album.artist}`}
+                key={albumKey(album)}
                 onClick={() => onNavigate(VIEWS.ALBUMS, { selected: album })}
                 onContextMenu={
                   onAlbumContextMenu
