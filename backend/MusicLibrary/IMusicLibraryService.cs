@@ -69,6 +69,15 @@ namespace resonance.MusicLibrary
         /// <returns></returns>
         MusicTrack GetTrack(string path);
 
+        /// <summary>
+        ///     Re-reads one file's tags and fingerprint into the index immediately, so a change
+        ///     made to that file (an analysis writing BPM and key) is visible without waiting for
+        ///     the debounced — and, during an analysis run, deferred — sync.
+        /// </summary>
+        /// <param name="path">The absolute path of the file to re-index.</param>
+        /// <returns>A value indicating whether the row was refreshed.</returns>
+        bool RefreshTrack(string path);
+
         void TriggerSync();
 
         /// <summary>Clears all indexed tracks and triggers an immediate full re-index from disk.</summary>

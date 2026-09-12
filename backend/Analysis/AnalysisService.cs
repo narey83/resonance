@@ -645,6 +645,17 @@ namespace resonance.Analysis
                                 || result.Waveform != null || result.Loudness != null;
                             if (produced)
                             {
+                                // Re-index this one file before announcing anything. The tag write
+                                // above changed its size and mtime, so the indexed row now carries
+                                // both the pre-analysis BPM/key and a stale fingerprint — and the
+                                // list's loudness and waveform columns join analysis.track_analysis
+                                // on file_size, so they read as missing too. A sync would put all of
+                                // that right, but it is debounced and deferred for as long as an
+                                // analysis queue is registered (which is the whole of this scan),
+                                // leaving every client that refetches on the broadcast below reading
+                                // the row back exactly as it was before the analysis ran.
+                                MusicLibrary?.RefreshTrack(path);
+
                                 // Do not broadcast on every track — a full scan can touch thousands
                                 // of them, and one update per track would flood every
                                 // connected client with a refetch. Throttled to at most once a

@@ -27,12 +27,13 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { useLibraryActivity } from '../../../context/LibraryActivityContext';
 import { usePlayer } from '../../../context/PlayerContext';
 import { getTracks } from '../../../lib/musicLibrary';
 import { formatSeconds } from '../../../lib/util';
 import TrackTable from './TrackTable';
 import { ChevronLeft, Play, Shuffle } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const toQueue = (track) => ({
   album: track.album,
@@ -56,9 +57,24 @@ const AlbumDetail = ({
   const [loading, setLoading] = useState(true);
   const [tracks, setTracks] = useState([]);
 
+  // An album's rows carry the same analysis-derived columns as every other track list, so this
+  // reloads when the library reports a change. Without it an analysis finishing with the album
+  // open left its key, BPM and LUFS cells empty until the view was navigated away from and back.
+  const libraryRevision = useLibraryActivity()?.libraryRevision ?? 0;
+
+  // Which album the rows on screen belong to. A reload for a *new* album has nothing worth
+  // showing and puts the table into its loading state; a reload of the same album must not,
+  // because that state hides every row — and a scan broadcasts about once a second, which
+  // would blank the list over and over while it ran.
+  const shownAlbum = useRef(null);
+  const albumId = `${album.album}\u0000${album.artist}\u0000${album.directory}`;
+
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    if (shownAlbum.current !== albumId) {
+      setLoading(true);
+    }
+
     const load = async () => {
       try {
         const result = await getTracks({
@@ -69,6 +85,7 @@ const AlbumDetail = ({
           limit: 5_000,
         });
         if (!cancelled) {
+          shownAlbum.current = albumId;
           const sorted = [...(result.tracks ?? [])].sort((a, b) => {
             if (a.discNumber !== b.discNumber)
               return (a.discNumber ?? 1) - (b.discNumber ?? 1);
@@ -86,7 +103,7 @@ const AlbumDetail = ({
     return () => {
       cancelled = true;
     };
-  }, [album.album, album.artist, album.directory]);
+  }, [albumId, album.album, album.artist, album.directory, libraryRevision]);
 
   const handlePlay = () => {
     if (tracks.length) playQueue(tracks.map(toQueue), 0);

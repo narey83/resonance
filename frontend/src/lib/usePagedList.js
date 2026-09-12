@@ -150,24 +150,46 @@ export const usePagedList = (
   // broadcasts repeatedly re-reads the same rows each time. Debounce it if that ever shows up
   // in a profile — one query against a cached list is cheap next to losing your place.
   useEffect(() => {
-    if (!enabled || refreshToken === 0 || busyRef.current) return;
+    if (!enabled || refreshToken === 0) return undefined;
 
-    const count = itemsRef.current.length;
-    if (count === 0) return;
+    let timer = null;
+    let cancelled = false;
 
-    const generation = generationRef.current;
-    (async () => {
+    const refresh = async () => {
+      if (cancelled) return;
+
+      // Waits for an in-flight fetch rather than giving up on the update. A scan broadcasts at
+      // most once a second and its last broadcast — the one carrying the final track's key, BPM
+      // and loudness — is as likely to land during a fetch as anywhere else; dropping that one
+      // left the list stale until the view was remounted. Waiting also covers a broadcast that
+      // arrives before the first page has landed, which has nothing to refresh yet.
+      if (busyRef.current) {
+        timer = setTimeout(refresh, 250);
+        return;
+      }
+
+      const count = itemsRef.current.length;
+      if (count === 0) return;
+
+      const generation = generationRef.current;
       try {
         const page = await fetchRef.current({
           ...JSON.parse(key),
           limit: count,
           offset: 0,
         });
-        apply(generation, page, false);
+        if (!cancelled) apply(generation, page, false);
       } catch {
         // keep showing what's there; the next update or query change retries
       }
-    })();
+    };
+
+    refresh();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
     // key deliberately absent: a query change already refetches through the effect above, and
     // listing it here would fire this one redundantly alongside it.
     // eslint-disable-next-line react-hooks/exhaustive-deps

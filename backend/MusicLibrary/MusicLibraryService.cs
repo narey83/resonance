@@ -226,6 +226,45 @@ namespace resonance.MusicLibrary
 
         public MusicTrack GetTrack(string path) => Repository.GetByPath(path);
 
+        /// <summary>
+        ///     Re-reads one file's tags and fingerprint and writes them straight to the index,
+        ///     without waiting for a sync.
+        /// </summary>
+        /// <remarks>
+        ///     Analysis writes BPM and key into the file's tags, which also changes its size and
+        ///     mtime. Until the index catches up the row keeps the old tags, and — because the
+        ///     loudness/waveform columns join analysis.track_analysis on file_size — the metrics
+        ///     that were just measured read as missing. A sync would fix both, but it is debounced
+        ///     and, worse, deferred entirely while an analysis queue is registered, so the whole
+        ///     scan can finish before any of its results become visible. One file, one tag read.
+        /// </remarks>
+        /// <param name="path">The absolute path of the file to re-index.</param>
+        /// <returns>A value indicating whether the row was refreshed.</returns>
+        public bool RefreshTrack(string path)
+        {
+            if (!IsLibraryPath(path))
+            {
+                return false;
+            }
+
+            try
+            {
+                var info = new FileInfo(path);
+                if (!info.Exists)
+                {
+                    return false;
+                }
+
+                Repository.Upsert(ReadTrack(info.FullName, info.Length, info.LastWriteTimeUtc.Ticks));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Debug("Could not refresh library row for '{Path}': {Error}", path, ex.Message);
+                return false;
+            }
+        }
+
         public (int Total, double TotalDuration) GetStats() => Repository.GetStats();
 
         public MusicAnalysisStats GetAnalysisStats() => Repository.GetAnalysisStats();

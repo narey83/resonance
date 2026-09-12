@@ -2106,6 +2106,7 @@ const SearchView = ({
   // Genres, years, folders and mixtapes are small enough to keep whole and filter here.
   const debouncedQuery = useDebounce(query, 250);
   const searchEnabled = Boolean(debouncedQuery);
+  const libraryRevision = useLibraryActivity()?.libraryRevision ?? 0;
 
   const {
     items: tracks,
@@ -2116,7 +2117,7 @@ const SearchView = ({
   } = usePagedList(
     getTrackPage,
     { search: debouncedQuery || undefined, sort: 'title' },
-    { enabled: searchEnabled, pageSize: 20 },
+    { enabled: searchEnabled, pageSize: 20, refreshToken: libraryRevision },
   );
 
   const { items: matchedArtists } = usePagedList(
@@ -2663,6 +2664,14 @@ const IssuesView = ({
   const [loading, setLoading] = useState(false);
   const { playQueue } = usePlayer();
 
+  // Analysing from this view is the whole point of it — the missing-key and missing-BPM
+  // categories are lists of tracks to analyse — so it has to reflect a finished analysis
+  // rather than keep showing the rows as they were when the category was opened.
+  const libraryRevision = useLibraryActivity()?.libraryRevision ?? 0;
+
+  // Which category the rows on screen belong to — see the load effect below.
+  const shownIssue = useRef(null);
+
   // This list is fetched whole and jumped through client-side, so the rail always applies —
   // said explicitly so a disabled rail left behind by another view doesn't persist here.
   useEffect(() => {
@@ -2692,12 +2701,23 @@ const IssuesView = ({
 
   useEffect(() => {
     let cancelled = false;
+
+    // Switching category has nothing worth showing and blanks the table; reloading the same
+    // one after a library update must not, or the list empties itself once a second for as
+    // long as a scan runs.
+    const changedCategory = shownIssue.current !== activeIssue;
     const load = async () => {
-      setLoading(true);
-      setTracks([]);
+      if (changedCategory) {
+        setLoading(true);
+        setTracks([]);
+      }
+
       try {
         const result = await getIssueTracks(activeIssue);
-        if (!cancelled) setTracks(result.tracks ?? []);
+        if (!cancelled) {
+          shownIssue.current = activeIssue;
+          setTracks(result.tracks ?? []);
+        }
       } catch {
         // ignore
       } finally {
@@ -2709,7 +2729,7 @@ const IssuesView = ({
     return () => {
       cancelled = true;
     };
-  }, [activeIssue]);
+  }, [activeIssue, libraryRevision]);
 
   const activeType = ISSUE_TYPES.find((t) => t.id === activeIssue);
 
@@ -3035,11 +3055,17 @@ const Library = () => {
   }, [reloadMixtapes]);
 
   // Loved view fetches only its tracks (resolved server-side) rather than the whole library.
-  // Refetch each time the view opens so newly-loved tracks appear.
+  // Refetch each time the view opens so newly-loved tracks appear, and whenever the library
+  // reports a change so an analysis finishing fills in these rows' key, BPM and LUFS too.
   useEffect(() => {
     if (activeView === VIEWS.LOVED && !loadingLoved) {
       const loadLoved = async () => {
-        setLoadingLoved(true);
+        // Only when there is nothing on screen yet: the spinner replaces the rows, and a
+        // library update during a scan would otherwise flash it repeatedly.
+        if (lovedTracks.length === 0) {
+          setLoadingLoved(true);
+        }
+
         try {
           const { getLovedTracks } = await import('../../lib/musicLibrary');
           setLovedTracks(await getLovedTracks());
@@ -3053,7 +3079,7 @@ const Library = () => {
       loadLoved();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeView]);
+  }, [activeView, libraryRevision]);
 
   useEffect(() => {
     if (activeView === VIEWS.GENRES && genres.length === 0 && !loadingGenres) {

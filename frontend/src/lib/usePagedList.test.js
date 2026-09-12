@@ -144,6 +144,63 @@ describe('usePagedList', () => {
     expect(calls).toHaveLength(before);
   });
 
+  // A library update that landed while a fetch was in flight used to be dropped on the spot,
+  // with nothing to retry it — so the broadcast carrying the last analysed track's key, BPM and
+  // loudness left the list showing the pre-analysis rows until the view was remounted.
+  it('still refetches when the refresh token arrives mid-fetch', async () => {
+    expect.assertions(2);
+    const seen = [];
+    const Probe = makeProbe(seen);
+    const calls = [];
+    let label = 'stale';
+    let releaseFirst;
+    const firstFetch = new Promise((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    // Only the first call is gated; every later one resolves straight away
+    // (Promise.resolve(undefined)), which keeps the gating out of the test's own control flow.
+    const gates = [firstFetch];
+
+    const fetchPage = async (query) => {
+      calls.push(query);
+      const tag = label;
+      await Promise.resolve(gates[calls.length - 1]);
+      return {
+        items: Array.from({ length: query.limit }, (_, index) => ({
+          label: `${tag}${query.offset + index}`,
+        })),
+        total: TOTAL,
+      };
+    };
+
+    await act(async () => {
+      ReactDOM.render(
+        React.createElement(Probe, { fetchPage, refreshToken: 0 }),
+        container,
+      );
+    });
+
+    // The analysis finishes while that first page is still on the wire.
+    await act(async () => {
+      ReactDOM.render(
+        React.createElement(Probe, { fetchPage, refreshToken: 1 }),
+        container,
+      );
+    });
+
+    label = 'fresh';
+    await act(async () => {
+      releaseFirst();
+      await new Promise((resolve) => {
+        setTimeout(resolve, 500);
+      });
+    });
+
+    expect(calls).toHaveLength(2);
+    expect(container.textContent).toBe('fresh0,fresh1');
+  });
+
   // Leaving a view and coming back (the library tab switch) remounts the hook with the same
   // query. Without this, it always asks for one page, the list is too short to hold the
   // scroll offset the user left at, and Library.jsx's restore code clamps to the top.
