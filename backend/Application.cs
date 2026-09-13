@@ -410,8 +410,10 @@ namespace resonance
             }
             catch (Exception ex)
             {
+                // Nobody awaits this (see the fire-and-forget call in Configure), so a rethrow only
+                // surfaces as an unobserved task exception. A failed check is routine -- no token on a
+                // private repo, no release cut yet, GitHub unreachable -- and warrants a line, not noise.
                 Log.Warning("Failed to check version: {Message}", ex.Message);
-                throw;
             }
         }
 
