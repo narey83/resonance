@@ -28,7 +28,7 @@
 // </copyright>
 
 import React, { useCallback, useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import * as Application from 'expo-application';
@@ -36,6 +36,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 import { useDeferredFocusEffect } from '../../hooks/useDeferredEffect';
 import { getApplicationState } from '../../api/application';
+import { downloadAndInstallUpdate } from '../../services/appUpdate';
 
 const REPO_URL = 'https://github.com/narey83/resonance';
 const RELEASES_URL = `${REPO_URL}/releases/latest`;
@@ -63,6 +64,7 @@ export default function AboutScreen() {
 
   const [latest, setLatest] = useState<string | null>(null);
   const [serverVersion, setServerVersion] = useState<string | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
 
   useDeferredFocusEffect(useCallback(() => {
     (async () => {
@@ -77,6 +79,21 @@ export default function AboutScreen() {
   }, []));
 
   const updateAvailable = !!latest && compareVersions(latest, VERSION) > 0;
+  const downloading = progress !== null;
+
+  const installUpdate = useCallback(async () => {
+    if (!latest || downloading) return;
+    setProgress(0);
+    const result = await downloadAndInstallUpdate(latest, setProgress);
+    setProgress(null);
+    if (!result.ok) {
+      // The release page is still there to fall back on, so this is a setback, not a dead end.
+      Alert.alert('Update failed', result.error ?? 'The update could not be downloaded.', [
+        { text: 'Open release', onPress: () => Linking.openURL(RELEASES_URL) },
+        { text: 'OK', style: 'cancel' },
+      ]);
+    }
+  }, [latest, downloading]);
 
   return (
     <ScrollView style={s.scroll} contentContainerStyle={s.container}>
@@ -93,15 +110,24 @@ export default function AboutScreen() {
 
       {updateAvailable && (
         <Pressable
-          onPress={() => Linking.openURL(RELEASES_URL)}
+          disabled={downloading}
+          onPress={installUpdate}
           style={({ pressed }) => [s.update, pressed && s.rowPressed]}
         >
-          <Ionicons color={colors.accent} name="arrow-up-circle-outline" size={20} />
+          {downloading ? (
+            <ActivityIndicator color={colors.accent} size="small" />
+          ) : (
+            <Ionicons color={colors.accent} name="arrow-down-circle-outline" size={20} />
+          )}
           <View style={s.rowText}>
             <Text style={s.updateTitle}>Version {latest} is available</Text>
-            <Text style={s.rowSub}>Tap to open the release</Text>
+            <Text style={s.rowSub}>
+              {downloading
+                ? `Downloading… ${Math.round((progress ?? 0) * 100)}%`
+                : 'Tap to download and install'}
+            </Text>
           </View>
-          <Ionicons color={colors.textDim} name="open-outline" size={14} />
+          {!downloading && <Ionicons color={colors.textDim} name="chevron-forward" size={16} />}
         </Pressable>
       )}
 
