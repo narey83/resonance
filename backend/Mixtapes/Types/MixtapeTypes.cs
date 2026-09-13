@@ -40,7 +40,6 @@ namespace resonance.Mixtapes
         long CreatedAt,
         long UpdatedAt,
         bool HasArtwork = false,
-        bool IsSoulseekShared = false,
         IReadOnlyList<MixtapeTrack>? Tracks = null);
 
     public record MixtapeTrack(

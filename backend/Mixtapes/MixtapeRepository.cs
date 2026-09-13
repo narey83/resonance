@@ -77,8 +77,7 @@ namespace resonance.Mixtapes
                     is_published       INTEGER NOT NULL DEFAULT 0,
                     public_token       TEXT,
                     created_at         {(UsePostgres ? "BIGINT" : "INTEGER")} NOT NULL,
-                    updated_at         {(UsePostgres ? "BIGINT" : "INTEGER")} NOT NULL,
-                    is_soulseek_shared INTEGER NOT NULL DEFAULT 0
+                    updated_at         {(UsePostgres ? "BIGINT" : "INTEGER")} NOT NULL
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_mixtapes_token ON {M}(public_token)
                     WHERE public_token IS NOT NULL;
@@ -95,11 +94,15 @@ namespace resonance.Mixtapes
                 CREATE INDEX IF NOT EXISTS idx_mixtape_tracks_mixtape ON {MT}(mixtape_id);";
             cmd.ExecuteNonQuery();
 
-            // Migration: add is_soulseek_shared if not present. IF NOT EXISTS rather than catching
-            // the failure, which the server logs as an ERROR on every startup either way.
-            using var alter = conn.CreateCommand();
-            alter.CommandText = $"ALTER TABLE {M} ADD COLUMN IF NOT EXISTS is_soulseek_shared INTEGER NOT NULL DEFAULT 0";
-            alter.ExecuteNonQuery();
+            // Migration: drop is_soulseek_shared, left over from when mixtapes could be published to
+            // the Soulseek share. IF EXISTS rather than catching the failure, which the server logs as
+            // an ERROR on every startup either way; SQLite has no such form, so it keeps the dead column.
+            if (UsePostgres)
+            {
+                using var alter = conn.CreateCommand();
+                alter.CommandText = $"ALTER TABLE {M} DROP COLUMN IF EXISTS is_soulseek_shared";
+                alter.ExecuteNonQuery();
+            }
         }
 
         // ── Mixtape CRUD ──────────────────────────────────────────────────────
@@ -108,8 +111,8 @@ namespace resonance.Mixtapes
             using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $@"
-                INSERT INTO {M} (id, name, description, is_published, public_token, created_at, updated_at, is_soulseek_shared)
-                VALUES (@id, @name, @desc, @pub, @token, @created, @updated, @slsk)";
+                INSERT INTO {M} (id, name, description, is_published, public_token, created_at, updated_at)
+                VALUES (@id, @name, @desc, @pub, @token, @created, @updated)";
             BindMixtape(cmd, m);
             cmd.ExecuteNonQuery();
         }
@@ -120,7 +123,7 @@ namespace resonance.Mixtapes
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $@"
                 UPDATE {M}
-                SET name=@name, description=@desc, is_published=@pub, public_token=@token, updated_at=@updated, is_soulseek_shared=@slsk
+                SET name=@name, description=@desc, is_published=@pub, public_token=@token, updated_at=@updated
                 WHERE id=@id";
             BindMixtape(cmd, m);
             cmd.ExecuteNonQuery();
@@ -139,7 +142,7 @@ namespace resonance.Mixtapes
         {
             using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = $"SELECT id,name,description,is_published,public_token,created_at,updated_at,is_soulseek_shared FROM {M} ORDER BY created_at DESC";
+            cmd.CommandText = $"SELECT id,name,description,is_published,public_token,created_at,updated_at FROM {M} ORDER BY created_at DESC";
             using var r = cmd.ExecuteReader();
             var list = new List<Mixtape>();
             while (r.Read())
@@ -154,7 +157,7 @@ namespace resonance.Mixtapes
         {
             using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = $"SELECT id,name,description,is_published,public_token,created_at,updated_at,is_soulseek_shared FROM {M} WHERE id=@id";
+            cmd.CommandText = $"SELECT id,name,description,is_published,public_token,created_at,updated_at FROM {M} WHERE id=@id";
             AddParam(cmd, "@id", id);
             using var r = cmd.ExecuteReader();
             return r.Read() ? ReadMixtape(r) : null;
@@ -164,7 +167,7 @@ namespace resonance.Mixtapes
         {
             using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = $"SELECT id,name,description,is_published,public_token,created_at,updated_at,is_soulseek_shared FROM {M} WHERE public_token=@token AND is_published=1";
+            cmd.CommandText = $"SELECT id,name,description,is_published,public_token,created_at,updated_at FROM {M} WHERE public_token=@token AND is_published=1";
             AddParam(cmd, "@token", token);
             using var r = cmd.ExecuteReader();
             return r.Read() ? ReadMixtape(r) : null;
@@ -290,7 +293,6 @@ namespace resonance.Mixtapes
             AddParam(cmd, "@token", (object?)m.PublicToken ?? DBNull.Value);
             AddParam(cmd, "@created", m.CreatedAt);
             AddParam(cmd, "@updated", m.UpdatedAt);
-            AddParam(cmd, "@slsk", m.IsSoulseekShared ? 1 : 0);
         }
 
         private static void BindTrack(DbCommand cmd, MixtapeTrack t)
@@ -312,8 +314,7 @@ namespace resonance.Mixtapes
             r.GetInt64(3) != 0,
             r.IsDBNull(4) ? null : r.GetString(4),
             r.GetInt64(5),
-            r.GetInt64(6),
-            IsSoulseekShared: r.GetInt64(7) != 0);
+            r.GetInt64(6));
 
         private static MixtapeTrack ReadTrack(DbDataReader r) => new(
             r.GetString(0),

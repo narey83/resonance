@@ -1455,28 +1455,6 @@ const MixtapeDetail = ({ mixtape, onBack, onUpdate }) => {
               <Shuffle size={13} /> Shuffle
             </button>
             <button
-              className={`jb-btn${mixtape.isSoulseekShared ? ' jb-btn--active' : ''}`}
-              onClick={async () => {
-                try {
-                  if (mixtape.isSoulseekShared)
-                    await mixtapesAPI.soulseekUnshare(mixtape.id);
-                  else await mixtapesAPI.soulseekShare(mixtape.id);
-                  await onUpdate();
-                } catch {
-                  /* ignore */
-                }
-              }}
-              title={
-                mixtape.isSoulseekShared
-                  ? 'Shared on Soulseek — click to unshare'
-                  : 'Share on Soulseek network'
-              }
-              type="button"
-            >
-              <Share2 size={13} />{' '}
-              {mixtape.isSoulseekShared ? 'On Soulseek' : 'Soulseek'}
-            </button>
-            <button
               className={`jb-btn${mixtape.isPublished ? ' jb-btn--active' : ''}`}
               onClick={handlePublish}
               type="button"

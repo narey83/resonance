@@ -284,37 +284,6 @@ namespace resonance.Mixtapes.API
             return File(Encoding.UTF8.GetBytes(content), "audio/x-mpegurl", fileName);
         }
 
-        [HttpPost("{id}/soulseek")]
-        [ProducesResponseType(typeof(Mixtape), 200)]
-        [ProducesResponseType(404)]
-        public IActionResult SoulseekShare(string id)
-        {
-            try
-            {
-                return Ok(Service.SoulseekShare(id));
-            }
-            catch (KeyNotFoundException)
-            {
-                return NotFound();
-            }
-        }
-
-        [HttpDelete("{id}/soulseek")]
-        [ProducesResponseType(204)]
-        [ProducesResponseType(404)]
-        public IActionResult SoulseekUnshare(string id)
-        {
-            try
-            {
-                Service.SoulseekUnshare(id);
-                return NoContent();
-            }
-            catch (KeyNotFoundException)
-            {
-                return NotFound();
-            }
-        }
-
         private static string SanitizeName(string name)
         {
             var invalid = System.IO.Path.GetInvalidFileNameChars();

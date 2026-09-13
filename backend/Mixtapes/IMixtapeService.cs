@@ -48,9 +48,6 @@ namespace resonance.Mixtapes
         Mixtape Publish(string id);
         void Unpublish(string id);
 
-        Mixtape SoulseekShare(string id);
-        void SoulseekUnshare(string id);
-
         Mixtape? GetByToken(string token);
         IReadOnlyList<MixtapeTrack> GetTracks(string mixtapeId);
 

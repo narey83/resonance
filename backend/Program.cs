@@ -1107,11 +1107,10 @@ namespace resonance
                 sp.GetRequiredService<resonance.MusicLibrary.MusicRepository>(),
                 OptionsAtStartup.Directories.Downloads,
                 System.IO.Path.Combine(DataDirectory, "mixtape-artwork"),
-                sp.GetRequiredService<resonance.Shares.IShareService>(),
                 sp.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<resonance.Mixtapes.API.MixtapesHub>>()));
 
-            // Eagerly construct at startup so the mixtapes managed share is registered
-            // immediately rather than on first use of the mixtapes API
+            // Eagerly construct at startup so mixtape folders are rebuilt in the
+            // background rather than on first use of the mixtapes API
             services.AddHostedService(sp => (resonance.Mixtapes.MixtapeService)sp.GetRequiredService<resonance.Mixtapes.IMixtapeService>());
 
             services.AddSingleton<ISearchService, SearchService>();

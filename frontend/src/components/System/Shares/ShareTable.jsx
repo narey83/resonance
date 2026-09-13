@@ -66,7 +66,7 @@ const ShareTable = ({ onClick, shares }) => (
               </div>
               <div className="shares-row-meta">
                 {share.host && <span>{share.host}</span>}
-                {isManaged && <span>managed (mixtapes)</span>}
+                {isManaged && <span>managed</span>}
                 {!isManaged && share.isLocked && (
                   <span>locked (privileged only)</span>
                 )}

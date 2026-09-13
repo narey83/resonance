@@ -69,7 +69,7 @@ Resonance is a Soulseek file-sharing client with an integrated music library, me
 - **Metadata lookup / auto-tagging** — background enrichment from MusicBrainz, Discogs, Last.fm, and Deezer, with a configurable minimum match score, manual preview, and force-run.
 - **Tag Manager** and a tag-sanitization scanner/consolidator.
 - **Audio Converter** — background conversion job queue backed by a managed, self-updating ffmpeg.
-- **Mixtapes** — create/edit playlists, reorder tracks, custom artwork, publish publicly via a shareable no-login token link, export as `.m3u`, download as `.zip`, push tracks to Soulseek.
+- **Mixtapes** — create/edit playlists, reorder tracks, custom artwork, publish publicly via a shareable no-login token link, export as `.m3u`, download as `.zip`.
 - **yt-dlp ingestion** — search or direct-URL jobs, configurable audio format/quality/output template, duration filters, SponsorBlock stripping, bandwidth/concurrency limits, auto-retry sweeps, post-download conversion, channel/playlist subscriptions with polling, and cookie management (paired with a browser extension that syncs YouTube cookies for age-restricted content).
 
 ## Integrations

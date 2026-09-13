@@ -141,56 +141,6 @@ namespace resonance.Shares
         private IReadOnlyList<IShareRepository> AllRepositories { get; set; }
         private ConcurrentDictionary<string, Share> ManagedShares { get; } = new();
 
-        // Providers that contribute virtual directories (masked→original) to every scan so they persist
-        // across prunes without any files existing on disk. Used by mixtapes instead of symlink folders.
-        private List<Func<IEnumerable<VirtualShareDirectory>>> VirtualShareProviders { get; } = new();
-
-        /// <inheritdoc/>
-        public void RegisterVirtualShareProvider(Func<IEnumerable<VirtualShareDirectory>> provider)
-        {
-            if (provider != null)
-            {
-                VirtualShareProviders.Add(provider);
-            }
-        }
-
-        /// <inheritdoc/>
-        public void ApplyVirtualDirectory(VirtualShareDirectory directory)
-        {
-            if (directory is null)
-            {
-                return;
-            }
-
-            // Stamp with 'now' so a concurrent scan's prune (which removes rows older than its own,
-            // earlier timestamp) cannot delete these; the next scan re-materialises them anyway.
-            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            Scanner.MaterializeVirtualDirectory(directory, timestamp, Local.Repository);
-            ComputeShareStatistics();
-            State.SetValue(state => state with
-            {
-                Directories = Hosts.SelectMany(host => host.Shares).Sum(share => share.Directories ?? 0),
-                Files = Hosts.SelectMany(host => host.Shares).Sum(share => share.Files ?? 0),
-            });
-        }
-
-        /// <inheritdoc/>
-        public void RemoveVirtualDirectory(string maskedDirectory)
-        {
-            if (string.IsNullOrEmpty(maskedDirectory))
-            {
-                return;
-            }
-
-            Local.Repository.DeleteByMaskedPrefix(maskedDirectory);
-            ComputeShareStatistics();
-            State.SetValue(state => state with
-            {
-                Directories = Hosts.SelectMany(host => host.Shares).Sum(share => share.Directories ?? 0),
-                Files = Hosts.SelectMany(host => host.Shares).Sum(share => share.Files ?? 0),
-            });
-        }
-
         /// <summary>
         ///     Adds a new, or updates an existing, share host.
         /// </summary>
@@ -753,7 +703,7 @@ namespace resonance.Shares
             {
                 State.SetValue(state => state with { Ready = false });
 
-                await Scanner.ScanAsync(Local.Host.Shares, OptionsMonitor.CurrentValue.Shares, Local.Repository, virtualDirectories: CollectVirtualDirectories());
+                await Scanner.ScanAsync(Local.Host.Shares, OptionsMonitor.CurrentValue.Shares, Local.Repository);
 
                 Log.Debug("Recomputing share statistics...");
                 ComputeShareStatistics();
@@ -788,7 +738,7 @@ namespace resonance.Shares
             {
                 State.SetValue(state => state with { Ready = false });
 
-                await Scanner.ScanAsync(Local.Host.Shares, OptionsMonitor.CurrentValue.Shares, Local.Repository, localPaths, CollectVirtualDirectories());
+                await Scanner.ScanAsync(Local.Host.Shares, OptionsMonitor.CurrentValue.Shares, Local.Repository, localPaths);
 
                 Log.Debug("Recomputing share statistics after targeted scan...");
                 ComputeShareStatistics();
@@ -923,20 +873,6 @@ namespace resonance.Shares
                 || string.IsNullOrWhiteSpace(tags.Artist);
         }
 
-        private IEnumerable<VirtualShareDirectory> CollectVirtualDirectories()
-            => VirtualShareProviders.SelectMany(provider =>
-            {
-                try
-                {
-                    return provider() ?? Enumerable.Empty<VirtualShareDirectory>();
-                }
-                catch (Exception ex)
-                {
-                    Log.Warning(ex, "A virtual share provider threw during collection: {Message}", ex.Message);
-                    return Enumerable.Empty<VirtualShareDirectory>();
-                }
-            }).ToList();
-
         private void ComputeShareStatistics()
         {
             foreach (var share in Local.Host.Shares)
@@ -1000,7 +936,7 @@ namespace resonance.Shares
             // guard against a spurious config reload that reports no share directories. with a polling file
             // watcher on a mounted config, a hot-reload can fire while the file is mid-rewrite and momentarily
             // bind an empty directories list. rebuilding from that would drop the user's real shares (e.g.
-            // /downloads), collapsing the advertised share to just managed/virtual shares (e.g. Mixtapes) until
+            // /downloads), collapsing the advertised share to just managed shares (e.g. yt-dlp staging) until
             // the next good reload. if we currently have configured (non-managed) shares and the incoming set is
             // empty, treat it as spurious and keep what we have. a genuinely empty config still applies at
             // startup, when no user shares have been established yet.

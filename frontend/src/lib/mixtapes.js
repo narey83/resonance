@@ -64,12 +64,6 @@ export const publish = (id) =>
 export const unpublish = (id) =>
   api.delete(`/mixtapes/${encodeURIComponent(id)}/publish`);
 
-export const soulseekShare = (id) =>
-  api.post(`/mixtapes/${encodeURIComponent(id)}/soulseek`).then((r) => r.data);
-
-export const soulseekUnshare = (id) =>
-  api.delete(`/mixtapes/${encodeURIComponent(id)}/soulseek`);
-
 // ── Public (no auth) ──────────────────────────────────────────────────────────
 
 export const artworkUrl = (id) =>

@@ -230,13 +230,6 @@ namespace resonance.Shares
         void DeleteEntriesByPaths(string originalPathPrefix, string maskedPathPrefix);
 
         /// <summary>
-        ///     Deletes all file and directory entries under the given masked directory (matched by masked name
-        ///     only). Used to remove a virtual share (e.g. an unshared mixtape) without touching disk.
-        /// </summary>
-        /// <param name="maskedDirectory">The masked directory prefix to remove (e.g. <c>Mixtapes\My Set</c>).</param>
-        void DeleteByMaskedPrefix(string maskedDirectory);
-
-        /// <summary>
         ///     Deletes directory records with a timestamp prior to the specified <paramref name="olderThanTimestamp"/>.
         /// </summary>
         /// <param name="olderThanTimestamp">The timestamp before which to delete directories.</param>

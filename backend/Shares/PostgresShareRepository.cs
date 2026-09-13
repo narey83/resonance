@@ -611,30 +611,6 @@ namespace resonance.Shares
             }
         }
 
-        public void DeleteByMaskedPrefix(string maskedDirectory)
-        {
-            using var conn = GetConnection();
-            var prefix = maskedDirectory.TrimEnd('\\') + "\\";
-
-            using (var cmd = new NpgsqlCommand(
-                "DELETE FROM shares.files WHERE host = @host AND (masked_filename = @masked OR starts_with(masked_filename, @prefix));", conn))
-            {
-                cmd.Parameters.AddWithValue("host", Host);
-                cmd.Parameters.AddWithValue("masked", maskedDirectory);
-                cmd.Parameters.AddWithValue("prefix", prefix);
-                cmd.ExecuteNonQuery();
-            }
-
-            using (var cmd = new NpgsqlCommand(
-                "DELETE FROM shares.directories WHERE host = @host AND (name = @masked OR starts_with(name, @prefix));", conn))
-            {
-                cmd.Parameters.AddWithValue("host", Host);
-                cmd.Parameters.AddWithValue("masked", maskedDirectory);
-                cmd.Parameters.AddWithValue("prefix", prefix);
-                cmd.ExecuteNonQuery();
-            }
-        }
-
         public long PruneDirectories(long olderThanTimestamp)
         {
             using var conn = GetConnection();

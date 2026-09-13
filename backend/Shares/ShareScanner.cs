@@ -66,19 +66,8 @@ namespace resonance.Shares
         /// <param name="options">The current options snapshot.</param>
         /// <param name="repository">The repository to update.</param>
         /// <param name="targetDirectories">If provided, only scan these local directories (targeted scan). If null, scan all shares.</param>
-        /// <param name="virtualDirectories">Optional virtual directories (masked→original) to materialise into the cache with the scan timestamp so they survive the post-scan prune.</param>
         /// <returns>The operation context.</returns>
-        Task ScanAsync(IEnumerable<Share> shares, Options.SharesOptions options, IShareRepository repository, IEnumerable<string> targetDirectories = null, IEnumerable<VirtualShareDirectory> virtualDirectories = null);
-
-        /// <summary>
-        ///     Materialises a single virtual directory into the cache: builds Soulseek file entries from the
-        ///     real files behind each masked name and upserts them under <paramref name="timestamp"/>. Used both
-        ///     during a scan and for immediate, targeted updates outside a scan.
-        /// </summary>
-        /// <param name="directory">The virtual directory to materialise.</param>
-        /// <param name="timestamp">The scan timestamp to stamp the entries with.</param>
-        /// <param name="repository">The repository to update.</param>
-        void MaterializeVirtualDirectory(VirtualShareDirectory directory, long timestamp, IShareRepository repository);
+        Task ScanAsync(IEnumerable<Share> shares, Options.SharesOptions options, IShareRepository repository, IEnumerable<string> targetDirectories = null);
 
         /// <summary>
         ///     Cancels the currently running fill operation, if one is running.
@@ -132,9 +121,8 @@ namespace resonance.Shares
         /// <param name="options">The current options snapshot.</param>
         /// <param name="repository">The repository to update.</param>
         /// <param name="targetDirectories">An optional list of directories to limit the scan to.</param>
-        /// <param name="virtualDirectories">An optional list of virtual directories to include in the scan.</param>
         /// <returns>The operation context.</returns>
-        public async Task ScanAsync(IEnumerable<Share> shares, Options.SharesOptions options, IShareRepository repository, IEnumerable<string> targetDirectories = null, IEnumerable<VirtualShareDirectory> virtualDirectories = null)
+        public async Task ScanAsync(IEnumerable<Share> shares, Options.SharesOptions options, IShareRepository repository, IEnumerable<string> targetDirectories = null)
         {
             // obtain the semaphore, or fail if it can't be obtained immediately, indicating that a scan is running.
             if (!await SyncRoot.WaitAsync(millisecondsTimeout: 0))
@@ -357,9 +345,9 @@ namespace resonance.Shares
                     // mid-rewrite and momentarily bind an empty/half Shares.Directories (see ApplySharesList /
                     // commit 30cacec for the in-memory analogue), or a mounted volume can drop out.
                     //
-                    // Crucially, checking for zero resolved directories is not enough: managed/virtual shares (e.g.
-                    // Mixtapes) still resolve, so the scan comes back with just those few files and prunes the entire
-                    // real library down to the managed remnant ("1 dir / 6 files"). So the signal is specifically
+                    // Crucially, checking for zero resolved directories is not enough: managed shares (e.g. the
+                    // yt-dlp staging dir) still resolve, so the scan comes back with just those few files and prunes
+                    // the entire real library down to the managed remnant. So the signal is specifically
                     // that none of the configured NON-managed shares resolve to an existing directory. When that
                     // holds and we already have a populated cache, treat the reading as spurious, abort, and preserve
                     // the cache instead of pruning a live index. A genuinely empty/removed config against an empty
@@ -532,23 +520,6 @@ namespace resonance.Shares
                     Log.Information("Scan found {Files} files ({Reused} reused from cache, {Filtered} filtered) in {Elapsed}ms", found, reused, filtered, sw.ElapsedMilliseconds - swSnapshot);
                     swSnapshot = sw.ElapsedMilliseconds;
 
-                    // Materialise virtual directories (e.g. shared mixtapes) with the scan timestamp, before the
-                    // prune, so they persist without any files existing on disk at the masked paths.
-                    if (virtualDirectories != null)
-                    {
-                        var virtualCount = 0;
-                        foreach (var virtualDirectory in virtualDirectories)
-                        {
-                            MaterializeVirtualDirectory(virtualDirectory, timestamp, repository);
-                            virtualCount++;
-                        }
-
-                        if (virtualCount > 0)
-                        {
-                            Log.Information("Materialised {Count} virtual director(ies) into the share cache", virtualCount);
-                        }
-                    }
-
                     if (!isTargeted)
                     {
                         // targeted scans only add/update files; full scans prune stale records
@@ -610,42 +581,6 @@ namespace resonance.Shares
                 CancellationTokenSource = null;
                 SyncRoot.Release();
             }
-        }
-
-        /// <inheritdoc/>
-        public void MaterializeVirtualDirectory(VirtualShareDirectory directory, long timestamp, IShareRepository repository)
-        {
-            if (directory is null || directory.Files is null)
-            {
-                return;
-            }
-
-            var upserts = new List<ShareFileUpsert>();
-
-            foreach (var virtualFile in directory.Files)
-            {
-                FileInfo info;
-                try
-                {
-                    info = Files.ResolveFileInfo(virtualFile.OriginalFilename);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warning("Skipping virtual share entry {Masked}: {Message}", virtualFile.MaskedFilename, ex.Message);
-                    continue;
-                }
-
-                if (info is null || !info.Exists)
-                {
-                    Log.Warning("Skipping virtual share entry {Masked}; source file not found: {Original}", virtualFile.MaskedFilename, virtualFile.OriginalFilename);
-                    continue;
-                }
-
-                var (file, tags) = SoulseekFileFactory.Create(virtualFile.OriginalFilename, virtualFile.MaskedFilename, size: info.Length);
-                upserts.Add(new ShareFileUpsert(virtualFile.MaskedFilename, virtualFile.OriginalFilename, info.LastWriteTimeUtc, file, tags));
-            }
-
-            repository.UpsertDirectoryContents(directory.MaskedDirectory, timestamp, upserts, touchedFilenames: Array.Empty<string>());
         }
 
         /// <summary>
