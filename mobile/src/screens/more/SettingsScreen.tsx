@@ -68,7 +68,7 @@ const STREAM_QUALITIES: { value: StreamQuality; label: string }[] = [
 ];
 
 const STREAM_QUALITY_SUBTITLE: Record<StreamQuality, string> = {
-  auto:     'Full quality on Wi-Fi, reduced on cellular or slow links',
+  auto:     'Full quality on Wi-Fi, reduced on cellular to save data',
   original: 'Always stream the original file (best quality, seekable)',
   saver:    'Always transcode to a smaller size (uses least data)',
 };

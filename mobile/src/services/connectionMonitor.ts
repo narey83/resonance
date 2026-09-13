@@ -43,9 +43,23 @@ interface ConnectionState {
   lastError: string | null;
   isCellular: boolean;
   networkSwitchedAt: number | null;
+  /**
+   * True once playback has repeatedly run dry -- the buffer emptied mid-track while the user
+   * was listening. Diagnostic only: it is reported, not acted on.
+   *
+   * It is the honest measure of whether the link is keeping up, in a way ping latency is not.
+   * Latency says nothing about sustained throughput (30-120s of buffer absorbs a late answer
+   * without the listener hearing a gap), and it measures the server as much as the network --
+   * a server busy on its disks answers slowly over a perfectly good link.
+   *
+   * Nothing downgrades quality off this flag, because the only lever available is transcoding
+   * and that asks more of the server, not less. See resolveStreamQuality in api/musicLibrary.
+   */
+  streamStruggling: boolean;
   _setStatus: (status: ConnectionStatus, latencyMs?: number | null, error?: string | null) => void;
   _setNetworkSwitchedAt: (ts: number) => void;
   _setIsCellular: (isCellular: boolean) => void;
+  _setStreamStruggling: (streamStruggling: boolean) => void;
 }
 
 export const useConnectionStore = create<ConnectionState>((set) => ({
@@ -54,9 +68,11 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
   lastError: null,
   isCellular: false,
   networkSwitchedAt: null,
+  streamStruggling: false,
   _setStatus: (status, latencyMs = null, error = null) => set({ status, latencyMs, lastError: error }),
   _setNetworkSwitchedAt: (ts) => set({ networkSwitchedAt: ts }),
   _setIsCellular: (isCellular) => set({ isCellular }),
+  _setStreamStruggling: (streamStruggling) => set({ streamStruggling }),
 }));
 
 const INTERVAL_OK       = 12_000;

@@ -212,13 +212,25 @@ export const getTrackArtworkPath = (track: MusicTrack): string | null => {
 };
 
 // Decide, at queue-build time, whether to request a transcoded low-bitrate stream.
-// Auto = transcode on cellular or when the connection monitor reports a slow link.
+// Auto = original everywhere except cellular, where a smaller stream is about the data bill
+// rather than any judgement that the link is bad.
+//
+// Nothing here downgrades automatically in response to trouble, and that is deliberate.
+// Transcoding does not sidestep a struggling server -- it reads the very same file off the
+// very same disk and adds an ffmpeg encode on top, so it asks strictly more of the machine
+// than sending the original would. It pays off only when the pipe is the narrow part and the
+// server has room to spare, and a server that has room to spare is rarely the one in trouble.
+// Downgrading on stalls therefore tends to arrive precisely when it will make things worse,
+// which is a poor thing to lean on as a last resort.
+//
+// What actually absorbs a slow link is the buffer: 30-120s of audio held ahead of the
+// listener (see playerSetup). Stalls are still detected and logged in PlayerContext, because
+// knowing the link struggled is useful -- it just is not something to answer by re-encoding.
 const resolveStreamQuality = (): 'low' | null => {
   const { streamQuality } = useAppSettings.getState();
   if (streamQuality === 'original') return null;
   if (streamQuality === 'saver') return 'low';
-  const { isCellular, status } = useConnectionStore.getState();
-  return isCellular || status === 'slow' ? 'low' : null;
+  return useConnectionStore.getState().isCellular ? 'low' : null;
 };
 
 /** Which stream flavour the next queue build will ask for — surfaced in playback-error logs,

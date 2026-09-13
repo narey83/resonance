@@ -177,7 +177,23 @@ const PREFETCH_RADIUS = 2;
 // 20s gives ~60s of total retrying before giving up — long enough to outlast a server restart,
 // short enough that a genuinely missing file doesn't loop forever.
 const STREAM_RETRY_MAX = 6;
+
+// How many mid-track buffer starvations, within how long, before concluding the link cannot
+// sustain a full-quality stream -- and how long it must then behave before the verdict lifts.
+// Two stalls rather than one so a single blip costs nothing; a recovery window comfortably
+// longer than the window itself so quality does not oscillate at the boundary.
+const STALL_LIMIT        =       2;
+const STALL_WINDOW_MS    =  60_000;
+const STALL_RECOVERY_MS  = 180_000;
 const streamRetryDelayMs = (attempt: number) => Math.min(1000 * 2 ** attempt, 20_000);
+
+// How much of the next track to pull early, and how long to wait before doing it. 512KB covers
+// several seconds of even a lossless stream -- enough that the server has found the file and its
+// head is cached, which is the part that costs. The delay keeps the request off the back of a
+// skip: while someone is flicking through tracks the effect re-runs and cancels, so only landing
+// on a track for longer than this spends anything.
+const STREAM_PREFETCH_BYTES    = 512 * 1024;
+const STREAM_PREFETCH_DELAY_MS = 2_000;
 
 // ── Provider ───────────────────────────────────────────────────────────────────
 
@@ -208,6 +224,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   // Pending stream-load timing: armed when a remote track becomes active, cleared (and recorded)
   // when it first reaches a playable state — i.e. how long the user waited for audio to buffer.
   const streamLoadRef        = useRef<{ path: string; startedAt: number } | null>(null);
+  // Timestamps of recent mid-track buffer starvations, newest last. The basis for deciding the
+  // link genuinely cannot carry a full-quality stream.
+  const stallsRef            = useRef<number[]>([]);
   const shuffleRef           = useRef(shuffle);
   const shuffleOrderRef      = useRef(shuffleOrder);
   const queueRef             = useRef(queue);
@@ -362,7 +381,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   // Stop the stream-load timer when buffering completes, recording how long the user waited for
   // audio to become playable. Only the first playable state after a track change counts — mid-play
-  // buffering dips leave streamLoadRef null and are ignored.
+  // buffering dips leave streamLoadRef null and are handled as stalls below.
   useTrackPlayerEvents([Event.PlaybackState], (event) => {
     const pending = streamLoadRef.current;
     if (!pending) return;
@@ -371,6 +390,46 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       streamLoadRef.current = null;
     }
   });
+
+  // Whether the link can carry the stream is answered by one thing only: did the buffer run dry
+  // while the user was listening. A dip with streamLoadRef still set is the initial load, not a
+  // stall, so it does not count here.
+  //
+  // One stall is not a verdict — a passing blip, a roaming handover or a single slow read on the
+  // server can empty the buffer once on a link that is otherwise fine. Downgrading on that would
+  // cost quality for nothing, so it takes STALL_LIMIT within STALL_WINDOW_MS to conclude the pipe
+  // is really too thin, and a clean spell to conclude it is not any more.
+  useTrackPlayerEvents([Event.PlaybackState], (event) => {
+    if (event.state !== State.Buffering) return;
+    if (streamLoadRef.current) return;   // still the initial load of a new track
+    if (!playingRef.current) return;     // paused/seeking — nothing was starved
+    if (isLocalPath(queueRef.current[queueIndexRef.current]?.path ?? '')) return; // local file, not the network
+
+    const now = Date.now();
+    const recent = [...stallsRef.current.filter((t) => now - t < STALL_WINDOW_MS), now];
+    stallsRef.current = recent;
+
+    if (recent.length >= STALL_LIMIT && !useConnectionStore.getState().streamStruggling) {
+      remoteLog('warn', `[conn] ${recent.length} stalls in ${Math.round(STALL_WINDOW_MS / 1000)}s — link is not keeping up`);
+      useConnectionStore.getState()._setStreamStruggling(true);
+    }
+  });
+
+  // Clear the flag once playback has been clean for a while, so a bad patch does not leave the
+  // session reported as struggling for ever. Checked on a timer rather than on a stall, because
+  // the evidence for recovery is the absence of events.
+  useEffect(() => {
+    const id = setInterval(() => {
+      const { streamStruggling, _setStreamStruggling } = useConnectionStore.getState();
+      if (!streamStruggling) return;
+      const last = stallsRef.current[stallsRef.current.length - 1] ?? 0;
+      if (Date.now() - last < STALL_RECOVERY_MS) return;
+      stallsRef.current = [];
+      remoteLog("info", `[conn] ${Math.round(STALL_RECOVERY_MS / 1000)}s without a stall — link healthy again`);
+      _setStreamStruggling(false);
+    }, 15_000);
+    return () => clearInterval(id);
+  }, []);
 
   // ── Side effects ───────────────────────────────────────────────────────────
 
@@ -514,6 +573,47 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     })();
 
     return () => { cancelled = true; };
+  }, [queue, queueIndex]);
+
+  // Pull the opening bytes of the track we would skip to next, while the current one plays.
+  //
+  // Starting a track is dominated by the server's first read, not by the transfer: the file has
+  // to be found and its head fetched off disk before a single byte reaches us, and on a library
+  // that lives on spinning disks that seek is most of the wait. Asking for the first few hundred
+  // KB early puts the head of the file in the server's page cache, so the real request a moment
+  // later is answered from memory. It costs one small range request per track change and takes
+  // the seek off the critical path, where the listener is the one waiting for it.
+  //
+  // Best-effort throughout: any failure is silently irrelevant, because the normal load path is
+  // unchanged and simply pays the usual cost. Skipped on cellular -- there, bytes cost money and
+  // a prefetch that goes unused is waste, which is a different trade from a seek on a home LAN.
+  useEffect(() => {
+    if (queue.length === 0) return;
+    if (useConnectionStore.getState().isCellular) return;
+
+    // Where Next would actually land, so shuffle prefetches the right track rather than the
+    // one that merely sits next in the list.
+    const nextIdx = shuffleRef.current && shuffleOrderRef.current.length > 1
+      ? shuffleOrderRef.current[(shuffleOrderRef.current.indexOf(queueIndex) + 1) % shuffleOrderRef.current.length]
+      : queueIndex + 1;
+
+    const nextTrack = queue[nextIdx];
+    if (!nextTrack || isLocalPath(nextTrack.path)) return; // local files have no seek to hide
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      (async () => {
+        try {
+          if (!isSigned(nextTrack.path)) await ensureSigned([nextTrack.path]);
+          await fetch(getStreamUrl(nextTrack.path), {
+            headers: { Range: `bytes=0-${STREAM_PREFETCH_BYTES - 1}` },
+            signal:  controller.signal,
+          });
+        } catch { /* best-effort: the normal load path is unaffected */ }
+      })();
+    }, STREAM_PREFETCH_DELAY_MS);
+
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [queue, queueIndex]);
 
   // ── Playback commands ──────────────────────────────────────────────────────
