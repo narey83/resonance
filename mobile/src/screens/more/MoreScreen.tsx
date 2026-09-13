@@ -65,13 +65,6 @@ interface MenuSection {
 
 const MENU_SECTIONS: MenuSection[] = [
   {
-    title: 'Library',
-    items: [
-      { label: 'Tags',     icon: 'pricetag-outline', screen: 'Tags',     subtitle: 'Edit ID3 tags' },
-      { label: 'Analysis', icon: 'pulse-outline',    screen: 'Analysis', subtitle: 'Key · BPM · Waveform' },
-    ],
-  },
-  {
     title: 'App',
     items: [
       { label: 'Overview',   icon: 'bar-chart-outline', screen: 'Overview',  subtitle: 'Stats & activity dashboard', adminOnly: true },
@@ -81,6 +74,7 @@ const MENU_SECTIONS: MenuSection[] = [
       { label: 'Blocked',    icon: 'ban-outline',      screen: 'Blocked',    subtitle: 'Blocked users, IPs & locations' },
       { label: 'Notifications', icon: 'notifications-outline', screen: 'Notifications', subtitle: 'Alerts & sounds' },
       { label: 'Settings',   icon: 'settings-outline', screen: 'Settings',   subtitle: 'App preferences' },
+      { label: 'About',      icon: 'information-circle-outline', screen: 'About', subtitle: 'Version, developer & source code' },
     ],
   },
 ];

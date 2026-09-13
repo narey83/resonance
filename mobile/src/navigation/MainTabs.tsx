@@ -58,8 +58,6 @@ import BrowseRoomsScreen         from '../screens/more/BrowseRoomsScreen';
 import RoomDetailScreen          from '../screens/more/RoomDetailScreen';
 import ChatScreen                from '../screens/more/ChatScreen';
 import ChatConversationScreen    from '../screens/more/ChatConversationScreen';
-import TagsScreen                from '../screens/more/TagsScreen';
-import AnalysisScreen            from '../screens/more/AnalysisScreen';
 import LogsScreen                from '../screens/more/LogsScreen';
 import BlockedScreen             from '../screens/more/BlockedScreen';
 import BlockedUsersScreen        from '../screens/more/BlockedUsersScreen';
@@ -67,6 +65,7 @@ import SettingsScreen            from '../screens/more/SettingsScreen';
 import NotificationsScreen       from '../screens/more/NotificationsScreen';
 import SoulseekRelayScreen       from '../screens/more/SoulseekRelayScreen';
 import NetworkLogScreen          from '../screens/more/NetworkLogScreen';
+import AboutScreen               from '../screens/more/AboutScreen';
 
 export type MainTabParamList = {
   LibraryTab:   undefined;
@@ -82,8 +81,6 @@ export type MoreStackParamList = {
   More:             undefined;
   Overview:         undefined;
   Connection:       undefined;
-  Tags:             undefined;
-  Analysis:         undefined;
   Logs:             undefined;
   Blocked:          undefined;
   BlockedUsers:     undefined;
@@ -91,6 +88,7 @@ export type MoreStackParamList = {
   Notifications:    undefined;
   SoulseekRelay:    undefined;
   NetworkLog:       undefined;
+  About:            undefined;
 };
 
 export type BrowseStackParamList = {
@@ -123,8 +121,6 @@ function MoreStack() {
       <More.Screen name="More"             component={MoreScreen}             options={{ title: 'More' }} />
       <More.Screen name="Overview"         component={OverviewScreen}         options={{ title: 'Overview' }} />
       <More.Screen name="Connection"       component={ConnectionScreen}       options={{ title: 'Connection' }} />
-      <More.Screen name="Tags"             component={TagsScreen}             options={{ title: 'Tags' }} />
-      <More.Screen name="Analysis"         component={AnalysisScreen}         options={{ title: 'Analysis' }} />
       <More.Screen name="Logs"             component={LogsScreen}             options={{ title: 'Server Logs' }} />
       <More.Screen name="Blocked"          component={BlockedScreen}          options={{ title: 'Blocked' }} />
       <More.Screen name="BlockedUsers"     component={BlockedUsersScreen}     options={{ title: 'Blocked Users' }} />
@@ -132,6 +128,7 @@ function MoreStack() {
       <More.Screen name="Notifications"    component={NotificationsScreen}    options={{ title: 'Notifications' }} />
       <More.Screen name="SoulseekRelay"    component={SoulseekRelayScreen}    options={{ title: 'Soulseek Relay' }} />
       <More.Screen name="NetworkLog"       component={NetworkLogScreen}       options={{ title: 'Network Log' }} />
+      <More.Screen name="About"            component={AboutScreen}            options={{ title: 'About' }} />
     </More.Navigator>
   );
 }
