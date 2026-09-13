@@ -29,6 +29,7 @@
       "./plugins/withAndroidAuto",
       "./plugins/withFloatingOverlay",
       "./plugins/withGradleProperties",
+      "./plugins/withLocalNetworkAccess",
       "./plugins/withGradleWrapperVersion",
       "./plugins/withReleaseSideBySide",
       [

@@ -37,7 +37,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { NativeModules } from 'react-native';
+import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
 import { MusicTrack } from '../api/musicLibrary';
 import { usePlayer } from './PlayerContext';
 import { useAuthStore } from '../store/auth';
@@ -45,6 +45,23 @@ import { ensureSigned, signedQuery } from '../api/streamSignatures';
 
 // True only when the Google Cast native module is present (not available in Expo Go)
 const CAST_AVAILABLE = !!(NativeModules as any).RNGCCastContext;
+
+// Android 16 (API 36) moved local network access behind this runtime permission. Cast finds
+// receivers purely by mDNS multicast on the local network, so until it is granted the picker
+// lists nothing -- with no error anywhere, because discovery simply never hears a reply.
+// Devices upgraded from an earlier Android carry it pre-granted but flagged
+// REVOKE_WHEN_REQUESTED, so ask every time rather than trusting the current state; the OS
+// only prompts when it actually needs to.
+const ACCESS_LOCAL_NETWORK = 'android.permission.ACCESS_LOCAL_NETWORK' as const;
+
+const ensureLocalNetworkPermission = async (): Promise<void> => {
+  if (Platform.OS !== 'android' || Number(Platform.Version) < 36) return;
+  try {
+    await PermissionsAndroid.request(ACCESS_LOCAL_NETWORK as never);
+  } catch {
+    // Older OS images do not know the permission; discovery is unrestricted there anyway.
+  }
+};
 
 // The receiver chooses its playback pipeline from the contentType in the load request, so a
 // .flac announced as audio/mpeg is rejected. Same map the stream endpoint serves.
@@ -148,6 +165,10 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
   const nativeClient = useRef(new RemoteMediaClient());
   const [mediaStatus, setMediaStatus] = useState<any>(null);
   const [castPositionSec, setCastPositionSec] = useState(0);
+
+  // Ask before discovery has any reason to run, so the first look at the picker is not the
+  // one that comes up empty.
+  useEffect(() => { ensureLocalNetworkPermission(); }, []);
 
   useEffect(() => {
     if (!isGoogleCasting) return;
@@ -284,7 +305,9 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
   }, [loadTrack]);
 
   const showGoogleCastPicker = useCallback(() => {
-    GoogleCastContext.showCastDialog();
+    // Re-ask here too: if the mount-time request was declined, this is the moment the user
+    // has actually asked to see receivers, so it is the one place a prompt makes sense.
+    ensureLocalNetworkPermission().finally(() => { GoogleCastContext.showCastDialog(); });
   }, []);
 
   const stopGoogleCast = useCallback(async () => {
