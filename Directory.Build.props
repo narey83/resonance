@@ -1,0 +1,19 @@
+<Project>
+  <!--
+    One version for the whole repo, read from the VERSION file at the root so every build path
+    agrees without anyone remembering a flag: dotnet watch on the dev server, the production
+    image (which publishes with no arguments of its own), and CI all stamp the same number.
+
+    bin/build and bin/publish still pass -p:Version explicitly; a command-line property beats
+    this default, so their git-describe version continues to win when they are used.
+
+    Keep VERSION in step with the git tag: the update check parses the release tag_name with
+    Version.Parse, which rejects a 'v' prefix, so tags are bare ('0.1.0'). bin/release-check
+    verifies the two match before a release is cut.
+  -->
+  <PropertyGroup>
+    <_VersionFile>$([MSBuild]::GetPathOfFileAbove('VERSION', '$(MSBuildThisFileDirectory)'))</_VersionFile>
+    <_VersionFile Condition="'$(_VersionFile)' == ''">$(MSBuildThisFileDirectory)VERSION</_VersionFile>
+    <Version Condition="'$(Version)' == '' And Exists('$(_VersionFile)')">$([System.IO.File]::ReadAllText('$(_VersionFile)').Trim())</Version>
+  </PropertyGroup>
+</Project>

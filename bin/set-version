@@ -1,0 +1,70 @@
+#!/bin/bash
+# The one command that bumps the repo's version. Everything that carries a version number
+# reads or is written from here, so they cannot drift apart:
+#
+#   VERSION              the source of truth; Directory.Build.props stamps the backend from it
+#   frontend/package.json
+#   mobile/package.json
+#   mobile/app.json      expo.version, shown on the About screen and compared against releases
+#
+# Tags are bare semantic versions ('0.1.0', never 'v0.1.0'): the update check parses a release's
+# tag_name with Version.Parse, which rejects the prefix.
+#
+# Usage:
+#   bin/set-version 0.2.0     # write the version everywhere
+#   bin/set-version --check   # verify all four agree (and match the current tag, if HEAD has one)
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+read_versions() {
+  file_version=$(tr -d '[:space:]' < VERSION)
+  frontend_version=$(node -p "require('./frontend/package.json').version")
+  mobile_pkg_version=$(node -p "require('./mobile/package.json').version")
+  mobile_app_version=$(node -p "require('./mobile/app.json').expo.version")
+}
+
+if [ "${1:-}" = "--check" ]; then
+  read_versions
+  status=0
+  for pair in "frontend/package.json:$frontend_version" "mobile/package.json:$mobile_pkg_version" "mobile/app.json:$mobile_app_version"; do
+    if [ "${pair#*:}" != "$file_version" ]; then
+      echo "MISMATCH ${pair%%:*} is ${pair#*:}, VERSION is $file_version" >&2
+      status=1
+    fi
+  done
+
+  tag=$(git tag --points-at HEAD | head -1)
+  if [ -n "$tag" ] && [ "$tag" != "$file_version" ]; then
+    echo "MISMATCH HEAD is tagged $tag, VERSION is $file_version" >&2
+    status=1
+  fi
+
+  [ "$status" -eq 0 ] && echo "version $file_version is consistent${tag:+ (tagged $tag)}"
+  exit "$status"
+fi
+
+version="${1:-}"
+if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "usage: bin/set-version <major.minor.patch> | --check" >&2
+  exit 1
+fi
+
+printf '%s\n' "$version" > VERSION
+for f in frontend/package.json mobile/package.json; do
+  node -e "
+    const fs = require('fs');
+    const j = JSON.parse(fs.readFileSync('$f', 'utf8'));
+    j.version = '$version';
+    fs.writeFileSync('$f', JSON.stringify(j, null, 2) + '\n');
+  "
+done
+node -e "
+  const fs = require('fs');
+  const j = JSON.parse(fs.readFileSync('mobile/app.json', 'utf8'));
+  j.expo.version = '$version';
+  fs.writeFileSync('mobile/app.json', JSON.stringify(j, null, 2) + '\n');
+"
+
+echo "version set to $version"
+echo "next: commit, then 'git tag $version' and push the tag to cut the release"

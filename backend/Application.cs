@@ -385,14 +385,17 @@ namespace resonance
                 return;
             }
 
-            Log.Information("Checking GitHub Releases for latest version");
+            var updates = Options.Updates;
+
+            Log.Information("Checking GitHub Releases for latest version ({Organization}/{Repository})", updates.Organization, updates.Repository);
 
             try
             {
                 var latestVersion = await GitHub.GetLatestReleaseVersion(
-                    organization: Program.AppName,
-                    repository: Program.AppName,
-                    userAgent: $"{Program.AppName} v{Program.FullVersion}");
+                    organization: updates.Organization,
+                    repository: updates.Repository,
+                    userAgent: $"{Program.AppName} v{Program.FullVersion}",
+                    token: updates.Token);
 
                 if (latestVersion > Version.Parse(Program.SemanticVersion))
                 {

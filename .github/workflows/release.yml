@@ -1,0 +1,79 @@
+name: Release
+
+# Cutting a release is pushing a tag. Tags are bare semantic versions ('0.1.0', never
+# 'v0.1.0'): the in-app update check parses a release's tag_name with Version.Parse,
+# which rejects the prefix, so a 'v' tag would publish a release nothing can read.
+on:
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+']
+
+# The release itself is what update detection reads: Application.CheckVersionAsync asks
+# the GitHub API for this repo's latest release and compares tag_name against the running
+# build's version. No release, nothing to detect.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The tag is the version users see; VERSION is the version the binaries are stamped
+      # with. If they disagree the release announces something nobody is running, so this
+      # fails the release rather than publishing a lie.
+      - name: Check the tag matches VERSION
+        run: bin/set-version --check
+
+      # Same build as ci.yml's mobile-apk job, duplicated deliberately: that job is gated on
+      # pushes to main and uploads a 14-day artifact, this one runs on a tag and attaches the
+      # APK to the release permanently. Keep the two in step if either changes.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+        working-directory: mobile
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Write google-services.json
+        working-directory: mobile
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "::error::GOOGLE_SERVICES_JSON secret is not set. Add it with:" \
+                 "gh secret set GOOGLE_SERVICES_JSON < <(base64 -w0 mobile/google-services.json)"
+            exit 1
+          fi
+          printf '%s' "$GOOGLE_SERVICES_JSON" | base64 -d > google-services.json
+      - name: Prebuild native Android project
+        working-directory: mobile
+        run: npx expo prebuild --platform android --no-install
+      - name: Build APK
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
+
+      - name: Name the APK for the release
+        run: |
+          mkdir -p dist
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk \
+             "dist/resonance-${GITHUB_REF_NAME}.apk"
+
+      # --generate-notes writes the changelog from the commits since the previous tag, so
+      # release notes need no hand-maintained file to fall out of date.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            "dist/resonance-${GITHUB_REF_NAME}.apk"

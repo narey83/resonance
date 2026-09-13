@@ -37,13 +37,14 @@ namespace resonance
 {
     using System;
     using System.Net.Http;
+    using System.Net.Http.Headers;
     using System.Net.Http.Json;
     using System.Text.Json;
     using System.Threading.Tasks;
 
     public static class GitHub
     {
-        public static async Task<Version> GetLatestReleaseVersion(string organization, string repository, string userAgent)
+        public static async Task<Version> GetLatestReleaseVersion(string organization, string repository, string userAgent, string token = null)
         {
             var url = $"https://api.github.com/repos/{organization}/{repository}/releases/latest";
 
@@ -51,8 +52,18 @@ namespace resonance
             {
                 using var http = new HttpClient();
                 http.DefaultRequestHeaders.UserAgent.TryParseAdd(userAgent);
+                http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+
+                // A private repository answers an anonymous caller with 404 rather than 403, so a missing
+                // or expired token looks exactly like a repository that has never cut a release.
+                if (!string.IsNullOrWhiteSpace(token))
+                {
+                    http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                }
 
                 var response = await http.GetFromJsonAsync<JsonDocument>(url);
+
+                // Tags are bare semantic versions ('0.1.0'), not 'v0.1.0': Version.Parse rejects the prefix.
                 return Version.Parse(response.RootElement.GetProperty("tag_name").GetString());
             }
             catch (Exception ex)

@@ -400,6 +400,12 @@ namespace resonance
         public LocationOptions Location { get; init; } = new LocationOptions();
 
         /// <summary>
+        ///     Gets options for the startup check for a newer release.
+        /// </summary>
+        [RequiresRestart]
+        public UpdatesOptions Updates { get; init; } = new UpdatesOptions();
+
+        /// <summary>
         ///     Handles top-level validation that doesn't fit anywhere else.
         /// </summary>
         /// <param name="validationContext"></param>
@@ -3855,6 +3861,39 @@ namespace resonance
             [Description("explicit IP to advertise/bind for DLNA (empty = auto-detect via default route)")]
             [RequiresRestart]
             public string BindAddress { get; init; } = string.Empty;
+        }
+
+        public class UpdatesOptions
+        {
+            /// <summary>
+            ///     Gets the GitHub organization or user that owns the release repository.
+            /// </summary>
+            [Argument(default, "updates-organization")]
+            [EnvironmentVariable("UPDATES_ORGANIZATION")]
+            [Description("github organization or user hosting releases")]
+            public string Organization { get; init; } = "narey83";
+
+            /// <summary>
+            ///     Gets the GitHub repository whose releases are checked.
+            /// </summary>
+            [Argument(default, "updates-repository")]
+            [EnvironmentVariable("UPDATES_REPOSITORY")]
+            [Description("github repository hosting releases")]
+            public string Repository { get; init; } = "resonance";
+
+            /// <summary>
+            ///     Gets the GitHub token used to read releases.
+            /// </summary>
+            /// <remarks>
+            ///     Required while the repository is private: the releases API answers 404, not 403, to an
+            ///     anonymous caller, so without a token an update check is indistinguishable from a repo
+            ///     that has never published a release. A token with read access to the repo is enough.
+            /// </remarks>
+            [Argument(default, "updates-token")]
+            [EnvironmentVariable("UPDATES_TOKEN")]
+            [Description("github token used to read releases (required for a private repository)")]
+            [Secret]
+            public string Token { get; init; } = null;
         }
 
         public class LocationOptions
