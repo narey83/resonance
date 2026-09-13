@@ -3894,6 +3894,52 @@ namespace resonance
             [Description("github token used to read releases (required for a private repository)")]
             [Secret]
             public string Token { get; init; } = null;
+
+            /// <summary>
+            ///     Gets the number of hours between update checks.
+            /// </summary>
+            /// <remarks>
+            ///     Checks also run once at startup. Releases are cut by hand and the GitHub API is rate
+            ///     limited, so the default is deliberately slack; the check is resolution, not urgency.
+            /// </remarks>
+            [Argument(default, "updates-interval")]
+            [EnvironmentVariable("UPDATES_INTERVAL")]
+            [Description("hours between update checks")]
+            [Range(1, 24 * 30)]
+            public int Interval { get; init; } = 24;
+
+            /// <summary>
+            ///     Gets options governing whether the application updates itself when a newer release appears.
+            /// </summary>
+            public SelfUpdateOptions SelfUpdate { get; init; } = new SelfUpdateOptions();
+
+            public class SelfUpdateOptions
+            {
+                /// <summary>
+                ///     Gets a value indicating whether to apply a newer release automatically.
+                /// </summary>
+                /// <remarks>
+                ///     Off by default, and deliberately so: applying an update moves the source tree this
+                ///     application is running from and then restarts it, which is not something to do to
+                ///     someone's server because a stranger cut a release.
+                /// </remarks>
+                [Argument(default, "updates-self-update")]
+                [EnvironmentVariable("UPDATES_SELF_UPDATE")]
+                [Description("download and apply newer releases automatically")]
+                public bool Enabled { get; init; } = false;
+
+                /// <summary>
+                ///     Gets the name of the container to restart once an update has been applied.
+                /// </summary>
+                /// <remarks>
+                ///     Empty means 'the container this process is running in', resolved from the hostname.
+                ///     Set it only when that guess is wrong.
+                /// </remarks>
+                [Argument(default, "updates-self-update-container")]
+                [EnvironmentVariable("UPDATES_SELF_UPDATE_CONTAINER")]
+                [Description("container to restart after applying an update (default: this one)")]
+                public string Container { get; init; } = null;
+            }
         }
 
         public class LocationOptions

@@ -38,6 +38,7 @@ using Microsoft.Extensions.Options;
 namespace resonance.Core.API
 {
     using System;
+    using System.Threading;
     using System.Threading.Tasks;
     using Asp.Versioning;
     using Microsoft.AspNetCore.Authorization;
@@ -147,6 +148,52 @@ namespace resonance.Core.API
             }
 
             return Ok(ApplicationStateMonitor.CurrentValue.Version);
+        }
+
+        /// <summary>
+        ///     Downloads the Android package attached to the latest release.
+        /// </summary>
+        /// <remarks>
+        ///     The mobile app cannot fetch this itself: the repository is private, and an app shipped with
+        ///     a token in it is a token published. The server already holds one, so it fetches the asset and
+        ///     streams it on to a caller it has already authenticated.
+        /// </remarks>
+        /// <returns></returns>
+        [HttpGet("update/apk")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(typeof(FileResult), 200)]
+        [ProducesResponseType(404)]
+        [ProducesResponseType(502)]
+        public async Task<IActionResult> DownloadLatestApk(CancellationToken cancellationToken)
+        {
+            var updates = OptionsMonitor.CurrentValue.Updates;
+
+            try
+            {
+                var asset = await GitHub.GetLatestReleaseAsset(
+                    organization: updates.Organization,
+                    repository: updates.Repository,
+                    userAgent: $"{Program.AppName} v{Program.FullVersion}",
+                    predicate: name => name.EndsWith(".apk", StringComparison.OrdinalIgnoreCase),
+                    token: updates.Token);
+
+                if (asset is null)
+                {
+                    return NotFound("The latest release has no Android package attached.");
+                }
+
+                var (stream, length) = await GitHub.DownloadAssetAsync(asset.Value.Url, $"{Program.AppName} v{Program.FullVersion}", updates.Token, cancellationToken);
+
+                // Streamed, not buffered: the package is tens of megabytes and there is no reason for
+                // it to pass through this server's memory on the way to the phone.
+                Response.ContentLength = length;
+                return File(stream, "application/vnd.android.package-archive", asset.Value.Name);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("Failed to fetch the latest Android package: {Message}", ex.Message);
+                return StatusCode(502, "Could not retrieve the release asset from GitHub.");
+            }
         }
 
         /// <summary>

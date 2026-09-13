@@ -308,6 +308,7 @@ namespace resonance
         private ILogger Log { get; set; } = Serilog.Log.ForContext("SourceContext", Logs.Application);
         private ConcurrentDictionary<string, ILogger> Loggers { get; } = new ConcurrentDictionary<string, ILogger>();
         private Options Options => OptionsMonitor.CurrentValue;
+        private DateTime LastVersionCheck { get; set; } = DateTime.MinValue;
         private OptionsAtStartup OptionsAtStartup { get; set; }
         private IOptionsMonitor<Options> OptionsMonitor { get; set; }
         private SemaphoreSlim OptionsSyncRoot { get; } = new SemaphoreSlim(1, 1);
@@ -387,6 +388,8 @@ namespace resonance
 
             var updates = Options.Updates;
 
+            LastVersionCheck = DateTime.UtcNow;
+
             Log.Information("Checking GitHub Releases for latest version ({Organization}/{Repository})", updates.Organization, updates.Repository);
 
             try
@@ -401,6 +404,17 @@ namespace resonance
                 {
                     State.SetValue(state => state with { Version = state.Version with { Latest = latestVersion.ToString(), IsUpdateAvailable = true } });
                     Log.Information("A new version is available! {CurrentVersion} -> {LatestVersion}", Program.SemanticVersion, latestVersion);
+
+                    if (updates.SelfUpdate.Enabled)
+                    {
+                        // Deliberately not awaited: this ends with the process being restarted underneath it.
+                        _ = resonance.Core.Updates.SelfUpdater.ApplyAsync(
+                            tag: latestVersion.ToString(),
+                            organization: updates.Organization,
+                            repository: updates.Repository,
+                            token: updates.Token,
+                            container: updates.SelfUpdate.Container);
+                    }
                 }
                 else
                 {
@@ -1553,6 +1567,33 @@ namespace resonance
         private void Clock_EveryHour(object sender, ClockEventArgs e)
         {
             _ = Task.Run(() => MaybeRescanShares());
+
+            // The startup check covers the first run; this is the one that catches a release cut while
+            // the application has been up for a fortnight.
+            if (!e.FirstRun)
+            {
+                _ = Task.Run(() => MaybeCheckVersion());
+            }
+        }
+
+        // Interval is in hours, and the clock only offers an hourly tick, so this is as fine-grained
+        // as the setting gets. LastVersionCheck is set by CheckVersionAsync whether or not it succeeded:
+        // a check that cannot reach GitHub should back off like any other, not retry every hour.
+        private void MaybeCheckVersion()
+        {
+            if (Options.Flags.NoVersionCheck)
+            {
+                return;
+            }
+
+            var interval = TimeSpan.FromHours(Math.Max(1, Options.Updates.Interval));
+
+            if (DateTime.UtcNow - LastVersionCheck < interval)
+            {
+                return;
+            }
+
+            _ = CheckVersionAsync();
         }
 
         private void TriggerShareScan(string localDirectory = null)
