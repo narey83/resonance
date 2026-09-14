@@ -32,6 +32,7 @@ import {
   blockUser as apiBlockUser,
   getBlockedUsers,
   unblockUser as apiUnblockUser,
+  unblockAllUsers as apiUnblockAllUsers,
   blockIp as apiBlockIp,
   unblockIp as apiUnblockIp,
   blockPlace as apiBlockPlace,
@@ -62,6 +63,7 @@ interface BlockedUsersStore {
   fetch: () => Promise<void>;
   block: (username: string, reason?: string) => Promise<void>;
   unblock: (username: string) => Promise<void>;
+  unblockAll: () => Promise<void>;
   blockIp: (cidr: string, reason?: string) => Promise<void>;
   unblockIp: (cidr: string) => Promise<void>;
   blockPlace: (country: string, city?: string, reason?: string) => Promise<void>;
@@ -104,6 +106,11 @@ export const useBlockedUsersStore = create<BlockedUsersStore>((set, get) => ({
 
   unblock: async (username: string) => {
     const users = await apiUnblockUser(username);
+    set({ blockedSet: toSet(users), users });
+  },
+
+  unblockAll: async () => {
+    const users = await apiUnblockAllUsers();
     set({ blockedSet: toSet(users), users });
   },
 

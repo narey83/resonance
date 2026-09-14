@@ -96,6 +96,10 @@ export const unblockUser = (username: string): Promise<BlockedUser[]> =>
     .delete<BlockedUser[]>(`/blockedusers/${encodeURIComponent(username)}`)
     .then(r => r.data);
 
+// Admin only. Clears the whole user list (and the IPs learned from it); IP and location rules stay.
+export const unblockAllUsers = (): Promise<BlockedUser[]> =>
+  apiClient.delete<BlockedUser[]>('/blockedusers').then(r => r.data);
+
 export const setBlockedUserOptions = (options: BlockedUserOptions): Promise<BlockedUserOptions> =>
   apiClient.put<BlockedUserOptions>('/blockedusers/options', options).then(r => r.data);
 

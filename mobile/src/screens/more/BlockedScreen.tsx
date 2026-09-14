@@ -75,8 +75,9 @@ export default function BlockedScreen({ navigation }: Props) {
 
   const {
     users, ips, places, options, geoAvailable,
-    fetch, unblock, blockIp, unblockIp, blockPlace, unblockPlace,
+    fetch, unblock, unblockAll, blockIp, unblockIp, blockPlace, unblockPlace,
   } = useBlockedUsersStore();
+  const [removingAll, setRemovingAll] = useState(false);
 
   const [cidr, setCidr] = useState('');
   const [country, setCountry] = useState('');
@@ -125,6 +126,31 @@ export default function BlockedScreen({ navigation }: Props) {
     } finally {
       setBusy(false);
     }
+  };
+
+  const onRemoveAll = () => {
+    const count = users.length;
+    Alert.alert(
+      'Remove all blocked users?',
+      `This unblocks all ${count} users and forgets every IP learned from them, so ban evasion detection starts from scratch. Blocked IPs and locations are kept.\n\nThis can't be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: `Remove all ${count}`,
+          style: 'destructive',
+          onPress: async () => {
+            setRemovingAll(true);
+            try {
+              await unblockAll();
+            } catch (e: any) {
+              Alert.alert('Could not remove blocked users', String(e?.response?.data ?? e?.message ?? e));
+            } finally {
+              setRemovingAll(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const onToggleOption = async (key: keyof BlockedUserOptions) => {
@@ -250,6 +276,29 @@ export default function BlockedScreen({ navigation }: Props) {
         ))}
       </View>
 
+      {/* Danger zone — the server only accepts this from an admin */}
+      {isAdmin && (
+        <>
+          <Text style={[s.sectionTitle, s.dangerTitle]}>DANGER ZONE</Text>
+          <View style={[s.group, s.dangerGroup]}>
+            <Text style={s.dangerText}>
+              Unblocks every user on the list and forgets the IPs learned from them. Blocked IPs and
+              locations are kept. This can&apos;t be undone.
+            </Text>
+            <Pressable
+              onPress={onRemoveAll}
+              disabled={users.length === 0 || removingAll}
+              style={[s.removeAllBtn, (users.length === 0 || removingAll) && s.addBtnDisabled]}
+            >
+              <Ionicons name="trash-outline" size={16} color="#fff" />
+              <Text style={s.addBtnText}>
+                {removingAll ? 'Removing…' : `Remove all ${users.length} blocked users`}
+              </Text>
+            </Pressable>
+          </View>
+        </>
+      )}
+
       <SearchableSelectSheet
         visible={picker === 'country'}
         title="Select country"
@@ -366,6 +415,19 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: c.border,
+  },
+  dangerTitle: { color: c.danger },
+  dangerGroup: { borderWidth: StyleSheet.hairlineWidth, borderColor: c.danger },
+  dangerText: { color: c.textMuted, fontSize: Typography.sm, padding: Spacing.md, paddingBottom: 0 },
+  removeAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    backgroundColor: c.danger,
+    borderRadius: Radius.sm,
+    margin: Spacing.md,
+    paddingVertical: Spacing.sm,
   },
   optLabel: { flex: 1, fontSize: Typography.md, color: c.textPrimary, paddingRight: Spacing.md },
 });
