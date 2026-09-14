@@ -351,6 +351,26 @@ public class BlockedUsersService
     }
 
     /// <summary>
+    ///     Removes every user from the block list, along with all IPs learned from them.
+    ///     Blocked IP ranges and locations are separate rules and are left alone.
+    /// </summary>
+    /// <returns>The number of users that were unblocked.</returns>
+    public int UnblockAll()
+    {
+        int removed;
+
+        using (var conn = CreateConnection())
+        {
+            removed = conn.Execute($"DELETE FROM {UsersTable}");
+            conn.Execute($"DELETE FROM {UserIpsTable}");
+        }
+
+        Log.Warning("Unblocked all {Count} blocked users", removed);
+        Reload();
+        return removed;
+    }
+
+    /// <summary>
     ///     Adds an address or CIDR range to the block list and returns the updated list.
     /// </summary>
     /// <returns>The updated list of blocked IP addresses.</returns>

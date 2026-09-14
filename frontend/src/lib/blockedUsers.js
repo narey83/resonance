@@ -120,6 +120,13 @@ export const unblockUser = async (username) => {
   return data;
 };
 
+// Admin only. Clears the whole user list (and learned IPs); IP and location rules stay.
+export const unblockAllUsers = async () => {
+  const { data } = await api.delete('/blockedusers');
+  setState({ users: data });
+  return data;
+};
+
 export const blockIp = async (cidr, reason) => {
   const { data } = await api.post('/blockedusers/ips', { cidr, reason });
   setState({ ips: data });

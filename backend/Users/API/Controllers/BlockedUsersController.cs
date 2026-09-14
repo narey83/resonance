@@ -179,6 +179,21 @@ namespace resonance.Users.API
         }
 
         /// <summary>
+        ///     Unblocks every blocked user and forgets the IPs learned from them. Blocked IPs
+        ///     and locations are kept. There is no undo.
+        /// </summary>
+        /// <returns></returns>
+        [HttpDelete]
+        [Authorize(Policy = AuthPolicy.JwtOnly, Roles = AuthRole.AdministratorOnly)]
+        [ProducesResponseType(typeof(IReadOnlyList<BlockedUser>), 200)]
+        public async Task<IActionResult> UnblockAll()
+        {
+            BlockedUsers.UnblockAll();
+            await ApplicationHub.BroadcastBlockedUsersAsync(BlockedUsers);
+            return Ok(BlockedUsers.GetAll());
+        }
+
+        /// <summary>
         ///     Blocks the specified user.
         /// </summary>
         /// <param name="username">The username of the user to block.</param>

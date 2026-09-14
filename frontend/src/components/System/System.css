@@ -2382,6 +2382,27 @@
   background: var(--text-muted);
 }
 
+.blocked-filter {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.blocked-admin .blocked-danger-header {
+  color: var(--danger) !important;
+}
+
+.blocked-admin .ui.segment.blocked-danger {
+  border-color: var(--danger) !important;
+}
+
+.blocked-danger-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
 .blocked-scroll thead th {
   position: sticky;
   top: 0;

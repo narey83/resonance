@@ -34,6 +34,7 @@ import {
   fetchBlockedUsers,
   fetchKnownLocations,
   setBlockedUserOptions,
+  unblockAllUsers,
   unblockIp,
   unblockPlace,
   unblockUser,
@@ -41,10 +42,18 @@ import {
 } from '../../../lib/blockedUsers';
 import { parseUtcDate } from '../../../lib/util';
 import AppContext from '../../AppContext';
-import React, { useContext, useEffect, useMemo, useState } from 'react';
+import BlockedUsersTable from './BlockedUsersTable';
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import {
   Button,
   Checkbox,
+  Confirm,
   Dropdown,
   Form,
   Header,
@@ -112,6 +121,8 @@ const BlockedUsers = () => {
   });
   const [working, setWorking] = useState(false);
   const [error, setError] = useState(null);
+  const [confirmingRemoveAll, setConfirmingRemoveAll] = useState(false);
+  const [removingAll, setRemovingAll] = useState(false);
 
   useEffect(() => {
     fetchBlockedUsers().catch(() => {});
@@ -153,12 +164,26 @@ const BlockedUsers = () => {
     }
   };
 
-  const handleUnblock = async (name) => {
+  // Stable so the memoised users table doesn't re-render on every keystroke in the form.
+  const handleUnblock = useCallback(async (name) => {
     setError(null);
     try {
       await unblockUser(name);
     } catch (error_) {
       setError(error_.response?.data ?? 'Failed to unblock user');
+    }
+  }, []);
+
+  const handleRemoveAll = async () => {
+    setConfirmingRemoveAll(false);
+    setRemovingAll(true);
+    setError(null);
+    try {
+      await unblockAllUsers();
+    } catch (error_) {
+      setError(error_.response?.data ?? 'Failed to remove all blocked users');
+    } finally {
+      setRemovingAll(false);
     }
   };
 
@@ -272,77 +297,10 @@ const BlockedUsers = () => {
           </Form.Group>
         </Form>
 
-        <div className="blocked-scroll">
-          <Table
-            basic="very"
-            compact
-          >
-            <Table.Header>
-              <Table.Row>
-                <Table.HeaderCell>Username</Table.HeaderCell>
-                <Table.HeaderCell>Known IPs</Table.HeaderCell>
-                <Table.HeaderCell>Location</Table.HeaderCell>
-                <Table.HeaderCell>Blocked</Table.HeaderCell>
-                <Table.HeaderCell>Reason</Table.HeaderCell>
-                <Table.HeaderCell textAlign="right" />
-              </Table.Row>
-            </Table.Header>
-            <Table.Body>
-              {users.length === 0 && (
-                <Table.Row>
-                  <Table.Cell
-                    colSpan={6}
-                    textAlign="center"
-                  >
-                    No blocked users
-                  </Table.Cell>
-                </Table.Row>
-              )}
-              {users.map((user) => (
-                <Table.Row key={user.username}>
-                  <Table.Cell>{user.username}</Table.Cell>
-                  <Table.Cell>
-                    {user.ips?.length ? (
-                      user.ips.map((ip) => (
-                        <Label
-                          key={ip}
-                          onClick={() => blockIp(ip).catch(() => {})}
-                          size="tiny"
-                          style={{ cursor: 'pointer', marginBottom: 2 }}
-                          title="Block this IP"
-                        >
-                          {ip}
-                        </Label>
-                      ))
-                    ) : (
-                      <span style={{ opacity: 0.4 }}>—</span>
-                    )}
-                  </Table.Cell>
-                  <Table.Cell>
-                    {user.city || user.country ? (
-                      [user.city, user.country].filter(Boolean).join(', ')
-                    ) : (
-                      <span style={{ opacity: 0.4 }}>—</span>
-                    )}
-                  </Table.Cell>
-                  <Table.Cell>
-                    {parseUtcDate(user.blockedAt)?.toLocaleString()}
-                  </Table.Cell>
-                  <Table.Cell>{user.reason}</Table.Cell>
-                  <Table.Cell textAlign="right">
-                    <Button
-                      className="hover-fx"
-                      onClick={() => handleUnblock(user.username)}
-                      size="mini"
-                    >
-                      Unblock
-                    </Button>
-                  </Table.Cell>
-                </Table.Row>
-              ))}
-            </Table.Body>
-          </Table>
-        </div>
+        <BlockedUsersTable
+          onUnblock={handleUnblock}
+          users={users}
+        />
       </Segment>
 
       <Header size="small">
@@ -561,6 +519,59 @@ const BlockedUsers = () => {
           </div>
         ))}
       </Segment>
+
+      <Header
+        className="blocked-danger-header"
+        size="small"
+      >
+        <Icon name="warning sign" />
+        Danger Zone
+      </Header>
+      <Segment className="blocked-danger">
+        <div className="blocked-danger-row">
+          <div>
+            <strong>Remove all blocked users</strong>
+            <div style={{ opacity: 0.7 }}>
+              Unblocks every user on the list and forgets the IPs learned from
+              them. Blocked IPs and locations are kept. This can&apos;t be
+              undone.
+            </div>
+          </div>
+          <Button
+            disabled={users.length === 0 || removingAll}
+            loading={removingAll}
+            negative
+            onClick={() => setConfirmingRemoveAll(true)}
+          >
+            <Icon name="trash" />
+            Remove all
+          </Button>
+        </div>
+      </Segment>
+      <Confirm
+        cancelButton="Cancel"
+        confirmButton={
+          <Button negative>Remove all {users.length} blocked users</Button>
+        }
+        content={
+          <div className="content">
+            <p>
+              This will unblock all <strong>{users.length}</strong> users and
+              forget every IP address learned from them, so ban evasion
+              detection starts from scratch.
+            </p>
+            <p>
+              <strong>This can&apos;t be undone.</strong> Blocked IPs and
+              locations are not affected.
+            </p>
+          </div>
+        }
+        header="Remove all blocked users?"
+        onCancel={() => setConfirmingRemoveAll(false)}
+        onConfirm={handleRemoveAll}
+        open={confirmingRemoveAll}
+        size="tiny"
+      />
     </div>
   );
 };
