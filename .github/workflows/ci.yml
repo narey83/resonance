@@ -64,10 +64,52 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+  # The APK build is by far the longest job in CI (a native CMake/ninja compile on a
+  # single-capacity runner), and nothing it produces can change unless the app itself
+  # does -- so a backend- or frontend-only push should not pay for it. This job decides
+  # that, and mobile-apk below reads its answer. Kept as a plain git diff rather than a
+  # paths-filter action: no third-party dependency to resolve, and it behaves the same
+  # if Gitea Actions is ever pointed at this repo.
+  mobile-changes:
+    name: Detect mobile changes
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      # Full history: the diff base is the commit this push moved main off, which a
+      # default depth-1 checkout does not fetch.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # A first push, a force-push, or a base that is simply not in this clone leaves
+          # nothing to compare against. Build in that case: a redundant APK costs runner
+          # minutes, a wrongly skipped one means main has no artifact for a real change.
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
+            || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "no usable diff base ($BEFORE) — building the APK"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --name-only "$BEFORE" "$GITHUB_SHA" -- mobile | grep -q .; then
+            echo "mobile/ changed in $BEFORE..$GITHUB_SHA — building the APK"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no mobile/ changes in $BEFORE..$GITHUB_SHA — skipping the APK"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
   mobile-apk:
     name: Mobile APK (Android)
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    needs: [mobile]
+    # mobile-changes carries the main-push condition; a skipped dependency skips this job
+    # too, so pull requests still never reach the APK build.
+    if: needs.mobile-changes.outputs.changed == 'true'
+    needs: [mobile, mobile-changes]
     runs-on: ubuntu-latest
     defaults:
       run:
