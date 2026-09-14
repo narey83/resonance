@@ -46,6 +46,7 @@ import {
   Switch,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 
@@ -71,6 +72,8 @@ import {
   MusicAlbum, MusicArtist, MusicFolder, MusicGenre, MusicTrack, MusicYear,
 } from '../../api/musicLibrary';
 import { useLibrarySync } from '../../store/librarySyncStore';
+import { useLibraryViewMode } from '../../store/libraryViewStore';
+import type { LibraryViewMode } from '../../store/libraryViewStore';
 import { peekListCache, readListCache, writeListCache, hasListCache } from '../../services/libraryCache';
 import { dbg, isSyncDebugOn } from '../../api/debugLog';
 import {
@@ -177,9 +180,12 @@ function useKeyboardHeight() {
 
 // ── ArtworkBox ────────────────────────────────────────────────────────────────
 
-const ArtworkBox = React.memo(({ path, size, overrideUrl, overrideCacheKey, source }: {
+const ArtworkBox = React.memo(({ path, size, overrideUrl, overrideCacheKey, source, thumbSize = ARTWORK_THUMB_SIZE, placeholderIcon = 'musical-note' }: {
   path: string | null; size: number; overrideUrl?: string | null; overrideCacheKey?: string;
   source?: 'local' | 'server';
+  /** Server transcode size. Rows keep the shared thumbnail; big tiles ask for a sharper one. */
+  thumbSize?: number;
+  placeholderIcon?: React.ComponentProps<typeof Ionicons>['name'];
 }) => {
   const { s, c } = useLibStyles();
   const [error, setError] = React.useState(false);
@@ -187,9 +193,9 @@ const ArtworkBox = React.memo(({ path, size, overrideUrl, overrideCacheKey, sour
   // All small cells request one canonical thumbnail size (not a per-layout pixel size), so the
   // same cover hits the same expo-image cacheKey + server transcode across every list and screen.
   const isLocalPath = path?.startsWith('file://') ?? false;
-  const downloadUrl = path ? (isLocalPath ? path : getArtworkUrl(path, ARTWORK_THUMB_SIZE)) : null;
+  const downloadUrl = path ? (isLocalPath ? path : getArtworkUrl(path, thumbSize)) : null;
   const url = overrideUrl ?? downloadUrl;
-  const cacheKey = overrideUrl ? overrideCacheKey : (path && !isLocalPath ? getArtworkCacheKey(path, ARTWORK_THUMB_SIZE) : undefined);
+  const cacheKey = overrideUrl ? overrideCacheKey : (path && !isLocalPath ? getArtworkCacheKey(path, thumbSize) : undefined);
 
   const badge = source ? (
     <View style={{
@@ -222,7 +228,7 @@ const ArtworkBox = React.memo(({ path, size, overrideUrl, overrideCacheKey, sour
   }
   return (
     <View style={[s.artworkPlaceholder, { width: size, height: size, borderRadius: size / 8 }]}>
-      <Ionicons name="musical-note" size={size * 0.4} color={c.textDim} />
+      <Ionicons name={placeholderIcon} size={size * 0.4} color={c.textDim} />
       {badge}
     </View>
   );
@@ -324,6 +330,111 @@ const SortControl = ({ options, sortBy, sortDir, onSort }: {
     </>
   );
 };
+
+// ── ViewModeControl / tiles ───────────────────────────────────────────────────
+
+const VIEW_MODES: { mode: LibraryViewMode; label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
+  { mode: 'list',   label: 'List',         icon: 'list' },
+  { mode: 'small',  label: 'Small tiles',  icon: 'apps' },
+  { mode: 'medium', label: 'Medium tiles', icon: 'grid' },
+  { mode: 'large',  label: 'Large tiles',  icon: 'square' },
+];
+
+// Sits beside SortControl and opens the same style of sheet.
+const ViewModeControl = ({ mode, onChange }: { mode: LibraryViewMode; onChange: (mode: LibraryViewMode) => void }) => {
+  const { s, c } = useLibStyles();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Pressable onPress={() => setOpen(true)} hitSlop={10} style={s.sortTrigger}>
+        <Ionicons name={mode === 'list' ? 'list' : 'grid-outline'} size={18} color={c.textMuted} />
+      </Pressable>
+      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+        <Pressable style={s.overlay} onPress={() => setOpen(false)} />
+        <View style={s.sheetContainer}>
+          <View style={s.sheet}>
+            <View style={s.sheetHandle} />
+            <Text style={s.sheetTitle}>View</Text>
+            <View style={s.sheetDivider} />
+            {VIEW_MODES.map((v) => {
+              const active = v.mode === mode;
+              return (
+                <Pressable
+                  key={v.mode}
+                  onPress={() => { onChange(v.mode); setOpen(false); }}
+                  style={({ pressed }) => [s.sortSheetRow, pressed && s.rowPressed]}
+                >
+                  <View style={s.sortSheetRight}>
+                    <Ionicons name={v.icon} size={18} color={active ? c.accent : c.textMuted} />
+                    <Text style={[s.sortSheetLabel, active && s.sortSheetLabelActive]}>{v.label}</Text>
+                  </View>
+                  {active && <Ionicons name="checkmark" size={19} color={c.accent} />}
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+};
+
+const TILE_GAP = Spacing.sm;
+// Roughly how wide a tile wants to be; the column count is whatever fits, so a phone gets
+// 4 / 3 / 2 columns and a tablet or landscape screen simply gets more.
+const TILE_TARGET: Record<Exclude<LibraryViewMode, 'list'>, number> = { small: 88, medium: 120, large: 170 };
+
+function useTileGrid(mode: LibraryViewMode) {
+  const { width } = useWindowDimensions();
+  return useMemo(() => {
+    if (mode === 'list') return null;
+    const inner = width - Spacing.md * 2;
+    const columns = Math.max(2, Math.floor((inner + TILE_GAP) / (TILE_TARGET[mode] + TILE_GAP)));
+    const tileSize = Math.floor((inner - TILE_GAP * (columns - 1)) / columns);
+    // Small tiles share the list thumbnail; bigger ones would look soft on a high-density screen.
+    const thumbSize = mode === 'small' ? ARTWORK_THUMB_SIZE : 512;
+    return { columns, tileSize, thumbSize, mode };
+  }, [mode, width]);
+}
+
+type TileGrid = NonNullable<ReturnType<typeof useTileGrid>>;
+
+// Props spread onto a FlatList when it's showing tiles. The list also needs `key={listKey(grid)}`
+// so it remounts when the column count changes, which FlatList requires (a key can't be spread).
+const listKey = (grid: TileGrid | null) => (grid ? `tiles-${grid.columns}` : 'list');
+
+const tileListProps = (grid: TileGrid, s: ReturnType<typeof useLibStyles>['s']) => ({
+  numColumns: grid.columns,
+  columnWrapperStyle: s.tileRow,
+  contentContainerStyle: [s.listContent, s.tileListContent],
+});
+
+const LibraryTile = React.memo(({ grid, title, subtitle, onPress, onLongPress, artwork }: {
+  grid: TileGrid;
+  title: string;
+  subtitle?: string;
+  onPress: () => void;
+  onLongPress?: () => void;
+  artwork: (size: number, thumbSize: number) => React.ReactNode;
+}) => {
+  const { s } = useLibStyles();
+  return (
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      style={({ pressed }) => [{ width: grid.tileSize }, pressed && s.tilePressed]}
+    >
+      {artwork(grid.tileSize, grid.thumbSize)}
+      <Text style={[s.tileTitle, grid.mode === 'small' && s.tileTitleSmall]} numberOfLines={grid.mode === 'large' ? 2 : 1}>
+        {title}
+      </Text>
+      {!!subtitle && grid.mode !== 'small' && (
+        <Text style={s.tileMeta} numberOfLines={1}>{subtitle}</Text>
+      )}
+    </Pressable>
+  );
+});
+LibraryTile.displayName = 'LibraryTile';
 
 // Right-hand metadata for a track row: musical key, BPM and duration stacked one per line. Key and
 // BPM keep their line when unknown, showing a dash, so rows stay the same height and the columns
@@ -1366,6 +1477,8 @@ function ArtistsTab() {
   const [search, setSearch] = useState('');
   const { sortBy, sortDir, onSort } = useSort('artist');
   const { includeLocalLibrary, mergeLocalAndServer } = useLibrarySettings();
+  const [viewMode, setViewMode] = useLibraryViewMode('Artists');
+  const grid = useTileGrid(viewMode);
 
   const wantServer = !includeLocalLibrary || mergeLocalAndServer;
   const { data: serverArtists, loading: serverLoading, refreshing } =
@@ -1406,7 +1519,22 @@ function ArtistsTab() {
   // row always opens the server-side detail view — the same as before local Artists existed. Only
   // pure local-only mode (every row genuinely local) can pass isLocal through.
   const localOnly = includeLocalLibrary && !mergeLocalAndServer;
-  const renderItem = useCallback(({ item }: { item: MusicArtist }) => (
+  const renderItem = useCallback(({ item }: { item: MusicArtist }) => grid ? (
+    <LibraryTile
+      grid={grid}
+      title={item.artist || '(Unknown Artist)'}
+      subtitle={`${item.albumCount} album${item.albumCount !== 1 ? 's' : ''} · ${item.trackCount} track${item.trackCount !== 1 ? 's' : ''}`}
+      onPress={() => navigation.push('Artist', { artistName: item.artist, isLocal: localOnly })}
+      artwork={(size, thumbSize) => (
+        <ArtworkBox
+          path={item.hasArtwork ? item.coverPath : null}
+          size={size}
+          thumbSize={thumbSize}
+          placeholderIcon="person"
+        />
+      )}
+    />
+  ) : (
     <Pressable
       onPress={() => navigation.push('Artist', { artistName: item.artist, isLocal: localOnly })}
       style={({ pressed }) => [s.row, pressed && s.rowPressed]}
@@ -1422,7 +1550,7 @@ function ArtistsTab() {
       </View>
       <Ionicons name="chevron-forward" size={16} color={c.textMuted} />
     </Pressable>
-  ), [navigation, s, c, localOnly]);
+  ), [navigation, s, c, localOnly, grid]);
 
   return (
     <View style={s.flex}>
@@ -1431,6 +1559,8 @@ function ArtistsTab() {
         onChange={setSearch}
         placeholder="Search artists…"
         trailing={
+          <>
+          <ViewModeControl mode={viewMode} onChange={setViewMode} />
           <SortControl
             options={[
               { field: 'artist', label: 'Name' },
@@ -1441,6 +1571,7 @@ function ArtistsTab() {
             sortDir={sortDir}
             onSort={onSort}
           />
+          </>
         }
       />
       <UpdatingBanner visible={refreshing && !loading} />
@@ -1449,10 +1580,12 @@ function ArtistsTab() {
         : (
           <FlatList
             {...LIST_PERF_PROPS}
+            key={listKey(grid)}
             data={filtered}
             keyExtractor={(item) => item.artist}
             renderItem={renderItem}
             contentContainerStyle={s.listContent}
+            {...(grid ? tileListProps(grid, s) : {})}
             ListEmptyComponent={
               <Text style={s.empty}>{search ? 'No artists match' : 'No artists in library'}</Text>
             }
@@ -1473,6 +1606,8 @@ function AlbumsTab() {
   const [actionAlbum, setActionAlbum] = useState<MusicAlbum | null>(null);
   const { sortBy, sortDir, onSort } = useSort('album');
   const { includeLocalLibrary, mergeLocalAndServer } = useLibrarySettings();
+  const [viewMode, setViewMode] = useLibraryViewMode('Albums');
+  const grid = useTileGrid(viewMode);
 
   const wantServer = !includeLocalLibrary || mergeLocalAndServer;
   const { data: serverAlbums, loading: serverLoading, refreshing } =
@@ -1504,7 +1639,25 @@ function AlbumsTab() {
 
   const showBadge = includeLocalLibrary && mergeLocalAndServer;
 
-  const renderItem = useCallback(({ item }: { item: AlbumWithSource }) => (
+  const renderItem = useCallback(({ item }: { item: AlbumWithSource }) => grid ? (
+    <LibraryTile
+      grid={grid}
+      title={item.album || '(Untitled)'}
+      subtitle={[item.artist, item.year?.toString()].filter(Boolean).join(' · ')}
+      onPress={() => item._local
+        ? navigation.push('Album', { album: item, localAlbumTitle: item.album ?? undefined })
+        : navigation.push('Album', { album: item })}
+      onLongPress={item._local ? undefined : () => setActionAlbum(item)}
+      artwork={(size, thumbSize) => (
+        <ArtworkBox
+          path={item.coverPath}
+          size={size}
+          thumbSize={thumbSize}
+          source={showBadge ? (item._local ? 'local' : 'server') : undefined}
+        />
+      )}
+    />
+  ) : (
     <Pressable
       onPress={() => item._local
         ? navigation.push('Album', { album: item, localAlbumTitle: item.album ?? undefined })
@@ -1532,7 +1685,7 @@ function AlbumsTab() {
         </Pressable>
       )}
     </Pressable>
-  ), [navigation, s, c, showBadge]);
+  ), [navigation, s, c, showBadge, grid]);
 
   return (
     <View style={s.flex}>
@@ -1541,6 +1694,8 @@ function AlbumsTab() {
         onChange={setSearch}
         placeholder="Search albums…"
         trailing={
+          <>
+          <ViewModeControl mode={viewMode} onChange={setViewMode} />
           <SortControl
             options={[
               { field: 'album', label: 'Title' },
@@ -1552,6 +1707,7 @@ function AlbumsTab() {
             sortDir={sortDir}
             onSort={onSort}
           />
+          </>
         }
       />
       <UpdatingBanner visible={refreshing && !loading} />
@@ -1560,10 +1716,12 @@ function AlbumsTab() {
         : (
           <FlatList
             {...LIST_PERF_PROPS}
+            key={listKey(grid)}
             data={filtered}
             keyExtractor={(item) => `${item.album}-${item.artist}`}
             renderItem={renderItem}
             contentContainerStyle={s.listContent}
+            {...(grid ? tileListProps(grid, s) : {})}
             ListEmptyComponent={
               <Text style={s.empty}>{search ? 'No albums match' : 'No albums in library'}</Text>
             }
@@ -2204,6 +2362,8 @@ function FoldersTab() {
   const { sortBy, sortDir, onSort } = useSort('name');
   const { mixtapes } = useMixtapeStore();
   const { includeLocalLibrary, mergeLocalAndServer } = useLibrarySettings();
+  const [viewMode, setViewMode] = useLibraryViewMode('Folders');
+  const grid = useTileGrid(viewMode);
 
   const wantServer = !includeLocalLibrary || mergeLocalAndServer;
   const { data: serverFolders, loading: serverLoading, refreshing } =
@@ -2267,6 +2427,32 @@ function FoldersTab() {
     const mixtape = !item._local ? mixtapes.find((m) => item.name === m.name) : null;
     const artworkOverride = mixtape?.hasArtwork ? getMixtapeArtworkUrl(mixtape.id) : null;
     const artworkOverrideCacheKey = mixtape?.hasArtwork ? `mixtape_${mixtape.id}` : undefined;
+    if (grid) {
+      return (
+        <LibraryTile
+          grid={grid}
+          title={item.name}
+          subtitle={`${item.trackCount} track${item.trackCount !== 1 ? 's' : ''}`}
+          onPress={() => navigation.push('FolderDetail', {
+            folderPath: item.path,
+            folderName: item.name,
+            isLocal: item._local,
+          })}
+          onLongPress={item._local ? undefined : () => setActionFolder(item)}
+          artwork={(size, thumbSize) => (
+            <ArtworkBox
+              path={item.hasArtwork ? item.coverPath : null}
+              size={size}
+              thumbSize={thumbSize}
+              overrideUrl={artworkOverride}
+              overrideCacheKey={artworkOverrideCacheKey}
+              source={showBadge ? (item._local ? 'local' : 'server') : undefined}
+              placeholderIcon="folder"
+            />
+          )}
+        />
+      );
+    }
     return (
       <Pressable
         onPress={() => navigation.push('FolderDetail', {
@@ -2296,7 +2482,7 @@ function FoldersTab() {
         )}
       </Pressable>
     );
-  }, [navigation, s, c, mixtapes, showBadge]);
+  }, [navigation, s, c, mixtapes, showBadge, grid]);
 
   return (
     <View style={s.flex}>
@@ -2317,6 +2503,8 @@ function FoldersTab() {
         onChange={setSearch}
         placeholder="Search folders…"
         trailing={
+          <>
+          <ViewModeControl mode={viewMode} onChange={setViewMode} />
           <SortControl
             options={[
               { field: 'name', label: 'Name' },
@@ -2325,6 +2513,7 @@ function FoldersTab() {
             sortDir={sortDir}
             onSort={onSort}
           />
+          </>
         }
       />
       <UpdatingBanner visible={refreshing && !loading} />
@@ -2333,10 +2522,12 @@ function FoldersTab() {
         : (
           <FlatList
             {...LIST_PERF_PROPS}
+            key={listKey(grid)}
             data={filtered}
             keyExtractor={(item, index) => `${item.path}-${index}`}
             renderItem={renderItem}
             contentContainerStyle={s.listContent}
+            {...(grid ? tileListProps(grid, s) : {})}
             ListEmptyComponent={
               <Text style={s.empty}>{search ? 'No folders match' : 'No folders in library'}</Text>
             }
@@ -2474,6 +2665,8 @@ function PlaylistsTab() {
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameName, setRenameName] = useState('');
   const { sortBy, sortDir, onSort } = useSort(null);
+  const [viewMode, setViewMode] = useLibraryViewMode('Mixtapes');
+  const grid = useTileGrid(viewMode);
 
   const sorted = useMemo(
     () => sortList(playlists, sortBy, sortDir, (p, f) =>
@@ -2496,7 +2689,41 @@ function PlaylistsTab() {
     setRenameName('');
   };
 
-  const renderItem = useCallback(({ item }: { item: typeof playlists[number] }) => (
+  // Tiles have no room for the row's rename/delete buttons, so a long press offers both.
+  const openTileActions = useCallback((item: typeof playlists[number]) => {
+    Alert.alert(item.name, undefined, [
+      { text: 'Rename', onPress: () => { setRenameId(item.id); setRenameName(item.name); } },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => Alert.alert('Delete mixtape?', `"${item.name}" will be deleted.`, [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: () => remove(item.id) },
+        ]),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }, [remove]);
+
+  const renderItem = useCallback(({ item }: { item: typeof playlists[number] }) => grid ? (
+    <LibraryTile
+      grid={grid}
+      title={item.name}
+      subtitle={`${item.tracks?.length ?? 0} track${(item.tracks?.length ?? 0) !== 1 ? 's' : ''}`}
+      onPress={() => navigation.push('PlaylistDetail', { playlistId: item.id })}
+      onLongPress={() => openTileActions(item)}
+      artwork={(size, thumbSize) => (
+        <ArtworkBox
+          path={null}
+          size={size}
+          thumbSize={thumbSize}
+          overrideUrl={item.hasArtwork ? getMixtapeArtworkUrl(item.id) : null}
+          overrideCacheKey={`mixtape_${item.id}`}
+          placeholderIcon="musical-notes"
+        />
+      )}
+    />
+  ) : (
     <Pressable
       onPress={() => navigation.push('PlaylistDetail', { playlistId: item.id })}
       style={({ pressed }) => [s.row, pressed && s.rowPressed]}
@@ -2516,7 +2743,7 @@ function PlaylistsTab() {
         <Ionicons name="trash-outline" size={16} color={c.textMuted} />
       </Pressable>
     </Pressable>
-  ), [navigation, remove, setRenameId, setRenameName, s, c]);
+  ), [navigation, remove, setRenameId, setRenameName, s, c, grid, openTileActions]);
 
   return (
     <View style={s.flex}>
@@ -2573,6 +2800,7 @@ function PlaylistsTab() {
       )}
 
       <View style={s.sortRow}>
+        <ViewModeControl mode={viewMode} onChange={setViewMode} />
         <SortControl
           options={[
             { field: 'name', label: 'Name' },
@@ -2585,10 +2813,12 @@ function PlaylistsTab() {
       </View>
       <FlatList
         {...LIST_PERF_PROPS}
+        key={listKey(grid)}
         data={sorted}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         contentContainerStyle={s.listContent}
+        {...(grid ? tileListProps(grid, s) : {})}
         ListEmptyComponent={
           <Text style={s.empty}>{'No mixtapes yet\nTap New Mixtape to get started'}</Text>
         }
@@ -4312,6 +4542,12 @@ function makeLibStyles(c: ThemeColors) {
 
     // List rows
     listContent: { paddingBottom: Spacing.xxl },
+    tileListContent: { paddingHorizontal: Spacing.md, paddingTop: Spacing.md },
+    tileRow:         { gap: TILE_GAP, marginBottom: Spacing.md },
+    tilePressed:     { opacity: 0.6 },
+    tileTitle:       { fontSize: Typography.sm, color: c.textPrimary, fontWeight: '500', marginTop: Spacing.xs },
+    tileTitleSmall:  { fontSize: Typography.xs },
+    tileMeta:        { fontSize: Typography.xs, color: c.textMuted, marginTop: 1 },
     row: {
       flexDirection: 'row',
       alignItems: 'center',
