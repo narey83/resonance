@@ -3590,10 +3590,10 @@ function FolderDetail({ route }: FolderDetailProps) {
   const [renameTrackTarget, setRenameTrackTarget] = useState<MusicTrack | null>(null);
   const [folderActionOpen, setFolderActionOpen] = useState(false);
   const [renamingFolder, setRenamingFolder] = useState(false);
-  // '' = "Track order": the server's `track` sort (album → disc → track number), i.e. the folder's
+  // '' = "Track number": the server's `track` sort (album → disc → track number), i.e. the folder's
   // real running order, and the default. It's falsy, so every `sortBy ? …` check below treats it as
   // "no sort" (server default / no client re-sort). Picking a field re-sorts (server-side for the
-  // shared library, client-side for on-device folders); the user can tap "Track order" to go back.
+  // shared library, client-side for on-device folders); the user can tap "Track number" to go back.
   const { sortBy, sortDir, onSort } = useSort('');
 
   const fetchingRef  = useRef(false);
@@ -3711,11 +3711,27 @@ function FolderDetail({ route }: FolderDetailProps) {
   const displayRef = useRef<MusicTrack[]>([]);
   useEffect(() => { displayRef.current = displayTracks; }, [displayTracks]);
 
+  // A multi-disc rip shows "2-03" so disc 2's track 3 can't be mistaken for disc 1's; a single
+  // disc just shows the track number. Untagged tracks show a dash rather than a made-up position.
+  // BPM and key come from analysis, so those sorts are only offered once some track has them.
+  const { multiDisc, hasBpm, hasKey } = useMemo(() => ({
+    multiDisc: displayTracks.some((t) => (t.discNumber ?? 1) > 1),
+    hasBpm: displayTracks.some((t) => t.bpm != null),
+    hasKey: displayTracks.some((t) => !!t.key),
+  }), [displayTracks]);
+
   const renderTrack = useCallback(({ item, index }: { item: MusicTrack; index: number }) => (
     <Pressable
       onPress={() => { playFromList(item, index); }}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
     >
+      <Text style={[s.trackNum, multiDisc && s.trackNumWide]} numberOfLines={1}>
+        {item.trackNumber == null
+          ? '–'
+          : multiDisc
+            ? `${item.discNumber ?? 1}-${String(item.trackNumber).padStart(2, '0')}`
+            : item.trackNumber}
+      </Text>
       <ArtworkBox
         path={item.hasArtwork && !isLocal ? item.path : null}
         overrideUrl={isLocal && item.hasArtwork ? item.coverPath : undefined}
@@ -3731,7 +3747,7 @@ function FolderDetail({ route }: FolderDetailProps) {
       </Pressable>
     </Pressable>
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ), [playFromList, s, c]);
+  ), [playFromList, multiDisc, s, c]);
 
   return (
     <View style={s.flex}>
@@ -3764,15 +3780,14 @@ function FolderDetail({ route }: FolderDetailProps) {
         trailing={
           <SortControl
             options={[
-              { field: '', label: 'Track order' },
-              { field: 'title', label: 'Title' },
+              { field: '', label: 'Track number' },
               { field: 'artist', label: 'Artist' },
-              { field: 'key', label: 'Key' },
-              { field: 'duration', label: 'Length' },
-              ...(isLocal ? [] : [
-                { field: 'bpm', label: 'BPM' },
-                { field: 'added', label: 'Added' },
-              ]),
+              { field: 'title', label: 'Track name' },
+              { field: 'duration', label: 'Track time' },
+              // Kept while active so the current sort never vanishes from the menu.
+              ...(hasBpm || sortBy === 'bpm' ? [{ field: 'bpm', label: 'BPM' }] : []),
+              ...(hasKey || sortBy === 'key' ? [{ field: 'key', label: 'Key' }] : []),
+              ...(isLocal ? [] : [{ field: 'added', label: 'Added' }]),
             ]}
             sortBy={sortBy}
             sortDir={sortDir}
@@ -4343,6 +4358,7 @@ function makeLibStyles(c: ThemeColors) {
       fontSize: Typography.sm,
       color: c.textMuted,
     },
+    trackNumWide: { width: 36 },
     trackDur: {
       fontSize: Typography.sm,
       color: c.textMuted,
