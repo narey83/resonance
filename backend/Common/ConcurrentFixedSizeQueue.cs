@@ -50,18 +50,31 @@ namespace resonance
 
         private ConcurrentQueue<T> Queue { get; } = new ConcurrentQueue<T>();
         private int Size { get; }
+        private object SyncRoot { get; } = new object();
 
+        // Writers are serialised so enqueue-then-trim is atomic. Without the lock, two writers
+        // could both see the queue one over capacity and both dequeue, leaving it short.
+        // Readers stay lock-free: enumerating a ConcurrentQueue works on a snapshot.
         public void Enqueue(T item)
         {
-            Queue.Enqueue(item);
-
-            if (Queue.Count > Size)
+            lock (SyncRoot)
             {
-                Queue.TryDequeue(out _);
+                Queue.Enqueue(item);
+
+                while (Queue.Count > Size)
+                {
+                    Queue.TryDequeue(out _);
+                }
             }
         }
 
-        public void Clear() => Queue.Clear();
+        public void Clear()
+        {
+            lock (SyncRoot)
+            {
+                Queue.Clear();
+            }
+        }
 
         public IEnumerator<T> GetEnumerator() => Queue.GetEnumerator();
 
