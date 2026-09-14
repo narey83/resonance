@@ -29,10 +29,48 @@
 
 import './TransferHistory.css';
 import { getTransferAttempts, getTransferHistory } from '../../lib/reports';
+import { onTransferComplete } from '../../lib/transferEvents';
 import { formatBitrate, formatBytes } from '../../lib/util';
+import UsernameLink from '../Shared/UsernameLink';
+import { RefreshCw, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Modal } from 'semantic-ui-react';
 
 const PAGE_SIZE = 50;
+const AUTO_REFRESH_MS = 30_000;
+const LIVE_REFRESH_COOLDOWN_MS = 2_500;
+const COLUMN_WIDTHS_KEY = 'resonance-transfer-history-column-widths';
+const MIN_COLUMN_WIDTH = 64;
+
+const COLUMNS = [
+  { key: 'finished', label: 'Finished', width: 180 },
+  { key: 'direction', label: 'Dir', width: 90 },
+  { key: 'peer', label: 'Peer', width: 150 },
+  { key: 'file', label: 'File', width: 360 },
+  { key: 'size', label: 'Size', numeric: true, width: 110 },
+  { key: 'speed', label: 'Speed', numeric: true, width: 120 },
+  { key: 'outcome', label: 'Outcome', width: 260 },
+];
+
+const defaultColumnWidths = Object.fromEntries(
+  COLUMNS.map(({ key, width }) => [key, width]),
+);
+
+const loadColumnWidths = () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(COLUMN_WIDTHS_KEY));
+    return Object.fromEntries(
+      COLUMNS.map(({ key, width }) => [
+        key,
+        Math.max(MIN_COLUMN_WIDTH, Number(saved?.[key]) || width),
+      ]),
+    );
+  } catch {
+    // A malformed or unavailable preference should never prevent the table loading.
+  }
+
+  return defaultColumnWidths;
+};
 
 const DIRECTIONS = [
   { key: '', label: 'All' },
@@ -79,6 +117,81 @@ const retryNote = (count) =>
     ? 'Retried — show attempts'
     : `Retried after ${count} failed attempts`;
 
+const transferDuration = (item) => {
+  const start = new Date(item.startedAt).getTime();
+  const end = new Date(item.endedAt).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start)
+    return '—';
+
+  const seconds = Math.round((end - start) / 1_000);
+  const minutes = Math.floor(seconds / 60);
+  return minutes > 0 ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
+};
+
+const TransferDetail = ({ item, onClose }) => {
+  const details = [
+    ['Direction', item.direction],
+    ['Outcome', item.stateDescription],
+    ['Requested', formatWhen(item.requestedAt)],
+    ['Queued', formatWhen(item.enqueuedAt)],
+    ['Started', formatWhen(item.startedAt)],
+    ['Finished', formatWhen(item.endedAt)],
+    ['Duration', transferDuration(item)],
+    ['File size', formatBytes(item.size)],
+    ['Transferred', formatBytes(item.bytesTransferred)],
+    ['Average speed', formatSpeed(item.averageSpeed)],
+    ['Transfer ID', item.id],
+    ['Retry of', item.retryOfId || '—'],
+    ['Prior failed attempts', item.priorFailedAttempts ?? 0],
+  ];
+
+  return (
+    <Modal
+      centered
+      onClose={onClose}
+      open
+      size="small"
+    >
+      <div className="th-detail">
+        <div className="th-detail-header">
+          <div>
+            <div className="th-detail-title">Transfer details</div>
+            <UsernameLink username={item.username} />
+          </div>
+          <button
+            aria-label="Close transfer details"
+            className="th-detail-close"
+            onClick={onClose}
+            type="button"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div
+          className="th-detail-file"
+          title={item.filename}
+        >
+          {item.filename || '—'}
+        </div>
+        <dl className="th-detail-grid">
+          {details.map(([label, value]) => (
+            <React.Fragment key={label}>
+              <dt>{label}</dt>
+              <dd>{value ?? '—'}</dd>
+            </React.Fragment>
+          ))}
+        </dl>
+        {item.exception ? (
+          <div className="th-detail-exception">
+            <strong>Error</strong>
+            <span>{item.exception}</span>
+          </div>
+        ) : null}
+      </div>
+    </Modal>
+  );
+};
+
 const TransferHistory = () => {
   const [direction, setDirection] = useState('');
   const [state, setState] = useState('');
@@ -90,7 +203,12 @@ const TransferHistory = () => {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [columnWidths, setColumnWidths] = useState(loadColumnWidths);
+  const [resizingColumn, setResizingColumn] = useState(null);
 
   // Attempt history for a retried transfer is fetched on demand (one row expanded at a time)
   // rather than bundled into every page load, since most rows have no retries to show.
@@ -102,6 +220,40 @@ const TransferHistory = () => {
   // 1.6M rows returns, so without this an older, slower response can land last and overwrite the
   // results for the filter the user is actually looking at.
   const requestId = useRef(0);
+  const attemptsRequestId = useRef(0);
+  const resizeRef = useRef(null);
+
+  useEffect(() => {
+    if (!resizingColumn) return undefined;
+
+    const resize = (event) => {
+      const { key, startWidth, startX } = resizeRef.current;
+      setColumnWidths((current) => ({
+        ...current,
+        [key]: Math.max(MIN_COLUMN_WIDTH, startWidth + event.clientX - startX),
+      }));
+    };
+
+    const finish = () => {
+      setResizingColumn(null);
+      setColumnWidths((current) => {
+        try {
+          localStorage.setItem(COLUMN_WIDTHS_KEY, JSON.stringify(current));
+        } catch {
+          // Resizing still works for this session when storage is unavailable.
+        }
+
+        return current;
+      });
+    };
+
+    window.addEventListener('pointermove', resize);
+    window.addEventListener('pointerup', finish, { once: true });
+    return () => {
+      window.removeEventListener('pointermove', resize);
+      window.removeEventListener('pointerup', finish);
+    };
+  }, [resizingColumn]);
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -111,38 +263,46 @@ const TransferHistory = () => {
     return () => clearTimeout(handle);
   }, [searchInput]);
 
-  const load = useCallback(async () => {
-    const id = ++requestId.current;
-    setLoading(true);
-    setError(null);
+  const load = useCallback(
+    async ({ silent = false } = {}) => {
+      const id = ++requestId.current;
+      if (silent) setRefreshing(true);
+      else setLoading(true);
+      setError(null);
 
-    try {
-      const result = await getTransferHistory({
-        direction: direction || undefined,
-        limit: PAGE_SIZE,
-        offset: page * PAGE_SIZE,
-        search: search || undefined,
-        start:
-          rangeDays > 0
-            ? new Date(Date.now() - rangeDays * 86_400_000).toISOString()
-            : undefined,
-        state: state || undefined,
-      });
+      try {
+        const result = await getTransferHistory({
+          direction: direction || undefined,
+          limit: PAGE_SIZE,
+          offset: page * PAGE_SIZE,
+          search: search || undefined,
+          start:
+            rangeDays > 0
+              ? new Date(Date.now() - rangeDays * 86_400_000).toISOString()
+              : undefined,
+          state: state || undefined,
+        });
 
-      if (id !== requestId.current) return;
+        if (id !== requestId.current) return;
 
-      setItems(result.items ?? []);
-      setTotal(result.total ?? 0);
-    } catch (loadError) {
-      if (id !== requestId.current) return;
-      setError(
-        loadError?.response?.data ?? loadError?.message ?? 'Request failed',
-      );
-      setItems([]);
-    } finally {
-      if (id === requestId.current) setLoading(false);
-    }
-  }, [direction, page, rangeDays, search, state]);
+        setItems(result.items ?? []);
+        setTotal(result.total ?? 0);
+        setLastUpdated(new Date());
+      } catch (loadError) {
+        if (id !== requestId.current) return;
+        setError(
+          loadError?.response?.data ?? loadError?.message ?? 'Request failed',
+        );
+        setItems([]);
+      } finally {
+        if (id === requestId.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    },
+    [direction, page, rangeDays, search, state],
+  );
 
   useEffect(() => {
     load();
@@ -150,24 +310,61 @@ const TransferHistory = () => {
     setAttempts([]);
   }, [load]);
 
+  // The application hub emits transfer-complete events. Refresh promptly on the first event,
+  // coalesce bursts from busy queues, and retain a modest poll as a fallback after reconnects.
+  useEffect(() => {
+    let cooldownTimer = null;
+    let pending = false;
+
+    const refresh = () => load({ silent: true });
+    const settle = () => {
+      if (pending) {
+        pending = false;
+        refresh();
+        cooldownTimer = setTimeout(settle, LIVE_REFRESH_COOLDOWN_MS);
+      } else {
+        cooldownTimer = null;
+      }
+    };
+
+    const off = onTransferComplete(() => {
+      if (cooldownTimer) {
+        pending = true;
+        return;
+      }
+
+      refresh();
+      cooldownTimer = setTimeout(settle, LIVE_REFRESH_COOLDOWN_MS);
+    });
+    const pollTimer = setInterval(refresh, AUTO_REFRESH_MS);
+
+    return () => {
+      off();
+      clearInterval(pollTimer);
+      if (cooldownTimer) clearTimeout(cooldownTimer);
+    };
+  }, [load]);
+
   const toggleAttempts = useCallback(
     async (item) => {
       if (expandedId === item.id) {
+        attemptsRequestId.current += 1;
         setExpandedId(null);
         return;
       }
 
+      const id = ++attemptsRequestId.current;
       setExpandedId(item.id);
       setAttempts([]);
       setAttemptsLoading(true);
 
       try {
         const result = await getTransferAttempts(item.id);
-        setAttempts(result ?? []);
+        if (id === attemptsRequestId.current) setAttempts(result ?? []);
       } catch {
-        setAttempts([]);
+        if (id === attemptsRequestId.current) setAttempts([]);
       } finally {
-        setAttemptsLoading(false);
+        if (id === attemptsRequestId.current) setAttemptsLoading(false);
       }
     },
     [expandedId],
@@ -182,19 +379,115 @@ const TransferHistory = () => {
     setPage(0);
   };
 
+  const startColumnResize = (event, key) => {
+    event.preventDefault();
+    event.stopPropagation();
+    resizeRef.current = {
+      key,
+      startWidth: columnWidths[key],
+      startX: event.clientX,
+    };
+    setResizingColumn(key);
+  };
+
+  const renderCell = (item, key) => {
+    switch (key) {
+      case 'finished':
+        return <td className="th-nowrap">{formatWhen(item.endedAt)}</td>;
+      case 'direction':
+        return <td>{item.direction}</td>;
+      case 'peer':
+        return (
+          <td className="th-nowrap th-peer">
+            <UsernameLink username={item.username} />
+          </td>
+        );
+      case 'file':
+        return (
+          <td
+            className="th-file"
+            title={item.filename}
+          >
+            {shortName(item.filename)}
+          </td>
+        );
+      case 'size':
+        return <td className="th-right th-nowrap">{formatBytes(item.size)}</td>;
+      case 'speed':
+        return (
+          <td className="th-right th-nowrap">
+            {formatSpeed(item.averageSpeed)}
+          </td>
+        );
+      case 'outcome':
+        return (
+          <td className={stateClass(item.stateDescription)}>
+            {item.stateDescription}
+            {item.exception ? (
+              <span
+                className="th-exception"
+                title={item.exception}
+              >
+                {item.exception}
+              </span>
+            ) : null}
+            {item.priorFailedAttempts > 0 ? (
+              <button
+                className="th-retry-note"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  toggleAttempts(item);
+                }}
+                type="button"
+              >
+                {retryNote(item.priorFailedAttempts)}
+                {expandedId === item.id ? ' ▲' : ' ▾'}
+              </button>
+            ) : null}
+          </td>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="transfer-history">
       <div className="th-header">
         <div className="th-title">Transfer History</div>
-        <div className="th-summary">
-          {loading && items.length === 0
-            ? 'Loading…'
-            : `${firstRow.toLocaleString()}–${lastRow.toLocaleString()} transfers`}
+        <div className="th-header-actions">
+          <div className="th-summary">
+            {loading && items.length === 0
+              ? 'Loading…'
+              : `${firstRow.toLocaleString()}–${lastRow.toLocaleString()} transfers`}
+            {lastUpdated ? (
+              <span title={lastUpdated.toLocaleString()}>
+                {' · '}Updated {lastUpdated.toLocaleTimeString()}
+              </span>
+            ) : null}
+          </div>
+          <button
+            aria-label="Refresh transfer history"
+            className="th-refresh"
+            disabled={loading || refreshing}
+            onClick={() => load({ silent: true })}
+            title="Refresh now"
+            type="button"
+          >
+            <RefreshCw
+              className={
+                refreshing ? 'th-refresh-icon th-spinning' : 'th-refresh-icon'
+              }
+              size={15}
+            />
+            Refresh
+          </button>
         </div>
       </div>
 
       <div className="th-filters">
         <input
+          aria-label="Search transfer history"
           className="th-search"
           onChange={(event) => setSearchInput(event.target.value)}
           placeholder="Search filename or peer…"
@@ -205,6 +498,7 @@ const TransferHistory = () => {
         <div className="th-chips">
           {DIRECTIONS.map((option) => (
             <button
+              aria-pressed={direction === option.key}
               className={
                 direction === option.key ? 'th-chip th-chip-on' : 'th-chip'
               }
@@ -220,6 +514,7 @@ const TransferHistory = () => {
         <div className="th-chips">
           {STATES.map((option) => (
             <button
+              aria-pressed={state === option.key}
               className={
                 state === option.key ? 'th-chip th-chip-on' : 'th-chip'
               }
@@ -235,6 +530,7 @@ const TransferHistory = () => {
         <div className="th-chips">
           {RANGES.map((option) => (
             <button
+              aria-pressed={rangeDays === option.days}
               className={
                 rangeDays === option.days ? 'th-chip th-chip-on' : 'th-chip'
               }
@@ -250,64 +546,71 @@ const TransferHistory = () => {
 
       {error ? <div className="th-error">{String(error)}</div> : null}
 
-      <div className="th-table-wrap">
-        <table className="th-table">
+      <div
+        className={refreshing ? 'th-table-wrap th-refreshing' : 'th-table-wrap'}
+      >
+        <table
+          className="th-table"
+          style={{
+            width: COLUMNS.reduce((sum, { key }) => sum + columnWidths[key], 0),
+          }}
+        >
+          <colgroup>
+            {COLUMNS.map(({ key }) => (
+              <col
+                key={key}
+                style={{ width: columnWidths[key] }}
+              />
+            ))}
+          </colgroup>
           <thead>
             <tr>
-              <th>Finished</th>
-              <th>Dir</th>
-              <th>Peer</th>
-              <th>File</th>
-              <th className="th-right">Size</th>
-              <th className="th-right">Speed</th>
-              <th>Outcome</th>
+              {COLUMNS.map((column) => (
+                <th
+                  className={column.numeric ? 'th-right' : undefined}
+                  key={column.key}
+                >
+                  {column.label}
+                  <span
+                    aria-label={`Resize ${column.label} column`}
+                    aria-orientation="vertical"
+                    className={`th-resize-handle${resizingColumn === column.key ? ' th-resizing' : ''}`}
+                    onPointerDown={(event) =>
+                      startColumnResize(event, column.key)
+                    }
+                    role="separator"
+                    title={`Drag to resize ${column.label}`}
+                  />
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {items.map((item) => (
               <React.Fragment key={item.id}>
-                <tr>
-                  <td className="th-nowrap">{formatWhen(item.endedAt)}</td>
-                  <td>{item.direction}</td>
-                  <td className="th-nowrap">{item.username}</td>
-                  <td
-                    className="th-file"
-                    title={item.filename}
-                  >
-                    {shortName(item.filename)}
-                  </td>
-                  <td className="th-right th-nowrap">
-                    {formatBytes(item.size)}
-                  </td>
-                  <td className="th-right th-nowrap">
-                    {formatSpeed(item.averageSpeed)}
-                  </td>
-                  <td className={stateClass(item.stateDescription)}>
-                    {item.stateDescription}
-                    {item.exception ? (
-                      <span
-                        className="th-exception"
-                        title={item.exception}
-                      >
-                        {item.exception}
-                      </span>
-                    ) : null}
-                    {item.priorFailedAttempts > 0 ? (
-                      <button
-                        className="th-retry-note"
-                        onClick={() => toggleAttempts(item)}
-                        type="button"
-                      >
-                        {retryNote(item.priorFailedAttempts)}
-                        {expandedId === item.id ? ' ▲' : ' ▾'}
-                      </button>
-                    ) : null}
-                  </td>
+                <tr
+                  className="th-transfer-row"
+                  onClick={() => setSelectedItem(item)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setSelectedItem(item);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  title="View transfer details"
+                >
+                  {COLUMNS.map(({ key }) => (
+                    <React.Fragment key={key}>
+                      {renderCell(item, key)}
+                    </React.Fragment>
+                  ))}
                 </tr>
 
                 {expandedId === item.id ? (
                   <tr className="th-attempts-row">
-                    <td colSpan={7}>
+                    <td colSpan={COLUMNS.length}>
                       {attemptsLoading ? (
                         <div className="th-attempts-loading">
                           Loading attempts…
@@ -379,6 +682,13 @@ const TransferHistory = () => {
           Next ›
         </button>
       </div>
+
+      {selectedItem ? (
+        <TransferDetail
+          item={selectedItem}
+          onClose={() => setSelectedItem(null)}
+        />
+      ) : null}
     </div>
   );
 };
