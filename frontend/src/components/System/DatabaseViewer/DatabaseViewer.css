@@ -117,8 +117,20 @@
   border-top: 1px solid var(--border);
 }
 
+/* Toggle and SELECT button side by side; the row carries the hover so both read as one item */
+.dbv-table-row {
+  display: flex;
+  align-items: center;
+  transition: background 0.1s;
+}
+
+.dbv-table-row:hover {
+  background: var(--surface-hover);
+}
+
 .dbv-table-toggle {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   background: none;
   border: none;
   color: var(--text-muted);
@@ -128,13 +140,12 @@
   gap: 5px;
   font-size: 0.72rem;
   font-weight: 500;
-  padding: 5px 8px 5px 12px;
+  padding: 5px 4px 5px 12px;
   text-align: left;
-  transition: background 0.1s, color 0.1s;
+  transition: color 0.1s;
 }
 
-.dbv-table-toggle:hover {
-  background: var(--surface-hover);
+.dbv-table-row:hover .dbv-table-toggle {
   color: var(--text-primary);
 }
 
@@ -191,17 +202,21 @@
 }
 
 .dbv-table-select-btn {
-  margin-left: auto;
+  flex-shrink: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
   background: none;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
   opacity: 0;
-  padding: 0 2px;
+  padding: 0 8px 0 2px;
   transition: opacity 0.15s, color 0.15s;
 }
 
-.dbv-table-toggle:hover .dbv-table-select-btn {
+.dbv-table-row:hover .dbv-table-select-btn,
+.dbv-table-select-btn:focus-visible {
   opacity: 1;
 }
 

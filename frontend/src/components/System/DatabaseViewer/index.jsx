@@ -416,38 +416,39 @@ const DatabaseViewer = () => {
                   )}
                   {Object.entries(schema).map(([table, cols]) => (
                     <div key={table}>
-                      <button
-                        className="dbv-table-toggle"
-                        onClick={() => toggleTable(table)}
-                        type="button"
-                      >
-                        {expandedTables[table] ? (
-                          <ChevronDown size={11} />
-                        ) : (
-                          <ChevronRight size={11} />
-                        )}
-                        <Table
-                          size={11}
-                          style={{ flexShrink: 0 }}
-                        />
-                        <span className="dbv-table-name">{table}</span>
-                        {databaseCounts[table] !== undefined && (
-                          <span className="dbv-table-count">
-                            {fmtCount(databaseCounts[table])}
-                          </span>
-                        )}
+                      {/* The SELECT button sits beside the toggle, not inside it: a <button>
+                          can't contain another <button>. */}
+                      <div className="dbv-table-row">
+                        <button
+                          className="dbv-table-toggle"
+                          onClick={() => toggleTable(table)}
+                          type="button"
+                        >
+                          {expandedTables[table] ? (
+                            <ChevronDown size={11} />
+                          ) : (
+                            <ChevronRight size={11} />
+                          )}
+                          <Table
+                            size={11}
+                            style={{ flexShrink: 0 }}
+                          />
+                          <span className="dbv-table-name">{table}</span>
+                          {databaseCounts[table] !== undefined && (
+                            <span className="dbv-table-count">
+                              {fmtCount(databaseCounts[table])}
+                            </span>
+                          )}
+                        </button>
                         <button
                           className="dbv-table-select-btn"
-                          onClick={(clickEvent) => {
-                            clickEvent.stopPropagation();
-                            selectTable(table);
-                          }}
+                          onClick={() => selectTable(table)}
                           title="Generate SELECT query"
                           type="button"
                         >
                           <Play size={10} />
                         </button>
-                      </button>
+                      </div>
                       {expandedTables[table] && (
                         <div className="dbv-col-list">
                           {cols.map((col) => (
