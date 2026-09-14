@@ -110,7 +110,6 @@ export default function NotificationsScreen() {
           label="Blocked-user alerts"
           subtitle="Alert when a user is auto-blocked for ban evasion"
           colors={colors}
-          last
         >
           <Switch
             disabled={!loaded}
@@ -118,6 +117,20 @@ export default function NotificationsScreen() {
             thumbColor={colors.textPrimary}
             trackColor={{ false: colors.bgElevated, true: colors.accent }}
             value={notifications.userBlocked}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Restart required"
+          subtitle="Alert when a config change needs a backend restart (administrators only)"
+          colors={colors}
+          last
+        >
+          <Switch
+            disabled={!loaded}
+            onValueChange={(v) => setNotification('restartRequired', v)}
+            thumbColor={colors.textPrimary}
+            trackColor={{ false: colors.bgElevated, true: colors.accent }}
+            value={notifications.restartRequired}
           />
         </SettingRow>
       </View>

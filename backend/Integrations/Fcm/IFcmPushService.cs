@@ -46,5 +46,14 @@ namespace resonance.Integrations.Fcm
         /// <param name="removed">Tracks removed since the last sync.</param>
         /// <returns>The operation context.</returns>
         Task SendLibraryUpdatedAsync(int added, int updated, int removed);
+
+        /// <summary>
+        ///     Sends a "restart required" push to every device registered to an administrator, so a
+        ///     configuration change that needs a restart reaches someone who can actually perform one
+        ///     even while the app is backgrounded or killed. A no-op when the integration is disabled
+        ///     or no administrator has a registered device. Never throws.
+        /// </summary>
+        /// <returns>The operation context.</returns>
+        Task SendRestartRequiredAsync();
     }
 }

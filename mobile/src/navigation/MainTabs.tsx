@@ -51,6 +51,7 @@ import LibraryScreen             from '../screens/library/LibraryScreen';
 import MoreScreen                from '../screens/more/MoreScreen';
 import OverviewScreen            from '../screens/more/OverviewScreen';
 import ConnectionScreen          from '../screens/more/ConnectionScreen';
+import ServerScreen              from '../screens/more/ServerScreen';
 import BrowseScreen              from '../screens/more/BrowseScreen';
 import BrowseUserScreen          from '../screens/more/BrowseUserScreen';
 import RoomsScreen               from '../screens/more/RoomsScreen';
@@ -80,6 +81,7 @@ export type MainTabParamList = {
 export type MoreStackParamList = {
   More:             undefined;
   Overview:         undefined;
+  Server:           undefined;
   Connection:       undefined;
   Logs:             undefined;
   Blocked:          undefined;
@@ -120,6 +122,7 @@ function MoreStack() {
     <More.Navigator screenOptions={navOpts}>
       <More.Screen name="More"             component={MoreScreen}             options={{ title: 'More' }} />
       <More.Screen name="Overview"         component={OverviewScreen}         options={{ title: 'Overview' }} />
+      <More.Screen name="Server"           component={ServerScreen}           options={{ title: 'Server' }} />
       <More.Screen name="Connection"       component={ConnectionScreen}       options={{ title: 'Connection' }} />
       <More.Screen name="Logs"             component={LogsScreen}             options={{ title: 'Server Logs' }} />
       <More.Screen name="Blocked"          component={BlockedScreen}          options={{ title: 'Blocked' }} />

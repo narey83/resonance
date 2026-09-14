@@ -106,12 +106,59 @@ namespace resonance.Integrations.Fcm
                 using var http = HttpClientFactory.CreateClient();
                 http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
-                await Task.WhenAll(tokens.Select(t => SendToTokenAsync(http, uri, t.Token, added, updated, removed)));
+                var data = new Dictionary<string, string>
+                {
+                    ["type"] = "library_updated",
+                    ["added"] = added.ToString(),
+                    ["updated"] = updated.ToString(),
+                    ["removed"] = removed.ToString(),
+                };
+
+                await Task.WhenAll(tokens.Select(t => SendToTokenAsync(http, uri, t.Token, data)));
             }
             catch (Exception ex)
             {
                 // Sent fire-and-forget from the scan loop — never let a push failure surface there.
                 Log.Warning(ex, "Failed to send FCM library-updated push: {Message}", ex.Message);
+            }
+        }
+
+        public async Task SendRestartRequiredAsync()
+        {
+            if (!FcmOptions.Enabled)
+            {
+                return;
+            }
+
+            try
+            {
+                // Administrators only: the restart endpoint is gated on AuthRole.AdministratorOnly, so
+                // pushing this to anyone else advertises an action their token would be refused.
+                var tokens = PushTokens.GetForAdministrators();
+
+                if (tokens.Count == 0)
+                {
+                    return;
+                }
+
+                var accessToken = await GetAccessTokenAsync();
+                var uri = $"https://fcm.googleapis.com/v1/projects/{FcmOptions.ProjectId}/messages:send";
+
+                using var http = HttpClientFactory.CreateClient();
+                http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+                var data = new Dictionary<string, string>
+                {
+                    ["type"] = "restart_required",
+                };
+
+                await Task.WhenAll(tokens.Select(t => SendToTokenAsync(http, uri, t.Token, data)));
+            }
+            catch (Exception ex)
+            {
+                // Sent fire-and-forget from the options reload path -- a push failure must never
+                // prevent the configuration change itself from being applied.
+                Log.Warning(ex, "Failed to send FCM restart-required push: {Message}", ex.Message);
             }
         }
 
@@ -134,7 +181,7 @@ namespace resonance.Integrations.Fcm
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
 
-        private async Task SendToTokenAsync(HttpClient http, string uri, string token, int added, int updated, int removed)
+        private async Task SendToTokenAsync(HttpClient http, string uri, string token, IDictionary<string, string> data)
         {
             try
             {
@@ -145,13 +192,7 @@ namespace resonance.Integrations.Fcm
                     message = new
                     {
                         token,
-                        data = new Dictionary<string, string>
-                        {
-                            ["type"] = "library_updated",
-                            ["added"] = added.ToString(),
-                            ["updated"] = updated.ToString(),
-                            ["removed"] = removed.ToString(),
-                        },
+                        data,
                         android = new { priority = "high" },
                     },
                 };

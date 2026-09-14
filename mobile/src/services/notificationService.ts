@@ -134,6 +134,14 @@ export async function notifyRoomMention(roomName: string, username: string, mess
   await send(`Mentioned in ${roomName}`, `${username}: ${message}`);
 }
 
+// Administrators only -- the backend's FCM push is already filtered to admin accounts, and the
+// hub path below is gated on isAdmin, so a non-admin never reaches this.
+export async function notifyRestartRequired() {
+  const { notifications } = useAppSettings.getState();
+  if (!notifications.restartRequired) return;
+  await send('Restart required', 'A configuration change needs a backend restart to take effect.');
+}
+
 export async function notifyUserBlocked(username: string, ip: string) {
   const { notifications } = useAppSettings.getState();
   if (!notifications.userBlocked) return;
@@ -183,6 +191,7 @@ export const useNotificationHub = () => {
     if (!hub) return;
 
     let prevScanning: boolean | null = null;
+    let prevPendingRestart: boolean | null = null;
 
     attachHubLogging(hub, 'application');
 
@@ -215,7 +224,7 @@ export const useNotificationHub = () => {
       notifyUploadComplete(filename);
     });
 
-    hub.on('STATE', (state: { shares?: { scanning?: boolean } }) => {
+    hub.on('STATE', (state: { shares?: { scanning?: boolean }; pendingRestart?: boolean }) => {
       const scanning = state?.shares?.scanning ?? false;
 
       if (prevScanning === true && !scanning) {
@@ -223,6 +232,18 @@ export const useNotificationHub = () => {
       }
 
       prevScanning = scanning;
+
+      // Only the false -> true edge, and only for admins (the restart endpoint refuses
+      // everyone else). prevPendingRestart starts null so the first STATE after connecting
+      // seeds it without notifying -- otherwise reopening the app with a restart already
+      // outstanding would alert every time.
+      const pendingRestart = state?.pendingRestart ?? false;
+
+      if (prevPendingRestart === false && pendingRestart && useAuthStore.getState().isAdmin) {
+        notifyRestartRequired();
+      }
+
+      prevPendingRestart = pendingRestart;
     });
 
     hub.on('BROWSED', () => {});

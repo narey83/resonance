@@ -48,8 +48,24 @@ export function registerBackgroundPushTask() {
       const TaskManager = await import('expo-task-manager');
       const Notifications = await import('expo-notifications');
 
-      TaskManager.defineTask(BACKGROUND_PUSH_TASK, async ({ error }) => {
+      TaskManager.defineTask(BACKGROUND_PUSH_TASK, async ({ data, error }) => {
         if (error) return;
+
+        // Android hands the task the raw FCM RemoteMessage, so the data-only key/value pairs
+        // the backend sent sit under `data.data`. Fall back to the top level in case the
+        // platform (or a future expo-notifications) flattens it.
+        const payload = (data as { data?: Record<string, string> } | undefined);
+        const type = payload?.data?.type ?? (data as { type?: string } | undefined)?.type;
+
+        // Older backends send no discriminator at all; treat that as the library push it
+        // used to be, so a mixed-version pair keeps syncing.
+        if (type === 'restart_required') {
+          try {
+            const { notifyRestartRequired } = await import('./notificationService');
+            await notifyRestartRequired();
+          } catch {}
+          return;
+        }
 
         try {
           const { useLibrarySync } = await import('../store/librarySyncStore');

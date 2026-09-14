@@ -68,6 +68,7 @@ const MENU_SECTIONS: MenuSection[] = [
     title: 'App',
     items: [
       { label: 'Overview',   icon: 'bar-chart-outline', screen: 'Overview',  subtitle: 'Stats & activity dashboard', adminOnly: true },
+      { label: 'Server',     icon: 'server-outline',  screen: 'Server',     subtitle: 'Pending changes & restart', adminOnly: true },
       { label: 'Connection', icon: 'wifi-outline',     screen: 'Connection', subtitle: 'App, Soulseek & disk status' },
       { label: 'Soulseek Relay', icon: 'git-network-outline', screen: 'SoulseekRelay', subtitle: 'Your position in the distributed search network' },
       { label: 'Server Logs', icon: 'reader-outline',   screen: 'Logs',       subtitle: 'Live & historical server logs' },

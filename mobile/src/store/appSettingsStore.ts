@@ -40,6 +40,7 @@ export interface NotificationPrefs {
   privateMessage:    boolean;
   roomMention:       boolean;
   userBlocked:       boolean;
+  restartRequired:   boolean;
 }
 
 // 'auto'     — full quality on wifi, transcode to low bitrate on cellular / slow links
@@ -82,6 +83,9 @@ const DEFAULT_NOTIFICATIONS: NotificationPrefs = {
   privateMessage:    true,
   roomMention:       true,
   userBlocked:       false,
+  // On by default: only administrators are sent this, and a config change sitting
+  // unapplied is exactly the kind of thing that goes unnoticed otherwise.
+  restartRequired:   true,
 };
 
 export const useAppSettings = create<AppSettingsStore>((set, get) => ({

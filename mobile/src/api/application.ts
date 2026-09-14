@@ -30,6 +30,10 @@
 import { apiClient } from './client';
 
 export interface AppState {
+  // Set by the backend when an options change carries [RequiresRestart]; cleared by the restart
+  // itself. Surfaced to administrators on the Server screen.
+  pendingRestart?:   boolean;
+  pendingReconnect?: boolean;
   version: {
     full:              string;
     current:           string;
@@ -98,3 +102,8 @@ export interface AppState {
 
 export const getApplicationState = () =>
   apiClient.get<AppState>('/application').then(r => r.data);
+
+// Administrator-only (AuthPolicy.JwtOnly + AdministratorOnly on the backend). The process relaunches
+// itself, so this resolves as the server is on its way down -- expect the hub to drop right after.
+export const restartApplication = () =>
+  apiClient.put('/application').then(() => undefined);

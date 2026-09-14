@@ -153,9 +153,11 @@ namespace resonance
             IHttpClientFactory httpClientFactory,
             ConnectionStringDictionary connectionStrings,
             resonance.Network.GeoService geoService,
-            BlockedUsersService blockedUsersService)
+            BlockedUsersService blockedUsersService,
+            resonance.Integrations.Fcm.IFcmPushService fcmPushService)
         {
             GeoService = geoService;
+            FcmPushService = fcmPushService;
             Console.CancelKeyPress += (_, args) =>
             {
                 ShuttingDown = true;
@@ -345,6 +347,7 @@ namespace resonance
         private BrowseRateLimiter BrowseRateLimiter { get; set; }
         private IHttpClientFactory HttpClientFactory { get; set; }
         private resonance.Network.GeoService GeoService { get; set; }
+        private resonance.Integrations.Fcm.IFcmPushService FcmPushService { get; set; }
         private string TransfersConnectionString { get; set; }
         private bool UsePostgres { get; set; }
         private ConcurrentDictionary<string, IPEndPoint> UserEndpointCache { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -2211,8 +2214,19 @@ namespace resonance
 
                 if (pendingRestart)
                 {
+                    // Only announce the transition into a pending restart. Re-firing on every
+                    // subsequent options reload would push again for a restart already outstanding.
+                    var wasPending = State.CurrentValue.PendingRestart;
+
                     State.SetValue(state => state with { PendingRestart = true });
                     Log.Information("One or more updated options requires an application restart to take effect.");
+
+                    if (!wasPending)
+                    {
+                        // Fire-and-forget: reaches an administrator's phone even when the app is
+                        // killed, which the SignalR state broadcast below cannot do.
+                        _ = FcmPushService.SendRestartRequiredAsync();
+                    }
                 }
 
                 if (PreviousOptions.Qos.Schedule.ToJson() != newOptions.Qos.Schedule.ToJson())

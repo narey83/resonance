@@ -100,6 +100,23 @@ public class PushTokenService
         return db.PushTokens.ToList();
     }
 
+    // Tokens belonging to administrators only. Used for pushes that announce an action only an
+    // administrator can take (a pending restart), so the alert doesn't reach accounts that would
+    // be shown a button the API would refuse. A user whose role is demoted stops matching here
+    // immediately -- the join is evaluated per send rather than cached against the token row.
+    public IReadOnlyList<PushToken> GetForAdministrators()
+    {
+        using var db = ContextFactory.CreateDbContext();
+
+        return db.PushTokens
+            .Join(
+                db.Users.Where(u => u.Role == Role.Administrator),
+                token => token.Username,
+                user => user.Username,
+                (token, _) => token)
+            .ToList();
+    }
+
     // Called when FCM reports a token as unregistered/invalid, so it stops being sent to.
     public void DeleteByToken(string token)
     {
