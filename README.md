@@ -181,5 +181,3 @@ Changes specific to Resonance are tracked in [CHANGES.md](CHANGES.md), and third
 ## 📄 License
 
 Licensed under the **GNU Affero General Public License v3.0 with Additional Terms**. See [LICENSE](LICENSE) for the complete terms.
-
-Copyright © JP Dillingham. Modifications copyright © 2026 John Narey.
