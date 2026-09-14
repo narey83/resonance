@@ -33,6 +33,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -1337,6 +1338,57 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             || e.Contains("no longer available");
     }
 
+    /// <summary>
+    ///     Reads a media file's duration with ffprobe, which decodes the container rather than
+    ///     estimating from headers the way the tag reader does. Returns null if ffprobe is
+    ///     unavailable or produced nothing usable — callers must treat that as "unknown", never
+    ///     as a short file.
+    /// </summary>
+    private async Task<int?> ProbeDurationSecondsAsync(string filePath, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var ffprobePath = await ffmpeg.GetFfprobePathAsync(cancellationToken);
+            var args = $"-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{filePath}\"";
+
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo(ffprobePath)
+                {
+                    Arguments = args,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                },
+            };
+
+            process.Start();
+            var stdout = await process.StandardOutput.ReadToEndAsync(cancellationToken);
+            await process.WaitForExitAsync(cancellationToken);
+
+            if (process.ExitCode != 0)
+            {
+                return null;
+            }
+
+            // "N/A" for a stream ffprobe can't measure parses as neither finite nor positive.
+            return double.TryParse(stdout.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds)
+                && double.IsFinite(seconds) && seconds > 0
+                ? (int)seconds
+                : null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("YtDlp: ffprobe could not measure {File}: {Error}", filePath, ex.Message);
+            return null;
+        }
+    }
+
     private async Task InitializeAsync(CancellationToken cancellationToken)
     {
         await resonance.Program.DatabaseInitialization.WaitAsync(cancellationToken);
@@ -1965,7 +2017,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 }
                 else
                 {
-                    await HandleSuccessAsync(track, resolvedFilePath, opts, db, job);
+                    await HandleSuccessAsync(track, resolvedFilePath, opts, db, job, cancellationToken);
                 }
             }
             else
@@ -2015,7 +2067,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         await hub.BroadcastTrackProgressAsync(track);
     }
 
-    private async Task HandleSuccessAsync(YtDlpTrack track, string? filePath, resonance.Options.IntegrationsOptions.YtDlpOptions opts, YtDlpDbContext db, YtDlpJob? job)
+    private async Task HandleSuccessAsync(YtDlpTrack track, string? filePath, resonance.Options.IntegrationsOptions.YtDlpOptions opts, YtDlpDbContext db, YtDlpJob? job, CancellationToken cancellationToken)
     {
         var metadata = YtDlpMetadataParser.Parse(track.Title, track.Uploader, track.PlaylistIndex, track.UploadDate, opts.DefaultGenre);
         string? tagError = null;
@@ -2031,29 +2083,59 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         {
             tagError = YtDlpTagWriter.Write(filePath, metadata, track.Url, out fileDuration);
 
-            if (tagError == null && fileDuration.HasValue && track.ReportedDurationSeconds is { } expectedDuration
-                && expectedDuration > 0 && fileDuration.Value < expectedDuration * TruncatedDownloadRatio)
+            if (tagError == null && track.ReportedDurationSeconds is { } expectedDuration && expectedDuration > 0
+                && fileDuration is { } taggedDuration && taggedDuration < expectedDuration * TruncatedDownloadRatio)
             {
-                var reason = $"downloaded file is only {FormatDuration(fileDuration.Value)}, expected ~{FormatDuration(expectedDuration)} — likely an interrupted download";
-                Log.Warning(
-                    "YtDlp: {Title} downloaded truncated ({Actual}s of {Expected}s expected) — discarding and retrying",
-                    track.Title, fileDuration.Value, expectedDuration);
+                // TagLib only estimates duration, and it gets a whole class of file badly wrong: a
+                // low-bitrate MPEG-1 MP3 comes back at exactly half its real length, because the Xing
+                // frame count is scaled by MPEG-2's 576 samples/frame instead of MPEG-1's 1152. That
+                // lands just under the ratio below, so complete downloads were being deleted and
+                // re-fetched forever. Discarding a file is destructive and unrecoverable, so confirm
+                // the short reading with ffprobe — which decodes the stream — before acting on it.
+                var probedDuration = await ProbeDurationSecondsAsync(filePath, cancellationToken);
 
-                try
+                if (probedDuration.HasValue)
                 {
-                    File.Delete(filePath);
+                    fileDuration = probedDuration;
                 }
-                catch (Exception ex)
+
+                if (probedDuration is not { } confirmedDuration)
                 {
-                    Log.Warning("YtDlp: failed to delete truncated file {File}: {Error}", filePath, ex.Message);
+                    // Unconfirmed is not the same as truncated; keeping a suspect file is far cheaper
+                    // to recover from than deleting a good one, so fall through and accept it.
+                    Log.Warning(
+                        "YtDlp: {Title} measured short ({Actual}s of {Expected}s expected) but ffprobe could not confirm — keeping the file",
+                        track.Title, taggedDuration, expectedDuration);
                 }
+                else if (confirmedDuration < expectedDuration * TruncatedDownloadRatio)
+                {
+                    var reason = $"downloaded file is only {FormatDuration(confirmedDuration)}, expected ~{FormatDuration(expectedDuration)} — likely an interrupted download";
+                    Log.Warning(
+                        "YtDlp: {Title} downloaded truncated ({Actual}s of {Expected}s expected) — discarding and retrying",
+                        track.Title, confirmedDuration, expectedDuration);
 
-                // Sidecars (thumbnail, .part, etc) share the same stem and must go too, otherwise
-                // a retry's yt-dlp invocation can still find and re-adopt the stale partial output.
-                RemoveStagingSidecars(filePath);
+                    try
+                    {
+                        File.Delete(filePath);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning("YtDlp: failed to delete truncated file {File}: {Error}", filePath, ex.Message);
+                    }
 
-                await HandleFailureAsync(track, reason, opts, db, job);
-                return;
+                    // Sidecars (thumbnail, .part, etc) share the same stem and must go too, otherwise
+                    // a retry's yt-dlp invocation can still find and re-adopt the stale partial output.
+                    RemoveStagingSidecars(filePath);
+
+                    await HandleFailureAsync(track, reason, opts, db, job);
+                    return;
+                }
+                else
+                {
+                    Log.Debug(
+                        "YtDlp: {Title} read as {Tagged}s by TagLib but ffprobe reports {Probed}s of {Expected}s expected — not truncated",
+                        track.Title, taggedDuration, confirmedDuration, expectedDuration);
+                }
             }
 
             if (tagError != null)
