@@ -61,7 +61,6 @@ import TransferHealth from './TransferHealth';
 import UserLeaderboard from './UserLeaderboard';
 import UserReports from './UserReports';
 import React, { useContext, useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
 
 // Range values are in hours
 const RANGES = [
@@ -170,9 +169,6 @@ const AdminOverview = () => {
   // changes, not on background auto-refresh (which would flash it).
   const [transitioning, setTransitioning] = useState(false);
   const [analyticsRefresh, setAnalyticsRefresh] = useState(0);
-
-  const location = useLocation();
-  const mapUrl = location.pathname.replace(/\/overview$/, '/map');
 
   // Live transfers — 1s polling
   useEffect(() => {
@@ -447,14 +443,6 @@ const AdminOverview = () => {
         >
           Users
         </button>
-        <a
-          className="overview-map-link"
-          href={mapUrl}
-          rel="noopener noreferrer"
-          target="_blank"
-        >
-          Live Map ↗
-        </a>
       </div>
 
       <div className="overview-body">

@@ -933,22 +933,6 @@ html.amoled {
   font-weight: 600;
 }
 
-.overview-map-link {
-  margin-left: auto;
-  align-self: center;
-  padding: 4px 10px;
-  font-size: 12px;
-  color: var(--text-muted);
-  text-decoration: none;
-  border-radius: 5px;
-  transition: color 0.12s, background 0.12s;
-}
-
-.overview-map-link:hover {
-  color: var(--accent);
-  background: var(--surface-hover);
-}
-
 /* ─── Main body (analytics + notifications) ──────────────────────────────────── */
 .overview-body {
   flex: 1;

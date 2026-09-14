@@ -42,6 +42,7 @@ import * as reportsAPI from '../../lib/reports';
 import * as transfersAPI from '../../lib/transfers';
 import { keepIfEqual } from '../../lib/util';
 import WorldMap from '../Overview/WorldMap';
+import { ExternalLink } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 
 const RANGES = [
@@ -69,7 +70,9 @@ const toDatetimeLocal = (isoOrDate) => {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 };
 
-const MapPage = () => {
+// `popoutUrl` is set when the map is embedded in the app shell: it adds a button that opens the
+// standalone map (the same page without the nav) in its own window, e.g. for a second monitor.
+const MapPage = ({ popoutUrl }) => {
   const [downloads, setDownloads] = useState([]);
   const [uploads, setUploads] = useState([]);
   const [serverLat, setServerLat] = useState(null);
@@ -323,7 +326,7 @@ const MapPage = () => {
   const hasCustomRange = customRange != null;
 
   return (
-    <div className="map-page">
+    <div className={`map-page${popoutUrl ? ' map-page--embedded' : ''}`}>
       <div className="map-controls">
         <div className="map-controls-row">
           <span className="map-controls-label">Range</span>
@@ -363,6 +366,26 @@ const MapPage = () => {
                 ? `${pastPeers.length} peers`
                 : `${filteredPastPeers.length} of ${pastPeers.length} peers`)}
           </span>
+          {popoutUrl && (
+            <button
+              aria-label="Pop out map"
+              className="map-popout hover-fx"
+              onClick={() =>
+                window.open(
+                  popoutUrl,
+                  'resonance-live-map',
+                  'popup,width=1280,height=800',
+                )
+              }
+              title="Pop out into its own window"
+              type="button"
+            >
+              <ExternalLink
+                size={13}
+                strokeWidth={1.75}
+              />
+            </button>
+          )}
         </div>
 
         {showCustomPicker && (

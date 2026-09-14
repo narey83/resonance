@@ -100,6 +100,7 @@ import {
   Copy,
   Download,
   FolderOpen,
+  Globe,
   History,
   KeyRound,
   LayoutDashboard,
@@ -1309,6 +1310,14 @@ const App = () => {
                         label="History"
                         to={`${urlBase}/history`}
                       />
+                      {isAdmin() && (
+                        <NavItem
+                          active={page === 'live-map'}
+                          icon={Globe}
+                          label="Live Map"
+                          to={`${urlBase}/live-map`}
+                        />
+                      )}
 
                       <div className="app-nav-label">Community</div>
                       <NavItem
@@ -1480,10 +1489,10 @@ const App = () => {
                           render={() => <Overview />}
                         />
                         <Route
-                          path={`${urlBase}/map`}
+                          path={`${urlBase}/live-map`}
                           render={() =>
                             isAdmin() ? (
-                              <MapPage />
+                              <MapPage popoutUrl={`${urlBase}/map`} />
                             ) : (
                               <Redirect to={`${urlBase}/searches`} />
                             )

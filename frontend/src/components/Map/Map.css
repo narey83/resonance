@@ -183,6 +183,27 @@
   50%       { opacity: 0.4; }
 }
 
+/* Small icon button at the end of the range row — only shown when embedded in the app */
+.map-popout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.map-popout:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
 /* Map canvas fills remaining space */
 .map-page {
   flex: 1;
@@ -191,6 +212,11 @@
   flex-direction: column;
   background: var(--map-bg);
   overflow: hidden;
+}
+
+/* In the app shell the parent (.app-content) isn't a flex column, so size to it directly */
+.map-page--embedded {
+  height: 100%;
 }
 
 /* SVG renders at natural aspect ratio (meet); background colour fills surrounding space */
