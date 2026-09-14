@@ -362,6 +362,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     if ('index' in event && event.index != null) {
+      // useProgress resets on this event too, but its previous track may still have an in-flight
+      // poll. Reset the imperative copy immediately so a play/signature refresh during the
+      // transition can never rebuild the new item at the old item's position.
+      if (event.index !== queueIndexRef.current) positionRef.current = 0;
+      queueIndexRef.current = event.index;
       setQueueIndex(event.index);
       // Reset the recovery state only when playback genuinely moves to a different track — our
       // own recovery rebuild re-fires this event for the same track, which must not re-arm it.
@@ -798,8 +803,25 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, [ensureFreshStreamUrls]);
 
   const seekTo = useCallback((seconds: number) => {
-    TrackPlayer.seekTo(seconds);
-  }, []);
+    // A track can keep playing buffered audio after its signed URL expires, then fail as soon as
+    // a seek asks the server for a new byte range. Refresh/rebuild first so that range request is
+    // authenticated. Keep the ref in step immediately so a rebuild restores at the target rather
+    // than briefly returning to the pre-seek position.
+    const target = Math.max(0, seconds);
+    const seekingPath = queueRef.current[queueIndexRef.current]?.path;
+    positionRef.current = target;
+    void (async () => {
+      try {
+        await ensureFreshStreamUrls();
+        // A skip made while signatures were refreshing owns the player now; never apply this
+        // track's seek target to the newly-active item.
+        if (queueRef.current[queueIndexRef.current]?.path !== seekingPath) return;
+        await TrackPlayer.seekTo(target);
+      } catch (err: unknown) {
+        remoteLog('warn', `[player] seek to ${target.toFixed(2)}s failed — ${err instanceof Error ? err.message : String(err)}`);
+      }
+    })();
+  }, [ensureFreshStreamUrls]);
 
   const restoreTrack = useCallback(async (restoredTrack: MusicTrack) => {
     setQueue([restoredTrack]);

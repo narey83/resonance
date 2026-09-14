@@ -93,7 +93,12 @@ const WAVEFORM_HEIGHT = 40;
 
 const ProgressBar = ({
   positionSec, durationSec, onSeek, peaks,
-}: { positionSec: number; durationSec: number; onSeek: (s: number) => void; peaks?: Float32Array | null }) => {
+}: {
+  positionSec: number;
+  durationSec: number;
+  onSeek: (s: number) => void;
+  peaks?: Float32Array | null;
+}) => {
   const [barWidth, setBarWidth] = useState(0);
   // While the user is dragging, `scrubFrac` (0..1) drives the UI so the bar follows the
   // finger and the position label updates live; null means "not scrubbing".
@@ -158,6 +163,10 @@ const ProgressBar = ({
       setPendingSec(null);
     }
   }, [pendingSec, positionSec]);
+
+  useEffect(() => () => {
+    if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
+  }, []);
 
   // Displayed position: live finger drag > post-release hold > live playback position.
   const shownSec = scrubFrac != null ? scrubFrac * durationSec
@@ -246,6 +255,7 @@ const ActiveProgressBar = ({ isGoogleCasting, castPositionSec, castDurationSec, 
   return (
     <ProgressBar
       durationSec={isGoogleCasting ? castDurationSec : durationSec}
+      key={`${isGoogleCasting ? 'cast' : 'local'}:${trackPath ?? ''}`}
       onSeek={onSeek}
       peaks={peaks}
       positionSec={isGoogleCasting ? castPositionSec : positionSec}
