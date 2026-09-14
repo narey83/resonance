@@ -34,7 +34,6 @@
       "./plugins/withGradleProperties",
       "./plugins/withLocalNetworkAccess",
       "./plugins/withGradleWrapperVersion",
-      "./plugins/withReleaseSideBySide",
       [
         "react-native-google-cast",
         {
