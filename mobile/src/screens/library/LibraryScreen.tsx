@@ -696,7 +696,7 @@ function FolderActionSheet({
     setShowPicker(false);
     onClose();
     try {
-      const result = await getTracks({ folder: folder.path, limit: 5000 });
+      const result = await getTracks({ folder: folder.path, sort: 'track', limit: 5000 });
       await Promise.allSettled((result.tracks ?? []).map((t) => addTrack(playlistId, t.path)));
     } catch { /* ignore */ }
   };
@@ -3590,7 +3590,7 @@ function FolderDetail({ route }: FolderDetailProps) {
   const [renameTrackTarget, setRenameTrackTarget] = useState<MusicTrack | null>(null);
   const [folderActionOpen, setFolderActionOpen] = useState(false);
   const [renamingFolder, setRenamingFolder] = useState(false);
-  // '' = "Track order": the server's natural order (album → disc → track number), i.e. the folder's
+  // '' = "Track order": the server's `track` sort (album → disc → track number), i.e. the folder's
   // real running order, and the default. It's falsy, so every `sortBy ? …` check below treats it as
   // "no sort" (server default / no client re-sort). Picking a field re-sorts (server-side for the
   // shared library, client-side for on-device folders); the user can tap "Track order" to go back.
@@ -3649,7 +3649,7 @@ function FolderDetail({ route }: FolderDetailProps) {
       const sort = sortRef.current;
       const result = await getTracks({
         folder: folderRef.current, search: query, limit: TRACKS_PER_PAGE, offset,
-        ...(sort.sortBy ? { sort: sort.sortBy, descending: String(sort.sortDir === 'desc') } : {}),
+        ...(sort.sortBy ? { sort: sort.sortBy, descending: String(sort.sortDir === 'desc') } : { sort: 'track' }),
       });
       setTracks((prev) => reset ? result.tracks : [...prev, ...result.tracks]);
       setTotal(result.total);
@@ -3677,7 +3677,7 @@ function FolderDetail({ route }: FolderDetailProps) {
       const result = await getTracks({
         folder: folderRef.current, search: searchRef.current,
         // A chosen sort still applies to Play All / tapping a row; only shuffle overrides it.
-        ...(sort.sortBy ? { sort: sort.sortBy, descending: String(sort.sortDir === 'desc') } : {}),
+        ...(sort.sortBy ? { sort: sort.sortBy, descending: String(sort.sortDir === 'desc') } : { sort: 'track' }),
         ...queueWindow(opts),
       });
       return result.tracks;

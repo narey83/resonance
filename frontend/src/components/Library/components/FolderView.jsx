@@ -197,7 +197,7 @@ const FolderView = ({
     trackTableProps,
   } = usePagedTracks(
     { folder: selected?.path },
-    { defaultSort: 'title', enabled: Boolean(selected) },
+    { defaultSort: 'track', enabled: Boolean(selected) },
   );
 
   const tracks = useMemo(

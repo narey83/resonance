@@ -471,9 +471,24 @@ export const getLocalFolders = async (): Promise<MusicFolder[]> => {
   return Array.from(folderMap.values());
 };
 
+// A folder's running order, matching the server's `track` sort: album, then disc (untagged = 1),
+// then track number (untagged last), then path so "01 - …" filenames order untagged rips.
+export function sortTrackOrder(list: MusicTrack[]): MusicTrack[] {
+  const key = (s: string | null | undefined) => (s ?? '').toLowerCase();
+  return [...list].sort((a, b) => {
+    const album = key(a.album) < key(b.album) ? -1 : key(a.album) > key(b.album) ? 1 : 0;
+    if (album) return album;
+    const disc = (a.discNumber ?? 1) - (b.discNumber ?? 1);
+    if (disc) return disc;
+    const track = (a.trackNumber ?? Number.MAX_SAFE_INTEGER) - (b.trackNumber ?? Number.MAX_SAFE_INTEGER);
+    if (track) return track;
+    return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
+  });
+}
+
 export const getLocalFolderTracks = async (dirPath: string): Promise<MusicTrack[]> => {
   const tracks = await getAllLocalTracks();
-  return tracks.filter(t => t.directory === dirPath);
+  return sortTrackOrder(tracks.filter(t => t.directory === dirPath));
 };
 
 export const getLocalArtists = async (): Promise<MusicArtist[]> => {

@@ -3899,7 +3899,7 @@ const Library = () => {
             onContextMenu={openContextMenu}
             onDeleteTracks={handleDeleteTracks}
             onFolderContextMenu={openFolderContextMenu}
-            onPlayFolder={(path) => playQuery({ folder: path })}
+            onPlayFolder={(path) => playQuery({ folder: path, sort: 'track' })}
             removedPaths={removedPaths}
             scrollContainerRef={viewScrollRef}
             tileSize={tileSize}

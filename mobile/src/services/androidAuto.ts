@@ -299,7 +299,7 @@ const chunked = (nodeId: string, items: BrowseItem[]): BrowseItem[] => {
 };
 
 const pageQuery = (kind: string, key: string): Record<string, string | number> => {
-  if (kind === 'f') return { folder: decodeURIComponent(key) };
+  if (kind === 'f') return { folder: decodeURIComponent(key), sort: 'track' };
   if (kind === 'g') return { genre: decodeURIComponent(key) };
   if (kind === 'y') return { year: Number(key) };
   return {};

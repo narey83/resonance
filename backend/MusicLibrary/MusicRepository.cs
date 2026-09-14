@@ -518,6 +518,11 @@ namespace resonance.MusicLibrary
             {
                 "title" => $"{OrdBy("title", dir)}, {OrdBy("artist")}",
                 "album" => $"{OrdBy("album", dir)}, disc_number, track_number",
+
+                // A folder's running order — how the CD (or release) it was ripped from plays.
+                // Untagged discs count as disc 1 so a lone missing tag doesn't push its track to
+                // the end; untagged track numbers fall back to path (i.e. "01 - …" filenames).
+                "track" => $"{OrdBy("album", dir)}, COALESCE(disc_number, 1) {dir}, track_number {dir}",
                 "year" => $"year {dir}, {OrdBy("artist")}, {OrdBy("album")}, track_number",
                 "duration" => $"duration {dir}, {OrdBy("title")}",
                 "bpm" => $"bpm {dir}, {OrdBy("title")}",
