@@ -2,6 +2,7 @@ namespace Resonance.Tests.Logs;
 
 using System.Diagnostics;
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using global::resonance;
 using global::resonance.Core.LogStore;
 
@@ -19,9 +20,41 @@ public class LogPersistenceServiceTests
     private static DateTime NextTimestamp() =>
         new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddTicks(Interlocked.Increment(ref timestampTicks));
 
-    private static LogPersistenceService NewService(SqliteConnection connection)
+    // The service writes from its own background loop while the tests poll for rows. Sharing one
+    // in-memory SqliteConnection between the two isn't thread-safe: a poll landing inside the
+    // writer's transaction throws on the read and can fail the writer's SaveChanges too, dropping
+    // that batch -- so the wait would intermittently time out or throw. A throwaway file database
+    // in WAL mode gives every context its own connection; readers never block the writer, and
+    // any brief lock waits out Microsoft.Data.Sqlite's busy timeout instead of failing.
+    private sealed class TestDatabase : IDisposable
     {
-        var options = LogsTestSupport.Options(connection);
+        private readonly string path = Path.Combine(Path.GetTempPath(), $"resonance-logs-test-{Guid.NewGuid():N}.db");
+
+        public TestDatabase()
+        {
+            Options = new DbContextOptionsBuilder<LogsDbContext>()
+                .UseSqlite(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString())
+                .Options;
+
+            using var context = new LogsDbContext(Options);
+            context.Database.EnsureCreated();
+            context.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
+        }
+
+        public DbContextOptions<LogsDbContext> Options { get; }
+
+        public void Dispose()
+        {
+            foreach (var file in new[] { path, path + "-wal", path + "-shm" })
+            {
+                File.Delete(file);
+            }
+        }
+    }
+
+    private static LogPersistenceService NewService(TestDatabase database)
+    {
+        var options = database.Options;
 
         using (var seed = new LogsDbContext(options))
         {
@@ -32,9 +65,9 @@ public class LogPersistenceServiceTests
         return new LogPersistenceService(factory, LogsTestSupport.FakeConnectionStrings(), LogsTestSupport.OptionsMonitor());
     }
 
-    private static int CountRows(SqliteConnection connection)
+    private static int CountRows(TestDatabase database)
     {
-        using var context = new LogsDbContext(LogsTestSupport.Options(connection));
+        using var context = new LogsDbContext(database.Options);
         return context.Entries.Count();
     }
 
@@ -58,8 +91,8 @@ public class LogPersistenceServiceTests
     [Fact]
     public async Task Enqueued_Records_AreEventuallyPersisted()
     {
-        using var connection = LogsTestSupport.OpenConnection();
-        var service = NewService(connection);
+        using var database = new TestDatabase();
+        var service = NewService(database);
 
         await service.StartAsync(CancellationToken.None);
         try
@@ -69,21 +102,21 @@ public class LogPersistenceServiceTests
                 service.Enqueue(new LogRecord { Timestamp = NextTimestamp(), Level = "Information", Message = $"m{i}" });
             }
 
-            await WaitUntilAsync(() => CountRows(connection) == 5, TimeSpan.FromSeconds(5));
+            await WaitUntilAsync(() => CountRows(database) == 5, TimeSpan.FromSeconds(5));
         }
         finally
         {
             await service.StopAsync(CancellationToken.None);
         }
 
-        Assert.Equal(5, CountRows(connection));
+        Assert.Equal(5, CountRows(database));
     }
 
     [Fact]
     public async Task ABurstLargerThanOneBatch_IsFullyPersisted_AcrossMultipleBatches()
     {
-        using var connection = LogsTestSupport.OpenConnection();
-        var service = NewService(connection);
+        using var database = new TestDatabase();
+        var service = NewService(database);
 
         // More than one BatchSize's worth, so this only passes if the drain loop keeps reading
         // and inserting batch after batch rather than handling just the first one.
@@ -97,21 +130,21 @@ public class LogPersistenceServiceTests
                 service.Enqueue(new LogRecord { Timestamp = NextTimestamp(), Level = "Information", Message = $"m{i}" });
             }
 
-            await WaitUntilAsync(() => CountRows(connection) == count, TimeSpan.FromSeconds(15));
+            await WaitUntilAsync(() => CountRows(database) == count, TimeSpan.FromSeconds(15));
         }
         finally
         {
             await service.StopAsync(CancellationToken.None);
         }
 
-        Assert.Equal(count, CountRows(connection));
+        Assert.Equal(count, CountRows(database));
     }
 
     [Fact]
     public async Task ConcurrentProducers_AllLandInTheDatabase_WithNoLossUnderCapacity()
     {
-        using var connection = LogsTestSupport.OpenConnection();
-        var service = NewService(connection);
+        using var database = new TestDatabase();
+        var service = NewService(database);
 
         const int producers = 8;
         const int perProducer = 100; // 800 total, comfortably under ChannelCapacity (5000)
@@ -129,21 +162,21 @@ public class LogPersistenceServiceTests
 
             await Task.WhenAll(tasks);
 
-            await WaitUntilAsync(() => CountRows(connection) == producers * perProducer, TimeSpan.FromSeconds(15));
+            await WaitUntilAsync(() => CountRows(database) == producers * perProducer, TimeSpan.FromSeconds(15));
         }
         finally
         {
             await service.StopAsync(CancellationToken.None);
         }
 
-        Assert.Equal(producers * perProducer, CountRows(connection));
+        Assert.Equal(producers * perProducer, CountRows(database));
     }
 
     [Fact]
     public async Task Enqueue_UnderQueueSaturation_NeverBlocks_AndDropsOnlyTheOldest()
     {
-        using var connection = LogsTestSupport.OpenConnection();
-        var service = NewService(connection);
+        using var database = new TestDatabase();
+        var service = NewService(database);
 
         const int overflow = 500;
         const int total = LogPersistenceService.ChannelCapacity + overflow;
@@ -170,14 +203,14 @@ public class LogPersistenceServiceTests
         await service.StartAsync(CancellationToken.None);
         try
         {
-            await WaitUntilAsync(() => CountRows(connection) == LogPersistenceService.ChannelCapacity, TimeSpan.FromSeconds(15));
+            await WaitUntilAsync(() => CountRows(database) == LogPersistenceService.ChannelCapacity, TimeSpan.FromSeconds(15));
         }
         finally
         {
             await service.StopAsync(CancellationToken.None);
         }
 
-        using var reader = new LogsDbContext(LogsTestSupport.Options(connection));
+        using var reader = new LogsDbContext(database.Options);
 
         // Ordered by Timestamp, not Id -- every row's Id is the same CLR-default 0 here (see the
         // class-level remark on NextTimestamp), so Timestamp is what actually reflects send order.
@@ -200,20 +233,20 @@ public class LogPersistenceServiceTests
         // string used here and will fail every time -- StartAsync runs it once immediately. This
         // proves that failure is caught and logged rather than taking the drain loop down with it,
         // since ordinary insertion has to keep working regardless.
-        using var connection = LogsTestSupport.OpenConnection();
-        var service = NewService(connection);
+        using var database = new TestDatabase();
+        var service = NewService(database);
 
         await service.StartAsync(CancellationToken.None);
         try
         {
             service.Enqueue(new LogRecord { Timestamp = NextTimestamp(), Level = "Information", Message = "still works" });
-            await WaitUntilAsync(() => CountRows(connection) == 1, TimeSpan.FromSeconds(5));
+            await WaitUntilAsync(() => CountRows(database) == 1, TimeSpan.FromSeconds(5));
         }
         finally
         {
             await service.StopAsync(CancellationToken.None);
         }
 
-        Assert.Equal(1, CountRows(connection));
+        Assert.Equal(1, CountRows(database));
     }
 }
