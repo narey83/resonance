@@ -244,30 +244,28 @@ const SearchBar = ({ value, onChange, placeholder, trailing }: {
   trailing?: React.ReactNode;
 }) => {
   const { s, c } = useLibStyles();
+  // View/sort controls sit beside the field, not inside it: the field is only for typing.
   return (
-    <View style={s.searchWrap}>
-      <Ionicons name="search" size={15} color={c.textMuted} style={s.searchIcon} />
-      <TextInput
-        autoCapitalize="none"
-        autoCorrect={false}
-        onChangeText={onChange}
-        placeholder={placeholder}
-        placeholderTextColor={c.textDim}
-        returnKeyType="search"
-        style={s.searchInput}
-        value={value}
-      />
-      {value.length > 0 && (
-        <Pressable onPress={() => onChange('')} hitSlop={8}>
-          <Ionicons name="close-circle" size={16} color={c.textMuted} />
-        </Pressable>
-      )}
-      {trailing != null && (
-        <>
-          <View style={s.searchTrailingDivider} />
-          {trailing}
-        </>
-      )}
+    <View style={s.searchRow}>
+      <View style={s.searchWrap}>
+        <Ionicons name="search" size={15} color={c.textMuted} style={s.searchIcon} />
+        <TextInput
+          autoCapitalize="none"
+          autoCorrect={false}
+          onChangeText={onChange}
+          placeholder={placeholder}
+          placeholderTextColor={c.textDim}
+          returnKeyType="search"
+          style={s.searchInput}
+          value={value}
+        />
+        {value.length > 0 && (
+          <Pressable onPress={() => onChange('')} hitSlop={8}>
+            <Ionicons name="close-circle" size={16} color={c.textMuted} />
+          </Pressable>
+        )}
+      </View>
+      {trailing != null && <View style={s.searchSide}>{trailing}</View>}
     </View>
   );
 };
@@ -4465,19 +4463,26 @@ function makeLibStyles(c: ThemeColors) {
     sourceBtnTextActive: { fontSize: Typography.sm, color: c.textPrimary, fontWeight: '600' },
 
     // Search
+    searchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing.xs,
+      marginHorizontal: Spacing.md,
+      marginTop: Spacing.md,
+      marginBottom: Spacing.sm,
+    },
     searchWrap: {
+      flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: c.bgSurface,
       borderWidth: 1,
       borderColor: c.border,
       borderRadius: Radius.md,
-      marginHorizontal: Spacing.md,
-      marginTop: Spacing.md,
-      marginBottom: Spacing.sm,
       paddingHorizontal: Spacing.sm,
       height: 40,
     },
+    searchSide: { flexDirection: 'row', alignItems: 'center' },
     searchIcon:  { marginRight: Spacing.xs },
     searchInput: {
       flex: 1,
@@ -4488,17 +4493,12 @@ function makeLibStyles(c: ThemeColors) {
 
     // Sort bar
     // Sort trigger (icon on the search row) + bottom-sheet rows
+    // A full-height touch target so the icon is easy to hit beside the search field.
     sortTrigger: {
-      marginLeft: Spacing.xs,
-      paddingHorizontal: 2,
-      alignSelf: 'center',
-    },
-    searchTrailingDivider: {
-      width: StyleSheet.hairlineWidth,
-      alignSelf: 'stretch',
-      marginVertical: Spacing.sm,
-      marginLeft: Spacing.xs,
-      backgroundColor: c.border,
+      width: 36,
+      height: 36,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     sortRow: {
       flexDirection: 'row',
