@@ -44,11 +44,35 @@ import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import { useAuthStore } from '../../store/auth';
 import { AppState, getApplicationState, restartApplication } from '../../api/application';
 import { Card, SectionHeader, StatRow, fmtDate } from '../../components/overview/shared';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { MoreStackParamList } from '../../navigation/MainTabs';
+
+type Props = NativeStackScreenProps<MoreStackParamList, 'Server'>;
+
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
+
+// Same shape MoreScreen uses — navigate() is only type-safe for screens taking no params.
+type ParamlessScreen = { [K in keyof MoreStackParamList]: MoreStackParamList[K] extends undefined ? K : never }[keyof MoreStackParamList];
+
+// The backend-facing screens that used to sit at the top level of More. They're grouped
+// here rather than there so More stays about the app and this screen is the one place the
+// server is administered from.
+const SERVER_SECTIONS: {
+  label:    string;
+  icon:     IoniconName;
+  screen:   ParamlessScreen;
+  subtitle: string;
+}[] = [
+  { label: 'Connection',     icon: 'wifi-outline',        screen: 'Connection',    subtitle: 'App, Soulseek & disk status' },
+  { label: 'Soulseek Relay', icon: 'git-network-outline', screen: 'SoulseekRelay', subtitle: 'Your position in the distributed search network' },
+  { label: 'Server Logs',    icon: 'reader-outline',      screen: 'Logs',          subtitle: 'Live & historical server logs' },
+  { label: 'Blocked',        icon: 'ban-outline',         screen: 'Blocked',       subtitle: 'Blocked users, IPs & locations' },
+];
 
 // Matches ConnectionScreen's cadence, which polls the same endpoint.
 const POLL_MS = 15_000;
 
-export default function ServerScreen() {
+export default function ServerScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
   const isAdmin = useAuthStore((state) => state.isAdmin);
@@ -170,6 +194,30 @@ export default function ServerScreen() {
         </View>
       )}
 
+      <SectionHeader colors={colors} title="Manage" />
+      <Card colors={colors}>
+        {SERVER_SECTIONS.map((item, i) => (
+          <Pressable
+            key={item.screen}
+            onPress={() => navigation.navigate(item.screen)}
+            style={({ pressed }) => [
+              s.navRow,
+              i === SERVER_SECTIONS.length - 1 && s.navRowLast,
+              pressed && s.navRowPressed,
+            ]}
+          >
+            <View style={s.navIcon}>
+              <Ionicons color={colors.accent} name={item.icon} size={20} />
+            </View>
+            <View style={s.navText}>
+              <Text style={s.navLabel}>{item.label}</Text>
+              <Text style={s.navSub} numberOfLines={1}>{item.subtitle}</Text>
+            </View>
+            <Ionicons color={colors.textDim} name="chevron-forward" size={16} />
+          </Pressable>
+        ))}
+      </Card>
+
       <SectionHeader colors={colors} title="Status" />
       <Card colors={colors}>
         <StatRow
@@ -241,6 +289,20 @@ function makeStyles(c: ThemeColors) {
     bannerBody:  { color: c.textMuted, fontSize: Typography.sm, lineHeight: 18 },
 
     error: { color: c.danger, fontSize: Typography.sm, paddingHorizontal: Spacing.sm },
+
+    navRow: {
+      flexDirection:     'row',
+      alignItems:        'center',
+      padding:           Spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+    },
+    navRowLast:    { borderBottomWidth: 0 },
+    navRowPressed: { backgroundColor: c.bgElevated },
+    navIcon:       { width: 28, alignItems: 'center', marginRight: Spacing.sm },
+    navText:       { flex: 1, gap: 2 },
+    navLabel:      { color: c.textPrimary, fontSize: Typography.base, fontWeight: '500' },
+    navSub:        { color: c.textMuted, fontSize: Typography.xs },
 
     restartBtn: {
       flexDirection:   'row',

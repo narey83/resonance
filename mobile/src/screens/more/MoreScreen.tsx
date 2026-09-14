@@ -68,11 +68,9 @@ const MENU_SECTIONS: MenuSection[] = [
     title: 'App',
     items: [
       { label: 'Overview',   icon: 'bar-chart-outline', screen: 'Overview',  subtitle: 'Stats & activity dashboard', adminOnly: true },
-      { label: 'Server',     icon: 'server-outline',  screen: 'Server',     subtitle: 'Pending changes & restart', adminOnly: true },
-      { label: 'Connection', icon: 'wifi-outline',     screen: 'Connection', subtitle: 'App, Soulseek & disk status' },
-      { label: 'Soulseek Relay', icon: 'git-network-outline', screen: 'SoulseekRelay', subtitle: 'Your position in the distributed search network' },
-      { label: 'Server Logs', icon: 'reader-outline',   screen: 'Logs',       subtitle: 'Live & historical server logs' },
-      { label: 'Blocked',    icon: 'ban-outline',      screen: 'Blocked',    subtitle: 'Blocked users, IPs & locations' },
+      // Everything about the backend itself now lives behind this one entry; see
+      // SERVER_SECTIONS in ServerScreen for what it fans out to.
+      { label: 'Server',     icon: 'server-outline',  screen: 'Server',     subtitle: 'Status, logs, relay & restart', adminOnly: true },
       { label: 'Notifications', icon: 'notifications-outline', screen: 'Notifications', subtitle: 'Alerts & sounds' },
       { label: 'Settings',   icon: 'settings-outline', screen: 'Settings',   subtitle: 'App preferences' },
       { label: 'About',      icon: 'information-circle-outline', screen: 'About', subtitle: 'Version, developer & source code' },
