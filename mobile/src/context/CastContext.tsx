@@ -38,7 +38,7 @@ import React, {
   useState,
 } from 'react';
 import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
-import { MusicTrack } from '../api/musicLibrary';
+import { getArtworkUrl, MusicTrack } from '../api/musicLibrary';
 import { usePlayer } from './PlayerContext';
 import { useAuthStore } from '../store/auth';
 import { ensureSigned, signedQuery } from '../api/streamSignatures';
@@ -249,16 +249,28 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
     await ensureSigned([trackToLoad.path]);
     const { serverUrl } = useAuthStore.getState();
     const streamUrl = `${serverUrl}/api/v0/musiclibrary/stream?path=${encodeURIComponent(trackToLoad.path)}${signedQuery(trackToLoad.path)}`;
+    // The receiver fetches the cover itself, so it gets the same signed URL the stream uses.
+    // 1024px is sharp on a TV without shipping the full-size embedded image; the Default Media
+    // Receiver uses it as the cover and blurs it into the background.
+    const artworkUrl = trackToLoad.hasArtwork ? getArtworkUrl(trackToLoad.path, 1024) : null;
     await client.loadMedia({
       autoplay:    true,
       mediaInfo: {
         contentUrl:  streamUrl,
         contentType: contentTypeFor(trackToLoad.path),
+        // Lets the receiver draw the full progress bar straight away instead of waiting to probe.
+        ...(trackToLoad.duration ? { streamDuration: trackToLoad.duration } : {}),
         metadata: {
           type:     'musicTrack',
           title:    trackToLoad.title ?? trackToLoad.filename,
           artist:     trackToLoad.artist ?? '',
           albumTitle: trackToLoad.album ?? '',
+          ...(trackToLoad.albumArtist ? { albumArtist: trackToLoad.albumArtist } : {}),
+          ...(trackToLoad.trackNumber != null ? { trackNumber: trackToLoad.trackNumber } : {}),
+          ...(trackToLoad.discNumber != null ? { discNumber: trackToLoad.discNumber } : {}),
+          // Cast wants an ISO-8601 date; only the year is tagged, so it's the first of January.
+          ...(trackToLoad.year ? { releaseDate: `${trackToLoad.year}-01-01` } : {}),
+          ...(artworkUrl ? { images: [{ url: artworkUrl }] } : {}),
         },
       },
     });
