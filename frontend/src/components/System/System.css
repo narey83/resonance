@@ -1519,6 +1519,47 @@
   margin-bottom: 4px;
 }
 
+/* distributed network change confirmation */
+.dnet-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dnet-confirm-item {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.dnet-confirm-item--warning {
+  border-left-color: var(--warning);
+}
+.dnet-confirm-item--positive {
+  border-left-color: var(--success);
+}
+.dnet-confirm-title {
+  color: var(--text-primary);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.dnet-confirm-item--warning .dnet-confirm-title .icon {
+  color: var(--warning);
+}
+.dnet-confirm-item--positive .dnet-confirm-title .icon {
+  color: var(--success);
+}
+.dnet-confirm-detail {
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.dnet-confirm-detail p {
+  margin: 0 0 8px;
+}
+.dnet-confirm-detail p:last-child {
+  margin-bottom: 0;
+}
+
 /* toggle switch */
 .opt-toggle {
   background: var(--bg-elevated);

@@ -46,6 +46,9 @@ import { ShrinkableButton } from '../../Shared';
 import FolderPicker from '../../Shared/FolderPicker';
 import BrowseRateLimitSection from './BrowseRateLimitSection';
 import DebugModal from './DebugModal';
+import DistributedNetworkConfirmModal, {
+  getDistributedNetworkChanges,
+} from './DistributedNetworkConfirmModal';
 import FfmpegSection from './FfmpegSection';
 import QoSSection from './QoSSection';
 import SharesSection from './SharesSection';
@@ -346,7 +349,7 @@ const SCHEMA = [
     fields: [
       {
         description:
-          'Stop participating in the Soulseek distributed search network.',
+          "Stop participating in the Soulseek distributed search network. Most searches arrive through it, so turning it off means other users' searches stop finding your files and uploads fall sharply.",
         label: 'Disable Network',
         path: ['soulseek', 'distributed_network', 'disabled'],
         type: 'toggle',
@@ -362,7 +365,7 @@ const SCHEMA = [
         description:
           'Maximum number of distributed child connections to accept. Default: 25.',
         label: 'Child Limit',
-        min: 0,
+        min: 1,
         path: ['soulseek', 'distributed_network', 'child_limit'],
         placeholder: '25',
         type: 'number',
@@ -1786,6 +1789,9 @@ const Options = ({ options, state = {}, theme }) => {
   const [loadKey, setLoadKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [parsed, setParsed] = useState(null);
+  // the document as last loaded from the server, to tell what a save changes
+  const [saved, setSaved] = useState(null);
+  const [confirmingNetwork, setConfirmingNetwork] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [credentials, setCredentials] = useState({
@@ -1808,6 +1814,7 @@ const Options = ({ options, state = {}, theme }) => {
           sharesLibrary.getAll(),
         ]);
         setParsed(YAML.parse(yamlText) ?? {});
+        setSaved(YAML.parse(yamlText) ?? {});
         setCredentials({
           username: creds.username ?? '',
           password: creds.password ?? '',
@@ -1845,7 +1852,11 @@ const Options = ({ options, state = {}, theme }) => {
   const isSoulseekSection =
     SCHEMA[activeSection]?.title === SOULSEEK_ACCOUNT_TITLE;
 
-  const handleSave = async () => {
+  const networkChanges = isDirty
+    ? getDistributedNetworkChanges(saved, parsed)
+    : [];
+
+  const save = async () => {
     setSaving(true);
     setSaveError(null);
     try {
@@ -1885,6 +1896,7 @@ const Options = ({ options, state = {}, theme }) => {
         }
 
         await updateYaml({ yaml: newYaml });
+        setSaved(parsed);
         setIsDirty(false);
       }
     } catch (error) {
@@ -1892,6 +1904,22 @@ const Options = ({ options, state = {}, theme }) => {
     } finally {
       setSaving(false);
     }
+  };
+
+  // distributed network changes quietly change how many peers can find us,
+  // so explain what they do before saving them
+  const handleSave = () => {
+    if (networkChanges.length > 0) {
+      setConfirmingNetwork(true);
+      return;
+    }
+
+    save();
+  };
+
+  const handleConfirmNetwork = () => {
+    setConfirmingNetwork(false);
+    save();
   };
 
   const handleRescan = async () => {
@@ -2162,6 +2190,14 @@ const Options = ({ options, state = {}, theme }) => {
         onClose={() => setDebugModal(false)}
         open={debugModal}
         theme={theme}
+      />
+
+      <DistributedNetworkConfirmModal
+        after={parsed}
+        changes={networkChanges}
+        onCancel={() => setConfirmingNetwork(false)}
+        onConfirm={handleConfirmNetwork}
+        open={confirmingNetwork && networkChanges.length > 0}
       />
     </div>
   );
