@@ -73,8 +73,8 @@ export const resolveWaveformDuration = (
 
 /**
  * Converts a moment on the analysis timeline to a pixel offset. The one place this
- * calculation happens — waveform bars, the playhead, the beat grid, and every seek/scratch
- * target all convert through this function (and its inverse, `pixelToTime`) rather than each
+ * calculation happens — waveform bars, the playhead, the beat grid, and every seek target
+ * all convert through this function (and its inverse, `pixelToTime`) rather than each
  * recomputing `time / duration * width` independently.
  *
  * Works equally for the whole track (`duration` = the full `analysisDuration`, `width` = the

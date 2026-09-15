@@ -64,9 +64,6 @@ const WaveformSeekBar = ({
   height = 40,
   onAnalysing,
   onReady,
-  onScratchEnd,
-  onScratchMove,
-  onScratchStart,
   onSeek,
   progressPct,
   track,
@@ -478,62 +475,27 @@ const WaveformSeekBar = ({
     return start + pixelToTime(fraction, end - start, 1);
   };
 
-  // Scratching needs a fixed, zoom-independent sensitivity — grabbing the
-  // waveform should feel like grabbing a physical record: a given amount of
-  // hand movement always covers the same amount of audio, regardless of how
-  // zoomed in the view happens to be. Mapping through the visible window
-  // (like plain seeking does) meant a tiny drag at low zoom covered minutes
-  // of audio, which is what made it feel like it was "going too fast".
-  const SCRATCH_PIXELS_PER_SECOND = 400;
-  const dragStartRef = useRef({ clientX: 0, time: 0 });
-
-  // `dragStartRef.current.time` and every value derived from it below stay on the analysis
-  // timeline until the moment they're actually handed to onSeek/onScratch* — the single point
-  // each converts to the playback clock via analysisToPlaybackTime, matching the pixel ->
-  // pixelToTime -> analysis time -> analysisToPlaybackTime -> audio.currentTime chain.
+  // Times stay on the analysis timeline until the moment they're handed to onSeek — the
+  // single point each converts to the playback clock via analysisToPlaybackTime, matching
+  // the pixel -> pixelToTime -> analysis time -> analysisToPlaybackTime -> audio.currentTime
+  // chain.
   const handlePointerDown = (event) => {
     if (!waveformDuration) return;
     draggingRef.current = true;
     canvasRef.current.setPointerCapture(event.pointerId);
-    const time = timeFromFraction(fractionFromEvent(event));
-    if (onScratchStart) {
-      dragStartRef.current = { clientX: event.clientX, time };
-      onScratchStart(analysisToPlaybackTime(time));
-    } else {
-      onSeek(analysisToPlaybackTime(time));
-    }
+    onSeek(analysisToPlaybackTime(timeFromFraction(fractionFromEvent(event))));
   };
 
   const handlePointerMove = (event) => {
     const fraction = fractionFromEvent(event);
     setHoverFraction(fraction);
     if (!draggingRef.current || !waveformDuration) return;
-    if (onScratchMove) {
-      const deltaTime =
-        (event.clientX - dragStartRef.current.clientX) /
-        SCRATCH_PIXELS_PER_SECOND;
-      const time = Math.max(
-        0,
-        Math.min(waveformDuration, dragStartRef.current.time + deltaTime),
-      );
-      onScratchMove(analysisToPlaybackTime(time));
-    } else {
-      onSeek(analysisToPlaybackTime(timeFromFraction(fraction)));
-    }
+    onSeek(analysisToPlaybackTime(timeFromFraction(fraction)));
   };
 
   const handlePointerUp = (event) => {
     draggingRef.current = false;
     canvasRef.current.releasePointerCapture(event.pointerId);
-    if (!onScratchEnd) return;
-    const deltaTime =
-      (event.clientX - dragStartRef.current.clientX) /
-      SCRATCH_PIXELS_PER_SECOND;
-    const time = Math.max(
-      0,
-      Math.min(waveformDuration, dragStartRef.current.time + deltaTime),
-    );
-    onScratchEnd(analysisToPlaybackTime(time));
   };
 
   // Keyboard seek parity with the plain scrubber bar (±5s) — the canvas has
