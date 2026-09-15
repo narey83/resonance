@@ -64,7 +64,7 @@ namespace resonance.Mixtapes.API
         [HttpGet("{token}/artwork")]
         [ProducesResponseType(200)]
         [ProducesResponseType(404)]
-        public IActionResult GetArtwork(string token)
+        public IActionResult GetArtwork(string token, [FromQuery] int? size)
         {
             var m = Service.GetByToken(token);
             if (m == null)
@@ -72,7 +72,7 @@ namespace resonance.Mixtapes.API
                 return NotFound();
             }
 
-            var info = Service.GetArtworkInfo(m.Id);
+            var info = Service.GetArtworkInfo(m.Id, size);
             return info == null ? NotFound() : PhysicalFile(info.Value.Path, info.Value.ContentType);
         }
 

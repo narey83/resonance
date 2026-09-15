@@ -47,10 +47,6 @@ namespace resonance.MusicLibrary.API
     using resonance.Common;
     using resonance.Mixtapes;
     using resonance.Shares;
-    using SixLabors.ImageSharp;
-    using SixLabors.ImageSharp.Formats;
-    using SixLabors.ImageSharp.Formats.Jpeg;
-    using SixLabors.ImageSharp.Processing;
     using AppOptions = resonance.Options;
 
     /// <summary>
@@ -511,7 +507,7 @@ namespace resonance.MusicLibrary.API
             // Second chance from the persistent cache before doing the expensive thing. The memory
             // cache is empty after every restart; this one isn't, so a cover is only ever decoded
             // and resized once rather than once per restart.
-            var normalisedSize = size.HasValue && size.Value > 0 ? Math.Clamp(size.Value, 32, 2048) : 0;
+            var normalisedSize = size.HasValue && size.Value > 0 ? ArtworkResizer.Clamp(size.Value) : 0;
             long fileSize;
 
             try
@@ -555,21 +551,7 @@ namespace resonance.MusicLibrary.API
 
                 if (size.HasValue && size.Value > 0)
                 {
-                    var s = Math.Clamp(size.Value, 32, 2048);
-
-                    // Decode straight to roughly the size we want. Album art is routinely far
-                    // larger than the thumbnail asked for, and decoding it at full resolution only
-                    // to shrink it afterwards was the bulk of what remained of a cold render — one
-                    // cover measured 12.6s. JPEG can scale during decode, so this skips most of it.
-                    using var img = Image.Load(new DecoderOptions { TargetSize = new Size(s, s) }, rawBytes);
-                    img.Mutate(x => x.Resize(new ResizeOptions
-                    {
-                        Size = new Size(s, s),
-                        Mode = ResizeMode.Max,
-                    }));
-                    using var ms = new MemoryStream();
-                    img.Save(ms, new JpegEncoder { Quality = 85 });
-                    bytes = ms.ToArray();
+                    bytes = ArtworkResizer.ResizeToJpeg(rawBytes, size.Value);
                     mime = "image/jpeg";
                 }
                 else

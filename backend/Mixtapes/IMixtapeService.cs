@@ -52,7 +52,11 @@ namespace resonance.Mixtapes
         IReadOnlyList<MixtapeTrack> GetTracks(string mixtapeId);
 
         bool HasArtwork(string id);
-        (string Path, string ContentType)? GetArtworkInfo(string id);
+        /// <summary>
+        ///     Gets the file to serve for a mixtape's artwork: the upload itself, or, when
+        ///     <paramref name="size"/> is given, a copy resized to fit that many pixels.
+        /// </summary>
+        (string Path, string ContentType)? GetArtworkInfo(string id, int? size = null);
         System.Threading.Tasks.Task SaveArtworkAsync(string id, System.IO.Stream data, string contentType);
         void DeleteArtwork(string id);
 

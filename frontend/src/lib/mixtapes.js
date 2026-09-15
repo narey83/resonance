@@ -66,8 +66,19 @@ export const unpublish = (id) =>
 
 // ── Public (no auth) ──────────────────────────────────────────────────────────
 
-export const artworkUrl = (id) =>
-  `${apiBaseUrl}/mixtapes/${encodeURIComponent(id)}/artwork`;
+// Artwork is an uploaded image, often a multi-megabyte photo, so pass the pixel
+// size it is shown at and the server sends a resized copy. version (the
+// mixtape's updatedAt) busts the browser cache when the artwork is replaced.
+const artworkQuery = ({ size, version } = {}) => {
+  const parameters = new URLSearchParams();
+  if (size) parameters.set('size', size);
+  if (version) parameters.set('v', version);
+  const query = parameters.toString();
+  return query ? `?${query}` : '';
+};
+
+export const artworkUrl = (id, options) =>
+  `${apiBaseUrl}/mixtapes/${encodeURIComponent(id)}/artwork${artworkQuery(options)}`;
 
 export const uploadArtwork = (id, file) => {
   const form = new FormData();
@@ -84,8 +95,8 @@ export const getPublic = (token) =>
 export const downloadTrackUrl = (token, trackId) =>
   `${apiBaseUrl}/public/mixtapes/${encodeURIComponent(token)}/tracks/${encodeURIComponent(trackId)}/download`;
 
-export const publicArtworkUrl = (token) =>
-  `${apiBaseUrl}/public/mixtapes/${encodeURIComponent(token)}/artwork`;
+export const publicArtworkUrl = (token, options) =>
+  `${apiBaseUrl}/public/mixtapes/${encodeURIComponent(token)}/artwork${artworkQuery(options)}`;
 
 // ── M3U / zip exports ─────────────────────────────────────────────────────────
 

@@ -147,7 +147,11 @@ const PublicMixtape = ({ token }) => {
                 <img
                   alt={mixtape.name}
                   className="pm-meta-art"
-                  src={`${publicArtworkUrl(token)}?v=${mixtape.updatedAt}`}
+                  src={publicArtworkUrl(token, {
+                    // shown at 80px; enough for a 3x screen
+                    size: 256,
+                    version: mixtape.updatedAt,
+                  })}
                 />
               ) : (
                 <ListMusic

@@ -38,6 +38,7 @@ namespace resonance.Mixtapes
     using System.Threading.Tasks;
     using Microsoft.AspNetCore.SignalR;
     using Microsoft.Extensions.Hosting;
+    using resonance.Common;
     using resonance.Mixtapes.API;
     using resonance.MusicLibrary;
     using Serilog;
@@ -116,7 +117,7 @@ namespace resonance.Mixtapes
 
         public bool HasArtwork(string id) => File.Exists(ArtworkFilePath(id));
 
-        public (string Path, string ContentType)? GetArtworkInfo(string id)
+        public (string Path, string ContentType)? GetArtworkInfo(string id, int? size = null)
         {
             var path = ArtworkFilePath(id);
             if (!File.Exists(path))
@@ -125,12 +126,53 @@ namespace resonance.Mixtapes
             }
 
             var ct = File.Exists(ArtworkCtPath(id)) ? File.ReadAllText(ArtworkCtPath(id)).Trim() : "image/jpeg";
-            return (path, ct);
+            var original = (path, ct);
+
+            if (size is not > 0)
+            {
+                return original;
+            }
+
+            // Uploaded artwork is served straight from the upload, often a multi-megabyte photo, while
+            // every tile showing it is a few hundred pixels across. Serve a resized copy instead, kept on
+            // disk beside the original so each size is only made once.
+            var bucket = ThumbnailBucket(size.Value);
+            var thumbnail = ArtworkThumbnailPath(id, bucket);
+
+            try
+            {
+                if (File.Exists(thumbnail) && File.GetLastWriteTimeUtc(thumbnail) >= File.GetLastWriteTimeUtc(path))
+                {
+                    return (thumbnail, "image/jpeg");
+                }
+
+                var source = File.ReadAllBytes(path);
+
+                // an image already within the bounds gains nothing from a re-encode
+                var dimensions = SixLabors.ImageSharp.Image.Identify(source);
+                if (Math.Max(dimensions.Width, dimensions.Height) <= bucket)
+                {
+                    return original;
+                }
+
+                // write aside and move into place, so a concurrent request never reads a partial file
+                var temporary = $"{thumbnail}.{Guid.NewGuid():N}.tmp";
+                File.WriteAllBytes(temporary, ArtworkResizer.ResizeToJpeg(source, bucket));
+                File.Move(temporary, thumbnail, overwrite: true);
+
+                return (thumbnail, "image/jpeg");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("Failed to resize artwork for mixtape {Id} to {Size}px, serving the original: {Message}", id, bucket, ex.Message);
+                return original;
+            }
         }
 
         public async System.Threading.Tasks.Task SaveArtworkAsync(string id, Stream data, string contentType)
         {
             Directory.CreateDirectory(ArtworkDir);
+            DeleteArtworkThumbnails(id);
             await using var fs = File.Create(ArtworkFilePath(id));
             await data.CopyToAsync(fs);
             await File.WriteAllTextAsync(ArtworkCtPath(id), contentType);
@@ -148,6 +190,8 @@ namespace resonance.Mixtapes
             {
                 File.Delete(ArtworkCtPath(id));
             }
+
+            DeleteArtworkThumbnails(id);
 
             _ = Hub.BroadcastUpdatedAsync();
         }
@@ -444,6 +488,41 @@ namespace resonance.Mixtapes
         private string ArtworkFilePath(string id) => Path.Combine(ArtworkDir, id);
 
         private string ArtworkCtPath(string id) => Path.Combine(ArtworkDir, id + ".ct");
+
+        private string ArtworkThumbnailPath(string id, int size) => Path.Combine(ArtworkDir, $"{id}.thumb-{size}.jpg");
+
+        // Requested sizes follow each client's layout and pixel density, so round them up to a power of
+        // two: a handful of files per mixtape rather than one for every size ever asked for.
+        internal static int ThumbnailBucket(int size)
+        {
+            var bucket = 64;
+            while (bucket < ArtworkResizer.Clamp(size))
+            {
+                bucket *= 2;
+            }
+
+            return Math.Min(bucket, ArtworkResizer.MaximumSize);
+        }
+
+        private void DeleteArtworkThumbnails(string id)
+        {
+            if (!Directory.Exists(ArtworkDir))
+            {
+                return;
+            }
+
+            foreach (var file in Directory.EnumerateFiles(ArtworkDir, $"{id}.thumb-*"))
+            {
+                try
+                {
+                    File.Delete(file);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning("Failed to delete artwork thumbnail {File}: {Message}", file, ex.Message);
+                }
+            }
+        }
 
         private Mixtape WithArtwork(Mixtape m) =>
             File.Exists(ArtworkFilePath(m.Id)) ? m with { HasArtwork = true } : m;

@@ -124,8 +124,14 @@ const AlbumArt = ({
     Math.ceil(size * (window.devicePixelRatio || 2)),
     512,
   );
-  const imgSource = sourceOverride ?? getArtworkUrl(path, requestSize);
-  const cacheKey = path || sourceOverride || '';
+  // src may be a function of the pixel size to request, so artwork served from
+  // elsewhere (mixtape uploads) is sized for this cell like library covers are
+  const resolvedOverride =
+    typeof sourceOverride === 'function'
+      ? sourceOverride(requestSize)
+      : sourceOverride;
+  const imgSource = resolvedOverride ?? getArtworkUrl(path, requestSize);
+  const cacheKey = path || resolvedOverride || '';
   const [imgError, setImgError] = useState(() =>
     artworkFailCache.has(cacheKey),
   );

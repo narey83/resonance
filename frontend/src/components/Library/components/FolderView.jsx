@@ -219,7 +219,7 @@ const FolderView = ({
     (folder) => {
       const m = mixtapes.find((mx) => mx.name === folder.name);
       return m?.hasArtwork
-        ? `${mixtapeArtworkUrl(m.id)}?v=${m.updatedAt}`
+        ? (size) => mixtapeArtworkUrl(m.id, { size, version: m.updatedAt })
         : undefined;
     },
     [mixtapes],

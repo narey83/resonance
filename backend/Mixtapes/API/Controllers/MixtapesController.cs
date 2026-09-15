@@ -179,9 +179,9 @@ namespace resonance.Mixtapes.API
         [AllowAnonymous]
         [ProducesResponseType(200)]
         [ProducesResponseType(404)]
-        public IActionResult GetArtwork(string id)
+        public IActionResult GetArtwork(string id, [FromQuery] int? size)
         {
-            var info = Service.GetArtworkInfo(id);
+            var info = Service.GetArtworkInfo(id, size);
             return info == null ? NotFound() : PhysicalFile(info.Value.Path, info.Value.ContentType);
         }
 

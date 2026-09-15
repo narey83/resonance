@@ -377,7 +377,7 @@ const loadNode = async (mediaId: string): Promise<void> => {
   } else if (mediaId === TAB_MIXTAPES) {
     const all = await mixtapes.getAll();
     tree[mediaId] = chunked(mediaId, all.map((m) =>
-      browsable(PREFIX_MIXTAPE + encodeURIComponent(m.id), m.name, plural(m.tracks.length, 'track'), m.hasArtwork ? (mixtapes.getMixtapeArtworkUrl(m.id) ?? undefined) : undefined),
+      browsable(PREFIX_MIXTAPE + encodeURIComponent(m.id), m.name, plural(m.tracks.length, 'track'), m.hasArtwork ? (mixtapes.getMixtapeArtworkUrl(m.id, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
     ));
   } else if (mediaId === TAB_LOVED) {
     const loved = await getLovedTracks();

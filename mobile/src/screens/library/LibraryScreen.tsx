@@ -95,7 +95,7 @@ import { useLocalLibraryActivityStore } from '../../store/localLibraryActivitySt
 import { getPlayHistory, type PlayRecord } from '../../api/libraryActivity';
 import * as mixtapesAPI from '../../api/mixtapes';
 import { create as createSearch, stripRemixInfo } from '../../api/searches';
-import { MixtapeTrack, getMixtapeArtworkUrl } from '../../api/mixtapes';
+import { Mixtape, MixtapeTrack, getMixtapeArtworkCacheKey, getMixtapeArtworkUrl } from '../../api/mixtapes';
 import { useLibrarySettings, ALL_TABS, LOCAL_TABS, LibraryTab } from '../../store/librarySettingsStore';
 import { useAuthStore } from '../../store/auth';
 import { notePerfBlock } from '../../lib/perfProbe';
@@ -180,8 +180,10 @@ function useKeyboardHeight() {
 
 // ── ArtworkBox ────────────────────────────────────────────────────────────────
 
-const ArtworkBox = React.memo(({ path, size, overrideUrl, overrideCacheKey, source, thumbSize = ARTWORK_THUMB_SIZE, placeholderIcon = 'musical-note' }: {
+const ArtworkBox = React.memo(({ path, size, overrideUrl, overrideCacheKey, mixtape, source, thumbSize = ARTWORK_THUMB_SIZE, placeholderIcon = 'musical-note' }: {
   path: string | null; size: number; overrideUrl?: string | null; overrideCacheKey?: string;
+  /** Show this mixtape's uploaded artwork, fetched at thumbSize, in place of path's cover. */
+  mixtape?: Mixtape | null;
   source?: 'local' | 'server';
   /** Server transcode size. Rows keep the shared thumbnail; big tiles ask for a sharper one. */
   thumbSize?: number;
@@ -194,8 +196,11 @@ const ArtworkBox = React.memo(({ path, size, overrideUrl, overrideCacheKey, sour
   // same cover hits the same expo-image cacheKey + server transcode across every list and screen.
   const isLocalPath = path?.startsWith('file://') ?? false;
   const downloadUrl = path ? (isLocalPath ? path : getArtworkUrl(path, thumbSize)) : null;
-  const url = overrideUrl ?? downloadUrl;
-  const cacheKey = overrideUrl ? overrideCacheKey : (path && !isLocalPath ? getArtworkCacheKey(path, thumbSize) : undefined);
+  const mixtapeUrl = mixtape?.hasArtwork ? getMixtapeArtworkUrl(mixtape.id, thumbSize) : null;
+  const url = mixtapeUrl ?? overrideUrl ?? downloadUrl;
+  const cacheKey = mixtapeUrl && mixtape
+    ? getMixtapeArtworkCacheKey(mixtape, thumbSize)
+    : overrideUrl ? overrideCacheKey : (path && !isLocalPath ? getArtworkCacheKey(path, thumbSize) : undefined);
 
   const badge = source ? (
     <View style={{
@@ -2423,8 +2428,6 @@ function FoldersTab() {
 
   const renderItem = useCallback(({ item }: { item: FolderWithSource }) => {
     const mixtape = !item._local ? mixtapes.find((m) => item.name === m.name) : null;
-    const artworkOverride = mixtape?.hasArtwork ? getMixtapeArtworkUrl(mixtape.id) : null;
-    const artworkOverrideCacheKey = mixtape?.hasArtwork ? `mixtape_${mixtape.id}` : undefined;
     if (grid) {
       return (
         <LibraryTile
@@ -2442,8 +2445,7 @@ function FoldersTab() {
               path={item.hasArtwork ? item.coverPath : null}
               size={size}
               thumbSize={thumbSize}
-              overrideUrl={artworkOverride}
-              overrideCacheKey={artworkOverrideCacheKey}
+              mixtape={mixtape}
               source={showBadge ? (item._local ? 'local' : 'server') : undefined}
               placeholderIcon="folder"
             />
@@ -2463,8 +2465,7 @@ function FoldersTab() {
         <ArtworkBox
           path={item.hasArtwork ? item.coverPath : null}
           size={48}
-          overrideUrl={artworkOverride}
-          overrideCacheKey={artworkOverrideCacheKey}
+          mixtape={mixtape}
           source={showBadge ? (item._local ? 'local' : 'server') : undefined}
         />
         <View style={s.rowInfo}>
@@ -2631,18 +2632,19 @@ function GenresTab() {
 
 // ── Tab: Playlists ────────────────────────────────────────────────────────────
 
-const MixtapeThumbLib = React.memo(({ id }: { id: string }) => {
+const MixtapeThumbLib = React.memo(({ mixtape }: { mixtape: Mixtape }) => {
   const { s, c } = useLibStyles();
   const [error, setError] = React.useState(false);
-  const url = getMixtapeArtworkUrl(id);
+  const url = getMixtapeArtworkUrl(mixtape.id, ARTWORK_THUMB_SIZE);
+  const cacheKey = getMixtapeArtworkCacheKey(mixtape, ARTWORK_THUMB_SIZE);
   if (url && !error) {
     return (
       <Image
         onError={() => setError(true)}
-        source={{ uri: url, cacheKey: `mixtape_${id}` }}
+        source={{ uri: url, cacheKey }}
         style={s.artistIcon}
         cachePolicy="memory-disk"
-        recyclingKey={`mixtape_${id}`}
+        recyclingKey={cacheKey}
       />
     );
   }
@@ -2715,8 +2717,7 @@ function PlaylistsTab() {
           path={null}
           size={size}
           thumbSize={thumbSize}
-          overrideUrl={item.hasArtwork ? getMixtapeArtworkUrl(item.id) : null}
-          overrideCacheKey={`mixtape_${item.id}`}
+          mixtape={item}
           placeholderIcon="musical-notes"
         />
       )}
@@ -2727,7 +2728,7 @@ function PlaylistsTab() {
       style={({ pressed }) => [s.row, pressed && s.rowPressed]}
     >
       {item.hasArtwork
-        ? <MixtapeThumbLib id={item.id} />
+        ? <MixtapeThumbLib mixtape={item} />
         : <View style={s.artistIcon}><Ionicons name="musical-notes" size={18} color={c.textMuted} /></View>
       }
       <View style={s.rowInfo}>
@@ -4314,7 +4315,10 @@ function PlaylistDetail({ route, navigation: nav }: PlaylistDetailProps) {
           <Pressable onPress={handlePickArtwork} style={s.mixtapeArtworkWrap}>
             {playlist.hasArtwork ? (
               <Image
-                source={{ uri: getMixtapeArtworkUrl(playlist.id) ?? undefined }}
+                source={{
+                  uri: getMixtapeArtworkUrl(playlist.id, ARTWORK_THUMB_SIZE) ?? undefined,
+                  cacheKey: getMixtapeArtworkCacheKey(playlist, ARTWORK_THUMB_SIZE),
+                }}
                 style={s.mixtapeArtworkImg}
               />
             ) : (

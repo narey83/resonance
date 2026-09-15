@@ -1013,7 +1013,9 @@ const mixtapeTrackToQueue = (track) => ({
 });
 
 const artworkSource = (m) =>
-  m.hasArtwork ? `${mixtapesAPI.artworkUrl(m.id)}?v=${m.updatedAt}` : null;
+  m.hasArtwork
+    ? (size) => mixtapesAPI.artworkUrl(m.id, { size, version: m.updatedAt })
+    : null;
 
 // ── Mixtape card (tile) ───────────────────────────────────────────────────────
 
@@ -2545,11 +2547,7 @@ const HomeView = ({
                     name={m.name}
                     radius={0}
                     size={130}
-                    src={
-                      m.hasArtwork
-                        ? `${mixtapesAPI.artworkUrl(m.id)}?v=${m.updatedAt}`
-                        : null
-                    }
+                    src={artworkSource(m)}
                     style={{
                       position: 'absolute',
                       inset: 0,

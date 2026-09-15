@@ -57,12 +57,23 @@ export interface Mixtape {
   tracks: MixtapeTrack[];
 }
 
-export const getMixtapeArtworkUrl = (id: string): string | null => {
+// Mixtape artwork is an uploaded image, often a multi-megabyte photo, so pass the pixel size it
+// is shown at (ARTWORK_THUMB_SIZE for rows, the tile's thumbSize for grids) and the server sends
+// a resized copy.
+export const getMixtapeArtworkUrl = (id: string, size?: number): string | null => {
   const { serverUrl, accessToken } = useAuthStore.getState();
   if (!serverUrl) return null;
-  const token = accessToken ? `?access_token=${encodeURIComponent(accessToken)}` : '';
-  return `${serverUrl}/api/v0/mixtapes/${encodeURIComponent(id)}/artwork${token}`;
+  const params = new URLSearchParams();
+  if (size) params.set('size', String(size));
+  if (accessToken) params.set('access_token', accessToken);
+  const query = params.toString();
+  return `${serverUrl}/api/v0/mixtapes/${encodeURIComponent(id)}/artwork${query ? `?${query}` : ''}`;
 };
+
+// expo-image cacheKey for a mixtape's artwork: per size, and per updatedAt so replacing the
+// artwork isn't hidden behind the previous image in the disk cache.
+export const getMixtapeArtworkCacheKey = (mixtape: Pick<Mixtape, 'id' | 'updatedAt'>, size: number): string =>
+  `mixtape_${mixtape.id}_${mixtape.updatedAt}_${size}`;
 
 export const getMixtapeM3uUrl = (id: string): string | null => {
   const { serverUrl, accessToken } = useAuthStore.getState();
