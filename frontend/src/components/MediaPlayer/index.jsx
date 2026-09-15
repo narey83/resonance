@@ -283,7 +283,6 @@ const MediaPlayer = () => {
     track,
   } = usePlayer();
   const activity = useLibraryActivity();
-  const trackLoudness = useTrackLoudness(track?.path);
   const audioRef = useRef(null);
   const playerRef = useRef(null);
   const repeatRef = useRef(false);
@@ -323,6 +322,14 @@ const MediaPlayer = () => {
   );
   const [waveformAnalysing, setWaveformAnalysing] = useState(false);
   const [miniWaveformAnalysing, setMiniWaveformAnalysing] = useState(false);
+  // A full-resolution waveform is several megabytes of JSON. Do not request it alongside the
+  // first audio bytes: on a fresh track those responses compete and noticeably delay playback.
+  // Keeping the path (rather than a boolean) also prevents the previous track's ready state from
+  // mounting a waveform during the render in which the queue advances to the next track.
+  const [waveformReadyPath, setWaveformReadyPath] = useState(null);
+  const trackLoudness = useTrackLoudness(track?.path, {
+    analyseMissing: waveformReadyPath === track?.path,
+  });
   const [showCast, setShowCast] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
@@ -655,6 +662,7 @@ const MediaPlayer = () => {
     const onPlaying = () => {
       setLoading(false);
       setStatusMessage(null);
+      setWaveformReadyPath(track.path);
     };
 
     audio.addEventListener('timeupdate', onTimeUpdate);
@@ -710,6 +718,7 @@ const MediaPlayer = () => {
           // cast failed — do nothing, leave local audio paused
         } finally {
           setLoading(false);
+          setWaveformReadyPath(track.path);
         }
 
         return;
@@ -1080,7 +1089,7 @@ const MediaPlayer = () => {
               </div>
 
               <div className="mp-expanded-scrub-stack">
-                {seekerEnabled && (
+                {seekerEnabled && waveformReadyPath === track.path && (
                   <WaveformSeekBar
                     duration={displayDuration}
                     getCurrentTime={getCurrentTime}
@@ -1344,7 +1353,7 @@ const MediaPlayer = () => {
 
       {/* ── Seekable scrubber ───────────────────────────────── */}
       <div className="media-player-scrub-wrap">
-        {seekerEnabled && (
+        {seekerEnabled && waveformReadyPath === track.path && (
           <WaveformSeekBar
             duration={displayDuration}
             getCurrentTime={getCurrentTime}

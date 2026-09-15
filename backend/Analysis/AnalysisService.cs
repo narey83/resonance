@@ -485,7 +485,7 @@ namespace resonance.Analysis
 
         private async Task RunScanAsync(AnalysisScanRequest request, CancellationToken ct)
         {
-            MusicLibrary?.RegisterQueue("analysis");
+            var queueRegistered = false;
             try
             {
                 // null  → scan all files
@@ -580,6 +580,13 @@ namespace resonance.Analysis
                     SetState(false, true, false, 0, 0, 0, 0, 1.0);
                     return;
                 }
+
+                // Registering a queue suppresses library sync while files and tags are changing;
+                // deregistering it deliberately triggers a catch-up sync. An empty missing-only
+                // request changes nothing, so registering it would turn every already-analysed
+                // track play into an unnecessary full-library scan.
+                MusicLibrary?.RegisterQueue("analysis");
+                queueRegistered = true;
 
                 string ffmpegPath;
                 try
@@ -759,7 +766,11 @@ namespace resonance.Analysis
                         CurrentState.Analysed, CurrentState.Skipped, CurrentState.Failed);
                 }
 
-                MusicLibrary?.DeregisterQueue("analysis");
+                if (queueRegistered)
+                {
+                    MusicLibrary?.DeregisterQueue("analysis");
+                }
+
                 SyncRoot.Release();
             }
         }

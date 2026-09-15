@@ -110,50 +110,63 @@ const WaveformSeekBar = ({
     }
 
     let cancelled = false;
-    onAnalysing?.(true);
 
-    // One trigger for every metric — the exact same analyseTrack() the manual "Analyse"
-    // button uses, not a separate hand-rolled request. This used to be two independent
-    // requests (a narrow Bpm/Key-only one, plus this component's own Waveform/Loudness
-    // fetch), which could each land on a different decode window — see
-    // AudioAnalyzer.AnalyseAsync — and was how a played track routinely got its BPM but not
-    // its key. Sharing analyseTrack means one decode, the same retry-on-busy-queue behaviour,
-    // and the same running/broadcast bookkeeping every other analyse surface uses, so a
-    // library row showing this track picks up the same spinner a click on its own analyse
-    // button would.
-    analyseTrack(track.path).then(() => {
-      if (cancelled) return;
+    const installWaveform = (data) => {
+      if (cancelled || !data?.overallPeaks?.length) return false;
 
-      // analyseTrack resolves once the peaks exist, but its own result is the reduced
-      // {high,low,mid,overall} shape library rows draw from — this component also needs
-      // analysisDuration/beat info for its timeline and beat grid, which only the raw
-      // response carries. cachedOnly: analyseTrack already guaranteed the data is there (or
-      // gave up trying), so this can only ever be a cheap read, never a second decode.
-      getWaveform(track.path, { cachedOnly: true })
-        .then((data) => {
-          if (cancelled || !data?.overallPeaks?.length) return;
+      // Rows already on screen showing this track pick this up via primeWaveformCache's
+      // own broadcast rather than staying on their stale "not analysed" waveform.
+      primeWaveformCache(track.path, data);
 
-          // Rows already on screen showing this track pick this up via primeWaveformCache's
-          // own broadcast rather than staying on their stale "not analysed" waveform.
-          primeWaveformCache(track.path, data);
+      const beatAvailability = resolveBeatAvailability(data);
+      peaksRef.current = {
+        analysisDuration: data.analysisDuration || null,
+        beatOffsetSeconds: beatAvailability.offsetSeconds,
+        beatsKnown: beatAvailability.known,
+        overall: new Float32Array(data.overallPeaks),
+      };
+      setReady(true);
+      onReady(true);
+      return true;
+    };
 
-          const beatAvailability = resolveBeatAvailability(data);
-          peaksRef.current = {
-            analysisDuration: data.analysisDuration || null,
-            beatOffsetSeconds: beatAvailability.offsetSeconds,
-            beatsKnown: beatAvailability.known,
-            overall: new Float32Array(data.overallPeaks),
-          };
-          setReady(true);
-          onReady(true);
-        })
-        .catch(() => {
-          /* no cached waveform — caller falls back to the plain bar */
-        })
-        .finally(() => {
-          if (!cancelled) onAnalysing?.(false);
-        });
-    });
+    const loadWaveform = async () => {
+      const allMetricsPresent =
+        Boolean(track.bpm) &&
+        Boolean(track.key) &&
+        track.hasWaveform === true &&
+        track.lufs != null;
+
+      // The library row already carries the four coverage fields. When all are present,
+      // playback is only a cache consumer and must not start even an empty analysis scan.
+      // If that cache read unexpectedly misses (the file changed since the row was fetched),
+      // fall through and let the backend re-evaluate it.
+      if (allMetricsPresent) {
+        const cached = await getWaveform(track.path, {
+          cachedOnly: true,
+        }).catch(() => null);
+        if (installWaveform(cached) || cancelled) return;
+      }
+
+      // Any missing metric uses the same full analysis workflow as the manual "Analyse"
+      // button. skipAnalysed makes the backend retain the parts that are already present.
+      onAnalysing?.(true);
+      try {
+        await analyseTrack(track.path);
+        if (cancelled) return;
+
+        // analyseTrack returns the reduced preview shape; the player needs the raw response's
+        // duration and beat information too, so read the newly cached record once it finishes.
+        const analysed = await getWaveform(track.path, {
+          cachedOnly: true,
+        }).catch(() => null);
+        installWaveform(analysed);
+      } finally {
+        if (!cancelled) onAnalysing?.(false);
+      }
+    };
+
+    loadWaveform();
 
     return () => {
       cancelled = true;

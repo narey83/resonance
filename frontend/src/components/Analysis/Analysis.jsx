@@ -291,9 +291,13 @@ const TrackRow = ({
   const handlePlay = () =>
     play({
       filename: track.filename,
+      hasWaveform: track.hasWaveform,
+      bpm: track.bpm,
+      key: track.key,
       username: null,
       size: 0,
       length: 0,
+      lufs: track.lufs,
       localRelativePath: track.path,
       path: track.path,
       title: track.title || track.filename,

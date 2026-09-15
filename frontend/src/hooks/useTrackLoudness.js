@@ -36,7 +36,7 @@ import { useEffect, useState } from 'react';
 // ffmpeg's ebur128 filter. Shared by the live loudness meter and
 // Performance Mode's pre-gain stage so both react to the same reading and
 // a track change only triggers one request, not one per consumer.
-const useTrackLoudness = (trackPath) => {
+const useTrackLoudness = (trackPath, { analyseMissing = false } = {}) => {
   const [loudness, setLoudness] = useState(null);
 
   useEffect(() => {
@@ -44,23 +44,30 @@ const useTrackLoudness = (trackPath) => {
     if (!trackPath) return undefined;
 
     let cancelled = false;
-    // Playback uses the same four-metric, missing-only analysis path as every
-    // manual Analyse action. The GET that follows is a cache read only.
-    analyseTrack(trackPath)
-      .then(() =>
-        api.get('/analysis/loudness', { params: { path: trackPath } }),
-      )
+    // Read the cache first. Starting analysis here used to happen before the audio request and
+    // made every play register an analysis queue, even when the backend ultimately found zero
+    // missing metrics. A genuine miss is filled only after the player says audio has started.
+    const getCached = () =>
+      api.get('/analysis/loudness', { params: { path: trackPath } });
+
+    getCached()
       .then(({ data }) => {
         if (!cancelled) setLoudness(data);
       })
+      .catch(async () => {
+        if (!analyseMissing) return;
+        await analyseTrack(trackPath);
+        const { data } = await getCached();
+        if (!cancelled) setLoudness(data);
+      })
       .catch(() => {
-        /* no cached loudness yet — consumers just treat it as unknown */
+        /* no cached loudness yet — consumers treat it as unknown */
       });
 
     return () => {
       cancelled = true;
     };
-  }, [trackPath]);
+  }, [analyseMissing, trackPath]);
 
   return loudness;
 };
