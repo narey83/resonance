@@ -42,7 +42,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      # platform-tools only; see ci.yml for why the action's default package list fails
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
       - name: Write google-services.json
         working-directory: mobile
         env:

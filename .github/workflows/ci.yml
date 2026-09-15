@@ -96,11 +96,12 @@ jobs:
             exit 0
           fi
 
-          if git diff --name-only "$BEFORE" "$GITHUB_SHA" -- mobile | grep -q .; then
-            echo "mobile/ changed in $BEFORE..$GITHUB_SHA — building the APK"
+          # This workflow counts too: a change to how the APK is built needs a build to prove it.
+          if git diff --name-only "$BEFORE" "$GITHUB_SHA" -- mobile .github/workflows/ci.yml | grep -q .; then
+            echo "mobile/ or ci.yml changed in $BEFORE..$GITHUB_SHA — building the APK"
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "no mobile/ changes in $BEFORE..$GITHUB_SHA — skipping the APK"
+            echo "no mobile/ or ci.yml changes in $BEFORE..$GITHUB_SHA — skipping the APK"
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -126,7 +127,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      # packages: the action's default, 'tools platform-tools', names the long-obsolete SDK
+      # Tools package; since cmdline-tools 16.0 sdkmanager fails on it instead of warning,
+      # which killed this job from 2026-09-15. Gradle installs the build-tools, platforms and
+      # NDK it needs on its own, so platform-tools is all this step has to provide.
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
       # mobile/google-services.json is gitignored (per-environment Firebase config), so the
       # tree never carries one and prebuild dies on ENOENT without this. The contents are not
       # meaningfully secret -- they ship inside every APK -- but they are specific to one
