@@ -30,7 +30,7 @@
 import { applyPreset, PRESETS } from '../../lib/dsp/presets';
 import { getMediaAudioGraph } from '../../lib/mediaAudioGraph';
 import CompressorView from './CompressorView';
-import EQView from './EQView';
+import EqView from './EqView';
 import FilterView from './FilterView';
 import LimiterView from './LimiterView';
 import PerformanceMode from './PerformanceMode';
@@ -46,7 +46,7 @@ import { createPortal } from 'react-dom';
 // need to change beyond that.
 const PROCESSORS = [
   { Component: PerformanceMode, id: 'performance' },
-  { Component: EQView, id: 'eq' },
+  { Component: EqView, id: 'eq' },
   { Component: CompressorView, id: 'compressor' },
   { Component: LimiterView, id: 'limiter' },
   { Component: SaturationView, id: 'saturation' },

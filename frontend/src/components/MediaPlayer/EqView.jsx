@@ -1,4 +1,4 @@
-// <copyright file="EQView.jsx" company="John Narey">
+// <copyright file="EqView.jsx" company="John Narey">
 //    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
 //   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
 //   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
@@ -27,14 +27,14 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import { EQ_MAX_DB, EQ_MIN_DB } from '../../lib/dsp/EQProcessor';
+import { EQ_MAX_DB, EQ_MIN_DB } from '../../lib/dsp/EqProcessor';
 import { getMediaAudioGraph } from '../../lib/mediaAudioGraph';
 import * as prefs from '../../lib/prefs';
 import ProcessorRow from './ProcessorRow';
 import React, { useEffect, useRef, useState } from 'react';
 
-// 3-band EQ panel — see lib/dsp/EQProcessor.js for the underlying filters.
-const EQView = ({
+// 3-band EQ panel — see lib/dsp/EqProcessor.js for the underlying filters.
+const EqView = ({
   audioRef,
   detailContainerNode,
   isSelected,
@@ -168,4 +168,4 @@ const EQView = ({
   );
 };
 
-export default EQView;
+export default EqView;

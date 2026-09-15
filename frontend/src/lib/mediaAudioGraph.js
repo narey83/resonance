@@ -28,7 +28,7 @@
 // </copyright>
 
 import { CompressorProcessor } from './dsp/CompressorProcessor';
-import { EQProcessor } from './dsp/EQProcessor';
+import { EQProcessor } from './dsp/EqProcessor';
 import { FilterProcessor } from './dsp/FilterProcessor';
 import { LimiterProcessor } from './dsp/LimiterProcessor';
 import { PerformanceProcessor } from './dsp/PerformanceProcessor';
