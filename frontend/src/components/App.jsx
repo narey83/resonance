@@ -159,7 +159,10 @@ const NETWORK_INFO_CACHE_KEY = 'resonance-status-network';
 
 const readStatusCache = (key, fallback) => {
   try {
-    const value = sessionStorage.getItem(key);
+    // Keep the shell warm across new tabs and browser restarts. These values are
+    // only paint-time placeholders and are refreshed as soon as authentication
+    // succeeds; logout and failed session validation clear them below.
+    const value = localStorage.getItem(key) ?? sessionStorage.getItem(key);
     return value === null ? fallback : JSON.parse(value);
   } catch {
     return fallback;
@@ -168,17 +171,26 @@ const readStatusCache = (key, fallback) => {
 
 const writeStatusCache = (key, value) => {
   try {
-    sessionStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(key, JSON.stringify(value));
+    // Remove values written by older builds so they cannot shadow debugging or
+    // survive after the durable cache has been cleared.
+    sessionStorage.removeItem(key);
   } catch {
     /* Status caching is only a rendering optimisation. */
   }
 };
 
 const clearStatusCaches = () => {
-  sessionStorage.removeItem(STATUS_STATE_CACHE_KEY);
-  sessionStorage.removeItem(NETWORK_INFO_CACHE_KEY);
-  sessionStorage.removeItem('resonance-status-profile');
-  sessionStorage.removeItem('resonance-status-port');
+  const keys = [
+    STATUS_STATE_CACHE_KEY,
+    NETWORK_INFO_CACHE_KEY,
+    'resonance-status-profile',
+    'resonance-status-port',
+  ];
+  for (const key of keys) {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+  }
 };
 
 const parseEventData = (raw) => {

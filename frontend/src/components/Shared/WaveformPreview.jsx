@@ -41,6 +41,21 @@ import React, { useEffect, useRef, useState } from 'react';
 const cache = new Map();
 const inFlight = new Map();
 
+// A row only needs roughly one peak per physical canvas pixel. Quantising the
+// request keeps resized rows sharing cached responses instead of creating a new
+// cache entry for every single-pixel width, while still staying sharp on HiDPI
+// displays. The unqualified path key remains the full-resolution waveform used
+// by the player and inspector.
+const previewBars = (width) => {
+  const required = Math.max(
+    128,
+    Math.ceil(width * (window.devicePixelRatio || 1)),
+  );
+  return Math.min(2 ** Math.ceil(Math.log2(required)), 2_048);
+};
+
+const cacheKey = (path, bars) => (bars ? `${path}\u0000${bars}` : path);
+
 // Rows already on screen when peaks arrive from somewhere else — playing a track analyses it
 // (via analyseTrack, same as every other trigger) — otherwise sat on their cached miss
 // forever: the row is mounted, so it never re-reads the cache, and `hasWaveform: false` from
@@ -174,26 +189,31 @@ export const analyseTrack = (path) => {
 // cachedOnly, never triggers a decode — the fast path for a track that's already analysed.
 // Exported so other "show this track's waveform" surfaces (RowWaveform on the Analysis page)
 // share this cache/in-flight bookkeeping instead of hand-rolling their own fetch.
-export const fetchPeaks = (path) => {
-  if (cache.has(path)) return Promise.resolve(cache.get(path));
-  if (inFlight.has(path)) return inFlight.get(path);
+export const fetchPeaks = (path, { bars } = {}) => {
+  // A full-resolution response is always sufficient for a preview too.
+  if (cache.has(path) && cache.get(path))
+    return Promise.resolve(cache.get(path));
+
+  const key = cacheKey(path, bars);
+  if (cache.has(key)) return Promise.resolve(cache.get(key));
+  if (inFlight.has(key)) return inFlight.get(key);
 
   // cachedOnly: never triggers an analysis. A library scrolling past thousands
   // of rows must not be able to queue a decode per row.
   const request = analysisApi
-    .getWaveform(path, { cachedOnly: true })
+    .getWaveform(path, { bars, cachedOnly: true })
     .then((data) => {
       const peaks = toPeaks(data);
-      cache.set(path, peaks);
+      cache.set(key, peaks);
       return peaks;
     })
     .catch(() => {
-      cache.set(path, null);
+      cache.set(key, null);
       return null;
     })
-    .finally(() => inFlight.delete(path));
+    .finally(() => inFlight.delete(key));
 
-  inFlight.set(path, request);
+  inFlight.set(key, request);
   return request;
 };
 
@@ -211,9 +231,13 @@ const WaveformPreview = ({
   path,
   width = 132,
 }) => {
+  const bars = previewBars(width);
+  const previewKey = cacheKey(path, bars);
   const canvasRef = useRef(null);
   const holderRef = useRef(null);
-  const [peaks, setPeaks] = useState(() => cache.get(path) ?? null);
+  const [peaks, setPeaks] = useState(
+    () => cache.get(path) ?? cache.get(previewKey) ?? null,
+  );
   const [analysing, setAnalysing] = useState(false);
   const [error, setError] = useState(null);
   const libraryRevision = useLibraryActivity()?.libraryRevision ?? 0;
@@ -257,10 +281,11 @@ const WaveformPreview = ({
 
     // A remembered miss is stale once the list says the track has a waveform: it was analysed
     // after this row last asked (by another row, the Analysis page, the player or the phone app).
-    if (hasWaveform === true && cache.get(path) === null) cache.delete(path);
+    if (hasWaveform === true && cache.get(previewKey) === null)
+      cache.delete(previewKey);
 
-    if (cache.has(path)) {
-      setPeaks(cache.get(path));
+    if (cache.has(path) || cache.has(previewKey)) {
+      setPeaks(cache.get(path) ?? cache.get(previewKey));
       return undefined;
     }
 
@@ -273,7 +298,7 @@ const WaveformPreview = ({
       (entries) => {
         if (!entries.some((e) => e.isIntersecting)) return;
         observer.disconnect();
-        fetchPeaks(path).then((result) => {
+        fetchPeaks(path, { bars }).then((result) => {
           if (!cancelled) setPeaks(result);
         });
       },
@@ -285,7 +310,7 @@ const WaveformPreview = ({
       cancelled = true;
       observer.disconnect();
     };
-  }, [hasWaveform, path]);
+  }, [bars, hasWaveform, path, previewKey]);
 
   useEffect(() => {
     const listener = (changed) => {

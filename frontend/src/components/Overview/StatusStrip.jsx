@@ -60,7 +60,7 @@ import { toast } from 'react-toastify';
 
 const readCachedStatus = (key, fallback) => {
   try {
-    const value = sessionStorage.getItem(key);
+    const value = localStorage.getItem(key) ?? sessionStorage.getItem(key);
     return value === null ? fallback : JSON.parse(value);
   } catch {
     return fallback;
@@ -69,7 +69,8 @@ const readCachedStatus = (key, fallback) => {
 
 const cacheStatus = (key, value) => {
   try {
-    sessionStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(key, JSON.stringify(value));
+    sessionStorage.removeItem(key);
   } catch {
     /* Status caching is only a rendering optimisation. */
   }
@@ -207,9 +208,9 @@ const StatusStrip = ({
   }, [menuOpen]);
 
   const runPortCheck = async () => {
-    // Keep the last-known result visible during the automatic refresh. On a
-    // first visit there is no cached result, so show the checking state.
-    if (!portStatus) setPortStatus('checking');
+    // The remote probe can take several seconds. Always expose that it has
+    // started instead of leaving a cached result on screen with no activity.
+    setPortStatus('checking');
     try {
       const result = await serverAPI.checkPort();
       setPortStatus(result);

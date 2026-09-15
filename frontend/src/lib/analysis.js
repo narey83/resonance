@@ -67,8 +67,12 @@ export const clearBpm = async (maskedFilename) =>
 
 // cachedOnly never triggers an analysis — required by anything rendering a list,
 // where one request per row would otherwise mean one ffmpeg decode per row.
-export const getWaveform = async (path, { cachedOnly = false } = {}) =>
-  (await api.get('/analysis/waveform', { params: { cachedOnly, path } })).data;
+export const getWaveform = async (path, { bars, cachedOnly = false } = {}) =>
+  (
+    await api.get('/analysis/waveform', {
+      params: { bars, cachedOnly, path },
+    })
+  ).data;
 
 export const getLoudness = async (path) =>
   (await api.get('/analysis/loudness', { params: { path } })).data;
