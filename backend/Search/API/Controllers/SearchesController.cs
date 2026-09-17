@@ -116,7 +116,12 @@ namespace resonance.Search.API
 
                 try
                 {
-                    search = await Searches.StartAsync(id, SearchQuery.FromText(request.SearchText), SearchScope.Network, request.ToSearchOptions());
+                    search = await Searches.StartAsync(
+                        id,
+                        SearchQuery.FromText(request.SearchText),
+                        SearchScope.Network,
+                        request.ToSearchOptions(
+                            defaultMaximumPeerQueueLength: OptionsSnapshot.Value.Filters.Search.MaximumPeerQueueLength));
                     return Ok(search);
                 }
                 catch (Exception ex) when (ex is ArgumentException || ex is Soulseek.DuplicateTokenException)

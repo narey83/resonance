@@ -195,7 +195,25 @@ namespace resonance.Transfers.Downloads
         ///     Its queued files are kept rather than discarded, so nothing is lost by giving up.
         /// </summary>
         private const int PeerGiveUpAfterRefusals = 5;
+
+        /// <summary>
+        ///     How many files to open with when a peer looks busy. Sampled from live searches, most peers
+        ///     advertise an empty queue, so a peer reporting a long one — or no free slot — is unusual
+        ///     enough to be worth approaching gently rather than with a full batch.
+        /// </summary>
+        private const int CrowdedPeerChunkSize = 10;
+
+        /// <summary>
+        ///     The advertised queue length past which a peer counts as busy.
+        /// </summary>
+        private const int CrowdedPeerQueueLength = 100;
+
         private const int MaxRejectionRetryDelayInMilliseconds = 600_000;
+
+        /// <summary>
+        ///     How long to wait for a peer to describe itself before giving up and just asking for files.
+        /// </summary>
+        private static readonly TimeSpan PeerInfoProbeTimeout = TimeSpan.FromSeconds(5);
 
         /// <summary>
         ///     Rejection messages that indicate a transient, remote-side queue limit; transfers rejected with one of
@@ -459,6 +477,7 @@ namespace resonance.Transfers.Downloads
                     activated), so dedupe them here against both the pending queue and in-progress transfers;
                     otherwise a re-submitted request queues a second copy that re-downloads after the first completes
                 */
+
                 // A peer that has been refusing "too many files" gets a smaller chunk: it told us the
                 // number was the problem, so activating the same fifty again just earns the same refusal.
                 var chunkSize = Math.Min(DownloadChunkSize, Backpressure.ActiveLimit(username));
@@ -466,6 +485,11 @@ namespace resonance.Transfers.Downloads
                 if (chunkSize < DownloadChunkSize)
                 {
                     Log.Information("Activating only {Chunk} file(s) at a time from {Username}; it has been refusing larger batches", chunkSize, username);
+                }
+                else if (fileList.Count > CrowdedPeerChunkSize)
+                {
+                    // Nothing learned about this peer yet, and enough files to be worth asking first.
+                    chunkSize = Math.Min(chunkSize, await GuessOpeningChunkAsync(username, cancellationToken));
                 }
 
                 if (fileList.Count > chunkSize)
@@ -1605,6 +1629,58 @@ namespace resonance.Transfers.Downloads
                     Log.Warning("Failed to retry rejected download of {Filename} from {Username}: {Message}", filename, username, ex.Message);
                 }
             });
+        }
+
+        /// <summary>
+        ///     Asks a peer how busy it is, and sizes the opening batch accordingly.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         A peer never says how many files you may queue with it — that is client-side policy and
+        ///         is not part of the protocol. What it will tell you, if asked, is how long its upload
+        ///         queue currently is and whether it has a free slot. That is not the limit, but it does
+        ///         separate a peer sitting idle from one with hundreds of files already waiting, and the
+        ///         second is not a peer to open with fifty requests.
+        ///     </para>
+        ///     <para>
+        ///         Strictly a hint. The peer may not answer, may answer slowly, or may be lying; any of
+        ///         those just means we fall back to the normal batch and let <see cref="PeerBackpressure"/>
+        ///         find the real number the hard way.
+        ///     </para>
+        /// </remarks>
+        /// <param name="username">The peer to ask.</param>
+        /// <param name="cancellationToken">The token to monitor for cancellation.</param>
+        /// <returns>The number of files to open with.</returns>
+        private async Task<int> GuessOpeningChunkAsync(string username, CancellationToken cancellationToken)
+        {
+            try
+            {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(PeerInfoProbeTimeout);
+
+                var info = await Client.GetUserInfoAsync(username, cancellationToken: timeout.Token);
+
+                if (info.QueueLength <= CrowdedPeerQueueLength && info.HasFreeUploadSlot)
+                {
+                    return DownloadChunkSize;
+                }
+
+                Log.Information(
+                    "{Username} reports a queue of {QueueLength} and {Slot} free upload slot; opening with {Chunk} file(s) rather than {Full}",
+                    username,
+                    info.QueueLength,
+                    info.HasFreeUploadSlot ? "a" : "no",
+                    CrowdedPeerChunkSize,
+                    DownloadChunkSize);
+
+                return CrowdedPeerChunkSize;
+            }
+            catch (Exception ex)
+            {
+                // Not answering is not a reason to refuse to download from someone.
+                Log.Debug("Could not ask {Username} how busy it is; opening with the usual batch: {Message}", username, ex.Message);
+                return DownloadChunkSize;
+            }
         }
 
         private void TryActivateNextPending(string username)

@@ -73,6 +73,7 @@ namespace resonance.Transfers.Downloads
         /// <param name="giveUpAfter">Consecutive refusals, with no success in between, before a peer is left alone.</param>
         /// <param name="baseDelay">The hold applied after the first refusal.</param>
         /// <param name="maxDelay">The longest hold, however many refusals accumulate.</param>
+        /// <param name="maxActive">How many files to ask a peer for before it has refused anything.</param>
         public PeerBackpressure(int giveUpAfter, TimeSpan baseDelay, TimeSpan maxDelay, int maxActive)
         {
             GiveUpAfter = giveUpAfter;

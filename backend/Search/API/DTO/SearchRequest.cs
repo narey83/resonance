@@ -91,9 +91,20 @@ namespace resonance.Search.API
         public string SearchText { get; set; }
 
         /// <summary>
-        ///     Gets or sets the search timeout value, in seconds, used to determine when the search is complete. (Default = 15).
+        ///     Gets or sets the search timeout value, in milliseconds, used to determine when the search is
+        ///     complete. (Default = 15,000).
         /// </summary>
-        /// <remarks>The timeout duration is from the time of the last response.</remarks>
+        /// <remarks>
+        ///     <para>The timeout duration is from the time of the last response.</para>
+        ///     <para>
+        ///         Milliseconds, not seconds: the value is handed to Soulseek.NET unchanged and that is what
+        ///         it expects. Documented as seconds until now, so a caller following the documentation and
+        ///         asking for 15 got a 15ms search, which times out before any peer can answer and returns
+        ///         nothing. No client in this repository sets it, so all of them get the correct default.
+        ///         The Range below still reads as though this were seconds; left alone rather than
+        ///         tightened, since narrowing it would start rejecting requests that are accepted today.
+        ///     </para>
+        /// </remarks>
         [Range(5, int.MaxValue)]
         public int? SearchTimeout { get; set; }
 
@@ -104,14 +115,22 @@ namespace resonance.Search.API
         /// <param name="fileFilter"></param>
         /// <param name="stateChanged"></param>
         /// <param name="responseReceived"></param>
+        /// <param name="defaultMaximumPeerQueueLength">The configured ceiling to apply when the request does not set one.</param>
         /// <returns></returns>
         public SearchOptions ToSearchOptions(
             Func<SearchResponse, bool> responseFilter = null,
             Func<File, bool> fileFilter = null,
             Action<(SearchStates PreviousState, Search Search)> stateChanged = null,
-            Action<(Search Search, SearchResponse Response)> responseReceived = null)
+            Action<(Search Search, SearchResponse Response)> responseReceived = null,
+            int? defaultMaximumPeerQueueLength = null)
         {
             var def = new SearchOptions();
+
+            // The configured ceiling applies unless the caller asked for one of its own. Zero means the
+            // operator turned it off, which is the library's "no limit" rather than "queue must be empty".
+            var maximumPeerQueueLength = MaximumPeerQueueLength
+                ?? (defaultMaximumPeerQueueLength is > 0 ? defaultMaximumPeerQueueLength : null)
+                ?? def.MaximumPeerQueueLength;
 
             return new SearchOptions(
                 searchTimeout: SearchTimeout ?? def.SearchTimeout,
@@ -119,7 +138,7 @@ namespace resonance.Search.API
                 fileLimit: FileLimit ?? def.FileLimit,
                 filterResponses: FilterResponses ?? def.FilterResponses,
                 minimumResponseFileCount: MinimumResponseFileCount ?? def.MinimumResponseFileCount,
-                maximumPeerQueueLength: MaximumPeerQueueLength ?? def.MaximumPeerQueueLength,
+                maximumPeerQueueLength: maximumPeerQueueLength,
                 minimumPeerUploadSpeed: MinimumPeerUploadSpeed ?? def.MinimumPeerUploadSpeed,
                 responseFilter: responseFilter,
                 fileFilter: fileFilter,

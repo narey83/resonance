@@ -1771,6 +1771,23 @@ namespace resonance
                 public string[] Request { get; init; } = Array.Empty<string>();
 
                 /// <summary>
+                ///     Gets the longest upload queue a peer may advertise for its search responses to be
+                ///     accepted. Zero means no limit.
+                /// </summary>
+                /// <remarks>
+                ///     Search responses carry the peer's queue depth, so a peer with no realistic chance of
+                ///     serving you can be dropped before it reaches the results, rather than discovered by
+                ///     queueing files with it and being refused. Sampled from live searches, healthy peers
+                ///     almost all advertise an empty queue and the busiest legitimate ones were around 150,
+                ///     so the default is set well clear of ordinary traffic and only excludes the hopeless.
+                /// </remarks>
+                [Argument(default, "maximum-peer-queue-length")]
+                [EnvironmentVariable("MAXIMUM_PEER_QUEUE_LENGTH")]
+                [Description("ignore search responses from peers whose upload queue is longer than this (0 = no limit)")]
+                [Range(0, int.MaxValue)]
+                public int MaximumPeerQueueLength { get; init; } = 500;
+
+                /// <summary>
                 ///     Extended validation.
                 /// </summary>
                 /// <param name="validationContext"></param>
