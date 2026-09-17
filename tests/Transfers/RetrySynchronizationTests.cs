@@ -264,6 +264,8 @@ public class RetrySynchronizationTests
 
         public bool IsBlacklisted(string username, IPAddress? ipAddress = null, bool bypassCache = true) => throw new NotImplementedException();
 
+        public bool HasIpBlacklistRules() => throw new NotImplementedException();
+
         public Task<bool> IsPrivilegedAsync(string username) => throw new NotImplementedException();
 
         public bool IsWatched(string username) => throw new NotImplementedException();

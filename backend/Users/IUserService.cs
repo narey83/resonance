@@ -162,6 +162,16 @@ namespace resonance.Users
         bool IsBlacklisted(string username, IPAddress ipAddress = null, bool bypassCache = true);
 
         /// <summary>
+        ///     Gets a value indicating whether any blacklist rule needs a peer's IP address to decide.
+        /// </summary>
+        /// <remarks>
+        ///     Resolving a peer's address costs a round-trip to the server. When no address-based rule is
+        ///     configured, the address cannot change the answer and the round-trip can be skipped.
+        /// </remarks>
+        /// <returns>A value indicating whether an IP address would affect the outcome.</returns>
+        bool HasIpBlacklistRules();
+
+        /// <summary>
         ///     Retrieves a value indicating whether the specified peer is privileged.
         /// </summary>
         /// <param name="username">The username of the peer.</param>

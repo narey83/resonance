@@ -2347,22 +2347,40 @@ namespace resonance
                         // it's unfortunate that we have to do this to get the IP, but we have to do it
                         // anyway to send the results, and the information is cached. whether we do it here
                         // or Soulseek.NET does it under the hood doesn't really matter.
-                        try
+                        //
+                        // only when something is actually configured to act on an address, though. this
+                        // is a server round-trip with a five-second timeout, on the path of every search
+                        // we can answer, and when it timed out the exception escaped and the response was
+                        // dropped -- so a search we had matching files for went unanswered because an IP
+                        // lookup was slow, for checks that had no rules to apply. 51 of those in the 24
+                        // hours to 2026-09-17, and rising through the day.
+                        var needsAddress = Users.HasIpBlacklistRules()
+                            || Blocked.HasIpRules(BlockedUserScope.SearchResponses);
+
+                        if (needsAddress)
                         {
-                            var endpoint = await Client.GetUserEndPointAsync(username);
-
-                            if (Users.IsBlacklisted(username, endpoint.Address))
+                            try
                             {
-                                return null;
-                            }
+                                var endpoint = await Client.GetUserEndPointAsync(username);
 
-                            if (Blocked.IsBlocked(username, endpoint.Address, BlockedUserScope.SearchResponses))
+                                if (Users.IsBlacklisted(username, endpoint.Address))
+                                {
+                                    return null;
+                                }
+
+                                if (Blocked.IsBlocked(username, endpoint.Address, BlockedUserScope.SearchResponses))
+                                {
+                                    return null;
+                                }
+                            }
+                            catch (Soulseek.UserOfflineException)
                             {
                                 return null;
                             }
                         }
-                        catch (Soulseek.UserOfflineException)
+                        else if (Users.IsBlacklisted(username) || Blocked.IsBlocked(username, BlockedUserScope.SearchResponses))
                         {
+                            // the name-only checks still run; they just don't need the round-trip
                             return null;
                         }
 

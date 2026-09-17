@@ -159,6 +159,35 @@ public class BlockedUsersService
     }
 
     /// <summary>
+    ///     Gets a value indicating whether any rule here needs a peer's IP address to decide, within
+    ///     the given <paramref name="scope"/>.
+    /// </summary>
+    /// <remarks>
+    ///     Resolving a peer's address costs a round-trip to the server, and the caller only needs it to
+    ///     run the IP-based checks. When none are configured there is nothing for it to answer, and the
+    ///     round-trip — along with its five-second timeout — can be skipped entirely.
+    /// </remarks>
+    /// <param name="scope">The scope being evaluated.</param>
+    /// <returns>A value indicating whether an IP address would affect the outcome.</returns>
+    public bool HasIpRules(BlockedUserScope scope)
+    {
+        var snapshot = current;
+
+        if (!ScopeEnabled(snapshot.Options, scope))
+        {
+            return false;
+        }
+
+        return IpRulesCouldMatch(
+            blockSameIp: snapshot.Options.BlockSameIp,
+            blockedUsernames: snapshot.Usernames.Count,
+            knownBlockedIps: snapshot.BlockedUserIps.Count,
+            ipRanges: snapshot.IpRanges.Count,
+            places: snapshot.Places.Count,
+            geoAvailable: Geo?.IsAvailable == true);
+    }
+
+    /// <summary>
     ///     Gets a value indicating whether <paramref name="directory"/> has been permanently
     ///     denied to <paramref name="username"/>. Denials are exact-match on the remote
     ///     directory path and are independent of <see cref="BlockedUserOptions"/> — a denied
@@ -482,6 +511,39 @@ public class BlockedUsersService
         Log.Information("Updated blocked user options: {Options}", options.ToJson());
         Reload();
         return current.Options;
+    }
+
+    /// <summary>
+    ///     Decides whether any address-based rule could change a blocking decision.
+    /// </summary>
+    /// <remarks>
+    ///     Separated from the snapshot so it can be exercised directly; it governs whether a check runs
+    ///     at all, which is not something to leave only to inspection.
+    /// </remarks>
+    /// <param name="blockSameIp">Whether addresses of blocked users are learned and matched.</param>
+    /// <param name="blockedUsernames">How many usernames are blocked.</param>
+    /// <param name="knownBlockedIps">How many addresses have been learned from blocked users.</param>
+    /// <param name="ipRanges">How many address ranges are blocked.</param>
+    /// <param name="places">How many places are blocked.</param>
+    /// <param name="geoAvailable">Whether the geolocation database is loaded.</param>
+    /// <returns>A value indicating whether an address could affect the outcome.</returns>
+    internal static bool IpRulesCouldMatch(
+        bool blockSameIp,
+        int blockedUsernames,
+        int knownBlockedIps,
+        int ipRanges,
+        int places,
+        bool geoAvailable)
+    {
+        // BlockSameIp defaults on, but on its own it decides nothing: an address is only learned from a
+        // blocked user, and only matched against addresses already learned. With neither, it can never
+        // change the answer, so it does not justify the round-trip.
+        var sameIpCouldMatch = blockSameIp && (blockedUsernames > 0 || knownBlockedIps > 0);
+
+        // A blocked place needs the geolocation database to resolve an address to a country.
+        var placeCouldMatch = places > 0 && geoAvailable;
+
+        return sameIpCouldMatch || ipRanges > 0 || placeCouldMatch;
     }
 
     private static bool ScopeEnabled(BlockedUserOptions options, BlockedUserScope scope) => scope switch

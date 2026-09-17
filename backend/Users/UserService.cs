@@ -335,6 +335,14 @@ namespace resonance.Users
             => Client.GrantUserPrivilegesAsync(username, days);
 
         /// <summary>
+        ///     Gets a value indicating whether any blacklist rule needs a peer's IP address to decide.
+        /// </summary>
+        /// <returns>A value indicating whether an IP address would affect the outcome.</returns>
+        public bool HasIpBlacklistRules()
+            => OptionsMonitor.CurrentValue.Transfers.Groups.Blacklisted.Cidrs.Any()
+                || Blacklist.Count > 0;
+
+        /// <summary>
         ///     Gets a value indicating whether the specified <paramref name="username"/> and/or <paramref name="ipAddress"/> are blacklisted.
         /// </summary>
         /// <remarks>
