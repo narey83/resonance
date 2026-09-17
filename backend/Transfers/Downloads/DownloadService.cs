@@ -83,7 +83,12 @@ namespace resonance.Transfers.Downloads
         /// <exception cref="ArgumentException">Thrown when the username is null or an empty string.</exception>
         /// <exception cref="ArgumentException">Thrown when no files are requested.</exception>
         /// <exception cref="AggregateException">Thrown when at least one of the requested files throws.</exception>
-        Task<(List<Transfer> Enqueued, List<string> Failed)> EnqueueAsync(string username, IEnumerable<(string Filename, long Size)> files, string destinationFolder = null, CancellationToken cancellationToken = default);
+        /// <param name="automaticRetry">
+        ///     Whether this call is the service retrying by itself, rather than someone asking for these files.
+        ///     A deliberate request clears any backpressure held against the peer, so a peer we had given up on
+        ///     gets a fresh start; an automatic retry must not, or giving up would never stick.
+        /// </param>
+        Task<(List<Transfer> Enqueued, List<string> Failed)> EnqueueAsync(string username, IEnumerable<(string Filename, long Size)> files, string destinationFolder = null, CancellationToken cancellationToken = default, bool automaticRetry = false);
 
         /// <summary>
         ///     Finds a single download matching the specified <paramref name="expression"/>.
@@ -183,6 +188,13 @@ namespace resonance.Transfers.Downloads
     public class DownloadService : IDownloadService
     {
         private const int DownloadChunkSize = 50;
+
+        /// <summary>
+        ///     Consecutive queue-level refusals from a peer, with no successful transfer in between, before
+        ///     we stop retrying it. With the doubling hold this works out at roughly ten minutes of trying.
+        ///     Its queued files are kept rather than discarded, so nothing is lost by giving up.
+        /// </summary>
+        private const int PeerGiveUpAfterRefusals = 5;
         private const int MaxRejectionRetryDelayInMilliseconds = 600_000;
 
         /// <summary>
@@ -267,6 +279,15 @@ namespace resonance.Transfers.Downloads
         private ConcurrentDictionary<(string Username, string Filename), int> RejectionRetries { get; } = new();
 
         /// <summary>
+        ///     Holds off peers that are refusing our whole queue, rather than retrying each refused file
+        ///     independently. See <see cref="PeerBackpressure"/> for why the distinction matters.
+        /// </summary>
+        private PeerBackpressure Backpressure { get; } = new(
+            giveUpAfter: PeerGiveUpAfterRefusals,
+            baseDelay: TimeSpan.FromSeconds(30),
+            maxDelay: TimeSpan.FromMinutes(5));
+
+        /// <summary>
         ///     Synchronizes the cleanup process; after gaining exclusive access over the dictionary, checks each entry
         ///     to see if the containing semaphore can be obtained immediately.  If so, it's not in use and is therefore
         ///     removed from the dictionary and discarded.
@@ -324,11 +345,19 @@ namespace resonance.Transfers.Downloads
         /// <exception cref="ArgumentException">Thrown when the username is null or an empty string.</exception>
         /// <exception cref="ArgumentException">Thrown when no files are requested.</exception>
         /// <exception cref="AggregateException">Thrown when at least one of the requested files throws.</exception>
-        public async Task<(List<Transfer> Enqueued, List<string> Failed)> EnqueueAsync(string username, IEnumerable<(string Filename, long Size)> files, string destinationFolder = null, CancellationToken cancellationToken = default)
+        /// <param name="automaticRetry">Whether this is the service retrying by itself rather than a deliberate request; see the interface.</param>
+        public async Task<(List<Transfer> Enqueued, List<string> Failed)> EnqueueAsync(string username, IEnumerable<(string Filename, long Size)> files, string destinationFolder = null, CancellationToken cancellationToken = default, bool automaticRetry = false)
         {
             if (string.IsNullOrEmpty(username))
             {
                 throw new ArgumentException("Username is required", nameof(username));
+            }
+
+            if (!automaticRetry)
+            {
+                // Somebody asked for these files, so give the peer another chance however badly it has
+                // behaved up to now. Without this, a peer we had given up on could never be retried.
+                Backpressure.Clear(username);
             }
 
             var fileList = files?.ToList() ?? [];
@@ -1407,6 +1436,9 @@ namespace resonance.Transfers.Downloads
 
                 RejectionRetries.TryRemove((transfer.Username, transfer.Filename), out _);
 
+                // A peer that just sent us a file is not refusing the queue, whatever it said earlier.
+                Backpressure.Succeeded(transfer.Username);
+
                 return transfer;
             }
             catch (Exception ex) when (ex is OperationCanceledException || ex is TimeoutException)
@@ -1499,8 +1531,27 @@ namespace resonance.Transfers.Downloads
                 return;
             }
 
+            // The peer is refusing the queue, not this file. Every file active with it is being refused
+            // at the same time, so the hold is recorded once per peer and every retry waits behind it --
+            // otherwise each file backs off on its own schedule and they simply take turns hammering.
+            if (!Backpressure.Refused(username, DateTime.UtcNow, out var heldUntil))
+            {
+                Log.Warning(
+                    "{Username} has refused our download queue {Refusals} times without completing anything ({Message}); leaving it alone. Queued files are kept and can be retried.",
+                    username,
+                    Backpressure.RefusalCount(username),
+                    rejection.Message);
+
+                RejectionRetries.TryRemove(key, out _);
+                return;
+            }
+
             var (delay, jitter) = Compute.ExponentialBackoffDelay(attempts, retryOptions.RejectedDelay, MaxRejectionRetryDelayInMilliseconds);
             var due = Math.Max(delay, retryOptions.RejectedDelay) + jitter;
+
+            // Never retry sooner than the peer-wide hold, however short this file's own backoff is.
+            var untilHold = Math.Clamp(Math.Ceiling((heldUntil - DateTime.UtcNow).TotalMilliseconds), 0d, int.MaxValue);
+            due = Math.Max(due, (int)untilHold);
 
             Log.Information("Download of {Filename} from {Username} was rejected ({Message}); retrying in about {Delay} second(s) (attempt {Attempt} of {Max})", filename, username, rejection.Message, (int)Math.Ceiling(due / 1000d), attempts, retryOptions.RejectedAttempts);
 
@@ -1537,7 +1588,7 @@ namespace resonance.Transfers.Downloads
                         return;
                     }
 
-                    await EnqueueAsync(username, [(filename, size)], destinationFolder);
+                    await EnqueueAsync(username, [(filename, size)], destinationFolder, automaticRetry: true);
                 }
                 catch (Exception ex)
                 {
@@ -1553,6 +1604,40 @@ namespace resonance.Transfers.Downloads
                 return;
             }
 
+            // This runs on every completion, including a failed one, so a peer that refuses everything
+            // used to pull its whole deferred queue into the refusal one file at a time. While the peer
+            // is held off, leave the queue alone and come back when the hold expires.
+            if (Backpressure.IsHeld(username, DateTime.UtcNow, out var heldUntil))
+            {
+                if (Backpressure.HasGivenUp(username))
+                {
+                    Log.Debug("Not activating deferred downloads from {Username}; the peer is refusing the queue", username);
+                    return;
+                }
+
+                var wait = heldUntil - DateTime.UtcNow;
+                Log.Debug("Holding deferred downloads from {Username} for about {Seconds}s", username, (int)Math.Ceiling(wait.TotalSeconds));
+
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(wait < TimeSpan.Zero ? TimeSpan.Zero : wait);
+
+                        if (!Application.IsShuttingDown)
+                        {
+                            TryActivateNextPending(username);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Debug("Failed to resume deferred downloads from {Username}: {Message}", username, ex.Message);
+                    }
+                });
+
+                return;
+            }
+
             if (!queue.TryDequeue(out var pending))
             {
                 return;
@@ -1564,7 +1649,7 @@ namespace resonance.Transfers.Downloads
             {
                 try
                 {
-                    var (enqueued, _) = await EnqueueAsync(username, [(pending.Filename, pending.Size)], pending.DestinationFolder);
+                    var (enqueued, _) = await EnqueueAsync(username, [(pending.Filename, pending.Size)], pending.DestinationFolder, automaticRetry: true);
 
                     /*
                         if the file was skipped (e.g. a duplicate that's already in progress), no download task was
