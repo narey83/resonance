@@ -264,6 +264,16 @@ namespace resonance.Transfers.Uploads
         private ISoulseekClient Client { get; set; }
         private IDbContextFactory<TransfersDbContext> ContextFactory { get; }
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Transfers.Uploads);
+
+        /// <summary>
+        ///     Keeps one cause failing a peer's whole queue from writing a line per file. A peer can have
+        ///     many thousands of files queued, so a single connection drop used to produce thousands of
+        ///     near-identical warnings; see <see cref="RepeatedFailureLog"/>.
+        /// </summary>
+        private RepeatedFailureLog UploadFailures { get; } = new(
+            verboseOccurrences: 3,
+            summariseEvery: 250,
+            window: TimeSpan.FromMinutes(1));
         private IOptionsMonitor<Options> OptionsMonitor { get; }
         private IRelayService Relay { get; }
         private IShareService Shares { get; set; }
@@ -649,16 +659,14 @@ namespace resonance.Transfers.Uploads
                     return null;
                 }
 
-                if (IsExpectedPeerFailure(ex))
-                {
-                    // the remote user is offline, dropped the connection, rejected the transfer, or simply timed
-                    // out; routine in a P2P network, so log quietly without the stack trace.
-                    Log.Warning("Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
-                }
-                else
-                {
-                    Log.Error(ex, "Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
-                }
+                // the remote user is offline, dropped the connection, rejected the transfer, or simply timed
+                // out; routine in a P2P network, so log quietly without the stack trace.
+                LogUploadFailure(
+                    "upload",
+                    transfer.Username,
+                    transfer.Filename,
+                    ex,
+                    asError: !IsExpectedPeerFailure(ex));
 
                 TryFail(transfer.Id, exception: ex);
                 _ = ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, ex.Message);
@@ -1335,6 +1343,47 @@ namespace resonance.Transfers.Uploads
         }
 
         /// <summary>
+        ///     Logs a failed upload, collapsing a run of identical failures to the same peer into a few
+        ///     examples and a count.
+        /// </summary>
+        /// <remarks>
+        ///     Grouped by peer and exception type rather than message, because the message carries the
+        ///     filename and so differs on every line. A one-off failure is never suppressed.
+        /// </remarks>
+        /// <param name="stage">Which of the two failure paths this is, so they are counted separately.</param>
+        /// <param name="username">The peer the upload was for.</param>
+        /// <param name="filename">The file being uploaded.</param>
+        /// <param name="exception">The failure.</param>
+        /// <param name="asError">Whether this warrants an error rather than a warning.</param>
+        private void LogUploadFailure(string stage, string username, string filename, Exception exception, bool asError)
+        {
+            var decision = UploadFailures.Record($"{stage}|{username}|{exception?.GetType().Name}", DateTime.UtcNow);
+
+            if (decision.Suppressed > 0)
+            {
+                Log.Warning(
+                    "...and {Count} further upload(s) to {Username} failed the same way: {Message}",
+                    decision.Suppressed,
+                    username,
+                    exception?.Message);
+            }
+
+            if (!decision.Verbose)
+            {
+                return;
+            }
+
+            if (asError)
+            {
+                Log.Error(exception, "Upload of {Filename} to user {Username} failed: {Message}", filename, username, exception?.Message);
+            }
+            else
+            {
+                Log.Warning("Upload of {Filename} to user {Username} failed: {Message}", filename, username, exception?.Message);
+            }
+        }
+
+        /// <summary>
         ///     Starts the upload of the specified <paramref name="transfer"/> on a background task, ensuring the transfer
         ///     record is dispositioned if the task itself faults.
         /// </summary>
@@ -1376,14 +1425,12 @@ namespace resonance.Transfers.Uploads
                     * transfer record updated so that it's no longer in Queued | Locally
                     * Soulseek.NET already tracking an identical upload (slskd <> Soulseek.NET desync)
                 */
-                if (IsExpectedPeerFailure(task.Exception))
-                {
-                    Log.Warning("Task for upload of {Filename} to {Username} did not complete successfully: {Error}", filename, username, task.Exception.Message);
-                }
-                else
-                {
-                    Log.Error(task.Exception, "Task for upload of {Filename} to {Username} did not complete successfully: {Error}", filename, username, task.Exception.Message);
-                }
+                LogUploadFailure(
+                    "task",
+                    username,
+                    filename,
+                    task.Exception,
+                    asError: !IsExpectedPeerFailure(task.Exception));
 
                 if (!TryFail(id, task.Exception))
                 {
