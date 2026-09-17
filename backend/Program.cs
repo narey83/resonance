@@ -971,6 +971,20 @@ namespace resonance
                 pgCmd.ExecuteNonQuery();
             }
 
+            // The Overview dashboard's aggregates are maintained in the database (see TransferRollup)
+            // rather than computed per request. Created here alongside the other custom, non-EF
+            // transfer tables, and before anything can ask for a report.
+            try
+            {
+                resonance.Telemetry.TransferRollup.EnsureSchema(connectionStringDictionary[Database.Transfers]);
+            }
+            catch (Exception ex)
+            {
+                // Reports fall back to aggregating the transfer table directly, so a failure here
+                // leaves the dashboard slow rather than broken; it is not worth failing startup over.
+                Log.Warning("Could not create the transfer rollup schema; reports will aggregate directly: {Message}", ex.Message);
+            }
+
             services.AddDbContext<MessagingDbContext>(connectionStringDictionary[Database.Messaging]);
             services.AddDbContext<EventsDbContext>(connectionStringDictionary[Database.Events]);
             services.AddDbContext<UsersDbContext>(connectionStringDictionary[Database.Users]);
@@ -1045,6 +1059,7 @@ namespace resonance
             // blanket warmer continuously scanned the multi-million-row transfer table and starved normal
             // requests and log persistence, even when its calls were serialized.
             services.AddSingleton<ReportsService>();
+            services.AddHostedService<resonance.Telemetry.TransferRollupRefresher>();
             services.AddSingleton<TelemetryService>();
 
             services.AddSingleton<VPNService>();
