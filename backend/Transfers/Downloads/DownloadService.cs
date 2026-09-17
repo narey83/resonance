@@ -197,14 +197,7 @@ namespace resonance.Transfers.Downloads
         private const int PeerGiveUpAfterRefusals = 5;
 
         /// <summary>
-        ///     How many files to open with when a peer looks busy. Sampled from live searches, most peers
-        ///     advertise an empty queue, so a peer reporting a long one — or no free slot — is unusual
-        ///     enough to be worth approaching gently rather than with a full batch.
-        /// </summary>
-        private const int CrowdedPeerChunkSize = 10;
-
-        /// <summary>
-        ///     The advertised queue length past which a peer counts as busy.
+        ///     The advertised queue length past which a peer is worth mentioning as busy.
         /// </summary>
         private const int CrowdedPeerQueueLength = 100;
 
@@ -486,10 +479,15 @@ namespace resonance.Transfers.Downloads
                 {
                     Log.Information("Activating only {Chunk} file(s) at a time from {Username}; it has been refusing larger batches", chunkSize, username);
                 }
-                else if (fileList.Count > CrowdedPeerChunkSize)
+                else if (fileList.Count > DownloadChunkSize)
                 {
-                    // Nothing learned about this peer yet, and enough files to be worth asking first.
-                    chunkSize = Math.Min(chunkSize, await GuessOpeningChunkAsync(username, cancellationToken));
+                    // Ask how busy the peer is, but only to say so. Shrinking the batch on this turned out
+                    // to cost more than it saved: a pool advertising a 90,000-file queue accepted all ten
+                    // it was offered without complaint, and would have taken fifty, while the request
+                    // showed in the UI as ten files out of the three hundred that were asked for. Queue
+                    // depth answers "how long will this take", not "how many will you accept", and only
+                    // the second is worth changing the batch for -- which a refusal tells us directly.
+                    await ReportPeerLoadAsync(username, cancellationToken);
                 }
 
                 if (fileList.Count > chunkSize)
@@ -1650,8 +1648,8 @@ namespace resonance.Transfers.Downloads
         /// </remarks>
         /// <param name="username">The peer to ask.</param>
         /// <param name="cancellationToken">The token to monitor for cancellation.</param>
-        /// <returns>The number of files to open with.</returns>
-        private async Task<int> GuessOpeningChunkAsync(string username, CancellationToken cancellationToken)
+        /// <returns>The operation context.</returns>
+        private async Task ReportPeerLoadAsync(string username, CancellationToken cancellationToken)
         {
             try
             {
@@ -1662,24 +1660,19 @@ namespace resonance.Transfers.Downloads
 
                 if (info.QueueLength <= CrowdedPeerQueueLength && info.HasFreeUploadSlot)
                 {
-                    return DownloadChunkSize;
+                    return;
                 }
 
                 Log.Information(
-                    "{Username} reports a queue of {QueueLength} and {Slot} free upload slot; opening with {Chunk} file(s) rather than {Full}",
+                    "{Username} reports a queue of {QueueLength} file(s) and {Slot} free upload slot; this may take a while",
                     username,
                     info.QueueLength,
-                    info.HasFreeUploadSlot ? "a" : "no",
-                    CrowdedPeerChunkSize,
-                    DownloadChunkSize);
-
-                return CrowdedPeerChunkSize;
+                    info.HasFreeUploadSlot ? "a" : "no");
             }
             catch (Exception ex)
             {
                 // Not answering is not a reason to refuse to download from someone.
-                Log.Debug("Could not ask {Username} how busy it is; opening with the usual batch: {Message}", username, ex.Message);
-                return DownloadChunkSize;
+                Log.Debug("Could not ask {Username} how busy it is: {Message}", username, ex.Message);
             }
         }
 
