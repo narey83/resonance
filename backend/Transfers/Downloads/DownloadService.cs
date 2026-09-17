@@ -280,7 +280,7 @@ namespace resonance.Transfers.Downloads
         ///     Per-user queue of files deferred from large download requests. When fewer than DownloadChunkSize files
         ///     are active, the next file is dequeued and activated.
         /// </summary>
-        private ConcurrentDictionary<string, ConcurrentQueue<(string Filename, long Size, string DestinationFolder)>> PendingQueues { get; } = new();
+        private ConcurrentDictionary<string, ConcurrentQueue<(string Filename, long Size, string DestinationFolder, Guid TransferId)>> PendingQueues { get; } = new();
 
         /// <summary>
         ///     Tracks how many times each file has been automatically re-enqueued following a transient rejection,
@@ -492,7 +492,7 @@ namespace resonance.Transfers.Downloads
 
                 if (fileList.Count > chunkSize)
                 {
-                    var queue = PendingQueues.GetOrAdd(username, _ => new ConcurrentQueue<(string Filename, long Size, string DestinationFolder)>());
+                    var queue = PendingQueues.GetOrAdd(username, _ => new ConcurrentQueue<(string Filename, long Size, string DestinationFolder, Guid TransferId)>());
                     var alreadyPending = queue.Select(p => p.Filename).ToHashSet();
                     var deferred = 0;
 
@@ -505,9 +505,48 @@ namespace resonance.Transfers.Downloads
                             continue;
                         }
 
-                        queue.Enqueue((f.Filename, f.Size, destinationFolder));
+                        /*
+                            a deferred file gets a record straight away, exactly like an activated one. it used to
+                            wait in memory with nothing in the database, which meant a request for 319 files showed
+                            as the 50 that were activated and nothing else -- indistinguishable, from the outside,
+                            from the application having dropped the rest. the record is what the UI draws from, so
+                            without one the file does not exist as far as anyone can see, cannot be cancelled, and
+                            is lost on restart with no trace.
+
+                            nothing drives this record yet; it is picked up by TryActivateNextPending. that is safe
+                            because a record left in this state across a restart is cleaned up on the way down --
+                            every dangling download is given a terminal state and then re-requested after login --
+                            so it cannot become one of the "stuck" rows this method's DANGER ZONE warns about.
+                        */
+                        var deferredId = Guid.NewGuid();
+
+                        context.Add(new Transfer()
+                        {
+                            Id = deferredId,
+                            Username = username,
+                            Direction = TransferDirection.Download,
+                            Filename = f.Filename,
+                            Size = f.Size,
+                            StartOffset = 0,
+                            RequestedAt = DateTime.UtcNow,
+                            State = TransferStates.Queued | TransferStates.Locally,
+                            DestinationFolder = string.IsNullOrWhiteSpace(destinationFolder) ? null : destinationFolder.Trim(),
+                            RetryOfId = RetryLinking.FindPriorFailedAttempt(existingRecordsNotYetRemoved, f.Filename)?.Id,
+                        });
+
+                        foreach (var superseded in existingRecordsNotYetRemoved.Where(t => t.Filename == f.Filename && !t.Removed))
+                        {
+                            superseded.Removed = true;
+                            context.Update(superseded);
+                        }
+
+                        queue.Enqueue((f.Filename, f.Size, destinationFolder, deferredId));
                         deferred++;
                     }
+
+                    // one round trip for the whole deferred set; the cost this chunking avoids is thousands of
+                    // concurrent tasks and enqueue requests, not the rows
+                    context.SaveChanges();
 
                     Log.Information("Chunking large download of {Total} files from {Username}: activating first {Chunk}, deferring {Deferred}, skipping {Skipped} duplicates", fileList.Count, username, chunkSize, deferred, fileList.Count - chunkSize - deferred);
                     fileList = fileList.Take(chunkSize).ToList();
@@ -1728,6 +1767,30 @@ namespace resonance.Transfers.Downloads
             {
                 try
                 {
+                    /*
+                        the placeholder record has been sitting on the UI since the request was made, so the
+                        user may have cancelled or cleared it while it waited. take that as the answer and
+                        move on to the next one rather than starting a download nobody is expecting.
+                    */
+                    var placeholder = Find(t => t.Id == pending.TransferId);
+
+                    if (placeholder is null || placeholder.Removed || placeholder.State.HasFlag(TransferStates.Completed))
+                    {
+                        Log.Debug("Skipping deferred download of {Filename} from {Username}; it was cancelled or removed while queued", pending.Filename, username);
+                        TryActivateNextPending(username);
+                        return;
+                    }
+
+                    /*
+                        drop the placeholder before enqueueing for real. EnqueueAsync treats any record that
+                        hasn't ended as a download already in progress and skips the file, so leaving this one
+                        in place would make every deferred file a no-op and silently drain the queue.
+                    */
+                    await using (var context = await ContextFactory.CreateDbContextAsync())
+                    {
+                        await context.Transfers.Where(t => t.Id == pending.TransferId).ExecuteDeleteAsync();
+                    }
+
                     var (enqueued, _) = await EnqueueAsync(username, [(pending.Filename, pending.Size)], pending.DestinationFolder, automaticRetry: true);
 
                     /*
