@@ -73,6 +73,13 @@ namespace resonance
         private const int MaxConsecutiveFailures = 2;
 
         /// <summary>
+        ///     The number of consecutive probes a connection may spend in a transitional state (connecting, logging in,
+        ///     disconnecting) with no reconnect underway before it is treated as stuck. Those states are meant to last
+        ///     milliseconds, so seeing the same one across several probes means nothing is going to resolve it.
+        /// </summary>
+        private const int MaxStuckTransitionProbes = 2;
+
+        /// <summary>
         ///     How often to probe the server connection for liveness.
         /// </summary>
         private static readonly TimeSpan ProbeInterval = TimeSpan.FromMinutes(2);
@@ -110,6 +117,7 @@ namespace resonance
         private SemaphoreSlim SyncRoot { get; } = new SemaphoreSlim(1, 1);
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Connection);
         private int ConsecutiveFailures { get; set; }
+        private int StuckTransitionProbes { get; set; }
         private bool Stopping { get; set; }
         private bool Disposed { get; set; }
 
@@ -147,6 +155,34 @@ namespace resonance
             Disposed = true;
         }
 
+        /// <summary>
+        ///     Names the transitional state the client is sitting in, or null when it is at rest.
+        /// </summary>
+        /// <remarks>
+        ///     Disconnected is deliberately not a transition: it is where a client that is meant to stay offline rests.
+        /// </remarks>
+        /// <param name="state">The client's current state.</param>
+        /// <returns>The transition's name, or null if the state is not transitional.</returns>
+        internal static string DescribeTransition(SoulseekClientStates state)
+        {
+            if (state.HasFlag(SoulseekClientStates.Disconnecting))
+            {
+                return nameof(SoulseekClientStates.Disconnecting);
+            }
+
+            if (state.HasFlag(SoulseekClientStates.LoggingIn))
+            {
+                return nameof(SoulseekClientStates.LoggingIn);
+            }
+
+            if (state.HasFlag(SoulseekClientStates.Connecting))
+            {
+                return nameof(SoulseekClientStates.Connecting);
+            }
+
+            return null;
+        }
+
         private async Task ProbeAsync()
         {
             // skip if a probe is already in flight; the probe timeout is well under the interval, so this is just a guard.
@@ -162,16 +198,66 @@ namespace resonance
                     return;
                 }
 
-                // only probe when we believe we're fully online. if we're not connected/logged in, a reconnect is
-                // either already underway (ConnectionWatchdog) or was intentional; either way it's not ours to drive.
+                // a reconnect loop already owns recovery; nothing here to drive.
+                if (ConnectionWatchdog.IsEnabled)
+                {
+                    ConsecutiveFailures = 0;
+                    StuckTransitionProbes = 0;
+                    return;
+                }
+
+                // only probe the server when we believe we're fully online.
                 var isOnline = Client.State.HasFlag(SoulseekClientStates.Connected)
                     && Client.State.HasFlag(SoulseekClientStates.LoggedIn);
 
-                if (!isOnline || ConnectionWatchdog.IsEnabled)
+                if (!isOnline)
                 {
                     ConsecutiveFailures = 0;
+
+                    // Being offline with no watchdog running is a legitimate resting state: the user disconnected, the
+                    // login was rejected, or a genuine second client kicked us. Client_Disconnected deliberately leaves
+                    // the watchdog stopped in each of those, and staying offline is the intent — so Disconnected is
+                    // left alone.
+                    //
+                    // A *transitional* state is different. Connecting, LoggingIn and Disconnecting are meant to last
+                    // milliseconds on the way somewhere else, and none of them has anything driving it forward once the
+                    // watchdog is stopped. On 2026-09-17 the client sat in Disconnecting for 11.5 minutes: the teardown
+                    // stalled, so Client_Disconnected never fired, so the watchdog was never started — and this monitor
+                    // used to return here on the assumption that someone else was already handling it. Nobody was.
+                    // Every request needing the server connection failed for the duration, and recovery only came when
+                    // something else happened to start the watchdog.
+                    var transition = DescribeTransition(Client.State);
+
+                    if (transition == null)
+                    {
+                        StuckTransitionProbes = 0;
+                        return;
+                    }
+
+                    StuckTransitionProbes++;
+                    Log.Warning(
+                        "Server connection has been {State} for {Probes}/{Max} probes with no reconnect underway",
+                        transition,
+                        StuckTransitionProbes,
+                        MaxStuckTransitionProbes);
+
+                    if (StuckTransitionProbes >= MaxStuckTransitionProbes)
+                    {
+                        StuckTransitionProbes = 0;
+
+                        Log.Error(
+                            "Server connection appears stuck in {State} with nothing driving recovery; starting the reconnect loop",
+                            transition);
+
+                        // Start the watchdog directly rather than calling Client.Disconnect: the client is already
+                        // mid-teardown, and it failing to raise Client_Disconnected is the whole reason we are here.
+                        ConnectionWatchdog.Start();
+                    }
+
                     return;
                 }
+
+                StuckTransitionProbes = 0;
 
                 try
                 {

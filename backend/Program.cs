@@ -1526,6 +1526,25 @@ namespace resonance
             return services;
         }
 
+        /// <summary>
+        ///     Determines whether the Soulseek server connection was unusable for this request, which makes a failure
+        ///     that needed it a 503 rather than an application fault.
+        /// </summary>
+        /// <param name="context">The request being handled.</param>
+        /// <returns>A value indicating whether the server connection is not fully established.</returns>
+        private static bool ServerConnectionIsDown(HttpContext context)
+        {
+            var client = context.RequestServices.GetService<ISoulseekClient>();
+
+            if (client is null)
+            {
+                return false;
+            }
+
+            return !client.State.HasFlag(SoulseekClientStates.Connected)
+                || !client.State.HasFlag(SoulseekClientStates.LoggedIn);
+        }
+
         private static WebApplication ConfigureAspDotNetPipeline(this WebApplication app)
         {
             // stop ASP.NET from sending a full stack trace and ProblemDetails for unhandled exceptions
@@ -1546,6 +1565,37 @@ namespace resonance
                 catch (Microsoft.AspNetCore.Http.BadHttpRequestException ex)
                 {
                     context.Response.StatusCode = ex.StatusCode;
+                }
+            });
+
+            // Reaching the Soulseek server while it is offline is a service-availability problem,
+            // not an application fault. The client raises a plain InvalidOperationException for it
+            // ("The server connection must be connected and logged in to ..."), so there is no typed
+            // exception to catch and no reason to match on message text — the client's own state says
+            // whether the connection was usable. Unhandled, these reached ExceptionHandlerMiddleware
+            // and went out as 500s: 17 in 35 seconds during the 2026-09-17 outage, telling every
+            // client the application had broken when it was briefly offline and already reconnecting.
+            app.Use(async (context, next) =>
+            {
+                try
+                {
+                    await next(context);
+                }
+                catch (InvalidOperationException ex) when (!context.Response.HasStarted && ServerConnectionIsDown(context))
+                {
+                    context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+
+                    // The watchdog reconnects in seconds when the server is reachable, so a client
+                    // that retries shortly is likely to succeed rather than hammer a dead endpoint.
+                    context.Response.Headers.RetryAfter = "5";
+
+                    // Logged, quietly, because the state check is a heuristic: an InvalidOperationException
+                    // that is genuinely a bug rather than a connection guard would otherwise vanish here
+                    // instead of surfacing as the 500 it deserves.
+                    Log.Debug(
+                        "{Path} failed while the server connection was down; returned 503: {Message}",
+                        context.Request.Path,
+                        ex.Message);
                 }
             });
 
