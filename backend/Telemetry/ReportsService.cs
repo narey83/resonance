@@ -2154,6 +2154,24 @@ public class ReportsService
         return TimeSpan.FromMinutes(2);
     }
 
+    /// <summary>
+    ///     Determines whether an interval can be composed from whole rollup buckets.
+    /// </summary>
+    /// <remarks>
+    ///     Anything the dashboard asks for (5, 15, 60, 360 and 1440 minutes) can be. An interval that
+    ///     is not a whole number of buckets would split one across two output rows, so those go to the
+    ///     transfer table where the real timestamps still exist.
+    /// </remarks>
+    /// <param name="interval">The requested bucket size.</param>
+    /// <returns>A value indicating whether the rollup can express this interval.</returns>
+    private static bool RollupCanServeInterval(TimeSpan interval)
+    {
+        var bucketSeconds = TransferRollup.BucketMinutes * 60;
+
+        return interval.TotalSeconds >= bucketSeconds
+            && (long)interval.TotalSeconds % bucketSeconds == 0;
+    }
+
     // Identifies the requested window *relative to now*, quantized by the TTL, rather than by
     // absolute wall-clock minutes. The dashboard always requests windows anchored at "now", so
     // absolute keys changed on every visit and defeated the TTL entirely.
@@ -2303,24 +2321,6 @@ public class ReportsService
         {
             ColdMissGates.TryRemove(cacheKey, out _);
         }
-    }
-
-    /// <summary>
-    ///     Determines whether an interval can be composed from whole rollup buckets.
-    /// </summary>
-    /// <remarks>
-    ///     Anything the dashboard asks for (5, 15, 60, 360 and 1440 minutes) can be. An interval that
-    ///     is not a whole number of buckets would split one across two output rows, so those go to the
-    ///     transfer table where the real timestamps still exist.
-    /// </remarks>
-    /// <param name="interval">The requested bucket size.</param>
-    /// <returns>A value indicating whether the rollup can express this interval.</returns>
-    private static bool RollupCanServeInterval(TimeSpan interval)
-    {
-        var bucketSeconds = TransferRollup.BucketMinutes * 60;
-
-        return interval.TotalSeconds >= bucketSeconds
-            && (long)interval.TotalSeconds % bucketSeconds == 0;
     }
 
     /// <summary>
