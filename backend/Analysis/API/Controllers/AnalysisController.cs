@@ -126,6 +126,7 @@ namespace resonance.Analysis.API
         [HttpGet("waveform")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(typeof(WaveformResponse), 200)]
+        [ProducesResponseType(204)]
         [ProducesResponseType(400)]
         [ProducesResponseType(404)]
         public async Task<IActionResult> GetWaveform(
@@ -144,10 +145,16 @@ namespace resonance.Analysis.API
                 return NotFound();
             }
 
+            // 204, not 404: the file is there, its analysis just hasn't been computed yet.
+            // Clients poll this endpoint while a scan runs, and the browser logs every 4xx as a
+            // failed request no matter how the caller handles it — a few seconds of decoding
+            // buried the console (and, through the log relay, the server's own Browser context)
+            // in errors that described nothing wrong. NotFound above still means what it says:
+            // a path that names no file at all.
             var data = await Analysis.GetWaveformAsync(full, ct, cachedOnly);
             if (data == null)
             {
-                return NotFound();
+                return NoContent();
             }
 
             // Stored waveforms run to ~75k bars a track -- a few MB of JSON across the four bands. A
@@ -178,6 +185,7 @@ namespace resonance.Analysis.API
         [HttpGet("loudness")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(typeof(LoudnessResponse), 200)]
+        [ProducesResponseType(204)]
         [ProducesResponseType(400)]
         [ProducesResponseType(404)]
         public async Task<IActionResult> GetLoudness([FromQuery] string path, CancellationToken ct)
@@ -193,10 +201,11 @@ namespace resonance.Analysis.API
                 return NotFound();
             }
 
+            // 204 rather than 404 when the track simply hasn't been analysed yet; see GetWaveform.
             var data = await Analysis.GetLoudnessAsync(full, ct);
             if (data == null)
             {
-                return NotFound();
+                return NoContent();
             }
 
             return Ok(new LoudnessResponse(data.IntegratedLufs, data.TruePeak, data.LoudnessRange));

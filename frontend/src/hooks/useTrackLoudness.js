@@ -28,7 +28,7 @@
 // </copyright>
 
 import { analyseTrack } from '../components/Shared/WaveformPreview';
-import api from '../lib/api';
+import { getLoudness } from '../lib/analysis';
 import { useEffect, useState } from 'react';
 
 // Fetches the current track's cached integrated-loudness analysis
@@ -47,18 +47,22 @@ const useTrackLoudness = (trackPath, { analyseMissing = false } = {}) => {
     // Read the cache first. Starting analysis here used to happen before the audio request and
     // made every play register an analysis queue, even when the backend ultimately found zero
     // missing metrics. A genuine miss is filled only after the player says audio has started.
-    const getCached = () =>
-      api.get('/analysis/loudness', { params: { path: trackPath } });
+    //
+    // A miss arrives as a null, not a rejection: the endpoint answers 204 while a track is
+    // still being analysed, so the "no reading yet" branch is taken on the value rather than
+    // in a catch, which is now left to report only genuine failures.
+    getLoudness(trackPath)
+      .then(async (cached) => {
+        if (cached || !analyseMissing) {
+          if (!cancelled) setLoudness(cached);
+          return;
+        }
 
-    getCached()
-      .then(({ data }) => {
-        if (!cancelled) setLoudness(data);
-      })
-      .catch(async () => {
-        if (!analyseMissing) return;
         await analyseTrack(trackPath);
-        const { data } = await getCached();
-        if (!cancelled) setLoudness(data);
+        if (cancelled) return;
+
+        const analysed = await getLoudness(trackPath);
+        if (!cancelled) setLoudness(analysed);
       })
       .catch(() => {
         /* no cached loudness yet — consumers treat it as unknown */

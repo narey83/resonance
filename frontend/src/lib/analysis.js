@@ -65,14 +65,21 @@ export const clearKey = async (maskedFilename) =>
 export const clearBpm = async (maskedFilename) =>
   api.delete(`/analysis/${encodeURIComponent(maskedFilename)}/bpm`);
 
+// The backend answers 204 when the file exists but carries no cached analysis yet — the
+// normal state while a scan is still decoding it. Axios reports that as a success with an
+// empty body, so it is normalised to null here: callers already treat a null as "nothing to
+// draw", and a rejection would be indistinguishable from a real failure. A path naming no
+// file at all still rejects with a 404.
+const dataOrNull = ({ data, status }) => (status === 204 ? null : data);
+
 // cachedOnly never triggers an analysis — required by anything rendering a list,
 // where one request per row would otherwise mean one ffmpeg decode per row.
 export const getWaveform = async (path, { bars, cachedOnly = false } = {}) =>
-  (
+  dataOrNull(
     await api.get('/analysis/waveform', {
       params: { bars, cachedOnly, path },
-    })
-  ).data;
+    }),
+  );
 
 export const getLoudness = async (path) =>
-  (await api.get('/analysis/loudness', { params: { path } })).data;
+  dataOrNull(await api.get('/analysis/loudness', { params: { path } }));
