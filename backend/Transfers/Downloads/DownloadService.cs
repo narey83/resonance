@@ -285,7 +285,8 @@ namespace resonance.Transfers.Downloads
         private PeerBackpressure Backpressure { get; } = new(
             giveUpAfter: PeerGiveUpAfterRefusals,
             baseDelay: TimeSpan.FromSeconds(30),
-            maxDelay: TimeSpan.FromMinutes(5));
+            maxDelay: TimeSpan.FromMinutes(5),
+            maxActive: DownloadChunkSize);
 
         /// <summary>
         ///     Synchronizes the cleanup process; after gaining exclusive access over the dictionary, checks each entry
@@ -458,13 +459,22 @@ namespace resonance.Transfers.Downloads
                     activated), so dedupe them here against both the pending queue and in-progress transfers;
                     otherwise a re-submitted request queues a second copy that re-downloads after the first completes
                 */
-                if (fileList.Count > DownloadChunkSize)
+                // A peer that has been refusing "too many files" gets a smaller chunk: it told us the
+                // number was the problem, so activating the same fifty again just earns the same refusal.
+                var chunkSize = Math.Min(DownloadChunkSize, Backpressure.ActiveLimit(username));
+
+                if (chunkSize < DownloadChunkSize)
+                {
+                    Log.Information("Activating only {Chunk} file(s) at a time from {Username}; it has been refusing larger batches", chunkSize, username);
+                }
+
+                if (fileList.Count > chunkSize)
                 {
                     var queue = PendingQueues.GetOrAdd(username, _ => new ConcurrentQueue<(string Filename, long Size, string DestinationFolder)>());
                     var alreadyPending = queue.Select(p => p.Filename).ToHashSet();
                     var deferred = 0;
 
-                    foreach (var f in fileList.Skip(DownloadChunkSize))
+                    foreach (var f in fileList.Skip(chunkSize))
                     {
                         if (alreadyPending.Contains(f.Filename) || existingInProgressRecords.ContainsKey(f.Filename))
                         {
@@ -477,8 +487,8 @@ namespace resonance.Transfers.Downloads
                         deferred++;
                     }
 
-                    Log.Information("Chunking large download of {Total} files from {Username}: activating first {Chunk}, deferring {Deferred}, skipping {Skipped} duplicates", fileList.Count, username, DownloadChunkSize, deferred, fileList.Count - DownloadChunkSize - deferred);
-                    fileList = fileList.Take(DownloadChunkSize).ToList();
+                    Log.Information("Chunking large download of {Total} files from {Username}: activating first {Chunk}, deferring {Deferred}, skipping {Skipped} duplicates", fileList.Count, username, chunkSize, deferred, fileList.Count - chunkSize - deferred);
+                    fileList = fileList.Take(chunkSize).ToList();
                 }
 
                 /*
