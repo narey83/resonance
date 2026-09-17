@@ -108,6 +108,16 @@ namespace resonance.Transfers.Downloads
         List<Transfer> List(Expression<Func<Transfer, bool>> expression = null, bool includeRemoved = false);
 
         /// <summary>
+        ///     Returns every in-flight download plus at most <paramref name="maxCompleted"/> of the most
+        ///     recently finished ones, capped in the query rather than after loading them all.
+        /// </summary>
+        /// <param name="includeRemoved">A value indicating whether to include downloads that have been removed previously.</param>
+        /// <param name="activeOnly">A value indicating whether to omit finished downloads entirely.</param>
+        /// <param name="maxCompleted">The most finished downloads to return.</param>
+        /// <returns>The in-flight downloads followed by the capped finished ones.</returns>
+        List<Transfer> ListCapped(bool includeRemoved, bool activeOnly, int maxCompleted);
+
+        /// <summary>
         ///     Gets the last known peer addresses for the specified <paramref name="usernames"/>, falling back to
         ///     persisted network info for users not seen with an in-progress transfer since the application started.
         /// </summary>
@@ -833,6 +843,30 @@ namespace resonance.Transfers.Downloads
             catch (Exception ex)
             {
                 Log.Error(ex, "Failed to get place in queue for download {Id}: {Message}", id, ex.Message);
+                throw;
+            }
+        }
+
+        /// <summary>
+        ///     Returns every in-flight download plus at most <paramref name="maxCompleted"/> of the most
+        ///     recently finished ones, capped in the query rather than after loading them all.
+        /// </summary>
+        /// <param name="includeRemoved">A value indicating whether to include downloads that have been removed previously.</param>
+        /// <param name="activeOnly">A value indicating whether to omit finished downloads entirely.</param>
+        /// <param name="maxCompleted">The most finished downloads to return.</param>
+        /// <returns>The in-flight downloads followed by the capped finished ones.</returns>
+        public List<Transfer> ListCapped(bool includeRemoved, bool activeOnly, int maxCompleted)
+        {
+            try
+            {
+                using var context = ContextFactory.CreateDbContext();
+
+                return TransferListQuery.ListCapped(
+                    context, TransferDirection.Download, includeRemoved, activeOnly, maxCompleted);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to list downloads: {Message}", ex.Message);
                 throw;
             }
         }

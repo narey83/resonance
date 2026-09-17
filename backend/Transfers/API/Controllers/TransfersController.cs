@@ -62,7 +62,8 @@ namespace resonance.Transfers.API
     {
         /// <summary>
         ///     How many finished transfers the list endpoints will return, newest first. In-flight
-        ///     transfers are always returned in full — see CapCompleted.
+        ///     transfers are always returned in full — see <see cref="resonance.Transfers.TransferListQuery"/>,
+        ///     which applies this in the query rather than after loading every row.
         /// </summary>
         private const int MaxCompletedInList = 500;
 
@@ -456,14 +457,7 @@ namespace resonance.Transfers.API
                 return Forbid();
             }
 
-            var downloads = Transfers.Downloads.List(includeRemoved: includeRemoved);
-
-            if (activeOnly)
-            {
-                downloads = downloads.Where(t => !TransferStateCategories.Completed.Contains(t.State)).ToList();
-            }
-
-            downloads = CapCompleted(downloads);
+            var downloads = Transfers.Downloads.ListCapped(includeRemoved, activeOnly, MaxCompletedInList);
 
             var peerAddresses = Transfers.Downloads.GetPeerAddresses(downloads.Select(t => t.Username));
 
@@ -605,13 +599,7 @@ namespace resonance.Transfers.API
                 return Forbid();
             }
 
-            var uploads = Transfers.Uploads.List(
-                activeOnly
-                    ? (t => !TransferStateCategories.Completed.Contains(t.State))
-                    : (t => true),
-                includeRemoved: includeRemoved);
-
-            uploads = CapCompleted(uploads);
+            var uploads = Transfers.Uploads.ListCapped(includeRemoved, activeOnly, MaxCompletedInList);
 
             var peerAddresses = Transfers.Uploads.GetPeerAddresses(uploads.Select(t => t.Username));
 
@@ -787,47 +775,6 @@ namespace resonance.Transfers.API
                 Log.Error(ex, "Failed to create folder {Path}: {Message}", request.Path, ex.Message);
                 return StatusCode(500, ex.Message);
             }
-        }
-
-        /// <summary>
-        ///     Returns every in-flight transfer plus only the most recently finished
-        ///     <see cref="MaxCompletedInList"/> completed ones.
-        /// </summary>
-        /// <remarks>
-        ///     These endpoints returned the entire transfer history. On a long-lived instance that is
-        ///     1.5 million rows and a 13 MB response taking four and a half seconds to build — polled
-        ///     every two seconds by the mobile transfers screen, so responses overlapped and piled up
-        ///     until the connection pool was full and the client spent seconds parsing each one. No
-        ///     client can display that many rows, and none tries to: they all filter client-side.
-        ///     In-flight transfers are never dropped, however many there are.
-        /// </remarks>
-        private static List<resonance.Transfers.Transfer> CapCompleted(IEnumerable<resonance.Transfers.Transfer> transfers)
-        {
-            var completed = new List<resonance.Transfers.Transfer>();
-            var live = new List<resonance.Transfers.Transfer>();
-
-            foreach (var t in transfers)
-            {
-                if (TransferStateCategories.Completed.Contains(t.State))
-                {
-                    completed.Add(t);
-                }
-                else
-                {
-                    live.Add(t);
-                }
-            }
-
-            if (completed.Count > MaxCompletedInList)
-            {
-                completed = completed
-                    .OrderByDescending(t => t.EndedAt ?? t.RequestedAt)
-                    .Take(MaxCompletedInList)
-                    .ToList();
-            }
-
-            live.AddRange(completed);
-            return live;
         }
 
         /// <summary>

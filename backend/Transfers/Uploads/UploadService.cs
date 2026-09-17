@@ -148,6 +148,16 @@ namespace resonance.Transfers.Uploads
         List<Transfer> List(Expression<Func<Transfer, bool>> expression, bool includeRemoved);
 
         /// <summary>
+        ///     Returns every in-flight upload plus at most <paramref name="maxCompleted"/> of the most
+        ///     recently finished ones, capped in the query rather than after loading them all.
+        /// </summary>
+        /// <param name="includeRemoved">A value indicating whether to include uploads that have been removed previously.</param>
+        /// <param name="activeOnly">A value indicating whether to omit finished uploads entirely.</param>
+        /// <param name="maxCompleted">The most finished uploads to return.</param>
+        /// <returns>The in-flight uploads followed by the capped finished ones.</returns>
+        List<Transfer> ListCapped(bool includeRemoved, bool activeOnly, int maxCompleted);
+
+        /// <summary>
         ///     Removes <see cref="TransferStates.Completed"/> uploads older than the specified <paramref name="age"/>.
         /// </summary>
         /// <param name="age">The age after which uploads are eligible for pruning, in minutes.</param>
@@ -1012,6 +1022,30 @@ namespace resonance.Transfers.Uploads
                 var stats = query.FirstOrDefault();
 
                 return (stats?.Files ?? 0, stats?.Bytes ?? 0);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to list uploads: {Message}", ex.Message);
+                throw;
+            }
+        }
+
+        /// <summary>
+        ///     Returns every in-flight upload plus at most <paramref name="maxCompleted"/> of the most
+        ///     recently finished ones, capped in the query rather than after loading them all.
+        /// </summary>
+        /// <param name="includeRemoved">A value indicating whether to include uploads that have been removed previously.</param>
+        /// <param name="activeOnly">A value indicating whether to omit finished uploads entirely.</param>
+        /// <param name="maxCompleted">The most finished uploads to return.</param>
+        /// <returns>The in-flight uploads followed by the capped finished ones.</returns>
+        public List<Transfer> ListCapped(bool includeRemoved, bool activeOnly, int maxCompleted)
+        {
+            try
+            {
+                using var context = ContextFactory.CreateDbContext();
+
+                return TransferListQuery.ListCapped(
+                    context, TransferDirection.Upload, includeRemoved, activeOnly, maxCompleted);
             }
             catch (Exception ex)
             {
