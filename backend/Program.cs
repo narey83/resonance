@@ -2126,6 +2126,39 @@ namespace resonance
                         // HasTables() returns true globally. For all subsequent contexts we generate the
                         // DDL script and execute it with IF NOT EXISTS guards.
                         var freshDb = ctx.Database.EnsureCreated();
+
+                        // Events is append-only. Autovacuum's dead-tuple trigger therefore never fires
+                        // on it, and only the insert trigger keeps the visibility map current -- at the
+                        // default insert scale factor, roughly one vacuum per 200k rows once the table
+                        // is large, with index-only scans degrading the whole way there. Found in the
+                        // wild with the map never built at all: COUNT(*) over a million rows was doing
+                        // 357k heap fetches and taking 27 seconds, which is the events list and count
+                        // endpoints timing out. Runs for a fresh database as well as an existing one,
+                        // so a new installation never gets into that state in the first place.
+                        if (typeof(T) == typeof(resonance.Events.EventsDbContext) && ctx.Database.IsNpgsql())
+                        {
+                            try
+                            {
+                                // Checked before altering: ALTER TABLE ... SET takes a lock before it
+                                // discovers there is nothing to do, and this runs on every startup.
+                                var tuned = ctx.Database
+                                    .SqlQueryRaw<int>("SELECT 1 FROM pg_class WHERE oid = 'events.\"Events\"'::regclass AND reloptions @> ARRAY['autovacuum_vacuum_insert_scale_factor=0.02']")
+                                    .AsEnumerable()
+                                    .Any();
+
+                                if (!tuned)
+                                {
+                                    ctx.Database.ExecuteSqlRaw("ALTER TABLE events.\"Events\" SET (autovacuum_vacuum_insert_scale_factor = 0.02)");
+                                    Log.Debug("Tuned autovacuum for events.Events");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                // A storage parameter is a tuning hint, not a correctness requirement.
+                                Log.Debug("Could not tune autovacuum for events.Events: {Message}", ex.Message);
+                            }
+                        }
+
                         if (!freshDb)
                         {
                             // RetryOfId was added after first release; EnsureCreated won't alter an existing
