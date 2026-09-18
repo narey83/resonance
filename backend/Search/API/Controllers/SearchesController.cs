@@ -43,6 +43,7 @@ namespace resonance.Search.API
     using Asp.Versioning;
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Mvc;
+    using resonance.Common.API;
     using Serilog;
     using SearchQuery = Soulseek.SearchQuery;
     using SearchScope = Soulseek.SearchScope;
@@ -132,12 +133,16 @@ namespace resonance.Search.API
                 catch (InvalidOperationException ex)
                 {
                     Log.Error(ex, "Failed to execute search {Search}: {Message}", request, ex.Message);
-                    return Conflict(ex.Message);
+
+                    // This catch is for a search that is already running, which is a genuine conflict. The
+                    // client raises the same exception type when the server connection is down, and that is
+                    // not the caller's doing -- so it is separated out before falling through to 409.
+                    return this.ServerUnavailable(ex) ?? Conflict(ex.Message);
                 }
                 catch (Exception ex)
                 {
                     Log.Error(ex, "Failed to execute search {Search}: {Message}", request, ex.Message);
-                    return StatusCode(500, ex.Message);
+                    return this.ServerUnavailable(ex) ?? StatusCode(500, ex.Message);
                 }
             }
             finally

@@ -46,6 +46,7 @@ namespace resonance.Transfers.API
     using Asp.Versioning;
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Mvc;
+    using resonance.Common.API;
     using resonance.Users;
     using Serilog;
     using Soulseek;
@@ -199,7 +200,7 @@ namespace resonance.Transfers.API
             catch (Exception ex)
             {
                 Log.Error(ex, "Failed to remove completed downloads: {Message}", ex.Message);
-                return StatusCode(500, ex.Message);
+                return this.ServerUnavailable(ex) ?? StatusCode(500, ex.Message);
             }
         }
 
@@ -353,7 +354,7 @@ namespace resonance.Transfers.API
             catch (Exception ex)
             {
                 Log.Error(ex, "Failed to remove completed uploads: {Message}", ex.Message);
-                return StatusCode(500, ex.Message);
+                return this.ServerUnavailable(ex) ?? StatusCode(500, ex.Message);
             }
         }
 
@@ -449,7 +450,7 @@ namespace resonance.Transfers.API
             catch (Exception ex)
             {
                 Log.Error(ex, "Failed to enqueue {Count} files for {Username}: {Message}", requests.Count(), username, ex.Message);
-                return StatusCode(500, ex.Message);
+                return this.ServerUnavailable(ex) ?? StatusCode(500, ex.Message);
             }
             finally
             {
@@ -595,7 +596,7 @@ namespace resonance.Transfers.API
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ex.Message);
+                return this.ServerUnavailable(ex) ?? StatusCode(500, ex.Message);
             }
         }
 
@@ -788,7 +789,7 @@ namespace resonance.Transfers.API
             catch (Exception ex)
             {
                 Log.Error(ex, "Failed to create folder {Path}: {Message}", request.Path, ex.Message);
-                return StatusCode(500, ex.Message);
+                return this.ServerUnavailable(ex) ?? StatusCode(500, ex.Message);
             }
         }
 
