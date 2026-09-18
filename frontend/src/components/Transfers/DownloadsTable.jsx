@@ -335,9 +335,16 @@ const DirectoryGroup = ({
   );
   const overallPercent =
     totalSize > 0 ? Math.round((totalTransferred / totalSize) * 100) : 0;
+  // "Completed" is Soulseek's terminal flag, not a verdict -- Completed, Errored and
+  // Completed, Cancelled carry it too. Counting all of them as done reported "222 / 319 done"
+  // for a folder that had transferred zero bytes, because every one of those 222 had failed.
   const completedCount = files.filter((f) =>
     f.state?.startsWith('Completed'),
   ).length;
+  const succeededCount = files.filter(
+    (f) => f.state === 'Completed, Succeeded',
+  ).length;
+  const failedCount = files.filter((f) => isStateRetryable(f.state)).length;
 
   // Track folder-level speed from byte progress between polls rather than per-file averageSpeed,
   // which is often 0 when only 1 file is active and completes within a single poll interval.
@@ -409,7 +416,13 @@ const DirectoryGroup = ({
         </td>
         <td className="dl-cell dl-cell--state">
           <span className="dl-dir-stat">
-            {completedCount} / {files.length} done
+            {succeededCount} / {files.length} done
+            {failedCount > 0 && (
+              <span className="dl-dir-stat-failed">
+                {' '}
+                &middot; {failedCount} failed
+              </span>
+            )}
           </span>
         </td>
         <td className="dl-cell dl-cell--progress">
@@ -419,7 +432,9 @@ const DirectoryGroup = ({
           />
         </td>
         <td className="dl-cell dl-cell--size">
-          {allCompleted
+          {/* Only collapse to the folder size once it has actually arrived. Collapsing on
+              "completed" showed the full size for a folder that had failed every file. */}
+          {allSucceeded
             ? formatBytes(totalSize)
             : `${formatBytes(totalTransferred)} / ${formatBytes(totalSize)}`}
         </td>
@@ -1060,7 +1075,10 @@ const DownloadsTable = ({
     if (completedGroups.length > 0) {
       result.push({
         key: 'section-done',
-        label: 'Downloaded',
+        // Not "Downloaded": this section is everything that reached a terminal state, and a
+        // transfer that failed is in it too. A peer that refused all 26 of its files was being
+        // listed under "Downloaded" having sent nothing.
+        label: 'Finished',
         pageInfo:
           totalCompletedPages > 1
             ? `${completedPage + 1} / ${totalCompletedPages}`
