@@ -750,11 +750,20 @@ namespace resonance.Transfers.Downloads
                                         Exception ex = task.IsCanceled ? new OperationCanceledException("Task was cancelled") : task.Exception;
                                         ex = ex?.InnerException ?? ex ?? new Exception("Unknown error");
 
-                                        Log.Error(ex, "Task for download of {Filename} from {Username} did not complete successfully: {Error}", file.Filename, username, ex.Message);
-
-                                        if (!TryFail(transferId, exception: ex))
+                                        if (IsShutdownTeardown(ex))
                                         {
-                                            Log.Error(ex, "Failed to clean up transfer {Id} after failed download", transferId);
+                                            // the application is stopping around this download; the shutdown
+                                            // path dispositions it, and there is no failure here to report
+                                            Log.Debug("Download of {Filename} from {Username} stopped for shutdown", file.Filename, username);
+                                        }
+                                        else
+                                        {
+                                            Log.Error(ex, "Task for download of {Filename} from {Username} did not complete successfully: {Error}", file.Filename, username, ex.Message);
+
+                                            if (!TryFail(transferId, exception: ex))
+                                            {
+                                                Log.Error(ex, "Failed to clean up transfer {Id} after failed download", transferId);
+                                            }
                                         }
                                     }
 
@@ -907,6 +916,11 @@ namespace resonance.Transfers.Downloads
                     .AsNoTracking()
                     .Where(t => t.Direction == TransferDirection.Download)
                     .Where(expression).FirstOrDefault();
+            }
+            catch (Exception ex) when (IsShutdownTeardown(ex))
+            {
+                Log.Debug("Not looking up a download during shutdown: {Message}", ex.Message);
+                return null;
             }
             catch (Exception ex)
             {
@@ -1171,11 +1185,36 @@ namespace resonance.Transfers.Downloads
         /// <param name="transfer">The transfer to update.</param>
         public void Update(Transfer transfer)
         {
-            using var context = ContextFactory.CreateDbContext();
+            try
+            {
+                using var context = ContextFactory.CreateDbContext();
 
-            context.Update(transfer);
-            context.SaveChanges();
+                context.Update(transfer);
+                context.SaveChanges();
+            }
+            catch (Exception ex) when (IsShutdownTeardown(ex))
+            {
+                // the shutdown path gives every dangling transfer a terminal state on its way out, so
+                // there is nothing this update still needs to record
+                Log.Debug("Not updating a download during shutdown: {Message}", ex.Message);
+            }
         }
+
+        /// <summary>
+        ///     Determines whether a failure is just the application being torn down around an in-flight
+        ///     transfer, rather than something worth reporting.
+        /// </summary>
+        /// <remarks>
+        ///     Shutdown disposes the service provider while downloads are still running, so every one of
+        ///     them throws on its next database call. Each threw a stack trace at Error, so a restart with
+        ///     fifty active downloads wrote a wall of them — describing nothing except that the application
+        ///     was asked to stop. The dangling transfers are given a terminal state by the shutdown path
+        ///     regardless, so there is nothing these calls still need to accomplish.
+        /// </remarks>
+        /// <param name="exception">The failure to classify.</param>
+        /// <returns>A value indicating whether this is expected shutdown teardown.</returns>
+        private static bool IsShutdownTeardown(Exception exception)
+            => exception is ObjectDisposedException || Application.IsShuttingDown;
 
         /// <summary>
         ///     Downloads the specified enqueued <paramref name="transfer"/> from the remote user.
