@@ -413,7 +413,22 @@ namespace resonance.Transfers.API
                 }
 
                 var destinationFolder = requests.FirstOrDefault()?.DestinationFolder;
-                var possibleDuplicate = FindPossibleDuplicateAlbum(requests);
+
+                // Advisory only -- it warns that the folder resembles an album already in the library and
+                // never blocks the download. It reads the whole album list to do it, though, which on a
+                // busy library can run past the command timeout, and an unguarded failure here took the
+                // entire request down with it: a 319-file download answered with a 500 because a warning
+                // could not be computed. The download is what was asked for; the warning is a courtesy.
+                resonance.MusicLibrary.MusicAlbum possibleDuplicate = null;
+
+                try
+                {
+                    possibleDuplicate = FindPossibleDuplicateAlbum(requests);
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug("Could not check whether this download duplicates an album already in the library: {Message}", ex.Message);
+                }
 
                 if (possibleDuplicate is not null)
                 {
