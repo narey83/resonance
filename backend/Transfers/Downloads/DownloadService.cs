@@ -475,11 +475,7 @@ namespace resonance.Transfers.Downloads
                 // number was the problem, so activating the same fifty again just earns the same refusal.
                 var chunkSize = Math.Min(DownloadChunkSize, Backpressure.ActiveLimit(username));
 
-                if (chunkSize < DownloadChunkSize)
-                {
-                    Log.Information("Activating only {Chunk} file(s) at a time from {Username}; it has been refusing larger batches", chunkSize, username);
-                }
-                else if (fileList.Count > DownloadChunkSize)
+                if (chunkSize >= DownloadChunkSize && fileList.Count > DownloadChunkSize)
                 {
                     // Ask how busy the peer is, but only to say so. Shrinking the batch on this turned out
                     // to cost more than it saved: a pool advertising a 90,000-file queue accepted all ten
@@ -492,6 +488,13 @@ namespace resonance.Transfers.Downloads
 
                 if (fileList.Count > chunkSize)
                 {
+                    // Only worth saying when a batch is actually being split. Said on every enqueue with a
+                    // reduced limit, it repeated on each single-file retry during a refusal storm.
+                    if (chunkSize < DownloadChunkSize)
+                    {
+                        Log.Information("Activating only {Chunk} file(s) at a time from {Username}; it has been refusing larger batches", chunkSize, username);
+                    }
+
                     var queue = PendingQueues.GetOrAdd(username, _ => new ConcurrentQueue<(string Filename, long Size, string DestinationFolder, Guid TransferId)>());
                     var alreadyPending = queue.Select(p => p.Filename).ToHashSet();
                     var deferred = 0;
@@ -1644,13 +1647,21 @@ namespace resonance.Transfers.Downloads
             // The peer is refusing the queue, not this file. Every file active with it is being refused
             // at the same time, so the hold is recorded once per peer and every retry waits behind it --
             // otherwise each file backs off on its own schedule and they simply take turns hammering.
+            // Giving up is a transition, not a state to re-announce: once it has happened, every one of
+            // the files still active with the peer arrives here and would repeat the same line. It was
+            // logged 84 times in one run, 78 of them inside a single minute, all saying "5 times".
+            var alreadyGivenUp = Backpressure.HasGivenUp(username);
+
             if (!Backpressure.Refused(username, DateTime.UtcNow, out var heldUntil))
             {
-                Log.Warning(
-                    "{Username} has refused our download queue {Refusals} times without completing anything ({Message}); leaving it alone. Queued files are kept and can be retried.",
-                    username,
-                    Backpressure.RefusalCount(username),
-                    rejection.Message);
+                if (!alreadyGivenUp)
+                {
+                    Log.Warning(
+                        "{Username} has refused our download queue {Refusals} times without completing anything ({Message}); leaving it alone. Queued files are kept and can be retried.",
+                        username,
+                        Backpressure.RefusalCount(username),
+                        rejection.Message);
+                }
 
                 RejectionRetries.TryRemove(key, out _);
                 return;
