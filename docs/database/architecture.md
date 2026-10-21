@@ -1,4 +1,8 @@
-# Database architecture and migration plan
+# Database architecture and migration
+
+Updated **21 October 2026**. This documents the implemented providers, defaults and
+migration tooling. Configuration and schema behaviour can change; review this guide
+alongside the source before an upgrade or migration.
 
 ## Decision
 
@@ -68,6 +72,10 @@ Use a new destination directory. The utility refuses to overwrite existing desti
 Every table is checked using row counts and SHA-256 hashes over canonical row contents. SQLite foreign-key and integrity checks must pass before the primary `.partial` file is published. A `.migration.json` validation report contains counts and checksums, never credentials. On failure the unpublished partial artifacts remain for inspection; choose a new directory for a retry. No source UPDATE, INSERT, DELETE, DDL or cutover is performed. Use a read-only PostgreSQL role where practical.
 
 The utility copies database data and share caches. Also copy external application assets (profile/mixtape artwork, optional candidate-analysis output directories) and keep the audio library available at the configured music root. Music paths stored relative to that root can be used with a copied library. Database migration does not copy audio files. The 15-track test uses independent audio copies so test scans cannot alter the source files' tags.
+
+Analysis tag writing is a separate application setting: `analysis.write_to_tags` is
+currently enabled by default. Set it to `false` in a destination instance if test
+analysis must preserve its audio tags. See [automatic preparation](../auto-analysis.md).
 
 After validation, start a separate instance against SQLite and compare authentication, the library, cached analysis, playlists, history, playback and logging. Explicitly update the production provider only after reviewing the result. Keep the PostgreSQL original and backup until hardware and application checks are complete.
 

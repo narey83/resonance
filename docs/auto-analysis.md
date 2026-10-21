@@ -1,5 +1,8 @@
 # Automatic library preparation
 
+Updated **21 October 2026**. This describes current scheduling and defaults; both can
+change. See the [feature inventory](../FEATURES.md) for the wider product scope.
+
 Newly indexed tracks enter a persistent preparation queue. This applies to Soulseek,
 yt-dlp, and unfamiliar folders copied into a configured library root. Folder scans
 include subfolders. An external folder must first be added to the configured shared
@@ -26,9 +29,29 @@ singing/processed voice and DJ/musical phrases. These are independent estimates;
 uncertain DJ sections use neutral labels. They do not require Rekordbox.
 
 Missing engines or model assets are reported as unavailable or failed rather than
-represented as successful full analysis. See [worker configuration](dj-workspace.md).
-Original audio tags are preserved by the normal analysis path; detected values are
-stored in the analysis cache and exposed by the library/player.
+represented as successful full analysis. Basic BPM/key detection needs a configured
+Essentia Python environment; waveform and loudness still work with ffmpeg when that
+environment is missing. Enhanced model assets and environments must be installed
+separately. See [worker configuration](dj-workspace.md#independent-enhanced-analysis).
+
+## Source tags and saved results
+
+Automatic preparation uses the same basic analysis options as a manual scan.
+`analysis.write_to_tags` currently defaults to `true`, allowing detected BPM and key to
+be written to audio tags. Set it to `false` to keep detections in the analysis cache
+without those tag writes. Explicit metadata/tag edits are separate write actions.
+
+In the application settings' YAML representation:
+
+```yaml
+analysis:
+  write_to_tags: false
+```
+
+The independent enhanced worker reads audio and saves separate results; it does not
+write source tags. Rekordbox results can optionally be imported for migration, but
+independent analysis does not require Rekordbox. Vocal and phrase labels remain
+estimates, and beatgrid rendering tests do not establish musical accuracy.
 
 ## Detection timing
 

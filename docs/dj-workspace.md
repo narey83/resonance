@@ -1,15 +1,72 @@
-# DJ workspace and optional workers
+# DJ workspace
 
-The desktop web workspace includes smart crates, preparation status, saved set plans,
-genre compatibility warnings, ending-to-opening transition previews and set rehearsal.
+Updated **21 October 2026**. Features, controls and configuration can change. See the
+[feature inventory](../FEATURES.md) for the current scope and experimental areas.
+
+## Library and preparation
+
+The web application is designed for desktop screens. Main and library navigation
+rails expand on hover or keyboard focus. **Auto size** chooses a compact interface
+scale for the current window; **100%** restores normal size. Manual presets run from
+50% to 100%. Interface scale does not change waveform detail or the audio.
+
+Configure the shared library locations during setup or in System settings. Library
+scans include their subfolders. New files from Soulseek, yt-dlp and copied folders
+must be indexed before they can be prepared. Library → Preparation shows pending,
+active, failed and completed work, with pause and retry controls. See
+[automatic preparation](auto-analysis.md) for scheduling and tag-writing behaviour.
+
+Browse, Prepare and Export table layouts retain their column settings. DJ and saved
+filters narrow the collection; a track can be inspected before playback, and selection
+actions prepare tracks, add them to a mixtape or start an export. Smart crates save
+rules for tempo, harmonic key, genre, vocals, energy, folders and listening history;
+their results update with the library. Existing metadata enrichment remains available
+through the library and Tag Manager.
+
+Mixtapes support ordering, artwork, public token links and M3U/ZIP downloads. Deleting
+a mixtape requires confirmation and leaves the original audio files in the library.
+
+## Set planning and transition preview
+
+The workspace includes saved set plans, genre compatibility warnings,
+ending-to-opening transition previews and full-set rehearsal.
 A set uses one fixed master tempo, defaulting to its first track. Unsupported tempo
 or timing combinations stop with an explanation; the engine does not silently change
-the set master. Interface scale supports compact layouts up to normal size (100%).
+the set master. A manually chosen master tempo also stays fixed for the set.
 
-The docked player and separate player window share one audio stream, waveform detail,
-beatgrid, phrase/vocal overlays and metadata. Processing can be bypassed completely;
-subtle settings are the default, with explicit advanced controls. Mixtape deletion
-requires confirmation and leaves original music files in the library.
+The compatibility view compares key, tempo, energy, genre evidence and candidate
+phrase handovers. Synced preview auditions the end of track one against the beginning
+of track two, with pitch-preserving tempo adjustment and a crossfader where timing
+supports it. Full-set rehearsal walks through consecutive handovers; it does not
+export a recorded mix.
+
+Genre warnings distinguish cross-genre transitions, missing information and conflicts
+between tags and predictions. The genre guide describes source-reviewed style
+relationships, not verified individual mixes. Matching BPM alone does not establish
+a suitable groove or arrangement.
+
+## Player controls
+
+The docked player and separate player window use one audio stream and current-track
+state. Open the separate window with the player-window button; docked artwork does
+not open another player view. BPM, key and LUFS appear with the track information.
+The queue starts closed and opens explicitly.
+
+The waveform can be shown or hidden, resized, and set to **Normal, 16×, 32×, 64×,
+128× or 256× detail**. Normal shows the whole track; detail follows the playhead.
+Beat grid and Vocals toggle their overlays. Choose **DJ phrases**, **Musical phrases**
+or **Hide phrases** independently. Phrase colours identify section types; singing
+and processed-voice regions are distinct predictions. Overlays require the relevant
+saved analysis. See [beatgrid verification](beatgrid-verification.md).
+
+Daylight, AMOLED, Midnight, Ultraviolet and Ember themes apply to the workspace and
+player window. Waveform colours follow the active theme.
+
+Audio processing starts **bypassed**. The master processing switch bypasses effects
+and loudness normalization while leaving player volume available. When enabled,
+controls use subtle ranges until **Unlock advanced controls** is selected. Returning
+to subtle controls resets values outside that mode's limits. Processing changes
+playback, not the source audio file or its analysis.
 
 ## Independent enhanced analysis
 
@@ -41,14 +98,16 @@ export RESONANCE_CANDIDATE_OUTPUT_ROOT=/var/lib/resonance/candidates
 export RESONANCE_CANDIDATE_TIMEOUT_SECONDS=660
 ```
 
-The normal analysis queue then uses the configured worker. See
+The analysis queue then uses the configured worker. Basic analysis still uses its
+own ffmpeg/Essentia settings; enhanced setup does not replace those settings. See
 [automatic preparation](auto-analysis.md). Rekordbox import is an optional migration
 path for existing saved analysis, not an inference dependency.
 
 ## Experimental USB export and Network Link
 
-The Export wizard prepares tracks, playlists, waveforms and beatgrids in a ZIP. Folder
-selection chooses tracks without imposing the source folder layout on the USB. The
+The Export wizard prepares tracks, playlists, waveforms and beatgrids in a ZIP. It can
+also be opened from library selections or a set plan. Folder selection chooses tracks
+without imposing the source folder layout on the USB. The
 server uses the Python writer in `tools/usb-export/`; install its `requirements.txt`
 in a dedicated environment and keep its empty schema templates beside the scripts.
 
@@ -62,7 +121,9 @@ export RESONANCE_USB_EXPORT_FFMPEG=/usr/bin/ffmpeg
 `desktop/pioneer-link/` contains the shared USB and Network Link helper, native launcher,
 installer builders, protocol sources and licenses. Build/install instructions are in
 its [README](../desktop/pioneer-link/README.md). Both actions use `.resonance` files.
-Network Link serves the prepared whole library and refreshes as its revision changes.
+Network Link serves the prepared whole library, checks for changes every 15 seconds
+and refreshes as its revision changes. Tracks need indexing and complete enhanced
+analysis before becoming available; there is no manual track picker.
 It runs on the players' local network; the main Resonance server may be elsewhere.
 
 USB export writes both classic and OneLibrary database formats when the dual profile
@@ -74,6 +135,8 @@ general distribution. The helper refuses overwriting existing exports and never
 formats drives.
 
 ## Validation
+
+Run these from the repository root (the commands change directories as shown):
 
 ```sh
 cd frontend
@@ -92,3 +155,7 @@ Python unit tests live beside their worker/export source. They can run without m
 inference where only signal-processing policies or format generation are exercised.
 PostgreSQL tests require dedicated disposable databases named by their test guards.
 The database migration CLI is documented in [database architecture](database/architecture.md).
+
+The 15-track fixtures provide regression coverage for timing and workspace behaviour;
+they do not establish universal genre, phrase or vocal accuracy. Models, browsers,
+operating systems and physical players need their own acceptance checks.

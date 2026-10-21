@@ -1,4 +1,43 @@
-# Resonance Pioneer Network Link (experimental)
+# Resonance Pioneer Link helper (experimental)
+
+Updated **21 October 2026**. One desktop helper handles **USB Export** and **Network
+Link**, using `.resonance` action files and the same local dashboard. Behaviour,
+platform support and compatibility can change. This is development software;
+physical Pioneer player acceptance is still pending.
+
+Install and launch the helper before visiting its [dashboard](http://127.0.0.1:55460/).
+That address is served by the running helper, not the main Resonance web server.
+Opening an action file selects the appropriate USB or Network Link view. Source and
+installer tooling are in this directory; see Platforms and firewall below.
+
+## USB Export
+
+1. In Resonance, start an export from library selections, a set plan or Music →
+   Export. Complete the track, player/playlist and review steps, then prepare the ZIP.
+2. Choose **Open in USB helper** on the completed export and open the downloaded
+   `.resonance` action file with the installed helper. The browser handoff is a file;
+   it may need opening from Downloads if the browser does not launch the association.
+3. In the helper, select a mounted external FAT32/exFAT destination, confirm the
+   destination checkbox and choose **Write**.
+4. Wait for verification to complete, then safely eject through the operating system.
+
+The helper downloads only that export using a scoped 24-hour token. It verifies the
+bundle, refuses existing-file/export overwrites and never formats drives. Cancellation
+and failures roll back only files created by that transfer. New files are read back
+and checked against their SHA-256 inventory before publishing. Keep action files
+private while valid.
+
+Folder selection chooses source tracks; it does not reproduce the source folder
+hierarchy on the USB. The prepared bundle supplies the player database layout.
+Manual ZIP transfer remains available: extract it, then place its `Contents` and
+`PIONEER` folders together at the root of an empty, compatible test drive.
+
+USB writes have been tested in isolated local folders. Physical drive and player
+validation, including OPUS-QUAD and legacy models, remains required. The dual profile
+contains classic and OneLibrary databases; that does not establish support for every
+USB-enabled Pioneer product.
+
+## Network Link
 
 Run this helper on the same IPv4 LAN as the players. Sharing is OFF at startup.
 Install the helper, then download a connection file from Resonance → Music →
@@ -49,7 +88,7 @@ Uninstall through Windows Apps settings, the Linux package manager, or move the
 Mac app to Trash. Private cached connection files may remain; revoke connections
 in Resonance before uninstalling if the computer will change owners. Native macOS execution is tested;
 Windows/Linux binaries are cross-compiled and need native validation.
-The browser dashboard is http://127.0.0.1:55460 and only listens on loopback.
+The browser dashboard only listens on loopback at [127.0.0.1:55460](http://127.0.0.1:55460/).
 
 Allow the executable on your private player network: UDP 50000–50002 discovery,
 UDP 50111 RPC, UDP 38251 mount, UDP/TCP 2049 read-only NFS, TCP 12523 db discovery
@@ -67,18 +106,23 @@ The OneLibrary half is preserved in the bundle but is not queried by this engine
 Waveforms/beat grids reflect available prepared analysis. Test browse, load, seek,
 waveform, beat grid, track transitions, disconnect and reconnect on each model
 before performance use. Never replace a known-working USB backup with this test.
-The native executable currently requires loading a bundle again after restart.
+Saved server connections reconnect and synchronize after a helper restart, but
+sharing must be started explicitly each time. Manually imported offline bundles
+must be loaded again after restart and do not receive automatic library updates.
 
 ## Build / test
 
-Requires Go 1.27.2 or newer. From this directory:
+Requires Go 1.27.2 or newer. Packaging also needs Python 3. From this directory:
 
-    go test ./...
-    python3 package.py  # GO may point to a private Go executable
-    python3 installers.py  # macOS pkgbuild and NSIS makensis required
-    go build -trimpath -o resonance-pioneer-link .
-    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o resonance-pioneer-link.exe .
-    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o resonance-pioneer-link .
+```sh
+go test ./...
+(cd third_party/vynull && go test ./...)
+python3 package.py  # GO may point to a private Go executable
+python3 installers.py  # macOS pkgbuild and NSIS makensis required
+go build -trimpath -o resonance-pioneer-link .
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o resonance-pioneer-link.exe .
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o resonance-pioneer-link .
+```
 
 Use --no-open to avoid opening a browser. --allow-loopback is only for isolated
 protocol tests; it adds loopback to the network chooser. Tests never start sharing
@@ -99,18 +143,5 @@ registers the MIME type and desktop handler. Plain .json remains accepted inside
 the helper dashboard for older connection files, but double-clicking a .json
 file may open the system editor (including Xcode). Use the new download instead.
 
-## USB Export (helper 0.2)
-
-One helper handles Network Link and USB Export. Both use a .resonance action file
-and the same dashboard at http://127.0.0.1:55460/; the action opens the correct
-view. In Resonance's completed USB export, choose Open in USB helper and open the
-downloaded action file. The helper downloads only that export using a scoped
-24-hour token, verifies the bundle, lists mounted external FAT32/exFAT drives,
-and requires an explicit destination checkbox and Write action. No drive is
-formatted. Existing user files or exports are never overwritten. Cancellation
-and failures roll back only files created by that transfer. New files are read
-back and checked against their SHA256 inventory before publishing.
-
-USB writes were tested only in isolated local folders; physical drive and player
-validation is still required. Safely eject using the operating system after
-completion. Windows/Linux file associations and binaries need native testing.
+See the [DJ workspace and worker setup](../../docs/dj-workspace.md) for server-side
+export configuration, and the [feature inventory](../../FEATURES.md) for product scope.
