@@ -41,6 +41,7 @@ namespace resonance.Analysis
     {
         /// <summary>Gets the state of the current or most recent scan.</summary>
         AnalysisScanState ScanState { get; }
+        bool PlaybackActive { get; }
 
         /// <summary>
         ///     Records that a client is actively streaming audio right now. Called from the

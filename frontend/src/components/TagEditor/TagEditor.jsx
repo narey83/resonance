@@ -63,6 +63,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 
 const EMPTY_FORM = {
@@ -666,9 +667,13 @@ const TagEditorForm = ({ file, mode, onSave, onSkip, saving }) => {
 };
 
 const TagEditor = () => {
+  const location = useLocation();
+  const selectedFilenames = location.state?.maskedFilenames;
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState('untagged');
+  const [mode, setMode] = useState(
+    selectedFilenames?.length ? 'selected' : 'untagged',
+  );
   const [selected, setSelected] = useState(null);
   const [selectedFolder, setSelectedFolder] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -724,14 +729,18 @@ const TagEditor = () => {
     setErrorMessage(null);
     try {
       const data =
-        mode === 'tagged'
-          ? await getTagged()
-          : mode === 'incomplete'
-            ? await getIncomplete()
-            : await getUntagged();
+        mode === 'selected'
+          ? (await Promise.all([getTagged(), getUntagged()]))
+              .flat()
+              .filter((f) => selectedFilenames?.includes(f.maskedFilename))
+          : mode === 'tagged'
+            ? await getTagged()
+            : mode === 'incomplete'
+              ? await getIncomplete()
+              : await getUntagged();
       setFiles(data);
       setCollapsed({});
-      setSelected(null);
+      setSelected(mode === 'selected' ? data[0] || null : null);
       setSelectedFolder(null);
     } catch (error) {
       setErrorMessage(
@@ -740,7 +749,7 @@ const TagEditor = () => {
     } finally {
       setLoading(false);
     }
-  }, [mode]);
+  }, [mode, selectedFilenames]);
 
   useEffect(() => {
     loadFiles();
@@ -989,6 +998,11 @@ const TagEditor = () => {
 
   return (
     <div className="te-shell">
+      {mode === 'selected' && (
+        <div className="te-saved-notice">
+          Library selection · {files.length} tracks
+        </div>
+      )}
       <PageInfo storageKey="tageditor">
         <p>
           Edit track metadata and write it back to the file on disk. Select a

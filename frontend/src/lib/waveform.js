@@ -413,3 +413,35 @@ export const drawWaveform = (canvas, peaks, options) => {
   context.globalAlpha = 1;
   context.globalCompositeOperation = 'source-over';
 };
+
+// A player snapshot can lack the BPM tag even though cached analysis has real
+// beat ticks. Derive its display cadence from those ticks, preserving phase.
+export const waveformBeatBpm = (beats) => {
+  if (
+    !Array.isArray(beats) ||
+    beats.length < 2 ||
+    beats.some(
+      (beat, i) =>
+        !Number.isFinite(beat) || beat < 0 || (i > 0 && beat <= beats[i - 1]),
+    )
+  )
+    return null;
+  const span = Math.min(8, beats.length - 1);
+  const periods = beats
+    .slice(span)
+    .map((beat, i) => (beat - beats[i]) / span)
+    .sort((a, b) => a - b);
+  const middle = Math.floor(periods.length / 2);
+  const median =
+    periods.length % 2
+      ? periods[middle]
+      : (periods[middle - 1] + periods[middle]) / 2;
+  return 60 / median;
+};
+
+// Thin a detected timeline by beat index without replacing its timing with BPM.
+export const visibleBeatTimes = (beats, start, end, stride = 1, anchor = 0) =>
+  beats.filter(
+    (time, index) =>
+      (index - anchor) % stride === 0 && time >= start && time < end,
+  );

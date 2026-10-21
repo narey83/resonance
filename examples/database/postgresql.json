@@ -1,0 +1,6 @@
+{
+  "Database": {
+    "Provider": "PostgreSql",
+    "ConnectionString": "Host=localhost;Port=5432;Database=resonance;Username=resonance;Password=REPLACE_LOCALLY"
+  }
+}

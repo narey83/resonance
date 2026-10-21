@@ -1,0 +1,197 @@
+/* Shared DJ workspace: neutral surfaces, clear data, restrained signal colour. */
+.dj-workspace { --accent: #087e8b; --accent-hover: #056774; --accent-rgb: 8,126,139; --bg-primary: #eef1f3; --bg-surface: #fff; --bg-elevated: #e5eaee; --border: #d7dfe4; --text-primary: #18252e; --text-secondary: #52636f; --text-muted: #677985; --nav-bg: #f8fafb; --nav-item-active-bg: #dceef0; --nav-item-active-color: var(--accent); font-variant-numeric: tabular-nums; }
+:root:is(.dark,.dim,.amoled) .dj-workspace { --bg-primary: #11171c; --bg-surface: #192229; --bg-elevated: #212e36; --border: #2d3b44; --text-primary: #e7eef2; --text-secondary: #b4c3cc; --text-muted: #91a4b0; --accent: #50d4d0; --accent-hover: #89e5df; --accent-rgb: 80,212,208; --nav-bg: #141c22; --nav-item-active-bg: #203c40; --surface-hover: #ffffff08; --surface-input: #192229; --player-bg: #151e25; --player-text: #e7eef2; --player-text-muted: #91a4b0; }
+.dj-workspace .app-nav { background: var(--nav-bg); backdrop-filter: none; }
+.dj-workspace .app-nav-label { font-size: 10px; letter-spacing: .14em; margin-top: var(--nav-section-gap); }
+.dj-workspace .app-nav-item { border-radius: 7px; margin: 0 8px; font-size: 12px; }
+.dj-workspace .app-nav-item--active { background: var(--nav-item-active-bg); color: var(--accent); }
+.dj-workspace .app-content { min-height: 0; }
+.dj-workspace-header { display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-shrink: 0; min-height: 44px; padding: 6px 24px; border-bottom: 1px solid var(--border); background: var(--bg-surface); }
+.dj-workspace-heading { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.dj-workspace-heading > svg { flex-shrink: 0; color: var(--accent); }
+.dj-workspace-header h1 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); font-size: 16px; line-height: 20px; letter-spacing: -.015em; margin: 0; font-weight: 650; }
+.dj-workspace-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.dj-workspace-actions a { display: flex; align-items: center; gap: 6px; min-height: 28px; border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; color: var(--text-primary); font-size: 11px; font-weight: 600; white-space: nowrap; background: var(--bg-primary); }
+.dj-workspace-actions a.dj-primary-action { background: var(--accent); color: var(--bg-surface); border-color: var(--accent); }
+.dj-workspace a:focus-visible, .dj-workspace button:focus-visible, .dj-workspace select:focus-visible, .dj-workspace input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.dj-workspace .jb-nav { background: var(--bg-surface); }
+.dj-workspace .jb-nav-section { font-size: 10px; letter-spacing: .12em; }
+.dj-workspace .jb-nav-item { border-radius: 6px; font-size: 12px; }
+.dj-workspace .jb-topbar { height: 44px; min-height: 44px; background: var(--bg-surface); border-bottom: 1px solid var(--border); }
+.dj-workspace .jb-search-wrap { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 7px; }
+.dj-workspace .jb-track-row { border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent); }
+.dj-workspace .jb-track-row--playing { background: color-mix(in srgb, var(--accent) 10%, var(--bg-surface)); box-shadow: inset 3px 0 var(--accent); }
+.dj-workspace .jb-track-title { font-weight: 600; }
+.dj-workspace .jb-track-header { color: var(--text-muted); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; }
+.dj-workspace .ta-tabs { padding: 12px 20px; gap: 8px; background: var(--bg-surface); }
+.dj-workspace .ta-tab { border: 1px solid transparent; border-radius: 6px; margin: 0; padding: 8px 14px; }
+.dj-workspace .ta-tab--active { border-color: var(--border); background: var(--bg-primary); }
+.dj-workspace .ka-stats-bar { background: var(--bg-surface); padding: 14px 22px; }
+.dj-workspace .ka-stat-value { font-size: 22px; font-weight: 650; }
+.dj-workspace .ka-toolbar { background: var(--bg-surface); }
+.dj-workspace .media-player { background: var(--bg-surface); backdrop-filter: none; border-top: 1px solid var(--border); box-shadow: 0 -5px 20px #00000008; }
+.dj-workspace .media-player-play-btn { box-shadow: none; border-radius: 12px; }
+@media (max-width: 760px) { .dj-workspace-header { padding-inline: 16px; gap: 12px; } .dj-workspace-actions a { padding-inline: 8px; } }
+
+.dj-workspace .app-nav-item.active { background: var(--nav-item-active-bg); color: var(--accent); }
+.dj-workspace .app-nav-item.active::before { background: var(--accent); box-shadow: none; }
+.dj-workspace .app-nav-item.active .app-nav-icon { color: var(--accent); }
+.dj-workspace .jb-view { min-height: 0; overflow: clip; }
+.dj-workspace .jb-view-scroll { min-height: 0; }
+.dj-workspace .media-player-bar { padding: 10px 16px; }
+.dj-workspace .media-player-links { display: none; }
+.dj-workspace { --player-text-dim: #a4b3bd; --wave-bg: #f7f9fa; --wave-grid: #627d8b55; }
+:root:is(.dark,.dim,.amoled) .dj-workspace { --player-text-dim: #7c929f; --wave-bg: #10181f; --wave-grid: #c0dce544; }
+.dj-workspace .media-player-scrub-wrap { background: var(--wave-bg); }
+
+.dj-workspace .status-strip { height: 40px; min-height: 40px; background: var(--bg-surface); backdrop-filter: none; font-size: 11px; }
+
+
+.dj-workspace .status-strip-item { width: auto; padding: 0 14px; }
+.dj-workspace .status-brand { padding-right: 18px; }
+.dj-workspace .app-nav-section { overflow-x: hidden; }
+
+/* Keep preparation pages usable when interface zoom reduces the workspace. */
+.dj-workspace .app-main { min-width: 0; container-type: inline-size; }
+.dj-workspace .app-content { container-type: inline-size; }
+.media-player { --waveform-height-limit: clamp(64px, calc(var(--app-viewport-height, 100vh) * .14), 244px); }
+.dj-workspace .ta-root, .dj-workspace .ka-root, .dj-workspace .tag-manager { min-height: 300px; }
+.dj-workspace .ka-stats-bar, .dj-workspace .ka-toolbar, .dj-workspace .ta-tabs { flex-wrap: wrap; }
+@container (max-width: 850px) {
+  .dj-workspace .converter-layout { grid-template-columns: minmax(0, 1fr); }
+  .dj-workspace-header { gap: 10px; }
+}
+@container (max-width: 600px) {
+  .export-page, .converter-page { padding: 12px; }
+}
+
+.media-player { max-height: min(calc(var(--app-viewport-height, 100vh) * .56), max(100px, calc(var(--app-viewport-height, 100vh) - 220px))); overflow-y: auto; }
+
+.dj-workspace.app-shell { container-type: inline-size; }
+@container (max-width: 850px) {
+  .dj-workspace .te-sidebar { max-width: 45%; }
+  .dj-workspace .tag-manager-tabs { flex-wrap: wrap; }
+}
+@container (max-width: 800px) {
+  .dj-workspace .status-strip-item--queue,
+  .dj-workspace .status-strip-item--shares { display: none; }
+}
+
+.dj-workspace .jb-root { min-height: 320px; }
+.dj-workspace .jb-content, .dj-workspace .jb-search-wrap { min-width: 0; }
+.dj-workspace .jb-search-wrap input { min-width: 0; width: 100%; }
+
+/* Bright dark-theme accents need a dark foreground, including selected filters. */
+:root:is(.dark,.dim,.amoled) .dj-workspace { --on-accent: #11171c; }
+:root:is(.dark,.dim,.amoled) .dj-workspace .te-mode-btn--active,
+:root:is(.dark,.dim,.amoled) .dj-workspace .te-badge { color: var(--on-accent); }
+:root:is(.dark,.dim,.amoled) .dj-workspace .media-player-play-btn { background: var(--accent); color: var(--on-accent); box-shadow: none; }
+:root:is(.dark,.dim,.amoled) .dj-workspace .media-player-play-btn:hover:not(:disabled) { background: var(--accent-hover); color: var(--on-accent); box-shadow: none; }
+
+/* Processing is portalled outside the music shell, so supply its own palette. */
+:root:is(.dark,.dim,.amoled) .mp-processing-overlay {
+  --accent: #50d4d0; --art-accent: #50d4d0; --player-fill: #50d4d0;
+  --player-bg: #192229; --player-surface-bg: #11171c; --player-border: #33424c;
+  --player-text: #e7eef2; --player-text-muted: #b4c3cc; --player-text-dim: #91a4b0;
+}
+:root:is(.dark,.dim,.amoled) .mp-processing-row--selected .mp-processing-row-name { color: #11171c; }
+:root:is(.dark,.dim,.amoled) .mp-processing-modal-close { display: inline-flex; align-items: center; justify-content: center; background: transparent; border: 1px solid var(--player-border); border-radius: 5px; padding: 5px; color: var(--player-text-muted); }
+
+:root.midnight, :root.midnight .dj-workspace {
+  color-scheme: dark;
+  --bg-primary: #0b1422; --bg-surface: #111f30; --bg-elevated: #1b2e43; --border: #30465d;
+  --text-primary: #e9f2fc; --text-secondary: #a8bdd2; --text-muted: #a8bdd2;
+  --accent: #65d9ef; --accent-hover: #9ceafb; --accent-rgb: 101,217,239; --on-accent: #0b1422;
+  --nav-bg: #111f30; --nav-border: #30465d; --nav-brand-color: #e9f2fc; --nav-item-color: #a8bdd2; --nav-label-color: #a8bdd2;
+  --nav-item-active-bg: #1b2e43; --nav-item-active-color: #65d9ef; --nav-item-active-icon: #65d9ef;
+  --player-bg: #111f30; --player-border: #30465d; --player-text: #e9f2fc; --player-text-muted: #a8bdd2; --player-text-dim: #a8bdd2; --player-fill: #65d9ef;
+  --surface-input: #111f30; --wave-bg: #0b1422; --wave-grid: #30465d;
+}
+
+:root.violet, :root.violet .dj-workspace {
+  color-scheme: dark;
+  --bg-primary: #151021; --bg-surface: #20192f; --bg-elevated: #30243f; --border: #49385b;
+  --text-primary: #f3edfc; --text-secondary: #c0afd5; --text-muted: #c0afd5;
+  --accent: #c6a0ff; --accent-hover: #ddc5ff; --accent-rgb: 198,160,255; --on-accent: #151021;
+  --nav-bg: #20192f; --nav-border: #49385b; --nav-brand-color: #f3edfc; --nav-item-color: #c0afd5; --nav-label-color: #c0afd5;
+  --nav-item-active-bg: #30243f; --nav-item-active-color: #c6a0ff; --nav-item-active-icon: #c6a0ff;
+  --player-bg: #20192f; --player-border: #49385b; --player-text: #f3edfc; --player-text-muted: #c0afd5; --player-text-dim: #c0afd5; --player-fill: #c6a0ff;
+  --surface-input: #20192f; --wave-bg: #151021; --wave-grid: #49385b;
+}
+
+:root.ember, :root.ember .dj-workspace {
+  color-scheme: dark;
+  --bg-primary: #1b1512; --bg-surface: #29201b; --bg-elevated: #3a2d24; --border: #574234;
+  --text-primary: #fff1e3; --text-secondary: #d0b7a2; --text-muted: #d0b7a2;
+  --accent: #ffb46b; --accent-hover: #ffd1a1; --accent-rgb: 255,180,107; --on-accent: #1b1512;
+  --nav-bg: #29201b; --nav-border: #574234; --nav-brand-color: #fff1e3; --nav-item-color: #d0b7a2; --nav-label-color: #d0b7a2;
+  --nav-item-active-bg: #3a2d24; --nav-item-active-color: #ffb46b; --nav-item-active-icon: #ffb46b;
+  --player-bg: #29201b; --player-border: #574234; --player-text: #fff1e3; --player-text-muted: #d0b7a2; --player-text-dim: #d0b7a2; --player-fill: #ffb46b;
+  --surface-input: #29201b; --wave-bg: #1b1512; --wave-grid: #574234;
+}
+
+.theme-palette-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.theme-palette { display: flex; flex-direction: column; gap: 8px; text-align: left; padding: 14px; border: 2px solid var(--border); border-radius: 12px; background: var(--bg-surface); color: var(--text-primary); cursor: pointer; min-width: 0; }
+.theme-palette[aria-pressed="true"] { border-color: var(--accent); }
+.theme-palette:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.theme-palette > span:last-child { font-size: 12px; color: var(--text-muted); }
+.theme-palette-preview { display: flex; height: 58px; border-radius: 6px; overflow: hidden; background: var(--preview-bg); }
+.theme-palette-preview i:first-child { width: 25%; background: var(--preview-surface); }
+.theme-palette-preview i:nth-child(2) { align-self: center; height: 4px; flex: 1; background: var(--preview-accent); margin: 0 10px; }
+.theme-palette-preview i:last-child { align-self: center; height: 18px; width: 18px; border-radius: 50%; background: var(--preview-accent); margin-right: 10px; }
+.theme-palette--light { --preview-bg: #eef1f3; --preview-surface: #d7dfe4; --preview-accent: #087e8b; }
+.theme-palette--amoled { --preview-bg: #080b0e; --preview-surface: #192229; --preview-accent: #50d4d0; }
+.theme-palette--midnight { --preview-bg: #0b1422; --preview-surface: #1b2e43; --preview-accent: #65d9ef; }
+.theme-palette--violet { --preview-bg: #151021; --preview-surface: #30243f; --preview-accent: #c6a0ff; }
+.theme-palette--ember { --preview-bg: #1b1512; --preview-surface: #3a2d24; --preview-accent: #ffb46b; }
+
+/* Keep named palettes consistent in portals and the independent player window. */
+:root:is(.midnight,.violet,.ember),
+:root:is(.midnight,.violet,.ember) .dj-workspace {
+  --text-dim: var(--text-muted);
+  --player-track-bg: var(--bg-elevated);
+  --player-surface-bg: var(--bg-elevated);
+  --player-surface-border: var(--border);
+}
+:root:is(.midnight,.violet,.ember) .mp-expanded,
+:root:is(.midnight,.violet,.ember) .mp-processing-overlay {
+  --bg-primary: inherit; --bg-surface: inherit; --border: inherit;
+  --text-primary: inherit; --text-secondary: inherit; --text-muted: inherit;
+  --accent: inherit; --art-accent: var(--accent); --player-fill: var(--accent);
+  --player-bg: var(--bg-surface); --player-surface-bg: var(--bg-elevated);
+  --player-border: var(--border); --player-text: var(--text-primary);
+  --player-text-muted: var(--text-muted); --player-text-dim: var(--text-muted);
+  --wave-bg: var(--bg-primary); --wave-grid: var(--border);
+}
+:root:is(.midnight,.violet,.ember) .mp-expanded-backdrop { background: var(--bg-primary); }
+:root:is(.midnight,.violet,.ember) .mp-expanded-content,
+:root:is(.midnight,.violet,.ember) .mp-expanded-queue { background: var(--bg-surface); color: var(--text-primary); border-color: var(--border); }
+:root:is(.midnight,.violet,.ember) :is(.mp-expanded-title,.mp-expanded-queue-row-title) { color: var(--text-primary); }
+:root:is(.midnight,.violet,.ember) :is(.mp-expanded-artist,.mp-expanded-album,.mp-expanded-time,.mp-expanded-ctrl,.mp-expanded-queue-empty,.mp-expanded-queue-row-artist,.mp-expanded-queue-remove,.mp-expanded-queue-close,.mp-expanded-collapse) { color: var(--text-muted); }
+:root:is(.midnight,.violet,.ember) .mp-expanded-ctrl--active { color: var(--accent); }
+:root:is(.midnight,.violet,.ember) .mp-expanded-play { background: var(--accent); color: var(--on-accent); }
+:root:is(.midnight,.violet,.ember) .mp-expanded-queue-count { background: var(--bg-elevated); color: var(--text-muted); }
+:root:is(.midnight,.violet,.ember) .mp-expanded-queue-header { border-color: var(--border); }
+:root:is(.midnight,.violet,.ember) .network-link-note { color: var(--text-muted); opacity: 1; }
+:root:is(.midnight,.violet,.ember) input::placeholder { color: var(--text-muted); opacity: 1; }
+
+/* Interface zoom reduces the shell's usable width before viewport media queries fire. */
+@container (max-width: 760px) {
+  .dj-workspace .status-brand { padding-right: 8px; }
+}
+@container (max-width: 600px) {
+  .dj-workspace .status-strip-view-label { display: none; }
+  .dj-workspace .status-strip-view-controls { padding: 0 8px; }
+}
+
+/* Artwork accents must not give the docked deck a different signal colour. */
+.media-player {
+  --player-fill: var(--accent);
+  --art-accent: var(--accent);
+  --art-accent-hover: var(--accent-hover);
+}
+/* In short windows, keep transport controls ahead of the scrollable waveform options. */
+@media (max-height: 650px) {
+  .dj-workspace .media-player { display: flex; flex-direction: column; }
+  .dj-workspace .media-player-bar { order: -1; flex-shrink: 0; }
+}

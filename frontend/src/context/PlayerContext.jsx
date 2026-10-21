@@ -28,7 +28,7 @@
 // </copyright>
 
 import { getTracks } from '../lib/musicLibrary';
-import * as prefs from '../lib/prefs';
+import { normaliseAuditionTempo } from '../lib/playerTempo';
 import { ensureSigned } from '../lib/streamSignatures';
 import React, {
   createContext,
@@ -43,7 +43,6 @@ import React, {
 const PlayerContext = createContext(null);
 
 const SESSION_KEY = 'resonance-player-session';
-const QUEUE_PANEL_KEY = 'resonance-queue-panel-open';
 
 const loadSession = () => {
   try {
@@ -73,7 +72,7 @@ const clearSession = () => {
 // ponytail: hard queue cap. "Play All" over a 46k-track library used to stringify ~20MB into
 // sessionStorage (5MB quota) every save and sign every path in one POST — the tab locked up.
 // 500 tracks is ~33h of playback; raise it if that ever feels short.
-const MAX_QUEUE = 500;
+export const MAX_QUEUE = 500;
 const LEAD_IN = 50; // kept before the tapped track so Previous still has somewhere to go
 
 // Window a too-long track list around the tapped index. Returns [tracks, index].
@@ -100,16 +99,10 @@ const buildShuffleOrder = (length, startIndex) => {
 };
 
 export const PlayerProvider = ({ children }) => {
-  const [queuePanelOpen, setQueuePanelOpen] = useState(
-    () => prefs.get(QUEUE_PANEL_KEY, true) !== false,
-  );
+  const [queuePanelOpen, setQueuePanelOpen] = useState(false);
 
   const toggleQueuePanel = useCallback(() => {
-    setQueuePanelOpen((prev) => {
-      const opened = !prev;
-      prefs.set(QUEUE_PANEL_KEY, opened);
-      return opened;
-    });
+    setQueuePanelOpen((opened) => !opened);
   }, []);
 
   const initialSession = useMemo(() => loadSession(), []);
@@ -159,6 +152,24 @@ export const PlayerProvider = ({ children }) => {
   // position to jump to once a newly-switched-to track finishes loading.
   const seekHandlerRef = useRef(null);
   const pendingSeekRef = useRef(null);
+  const pauseHandlerRef = useRef(null);
+  const tempoHandlerRef = useRef(null);
+  const [auditionTempo, setAuditionTempo] = useState(null);
+  const registerTempoHandler = useCallback((handler) => {
+    tempoHandlerRef.current = handler;
+  }, []);
+  const configureAuditionTempo = useCallback((settings) => {
+    const normalized = normaliseAuditionTempo(settings);
+    if (!normalized) return false;
+    const accepted = tempoHandlerRef.current?.(normalized) ?? false;
+    if (accepted || !settings) setAuditionTempo(settings ? normalized : null);
+    return accepted || !settings;
+  }, []);
+
+  const registerPauseHandler = useCallback((handler) => {
+    pauseHandlerRef.current = handler;
+  }, []);
+  const pausePlayback = useCallback(() => pauseHandlerRef.current?.(), []);
 
   const registerSeekHandler = useCallback((fn) => {
     seekHandlerRef.current = fn;
@@ -217,14 +228,6 @@ export const PlayerProvider = ({ children }) => {
       return undefined;
     }
 
-    setQueuePanelOpen((prev) => {
-      if (!prev) {
-        prefs.set(QUEUE_PANEL_KEY, true);
-        return true;
-      }
-
-      return prev;
-    });
     clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
       saveSession({ queue, queueIndex, shuffle, shuffleOrder, track });
@@ -421,6 +424,8 @@ export const PlayerProvider = ({ children }) => {
   const value = useMemo(
     () => ({
       addToQueueNext,
+      auditionTempo,
+      configureAuditionTempo,
       clearQueue,
       enqueueTrack,
       hasQueue: queue.length > 1,
@@ -429,6 +434,7 @@ export const PlayerProvider = ({ children }) => {
       jumpTo,
       next,
       pendingSeekRef,
+      pausePlayback,
       play,
       playQueue,
       prev: previous,
@@ -436,6 +442,8 @@ export const PlayerProvider = ({ children }) => {
       queueIndex,
       queuePanelOpen,
       registerSeekHandler,
+      registerPauseHandler,
+      registerTempoHandler,
       removeFromQueue,
       reorderQueue,
       restoredFromSession: sessionValidated && restoredFromSession,
@@ -449,19 +457,24 @@ export const PlayerProvider = ({ children }) => {
     }),
     [
       addToQueueNext,
+      auditionTempo,
       clearQueue,
+      configureAuditionTempo,
       enqueueTrack,
       insertIntoQueue,
       isPlaying,
       jumpTo,
       next,
+      pausePlayback,
       play,
       playQueue,
       previous,
       queue,
       queueIndex,
       queuePanelOpen,
+      registerPauseHandler,
       registerSeekHandler,
+      registerTempoHandler,
       removeFromQueue,
       reorderQueue,
       restoredFromSession,

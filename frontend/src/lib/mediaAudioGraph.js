@@ -31,7 +31,9 @@ import { CompressorProcessor } from './dsp/CompressorProcessor';
 import { EQProcessor } from './dsp/EqProcessor';
 import { FilterProcessor } from './dsp/FilterProcessor';
 import { LimiterProcessor } from './dsp/LimiterProcessor';
+import { MasterBypass } from './dsp/MasterBypass';
 import { PerformanceProcessor } from './dsp/PerformanceProcessor';
+import { applySubtleSettings } from './dsp/processingPolicy';
 import { ProcessorChain } from './dsp/ProcessorChain';
 import { SaturationProcessor } from './dsp/SaturationProcessor';
 import { StereoProcessor } from './dsp/StereoProcessor';
@@ -79,7 +81,9 @@ const restorePersistedState = (dsp) => {
   dsp.filter.setResonance(prefs.get('mediaPlayer.dsp.filter.resonance', 1));
   dsp.filter.setEnabled(prefs.get('mediaPlayer.dsp.filter.enabled', false));
 
-  dsp.compressor.setAmount(prefs.get('mediaPlayer.dsp.compressor.amount', 0.5));
+  dsp.compressor.setAmount(
+    prefs.get('mediaPlayer.dsp.compressor.amount', 0.15),
+  );
   dsp.compressor.setAttack(
     prefs.get('mediaPlayer.dsp.compressor.attack', 0.01),
   );
@@ -91,7 +95,7 @@ const restorePersistedState = (dsp) => {
   );
 
   dsp.saturation.setAmount(
-    prefs.get('mediaPlayer.dsp.saturation.amount', 0.15),
+    prefs.get('mediaPlayer.dsp.saturation.amount', 0.05),
   );
   dsp.saturation.setEnabled(
     prefs.get('mediaPlayer.dsp.saturation.enabled', false),
@@ -105,7 +109,7 @@ const restorePersistedState = (dsp) => {
   dsp.limiter.setEnabled(prefs.get('mediaPlayer.dsp.limiter.enabled', false));
 
   dsp.performance.setCompressionAmount(
-    prefs.get('mediaPlayer.performanceCompression', 0.5),
+    prefs.get('mediaPlayer.performanceCompression', 0.15),
   );
   dsp.performance.setOutputProtection(
     prefs.get('mediaPlayer.performanceProtection', true),
@@ -115,12 +119,13 @@ const restorePersistedState = (dsp) => {
 
 // Topology:
 //
-//   source ─┬─► outputGain ─► ProcessorChain(EQ ▸ Filter ▸ Compressor ▸
-//           │                 Saturation ▸ Stereo ▸ Limiter) ─► destination
+//   source ─┬─► dry gain ───────────────────────────────────► destination
+//           ├─► outputGain ─► ProcessorChain ─► wet gain ────► destination
 //           └─► highpass ──► highshelf ──► analyser    (analysis-only tap)
+// Master bypass crossfades dry/wet gains; normalisation only affects the wet path.
 //
 // `outputGain` is the rack's shared input trim — always in the playback
-// path, at unity by default, so audio reaches the speakers even before any
+// processed path, at unity by default, so audio reaches the speakers before any
 // processor is touched. It also doubles as Loudness Normalise's pre-gain
 // stage (driven by PerformanceProcessor): trimming level BEFORE anything
 // else in the chain sees the signal is what lets a quiet and a loud track
@@ -185,7 +190,13 @@ export const getMediaAudioGraph = (audioElement) => {
   highpass.connect(highshelf);
   highshelf.connect(analyser);
 
-  const chain = new ProcessorChain(context, outputGain, context.destination);
+  const processing = new MasterBypass(
+    context,
+    source,
+    context.destination,
+    prefs.get('mediaPlayer.processingBypassed', true),
+  );
+  const chain = new ProcessorChain(context, outputGain, processing.wet);
   const eq = chain.register('eq', new EQProcessor(context));
   const filter = chain.register('filter', new FilterProcessor(context));
   const compressor = chain.register(
@@ -216,7 +227,10 @@ export const getMediaAudioGraph = (audioElement) => {
     saturation,
     stereo,
   };
+  performance_.setAdvanced(prefs.get('mediaPlayer.processingAdvanced', false));
   restorePersistedState(dsp);
+  if (!prefs.get('mediaPlayer.processingAdvanced', false))
+    applySubtleSettings(dsp);
 
   graph = {
     analyser,
@@ -224,6 +238,7 @@ export const getMediaAudioGraph = (audioElement) => {
     context,
     dsp,
     outputGain,
+    processing,
     source,
   };
   audioElement[GRAPH_PROPERTY] = graph;

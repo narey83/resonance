@@ -17,6 +17,7 @@
     "@codemirror/language": "^6.0.0",
     "@codemirror/legacy-modes": "^6.0.0",
     "@microsoft/signalr": "^7.0.7",
+    "@soundtouchjs/core": "2.1.1",
     "@tanstack/react-virtual": "^3.14.2",
     "@uiw/react-codemirror": "^4.2.4",
     "axios": "^1.15.0",
@@ -66,6 +67,10 @@
     "screenshots": "node scripts/capture-screenshots.mjs",
     "start": "craco start",
     "test": "craco test",
+    "test:beatgrid": "craco test --watchAll=false --runInBand BeatgridShipping WaveformSeekBar enhancedWaveform waveform.test analysisTimeline usePlayerPopout",
+    "test:mix-preview": "craco test --watchAll=false --runInBand mixSync mixAudioTimeline DualMixPlayer MixCompatibilityPreview playerTempo mixCompatibility PlayerTransport TrackTable TrackInspector usePlayerPopout && node scripts/test-mix-dsp.mjs",
+    "test:set-planner": "craco test --watchAll=false --runInBand setPlanner SetPlanner SetPlanAnalysis genreCompatibility MixCompatibilityPreview UsbExportPanel PlaylistTools SmartCratesView PreparationView mixSync mixCompatibility DualMixPlayer PlayerTransport TrackTable TrackInspector usePlayerPopout",
+    "test:set-rehearsal": "craco test --watchAll=false --runInBand setRehearsal SetRehearsal ZoomControl Converter IndependentAnalysisLibrary setPlanner SetPlanner SetPlanAnalysis genreCompatibility MixCompatibilityPreview UsbExportPanel PlaylistTools SmartCratesView PreparationView mixSync mixCompatibility DualMixPlayer PlayerTransport TrackTable TrackInspector usePlayerPopout AudioProcessing LoudnessMeter useTrackLoudness processingPolicy && node scripts/test-mix-dsp.mjs",
     "test-unattended": "craco test --watchAll false --passWithNoTests"
   },
   "version": "0.1.0"

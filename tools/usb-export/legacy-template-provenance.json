@@ -1,0 +1,25 @@
+{
+  "source": "https://github.com/fragmede/rekordbox-pdb",
+  "commit": "ee3bac2f22ca11a5ce61eea35f8cb951c246eaef",
+  "license": "MIT",
+  "transformation": "Clear data-page heaps and row counts except fixed manufacturer colour/column tables; preserve structural page chains",
+  "templates": [
+    {
+      "source": "one-song-export.pdb",
+      "sourceSha256": "3097f266c887ce78497d669143733efd45ae26fbb221b7a562e9edc4050e3251",
+      "template": "legacy-empty-template.pdb",
+      "sha256": "0dd44e6094dcc6326ecafc8148070ad10bfef3cde14d001f2fd891de26b8bfcf",
+      "retainedTables": [
+        6,
+        16
+      ]
+    },
+    {
+      "source": "one-song-exportExt.pdb",
+      "sourceSha256": "cd537e1ea28f1cd8fb8613283bd9c466074f51b4fee2439e62a4be3b97c3e693",
+      "template": "legacy-empty-templateExt.pdb",
+      "sha256": "208afe571e71e940b131e1464b7d242fa672219ee0ba11dcc8e8c25c044f4f3c",
+      "retainedTables": []
+    }
+  ]
+}

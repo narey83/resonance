@@ -66,6 +66,7 @@ export class PerformanceProcessor {
     this.context = context;
 
     this.enabled = false;
+    this.advanced = false;
     this.protectionEnabled = true;
     this.normalizeEnabled = true;
     this.compressionAmount = 0.5;
@@ -108,6 +109,11 @@ export class PerformanceProcessor {
     this._notify();
   }
 
+  setAdvanced(value) {
+    this.advanced = Boolean(value);
+    this._applyPreGain();
+  }
+
   setCompressionAmount(amount) {
     this.compressionAmount = clamp(amount, 0, 1);
     if (this.enabled) this.compressor.setAmount(this.compressionAmount);
@@ -132,8 +138,8 @@ export class PerformanceProcessor {
     if (this.enabled && this.normalizeEnabled && this.targetLufs != null) {
       const gainDb = clamp(
         TARGET_LUFS - this.targetLufs,
-        -MAX_CUT_DB,
-        MAX_BOOST_DB,
+        this.advanced ? -MAX_CUT_DB : -3,
+        this.advanced ? MAX_BOOST_DB : 0,
       );
       targetGain = dbToGain(gainDb);
     }

@@ -43,6 +43,7 @@ import React, { useEffect, useRef, useState } from 'react';
 // compressor: only Ceiling and Release are exposed, see
 // lib/dsp/LimiterProcessor.js for why attack/knee/ratio stay fixed.
 const LimiterView = ({
+  advanced = false,
   audioRef,
   detailContainerNode,
   isSelected,
@@ -143,8 +144,8 @@ const LimiterView = ({
           <span>Ceiling</span>
           <input
             className="mp-processing-slider"
-            max={CEILING_MAX_DB}
-            min={CEILING_MIN_DB}
+            max={advanced ? CEILING_MAX_DB : -1}
+            min={advanced ? CEILING_MIN_DB : -3}
             onChange={changeCeiling}
             step={0.1}
             type="range"
@@ -154,21 +155,23 @@ const LimiterView = ({
             {ceiling.toFixed(1)} dBFS
           </span>
         </label>
-        <label className="mp-processing-setting">
-          <span>Release</span>
-          <input
-            className="mp-processing-slider"
-            max={RELEASE_MAX_SECONDS}
-            min={RELEASE_MIN_SECONDS}
-            onChange={changeRelease}
-            step={0.01}
-            type="range"
-            value={release}
-          />
-          <span className="mp-processing-setting-value">
-            {Math.round(release * 1_000)} ms
-          </span>
-        </label>
+        {advanced && (
+          <label className="mp-processing-setting">
+            <span>Release</span>
+            <input
+              className="mp-processing-slider"
+              max={RELEASE_MAX_SECONDS}
+              min={RELEASE_MIN_SECONDS}
+              onChange={changeRelease}
+              step={0.01}
+              type="range"
+              value={release}
+            />
+            <span className="mp-processing-setting-value">
+              {Math.round(release * 1_000)} ms
+            </span>
+          </label>
+        )}
       </div>
     </ProcessorRow>
   );

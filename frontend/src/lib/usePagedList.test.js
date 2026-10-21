@@ -37,11 +37,11 @@ const TOTAL = 10;
 // Renders the hook's items as text, and records every value it has ever shown so a test can
 // assert on what happened between two states, not just where it ended up.
 const makeProbe = (seen) => {
-  const Probe = ({ fetchPage, refreshToken }) => {
+  const Probe = ({ enabled = true, fetchPage, refreshToken }) => {
     const { items } = usePagedList(
       fetchPage,
       { folder: '/TECHNO ZONE' },
-      { pageSize: 2, refreshToken },
+      { enabled, pageSize: 2, refreshToken },
     );
     const rendered = items.map((index_) => index_.label).join(',');
     seen.push(rendered);
@@ -65,6 +65,30 @@ describe('usePagedList', () => {
     });
     container.remove();
     sessionStorage.clear();
+  });
+
+  it('fills an initially empty smart crate when the library changes', async () => {
+    expect.assertions(3);
+    const Probe = makeProbe([]);
+    const fetchPage = jest
+      .fn()
+      .mockResolvedValueOnce({ items: [], total: 0 })
+      .mockResolvedValue({ items: [{ label: 'New arrival' }], total: 1 });
+    await act(async () =>
+      ReactDOM.render(
+        React.createElement(Probe, { fetchPage, refreshToken: 0 }),
+        container,
+      ),
+    );
+    expect(container.textContent).toBe('');
+    await act(async () =>
+      ReactDOM.render(
+        React.createElement(Probe, { fetchPage, refreshToken: 1 }),
+        container,
+      ),
+    );
+    expect(container.textContent).toBe('New arrival');
+    expect(fetchPage.mock.calls.at(-1)[0].limit).toBeGreaterThan(0);
   });
 
   // The analysis writes BPM and key into a track's tags, so rows already on screen are stale the
@@ -116,7 +140,7 @@ describe('usePagedList', () => {
     expect(seen.slice(seen.indexOf('stale0,stale1'))).not.toContain('');
   });
 
-  it('does not refetch when nothing is loaded yet', async () => {
+  it('does not fetch disabled views when the library changes', async () => {
     expect.assertions(1);
     const seen = [];
     const Probe = makeProbe(seen);
@@ -128,7 +152,11 @@ describe('usePagedList', () => {
 
     await act(async () => {
       ReactDOM.render(
-        React.createElement(Probe, { fetchPage, refreshToken: 0 }),
+        React.createElement(Probe, {
+          enabled: false,
+          fetchPage,
+          refreshToken: 0,
+        }),
         container,
       );
     });
@@ -136,7 +164,11 @@ describe('usePagedList', () => {
 
     await act(async () => {
       ReactDOM.render(
-        React.createElement(Probe, { fetchPage, refreshToken: 1 }),
+        React.createElement(Probe, {
+          enabled: false,
+          fetchPage,
+          refreshToken: 1,
+        }),
         container,
       );
     });

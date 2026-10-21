@@ -27,8 +27,14 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { urlBase } from '../../../config';
 import { useLibraryActivity } from '../../../context/LibraryActivityContext';
 import { usePlayer } from '../../../context/PlayerContext';
+import { useSetPlanner } from '../../../context/SetPlannerContext';
+import useAnalysisQueue from '../../../hooks/useAnalysisQueue';
+import { getMaskedFilename } from '../../../lib/analysis';
+import { analysisStatus, djSummary } from '../../../lib/libraryWorkbench';
+import { mixPath } from '../../../lib/mixCompatibility';
 import * as prefs from '../../../lib/prefs';
 import {
   formatAttributes,
@@ -36,11 +42,16 @@ import {
   formatSeconds,
 } from '../../../lib/util';
 import WaveformPreview from '../../Shared/WaveformPreview';
+import LibraryMenu from './LibraryMenu';
+import { useMixPreview } from './MixCompatibilityPreview';
+import PlaylistTools from './PlaylistTools';
+import TrackInspector from './TrackInspector';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   AudioWaveform,
   ChevronDown,
   ChevronUp,
+  Headphones,
   Heart,
   ListChecks,
   ListFilter,
@@ -57,6 +68,8 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
+import { useHistory } from 'react-router-dom';
 import { toast } from 'react-toastify';
 
 const toQueue = (track) => ({
@@ -98,6 +111,7 @@ export const COLUMNS = [
   { def: 'minmax(60px, 1.4fr)', id: 'album', min: 60 },
   { def: '44px', id: 'key', min: 32 },
   { def: '44px', id: 'bpm', min: 32 },
+  { def: '100px', id: 'status', min: 80 },
   { def: '52px', id: 'lufs', min: 36 },
   { def: '42px', id: 'ext', min: 32 },
   { def: '72px', id: 'quality', min: 40 },
@@ -111,7 +125,16 @@ export const COLUMNS = [
 // collapsing; without dropping something they'd still be squeezed to 80px of ellipsis. num, wave,
 // title, artist, duration and love are deliberately absent — a row you can't read (or see the
 // waveform of) isn't a track listing.
-const DROP_ORDER = ['plays', 'quality', 'ext', 'album', 'bpm', 'lufs', 'key'];
+const DROP_ORDER = [
+  'plays',
+  'quality',
+  'ext',
+  'album',
+  'lufs',
+  'key',
+  'bpm',
+  'status',
+];
 
 const COLUMN_GAP = 10;
 const ROW_PADDING = 48;
@@ -162,20 +185,64 @@ const TrackTable = ({
   serverFilter,
   serverSort,
   showAdded = true,
+  toolbarTarget,
   tracks = [],
 }) => {
   const {
+    enqueueTrack,
     isPlaying: playerIsPlaying,
     playQueue,
     seekTrack,
     track: currentTrack,
   } = usePlayer();
+  const mixPreview = useMixPreview();
+  const setPlanner = useSetPlanner();
   const activity = useLibraryActivity();
   const lovedPaths = activity?.lovedPaths ?? new Set();
   const playStats = useMemo(
     () => activity?.playStats ?? new Map(),
     [activity?.playStats],
   );
+
+  const history = useHistory();
+  const scan = useAnalysisQueue();
+  const [queuedPaths, setQueuedPaths] = useState(new Set());
+  const scanActive = Boolean(scan.scanning || scan.enhancedPath);
+  useEffect(() => {
+    if (!scanActive) setQueuedPaths(new Set());
+  }, [scanActive]);
+  const activePath = (path) =>
+    [...(scan.inFlightPaths || []), scan.enhancedPath]
+      .filter(Boolean)
+      .some((p) => p === path || p.endsWith(`/${path}`));
+  const [layout, setLayout] = useState(() =>
+    prefs.get('library.layout', 'browse'),
+  );
+  const [columnPanel, setColumnPanel] = useState(false);
+  const defaultHidden = {
+    browse: ['lufs', 'ext', 'quality', 'added', 'plays'],
+    prepare: ['album', 'ext', 'quality', 'plays', 'added'],
+    export: ['lufs', 'plays'],
+  };
+  const [hidden, setHidden] = useState(() =>
+    prefs.get(`library.layout.${layout}.hidden`, defaultHidden[layout] || []),
+  );
+  const [order, setOrder] = useState(() =>
+    prefs.get(
+      `library.layout.${layout}.order`,
+      COLUMNS.map((c) => c.id),
+    ),
+  );
+  const [inspected, setInspected] = useState(null);
+  const [reviewed, setReviewed] = useState(() =>
+    prefs.get('library.reviewedTracks', {}),
+  );
+  const hasReviewed = (track) =>
+    Boolean(
+      djSummary(track).analysisId &&
+        reviewed[track.path] === djSummary(track).analysisId,
+    );
+  const closeInspector = useCallback(() => setInspected(null), []);
 
   const [localFilters, setLocalFilters] = useState({
     title: '',
@@ -433,6 +500,7 @@ const TrackTable = ({
     if (!onAnalyzeTracks || analysing) return;
     setAnalysing(true);
     try {
+      setQueuedPaths(new Set(selectedPaths));
       await onAnalyzeTracks([...selectedPaths]);
       setSelectedPaths(new Set());
       setIsEditMode(false);
@@ -463,8 +531,49 @@ const TrackTable = ({
 
   // Plain render functions — not components — so React doesn't remount on every render
   const [colWidths, setColWidths] = useState(
-    () => prefs.get(WIDTHS_PREF, {}) ?? {},
+    () =>
+      prefs.get(
+        `library.layout.${layout}.widths`,
+        prefs.get(WIDTHS_PREF, {}),
+      ) ?? {},
   );
+  const changeLayout = (next) => {
+    setLayout(next);
+    prefs.set('library.layout', next);
+    setHidden(
+      prefs.get(`library.layout.${next}.hidden`, defaultHidden[next] || []),
+    );
+    setOrder(
+      prefs.get(
+        `library.layout.${next}.order`,
+        COLUMNS.map((c) => c.id),
+      ),
+    );
+    setColWidths(prefs.get(`library.layout.${next}.widths`, {}));
+  };
+
+  const reorder = (id, direction) => {
+    const next = [...order];
+    const index = next.indexOf(id);
+    const target = index + direction;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    setOrder(next);
+    prefs.set(`library.layout.${layout}.order`, next);
+  };
+
+  const editTags = async () => {
+    try {
+      const paths = [...selectedPaths];
+      const maskedFilenames = [];
+      for (const path of paths)
+        maskedFilenames.push(await getMaskedFilename(path));
+      history.push(`${urlBase}/tags`, { maskedFilenames });
+    } catch {
+      toast.error('Could not open the selected tracks in Tag Manager');
+    }
+  };
+
   const headRef = useRef(null);
   const dragRef = useRef(null);
   const waveHeadRef = useRef(null);
@@ -501,11 +610,13 @@ const TrackTable = ({
   const activeColumns = useMemo(
     () =>
       fitColumns(
-        COLUMNS.filter((c) => !c.onlyWhenAdded || showAdded),
+        COLUMNS.filter(
+          (c) => (!c.onlyWhenAdded || showAdded) && !hidden.includes(c.id),
+        ).sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id)),
         tableWidth,
         colWidths,
       ),
-    [colWidths, showAdded, tableWidth],
+    [colWidths, hidden, order, showAdded, tableWidth],
   );
 
   // Cells are written out in column order rather than generated, so a dropped column has to skip
@@ -555,7 +666,7 @@ const TrackTable = ({
     // Persisted once per gesture rather than per mouse-move; prefs debounces the
     // PATCH anyway, but there is no reason to queue a write for every pixel.
     setColWidths((previous) => {
-      prefs.set(WIDTHS_PREF, previous);
+      prefs.set(`library.layout.${layout}.widths`, previous);
       return previous;
     });
   };
@@ -565,7 +676,7 @@ const TrackTable = ({
     setColWidths((previous) => {
       const next = { ...previous };
       delete next[col];
-      prefs.set(WIDTHS_PREF, next);
+      prefs.set(`library.layout.${layout}.widths`, next);
       return next;
     });
 
@@ -706,26 +817,151 @@ const TrackTable = ({
 
   const virtualItems = virtualizer.getVirtualItems();
 
+  const toolbar = (
+    <div className="library-table-controls">
+      <LibraryMenu
+        label="Library view"
+        summary={
+          <>
+            <span className="library-toolbar-muted">View</span>
+            <strong>{layout[0].toUpperCase() + layout.slice(1)}</strong>
+          </>
+        }
+      >
+        <div
+          aria-label="Saved library layouts"
+          className="library-layout-choices"
+          role="group"
+        >
+          {['browse', 'prepare', 'export'].map((name) => (
+            <button
+              aria-pressed={layout === name}
+              className="library-layout-choice"
+              data-close-menu="true"
+              key={name}
+              onClick={() => changeLayout(name)}
+              type="button"
+            >
+              <strong>{name[0].toUpperCase() + name.slice(1)}</strong>
+              <span>
+                {name === 'browse'
+                  ? 'Essential track information'
+                  : name === 'prepare'
+                    ? 'Analysis, tempo and key'
+                    : 'File formats and USB preparation'}
+              </span>
+            </button>
+          ))}
+        </div>
+        <button
+          aria-expanded={columnPanel}
+          className="library-menu-action"
+          onClick={() => setColumnPanel(!columnPanel)}
+          type="button"
+        >
+          Customise columns <ChevronDown size={13} />
+        </button>
+        {columnPanel && (
+          <div
+            aria-label="Column settings"
+            className="library-column-panel"
+          >
+            {order.map((id, index) => (
+              <div key={id}>
+                <label>
+                  <input
+                    checked={!hidden.includes(id)}
+                    disabled={[
+                      'num',
+                      'wave',
+                      'title',
+                      'artist',
+                      'duration',
+                      'love',
+                    ].includes(id)}
+                    onChange={() => {
+                      const next = hidden.includes(id)
+                        ? hidden.filter((v) => v !== id)
+                        : [...hidden, id];
+                      setHidden(next);
+                      prefs.set(`library.layout.${layout}.hidden`, next);
+                    }}
+                    type="checkbox"
+                  />
+                  {id === 'status' ? 'Analysis' : id}
+                </label>
+                <button
+                  aria-label={`Move ${id} column left`}
+                  className="jb-btn"
+                  disabled={index === 0}
+                  onClick={() => reorder(id, -1)}
+                  type="button"
+                >
+                  ←
+                </button>
+                <button
+                  aria-label={`Move ${id} column right`}
+                  className="jb-btn"
+                  disabled={index === order.length - 1}
+                  onClick={() => reorder(id, 1)}
+                  type="button"
+                >
+                  →
+                </button>
+              </div>
+            ))}
+            <button
+              className="jb-btn"
+              onClick={() => {
+                const next = COLUMNS.map((c) => c.id);
+                setOrder(next);
+                setHidden(defaultHidden[layout]);
+                setColWidths({});
+                prefs.set(`library.layout.${layout}.order`, next);
+                prefs.set(
+                  `library.layout.${layout}.hidden`,
+                  defaultHidden[layout],
+                );
+                prefs.set(`library.layout.${layout}.widths`, {});
+              }}
+              type="button"
+            >
+              Reset {layout} layout
+            </button>
+          </div>
+        )}
+      </LibraryMenu>
+      {(onDeleteTracks || onExportTracks || onAnalyzeTracks) && (
+        <button
+          aria-label={isEditMode ? 'Done selecting' : 'Select tracks'}
+          aria-pressed={isEditMode}
+          className="library-toolbar-icon"
+          onClick={() => {
+            if (isEditMode) clearSelection();
+            else setIsEditMode(true);
+          }}
+          title={isEditMode ? 'Done selecting' : 'Select tracks'}
+          type="button"
+        >
+          {isEditMode ? <X size={15} /> : <ListChecks size={15} />}
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <>
-      {(onDeleteTracks || onExportTracks || onAnalyzeTracks) && (
-        <div className="jb-tt-mode-bar">
-          <button
-            className={`jb-icon-btn${isEditMode ? ' jb-icon-btn--active' : ''}`}
-            onClick={() => {
-              if (isEditMode) clearSelection();
-              else setIsEditMode(true);
-            }}
-            title={isEditMode ? 'Cancel' : 'Select tracks'}
-            type="button"
-          >
-            {isEditMode ? <X size={15} /> : <ListChecks size={15} />}
-          </button>
-        </div>
+      {toolbarTarget ? (
+        createPortal(toolbar, toolbarTarget)
+      ) : (
+        <div className="library-workbench-toolbar">{toolbar}</div>
       )}
       <div
         className={`jb-track-table${showAdded ? ' jb-track-table--with-added' : ''}`}
         ref={scrollContainerRef ? undefined : containerRef}
+        style={Object.fromEntries(
+          activeColumns.map((c, index) => [`--col-${c.id}`, index]),
+        )}
       >
         <div
           className="jb-track-table-head"
@@ -761,6 +997,9 @@ const TrackTable = ({
           {shows.has('album') && colHeader('album', 'Album', 'jb-tt-album')}
           {shows.has('key') && plainSortHeader('key', 'Key', 'jb-tt-key')}
           {shows.has('bpm') && plainSortHeader('bpm', 'BPM', 'jb-tt-bpm')}
+          {shows.has('status') && (
+            <div className="jb-tt-status">{resizeHandle('status')}Analysis</div>
+          )}
           {shows.has('lufs') && plainSortHeader('lufs', 'LUFS', 'jb-tt-lufs')}
           {shows.has('ext') && plainSortHeader('ext', 'Ext', 'jb-tt-ext')}
           {shows.has('quality') &&
@@ -768,7 +1007,8 @@ const TrackTable = ({
           {plainSortHeader('duration', 'Time', 'jb-tt-dur')}
           {shows.has('plays') &&
             plainSortHeader('plays', 'Plays', 'jb-tt-plays')}
-          {showAdded && plainSortHeader('added', 'Added', 'jb-tt-added')}
+          {shows.has('added') &&
+            plainSortHeader('added', 'Added', 'jb-tt-added')}
           <div className="jb-tt-love">
             <Heart
               size={13}
@@ -836,7 +1076,7 @@ const TrackTable = ({
                     onClick={
                       selectMode
                         ? (e) => handleRowClick(e, track, vRow.index)
-                        : undefined
+                        : () => setInspected(track)
                     }
                     onContextMenu={(mouseEvent) => {
                       mouseEvent.preventDefault();
@@ -852,7 +1092,7 @@ const TrackTable = ({
                         return;
                       }
 
-                      onContextMenu(mouseEvent, toQueue(track));
+                      onContextMenu?.(mouseEvent, toQueue(track));
                     }}
                     onDoubleClick={
                       selectMode
@@ -875,6 +1115,7 @@ const TrackTable = ({
                     <div className="jb-track-num">
                       {selectMode ? (
                         <input
+                          aria-label={`Select ${track.title || track.filename}`}
                           checked={isSelected}
                           className="jb-tt-checkbox"
                           onChange={(e) => handleRowClick(e, track, vRow.index)}
@@ -923,12 +1164,36 @@ const TrackTable = ({
                         width={waveWidth}
                       />
                     </div>
-                    <div className="jb-tt-title">
-                      {track.title || track.filename}
+                    <div
+                      className="jb-tt-title"
+                      title={track.title || track.filename}
+                    >
+                      <button
+                        className="library-inspect-title"
+                        onClick={(e) => {
+                          if (!selectMode) {
+                            e.stopPropagation();
+                            setInspected(track);
+                          }
+                        }}
+                        type="button"
+                      >
+                        {track.title || track.filename}
+                      </button>
                     </div>
-                    <div className="jb-tt-artist">{track.artist || '–'}</div>
+                    <div
+                      className="jb-tt-artist"
+                      title={track.artist || ''}
+                    >
+                      {track.artist || '–'}
+                    </div>
                     {shows.has('album') && (
-                      <div className="jb-tt-album">{track.album || '–'}</div>
+                      <div
+                        className="jb-tt-album"
+                        title={track.album || ''}
+                      >
+                        {track.album || '–'}
+                      </div>
                     )}
                     {shows.has('key') &&
                       (analysingPaths.has(track.path) ? (
@@ -952,6 +1217,29 @@ const TrackTable = ({
                       ) : (
                         <div className="jb-tt-bpm">{track.bpm || '–'}</div>
                       ))}
+                    {shows.has('status') &&
+                      (() => {
+                        const status = analysisStatus(
+                          track,
+                          analysingPaths.has(track.path) ||
+                            activePath(track.path)
+                            ? true
+                            : queuedPaths.has(track.path) && scanActive
+                              ? 'queued'
+                              : false,
+                          hasReviewed(track),
+                        );
+                        return (
+                          <div className="jb-tt-status">
+                            <span
+                              className={`library-analysis-badge is-${status.kind}`}
+                              title={status.detail}
+                            >
+                              {status.label}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     {shows.has('lufs') &&
                       (analysingPaths.has(track.path) ? (
                         <div className="jb-tt-lufs">
@@ -983,7 +1271,7 @@ const TrackTable = ({
                         {stat?.playCount ?? '–'}
                       </div>
                     )}
-                    {showAdded && (
+                    {shows.has('added') && (
                       <div className="jb-tt-added">
                         {formatIndexedAt(track.indexedAt) || '–'}
                       </div>
@@ -1026,8 +1314,74 @@ const TrackTable = ({
         <div className="jb-track-selection-bar">
           <span className="jb-selection-bar-msg">
             {selectedPaths.size} {selectedPaths.size === 1 ? 'track' : 'tracks'}{' '}
-            selected
+            selected ·{' '}
+            {formatSeconds(
+              tracks
+                .filter((t) => selectedPaths.has(t.path))
+                .reduce((total, t) => total + (t.duration || 0), 0),
+            )}
           </span>
+          <button
+            className="jb-btn"
+            onClick={() => {
+              for (const track of tracks.filter((t) =>
+                selectedPaths.has(t.path),
+              ))
+                enqueueTrack(toQueue(track));
+              toast.success(`Added ${selectedPaths.size} tracks to queue`);
+            }}
+            type="button"
+          >
+            Add to queue
+          </button>
+          <button
+            className="jb-btn"
+            onClick={editTags}
+            type="button"
+          >
+            Edit tags
+          </button>
+          <PlaylistTools paths={[...selectedPaths]} />
+          {setPlanner && (
+            <button
+              className="jb-btn"
+              disabled={setPlanner.switching}
+              onClick={() =>
+                setPlanner.open(
+                  sortedTracks.filter((track) => selectedPaths.has(track.path)),
+                )
+              }
+              type="button"
+            >
+              <ListChecks size={13} /> Add to set
+            </button>
+          )}
+          {mixPreview && (
+            <button
+              className="jb-btn"
+              disabled={
+                selectedPaths.size !== 2 &&
+                !(
+                  selectedPaths.size === 1 &&
+                  mixPath(currentTrack) &&
+                  !selectedPaths.has(mixPath(currentTrack))
+                )
+              }
+              onClick={() => {
+                const selected = sortedTracks.filter((track) =>
+                  selectedPaths.has(track.path),
+                );
+                if (selected.length === 2)
+                  mixPreview.open(selected[0], selected[1]);
+                else if (selected.length === 1)
+                  mixPreview.open(currentTrack, selected[0]);
+              }}
+              title="Compare two selected tracks, or one track with the loaded track"
+              type="button"
+            >
+              <Headphones size={13} /> Compare mix
+            </button>
+          )}
           <button
             className="jb-btn"
             disabled={deleting || exporting || analysing}
@@ -1069,6 +1423,49 @@ const TrackTable = ({
         </div>
       )}
 
+      {inspected && (
+        <TrackInspector
+          key={inspected.path}
+          onClose={closeInspector}
+          onMix={
+            mixPreview
+              ? () => {
+                  const fromLoaded =
+                    mixPath(currentTrack) &&
+                    mixPath(currentTrack) !== inspected.path;
+                  closeInspector();
+                  mixPreview.open(
+                    fromLoaded ? currentTrack : inspected,
+                    fromLoaded ? inspected : null,
+                  );
+                }
+              : undefined
+          }
+          onReview={(path, value) => {
+            const record = tracks.find((t) => t.path === path) || inspected;
+            const next = {
+              ...reviewed,
+              [path]: value ? djSummary(record).analysisId : false,
+            };
+            setReviewed(next);
+            prefs.set('library.reviewedTracks', next);
+          }}
+          onSeek={(time) => {
+            const index = sortedTracks.findIndex(
+              (t) => t.path === inspected.path,
+            );
+            seekTrack(
+              index >= 0 ? filteredQueue : [toQueue(inspected)],
+              index >= 0 ? index : 0,
+              time,
+            );
+          }}
+          reviewed={hasReviewed(
+            tracks.find((t) => t.path === inspected.path) || inspected,
+          )}
+          track={tracks.find((t) => t.path === inspected.path) || inspected}
+        />
+      )}
       {bulkMenu && (
         <BulkContextMenu
           analysing={analysing}

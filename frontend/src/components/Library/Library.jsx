@@ -32,9 +32,17 @@ import 'react-image-crop/dist/ReactCrop.css';
 import { urlBase } from '../../config';
 import { useLibraryActivity } from '../../context/LibraryActivityContext';
 import { usePlayer } from '../../context/PlayerContext';
+import {
+  SetPlannerProvider,
+  useSetPlanner,
+} from '../../context/SetPlannerContext';
 import useDebounce from '../../hooks/useDebounce';
-import useResizablePanel from '../../hooks/useResizablePanel';
 import { createMixtapesHubConnection } from '../../lib/hubFactory';
+import {
+  djQuery,
+  resolveLibraryTracks,
+  transitionHint,
+} from '../../lib/libraryWorkbench';
 import * as mixtapesAPI from '../../lib/mixtapes';
 import {
   albumKey,
@@ -61,21 +69,33 @@ import {
 } from '../../lib/musicLibrary';
 import * as prefs from '../../lib/prefs';
 import { create as createSearch, stripRemixInfo } from '../../lib/searches';
-import {
-  exportTracksToUsb,
-  exportTrackToUsb,
-  isUsbExportSupported,
-} from '../../lib/usbExport';
 import { usePagedList, usePagedTracks } from '../../lib/usePagedList';
 import { formatSeconds } from '../../lib/util';
+import UsbExportPanel from '../TrackAnalysis/UsbExportPanel';
 import AlbumArt from './components/AlbumArt';
 import AlbumDetail from './components/AlbumDetail';
 import AlbumsView from './components/AlbumsView';
+import AlphaFilterChip from './components/AlphaFilterChip';
 import ArtistsView from './components/ArtistsView';
 import FolderView from './components/FolderView';
 import GenreView from './components/GenreView';
-import LibraryViewHeader from './components/LibraryViewHeader';
+import LibraryDjFilters, {
+  EMPTY_DJ_FILTERS,
+} from './components/LibraryDjFilters';
+import LibraryMenu from './components/LibraryMenu';
+import {
+  MixPreviewButton,
+  MixPreviewProvider,
+} from './components/MixCompatibilityPreview';
+import MixtapeDeleteDialog from './components/MixtapeDeleteDialog';
 import PlayHistoryView from './components/PlayHistoryView';
+import { MixtapeDropTarget } from './components/PlaylistTools';
+import PreparationView, {
+  PreparationHomeCard,
+} from './components/PreparationView';
+import ResetViewButton from './components/ResetViewButton';
+import SetPlannerView from './components/SetPlannerView';
+import SmartCratesView from './components/SmartCratesView';
 import SortButton from './components/SortButton';
 import TrackTable from './components/TrackTable';
 import YearView from './components/YearView';
@@ -96,16 +116,18 @@ import {
   Heart,
   Home,
   KeyRound,
+  Layers3,
   LayoutGrid,
   Link2,
   List,
   ListMusic,
   Loader2,
-  PanelLeft,
+  MoreHorizontal,
   Pencil,
   Play,
   Plus,
   RefreshCw,
+  Route,
   Save,
   Search,
   Share2,
@@ -127,6 +149,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 // eslint-disable-next-line import/no-named-as-default
 import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
 import { useHistory, useLocation } from 'react-router-dom';
@@ -148,6 +171,9 @@ const VIEWS = {
   MIXTAPES: 'mixtapes',
   SEARCH: 'search',
   ISSUES: 'issues',
+  CRATES: 'crates',
+  PREPARATION: 'preparation',
+  PLANNER: 'planner',
 };
 
 const NAV_ITEMS = [
@@ -155,6 +181,9 @@ const NAV_ITEMS = [
   { id: VIEWS.ARTISTS, label: 'Artists', icon: Users },
   { id: VIEWS.ALBUMS, label: 'Albums', icon: Disc },
   { id: VIEWS.TRACKS, label: 'Tracks', icon: List },
+  { id: VIEWS.CRATES, label: 'Smart crates', icon: Layers3 },
+  { id: VIEWS.PLANNER, label: 'Set Planner', icon: Route },
+  { id: VIEWS.PREPARATION, label: 'Preparation', icon: AudioWaveform },
   { id: VIEWS.FOLDERS, label: 'Folders', icon: Folder },
   { id: VIEWS.GENRES, label: 'Genres', icon: Tag },
   { id: VIEWS.YEARS, label: 'Years', icon: Calendar },
@@ -374,7 +403,7 @@ const ContextMenu = ({
         <Pencil size={13} />
         Rename track…
       </button>
-      {isUsbExportSupported() && (
+      {onExportTrack && (
         <button
           className="jb-context-item"
           onClick={() => {
@@ -384,7 +413,7 @@ const ContextMenu = ({
           type="button"
         >
           <Save size={13} />
-          Export to USB
+          Export to USB (Rekordbox)
         </button>
       )}
 
@@ -675,7 +704,7 @@ const FolderContextMenu = ({
         <Pencil size={13} />
         Rename folder…
       </button>
-      {isUsbExportSupported() && (
+      {onExportFolder && (
         <button
           className="jb-context-item"
           onClick={() => {
@@ -685,7 +714,7 @@ const FolderContextMenu = ({
           type="button"
         >
           <Save size={13} />
-          Export to USB
+          Export to USB (Rekordbox)
         </button>
       )}
 
@@ -865,7 +894,7 @@ const AlbumContextMenu = ({
         <FolderSearch size={13} />
         Show in folder
       </button>
-      {isUsbExportSupported() && (
+      {onExportAlbum && (
         <button
           className="jb-context-item"
           onClick={() => {
@@ -875,7 +904,7 @@ const AlbumContextMenu = ({
           type="button"
         >
           <Save size={13} />
-          Export to USB
+          Export to USB (Rekordbox)
         </button>
       )}
 
@@ -999,11 +1028,15 @@ const AlbumContextMenu = ({
 
 // ── Mixtapes view ─────────────────────────────────────────────────────────────
 
-const mixtapeTrackToQueue = (track) => ({
+const mixtapeTrackToQueue = (track, metadata = {}) => ({
+  bpm: metadata.bpm ?? track.bpm,
+  key: metadata.key ?? track.key,
+  lufs: metadata.lufs ?? track.lufs,
+  hasWaveform: metadata.hasWaveform ?? track.hasWaveform,
   album: track.album,
   artist: track.artist,
   filename: track.filePath,
-  hasArtwork: false,
+  hasArtwork: metadata.hasArtwork ?? false,
   length: track.duration,
   localRelativePath: track.filePath,
   path: track.filePath,
@@ -1023,57 +1056,85 @@ const artworkSource = (m) =>
 
 // ── Mixtape card (tile) ───────────────────────────────────────────────────────
 
-const MixtapeCard = ({ mixtape, onPlay, onSelect }) => (
-  <button
-    className="jb-folder-card"
-    onClick={() => onSelect(mixtape.id)}
-    type="button"
-  >
-    <div className="jb-folder-card-art">
-      <AlbumArt
-        hasArtwork={mixtape.hasArtwork}
-        name={mixtape.name}
-        radius={0}
-        size={160}
-        src={artworkSource(mixtape)}
-        style={{
-          position: 'absolute',
-          inset: 0,
-          width: '100%',
-          height: '100%',
-          minWidth: 'unset',
-        }}
-      />
-      <div
-        className="jb-folder-card-play"
-        onClick={(e) => {
-          e.stopPropagation();
-          onPlay(mixtape);
-        }}
-        role="button"
-        tabIndex={0}
-        title="Play"
-      >
-        <Play
-          fill="currentColor"
-          size={18}
+const MixtapeCard = ({ mixtape, onDelete, onPlay, onRename, onSelect }) => (
+  <div className="jb-mixtape-tile">
+    <button
+      className="jb-folder-card"
+      onClick={() => onSelect(mixtape.id)}
+      type="button"
+    >
+      <div className="jb-folder-card-art">
+        <AlbumArt
+          hasArtwork={mixtape.hasArtwork}
+          name={mixtape.name}
+          radius={0}
+          size={160}
+          src={artworkSource(mixtape)}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            minWidth: 'unset',
+          }}
         />
+        <div
+          className="jb-folder-card-play"
+          onClick={(e) => {
+            e.stopPropagation();
+            onPlay(mixtape);
+          }}
+          role="button"
+          tabIndex={0}
+          title="Play"
+        >
+          <Play
+            fill="currentColor"
+            size={18}
+          />
+        </div>
       </div>
-    </div>
-    <div className="jb-folder-card-info">
-      <div
-        className="jb-folder-card-name"
-        title={mixtape.name}
+      <div className="jb-folder-card-info">
+        <div
+          className="jb-folder-card-name"
+          title={mixtape.name}
+        >
+          {mixtape.name}
+        </div>
+        <div className="jb-folder-card-meta">
+          {mixtape.tracks?.length ?? 0} track
+          {(mixtape.tracks?.length ?? 0) !== 1 ? 's' : ''}
+          {mixtape.isPublished ? ' · 🌐' : ''}
+        </div>
+      </div>
+    </button>
+    <LibraryMenu
+      label={`Mixtape actions for ${mixtape.name}`}
+      summary={
+        <MoreHorizontal
+          aria-hidden="true"
+          size={16}
+        />
+      }
+    >
+      <button
+        className="library-menu-action"
+        data-close-menu="true"
+        onClick={() => onRename(mixtape)}
+        type="button"
       >
-        {mixtape.name}
-      </div>
-      <div className="jb-folder-card-meta">
-        {mixtape.tracks?.length ?? 0} track
-        {(mixtape.tracks?.length ?? 0) !== 1 ? 's' : ''}
-        {mixtape.isPublished ? ' · 🌐' : ''}
-      </div>
-    </div>
-  </button>
+        <Pencil size={14} /> Rename
+      </button>
+      <button
+        className="library-menu-action library-menu-action--danger"
+        data-close-menu="true"
+        onClick={() => onDelete(mixtape)}
+        type="button"
+      >
+        <Trash2 size={14} /> Delete mixtape
+      </button>
+    </LibraryMenu>
+  </div>
 );
 
 // ── Mixtape list row ──────────────────────────────────────────────────────────
@@ -1121,12 +1182,13 @@ const MixtapeListRow = ({ mixtape, onDelete, onPlay, onRename, onSelect }) => (
       <Pencil size={12} />
     </button>
     <button
+      aria-label={`Delete mixtape ${mixtape.name}`}
       className="jb-icon-btn"
       onClick={(e) => {
         e.stopPropagation();
-        onDelete(mixtape.id);
+        onDelete(mixtape);
       }}
-      title="Delete"
+      title="Delete mixtape"
       type="button"
     >
       <Trash2 size={12} />
@@ -1239,12 +1301,25 @@ const CropArtworkModal = ({ onCancel, onConfirm, src }) => {
 
 // ── Mixtape detail ────────────────────────────────────────────────────────────
 
-const MixtapeDetail = ({ mixtape, onBack, onUpdate }) => {
+const MixtapeDetail = ({ mixtape, onBack, onDelete, onUpdate }) => {
   const {
     isPlaying: playerIsPlaying,
     playQueue,
     track: currentTrack,
   } = usePlayer();
+  const [mixMetadata, setMixMetadata] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    resolveLibraryTracks((mixtape.tracks || []).map((t) => t.filePath))
+      .then((rows) => {
+        if (!cancelled)
+          setMixMetadata(Object.fromEntries(rows.map((t) => [t.path, t])));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [mixtape.tracks]);
   const [copied, setCopied] = useState(false);
   const [dragOverId, setDragOverId] = useState(null);
   const [renaming, setRenaming] = useState(false);
@@ -1333,8 +1408,11 @@ const MixtapeDetail = ({ mixtape, onBack, onUpdate }) => {
   };
 
   const allQueued = useMemo(
-    () => (mixtape.tracks ?? []).map(mixtapeTrackToQueue),
-    [mixtape.tracks],
+    () =>
+      (mixtape.tracks ?? []).map((track) =>
+        mixtapeTrackToQueue(track, mixMetadata[track.filePath]),
+      ),
+    [mixtape.tracks, mixMetadata],
   );
 
   return (
@@ -1499,9 +1577,16 @@ const MixtapeDetail = ({ mixtape, onBack, onUpdate }) => {
                 onClick={handleClearTracks}
                 type="button"
               >
-                <Trash2 size={13} /> Clear
+                <Trash2 size={13} /> Clear tracks
               </button>
             )}
+            <button
+              className="jb-btn jb-btn--danger"
+              onClick={() => onDelete(mixtape)}
+              type="button"
+            >
+              <Trash2 size={13} /> Delete mixtape
+            </button>
           </div>
         </div>
       </div>
@@ -1518,6 +1603,13 @@ const MixtapeDetail = ({ mixtape, onBack, onUpdate }) => {
         )}
         {(mixtape.tracks ?? []).map((track, trackIndex) => {
           const isCurrentTrack = currentTrack?.path === track.filePath;
+          const transition =
+            trackIndex > 0
+              ? transitionHint(
+                  mixMetadata[mixtape.tracks[trackIndex - 1].filePath],
+                  mixMetadata[track.filePath],
+                )
+              : null;
           return (
             <div
               className={`jb-pl-track${isCurrentTrack ? ' jb-pl-track--playing' : ''}${dragOverId === track.id ? ' jb-pl-track--drag-over' : ''}`}
@@ -1606,6 +1698,14 @@ const MixtapeDetail = ({ mixtape, onBack, onUpdate }) => {
                   <div className="jb-track-meta">{track.artist}</div>
                 )}
               </div>
+              {transition && (
+                <span
+                  className={`library-transition${transition.compatible === false ? ' is-change' : ''}`}
+                  title="BPM difference and harmonic key relationship; audition your transition"
+                >
+                  {transition.label}
+                </span>
+              )}
               <div className="jb-track-duration">
                 {track.duration ? formatSeconds(track.duration) : '–'}
               </div>
@@ -1627,7 +1727,7 @@ const MixtapeDetail = ({ mixtape, onBack, onUpdate }) => {
 
 // ── Mixtapes grid/list view ───────────────────────────────────────────────────
 
-const MixtapesView = ({
+export const MixtapesView = ({
   onSelectId,
   onUpdate,
   playlists,
@@ -1639,6 +1739,7 @@ const MixtapesView = ({
   const [creating, setCreating] = useState(false);
   const [createName, setCreateName] = useState('');
   const [renameTarget, setRenameTarget] = useState(null); // { id, name }
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [sortBy, setSortBy] = useState(() =>
     prefs.get('resonance-mixtapes-sort-by', 'name'),
   );
@@ -1686,13 +1787,16 @@ const MixtapesView = ({
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDeleted = async (id) => {
+    setDeleteTarget(null);
+    if (selectedId === id) setSelectedId(null);
+    toast.success('Mixtape deleted. Your music files are unchanged.');
     try {
-      await mixtapesAPI.remove(id);
-      if (selectedId === id) setSelectedId(null);
       await onUpdate();
     } catch {
-      /* ignore */
+      toast.error(
+        'Mixtape deleted, but the list could not refresh. Refresh the library to update it.',
+      );
     }
   };
 
@@ -1715,22 +1819,52 @@ const MixtapesView = ({
   };
 
   // Show detail if a mixtape is selected and still exists
+  const deleteDialog = deleteTarget && (
+    <MixtapeDeleteDialog
+      key={`delete-${deleteTarget.id}`}
+      mixtape={deleteTarget}
+      onCancel={() => setDeleteTarget(null)}
+      onDeleted={handleDeleted}
+    />
+  );
   if (selected) {
     return (
-      <MixtapeDetail
-        key={selected.id}
-        mixtape={selected}
-        onBack={() => setSelectedId(null)}
-        onUpdate={onUpdate}
-      />
+      <>
+        {deleteDialog}
+        <MixtapeDetail
+          key={`detail-${selected.id}`}
+          mixtape={selected}
+          onBack={() => setSelectedId(null)}
+          onDelete={setDeleteTarget}
+          onUpdate={onUpdate}
+        />
+      </>
     );
   }
 
-  const playMixtape = (m) =>
-    playQueue((m.tracks ?? []).map(mixtapeTrackToQueue), 0);
+  const playMixtape = async (m) => {
+    let metadata = {};
+    try {
+      metadata = Object.fromEntries(
+        (
+          await resolveLibraryTracks((m.tracks || []).map((t) => t.filePath))
+        ).map((t) => [t.path, t]),
+      );
+    } catch {
+      /* Playback can continue while the player retries the metadata lookup. */
+    }
+
+    playQueue(
+      (m.tracks ?? []).map((track) =>
+        mixtapeTrackToQueue(track, metadata[track.filePath]),
+      ),
+      0,
+    );
+  };
 
   return (
     <>
+      {deleteDialog}
       {/* Header */}
       <div className="jb-section-header">
         <span className="jb-section-title">Mixtapes</span>
@@ -1862,12 +1996,20 @@ const MixtapesView = ({
       {viewMode === 'tile' && sorted.length > 0 && (
         <div className="jb-folders-grid">
           {sorted.map((pl) => (
-            <MixtapeCard
+            <MixtapeDropTarget
               key={pl.id}
               mixtape={pl}
-              onPlay={playMixtape}
-              onSelect={setSelectedId}
-            />
+              onUpdate={onUpdate}
+            >
+              <MixtapeCard
+                key={pl.id}
+                mixtape={pl}
+                onDelete={setDeleteTarget}
+                onPlay={playMixtape}
+                onRename={(m) => setRenameTarget({ id: m.id, name: m.name })}
+                onSelect={setSelectedId}
+              />
+            </MixtapeDropTarget>
           ))}
         </div>
       )}
@@ -1876,14 +2018,20 @@ const MixtapesView = ({
       {viewMode === 'list' && sorted.length > 0 && (
         <div className="jb-folder-list">
           {sorted.map((pl) => (
-            <MixtapeListRow
+            <MixtapeDropTarget
               key={pl.id}
               mixtape={pl}
-              onDelete={handleDelete}
-              onPlay={playMixtape}
-              onRename={(m) => setRenameTarget({ id: m.id, name: m.name })}
-              onSelect={setSelectedId}
-            />
+              onUpdate={onUpdate}
+            >
+              <MixtapeListRow
+                key={pl.id}
+                mixtape={pl}
+                onDelete={setDeleteTarget}
+                onPlay={playMixtape}
+                onRename={(m) => setRenameTarget({ id: m.id, name: m.name })}
+                onSelect={setSelectedId}
+              />
+            </MixtapeDropTarget>
           ))}
         </div>
       )}
@@ -1901,7 +2049,15 @@ const TracksView = ({
   onDeleteTracks,
   onExportTracks,
   removedPaths,
+  toolbarHeading,
+  toolbarTools,
+  toolbarView,
 }) => {
+  const [djFilters, setDjFilters] = useState(() =>
+    prefs.get('library.activeDjFilters', EMPTY_DJ_FILTERS),
+  );
+  const rawQuery = useMemo(() => djQuery(djFilters), [djFilters]);
+  const query = useDebounce(rawQuery, 250);
   // Title A-Z by default. The server buckets the A-Z rail by whatever column the list is
   // ordered by, so sorting by title is what makes the rail's letters agree with the titles
   // on screen — and it's the order this view has always opened in.
@@ -1913,7 +2069,7 @@ const TracksView = ({
     reset,
     total,
     trackTableProps,
-  } = usePagedTracks({}, { defaultSort: 'title' });
+  } = usePagedTracks(query, { defaultSort: 'title' });
 
   useEffect(() => {
     onAlphaEnabled?.(alphaApplies);
@@ -1927,45 +2083,88 @@ const TracksView = ({
     [removedPaths, trackTableProps.tracks],
   );
 
+  const sort = trackTableProps.serverSort;
+  const sortOptions = [
+    ['title:asc', 'Title · A–Z'],
+    ['title:desc', 'Title · Z–A'],
+    ['artist:asc', 'Artist · A–Z'],
+    ['artist:desc', 'Artist · Z–A'],
+    ['album:asc', 'Album · A–Z'],
+    ['album:desc', 'Album · Z–A'],
+    ['added:desc', 'Newest added'],
+    ['added:asc', 'Oldest added'],
+  ];
+  const sortValue = `${sort.col}:${sort.dir}`;
+  const heading = (
+    <>
+      <span className="jb-view-header-title">All Tracks</span>
+      {total > 0 && (
+        <span className="jb-view-header-count">{total.toLocaleString()}</span>
+      )}
+    </>
+  );
+  const controls = (
+    <>
+      <LibraryDjFilters
+        onChange={(next) => {
+          setDjFilters(next);
+          prefs.set('library.activeDjFilters', next);
+        }}
+        textFilter={trackTableProps.serverFilter}
+        value={djFilters}
+      />
+      <label className="library-toolbar-sort">
+        <span>Sort</span>
+        <select
+          aria-label="Sort tracks"
+          onChange={(event) => {
+            const [col, dir] = event.target.value.split(':');
+            sort.onChange(col, dir);
+          }}
+          value={sortValue}
+        >
+          {!sortOptions.some(([value]) => value === sortValue) && (
+            <option value={sortValue}>
+              {sort.col.toUpperCase()} ·{' '}
+              {sort.dir === 'asc' ? 'Ascending' : 'Descending'}
+            </option>
+          )}
+          {sortOptions.map(([value, label]) => (
+            <option
+              key={value}
+              value={value}
+            >
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+    </>
+  );
   return (
     <div className="jb-tracks-view">
-      {/*
-        The header's sort pills and filter drive the very same serverSort/serverFilter the
-        table's own column headers do — one piece of state, two ways in — so clicking a pill
-        highlights the column and vice versa. Without them this bar was the only one in the
-        library with an empty right-hand side, which read as unfinished. Tracks still has no
-        tile mode: dense columns are the point of it.
-      */}
-      <LibraryViewHeader
-        filter={{
-          onChange: trackTableProps.serverFilter.onChange,
-          placeholder: 'Filter tracks…',
-          value: trackTableProps.serverFilter.value,
-        }}
-        isDefault={isDefaultView}
-        letter={letter}
-        onClearLetter={clearLetter}
-        onReset={reset}
-        onSort={(field) =>
-          trackTableProps.serverSort.onChange(
-            field,
-            field === trackTableProps.serverSort.col &&
-              trackTableProps.serverSort.dir === 'asc'
-              ? 'desc'
-              : 'asc',
-          )
-        }
-        sortBy={trackTableProps.serverSort.col}
-        sortDir={trackTableProps.serverSort.dir}
-        sorts={[
-          { field: 'title', label: 'A–Z' },
-          { field: 'artist', label: 'Artist' },
-          { field: 'album', label: 'Album' },
-          { field: 'added', label: 'Added' },
-        ]}
-        title="All Tracks"
-        total={total}
-      />
+      {toolbarHeading ? (
+        createPortal(heading, toolbarHeading)
+      ) : (
+        <div className="library-toolbar-heading">{heading}</div>
+      )}
+      {toolbarTools ? (
+        createPortal(controls, toolbarTools)
+      ) : (
+        <div className="library-toolbar-tools">{controls}</div>
+      )}
+      {letter && (
+        <div className="library-query-state">
+          <AlphaFilterChip
+            letter={letter}
+            onClear={clearLetter}
+          />
+          <ResetViewButton
+            hidden={isDefaultView}
+            onReset={reset}
+          />
+        </div>
+      )}
       <TrackTable
         {...trackTableProps}
         alphaHandlerRef={alphaHandlerRef}
@@ -1973,6 +2172,7 @@ const TracksView = ({
         onContextMenu={onContextMenu}
         onDeleteTracks={onDeleteTracks}
         onExportTracks={onExportTracks}
+        toolbarTarget={toolbarView}
         tracks={tracks}
       />
     </div>
@@ -2453,6 +2653,10 @@ const HomeView = ({
         )}
       </div>
 
+      <PreparationHomeCard
+        onCrates={() => onNavigate(VIEWS.CRATES)}
+        onOpen={() => onNavigate(VIEWS.PREPARATION)}
+      />
       {/* Recently Added */}
       {recentlyAdded.length > 0 && (
         <HomeRow
@@ -2781,8 +2985,9 @@ const IssuesView = ({
 
 // ── Main Library component ────────────────────────────────────────────────────
 
-const Library = () => {
+const LibraryContent = () => {
   const history = useHistory();
+  const setPlanner = useSetPlanner();
   const location = useLocation();
   const {
     addToQueueNext,
@@ -2803,6 +3008,9 @@ const Library = () => {
 
   const [lovedTracks, setLovedTracks] = useState([]);
   const [loadingLoved, setLoadingLoved] = useState(false);
+  const [toolbarHeading, setToolbarHeading] = useState(null);
+  const [toolbarTools, setToolbarTools] = useState(null);
+  const [toolbarView, setToolbarView] = useState(null);
 
   // Only the counts, not the lists: the Artists and Albums views page their own rows now, and
   // Home just prints these two numbers. A limit=1 request answers both from X-Total-Count for
@@ -2850,26 +3058,6 @@ const Library = () => {
     Number(prefs.get('resonance-library-tilesize', 160)),
   );
   const [syncing, setSyncing] = useState(false);
-  const [navOpen, setNavOpen] = useState(
-    () => prefs.get('resonance-library-nav-open', true) !== false,
-  );
-
-  const toggleNav = () => {
-    setNavOpen((open) => {
-      const next = !open;
-      prefs.set('resonance-library-nav-open', next);
-      return next;
-    });
-  };
-
-  const {
-    containerRef: rootRef,
-    onDividerMouseDown: onNavDividerMouseDown,
-    width: navWidth,
-  } = useResizablePanel('resonance-library-nav-width', 190, {
-    min: 140,
-    max: 340,
-  });
 
   const savedScrollOffset = useMemo(() => {
     try {
@@ -3138,6 +3326,10 @@ const Library = () => {
     setNavStack([{ view, params: parameters }]);
     setSearchQuery('');
   }, []);
+
+  useEffect(() => {
+    if (setPlanner?.launch) navTo(VIEWS.PLANNER);
+  }, [navTo, setPlanner?.launch]);
 
   const goToArtist = useCallback((artist) => {
     setNavStack([{ view: VIEWS.ARTISTS, params: { selected: artist } }]);
@@ -3513,64 +3705,47 @@ const Library = () => {
     }
   }, []);
 
-  const USB_EXPORT_TOAST_ID = 'usb-export';
-
-  const runBulkUsbExport = useCallback(async (tracks) => {
-    if (tracks.length === 0) {
-      toast.info('Nothing to export.');
-      return;
-    }
-
-    toast.info(`Exporting… (0/${tracks.length})`, {
-      autoClose: false,
-      toastId: USB_EXPORT_TOAST_ID,
-    });
-    const result = await exportTracksToUsb(tracks, (done, total) =>
-      toast.update(USB_EXPORT_TOAST_ID, {
-        render: `Exporting… (${done}/${total})`,
-      }),
+  const [usbExportPaths, setUsbExportPaths] = useState(null);
+  const [usbExportName, setUsbExportName] = useState('Resonance');
+  const [usbExportWizard, setUsbExportWizard] = useState(false);
+  const handleExportTrack = useCallback((track) => {
+    setUsbExportName('Resonance');
+    setUsbExportWizard(false);
+    setUsbExportPaths([track.path ?? track.localRelativePath]);
+  }, []);
+  const handleExportTracks = useCallback((tracks) => {
+    setUsbExportName('Resonance');
+    setUsbExportWizard(false);
+    setUsbExportPaths(
+      tracks.map((track) => track.path ?? track.localRelativePath),
     );
-    toast.update(USB_EXPORT_TOAST_ID, {
-      autoClose: 4_000,
-      render: result.ok
-        ? `Exported ${result.exported}, skipped ${result.skipped}, failed ${result.failed}.`
-        : result.reason ?? 'Export failed.',
-      type: result.ok ? toast.TYPE.SUCCESS : toast.TYPE.ERROR,
-    });
   }, []);
-
-  const handleExportTrack = useCallback(async (track) => {
-    const result = await exportTrackToUsb(track);
-    if (result.ok) toast.success(result.message ?? 'Done');
-    else toast.error(result.reason ?? 'Export failed.');
-  }, []);
-
   const handleExportFolder = useCallback(
     async (folder) => {
-      const { getTracks } = await import('../../lib/musicLibrary');
-      const result = await getTracks({ folder: folder.path, limit: 500_000 });
-      await runBulkUsbExport(result.tracks ?? []);
+      try {
+        const { getTracks } = await import('../../lib/musicLibrary');
+        const result = await getTracks({ folder: folder.path, limit: 500_000 });
+        handleExportTracks(result.tracks ?? []);
+      } catch {
+        toast.error('Could not load folder tracks for export.');
+      }
     },
-    [runBulkUsbExport],
+    [handleExportTracks],
   );
-
   const handleExportAlbum = useCallback(
     async (album) => {
-      const { getTracks } = await import('../../lib/musicLibrary');
-      const result = await getTracks({
-        ...albumTrackParams(album),
-        limit: 500_000,
-      });
-      await runBulkUsbExport(result.tracks ?? []);
+      try {
+        const { getTracks } = await import('../../lib/musicLibrary');
+        const result = await getTracks({
+          ...albumTrackParams(album),
+          limit: 500_000,
+        });
+        handleExportTracks(result.tracks ?? []);
+      } catch {
+        toast.error('Could not load album tracks for export.');
+      }
     },
-    [runBulkUsbExport],
-  );
-
-  const handleExportTracks = useCallback(
-    async (tracks) => {
-      await runBulkUsbExport(tracks);
-    },
-    [runBulkUsbExport],
+    [handleExportTracks],
   );
 
   // Paths removed (or renamed away) during this session. The lists are server-paged, so a
@@ -3746,6 +3921,28 @@ const Library = () => {
 
   const renderView = () => {
     switch (activeView) {
+      case VIEWS.PLANNER:
+        return (
+          <SetPlannerView
+            onExport={(paths, name) => {
+              setUsbExportName(name);
+              setUsbExportWizard(true);
+              setUsbExportPaths(paths);
+            }}
+            onMixtape={(id) => navTo(VIEWS.MIXTAPES, { selectedId: id })}
+          />
+        );
+      case VIEWS.CRATES:
+        return (
+          <SmartCratesView
+            onAnalyzeTracks={handleAnalyzeTracks}
+            onContextMenu={openContextMenu}
+            onDeleteTracks={handleDeleteTracks}
+            onExportTracks={handleExportTracks}
+          />
+        );
+      case VIEWS.PREPARATION:
+        return <PreparationView />;
       case VIEWS.HOME:
         return (
           <HomeView
@@ -3837,10 +4034,11 @@ const Library = () => {
             onAnalyzeTracks={handleAnalyzeTracks}
             onContextMenu={openContextMenu}
             onDeleteTracks={handleDeleteTracks}
-            onExportTracks={
-              isUsbExportSupported() ? handleExportTracks : undefined
-            }
+            onExportTracks={handleExportTracks}
             removedPaths={removedPaths}
+            toolbarHeading={toolbarHeading}
+            toolbarTools={toolbarTools}
+            toolbarView={toolbarView}
           />
         );
 
@@ -3952,55 +4150,68 @@ const Library = () => {
   };
 
   return (
-    <div
-      className="jb-root"
-      ref={rootRef}
-    >
-      <nav
-        className={`jb-nav${navOpen ? '' : ' jb-nav--collapsed'}`}
-        style={
-          navOpen
-            ? { width: navWidth, minWidth: navWidth, maxWidth: navWidth }
-            : undefined
-        }
-      >
-        <div className="jb-nav-section">Library</div>
-        {NAV_ITEMS.map(({ icon: Icon, id, label }) => (
-          <button
-            className={`jb-nav-item hover-fx${activeView === id ? ' jb-nav-item--active' : ''}`}
-            key={id}
-            onClick={() => navTo(id)}
-            title={navOpen ? undefined : label}
-            type="button"
+    <div className="jb-root">
+      {usbExportPaths && (
+        <div className="jb-usb-export-overlay">
+          <div
+            aria-label="Library USB export"
+            aria-modal="true"
+            className="jb-usb-export-dialog"
+            role="dialog"
           >
-            <Icon
-              size={15}
-              strokeWidth={1.75}
+            <button
+              className="jb-usb-export-close"
+              onClick={() => setUsbExportPaths(null)}
+              type="button"
+            >
+              Back to library
+            </button>
+            <UsbExportPanel
+              initialPaths={usbExportPaths}
+              initialPlaylistName={usbExportName}
+              wizard={usbExportWizard}
             />
-            {navOpen && label}
-          </button>
-        ))}
-      </nav>
-
-      {navOpen && (
-        // eslint-disable-next-line jsx-a11y/no-static-element-interactions
-        <div
-          className="jb-panel-divider"
-          onMouseDown={onNavDividerMouseDown}
-        />
+          </div>
+        </div>
       )}
+      <div className="jb-nav-rail">
+        <nav
+          aria-label="Music navigation"
+          className="jb-nav"
+        >
+          <div className="jb-nav-scroll">
+            <div className="jb-nav-section">
+              <span>Library</span>
+            </div>
+            {NAV_ITEMS.map(({ icon: Icon, id, label }) => (
+              <button
+                aria-current={activeView === id ? 'page' : undefined}
+                className={`jb-nav-item hover-fx${activeView === id ? ' jb-nav-item--active' : ''}`}
+                key={id}
+                onClick={() => navTo(id)}
+                title={label}
+                type="button"
+              >
+                <Icon
+                  aria-hidden="true"
+                  size={15}
+                  strokeWidth={1.75}
+                />
+                <span className="jb-nav-label">{label}</span>
+              </button>
+            ))}
+          </div>
+        </nav>
+      </div>
 
       <div className="jb-content">
-        <div className="jb-topbar">
-          <button
-            className={`jb-icon-btn hover-fx${navOpen ? ' jb-icon-btn--active' : ''}`}
-            onClick={toggleNav}
-            title={navOpen ? 'Hide library pane' : 'Show library pane'}
-            type="button"
-          >
-            <PanelLeft size={15} />
-          </button>
-
+        <div
+          className={`jb-topbar${activeView === VIEWS.TRACKS ? ' jb-topbar--collection' : ''}`}
+        >
+          <div
+            className="library-toolbar-heading"
+            ref={setToolbarHeading}
+          />
           <div
             className="jb-search-wrap"
             ref={searchRef}
@@ -4027,45 +4238,75 @@ const Library = () => {
             )}
           </div>
 
+          <div
+            className="library-toolbar-tools"
+            ref={setToolbarTools}
+          />
+          <div
+            className="library-toolbar-view"
+            ref={setToolbarView}
+          />
           <div className="jb-topbar-right">
-            <button
-              className={`jb-icon-btn hover-fx${currentTrack?.key ? ' jb-icon-btn--active' : ''}`}
-              onClick={() =>
-                currentTrack
-                  ? handleAutoMix(currentTrack)
-                  : navigate(VIEWS.SEARCH)
+            <MixPreviewButton />
+            <LibraryMenu
+              label="More library tools"
+              summary={
+                <MoreHorizontal
+                  aria-hidden="true"
+                  size={17}
+                />
               }
-              title={
-                currentTrack?.key
-                  ? `Auto Mix from ${currentTrack.key}`
-                  : 'Auto Mix (play a keyed track first)'
-              }
-              type="button"
             >
-              <Wand2 size={15} />
-            </button>
+              <button
+                className="library-menu-action"
+                data-close-menu="true"
+                disabled={!currentTrack?.key}
+                onClick={() =>
+                  currentTrack
+                    ? handleAutoMix(currentTrack)
+                    : navigate(VIEWS.SEARCH)
+                }
+                title={
+                  currentTrack?.key
+                    ? `Auto Mix from ${currentTrack.key}`
+                    : 'Auto Mix (play a keyed track first)'
+                }
+                type="button"
+              >
+                <Wand2 size={15} /> Auto Mix
+                {currentTrack?.key ? ` from ${currentTrack.key}` : ''}
+              </button>
 
-            <button
-              className={`jb-icon-btn hover-fx${queuePanelOpen ? ' jb-icon-btn--active' : ''}`}
-              onClick={toggleQueuePanel}
-              title="Toggle queue"
-              type="button"
-            >
-              <ListMusic size={15} />
-            </button>
+              <button
+                aria-pressed={queuePanelOpen}
+                className="library-menu-action"
+                data-close-menu="true"
+                onClick={toggleQueuePanel}
+                title="Toggle queue"
+                type="button"
+              >
+                <ListMusic size={15} />{' '}
+                {queuePanelOpen ? 'Hide queue' : 'Show queue'}
+              </button>
 
-            <button
-              className="jb-icon-btn hover-fx"
-              disabled={syncing}
-              onClick={handleRefresh}
-              title="Refresh library"
-              type="button"
-            >
-              <RefreshCw
-                className={syncing ? 'jb-spin' : ''}
-                size={15}
-              />
-            </button>
+              <button
+                className="library-menu-action"
+                data-close-menu="true"
+                disabled={syncing}
+                onClick={handleRefresh}
+                title="Refresh library"
+                type="button"
+              >
+                <RefreshCw
+                  className={syncing ? 'jb-spin' : ''}
+                  size={15}
+                />
+                {syncing ? 'Refreshing library…' : 'Refresh library'}
+              </button>
+              <p className="library-menu-help">
+                Click a track to inspect it. Double-click to play.
+              </p>
+            </LibraryMenu>
 
             {hasTileList && (
               <div className="jb-btn-group">
@@ -4320,5 +4561,13 @@ const Library = () => {
     </div>
   );
 };
+
+const Library = () => (
+  <MixPreviewProvider>
+    <SetPlannerProvider>
+      <LibraryContent />
+    </SetPlannerProvider>
+  </MixPreviewProvider>
+);
 
 export default Library;

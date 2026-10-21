@@ -35,6 +35,8 @@
 
 import 'react-toastify/dist/ReactToastify.css';
 import './App.css';
+import './MusicWorkspace.css';
+import './PageLayout.css';
 import { urlBase } from '../config';
 import {
   LibraryActivityProvider,
@@ -69,11 +71,14 @@ import Chat from './Chat/Chat';
 import ConnectionScreen from './ConnectionScreen';
 import Converter from './Converter/Converter';
 import Duplicates from './Duplicates/Duplicates';
+import ExportPage from './Export/ExportPage';
+import NetworkLinkPage from './Export/NetworkLinkPage';
 import Library from './Library/Library';
 import LoginForm from './LoginForm';
 import MapPage from './Map';
 import MediaPlayer from './MediaPlayer';
 import MetadataLookupWatcher from './MetadataLookup/MetadataLookupWatcher';
+import MusicWorkspaceHeader from './MusicWorkspaceHeader';
 import NotificationCentre from './Notifications/NotificationCentre';
 import Overview from './Overview';
 import StatusStrip from './Overview/StatusStrip';
@@ -83,6 +88,7 @@ import Rooms from './Rooms/Rooms';
 import Searches from './Search/Searches';
 import Setup from './Setup';
 import ResonanceMark from './Shared/ResonanceMark';
+import ZoomControl from './Shared/ZoomControl';
 import StartupStatus from './StartupStatus';
 import DatabaseViewer from './System/DatabaseViewer';
 import Logs from './System/Logs';
@@ -109,13 +115,12 @@ import {
   MessageCircle,
   MessageSquare,
   Palette,
-  PanelLeftClose,
-  PanelLeftOpen,
   Search,
   Settings,
   Tag,
   Upload,
   Users as UsersIcon,
+  Wifi,
 } from 'lucide-react';
 import React, {
   useCallback,
@@ -149,9 +154,22 @@ const AppQueuePanel = () => {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const THEMES = ['light', 'amoled'];
-const THEME_LABELS = { amoled: 'AMOLED', light: 'Light' };
-const ALL_THEME_CLASSES = ['amoled', 'dark', 'dim'];
+const THEMES = ['light', 'amoled', 'midnight', 'violet', 'ember'];
+const THEME_LABELS = {
+  amoled: 'AMOLED',
+  light: 'Daylight',
+  midnight: 'Midnight',
+  violet: 'Ultraviolet',
+  ember: 'Ember',
+};
+const ALL_THEME_CLASSES = [
+  'amoled',
+  'dark',
+  'dim',
+  'midnight',
+  'violet',
+  'ember',
+];
 
 const INIT_MAX_ATTEMPTS = 30;
 const STATUS_STATE_CACHE_KEY = 'resonance-status-state';
@@ -309,10 +327,6 @@ const App = () => {
   const [chatUnread, setChatUnread] = useState(0);
   const [downloadCount, setDownloadCount] = useState(0);
   const [downloads, setDownloads] = useState([]);
-  const [navCollapsed, setNavCollapsed] = useState(() => {
-    const v = prefs.get('resonance-nav-collapsed', false);
-    return v === true || v === 'true';
-  });
   const [networkInfo, setNetworkInfo] = useState(() =>
     readStatusCache(NETWORK_INFO_CACHE_KEY, null),
   );
@@ -322,6 +336,7 @@ const App = () => {
     loadNotificationSettings,
   );
   const [roomUnread, setRoomUnread] = useState(0);
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [theme, setTheme] = useState(
     () =>
       prefs.get('resonance-theme', null) ??
@@ -996,14 +1011,6 @@ const App = () => {
     setIsLoggedIn(true);
   }, []);
 
-  const handleToggleNav = useCallback(() => {
-    setNavCollapsed((previous) => {
-      const next = !previous;
-      prefs.set('resonance-nav-collapsed', next);
-      return next;
-    });
-  }, []);
-
   const handleToggleNotificationPanel = useCallback(() => {
     setNotificationPanelOpen((previous) => {
       const opening = !previous;
@@ -1035,19 +1042,17 @@ const App = () => {
     });
   }, []);
 
-  const cycleTheme = useCallback(() => {
-    setTheme((previousTheme) => {
-      const index = THEMES.indexOf(previousTheme ?? 'light');
-      const newTheme = THEMES[(index + 1) % THEMES.length];
-      prefs.set('resonance-theme', newTheme);
-      return newTheme;
-    });
+  const chooseTheme = useCallback((selectedTheme) => {
+    prefs.set('resonance-theme', selectedTheme);
+    setTheme(selectedTheme);
   }, []);
 
   // ── Apply theme classes ───────────────────────────────────────────────────────
   for (const cls of ALL_THEME_CLASSES)
     document.documentElement.classList.remove(cls);
   if (theme !== 'light') document.documentElement.classList.add(theme);
+  if (['midnight', 'violet', 'ember'].includes(theme))
+    document.documentElement.classList.add('amoled');
 
   // ── Gate: full-screen screens that replace the app ───────────────────────────
   const mixtapeMatch = window.location.pathname.match(
@@ -1168,6 +1173,15 @@ const App = () => {
   const { mode } = relay;
   const isAgent = mode === 'Agent';
   const page = getPage();
+  const musicWorkspace = [
+    'library',
+    'trackanalysis',
+    'export',
+    'networklink',
+    'tags',
+    'duplicates',
+    'converter',
+  ].includes(page);
   const hasPending = pendingReconnect || pendingRestart || pendingShareRescan;
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -1222,32 +1236,12 @@ const App = () => {
       <PlayerProvider>
         <TagEditActivityProvider>
           <PlayTracker />
-          <div className="app-shell">
+          <div className="app-shell dj-workspace">
             <StartupStatus status={startupStatus} />
             {!isAgent && (
               <StatusStrip
                 brand={
                   <div className="status-brand">
-                    <button
-                      className="app-nav-toggle hover-fx"
-                      onClick={handleToggleNav}
-                      title={
-                        navCollapsed ? 'Expand sidebar' : 'Collapse sidebar'
-                      }
-                      type="button"
-                    >
-                      {navCollapsed ? (
-                        <PanelLeftOpen
-                          size={14}
-                          strokeWidth={1.75}
-                        />
-                      ) : (
-                        <PanelLeftClose
-                          size={14}
-                          strokeWidth={1.75}
-                        />
-                      )}
-                    </button>
                     <ResonanceMark size={18} />
                     <span className="status-brand-name">Resonance</span>
                     {version.isCanary && (
@@ -1268,213 +1262,287 @@ const App = () => {
                 uploads={uploads}
                 upnp={applicationState?.upnp}
                 user={user}
+                viewControls={<ZoomControl />}
               />
             )}
 
             <div className="app-body">
-              <nav
-                className={
-                  navCollapsed ? 'app-nav app-nav--collapsed' : 'app-nav'
-                }
-              >
-                <div className="app-nav-section">
-                  {isAgent ? (
+              <div className="app-nav-rail">
+                <nav
+                  aria-label="Main navigation"
+                  className="app-nav"
+                >
+                  <div className="app-nav-section">
+                    {isAgent ? (
+                      <NavItem
+                        active={page === 'system'}
+                        icon={Settings}
+                        label="System"
+                        to={`${urlBase}/system`}
+                      />
+                    ) : (
+                      <>
+                        <NavItem
+                          active={page === 'overview'}
+                          icon={LayoutDashboard}
+                          label="Overview"
+                          to={`${urlBase}/overview`}
+                        />
+                        <div className="app-nav-label">
+                          <span>Music</span>
+                        </div>
+                        <NavItem
+                          active={page === 'library'}
+                          icon={LibraryIcon}
+                          label="Library"
+                          to={`${urlBase}/library`}
+                        />
+                        <NavItem
+                          active={page === 'trackanalysis'}
+                          icon={KeyRound}
+                          label="Track Analysis"
+                          to={`${urlBase}/trackanalysis`}
+                        />
+                        <NavItem
+                          active={page === 'export'}
+                          icon={Upload}
+                          label="Export"
+                          to={`${urlBase}/export`}
+                        />
+                        <NavItem
+                          active={page === 'networklink'}
+                          icon={Wifi}
+                          label="Network Link"
+                          to={`${urlBase}/networklink`}
+                        />
+                        <NavItem
+                          active={page === 'tags'}
+                          icon={Tag}
+                          label="Tag Manager"
+                          to={`${urlBase}/tags`}
+                        />
+                        <NavItem
+                          active={page === 'duplicates'}
+                          icon={Copy}
+                          label="Duplicates"
+                          to={`${urlBase}/duplicates`}
+                        />
+                        <NavItem
+                          active={page === 'converter'}
+                          icon={AudioLines}
+                          label="Converter"
+                          to={`${urlBase}/converter`}
+                        />
+
+                        <div className="app-nav-label">
+                          <span>Soulseek</span>
+                        </div>
+                        <NavItem
+                          active={page === 'searches'}
+                          icon={Search}
+                          label="Search"
+                          to={`${urlBase}/searches`}
+                        />
+                        <NavItem
+                          active={page === 'downloads'}
+                          badge={downloadCount}
+                          icon={Download}
+                          label="Downloads"
+                          to={`${urlBase}/downloads`}
+                        />
+                        <NavItem
+                          active={page === 'uploads'}
+                          badge={uploadCount}
+                          icon={Upload}
+                          label="Uploads"
+                          to={`${urlBase}/uploads`}
+                        />
+
+                        <NavItem
+                          active={page === 'history'}
+                          icon={History}
+                          label="History"
+                          to={`${urlBase}/history`}
+                        />
+                        {isAdmin() && (
+                          <NavItem
+                            active={page === 'live-map'}
+                            icon={Globe}
+                            label="Live Map"
+                            to={`${urlBase}/live-map`}
+                          />
+                        )}
+
+                        <div className="app-nav-label">
+                          <span>Community</span>
+                        </div>
+                        <NavItem
+                          active={page === 'rooms'}
+                          badge={page === 'rooms' ? 0 : roomUnread}
+                          icon={MessageSquare}
+                          label="Rooms"
+                          to={`${urlBase}/rooms`}
+                        />
+                        <NavItem
+                          active={page === 'chat'}
+                          badge={page === 'chat' ? 0 : chatUnread}
+                          icon={MessageCircle}
+                          label="Chat"
+                          to={`${urlBase}/chat`}
+                        />
+                        <NavItem
+                          active={page === 'users'}
+                          icon={UsersIcon}
+                          label="Users"
+                          to={`${urlBase}/users`}
+                        />
+                        <NavItem
+                          active={page === 'browse'}
+                          icon={FolderOpen}
+                          label="Browse"
+                          to={`${urlBase}/browse`}
+                        />
+
+                        <div className="app-nav-label">
+                          <span>yt-dlp</span>
+                        </div>
+                        <NavItem
+                          active={
+                            page === 'ytdlp' &&
+                            !window.location.pathname.endsWith('/downloads')
+                          }
+                          icon={Search}
+                          label="Search"
+                          to={`${urlBase}/ytdlp/search`}
+                        />
+                        <NavItem
+                          active={
+                            page === 'ytdlp' &&
+                            window.location.pathname.endsWith('/downloads')
+                          }
+                          badge={ytdlpCount}
+                          icon={Download}
+                          label="Downloads"
+                          to={`${urlBase}/ytdlp/downloads`}
+                        />
+                      </>
+                    )}
+                  </div>
+
+                  <div className="app-nav-footer">
+                    {hasPending && (
+                      <NavItem
+                        icon={AlertCircle}
+                        label="Pending Action"
+                        to={`${urlBase}/system/info`}
+                      />
+                    )}
+                    {isUpdateAvailable && (
+                      <Modal
+                        centered
+                        closeIcon
+                        size="mini"
+                        trigger={
+                          <NavItem
+                            icon={Megaphone}
+                            label="New Version!"
+                          />
+                        }
+                      >
+                        <Modal.Header>New Version!</Modal.Header>
+                        <Modal.Content>
+                          <p>
+                            Running <strong>{current}</strong>, version{' '}
+                            <strong>{latest}</strong> is available.
+                          </p>
+                        </Modal.Content>
+                        <Modal.Actions>
+                          <Button
+                            className="hover-fx"
+                            fluid
+                            primary
+                            style={{ marginLeft: 0 }}
+                          >
+                            See Release Notes
+                          </Button>
+                        </Modal.Actions>
+                      </Modal>
+                    )}
+                    <NavItem
+                      badge={unreadCount}
+                      icon={Bell}
+                      label="Notifications"
+                      onClick={handleToggleNotificationPanel}
+                    />
                     <NavItem
                       active={page === 'system'}
                       icon={Settings}
                       label="System"
                       to={`${urlBase}/system`}
                     />
-                  ) : (
-                    <>
-                      <NavItem
-                        active={page === 'overview'}
-                        icon={LayoutDashboard}
-                        label="Overview"
-                        to={`${urlBase}/overview`}
-                      />
-
-                      <div className="app-nav-label">Soulseek</div>
-                      <NavItem
-                        active={page === 'searches'}
-                        icon={Search}
-                        label="Search"
-                        to={`${urlBase}/searches`}
-                      />
-                      <NavItem
-                        active={page === 'downloads'}
-                        badge={downloadCount}
-                        icon={Download}
-                        label="Downloads"
-                        to={`${urlBase}/downloads`}
-                      />
-                      <NavItem
-                        active={page === 'uploads'}
-                        badge={uploadCount}
-                        icon={Upload}
-                        label="Uploads"
-                        to={`${urlBase}/uploads`}
-                      />
-
-                      <NavItem
-                        active={page === 'history'}
-                        icon={History}
-                        label="History"
-                        to={`${urlBase}/history`}
-                      />
-                      {isAdmin() && (
-                        <NavItem
-                          active={page === 'live-map'}
-                          icon={Globe}
-                          label="Live Map"
-                          to={`${urlBase}/live-map`}
-                        />
-                      )}
-
-                      <div className="app-nav-label">Community</div>
-                      <NavItem
-                        active={page === 'rooms'}
-                        badge={page === 'rooms' ? 0 : roomUnread}
-                        icon={MessageSquare}
-                        label="Rooms"
-                        to={`${urlBase}/rooms`}
-                      />
-                      <NavItem
-                        active={page === 'chat'}
-                        badge={page === 'chat' ? 0 : chatUnread}
-                        icon={MessageCircle}
-                        label="Chat"
-                        to={`${urlBase}/chat`}
-                      />
-                      <NavItem
-                        active={page === 'users'}
-                        icon={UsersIcon}
-                        label="Users"
-                        to={`${urlBase}/users`}
-                      />
-                      <NavItem
-                        active={page === 'browse'}
-                        icon={FolderOpen}
-                        label="Browse"
-                        to={`${urlBase}/browse`}
-                      />
-
-                      <div className="app-nav-label">Music</div>
-                      <NavItem
-                        active={page === 'library'}
-                        icon={LibraryIcon}
-                        label="Library"
-                        to={`${urlBase}/library`}
-                      />
-                      <NavItem
-                        active={page === 'trackanalysis'}
-                        icon={KeyRound}
-                        label="Track Analysis"
-                        to={`${urlBase}/trackanalysis`}
-                      />
-                      <NavItem
-                        active={page === 'tags'}
-                        icon={Tag}
-                        label="Tag Manager"
-                        to={`${urlBase}/tags`}
-                      />
-                      <NavItem
-                        active={page === 'duplicates'}
-                        icon={Copy}
-                        label="Duplicates"
-                        to={`${urlBase}/duplicates`}
-                      />
-                      <NavItem
-                        active={page === 'converter'}
-                        icon={AudioLines}
-                        label="Converter"
-                        to={`${urlBase}/converter`}
-                      />
-
-                      <div className="app-nav-label">yt-dlp</div>
-                      <NavItem
-                        active={
-                          page === 'ytdlp' &&
-                          !window.location.pathname.endsWith('/downloads')
-                        }
-                        icon={Search}
-                        label="Search"
-                        to={`${urlBase}/ytdlp/search`}
-                      />
-                      <NavItem
-                        active={
-                          page === 'ytdlp' &&
-                          window.location.pathname.endsWith('/downloads')
-                        }
-                        badge={ytdlpCount}
-                        icon={Download}
-                        label="Downloads"
-                        to={`${urlBase}/ytdlp/downloads`}
-                      />
-                    </>
-                  )}
-                </div>
-
-                <div className="app-nav-footer">
-                  {hasPending && (
-                    <NavItem
-                      icon={AlertCircle}
-                      label="Pending Action"
-                      to={`${urlBase}/system/info`}
-                    />
-                  )}
-                  {isUpdateAvailable && (
-                    <Modal
-                      centered
-                      closeIcon
-                      size="mini"
-                      trigger={
-                        <NavItem
-                          icon={Megaphone}
-                          label="New Version!"
-                        />
+                    <div
+                      className={
+                        isAgent ? 'app-appearance-controls' : undefined
                       }
                     >
-                      <Modal.Header>New Version!</Modal.Header>
-                      <Modal.Content>
-                        <p>
-                          Running <strong>{current}</strong>, version{' '}
-                          <strong>{latest}</strong> is available.
-                        </p>
-                      </Modal.Content>
-                      <Modal.Actions>
-                        <Button
-                          className="hover-fx"
-                          fluid
-                          primary
-                          style={{ marginLeft: 0 }}
-                        >
-                          See Release Notes
-                        </Button>
-                      </Modal.Actions>
-                    </Modal>
-                  )}
-                  <NavItem
-                    badge={unreadCount}
-                    icon={Bell}
-                    label="Notifications"
-                    onClick={handleToggleNotificationPanel}
-                  />
-                  <NavItem
-                    active={page === 'system'}
-                    icon={Settings}
-                    label="System"
-                    to={`${urlBase}/system`}
-                  />
-                  <NavItem
-                    icon={Palette}
-                    label={THEME_LABELS[theme] ?? 'Theme'}
-                    onClick={cycleTheme}
-                  />
-                </div>
-              </nav>
+                      <NavItem
+                        icon={Palette}
+                        label={THEME_LABELS[theme] ?? 'Theme'}
+                        onClick={() => setThemePickerOpen(true)}
+                      />
+                      <Modal
+                        closeIcon
+                        onClose={() => setThemePickerOpen(false)}
+                        open={themePickerOpen}
+                        size="small"
+                      >
+                        <Modal.Header>Choose your atmosphere</Modal.Header>
+                        <Modal.Content>
+                          <p>
+                            Colour for your collection, from daylight browsing
+                            to late-night sets.
+                          </p>
+                          <div className="theme-palette-grid">
+                            {THEMES.map((option) => (
+                              <button
+                                aria-pressed={theme === option}
+                                className={`theme-palette theme-palette--${option}`}
+                                key={option}
+                                onClick={() => chooseTheme(option)}
+                                type="button"
+                              >
+                                <span
+                                  aria-hidden="true"
+                                  className="theme-palette-preview"
+                                >
+                                  <i />
+                                  <i />
+                                  <i />
+                                </span>
+                                <strong>{THEME_LABELS[option]}</strong>
+                                <span>
+                                  {theme === option
+                                    ? 'Selected'
+                                    : 'Preview theme'}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </Modal.Content>
+                        <Modal.Actions>
+                          <Button onClick={() => setThemePickerOpen(false)}>
+                            Done
+                          </Button>
+                        </Modal.Actions>
+                      </Modal>
+                      {isAgent && <ZoomControl />}
+                    </div>
+                  </div>
+                </nav>
+              </div>
 
               <main className="app-main">
+                {musicWorkspace && <MusicWorkspaceHeader page={page} />}
                 <div className="app-content">
                   <AppContext.Provider value={appContextValue}>
                     {isAgent ? (
@@ -1574,6 +1642,14 @@ const App = () => {
                         <Route
                           path={`${urlBase}/library`}
                           render={(props) => <Library {...props} />}
+                        />
+                        <Route
+                          path={`${urlBase}/networklink`}
+                          render={() => <NetworkLinkPage />}
+                        />
+                        <Route
+                          path={`${urlBase}/export`}
+                          render={() => <ExportPage />}
                         />
                         <Route
                           path={`${urlBase}/trackanalysis`}

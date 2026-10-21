@@ -309,7 +309,6 @@
 .dupes-empty {
   color: var(--text-muted);
   font-size: 13px;
-  opacity: 0.6;
   padding: 60px 20px;
   text-align: center;
 }
@@ -352,8 +351,8 @@
 }
 
 .dupes-action-btn--danger:hover {
-  border-color: #e53e3e;
-  color: #e53e3e;
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .dupes-action-btn--sm {
@@ -460,11 +459,11 @@
 }
 
 .dupes-queue-btn:hover {
-  color: #e53e3e;
+  color: var(--danger);
 }
 
 .dupes-queue-btn--active {
-  color: #e53e3e;
+  color: var(--danger);
 }
 
 /* ── Similar-folder rows ── */
@@ -540,7 +539,7 @@
 
 .dupes-deletion-panel {
   background: var(--bg-elevated);
-  border-top: 2px solid #e53e3e;
+  border-top: 2px solid var(--danger);
   bottom: 0;
   position: sticky;
   z-index: 20;
@@ -595,8 +594,8 @@
 }
 
 .dupes-deletion-action-btn--clear:hover {
-  border-color: #e53e3e;
-  color: #e53e3e;
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .dupes-deletion-action-btn--delete {
@@ -651,5 +650,5 @@
 }
 
 .dupes-deletion-remove:hover {
-  color: #e53e3e;
+  color: var(--danger);
 }

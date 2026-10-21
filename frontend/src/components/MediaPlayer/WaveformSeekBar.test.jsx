@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import * as analysisApi from '../../lib/analysis';
+import api from '../../lib/api';
 import * as waveformPreview from '../Shared/WaveformPreview';
 import WaveformSeekBar from './WaveformSeekBar';
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { act } from 'react-dom/test-utils';
 
+jest.mock('../../lib/api', () => ({ get: jest.fn() }));
 jest.mock('../../lib/analysis', () => ({ getWaveform: jest.fn() }));
 jest.mock('../Shared/WaveformPreview', () => ({
   analyseTrack: jest.fn(),
@@ -28,6 +30,7 @@ describe('WaveformSeekBar waveform loading', () => {
     container = document.createElement('div');
     document.body.append(container);
     jest.clearAllMocks();
+    api.get.mockResolvedValue({ data: { available: false } });
     jest.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
     jest.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
     window.ResizeObserver = class {
@@ -58,6 +61,26 @@ describe('WaveformSeekBar waveform loading', () => {
     });
   };
 
+  it('shows the analysis status and vocal legend when current analysis is available', async () => {
+    expect.hasAssertions();
+    api.get.mockResolvedValue({
+      data: {
+        available: true,
+        djPhrases: [],
+        musicalPhrases: [],
+        singing: [],
+        processedVoice: [],
+      },
+    });
+    analysisApi.getWaveform.mockResolvedValue(response);
+    await render({ path: '/music/enhanced.flac' });
+    expect(container.querySelector('.mp-vocal-legend')).not.toBeNull();
+    expect(container.textContent).toContain('Processed voice');
+    expect(api.get).toHaveBeenCalledWith('/analysis/candidates/enhanced', {
+      params: { path: '/music/enhanced.flac' },
+    });
+  });
+
   it('uses an existing cached waveform without starting analysis', async () => {
     expect.hasAssertions();
     analysisApi.getWaveform.mockResolvedValue(response);
@@ -79,7 +102,7 @@ describe('WaveformSeekBar waveform loading', () => {
     expect(container.querySelector('canvas')).not.toBeNull();
   });
 
-  it('starts analysis when another analysis metric is missing', async () => {
+  it('shows cached peaks even when key and BPM are missing', async () => {
     expect.hasAssertions();
     analysisApi.getWaveform.mockResolvedValueOnce(response);
     waveformPreview.analyseTrack.mockResolvedValue({
@@ -88,18 +111,91 @@ describe('WaveformSeekBar waveform loading', () => {
     });
 
     await render({
-      bpm: 128,
+      bpm: null,
       hasWaveform: true,
       key: null,
       lufs: -12.4,
       path: '/music/not-analysed.flac',
     });
 
-    expect(waveformPreview.analyseTrack).toHaveBeenCalledTimes(1);
-    expect(waveformPreview.analyseTrack).toHaveBeenCalledWith(
-      '/music/not-analysed.flac',
-    );
+    expect(waveformPreview.analyseTrack).not.toHaveBeenCalled();
     expect(analysisApi.getWaveform).toHaveBeenCalledTimes(1);
     expect(container.querySelector('canvas')).not.toBeNull();
+  });
+  it('analyses only when no cached waveform exists', async () => {
+    expect.hasAssertions();
+    analysisApi.getWaveform
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(response);
+    waveformPreview.analyseTrack.mockResolvedValue({ error: null, peaks: {} });
+    await render({ path: '/music/missing.flac' });
+    expect(waveformPreview.analyseTrack).toHaveBeenCalledWith(
+      '/music/missing.flac',
+    );
+    expect(container.querySelector('canvas')).not.toBeNull();
+  });
+  it('draws the real cached grid even when the player snapshot has no BPM', async () => {
+    expect.hasAssertions();
+    const context = Object.fromEntries(
+      [
+        'beginPath',
+        'clearRect',
+        'clip',
+        'fillRect',
+        'fillText',
+        'lineTo',
+        'moveTo',
+        'rect',
+        'restore',
+        'save',
+        'setTransform',
+        'stroke',
+        'translate',
+      ].map((name) => [name, jest.fn()]),
+    );
+    jest
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue(context);
+    analysisApi.getWaveform.mockResolvedValue(response);
+    await render({
+      bpm: null,
+      hasWaveform: true,
+      path: '/music/cached-beats.flac',
+    });
+    const canvas = container.querySelector('canvas');
+    Object.defineProperty(canvas, 'clientWidth', { value: 800 });
+    Object.defineProperty(canvas, 'clientHeight', { value: 40 });
+    const callback = window.requestAnimationFrame.mock.calls.at(-1)[0];
+    act(() => callback());
+    expect(context.stroke).toHaveBeenCalledWith();
+    expect(context.fillText).toHaveBeenCalledTimes(6);
+    expect(waveformPreview.analyseTrack).not.toHaveBeenCalled();
+  });
+  it('keeps cached peaks visible while missing beat data is analysed', async () => {
+    expect.hasAssertions();
+    let finish;
+    waveformPreview.analyseTrack.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    analysisApi.getWaveform
+      .mockResolvedValueOnce({
+        ...response,
+        beats: null,
+        beatOffsetSeconds: null,
+      })
+      .mockResolvedValueOnce(response);
+    await render({ hasWaveform: true, path: '/music/peaks-only.flac' });
+    expect(container.querySelector('canvas')).not.toBeNull();
+    expect(waveformPreview.analyseTrack).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finish({ error: null, peaks: {} });
+    });
+    expect(analysisApi.getWaveform).toHaveBeenCalledTimes(2);
+    expect(waveformPreview.primeWaveformCache).toHaveBeenLastCalledWith(
+      '/music/peaks-only.flac',
+      response,
+    );
   });
 });

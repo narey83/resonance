@@ -2247,6 +2247,12 @@ public class ReportsService
 
     private DbConnection OpenConnection(Database database)
     {
+        if (!UsePostgres)
+        {
+            DbConnection sqlite = new Microsoft.Data.Sqlite.SqliteConnection(ConnectionStrings[database]);
+            sqlite.Open();
+            return sqlite;
+        }
         var connectionString = new NpgsqlConnectionStringBuilder(ConnectionStrings[database])
         {
             CommandTimeout = ReportCommandTimeoutSeconds,

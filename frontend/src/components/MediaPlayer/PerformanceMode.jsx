@@ -40,6 +40,7 @@ import React, { useEffect, useRef, useState } from 'react';
 // same Compressor and Limiter instances the standalone Compressor/Limiter
 // panels show — one processor, not two competing ones.
 const PerformanceMode = ({
+  advanced = false,
   audioRef,
   detailContainerNode,
   isSelected,
@@ -52,7 +53,7 @@ const PerformanceMode = ({
     prefs.get('mediaPlayer.performanceMode', false),
   );
   const [compression, setCompression] = useState(() =>
-    prefs.get('mediaPlayer.performanceCompression', 0.5),
+    prefs.get('mediaPlayer.performanceCompression', 0.15),
   );
   const [protection, setProtection] = useState(() =>
     prefs.get('mediaPlayer.performanceProtection', true),
@@ -172,7 +173,7 @@ const PerformanceMode = ({
           <span>Compression</span>
           <input
             className="mp-processing-slider"
-            max={100}
+            max={advanced ? 100 : 25}
             min={0}
             onChange={changeCompression}
             type="range"

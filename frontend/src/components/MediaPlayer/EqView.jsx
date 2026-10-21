@@ -35,6 +35,7 @@ import React, { useEffect, useRef, useState } from 'react';
 
 // 3-band EQ panel — see lib/dsp/EqProcessor.js for the underlying filters.
 const EqView = ({
+  advanced = false,
   audioRef,
   detailContainerNode,
   isSelected,
@@ -97,8 +98,8 @@ const EqView = ({
       <span>{label}</span>
       <input
         className="mp-processing-slider"
-        max={EQ_MAX_DB}
-        min={EQ_MIN_DB}
+        max={advanced ? EQ_MAX_DB : 3}
+        min={advanced ? EQ_MIN_DB : -3}
         onChange={(event) => {
           const next = Number.parseFloat(event.target.value);
           setValue(next);

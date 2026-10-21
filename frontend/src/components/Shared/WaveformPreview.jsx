@@ -28,6 +28,7 @@
 // </copyright>
 
 import { useLibraryActivity } from '../../context/LibraryActivityContext';
+import useThemeRevision from '../../hooks/useThemeRevision';
 import * as analysisApi from '../../lib/analysis';
 import { ALL_METRICS, analyzeTrack } from '../../lib/musicLibrary';
 import { drawWaveform, toPeaks } from '../../lib/waveform';
@@ -240,6 +241,7 @@ const WaveformPreview = ({
   );
   const [analysing, setAnalysing] = useState(false);
   const [error, setError] = useState(null);
+  const themeRevision = useThemeRevision();
   const libraryRevision = useLibraryActivity()?.libraryRevision ?? 0;
   const seenRevision = useRef(libraryRevision);
 
@@ -371,7 +373,7 @@ const WaveformPreview = ({
 
   useEffect(() => {
     if (peaks) drawWaveform(canvasRef.current, peaks, { height, mono, width });
-  }, [height, mono, peaks, width]);
+  }, [height, mono, peaks, themeRevision, width]);
 
   // One decode yields all four metrics, so the click runs the library's analyse
   // service rather than the waveform-only endpoint, asking for everything with

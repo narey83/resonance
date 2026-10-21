@@ -1420,13 +1420,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        // SubscriptionId was added after first release; EnsureCreated won't alter an existing table.
-        await db.Database.ExecuteSqlRawAsync(
-            "ALTER TABLE ytdlp.\"Jobs\" ADD COLUMN IF NOT EXISTS \"SubscriptionId\" uuid", cancellationToken);
-        await db.Database.ExecuteSqlRawAsync(
-            "ALTER TABLE ytdlp.\"Tracks\" ADD COLUMN IF NOT EXISTS \"ReportedDurationSeconds\" integer", cancellationToken);
-        await db.Database.ExecuteSqlRawAsync(
-            "ALTER TABLE ytdlp.\"Events\" ADD COLUMN IF NOT EXISTS \"TrackTitle\" text", cancellationToken);
+        await db.InitializeSchemaAsync(cancellationToken);
 
         // Reset any tracks that were in-progress when the app last shut down
         var stuckTracks = await db.Tracks

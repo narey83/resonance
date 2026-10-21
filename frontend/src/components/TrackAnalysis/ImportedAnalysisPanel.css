@@ -1,0 +1,15 @@
+.imported-analysis { margin: 1rem 0; padding: 1rem; border: 1px solid currentColor; border-radius: 8px; }
+.imported-analysis label { display: inline-flex; flex-direction: column; gap: .35rem; }
+.imported-analysis select, .imported-analysis input { padding: .4rem; max-width: 100%; }
+.imported-analysis-window { display: flex; flex-wrap: wrap; gap: 1rem; margin: .5rem 0; }
+.imported-analysis-grid { display: block; width: 100%; height: 80px; background: rgba(120, 120, 120, .12); }
+.imported-analysis-grid line { stroke: currentColor; stroke-width: 1; }
+.imported-analysis-grid .imported-downbeat { stroke: #00aeb8; stroke-width: 3; }
+.imported-analysis details code { overflow-wrap: anywhere; }
+
+.imported-analysis-features { display: grid; grid-template-columns: minmax(8rem, 1fr) 3fr; gap: .3rem 1rem; }
+.imported-analysis-features dd { margin: 0; }
+.imported-vocal-grid { display: block; width: 100%; height: 60px; background: rgba(120, 120, 120, .12); }
+.imported-vocal-grid rect { fill: #00aeb8; }
+.imported-analysis table { width: 100%; margin: .5rem 0; border-collapse: collapse; }
+.imported-analysis td, .imported-analysis th { padding: .3rem; text-align: left; }

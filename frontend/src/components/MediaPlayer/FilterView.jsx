@@ -36,6 +36,7 @@ import React, { useEffect, useRef, useState } from 'react';
 // DJ-style sweep filter panel — see lib/dsp/FilterProcessor.js. Position
 // -1 sweeps a rising highpass, +1 a falling lowpass, 0 is wide open.
 const FilterView = ({
+  advanced = false,
   audioRef,
   detailContainerNode,
   isSelected,
@@ -142,26 +143,28 @@ const FilterView = ({
           <span>Low ◂ Filter ▸ High</span>
           <input
             className="mp-processing-slider"
-            max={100}
-            min={-100}
+            max={advanced ? 100 : 10}
+            min={advanced ? -100 : -10}
             onChange={changePosition}
             type="range"
             value={Math.round(position * 100)}
           />
           <span className="mp-processing-setting-value">{positionLabel}</span>
         </label>
-        <label className="mp-processing-setting">
-          <span>Resonance</span>
-          <input
-            className="mp-processing-slider"
-            max={RESONANCE_MAX}
-            min={RESONANCE_MIN}
-            onChange={changeResonance}
-            step={0.1}
-            type="range"
-            value={resonance}
-          />
-        </label>
+        {advanced && (
+          <label className="mp-processing-setting">
+            <span>Resonance</span>
+            <input
+              className="mp-processing-slider"
+              max={RESONANCE_MAX}
+              min={RESONANCE_MIN}
+              onChange={changeResonance}
+              step={0.1}
+              type="range"
+              value={resonance}
+            />
+          </label>
+        )}
       </div>
     </ProcessorRow>
   );

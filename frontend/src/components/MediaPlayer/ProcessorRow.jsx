@@ -50,8 +50,19 @@ const ProcessorRow = ({
       className={`mp-processing-row${isSelected ? ' mp-processing-row--selected' : ''}`}
       onClick={onSelect}
     >
-      <span className="mp-processing-row-name">{name}</span>
+      <button
+        aria-pressed={isSelected}
+        className="mp-processing-row-name"
+        onClick={(event) => {
+          event.stopPropagation();
+          onSelect();
+        }}
+        type="button"
+      >
+        {name}
+      </button>
       <input
+        aria-label={`Enable ${name}`}
         checked={enabled}
         onChange={onToggleEnabled}
         onClick={(event) => event.stopPropagation()}

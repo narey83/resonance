@@ -63,16 +63,27 @@ const describe = (loudness) => {
 // gain/Performance Mode processing (see mediaAudioGraph.js), so it always
 // shows the track's real level. Volume/loudness adjustment itself lives in
 // Performance Mode now (PerformanceMode.jsx).
-const LoudnessMeter = ({ audioRef, loudness }) => {
+const LoudnessMeter = ({
+  audioRef,
+  loudness,
+  orientation = 'horizontal',
+  showLive = false,
+}) => {
   const fillRef = useRef(null);
   const labelRef = useRef(null);
   const analyserRef = useRef(null);
   const bufferRef = useRef(null);
-  const staticLufs = loudness?.integratedLufs ?? null;
+  const staticLufs = Number.isFinite(loudness?.integratedLufs)
+    ? loudness.integratedLufs
+    : null;
   // The redraw loop is started once and never restarted (it reads everything
   // through refs), so it can't close over the current track's loudness.
   const hasIntegratedRef = useRef(false);
   hasIntegratedRef.current = staticLufs != null;
+  const showLiveRef = useRef(showLive);
+  showLiveRef.current = showLive;
+  const verticalRef = useRef(orientation === 'vertical');
+  verticalRef.current = orientation === 'vertical';
 
   // Attach to the shared audio graph for this <audio> element. Built lazily
   // and cached on the element itself by getMediaAudioGraph — see that
@@ -98,23 +109,25 @@ const LoudnessMeter = ({ audioRef, loudness }) => {
     };
 
     tryResume();
+    const meterDocument = fillRef.current?.ownerDocument || document;
     const gestureEvents = ['click', 'keydown', 'touchstart'];
     for (const eventName of gestureEvents) {
-      document.addEventListener(eventName, tryResume, { once: true });
+      meterDocument.addEventListener(eventName, tryResume, { once: true });
     }
 
     return () => {
       for (const eventName of gestureEvents) {
-        document.removeEventListener(eventName, tryResume);
+        meterDocument.removeEventListener(eventName, tryResume);
       }
     };
   }, [audioRef]);
 
   useEffect(() => {
+    const meterWindow = fillRef.current?.ownerDocument.defaultView || window;
     let frameId;
     let lastUpdate = 0;
     const loop = (now) => {
-      frameId = requestAnimationFrame(loop);
+      frameId = meterWindow.requestAnimationFrame(loop);
 
       // A loudness bar doesn't need true 60fps precision like the waveform's
       // scrub position does — updating it ~15x/sec still looks smooth to the
@@ -142,35 +155,47 @@ const LoudnessMeter = ({ audioRef, loudness }) => {
         const pct =
           ((clamped - METER_MIN_LUFS) / (METER_MAX_LUFS - METER_MIN_LUFS)) *
           100;
-        fillRef.current.style.width = `${pct}%`;
+        fillRef.current.style.width = verticalRef.current ? '100%' : `${pct}%`;
+        fillRef.current.style.height = verticalRef.current ? `${pct}%` : '100%';
         fillRef.current.style.background =
           pct > 85
             ? '#ff4d4d'
             : pct > 65
               ? '#ffb84d'
               : 'var(--art-accent, #4d9fff)';
+        const meter = fillRef.current.parentElement;
+        meter.setAttribute('aria-valuenow', clamped.toFixed(1));
+        meter.setAttribute('aria-valuetext', `${clamped.toFixed(1)} LUFS`);
 
-        // Only while there is no integrated figure to show instead — an
-        // analysed track's readout is the track's overall level, which doesn't
-        // move. Written straight to the DOM rather than through state: this
-        // runs ~15x/sec and re-rendering the player at that rate is exactly
-        // the main-thread contention the throttle above exists to avoid.
-        if (labelRef.current && !hasIntegratedRef.current) {
+        // The player window always shows live LUFS; the compact bar keeps its
+        // integrated reference when available. Avoid re-rendering the player
+        // for this visual update, which runs about 15 times per second.
+        if (
+          labelRef.current &&
+          (showLiveRef.current || !hasIntegratedRef.current)
+        ) {
           labelRef.current.textContent = `live ${clamped.toFixed(1)} LUFS`;
         }
       }
     };
 
-    frameId = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(frameId);
+    frameId = meterWindow.requestAnimationFrame(loop);
+    return () => meterWindow.cancelAnimationFrame(frameId);
   }, []);
 
   return (
     <div
-      className="mp-loudness-meter"
+      className={`mp-loudness-meter${showLive ? ' mp-loudness-meter--live' : ''}${orientation === 'vertical' ? ' mp-loudness-meter--vertical' : ''}`}
       title={describe(loudness)}
     >
-      <div className="mp-loudness-meter-track">
+      <div
+        aria-label="Live momentary loudness"
+        aria-valuemax={METER_MAX_LUFS}
+        aria-valuemin={METER_MIN_LUFS}
+        aria-valuenow={METER_MIN_LUFS}
+        className="mp-loudness-meter-track"
+        role="meter"
+      >
         <div
           className="mp-loudness-meter-fill"
           ref={fillRef}
@@ -185,7 +210,11 @@ const LoudnessMeter = ({ audioRef, loudness }) => {
         className="mp-loudness-meter-label"
         ref={labelRef}
       >
-        {staticLufs == null ? '–' : `avg ${staticLufs.toFixed(1)} LUFS`}
+        {showLive
+          ? 'live – LUFS'
+          : staticLufs == null
+            ? '–'
+            : `avg ${staticLufs.toFixed(1)} LUFS`}
       </span>
     </div>
   );

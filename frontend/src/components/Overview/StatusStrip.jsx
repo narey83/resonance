@@ -91,6 +91,7 @@ const StatusStrip = ({
   uploads,
   upnp,
   user,
+  viewControls,
 }) => {
   const cachedProfile = readCachedStatus('resonance-status-profile', {});
   const [rescanning, setRescanning] = useState(false);
@@ -829,6 +830,12 @@ const StatusStrip = ({
       )}
 
       <div className="status-strip-spacer" />
+      {viewControls && (
+        <div className="status-strip-view-controls">
+          <span className="status-strip-view-label">UI scale</span>
+          {viewControls}
+        </div>
+      )}
 
       {isLoggedIn && onLogout && (
         <>

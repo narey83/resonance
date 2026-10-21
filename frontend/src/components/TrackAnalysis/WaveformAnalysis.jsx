@@ -44,6 +44,8 @@ import {
   visibleBeats,
 } from '../../lib/waveform';
 import { analyseTrack } from '../Shared/WaveformPreview';
+import CandidateAnalysisPanel from './CandidateAnalysisPanel';
+import ImportedAnalysisPanel from './ImportedAnalysisPanel';
 import {
   Activity,
   AudioWaveform,
@@ -1052,6 +1054,8 @@ const WaveformAnalysis = () => {
 
       {selectedTrack && (
         <>
+          <ImportedAnalysisPanel path={selectedTrack.path} />
+          <CandidateAnalysisPanel path={selectedTrack.path} />
           <div className="wa-toolbar">
             <div className="wa-mode-group">
               {Object.entries(MODE_META).map(([key, { icon: Icon, label }]) => (

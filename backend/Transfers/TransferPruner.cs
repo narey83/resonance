@@ -37,6 +37,13 @@ internal static class TransferPruner
         DateTime cutoff,
         IReadOnlyCollection<int> states)
     {
+        if (!context.Database.IsNpgsql())
+        {
+            var stateList = states.ToList();
+            var ids = context.Transfers.Where(t => t.Direction == direction && !t.Removed && t.EndedAt != null && t.EndedAt < cutoff && stateList.Contains((int)t.State))
+                .OrderBy(t => t.EndedAt).Select(t => t.Id).Take(BatchSize).ToList();
+            return context.Transfers.Where(t => ids.Contains(t.Id)).ExecuteUpdate(set => set.SetProperty(t => t.Removed, true));
+        }
         const string sql = """
             WITH candidates AS (
                 SELECT "Id"

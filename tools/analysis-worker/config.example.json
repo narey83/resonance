@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "python": "/opt/resonance/venvs/beats/bin/python",
+  "ffmpeg": "/opt/resonance/venvs/essentia/lib/python3.12/site-packages",
+  "timeoutSeconds": 600,
+  "beats": {
+    "enabled": true,
+    "checkpoint": "/opt/resonance/models/beat-this-models/hub/checkpoints/beat_this-final0.ckpt",
+    "fourFourPhase": false,
+    "postprocessor": "dbn",
+    "dbnPython": "/opt/resonance/venvs/dbn/bin/python",
+    "consensusWeight": 0.75
+  },
+  "embedding": {
+    "enabled": true,
+    "snapshot": "/opt/resonance/models/clap-models/hub/models--laion--larger_clap_general/snapshots/ada0c23a36c4e8582805bb38fec3905903f18b41",
+    "prompts": [
+      "This is a House music track.",
+      "This is a Techno music track.",
+      "This is a Trance music track.",
+      "This is a Hardcore music track.",
+      "This is a Arcadecore music track.",
+      "This is a UK Garage music track.",
+      "This is a EDM music track.",
+      "This is a Game music track.",
+      "This is a Drum & Bass music track.",
+      "This is a Dubstep music track.",
+      "This is a Retro music track.",
+      "This is a Future Bass music track.",
+      "This is a Breaks music track.",
+      "This is a R&B/Soul music track.",
+      "This is a Hip-Hop music track.",
+      "This is a Orchestral music track.",
+      "This is a Chill music track.",
+      "This is a Jazz music track.",
+      "This is a Pop music track.",
+      "This is a Reggae music track.",
+      "This is a Piano music track.",
+      "This is a Classical music track.",
+      "This is a Blues music track.",
+      "This is a Rock music track.",
+      "This is a Metal music track."
+    ]
+  },
+  "key": {
+    "enabled": true,
+    "python": "/opt/resonance/venvs/essentia/bin/python",
+    "pythonPath": "/opt/resonance/venvs/essentia/lib/python3.12/site-packages",
+    "profile": "braw"
+  },
+  "waveform": {
+    "enabled": true
+  },
+  "energy": {
+    "enabled": true
+  },
+  "loudness": {
+    "enabled": true
+  },
+  "structure": {
+    "enabled": true
+  },
+  "stems": {
+    "enabled": true,
+    "python": "/opt/resonance/venvs/semantic/bin/python",
+    "modelRoot": "/opt/resonance/models/quality-round2/demucs-models",
+    "segmentSeconds": 30,
+    "engine": "htdemucs",
+    "pythonPath": "/opt/resonance/venvs/semantic/lib/python3.12/site-packages"
+  },
+  "semanticPhrases": {
+    "enabled": true,
+    "python": "/opt/resonance/venvs/semantic/bin/python",
+    "adapter": "/opt/resonance/tools/analysis-worker/optional-allinone/ensemble_adapter.py",
+    "sourceRoot": "/opt/resonance/tools/analysis-worker/optional-allinone/author-source",
+    "checkpoint": "/opt/resonance/models/allinone-models/harmonix-fold0-0vra4ys2.pth",
+    "checkpointSha256": "0db596dfb0995f41d62f6267d76a9d54c046f1649bd35e1dbeca0c5f9a7b8acd",
+    "ensembleManifest": "/opt/resonance/models/quality-round3/models/provenance.json",
+    "djProfile": true,
+    "genreAware": true
+  },
+  "loops": {
+    "enabled": true,
+    "beatCounts": [
+      4,
+      8,
+      16,
+      32
+    ],
+    "maxLoops": 12,
+    "minRmsDbfs": -45
+  },
+  "vocalPresence": {
+    "enabled": true,
+    "onDbfs": -40,
+    "offDbfs": -45,
+    "onRatio": 0.25,
+    "offRatio": 0.15,
+    "minPresenceSeconds": 2,
+    "maxGapSeconds": 1,
+    "engine": "singing-voice",
+    "checkpoint": "/opt/resonance/models/quality-round3/veracity-source/dataset/jamendo/models/model_log_0mean/model.pt",
+    "python": "/opt/resonance/venvs/beats/bin/python",
+    "onScore": 0.9,
+    "offScore": 0.54,
+    "processedVoice": {
+      "enabled": true,
+      "checkpoint": "/opt/resonance/models/quality-round4/silero-source/src/silero_vad/data/silero_vad.jit",
+      "checkpointSha256": "e1122837f4154c511485fe0b9c64455f7b929c96fbb8d79fbdb336383ebd3720"
+    }
+  },
+  "genre": {
+    "promptProfile": "disambiguated"
+  },
+  "phrases": {
+    "fuseSemanticBoundaries": true
+  }
+}

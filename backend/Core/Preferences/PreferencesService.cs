@@ -35,6 +35,7 @@ using System.Data.Common;
 using System.Text.Json;
 using Dapper;
 using Npgsql;
+using Microsoft.Data.Sqlite;
 using Serilog;
 
 public class PreferencesService
@@ -104,7 +105,7 @@ public class PreferencesService
         }
     }
 
-    private DbConnection CreateConnection() => new NpgsqlConnection(ConnectionStrings[Database.Preferences]);
+    private DbConnection CreateConnection() => UsePostgres ? new NpgsqlConnection(ConnectionStrings[Database.Preferences]) : new SqliteConnection(ConnectionStrings[Database.Preferences]);
 
     private void EnsureSchema()
     {

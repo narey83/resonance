@@ -1,0 +1,17 @@
+[
+  {
+    "file": "BeatThis-MIT.txt",
+    "url": "https://raw.githubusercontent.com/CPJKU/beat_this/main/LICENSE",
+    "sha256": "909ab6549794a18e9bb243aacfadda4a5f308436fc2846f350755c53c4f06ae1"
+  },
+  {
+    "file": "Spleeter-MIT.txt",
+    "url": "https://raw.githubusercontent.com/deezer/spleeter/master/LICENSE",
+    "sha256": "b15e40c921ec6fe997e0d88ddab9c26fb915bebbbb9496530d3f98f317d4325a"
+  },
+  {
+    "file": "CLAP-model-card.md",
+    "url": "https://huggingface.co/laion/larger_clap_general/raw/main/README.md",
+    "sha256": "fa3c15ecc9a6753f06a51205a0ca5213ae7be96a962ed9b2b1c970aea3b3c56e"
+  }
+]

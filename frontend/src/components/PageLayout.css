@@ -1,0 +1,43 @@
+/* Shared page rhythm. Split-pane tools keep their full-width working canvas. */
+.app-main {
+  --page-gutter: 24px;
+  --page-spacing: 20px;
+  --page-form-width: 1400px;
+  min-width: 0;
+}
+.app-content { min-width: 0; min-height: 0; }
+.app-content > * { box-sizing: border-box; min-width: 0; }
+.app-content > :is(.view, .system, .export-page, .network-link-page, .converter-page) {
+  padding: var(--page-spacing) var(--page-gutter);
+  width: 100%;
+}
+.app-content > .view > .transfer-history { padding: 0; }
+.app-content .export-page > :is(header, section),
+.app-content .converter-page > :is(.converter-layout, .converter-job, .converter-alert),
+.app-content .network-link-page > :is(.network-link-banner, .network-link-layout) {
+  width: 100%;
+  max-width: var(--page-form-width);
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+.app-content :is(.overview-tabs, .ta-tabs, .tag-manager-tabs) {
+  padding-left: var(--page-gutter);
+  padding-right: var(--page-gutter);
+}
+.app-content .dupes-content { padding: var(--page-spacing) var(--page-gutter); }
+.app-content .dupes-toolbar-row { padding-left: var(--page-gutter); padding-right: var(--page-gutter); }
+.app-content .sr-sidebar-top { padding: 12px 16px; }
+.app-content :is(.converter-source, .converter-settings, .network-link-card, .usb-export-panel) {
+  border-radius: 8px;
+}
+@media (max-width: 760px) {
+  .app-main { --page-gutter: 16px; --page-spacing: 16px; }
+}
+@media (max-width: 480px) {
+  .app-main { --page-gutter: 12px; --page-spacing: 12px; }
+}
+.app-main > .dj-workspace-header { padding-left: var(--page-gutter); padding-right: var(--page-gutter); }
+
+.app-content .export-page > .usb-export-panel { margin-top: 0; padding: var(--page-spacing); }
+.app-content :is(.converter-source, .converter-settings, .network-link-card) { padding: var(--page-spacing); }

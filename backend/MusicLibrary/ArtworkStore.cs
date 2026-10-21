@@ -51,12 +51,15 @@ namespace resonance.MusicLibrary
     /// </remarks>
     public class ArtworkStore
     {
-        public ArtworkStore(string connectionString)
+        public ArtworkStore(string connectionString, bool usePostgres = true)
         {
             ConnectionString = connectionString;
+            UsePostgres = usePostgres;
             EnsureSchema();
         }
 
+        private bool UsePostgres { get; }
+        private string Table => UsePostgres ? "music.artwork_cache" : "artwork_cache";
         private string ConnectionString { get; }
 
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Library);
@@ -75,8 +78,8 @@ namespace resonance.MusicLibrary
             {
                 using var conn = OpenConnection();
                 using var cmd = conn.CreateCommand();
-                cmd.CommandText = @"
-                    SELECT bytes, mime FROM music.artwork_cache
+                cmd.CommandText = $@"
+                    SELECT bytes, mime FROM {Table}
                     WHERE masked_filename = @m AND size = @z AND file_size = @s";
                 AddParam(cmd, "@m", Key(path));
                 AddParam(cmd, "@z", size);
@@ -116,8 +119,8 @@ namespace resonance.MusicLibrary
 
                 // file_size is part of the update, not the key: a re-tagged track keeps one row and
                 // replaces its artwork, rather than accumulating one per version of the file.
-                cmd.CommandText = @"
-                    INSERT INTO music.artwork_cache (masked_filename, size, file_size, mime, bytes, cached_at)
+                cmd.CommandText = $@"
+                    INSERT INTO {Table} (masked_filename, size, file_size, mime, bytes, cached_at)
                     VALUES (@m, @z, @s, @t, @b, @c)
                     ON CONFLICT (masked_filename, size) DO UPDATE SET
                         file_size = excluded.file_size,
@@ -156,7 +159,7 @@ namespace resonance.MusicLibrary
                 foreach (var path in paths)
                 {
                     using var cmd = conn.CreateCommand();
-                    cmd.CommandText = "DELETE FROM music.artwork_cache WHERE masked_filename = @m";
+                    cmd.CommandText = $"DELETE FROM {Table} WHERE masked_filename = @m";
                     AddParam(cmd, "@m", Key(path));
                     cmd.ExecuteNonQuery();
                 }
@@ -179,7 +182,7 @@ namespace resonance.MusicLibrary
 
         private DbConnection OpenConnection()
         {
-            DbConnection conn = new NpgsqlConnection(ConnectionString);
+            DbConnection conn = UsePostgres ? new NpgsqlConnection(ConnectionString) : new Microsoft.Data.Sqlite.SqliteConnection(ConnectionString);
             conn.Open();
             return conn;
         }
@@ -188,6 +191,12 @@ namespace resonance.MusicLibrary
         {
             using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
+            if (!UsePostgres)
+            {
+                cmd.CommandText = "CREATE TABLE IF NOT EXISTS artwork_cache (masked_filename TEXT NOT NULL, size INTEGER NOT NULL, file_size INTEGER NOT NULL, mime TEXT NOT NULL, bytes BLOB NOT NULL, cached_at INTEGER NOT NULL, PRIMARY KEY(masked_filename,size))";
+                cmd.ExecuteNonQuery();
+                return;
+            }
             cmd.CommandText = @"
                 CREATE SCHEMA IF NOT EXISTS music;
                 CREATE TABLE IF NOT EXISTS music.artwork_cache (

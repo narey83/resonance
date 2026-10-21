@@ -91,7 +91,13 @@ public class LogsDbContext : DbContext
         // (Timestamp); Id alone is still effectively unique in practice since it's a single
         // GENERATED ALWAYS AS IDENTITY sequence shared by the whole partitioned table, not one
         // per partition.
-        entry.HasKey(e => new { e.Id, e.Timestamp });
+        if (Database.IsNpgsql()) entry.HasKey(e => new { e.Id, e.Timestamp });
+        else
+        {
+            entry.HasKey(e => e.Id);
+            entry.Property(e => e.Id).ValueGeneratedOnAdd();
+            entry.HasIndex(e => e.Timestamp);
+        }
 
         entry.Property(e => e.Timestamp)
             .HasConversion(v => v, v => DateTime.SpecifyKind(v, DateTimeKind.Utc))

@@ -76,16 +76,16 @@ describe('fitColumns', () => {
   it('drops columns in priority order as the table narrows', () => {
     expect.assertions(3);
     // Plays goes before quality — the waveform isn't in the drop order at all.
-    expect(ids(800)).not.toContain('plays');
-    expect(ids(800)).toContain('quality');
-    expect(ids(770)).not.toContain('quality');
+    expect(ids(900)).not.toContain('plays');
+    expect(ids(900)).toContain('quality');
+    expect(ids(870)).not.toContain('quality');
   });
 
-  it('drops LUFS after BPM, alongside the rest of the analysis columns', () => {
+  it('keeps tempo and analysis status ahead of loudness at narrow widths', () => {
     expect.assertions(3);
-    expect(ids(550)).not.toContain('bpm');
-    expect(ids(550)).toContain('lufs');
-    expect(ids(500)).not.toContain('lufs');
+    expect(ids(600)).toContain('bpm');
+    expect(ids(600)).not.toContain('lufs');
+    expect(ids(550)).toContain('status');
   });
 
   // Widths at or above the point where there is still something left to give up. Narrower than

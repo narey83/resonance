@@ -30,6 +30,7 @@
 namespace resonance.Core.LogStore;
 
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Channels;
@@ -231,7 +232,7 @@ public class LogPersistenceService : BackgroundService
         }
         catch (Exception ex)
         {
-            Log.Warning("Failed to persist {Count} log entries to Postgres: {Message}", batch.Count, ex.Message);
+            Log.Warning("Failed to persist {Count} log entries to the database: {Message}", batch.Count, ex.Message);
         }
     }
 
@@ -239,6 +240,17 @@ public class LogPersistenceService : BackgroundService
     {
         try
         {
+            if (!ConnectionStrings.UsePostgres)
+            {
+                var retention = Options.CurrentValue.Retention.Logs;
+                if (retention > 0)
+                {
+                    await using var context = await DbContextFactory.CreateDbContextAsync(stoppingToken);
+                    var cutoff = DateTime.UtcNow.AddDays(-retention);
+                    await context.Entries.Where(e => e.Timestamp < cutoff).ExecuteDeleteAsync(stoppingToken);
+                }
+                return;
+            }
             await using var connection = new NpgsqlConnection(ConnectionStrings[Database.Logs]);
             await connection.OpenAsync(stoppingToken);
 

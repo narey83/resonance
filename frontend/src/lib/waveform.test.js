@@ -35,7 +35,9 @@ import {
   firstGridLineAt,
   resamplePeaks,
   visibleBeats,
+  visibleBeatTimes,
   waveColours,
+  waveformBeatBpm,
 } from './waveform';
 
 // 128bpm: 0.469s a beat. The scales below are what the player's seek bar
@@ -341,5 +343,41 @@ describe('waveColours', () => {
       mid: '#ffa629',
     });
     element.remove();
+  });
+});
+
+describe('cached waveform beat cadence', () => {
+  it('derives tempo from actual ticks without a BPM tag', () => {
+    expect.hasAssertions();
+    expect(
+      waveformBeatBpm(
+        Array.from({ length: 40 }, (_, i) => 0.2 + (i * 60) / 128),
+      ),
+    ).toBeCloseTo(128, 8);
+    expect(waveformBeatBpm([0.2, 0.7])).toBeCloseTo(120, 10);
+  });
+  it('does not invent cadence for absent or invalid ticks', () => {
+    expect.hasAssertions();
+    for (const beats of [null, [], [0.2], [0.2, 0.2], [1, 0], [0, Number.NaN]])
+      expect(waveformBeatBpm(beats)).toBeNull();
+  });
+});
+
+describe('detected grid timing', () => {
+  it('preserves changing beat intervals and bar alignment in scrolling windows', () => {
+    const beats = Array.from(
+      { length: 80 },
+      (_, i) => 0.2 + i * 0.43 + i * i * 0.000_2,
+    );
+    const bars = beats.filter((_, i) => i % 4 === 0);
+    for (const start of [0, 8.123, 17.83, 25.18]) {
+      const end = start + 8;
+      const visible = visibleBeatTimes(beats, start, end);
+      const visibleBars = visibleBeatTimes(beats, start, end, 4);
+      expect(visibleBars).toEqual(
+        bars.filter((t) => t >= start).filter((t) => t < end),
+      );
+      for (const time of visibleBars) expect(visible).toContain(time);
+    }
   });
 });

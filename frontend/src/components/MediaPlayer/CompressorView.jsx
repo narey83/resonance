@@ -43,6 +43,7 @@ import React, { useEffect, useRef, useState } from 'react';
 // lib/dsp/PerformanceProcessor.js) — there is only one compressor in the
 // rack, not one per panel.
 const CompressorView = ({
+  advanced = false,
   audioRef,
   detailContainerNode,
   isSelected,
@@ -54,7 +55,7 @@ const CompressorView = ({
     prefs.get('mediaPlayer.dsp.compressor.enabled', false),
   );
   const [amount, setAmount] = useState(() =>
-    prefs.get('mediaPlayer.dsp.compressor.amount', 0.5),
+    prefs.get('mediaPlayer.dsp.compressor.amount', 0.15),
   );
   const [attack, setAttack] = useState(() =>
     prefs.get('mediaPlayer.dsp.compressor.attack', 0.01),
@@ -153,43 +154,47 @@ const CompressorView = ({
           <span>Amount</span>
           <input
             className="mp-processing-slider"
-            max={100}
+            max={advanced ? 100 : 25}
             min={0}
             onChange={changeAmount}
             type="range"
             value={Math.round(amount * 100)}
           />
         </label>
-        <label className="mp-processing-setting">
-          <span>Attack</span>
-          <input
-            className="mp-processing-slider"
-            max={ATTACK_MAX_SECONDS}
-            min={ATTACK_MIN_SECONDS}
-            onChange={changeAttack}
-            step={0.001}
-            type="range"
-            value={attack}
-          />
-          <span className="mp-processing-setting-value">
-            {Math.round(attack * 1_000)} ms
-          </span>
-        </label>
-        <label className="mp-processing-setting">
-          <span>Release</span>
-          <input
-            className="mp-processing-slider"
-            max={RELEASE_MAX_SECONDS}
-            min={RELEASE_MIN_SECONDS}
-            onChange={changeRelease}
-            step={0.01}
-            type="range"
-            value={release}
-          />
-          <span className="mp-processing-setting-value">
-            {Math.round(release * 1_000)} ms
-          </span>
-        </label>
+        {advanced && (
+          <label className="mp-processing-setting">
+            <span>Attack</span>
+            <input
+              className="mp-processing-slider"
+              max={ATTACK_MAX_SECONDS}
+              min={ATTACK_MIN_SECONDS}
+              onChange={changeAttack}
+              step={0.001}
+              type="range"
+              value={attack}
+            />
+            <span className="mp-processing-setting-value">
+              {Math.round(attack * 1_000)} ms
+            </span>
+          </label>
+        )}
+        {advanced && (
+          <label className="mp-processing-setting">
+            <span>Release</span>
+            <input
+              className="mp-processing-slider"
+              max={RELEASE_MAX_SECONDS}
+              min={RELEASE_MIN_SECONDS}
+              onChange={changeRelease}
+              step={0.01}
+              type="range"
+              value={release}
+            />
+            <span className="mp-processing-setting-value">
+              {Math.round(release * 1_000)} ms
+            </span>
+          </label>
+        )}
       </div>
     </ProcessorRow>
   );

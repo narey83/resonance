@@ -52,13 +52,13 @@ const useTrackLoudness = (trackPath, { analyseMissing = false } = {}) => {
 
     getCached()
       .then(({ data }) => {
-        if (!cancelled) setLoudness(data);
+        if (!cancelled) setLoudness({ path: trackPath, data });
       })
       .catch(async () => {
         if (!analyseMissing) return;
         await analyseTrack(trackPath);
         const { data } = await getCached();
-        if (!cancelled) setLoudness(data);
+        if (!cancelled) setLoudness({ path: trackPath, data });
       })
       .catch(() => {
         /* no cached loudness yet — consumers treat it as unknown */
@@ -69,7 +69,7 @@ const useTrackLoudness = (trackPath, { analyseMissing = false } = {}) => {
     };
   }, [analyseMissing, trackPath]);
 
-  return loudness;
+  return loudness && loudness.path === trackPath ? loudness.data : null;
 };
 
 export default useTrackLoudness;

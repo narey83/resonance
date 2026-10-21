@@ -47,11 +47,35 @@ public class YtDlpDbContext : DbContext
     public DbSet<YtDlpSubscription> Subscriptions { get; set; }
     public DbSet<YtDlpEventRecord> Events { get; set; }
 
+    public async System.Threading.Tasks.Task InitializeSchemaAsync(System.Threading.CancellationToken cancellationToken)
+    {
+        if (!Database.IsNpgsql())
+        {
+            resonance.SqliteSchema.Initialize(this);
+            return;
+        }
+        // SubscriptionId was added after first release; EnsureCreated won't alter an existing table.
+        await Database.ExecuteSqlRawAsync(
+            "ALTER TABLE ytdlp.\"Jobs\" ADD COLUMN IF NOT EXISTS \"SubscriptionId\" uuid", cancellationToken);
+        await Database.ExecuteSqlRawAsync(
+            "ALTER TABLE ytdlp.\"Tracks\" ADD COLUMN IF NOT EXISTS \"ReportedDurationSeconds\" integer", cancellationToken);
+        await Database.ExecuteSqlRawAsync(
+            "ALTER TABLE ytdlp.\"Events\" ADD COLUMN IF NOT EXISTS \"TrackTitle\" text", cancellationToken);
+
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         if (Database.IsNpgsql())
         {
             modelBuilder.HasDefaultSchema("ytdlp");
+        }
+        else
+        {
+            modelBuilder.Entity<YtDlpJob>().ToTable("YtDlpJobs");
+            modelBuilder.Entity<YtDlpTrack>().ToTable("YtDlpTracks");
+            modelBuilder.Entity<YtDlpSubscription>().ToTable("YtDlpSubscriptions");
+            modelBuilder.Entity<YtDlpEventRecord>().ToTable("YtDlpEvents");
         }
 
         // Persist download output paths relative to the music root; resolve to absolute on read.

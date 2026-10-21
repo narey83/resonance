@@ -392,7 +392,7 @@ const ArtistsView = ({
           <div
             className="jb-folders-grid"
             style={{
-              gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))`,
+              gridTemplateColumns: `repeat(auto-fill, ${tileSize}px)`,
             }}
           >
             {artists.map((artist) => (

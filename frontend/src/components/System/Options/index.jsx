@@ -547,7 +547,7 @@ const SCHEMA = [
       },
       {
         description:
-          'How many days of application log files to keep on disk before the oldest are deleted. Default: 30.',
+          'How many days to keep application logs in the selected disk and/or database storage. Default: 30.',
         label: 'Application Logs (days)',
         min: 1,
         path: ['retention', 'logs'],
@@ -557,6 +557,21 @@ const SCHEMA = [
     ],
     group: 'System',
     title: 'Retention',
+  },
+  {
+    fields: [
+      {
+        choices: ['Database', 'Disk', 'Both'],
+        defaultValue: 'Database',
+        description:
+          'Database is the default and uses SQLite or PostgreSQL, according to your database provider. Disk writes text and structured log files. Both keeps both copies. Restart Resonance after changing this setting.',
+        label: 'Log storage',
+        path: ['logger', 'storage'],
+        type: 'select',
+      },
+    ],
+    group: 'System',
+    title: 'Logging',
   },
   {
     fields: [
@@ -1944,10 +1959,19 @@ const Options = ({ options, state = {}, theme }) => {
     }
   };
 
-  const getFieldValue = (field) =>
-    parsed === null
-      ? getAtPathCamel(options, field.path)
-      : getAtPath(parsed, field.path);
+  const getFieldValue = (field) => {
+    const value =
+      parsed === null
+        ? getAtPathCamel(options, field.path)
+        : getAtPath(parsed, field.path);
+    if (field.path.join('.') === 'logger.storage' && value == null) {
+      const logger = (parsed ?? options)?.logger ?? {};
+      const database = logger.database !== false || logger.postgres === true;
+      return logger.disk ? (database ? 'Both' : 'Disk') : 'Database';
+    }
+
+    return value ?? field.defaultValue;
+  };
 
   const isEditable = parsed !== null && !loading;
 

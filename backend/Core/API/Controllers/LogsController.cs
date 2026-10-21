@@ -101,7 +101,7 @@ namespace resonance.Core.API
                 List<LogRecord> items;
                 int total;
 
-                if (Options.CurrentValue.Logger.Postgres)
+                if (Program.DatabaseLoggingEnabled)
                 {
                     await using var db = await LogsDbContextFactory.CreateDbContextAsync(HttpContext.RequestAborted);
 

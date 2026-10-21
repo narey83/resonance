@@ -212,7 +212,13 @@ namespace resonance.Analysis
         double Progress,
         int InFlight = 0,
         string Metrics = null,
-        IReadOnlyList<string> InFlightPaths = null);
+        IReadOnlyList<string> InFlightPaths = null)
+    {
+        public int EnhancedTotal { get; init; }
+        public int EnhancedCompleted { get; init; }
+        public int EnhancedFailed { get; init; }
+        public string EnhancedPath { get; init; }
+    }
 
     /// <summary>Per-track analysis status, one row per audio file in the library.</summary>
     public record TrackAnalysisInfo(

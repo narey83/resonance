@@ -218,16 +218,28 @@ namespace resonance.MusicLibrary.API
             [FromQuery] bool descending = false,
             [FromQuery] string startsWith = null,
             [FromQuery] string key = null,
-            [FromQuery] string analysis = null)
+            [FromQuery] string analysis = null,
+            [FromQuery] double? bpmMin = null, [FromQuery] double? bpmMax = null,
+            [FromQuery] string keys = null, [FromQuery] string energy = null, [FromQuery] string vocals = null)
         {
             limit = Math.Max(1, limit);
             offset = Math.Max(0, offset);
-            var result = Service.QueryTracks(search, artist, album, genre, year, folder, missingKey, missingBpm, missingTitle, missingArtist, missingArtwork, limit, offset, sort, descending, startsWith, key, analysis);
+            var result = Service.QueryTracks(search, artist, album, genre, year, folder, missingKey, missingBpm, missingTitle, missingArtist, missingArtwork, limit, offset, sort, descending, startsWith, key, analysis, new DjLibraryFilters(bpmMin, bpmMax, keys?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), energy, vocals));
             return Ok(result with { Tracks = result.Tracks.Select(SignTrack).ToList() });
         }
 
         /// <summary>Returns how much of the library carries each analysis metric.</summary>
         /// <returns></returns>
+        [HttpPost("resolve")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        public IActionResult Resolve([FromBody] string[] paths)
+        {
+            if (paths == null || paths.Length > 200) return BadRequest("Up to 200 library paths are supported.");
+            if (paths.Length == 0) return Ok(Array.Empty<MusicTrack>());
+            return Ok(Service.QueryTracks(null, null, null, null, null, null, false, false, false, false, false,
+                200, 0, dj: new DjLibraryFilters(Paths: paths)).Tracks.Select(SignTrack));
+        }
+
         [HttpGet("analysis-stats")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(typeof(MusicAnalysisStats), 200)]

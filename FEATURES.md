@@ -54,7 +54,7 @@ Resonance is a Soulseek file-sharing client with an integrated music library, me
 
 ## Music library
 
-- Central Postgres-backed catalog: stats, sync/re-sync (cancellable), track/genre/year/folder/album/artist listings, recently-added, and "keyed" (analyzed) listings.
+- Central SQLite- or PostgreSQL-backed catalog: stats, sync/re-sync (cancellable), track/genre/year/folder/album/artist listings, recently-added, and "keyed" (analyzed) listings.
 - **Track analysis** — one background scan produces BPM, musical key, waveform peaks and EBU R128 loudness from a *single* decode per file, with per-metric selection, worker count, resume and cancel.
   - **BPM** — Essentia beat tracking with octave-folding to a preferred range to correct half/double-time errors, tag write-back, manual override.
   - **Key** — Essentia key detection (EDM-tuned `edma` profile plus krumhansl/temperley/bgate), displayed/sorted using Camelot wheel notation for harmonic mixing.
@@ -126,7 +126,7 @@ Resonance is a Soulseek file-sharing client with an integrated music library, me
 - `remote-configuration` / `remote-file-management` flags gate remote settings/file changes via the API.
 - Configurable downloads/incomplete-downloads directories.
 - Swagger UI toggle for interactive API docs.
-- PostgreSQL-only database (SQLite unsupported).
+- Persistent SQLite by default, with PostgreSQL support and an explicit migration tool. Logging can use Database (default), Disk, or Both.
 - SOCKS/HTTP proxy support for the Soulseek connection itself, independent of the VPN integration.
 - Toggleable participation in Soulseek's distributed search network with child-connection limits.
 - Configurable server geographic location, feeding the Overview Map's self-marker.

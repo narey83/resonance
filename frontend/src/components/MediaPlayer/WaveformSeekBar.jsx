@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { useLibraryActivity } from '../../context/LibraryActivityContext';
 import { getWaveform } from '../../lib/analysis';
 import {
   analysisToPlaybackTime,
@@ -36,6 +37,8 @@ import {
   resolveWaveformDuration,
   timeToPixel,
 } from '../../lib/analysisTimeline';
+import api from '../../lib/api';
+import { drawEnhanced } from '../../lib/enhancedWaveform';
 import { formatSeconds } from '../../lib/util';
 import {
   beatGridPhase,
@@ -43,7 +46,9 @@ import {
   firstGridLineAt,
   maxOf,
   resamplePeaks,
+  visibleBeatTimes,
   waveColours,
+  waveformBeatBpm,
 } from '../../lib/waveform';
 import { analyseTrack, primeWaveformCache } from '../Shared/WaveformPreview';
 import React, { useEffect, useRef, useState } from 'react';
@@ -65,11 +70,37 @@ const WaveformSeekBar = ({
   onAnalysing,
   onReady,
   onSeek,
+  phraseMode = 'dj',
   progressPct,
+  showGrid = true,
+  showVocals = true,
   track,
   zoom = 1,
 }) => {
   const canvasRef = useRef(null);
+  const enhancedRef = useRef(null);
+  const [enhanced, setEnhanced] = useState(null);
+  const libraryRevision = useLibraryActivity()?.libraryRevision ?? 0;
+  useEffect(() => {
+    let cancelled = false;
+    enhancedRef.current = null;
+    setEnhanced(null);
+    if (track?.path)
+      api
+        .get('/analysis/candidates/enhanced', { params: { path: track.path } })
+        .then(({ data }) => {
+          if (!cancelled) {
+            enhancedRef.current = data;
+            setEnhanced(data);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setEnhanced({ available: false });
+        });
+    return () => {
+      cancelled = true;
+    };
+  }, [track?.path, libraryRevision]);
   const peaksRef = useRef(null);
   // Caches a fixed-resolution resample of the whole track (fine enough to
   // cover the highest zoom level), so per-frame redraws only need to
@@ -120,6 +151,8 @@ const WaveformSeekBar = ({
         analysisDuration: data.analysisDuration || null,
         beatOffsetSeconds: beatAvailability.offsetSeconds,
         beatsKnown: beatAvailability.known,
+        beats: beatAvailability.beats,
+        bpm: waveformBeatBpm(beatAvailability.beats),
         overall: new Float32Array(data.overallPeaks),
       };
       setReady(true);
@@ -128,22 +161,21 @@ const WaveformSeekBar = ({
     };
 
     const loadWaveform = async () => {
-      const allMetricsPresent =
-        Boolean(track.bpm) &&
-        Boolean(track.key) &&
-        track.hasWaveform === true &&
-        track.lufs != null;
-
-      // The library row already carries the four coverage fields. When all are present,
-      // playback is only a cache consumer and must not start even an empty analysis scan.
-      // If that cache read unexpectedly misses (the file changed since the row was fetched),
-      // fall through and let the backend re-evaluate it.
-      if (allMetricsPresent) {
-        const cached = await getWaveform(track.path, {
-          cachedOnly: true,
-        }).catch(() => null);
-        if (installWaveform(cached) || cancelled) return;
-      }
+      // Waveform availability is independent of BPM, key and loudness. Always
+      // consume cached peaks first, including tracks whose other metrics are missing.
+      const cached = await getWaveform(track.path, {
+        cachedOnly: true,
+      }).catch(() => null);
+      const installed = installWaveform(cached);
+      if (cancelled) return;
+      // Existing peaks stay visible while missing beat data is filled in.
+      // Missing tag metadata alone must not trigger a new decode.
+      if (
+        installed &&
+        resolveBeatAvailability(cached).known &&
+        waveformBeatBpm(cached.beats)
+      )
+        return;
 
       // Any missing metric uses the same full analysis workflow as the manual "Analyse"
       // button. skipAnalysed makes the backend retain the parts that are already present.
@@ -187,6 +219,8 @@ const WaveformSeekBar = ({
         token('--art-accent', '') || token('--player-fill', '') || '#4d9fff',
       at: now,
       dim: token('--player-text-dim', 'rgba(128,128,128,0.3)'),
+      text: token('--text-primary', '#e7eef2'),
+      surface: token('--bg-primary', '#11171c'),
       // Band palette and blend mode come from the theme, shared with the library
       // row previews — the colours are only legible if the blend matches the
       // panel they sit on, so the two travel together.
@@ -203,7 +237,7 @@ const WaveformSeekBar = ({
     // Render at full device pixel density so more of the backend's stored peaks
     // actually show up, instead of the canvas's CSS-pixel width capping
     // resolution well below what's available.
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = canvas.ownerDocument.defaultView?.devicePixelRatio || 1;
     const width = canvas.clientWidth;
     const cssHeight = canvas.clientHeight;
     const pixelWidth = Math.round(width * dpr);
@@ -381,22 +415,55 @@ const WaveformSeekBar = ({
     // beat analysis, and previously drew a confident-looking grid anchored at a fabricated
     // phase of 0 for tracks that had never had real beat detection run at all.
     const drawBeatGrid = () => {
-      if (!peaks.beatsKnown) return;
+      const independent = enhancedRef.current?.available
+        ? enhancedRef.current
+        : null;
+      if (!showGrid || (!independent && !peaks.beatsKnown)) return;
       // One line per beat at zoom 1 is a line every pixel or two — a second
       // comb at almost exactly the waveform's own period, which is where the
       // crawling Moiré came from. Widen to bar/phrase lines, or drop the grid.
       const lineSeconds = beatGridSeconds(
-        track?.bpm,
+        independent
+          ? waveformBeatBpm(independent.beats)
+          : Number(track?.bpm) > 0
+            ? Number(track.bpm)
+            : peaks.bpm,
         pixelsPerSecond,
         8 * dprScale,
       );
       if (!lineSeconds) return;
-      const phase = beatGridPhase(peaks.beatOffsetSeconds, lineSeconds);
+      const phase = beatGridPhase(
+        independent ? independent.beats?.[0] : peaks.beatOffsetSeconds,
+        lineSeconds,
+      );
       const firstBeat = firstGridLineAt(phase, lineSeconds, drawStart);
+      // Detected beats are a timeline, not a constant-tempo estimate. Rebuilding
+      // them from median BPM accumulates error against the saved downbeats.
+      const times = [];
+      const detectedBeats = independent?.beats || peaks.beats;
+      if (detectedBeats?.length > 1) {
+        const bpm = waveformBeatBpm(detectedBeats);
+        const stride = Math.max(1, Math.round(lineSeconds / (60 / bpm)));
+        const firstDownbeat = independent?.downbeats?.[0];
+        const anchor =
+          stride > 1 ? Math.max(0, detectedBeats.indexOf(firstDownbeat)) : 0;
+        times.push(
+          ...visibleBeatTimes(
+            detectedBeats,
+            drawStart,
+            drawEnd,
+            stride,
+            anchor,
+          ),
+        );
+      } else {
+        for (let time = firstBeat; time < drawEnd; time += lineSeconds)
+          times.push(time);
+      }
+
       context.save();
-      context.strokeStyle = colours.grid;
-      context.lineWidth = 1;
-      for (let time = firstBeat; time < drawEnd; time += lineSeconds) {
+      const detailGrid = zoom > 1;
+      for (const time of times) {
         // Whole-pixel snapping only where the view is static — under a
         // scrolling sub-pixel offset it would make the grid jitter against
         // the bars it is supposed to line up with.
@@ -405,11 +472,21 @@ const WaveformSeekBar = ({
           windowDuration,
           windowWidthPx,
         );
-        const x = offsetPx ? rawX : Math.round(rawX) + 0.5;
+        const x =
+          detectedBeats?.length || offsetPx ? rawX : Math.round(rawX) + 0.5;
         context.beginPath();
         context.moveTo(x, 0);
         context.lineTo(x, pixelHeight);
+        // A contrasting outline keeps beats legible over both played and
+        // unplayed bars, including the brighter named theme palettes.
+        context.strokeStyle = detailGrid ? colours.surface : colours.grid;
+        context.lineWidth = detailGrid ? 3 * dprScale : 1;
         context.stroke();
+        if (detailGrid) {
+          context.strokeStyle = colours.text;
+          context.lineWidth = dprScale;
+          context.stroke();
+        }
       }
 
       context.restore();
@@ -432,6 +509,49 @@ const WaveformSeekBar = ({
     context.restore();
 
     drawBeatGrid();
+    drawEnhanced(context, enhancedRef.current, {
+      start: drawStart,
+      end: drawEnd,
+      width: slots * barWidth,
+      height: pixelHeight - 16 * dprScale,
+      grid: showGrid,
+      labelColour: colours.text,
+      labelBackground: colours.surface,
+      gridColour: zoom > 1 ? colours.text : colours.grid,
+      gridOutline: zoom > 1 ? colours.surface : null,
+      detailGrid: zoom > 1,
+      phrases: phraseMode,
+      vocals: showVocals,
+      scale: dprScale,
+    });
+    // Keep timeline labels separate from the vocal lanes and use the same
+    // window mapping as seeking and the grid.
+    context.save();
+    context.fillStyle = colours.surface;
+    context.fillRect(0, pixelHeight - 14 * dprScale, pixelWidth, 14 * dprScale);
+    context.fillStyle = colours.text;
+    context.font = `${9 * dprScale}px sans-serif`;
+    for (let index = 0; index <= 5; index++) {
+      const time = Math.min(
+        waveformDuration,
+        drawStart + (windowDuration * index) / 5,
+      );
+      const x = (pixelWidth * index) / 5;
+      context.textAlign = index === 5 ? 'right' : 'left';
+      context.fillText(
+        formatSeconds(time),
+        x + (index === 5 ? -3 : 3) * dprScale,
+        pixelHeight - 3 * dprScale,
+      );
+    }
+
+    context.strokeStyle = colours.text;
+    context.lineWidth = dprScale;
+    context.beginPath();
+    context.moveTo(playedX, 0);
+    context.lineTo(playedX, pixelHeight - 14 * dprScale);
+    context.stroke();
+    context.restore();
   };
 
   // Always call the latest draw closure — the rAF loop below is set up once
@@ -442,14 +562,16 @@ const WaveformSeekBar = ({
 
   useEffect(() => {
     if (!ready) return undefined;
+    const animationWindow =
+      canvasRef.current?.ownerDocument.defaultView || window;
     let frameId;
     const loop = () => {
       drawRef.current();
-      frameId = requestAnimationFrame(loop);
+      frameId = animationWindow.requestAnimationFrame(loop);
     };
 
-    frameId = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(frameId);
+    frameId = animationWindow.requestAnimationFrame(loop);
+    return () => animationWindow.cancelAnimationFrame(frameId);
   }, [ready]);
 
   useEffect(() => {
@@ -521,8 +643,36 @@ const WaveformSeekBar = ({
   return (
     <div
       className="mp-waveform-seeker"
-      style={{ height }}
+      style={{
+        height: `min(${height + (enhanced?.available ? 24 : 0)}px, var(--waveform-height-limit, 100000px))`,
+        paddingTop: enhanced?.available ? 24 : 0,
+      }}
     >
+      {enhanced?.available && (
+        <div className="mp-waveform-analysis-header">
+          <span
+            className="mp-waveform-analysis-status"
+            title={
+              enhanced.djPhraseAnalysis?.automatic
+                ? 'Automatic independent analysis; neutral labels indicate uncertain sections'
+                : 'Independent predictions; audition suggested'
+            }
+          >
+            {enhanced.djPhraseAnalysis?.automatic
+              ? 'Automatic DJ analysis'
+              : 'Independent analysis'}{' '}
+            · experimental
+            {enhanced.genre?.scores?.length
+              ? ` · ${[...enhanced.genre.scores].sort((a, b) => b.cosine - a.cosine)[0].label}`
+              : ''}
+          </span>
+          {showVocals && (
+            <span className="mp-vocal-legend">
+              <i /> Singing <i /> Processed voice
+            </span>
+          )}
+        </div>
+      )}
       <canvas
         aria-label="Seek"
         aria-valuemax={waveformDuration}
@@ -536,6 +686,9 @@ const WaveformSeekBar = ({
         onPointerUp={handlePointerUp}
         ref={canvasRef}
         role="slider"
+        style={{
+          height: `min(${height}px, calc(var(--waveform-height-limit, 100000px) - ${enhanced?.available ? 24 : 0}px))`,
+        }}
         tabIndex={0}
       />
       {hoverFraction !== null && (

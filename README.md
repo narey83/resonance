@@ -15,14 +15,14 @@
     <img src="https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&amp;logoColor=white" alt=".NET 10">
     <img src="https://img.shields.io/badge/React-web-149ECA?logo=react&amp;logoColor=white" alt="React web app">
     <img src="https://img.shields.io/badge/Expo-mobile-000020?logo=expo&amp;logoColor=white" alt="Expo mobile app">
-    <img src="https://img.shields.io/badge/PostgreSQL-required-4169E1?logo=postgresql&amp;logoColor=white" alt="PostgreSQL required">
+    <img src="https://img.shields.io/badge/storage-SQLite%20%7C%20PostgreSQL-4169E1" alt="SQLite or PostgreSQL storage">
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue.svg" alt="License: AGPL v3"></a>
   </p>
 </div>
 
 ---
 
-Resonance turns Soulseek into a complete, self-hosted music workspace. Alongside fast search and transfer management, it includes a Postgres-backed library, in-browser playback, audio analysis, metadata enrichment, public mixtapes, real-time chat, multi-user permissions, and a companion mobile app.
+Resonance turns Soulseek into a complete, self-hosted music workspace. Alongside fast search and transfer management, it includes a persistent music library, in-browser playback, audio analysis, metadata enrichment, public mixtapes, real-time chat, multi-user permissions, and a companion mobile app. New installations use SQLite; PostgreSQL remains supported.
 
 > [!IMPORTANT]
 > Resonance is a modified version of [slskd](https://github.com/slskd/slskd). It is not maintained by, endorsed by, or affiliated with the slskd project or its author(s).
@@ -38,7 +38,7 @@ Resonance turns Soulseek into a complete, self-hosted music workspace. Alongside
 
 ### Build a real music library
 
-- Browse a Postgres-backed catalogue by artist, album, genre, year, folder, or recently added.
+- Browse a SQLite- or PostgreSQL-backed catalogue by artist, album, genre, year, folder, or recently added.
 - Analyse BPM, musical key, waveform, LUFS, true peak, and loudness range in a single decode pass.
 - Build harmonic Auto-Mix queues using Camelot-compatible key and BPM matching.
 - Edit tags in bulk and enrich metadata through MusicBrainz, Discogs, Last.fm, and Deezer.
@@ -75,7 +75,7 @@ The full, detailed capability list lives in [FEATURES.md](FEATURES.md).
 | | |
 | :---: | :---: |
 | <img src="docs/screenshots/library.png" alt="Music library" width="420"> | <img src="docs/screenshots/track-analysis.png" alt="Track analysis" width="420"> |
-| **Library** — the Postgres-backed catalogue, by artist, album and genre | **Track analysis** — Camelot key and BPM per track, ready for harmonic mixing |
+| **Library** — the persistent catalogue, by artist, album and genre | **Track analysis** — Camelot key and BPM per track, ready for harmonic mixing |
 | <img src="docs/screenshots/search.png" alt="Soulseek search" width="420"> | <img src="docs/screenshots/duplicates.png" alt="Duplicate detection" width="420"> |
 | **Search** — Soulseek results with filters for bitrate, format and free slots | **Duplicates** — grouped by track identity, with the best copy flagged |
 | <img src="docs/screenshots/converter.png" alt="Audio converter" width="420"> | |
@@ -93,7 +93,7 @@ Resonance is currently aimed at self-hosters and developers. A local source setu
 
 - [.NET SDK 10](https://dotnet.microsoft.com/download)
 - [Node.js 20+](https://nodejs.org/) and npm
-- PostgreSQL
+- SQLite storage is included; PostgreSQL is optional
 - Linux or macOS for the included shell scripts
 
 ```bash
@@ -108,7 +108,7 @@ cd resonance
 ./bin/run
 ```
 
-The backend requires a PostgreSQL connection string. Supply it through the settings database or the `RESONANCE_DATABASE_CONNECTION_STRING` environment variable before starting:
+Without database configuration, the backend creates a persistent SQLite database inside its application directory. Existing PostgreSQL connection strings continue to select PostgreSQL. To use PostgreSQL explicitly:
 
 ```bash
 export RESONANCE_DATABASE_CONNECTION_STRING='Host=localhost;Database=resonance;Username=resonance;Password=change-me'
@@ -116,7 +116,7 @@ export RESONANCE_DATABASE_CONNECTION_STRING='Host=localhost;Database=resonance;U
 ```
 
 > [!NOTE]
-> On its first build, the backend attempts to download its managed `ffmpeg` binary. Some integrations—such as audio analysis, metadata providers, Gluetun, and Pushbullet—also need their own runtime configuration or credentials.
+> On its first build, the backend attempts to download its managed `ffmpeg` binary. Some integrations—such as audio analysis, metadata providers, Gluetun, and Pushbullet—also need their own runtime configuration or credentials. See [database configuration and migration](docs/database/architecture.md), [automatic analysis](docs/auto-analysis.md), and [DJ workspace and optional workers](docs/dj-workspace.md).
 
 ## 🏗 Architecture
 
@@ -129,7 +129,7 @@ export RESONANCE_DATABASE_CONNECTION_STRING='Host=localhost;Database=resonance;U
 | `tests/` | xUnit | Backend unit and integration coverage |
 | `docker/` | Docker Compose, Caddy | Development deployment for the project's multi-network server environment |
 
-Real-time browser and mobile updates travel over SignalR. PostgreSQL stores application state, the library catalogue, transfer history, and analytics data; media remains on storage you control.
+Real-time browser and mobile updates travel over SignalR. SQLite or PostgreSQL stores application state, the library catalogue, transfer history, and analytics data; media remains on storage you control. Logging defaults to database storage, with Disk and Both modes available.
 
 ## 🧰 Development
 

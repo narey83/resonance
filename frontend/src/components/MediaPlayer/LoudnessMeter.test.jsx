@@ -129,7 +129,11 @@ describe('LoudnessMeter', () => {
     jest.restoreAllMocks();
   });
 
-  const render = async (loudness) => {
+  const render = async (
+    loudness,
+    showLive = false,
+    orientation = 'horizontal',
+  ) => {
     const audioRef = { current: document.createElement('audio') };
 
     await act(async () => {
@@ -137,6 +141,8 @@ describe('LoudnessMeter', () => {
         <LoudnessMeter
           audioRef={audioRef}
           loudness={loudness ?? null}
+          orientation={orientation}
+          showLive={showLive}
         />,
         container,
       );
@@ -185,5 +191,87 @@ describe('LoudnessMeter', () => {
     act(() => frame(1_010));
 
     expect(label.textContent).toBe(EXPECTED_LABEL);
+  });
+
+  it('shows a live readout beside an analysed track’s separate integrated reference', async () => {
+    expect.hasAssertions();
+    const label = await render({ integratedLufs: -14.9 }, true);
+    act(() => frame(1_000));
+    expect(label.textContent).toBe(EXPECTED_LABEL);
+    expect(
+      container.querySelector('[role="meter"]').getAttribute('aria-valuenow'),
+    ).toBe('-6.7');
+    expect(container.querySelector('.mp-loudness-meter').title).toContain(
+      'Integrated: -14.9 LUFS',
+    );
+  });
+
+  it('fills the vertical meter from the bottom while keeping the same calibrated reading', async () => {
+    expect.hasAssertions();
+    const label = await render({ integratedLufs: -14.9 }, true, 'vertical');
+    act(() => frame(1_000));
+    const meter = container.querySelector('[role="meter"]');
+    const fill = container.querySelector('.mp-loudness-meter-fill');
+    expect(
+      meter.parentElement.classList.contains('mp-loudness-meter--vertical'),
+    ).toBe(true);
+    expect(fill.style.width).toBe('100%');
+    expect(Number.parseFloat(fill.style.height)).toBeCloseTo(83.22, 2);
+    expect(label.textContent).toBe(EXPECTED_LABEL);
+  });
+
+  it('uses the player window’s animation clock while sharing the parent audio graph', async () => {
+    expect.hasAssertions();
+    const iframe = document.createElement('iframe');
+    document.body.append(iframe);
+    const popupContainer = iframe.contentDocument.createElement('div');
+    iframe.contentDocument.body.append(popupContainer);
+    let popupFrame;
+    jest
+      .spyOn(iframe.contentWindow, 'requestAnimationFrame')
+      .mockImplementation((callback) => {
+        popupFrame = callback;
+        return 2;
+      });
+    const cancelPopup = jest
+      .spyOn(iframe.contentWindow, 'cancelAnimationFrame')
+      .mockImplementation(() => {});
+    const createContext = jest
+      .spyOn(window, 'AudioContext')
+      .mockImplementation(() => new AudioContextStub());
+    const audioRef = { current: document.createElement('audio') };
+    const loudness = { integratedLufs: -14.9 };
+    await act(async () => {
+      ReactDOM.render(
+        <>
+          <LoudnessMeter
+            audioRef={audioRef}
+            loudness={loudness}
+          />
+          {ReactDOM.createPortal(
+            <LoudnessMeter
+              audioRef={audioRef}
+              loudness={loudness}
+              showLive
+            />,
+            popupContainer,
+          )}
+        </>,
+        container,
+      );
+    });
+    act(() => popupFrame(1_000));
+    expect(
+      popupContainer.querySelector('.mp-loudness-meter-label').textContent,
+    ).toBe(EXPECTED_LABEL);
+    expect(
+      container.querySelector('.mp-loudness-meter-label').textContent,
+    ).toBe('avg -14.9 LUFS');
+    expect(createContext).toHaveBeenCalledTimes(1);
+    act(() => {
+      ReactDOM.unmountComponentAtNode(container);
+    });
+    expect(cancelPopup).toHaveBeenCalledWith(2);
+    iframe.remove();
   });
 });

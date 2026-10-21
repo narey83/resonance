@@ -28,6 +28,7 @@
 // </copyright>
 
 import * as analysisApi from '../../lib/analysis';
+import { drawWaveform } from '../../lib/waveform';
 import WaveformPreview, { primeWaveformCache } from './WaveformPreview';
 import React from 'react';
 import ReactDOM from 'react-dom';
@@ -95,6 +96,31 @@ describe('WaveformPreview', () => {
 
     expect(container.querySelector('.jb-wave-analyse')).toBeNull();
     expect(container.querySelector('canvas')).not.toBeNull();
+  });
+
+  it('redraws cached peaks on theme changes without requesting audio again', async () => {
+    expect.hasAssertions();
+    const path = '/downloads/HATE/theme-redraw.mp3';
+    render(path, false);
+    act(() => primeWaveformCache(path, waveformResponse));
+    drawWaveform.mockClear();
+    await act(async () => {
+      document.documentElement.classList.add('violet');
+      await Promise.resolve();
+    });
+    expect(drawWaveform).toHaveBeenCalledWith(
+      container.querySelector('canvas'),
+      expect.any(Object),
+      expect.objectContaining({
+        width: expect.any(Number),
+        height: expect.any(Number),
+      }),
+    );
+    expect(analysisApi.getWaveform).not.toHaveBeenCalled();
+    await act(async () => {
+      document.documentElement.classList.remove('violet');
+      await Promise.resolve();
+    });
   });
 
   it('does not ask the server when the list said there are no peaks', () => {

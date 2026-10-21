@@ -36,6 +36,7 @@ using System.Linq;
 using System.Text.Json;
 using Dapper;
 using Npgsql;
+using Microsoft.Data.Sqlite;
 using Serilog;
 
 /// <summary>
@@ -104,7 +105,7 @@ public class BrowseHistoryService
         return GetAll();
     }
 
-    private DbConnection CreateConnection() => new NpgsqlConnection(ConnectionStrings[Database.Preferences]);
+    private DbConnection CreateConnection() => UsePostgres ? new NpgsqlConnection(ConnectionStrings[Database.Preferences]) : new SqliteConnection(ConnectionStrings[Database.Preferences]);
 
     /// <summary>
     ///     One-time seed from the legacy client-side preference: browse history used

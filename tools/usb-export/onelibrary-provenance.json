@@ -1,0 +1,36 @@
+{
+  "implementation": "Independent Resonance staging adapter using pyrekordbox's licensed schema and key handling",
+  "dependency": {
+    "name": "pyrekordbox",
+    "repository": "https://github.com/dylanljones/pyrekordbox",
+    "commit": "2dcb57f2ea907c51fa15850f5433ec09ff3223ff",
+    "license": "MIT",
+    "schema": "pyrekordbox/onelibrary/models.py",
+    "keyHandling": "pyrekordbox/onelibrary/database.py"
+  },
+  "otherDependencies": [
+    "SQLAlchemy",
+    "sqlcipher3-wheels"
+  ],
+  "format": "PIONEER/rekordbox/exportLibrary.db encrypted SQLCipher OneLibrary (formerly Device Library Plus)",
+  "validation": [
+    "SQLCipher integrity_check",
+    "independent DBAPI content and playlist read-back",
+    "encrypted file header",
+    "refuse overwrite",
+    "reject path traversal",
+    "invalid cue rollback"
+  ],
+  "limits": [
+    "No hardware playback verification",
+    "Fresh schema defaults require comparison with genuine device export",
+    "Hot cues are written by parent ANLZ writer only; OneLibrary cue kind mapping is not guessed",
+    "No streaming or DRM content export"
+  ],
+  "bootstrapObservations": {
+    "source": "https://github.com/morizkraemer/fourfour",
+    "localReference": "fourfour/pioneer-usb-writer/reference-code/PIONEER.md and onelibrary.rs scalar format observations",
+    "facts": "Menu IDs/kinds, delimiters, fixed color/key lookup order; independently implemented without copying implementation code",
+    "status": "Provisional, not checked against genuine device export or hardware"
+  }
+}

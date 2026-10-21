@@ -34,6 +34,7 @@ import React, { useEffect, useRef, useState } from 'react';
 
 // Subtle harmonic saturation panel — see lib/dsp/SaturationProcessor.js.
 const SaturationView = ({
+  advanced = false,
   audioRef,
   detailContainerNode,
   isSelected,
@@ -45,7 +46,7 @@ const SaturationView = ({
     prefs.get('mediaPlayer.dsp.saturation.enabled', false),
   );
   const [amount, setAmount] = useState(() =>
-    prefs.get('mediaPlayer.dsp.saturation.amount', 0.15),
+    prefs.get('mediaPlayer.dsp.saturation.amount', 0.05),
   );
 
   // Params/enabled are restored once, centrally, when the graph is built
@@ -123,7 +124,7 @@ const SaturationView = ({
           <span>Amount</span>
           <input
             className="mp-processing-slider"
-            max={100}
+            max={advanced ? 100 : 10}
             min={0}
             onChange={changeAmount}
             type="range"

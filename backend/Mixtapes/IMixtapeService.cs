@@ -37,6 +37,7 @@ namespace resonance.Mixtapes
         IReadOnlyList<Mixtape> GetAll();
         Mixtape? GetById(string id);
         Mixtape Create(string name, string? description);
+        Mixtape CreateSnapshot(string id, string name, string? description, IReadOnlyList<resonance.MusicLibrary.MusicTrack> tracks);
         Mixtape Update(string id, string name, string? description);
         void Delete(string id);
 

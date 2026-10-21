@@ -35,6 +35,7 @@ namespace resonance.MusicLibrary
     using System.Data.Common;
     using System.Linq;
     using Npgsql;
+using Microsoft.Data.Sqlite;
     using resonance.Common;
 
     public class MusicRepository
@@ -61,6 +62,10 @@ namespace resonance.MusicLibrary
         // the same file_size guard — so "does this track have a waveform?" is answerable here as
         // a join, with none of the filesystem work the analysis endpoint has to do per request.
         private string TA => UsePostgres ? "analysis.track_analysis" : "track_analysis";
+
+        // Preserve explicit tags; expose no-tag-write analysis in normal library rows.
+        private string CachedBpm => $"COALESCE(NULLIF({T}.bpm, 0), (SELECT c.detected_bpm FROM {TA} c WHERE {CacheMatch("c")}))";
+        private string CachedKey => $"COALESCE(NULLIF({T}.key_sig, ''), (SELECT c.detected_key FROM {TA} c WHERE {CacheMatch("c")}))";
 
         // Case-insensitive LIKE operator
         private string Like => UsePostgres ? "ILIKE" : "LIKE";
@@ -181,6 +186,21 @@ namespace resonance.MusicLibrary
             // Migrations. IF NOT EXISTS rather than catching the failure: a failed statement is
             // logged as an ERROR by the server whether or not we swallow it, and four of them on
             // every startup buried the errors worth reading.
+            if (!UsePostgres)
+            {
+                foreach (var column in new[] { ("tag_types", "TEXT"), ("bit_rate", "INTEGER"), ("sample_rate", "INTEGER"), ("bit_depth", "INTEGER") })
+                {
+                    using var check = conn.CreateCommand();
+                    check.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('tracks') WHERE name='{column.Item1}'";
+                    if (Convert.ToInt64(check.ExecuteScalar()) == 0)
+                    {
+                        using var add = conn.CreateCommand();
+                        add.CommandText = $"ALTER TABLE tracks ADD COLUMN {column.Item1} {column.Item2}";
+                        add.ExecuteNonQuery();
+                    }
+                }
+                return;
+            }
             using var alter = conn.CreateCommand();
             alter.CommandText = $@"
                 ALTER TABLE {T} ADD COLUMN IF NOT EXISTS tag_types   TEXT;
@@ -357,7 +377,7 @@ namespace resonance.MusicLibrary
             string genre, int? year, string folder,
             bool missingKey, bool missingBpm, bool missingTitle, bool missingArtist, bool missingArtwork,
             int limit, int offset, string sort = null, bool descending = false, string startsWith = null,
-            string key = null, string analysis = null)
+            string key = null, string analysis = null, DjLibraryFilters dj = null)
         {
             using var conn = OpenConnection();
 
@@ -372,7 +392,7 @@ namespace resonance.MusicLibrary
 
             if (hasSearch)
             {
-                conditions.Add($"(title {Like} @s OR artist {Like} @s OR album {Like} @s OR key_sig {Like} @s)");
+                conditions.Add($"(title {Like} @s OR artist {Like} @s OR album {Like} @s OR {CachedKey} {Like} @s)");
             }
 
             if (hasArtist)
@@ -387,7 +407,7 @@ namespace resonance.MusicLibrary
 
             if (hasGenre)
             {
-                conditions.Add($"{IEq("genre")} @genre");
+                conditions.Add(UsePostgres ? $"({IEq("genre")} @genre OR LOWER((SELECT c.dj_summary::jsonb->>'genre' FROM {TA} c WHERE {CacheMatch("c")})) = LOWER(@genre))" : $"({IEq("genre")} @genre OR LOWER((SELECT json_extract(c.dj_summary,'$.genre') FROM {TA} c WHERE {CacheMatch("c")})) = LOWER(@genre))");
             }
 
             if (hasYear)
@@ -397,17 +417,17 @@ namespace resonance.MusicLibrary
 
             if (hasFolder)
             {
-                conditions.Add("(directory = @folder OR directory LIKE @folderPrefix)");
+                conditions.Add("(directory = @folder OR directory LIKE @folderPrefix ESCAPE '\\')");
             }
 
             if (missingKey)
             {
-                conditions.Add("(key_sig IS NULL OR key_sig = '')");
+                conditions.Add($"({CachedKey} IS NULL OR {CachedKey} = '')");
             }
 
             if (missingBpm)
             {
-                conditions.Add("bpm IS NULL");
+                conditions.Add($"{CachedBpm} IS NULL");
             }
 
             if (missingTitle)
@@ -427,14 +447,37 @@ namespace resonance.MusicLibrary
 
             if (hasKey)
             {
-                conditions.Add($"{IEq("key_sig")} @key");
+                conditions.Add($"{IEq(CachedKey)} @key");
+            }
+
+            var summary = $"(SELECT c.dj_summary FROM {TA} c WHERE {CacheMatch("c")})";
+            if (dj?.AddedAfter.HasValue == true) conditions.Add("indexed_at >= @addedAfter");
+            var history = UsePostgres ? "library_activity.\"PlayHistory\"" : "PlayHistory";
+            var loved = UsePostgres ? "library_activity.\"LovedTracks\"" : "LovedTracks";
+            if (dj?.NeverPlayed == true || dj?.NotPlayedSince.HasValue == true)
+                conditions.Add($"{T}.path NOT IN (SELECT h.\"Path\" FROM {history} h WHERE h.\"Path\" IS NOT NULL AND h.\"Username\"=@crateUsername" +
+                    (dj.NeverPlayed ? ")" : " AND h.\"PlayedAt\">=@notPlayedSince)"));
+            if (dj?.LovedOnly == true)
+                conditions.Add($"EXISTS (SELECT 1 FROM {loved} l WHERE l.\"Path\"={T}.path AND l.\"Username\"=@crateUsername)");
+            if (dj?.Paths?.Length > 0) conditions.Add("path IN (" + string.Join(",", dj.Paths.Select((_, index) => "@path" + index)) + ")");
+            if (dj?.BpmMin is double min) conditions.Add($"{CachedBpm} >= @bpmMin");
+            if (dj?.BpmMax is double max) conditions.Add($"{CachedBpm} <= @bpmMax");
+            if (dj?.Keys?.Length > 0) conditions.Add($"{CachedKey} IN (" + string.Join(",", dj.Keys.Select((_, index) => "@compatibleKey" + index)) + ")");
+            if (dj?.Vocals is "yes" or "no")
+                conditions.Add(UsePostgres ? $"(({summary})::jsonb->>'vocals')::boolean = @vocals" : $"json_extract({summary},'$.vocals') = @vocals");
+            if (dj?.Energy is "low" or "medium" or "high")
+            {
+                var energy = UsePostgres ? $"(({summary})::jsonb->>'energy')::double precision" : $"json_extract({summary},'$.energy')";
+                conditions.Add(dj.Energy == "low" ? $"{energy} < 0.15" : dj.Energy == "high" ? $"{energy} >= 0.3" : $"{energy} >= 0.15 AND {energy} < 0.3");
             }
 
             // The analysis page filters on "has all four metrics" rather than on one of them, which
             // no missing* flag can express. Same predicate the stats count uses, so the list and the
             // headline number can't disagree.
             var analysed = analysis?.Trim().ToLowerInvariant();
-            if (analysed == "complete")
+            if (analysed == "enhanced") conditions.Add(UsePostgres ? $"({summary})::jsonb->>'complete' = 'true'" : $"json_extract({summary},'$.complete') = 1");
+            else if (analysed == "pending") conditions.Add($"{summary} IS NULL");
+            else if (analysed == "complete")
             {
                 conditions.Add(FullyAnalysedExists);
             }
@@ -497,7 +540,7 @@ namespace resonance.MusicLibrary
             if (hasFolder)
             {
                 AddParam(countCmd, "@folder", MusicPath.ToRelative(folder));
-                AddParam(countCmd, "@folderPrefix", MusicPath.ToRelative(folder).TrimEnd('/') + "/%");
+                AddParam(countCmd, "@folderPrefix", MusicPath.ToRelative(folder).TrimEnd('/').Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "/%");
             }
 
             if (hasKey)
@@ -510,6 +553,18 @@ namespace resonance.MusicLibrary
                 AddParam(countCmd, "@sw", alphaLetter);
             }
 
+            void BindDj(DbCommand command)
+            {
+                if (dj?.AddedAfter is long addedAfter) AddParam(command, "@addedAfter", addedAfter);
+                if (dj?.NotPlayedSince is long notPlayedSince && !dj.NeverPlayed) AddParam(command, "@notPlayedSince", notPlayedSince);
+                if (dj?.NeverPlayed == true || dj?.NotPlayedSince.HasValue == true || dj?.LovedOnly == true) AddParam(command, "@crateUsername", dj.Username ?? "");
+                if (dj?.Paths?.Length > 0) for (var index = 0; index < dj.Paths.Length; index++) AddParam(command, "@path" + index, MusicPath.ToRelative(dj.Paths[index]));
+                if (dj?.BpmMin is double min) AddParam(command, "@bpmMin", min);
+                if (dj?.BpmMax is double max) AddParam(command, "@bpmMax", max);
+                if (dj?.Keys?.Length > 0) for (var index = 0; index < dj.Keys.Length; index++) AddParam(command, "@compatibleKey" + index, dj.Keys[index]);
+                if (dj?.Vocals is "yes" or "no") AddParam(command, "@vocals", dj.Vocals == "yes");
+            }
+            BindDj(countCmd);
             var total = Convert.ToInt32(countCmd.ExecuteScalar());
 
             // The sort key is mapped through a whitelist; user input never reaches the SQL directly
@@ -525,13 +580,13 @@ namespace resonance.MusicLibrary
                 "track" => $"{OrdBy("album", dir)}, COALESCE(disc_number, 1) {dir}, track_number {dir}",
                 "year" => $"year {dir}, {OrdBy("artist")}, {OrdBy("album")}, track_number",
                 "duration" => $"duration {dir}, {OrdBy("title")}",
-                "bpm" => $"bpm {dir}, {OrdBy("title")}",
+                "bpm" => $"{CachedBpm} {dir}, {OrdBy("title")}",
                 "lufs" => $"lufs {dir}, {OrdBy("title")}",
                 "ext" => $"{OrdBy("extension", dir)}, {OrdBy("title")}",
                 "quality" => $"bit_rate {dir}, sample_rate {dir}, {OrdBy("title")}",
 
                 // Group tracks of the same musical key together (tracks with no detected key sort last).
-                "key" => $"CASE WHEN key_sig IS NULL OR key_sig = '' THEN 1 ELSE 0 END, {OrdBy("key_sig", dir)}, {OrdBy("title")}",
+                "key" => $"CASE WHEN {CachedKey} IS NULL OR {CachedKey} = '' THEN 1 ELSE 0 END, {OrdBy(CachedKey, dir)}, {OrdBy("title")}",
                 "added" => $"indexed_at {dir}, {OrdBy("title")}",
 
                 // Shuffle: let the database pick the sample. Clients queue a bounded window
@@ -559,14 +614,15 @@ namespace resonance.MusicLibrary
             cmd.CommandText = $@"
                 SELECT path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
                        title, artist, album_artist, album, year, track_number, disc_number,
-                       genre, bpm, key_sig, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth,
+                       genre, {CachedBpm} AS bpm, {CachedKey} AS key_sig, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth,
                        EXISTS (SELECT 1 FROM {TA} a
                                WHERE a.masked_filename = {T}.path
                                  AND a.file_size = {T}.file_size
                                  AND a.overall_peaks IS NOT NULL) AS has_waveform,
                        (SELECT a.lufs FROM {TA} a
                         WHERE a.masked_filename = {T}.path
-                          AND a.file_size = {T}.file_size) AS lufs
+                          AND a.file_size = {T}.file_size) AS lufs,
+                       {($"(SELECT c.dj_summary FROM {TA} c WHERE {CacheMatch("c")})")} AS dj_summary
                 FROM {T} {where}
                 ORDER BY {orderBy}
                 LIMIT @limit OFFSET @offset";
@@ -598,7 +654,7 @@ namespace resonance.MusicLibrary
             if (hasFolder)
             {
                 AddParam(cmd, "@folder", MusicPath.ToRelative(folder));
-                AddParam(cmd, "@folderPrefix", MusicPath.ToRelative(folder).TrimEnd('/') + "/%");
+                AddParam(cmd, "@folderPrefix", MusicPath.ToRelative(folder).TrimEnd('/').Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "/%");
             }
 
             if (hasKey)
@@ -614,6 +670,7 @@ namespace resonance.MusicLibrary
             AddParam(cmd, "@limit", limit);
             AddParam(cmd, "@offset", offset);
 
+            BindDj(cmd);
             var tracks = new List<MusicTrack>();
             using var reader = cmd.ExecuteReader();
             const int hasWaveformOrdinal = 24;
@@ -624,6 +681,7 @@ namespace resonance.MusicLibrary
                 {
                     HasWaveform = !reader.IsDBNull(hasWaveformOrdinal) && Convert.ToBoolean(reader.GetValue(hasWaveformOrdinal)),
                     Lufs = reader.IsDBNull(lufsOrdinal) ? null : reader.GetDouble(lufsOrdinal),
+                    DjSummary = reader.IsDBNull(26) ? null : reader.GetString(26),
                 });
             }
 
@@ -668,11 +726,11 @@ namespace resonance.MusicLibrary
             using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $@"
-                SELECT MIN(key_sig) AS key_sig, COUNT(*) AS track_count
+                SELECT MIN({CachedKey}) AS key_sig, COUNT(*) AS track_count
                 FROM {T}
-                WHERE key_sig IS NOT NULL AND key_sig != ''
-                GROUP BY {GrpBy("key_sig")}
-                ORDER BY {OrdBy("key_sig")}";
+                WHERE {CachedKey} IS NOT NULL AND {CachedKey} != ''
+                GROUP BY {GrpBy(CachedKey)}
+                ORDER BY {OrdBy(CachedKey)}";
             var results = new List<MusicKey>();
             using var r = cmd.ExecuteReader();
             while (r.Read())
@@ -771,8 +829,8 @@ namespace resonance.MusicLibrary
             // where FILTER is a recent addition.
             cmd.CommandText = $@"
                 SELECT COUNT(*),
-                       SUM(CASE WHEN {T}.key_sig IS NOT NULL AND {T}.key_sig <> '' THEN 1 ELSE 0 END),
-                       SUM(CASE WHEN {T}.bpm IS NOT NULL THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN {CachedKey} IS NOT NULL AND {CachedKey} <> '' THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN {CachedBpm} IS NOT NULL THEN 1 ELSE 0 END),
                        SUM(CASE WHEN a.overall_peaks IS NOT NULL THEN 1 ELSE 0 END),
                        SUM(CASE WHEN a.lufs IS NOT NULL THEN 1 ELSE 0 END),
                        SUM(CASE WHEN {FullyAnalysed("a")} THEN 1 ELSE 0 END)
@@ -1199,7 +1257,7 @@ namespace resonance.MusicLibrary
 
         // See FullyAnalysedExists. `cache` names an analysis row already matched by CacheMatch.
         private string FullyAnalysed(string cache) =>
-            $"({T}.key_sig IS NOT NULL AND {T}.key_sig <> '' AND {T}.bpm IS NOT NULL "
+            $"({CachedKey} IS NOT NULL AND {CachedKey} <> '' AND {CachedBpm} IS NOT NULL "
             + $"AND {cache}.overall_peaks IS NOT NULL AND {cache}.lufs IS NOT NULL)";
 
         // Case-insensitive equality (used in WHERE)
@@ -1218,7 +1276,7 @@ namespace resonance.MusicLibrary
         // ── Helpers ───────────────────────────────────────────────────────────
         private DbConnection OpenConnection()
         {
-            DbConnection conn = new NpgsqlConnection(ConnectionString);
+            DbConnection conn = UsePostgres ? new NpgsqlConnection(ConnectionString) : new SqliteConnection(ConnectionString);
             conn.Open();
             return conn;
         }

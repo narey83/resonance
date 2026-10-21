@@ -233,7 +233,7 @@ namespace resonance.Transfers.Uploads
             OptionsMonitor = optionsMonitor;
             EventBus = eventBus;
             ErrorNotifications = errorNotifications;
-            TransfersConnectionString = connectionStrings[Database.Transfers];
+            NetworkInfoStore = new TransferNetworkInfoStore(connectionStrings);
 
             Governor = new UploadGovernor(userService, optionsMonitor);
             Queue = new UploadQueue(userService, optionsMonitor);
@@ -262,7 +262,7 @@ namespace resonance.Transfers.Uploads
         private ITransferErrorNotificationService ErrorNotifications { get; }
         private ConcurrentDictionary<string, bool> Locks { get; } = new();
         private ConcurrentDictionary<string, string> PeerAddresses { get; } = new();
-        private string TransfersConnectionString { get; }
+        private TransferNetworkInfoStore NetworkInfoStore { get; }
 
         /// <summary>
         ///     Gets the last known IP addresses for the specified <paramref name="usernames"/>, falling back to
@@ -292,12 +292,7 @@ namespace resonance.Transfers.Uploads
             {
                 try
                 {
-                    using var conn = new Npgsql.NpgsqlConnection(TransfersConnectionString);
-
-                    var rows = conn.Query<(string Username, string IpAddress)>(
-                        @"SELECT ""Username"", ""IpAddress"" FROM transfers.""TransferNetworkInfo""
-                          WHERE ""Username"" = ANY(@Usernames) AND ""IpAddress"" IS NOT NULL AND ""IpAddress"" <> ''",
-                        new { Usernames = missing.ToArray() });
+                    var rows = NetworkInfoStore.GetPeerAddresses(missing);
 
                     foreach (var (username, ip) in rows)
                     {

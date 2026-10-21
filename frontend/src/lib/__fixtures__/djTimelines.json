@@ -1,0 +1,2851 @@
+[
+  {
+    "djPhrases": [
+      {
+        "end_seconds": 15.42,
+        "featureEvidence": {
+          "bassLevel": 0.0012790098988824997,
+          "drumLevel": 0.005827031452252749,
+          "drumOnset": 0.00012614460553729814,
+          "drumSustainedPeak": 0.000830680889115495,
+          "kickLevel": 0.005685722466941428,
+          "melodyRise": true,
+          "nextBass": 0.02121451997442049,
+          "nextKick": 0.7574776701351059
+        },
+        "label": "Intro",
+        "start_seconds": 0.0
+      },
+      {
+        "end_seconds": 36.0,
+        "featureEvidence": {
+          "bassLevel": 0.00801945397113017,
+          "drumLevel": 0.6782453298086605,
+          "drumOnset": 0.6551564511056873,
+          "drumSustainedPeak": 0.7627178854719693,
+          "kickLevel": 0.6887017805253336,
+          "melodyRise": false,
+          "nextBass": 0.030667436143749827,
+          "nextKick": 0.011792250900095802
+        },
+        "label": "Groove",
+        "start_seconds": 15.42
+      },
+      {
+        "end_seconds": 42.86,
+        "featureEvidence": {
+          "bassLevel": 0.02932332085870492,
+          "drumLevel": 0.03656421612057668,
+          "drumOnset": 0.030203833651643783,
+          "drumSustainedPeak": 0.040296454453001535,
+          "kickLevel": 0.009903879486979367,
+          "melodyRise": false,
+          "nextBass": 0.9613970514502914,
+          "nextKick": 0.7101963192884594
+        },
+        "label": "Breakdown",
+        "start_seconds": 36.0
+      },
+      {
+        "end_seconds": 99.44,
+        "featureEvidence": {
+          "bassLevel": 0.7585139229522689,
+          "drumLevel": 0.611573120499451,
+          "drumOnset": 0.662156566883399,
+          "drumSustainedPeak": 0.7632181830658142,
+          "kickLevel": 0.6388102707605217,
+          "melodyRise": false,
+          "nextBass": 0.9951645044293647,
+          "nextKick": 0.6864186878423059
+        },
+        "label": "Drop entrance",
+        "start_seconds": 42.86
+      },
+      {
+        "end_seconds": 126.86,
+        "featureEvidence": {
+          "bassLevel": 0.9518478388238203,
+          "drumLevel": 0.6559636775523571,
+          "drumOnset": 0.6802986752209103,
+          "drumSustainedPeak": 0.6802986752209103,
+          "kickLevel": 0.6811096337883373,
+          "melodyRise": false,
+          "nextBass": 1.001093009981789,
+          "nextKick": 0.6874944576250042
+        },
+        "label": "Groove",
+        "start_seconds": 99.44
+      },
+      {
+        "end_seconds": 140.58,
+        "featureEvidence": {
+          "bassLevel": 0.9956884383593747,
+          "drumLevel": 0.6457643273303431,
+          "drumOnset": 0.636535412921476,
+          "drumSustainedPeak": 0.6524769363601329,
+          "kickLevel": 0.6657333489559993,
+          "melodyRise": false,
+          "nextBass": 0.00585727779886343,
+          "nextKick": 0.0017636380009408577
+        },
+        "label": "Groove",
+        "start_seconds": 126.86
+      },
+      {
+        "end_seconds": 168.0,
+        "featureEvidence": {
+          "bassLevel": 0.0018391368998212742,
+          "drumLevel": 0.019052276337883884,
+          "drumOnset": 0.013517127811793865,
+          "drumSustainedPeak": 0.021745290818479406,
+          "kickLevel": 0.002552994366019933,
+          "melodyRise": false,
+          "nextBass": 0.790967610881778,
+          "nextKick": 0.7272860686751658
+        },
+        "label": "Breakdown",
+        "start_seconds": 140.58
+      },
+      {
+        "end_seconds": 209.14,
+        "featureEvidence": {
+          "bassLevel": 0.698041471709261,
+          "drumLevel": 0.6214316574230057,
+          "drumOnset": 0.7065922264877034,
+          "drumSustainedPeak": 0.7169751806306583,
+          "kickLevel": 0.6378043485906334,
+          "melodyRise": false,
+          "nextBass": 0.04263814907208767,
+          "nextKick": 0.0002477996104983216
+        },
+        "label": "Drop entrance",
+        "start_seconds": 168.0
+      },
+      {
+        "end_seconds": 222.86,
+        "featureEvidence": {
+          "bassLevel": 0.029654742840868355,
+          "drumLevel": 0.03616313439689475,
+          "drumOnset": 0.0007348803532969927,
+          "drumSustainedPeak": 0.014163287232758125,
+          "kickLevel": 0.030858742182597855,
+          "melodyRise": false,
+          "nextBass": 0.9213178221245395,
+          "nextKick": 0.7487976353489565
+        },
+        "label": "Breakdown",
+        "start_seconds": 209.14
+      },
+      {
+        "end_seconds": 236.56,
+        "featureEvidence": {
+          "bassLevel": 0.8826342598183307,
+          "drumLevel": 0.6199719511858243,
+          "drumOnset": 0.6877323039690016,
+          "drumSustainedPeak": 0.6879727413507825,
+          "kickLevel": 0.6670424795949249,
+          "melodyRise": false,
+          "nextBass": 0.9352448579673298,
+          "nextKick": 0.7410809196398196
+        },
+        "label": "Drop entrance",
+        "start_seconds": 222.86
+      },
+      {
+        "end_seconds": 277.72,
+        "featureEvidence": {
+          "bassLevel": 0.6237136609350576,
+          "drumLevel": 0.7009434520291256,
+          "drumOnset": 0.6780463101158044,
+          "drumSustainedPeak": 0.7093579372287311,
+          "kickLevel": 0.7463197248796193,
+          "melodyRise": false,
+          "nextBass": 0.0014465505208100297,
+          "nextKick": 0.7306367295263799
+        },
+        "label": "Groove",
+        "start_seconds": 236.56
+      },
+      {
+        "end_seconds": 294.86,
+        "featureEvidence": {
+          "bassLevel": 0.001137836791586051,
+          "drumLevel": 0.5460781721573849,
+          "drumOnset": 0.676635386164525,
+          "drumSustainedPeak": 0.6844906322528874,
+          "kickLevel": 0.5847449677481177,
+          "melodyRise": false,
+          "nextBass": 0.0003281823787405776,
+          "nextKick": 0.00013978368435735793
+        },
+        "label": "Groove",
+        "start_seconds": 277.72
+      },
+      {
+        "end_seconds": 318.86,
+        "featureEvidence": {
+          "bassLevel": 0.000404435745251839,
+          "drumLevel": 0.016509767949875763,
+          "drumOnset": 0.00034410338646893385,
+          "drumSustainedPeak": 0.03165967318424574,
+          "kickLevel": 0.0015237356027633844,
+          "melodyRise": false,
+          "nextBass": 0.00015139854340471724,
+          "nextKick": 0.034544531583154604
+        },
+        "label": "Breakdown",
+        "start_seconds": 294.86
+      },
+      {
+        "end_seconds": 327.4453514739229,
+        "featureEvidence": {
+          "bassLevel": 0.0001326276719722439,
+          "drumLevel": 0.026631894900212803,
+          "drumOnset": 0.053221611156914955,
+          "drumSustainedPeak": 4.217864351101262e-05,
+          "kickLevel": 0.027682909372270033,
+          "melodyRise": false,
+          "nextBass": 0.0001326276719722439,
+          "nextKick": 0.027682909372270033
+        },
+        "label": "Outro",
+        "start_seconds": 318.86
+      }
+    ],
+    "durationSeconds": 327.4453514739229,
+    "expectedEventSeconds": [
+      42.86,
+      168.0,
+      222.86
+    ],
+    "title": "9PM (Till I Come) (Bionic Pulse Bootleg)"
+  },
+  {
+    "djPhrases": [
+      {
+        "end_seconds": 14.18,
+        "featureEvidence": {
+          "bassLevel": 0.15548670864881384,
+          "drumLevel": 0.9355828169405903,
+          "drumOnset": 0.930162343714389,
+          "drumSustainedPeak": 0.946482472029715,
+          "kickLevel": 0.9204483258600752,
+          "melodyRise": false,
+          "nextBass": 0.24563234095796666,
+          "nextKick": 0.92519896461885
+        },
+        "label": "Intro",
+        "start_seconds": 0.0
+      },
+      {
+        "end_seconds": 42.02,
+        "featureEvidence": {
+          "bassLevel": 0.0931324789649156,
+          "drumLevel": 0.9578341271381478,
+          "drumOnset": 0.9249418879892545,
+          "drumSustainedPeak": 0.9582958809534385,
+          "kickLevel": 0.9477172979380301,
+          "melodyRise": false,
+          "nextBass": 0.003132848192253527,
+          "nextKick": 0.714315660827032
+        },
+        "label": "Groove",
+        "start_seconds": 14.18
+      },
+      {
+        "end_seconds": 55.94,
+        "featureEvidence": {
+          "bassLevel": 0.0052157431908095315,
+          "drumLevel": 0.6710804920121409,
+          "drumOnset": 0.8091577690080639,
+          "drumSustainedPeak": 0.8091577690080639,
+          "kickLevel": 0.616431658956802,
+          "melodyRise": false,
+          "nextBass": 0.8085859148277731,
+          "nextKick": 0.8753586740850344
+        },
+        "label": "Groove",
+        "start_seconds": 42.02
+      },
+      {
+        "end_seconds": 69.84,
+        "featureEvidence": {
+          "bassLevel": 0.8019439423740998,
+          "drumLevel": 0.8970532153373959,
+          "drumOnset": 0.9024094866697556,
+          "drumSustainedPeak": 0.9074256663433153,
+          "kickLevel": 0.8858847068855015,
+          "melodyRise": false,
+          "nextBass": 0.8247274014216033,
+          "nextKick": 0.8748251158678553
+        },
+        "label": "Groove",
+        "start_seconds": 55.94
+      },
+      {
+        "end_seconds": 97.66,
+        "featureEvidence": {
+          "bassLevel": 0.8176486598011323,
+          "drumLevel": 0.8732488876653595,
+          "drumOnset": 0.8990138744387349,
+          "drumSustainedPeak": 0.8990138744387349,
+          "kickLevel": 0.8654917448734945,
+          "melodyRise": false,
+          "nextBass": 0.7999318243579319,
+          "nextKick": 0.8812072473555481
+        },
+        "label": "Groove",
+        "start_seconds": 69.84
+      },
+      {
+        "end_seconds": 125.5,
+        "featureEvidence": {
+          "bassLevel": 0.8025070343848348,
+          "drumLevel": 0.8899625664773826,
+          "drumOnset": 0.8872846290763526,
+          "drumSustainedPeak": 0.8927276031894633,
+          "kickLevel": 0.891636011561133,
+          "melodyRise": false,
+          "nextBass": 0.8095751543986597,
+          "nextKick": 0.8871891494731136
+        },
+        "label": "Groove",
+        "start_seconds": 97.66
+      },
+      {
+        "end_seconds": 139.4,
+        "featureEvidence": {
+          "bassLevel": 0.830890625831712,
+          "drumLevel": 0.747617250351075,
+          "drumOnset": 0.8857770747323994,
+          "drumSustainedPeak": 0.8857770747323994,
+          "kickLevel": 0.7411677821547967,
+          "melodyRise": false,
+          "nextBass": 0.7983441514406452,
+          "nextKick": 0.8810348602176423
+        },
+        "label": "Groove",
+        "start_seconds": 125.5
+      },
+      {
+        "end_seconds": 153.32,
+        "featureEvidence": {
+          "bassLevel": 0.7233434279659398,
+          "drumLevel": 0.8801381016880316,
+          "drumOnset": 0.8772793064380016,
+          "drumSustainedPeak": 0.8952865985612712,
+          "kickLevel": 0.8841099583758422,
+          "melodyRise": false,
+          "nextBass": 0.6558185227691979,
+          "nextKick": 0.8790144082511057
+        },
+        "label": "Groove",
+        "start_seconds": 139.4
+      },
+      {
+        "end_seconds": 195.04,
+        "featureEvidence": {
+          "bassLevel": 0.6819253547970479,
+          "drumLevel": 0.858169672498063,
+          "drumOnset": 0.8869713537504973,
+          "drumSustainedPeak": 0.890458551421384,
+          "kickLevel": 0.8516946297311375,
+          "melodyRise": false,
+          "nextBass": 0.9719249020821785,
+          "nextKick": 0.06619231257765111
+        },
+        "label": "Groove",
+        "start_seconds": 153.32
+      },
+      {
+        "end_seconds": 223.08,
+        "featureEvidence": {
+          "bassLevel": 0.8640291560347824,
+          "drumLevel": 0.017174868389437013,
+          "drumOnset": 0.0021951602965650887,
+          "drumSustainedPeak": 0.0021951602965650887,
+          "kickLevel": 0.016773211616386185,
+          "melodyRise": false,
+          "nextBass": 0.0008770436919957413,
+          "nextKick": 0.00023406521629283172
+        },
+        "label": "Breakdown",
+        "start_seconds": 195.04
+      },
+      {
+        "end_seconds": 334.18,
+        "featureEvidence": {
+          "bassLevel": 0.0009566192846387134,
+          "drumLevel": 0.00856055831984916,
+          "drumOnset": 0.002134375962708198,
+          "drumSustainedPeak": 0.0612026260173596,
+          "kickLevel": 0.00043935156750123816,
+          "melodyRise": false,
+          "nextBass": 0.0015838715076308772,
+          "nextKick": 0.037665167288872765
+        },
+        "label": "Breakdown",
+        "start_seconds": 223.08
+      },
+      {
+        "end_seconds": 375.94,
+        "featureEvidence": {
+          "bassLevel": 0.012668954017353608,
+          "drumLevel": 0.11772548425698295,
+          "drumOnset": 0.11944640109475206,
+          "drumSustainedPeak": 0.20139759066526983,
+          "kickLevel": 0.06606085169972012,
+          "melodyRise": false,
+          "nextBass": 0.003976459279676166,
+          "nextKick": 0.5018248521270515
+        },
+        "label": "Buildup",
+        "start_seconds": 334.18
+      },
+      {
+        "end_seconds": 431.58,
+        "featureEvidence": {
+          "bassLevel": 0.5636659870717123,
+          "drumLevel": 0.7590242142839966,
+          "drumOnset": 0.5230064548034381,
+          "drumSustainedPeak": 0.8873267852592841,
+          "kickLevel": 0.7485125706636584,
+          "melodyRise": false,
+          "nextBass": 0.6378464791813601,
+          "nextKick": 0.8757382245549598
+        },
+        "label": "Drop entrance",
+        "start_seconds": 375.94
+      },
+      {
+        "end_seconds": 445.5,
+        "featureEvidence": {
+          "bassLevel": 0.6681090199679158,
+          "drumLevel": 0.8893584193214367,
+          "drumOnset": 0.859008137680299,
+          "drumSustainedPeak": 0.8894420584671853,
+          "kickLevel": 0.8953271170426792,
+          "melodyRise": false,
+          "nextBass": 0.7770031157874362,
+          "nextKick": 0.870092772119594
+        },
+        "label": "Groove",
+        "start_seconds": 431.58
+      },
+      {
+        "end_seconds": 501.14,
+        "featureEvidence": {
+          "bassLevel": 0.6740237684064775,
+          "drumLevel": 0.8308692826624623,
+          "drumOnset": 0.853280846801341,
+          "drumSustainedPeak": 0.8783977075436624,
+          "kickLevel": 0.8394272461810077,
+          "melodyRise": false,
+          "nextBass": 0.8229565272180125,
+          "nextKick": 0.8762017717948926
+        },
+        "label": "Groove",
+        "start_seconds": 445.5
+      },
+      {
+        "end_seconds": 528.98,
+        "featureEvidence": {
+          "bassLevel": 0.816583170964962,
+          "drumLevel": 0.8951732316060761,
+          "drumOnset": 0.8907803569830904,
+          "drumSustainedPeak": 0.8942718758866043,
+          "kickLevel": 0.8943597702050546,
+          "melodyRise": false,
+          "nextBass": 0.8086703391085607,
+          "nextKick": 0.8913984229458063
+        },
+        "label": "Groove",
+        "start_seconds": 501.14
+      },
+      {
+        "end_seconds": 542.88,
+        "featureEvidence": {
+          "bassLevel": 0.8231407640277862,
+          "drumLevel": 0.8834809652396994,
+          "drumOnset": 0.8927809831996751,
+          "drumSustainedPeak": 0.8967596845109861,
+          "kickLevel": 0.8841548643327579,
+          "melodyRise": false,
+          "nextBass": 0.9690926236568067,
+          "nextKick": 0.0033922283242776735
+        },
+        "label": "Groove",
+        "start_seconds": 528.98
+      },
+      {
+        "end_seconds": 556.8,
+        "featureEvidence": {
+          "bassLevel": 0.9659530177173203,
+          "drumLevel": 0.09745900103427818,
+          "drumOnset": 0.04317333764370804,
+          "drumSustainedPeak": 0.17090059591279227,
+          "kickLevel": 0.04559626295005417,
+          "melodyRise": false,
+          "nextBass": 0.0029759387828997928,
+          "nextKick": 0.0001275193869544123
+        },
+        "label": "Breakdown",
+        "start_seconds": 542.88
+      },
+      {
+        "end_seconds": 568.0933333333334,
+        "featureEvidence": {
+          "bassLevel": 0.00196840317448254,
+          "drumLevel": 0.009073644078248089,
+          "drumOnset": 0.017807896511718244,
+          "drumSustainedPeak": 0.0003393916447775819,
+          "kickLevel": 8.241771225679653e-05,
+          "melodyRise": false,
+          "nextBass": 0.00196840317448254,
+          "nextKick": 8.241771225679653e-05
+        },
+        "label": "Outro",
+        "start_seconds": 556.8
+      }
+    ],
+    "durationSeconds": 568.0933333333334,
+    "expectedEventSeconds": [
+      375.94
+    ],
+    "title": "A Beautiful Tomorrow"
+  },
+  {
+    "djPhrases": [
+      {
+        "end_seconds": 12.8,
+        "featureEvidence": {
+          "bassLevel": 0.0008557131943869292,
+          "drumLevel": 0.08258625321780952,
+          "drumOnset": 0.0908787354971471,
+          "drumSustainedPeak": 0.0908787354971471,
+          "kickLevel": 0.05694866399026655,
+          "melodyRise": false,
+          "nextBass": 0.5676956295137805,
+          "nextKick": 0.5507961239408043
+        },
+        "label": "Intro",
+        "start_seconds": 0.0
+      },
+      {
+        "end_seconds": 25.6,
+        "featureEvidence": {
+          "bassLevel": 0.5683619264031957,
+          "drumLevel": 0.48982293282280814,
+          "drumOnset": 0.5588816820292449,
+          "drumSustainedPeak": 0.5588816820292449,
+          "kickLevel": 0.47953082791284846,
+          "melodyRise": true,
+          "nextBass": 0.006571906888913061,
+          "nextKick": 0.06409870144307576
+        },
+        "label": "Groove",
+        "start_seconds": 12.8
+      },
+      {
+        "end_seconds": 38.4,
+        "featureEvidence": {
+          "bassLevel": 0.0037725498899817836,
+          "drumLevel": 0.07694615474387934,
+          "drumOnset": 0.09113848060894252,
+          "drumSustainedPeak": 0.09113848060894252,
+          "kickLevel": 0.05654273760737183,
+          "melodyRise": false,
+          "nextBass": 0.5634343977460521,
+          "nextKick": 0.5357441550293706
+        },
+        "label": "Breakdown",
+        "start_seconds": 25.6
+      },
+      {
+        "end_seconds": 64.0,
+        "featureEvidence": {
+          "bassLevel": 0.49523421547432916,
+          "drumLevel": 0.49740180703550185,
+          "drumOnset": 0.5415776685789276,
+          "drumSustainedPeak": 0.5496994250742404,
+          "kickLevel": 0.48635533031312217,
+          "melodyRise": false,
+          "nextBass": 0.0010088971819157545,
+          "nextKick": 0.06765447829582417
+        },
+        "label": "Groove",
+        "start_seconds": 38.4
+      },
+      {
+        "end_seconds": 76.8,
+        "featureEvidence": {
+          "bassLevel": 0.001054420717241159,
+          "drumLevel": 0.11296261221980887,
+          "drumOnset": 0.08826503064266616,
+          "drumSustainedPeak": 0.15500790261583258,
+          "kickLevel": 0.07055459362390759,
+          "melodyRise": false,
+          "nextBass": 0.5656328197514913,
+          "nextKick": 0.5391257986759845
+        },
+        "label": "Buildup",
+        "start_seconds": 64.0
+      },
+      {
+        "end_seconds": 89.6,
+        "featureEvidence": {
+          "bassLevel": 0.49581875884160287,
+          "drumLevel": 0.49609697716414497,
+          "drumOnset": 0.5503888979910714,
+          "drumSustainedPeak": 0.5503888979910714,
+          "kickLevel": 0.48701820116530203,
+          "melodyRise": false,
+          "nextBass": 0.5639123027927085,
+          "nextKick": 0.540991675475881
+        },
+        "label": "Groove",
+        "start_seconds": 76.8
+      },
+      {
+        "end_seconds": 102.4,
+        "featureEvidence": {
+          "bassLevel": 0.49517774435266637,
+          "drumLevel": 0.500316248873292,
+          "drumOnset": 0.5501493145748095,
+          "drumSustainedPeak": 0.5552517695669403,
+          "kickLevel": 0.482336096431699,
+          "melodyRise": false,
+          "nextBass": 0.561521991675056,
+          "nextKick": 0.5355845913725535
+        },
+        "label": "Groove",
+        "start_seconds": 89.6
+      },
+      {
+        "end_seconds": 128.0,
+        "featureEvidence": {
+          "bassLevel": 0.49473200129161704,
+          "drumLevel": 0.4848450203992193,
+          "drumOnset": 0.5437387087742006,
+          "drumSustainedPeak": 0.5610835583782798,
+          "kickLevel": 0.4702710057463857,
+          "melodyRise": false,
+          "nextBass": 0.0009678745324292626,
+          "nextKick": 0.07057934689165195
+        },
+        "label": "Groove",
+        "start_seconds": 102.4
+      },
+      {
+        "end_seconds": 140.8,
+        "featureEvidence": {
+          "bassLevel": 0.0009497235643734403,
+          "drumLevel": 0.07160028356272784,
+          "drumOnset": 0.08389632980441332,
+          "drumSustainedPeak": 0.08389632980441332,
+          "kickLevel": 0.0619936493522472,
+          "melodyRise": false,
+          "nextBass": 0.5647297867768655,
+          "nextKick": 0.5460956265345291
+        },
+        "label": "Breakdown",
+        "start_seconds": 128.0
+      },
+      {
+        "end_seconds": 153.6,
+        "featureEvidence": {
+          "bassLevel": 0.4978644259518434,
+          "drumLevel": 0.49437098538399954,
+          "drumOnset": 0.5518432142756731,
+          "drumSustainedPeak": 0.5537738113701702,
+          "kickLevel": 0.48900556646875054,
+          "melodyRise": false,
+          "nextBass": 0.5684103621258327,
+          "nextKick": 0.5436666458341944
+        },
+        "label": "Groove",
+        "start_seconds": 140.8
+      },
+      {
+        "end_seconds": 164.8,
+        "featureEvidence": {
+          "bassLevel": 0.5686341942657329,
+          "drumLevel": 0.5523265714043905,
+          "drumOnset": 0.5525791009858486,
+          "drumSustainedPeak": 0.5533974595796546,
+          "kickLevel": 0.5426202663679582,
+          "melodyRise": false,
+          "nextBass": 0.003598306200635153,
+          "nextKick": 0.09968588315730692
+        },
+        "label": "Groove",
+        "start_seconds": 153.6
+      },
+      {
+        "end_seconds": 171.2,
+        "featureEvidence": {
+          "bassLevel": 0.003598306200635153,
+          "drumLevel": 0.12594917260753544,
+          "drumOnset": 0.15101615095248797,
+          "drumSustainedPeak": 0.15101615095248797,
+          "kickLevel": 0.09968588315730692,
+          "melodyRise": false,
+          "nextBass": 0.42445366406576673,
+          "nextKick": 0.5727204239110238
+        },
+        "label": "Breakdown",
+        "start_seconds": 164.8
+      },
+      {
+        "end_seconds": 198.4,
+        "featureEvidence": {
+          "bassLevel": 0.4656326751789925,
+          "drumLevel": 0.507371854105283,
+          "drumOnset": 0.5566362653153509,
+          "drumSustainedPeak": 0.5566362653153509,
+          "kickLevel": 0.49169867641056336,
+          "melodyRise": false,
+          "nextBass": 0.5635138535499867,
+          "nextKick": 0.538509615542289
+        },
+        "label": "Groove",
+        "start_seconds": 171.2
+      },
+      {
+        "end_seconds": 236.8,
+        "featureEvidence": {
+          "bassLevel": 0.4953327742634499,
+          "drumLevel": 0.4888229872226003,
+          "drumOnset": 0.5463911572414522,
+          "drumSustainedPeak": 0.5507204613421245,
+          "kickLevel": 0.4788824017170184,
+          "melodyRise": false,
+          "nextBass": 0.0010558281514627817,
+          "nextKick": 0.06506263343328156
+        },
+        "label": "Groove",
+        "start_seconds": 198.4
+      },
+      {
+        "end_seconds": 257.6,
+        "featureEvidence": {
+          "bassLevel": 0.0009163500300107302,
+          "drumLevel": 0.07572671681559034,
+          "drumOnset": 0.08869281877478917,
+          "drumSustainedPeak": 0.08869281877478917,
+          "kickLevel": 0.055252691440590807,
+          "melodyRise": false,
+          "nextBass": 0.0009163500300107302,
+          "nextKick": 0.055252691440590807
+        },
+        "label": "Breakdown",
+        "start_seconds": 236.8
+      }
+    ],
+    "durationSeconds": 257.6,
+    "expectedEventSeconds": [],
+    "title": "Act A Fool (YROR? Bootleg)"
+  },
+  {
+    "djPhrases": [
+      {
+        "end_seconds": 18.04,
+        "featureEvidence": {
+          "bassLevel": 0.24327325219621995,
+          "drumLevel": 0.019826407410102567,
+          "drumOnset": 0.0007490845779961243,
+          "drumSustainedPeak": 0.0007490845779961243,
+          "kickLevel": 0.0188232588572972,
+          "melodyRise": false,
+          "nextBass": 0.6918788880147412,
+          "nextKick": 0.0006117481171519979
+        },
+        "label": "Intro",
+        "start_seconds": 0.0
+      },
+      {
+        "end_seconds": 35.64,
+        "featureEvidence": {
+          "bassLevel": 0.2579277648371135,
+          "drumLevel": 0.008848807648687618,
+          "drumOnset": 0.0009024007105901954,
+          "drumSustainedPeak": 0.0011776703641502902,
+          "kickLevel": 0.008038944483316036,
+          "melodyRise": false,
+          "nextBass": 0.0015346418345432318,
+          "nextKick": 0.016133217089251743
+        },
+        "label": "Breakdown",
+        "start_seconds": 18.04
+      },
+      {
+        "end_seconds": 52.43,
+        "featureEvidence": {
+          "bassLevel": 0.0018478019127693478,
+          "drumLevel": 0.007249025369315539,
+          "drumOnset": 0.0004635908094548128,
+          "drumSustainedPeak": 0.0008026191890521515,
+          "kickLevel": 0.006436546403540885,
+          "melodyRise": false,
+          "nextBass": 0.39126707209735284,
+          "nextKick": 0.191962226850349
+        },
+        "label": "Breakdown",
+        "start_seconds": 35.64
+      },
+      {
+        "end_seconds": 71.1,
+        "featureEvidence": {
+          "bassLevel": 0.3585493495709642,
+          "drumLevel": 0.2692828702652793,
+          "drumOnset": 0.2889911896126152,
+          "drumSustainedPeak": 0.29904535948560307,
+          "kickLevel": 0.16681268699622043,
+          "melodyRise": false,
+          "nextBass": 1.6781059665038283,
+          "nextKick": 0.9898440229186843
+        },
+        "label": "Breakdown",
+        "start_seconds": 52.43
+      },
+      {
+        "end_seconds": 88.94,
+        "featureEvidence": {
+          "bassLevel": 1.5518916655423496,
+          "drumLevel": 0.9121319781958467,
+          "drumOnset": 1.018259438565372,
+          "drumSustainedPeak": 1.0205809331046538,
+          "kickLevel": 0.886576498119403,
+          "melodyRise": false,
+          "nextBass": 1.763405669482648,
+          "nextKick": 0.9824321742320868
+        },
+        "label": "Drop entrance",
+        "start_seconds": 71.1
+      },
+      {
+        "end_seconds": 106.78,
+        "featureEvidence": {
+          "bassLevel": 1.3983380429370118,
+          "drumLevel": 0.8177998638371564,
+          "drumOnset": 1.0312140999200903,
+          "drumSustainedPeak": 1.0312140999200903,
+          "kickLevel": 0.7814113992185234,
+          "melodyRise": false,
+          "nextBass": 1.657015841099935,
+          "nextKick": 0.9391008473865494
+        },
+        "label": "Groove",
+        "start_seconds": 88.94
+      },
+      {
+        "end_seconds": 124.6,
+        "featureEvidence": {
+          "bassLevel": 1.6606773342459507,
+          "drumLevel": 0.9637707843879798,
+          "drumOnset": 0.9691944077037361,
+          "drumSustainedPeak": 1.028702836497161,
+          "kickLevel": 0.9177457990913852,
+          "melodyRise": false,
+          "nextBass": 0.37008362826902047,
+          "nextKick": 0.22949479227593886
+        },
+        "label": "Drop entrance",
+        "start_seconds": 106.78
+      },
+      {
+        "end_seconds": 142.44,
+        "featureEvidence": {
+          "bassLevel": 0.38399369239709963,
+          "drumLevel": 0.26115015006224335,
+          "drumOnset": 0.3315545169078827,
+          "drumSustainedPeak": 0.3315545169078827,
+          "kickLevel": 0.19031713658533195,
+          "melodyRise": false,
+          "nextBass": 1.4668888022987243,
+          "nextKick": 0.9809025499997385
+        },
+        "label": "Breakdown",
+        "start_seconds": 124.6
+      },
+      {
+        "end_seconds": 160.26,
+        "featureEvidence": {
+          "bassLevel": 1.4384909631243792,
+          "drumLevel": 0.917268618311426,
+          "drumOnset": 1.0088345676744312,
+          "drumSustainedPeak": 1.01691623421307,
+          "kickLevel": 0.8775549462465174,
+          "melodyRise": false,
+          "nextBass": 1.6579588509290333,
+          "nextKick": 0.9515578360174995
+        },
+        "label": "Drop entrance",
+        "start_seconds": 142.44
+      },
+      {
+        "end_seconds": 178.12,
+        "featureEvidence": {
+          "bassLevel": 1.3896701365240716,
+          "drumLevel": 0.8133474226505699,
+          "drumOnset": 0.9990611829357929,
+          "drumSustainedPeak": 1.0191873658627917,
+          "kickLevel": 0.7694046906215706,
+          "melodyRise": false,
+          "nextBass": 1.067669865692791,
+          "nextKick": 1.0597528061494998
+        },
+        "label": "Groove",
+        "start_seconds": 160.26
+      },
+      {
+        "end_seconds": 195.96,
+        "featureEvidence": {
+          "bassLevel": 1.3841000599193025,
+          "drumLevel": 1.0233533402889048,
+          "drumOnset": 1.146488010856506,
+          "drumSustainedPeak": 1.146488010856506,
+          "kickLevel": 0.9886381461451759,
+          "melodyRise": false,
+          "nextBass": 1.5286012485307654,
+          "nextKick": 1.0131906175996463
+        },
+        "label": "Drop entrance",
+        "start_seconds": 178.12
+      },
+      {
+        "end_seconds": 213.78,
+        "featureEvidence": {
+          "bassLevel": 1.3005783049714195,
+          "drumLevel": 0.9243120104686295,
+          "drumOnset": 1.0323691305981404,
+          "drumSustainedPeak": 1.0845198577562927,
+          "kickLevel": 0.8839098337353885,
+          "melodyRise": false,
+          "nextBass": 0.42445997723947243,
+          "nextKick": 0.2827504545101677
+        },
+        "label": "Groove",
+        "start_seconds": 195.96
+      },
+      {
+        "end_seconds": 231.88,
+        "featureEvidence": {
+          "bassLevel": 0.1661987647511236,
+          "drumLevel": 0.10594564897495123,
+          "drumOnset": 0.45541202875038234,
+          "drumSustainedPeak": 0.45541202875038234,
+          "kickLevel": 0.10142724917402884,
+          "melodyRise": false,
+          "nextBass": 0.6611193643423199,
+          "nextKick": 0.00032811296771452877
+        },
+        "label": "Breakdown",
+        "start_seconds": 213.78
+      },
+      {
+        "end_seconds": 251.1129931972789,
+        "featureEvidence": {
+          "bassLevel": 0.2429288324330125,
+          "drumLevel": 0.000305186090003941,
+          "drumOnset": 0.0004607814993367586,
+          "drumSustainedPeak": 0.0004607814993367586,
+          "kickLevel": 0.00021865872116503862,
+          "melodyRise": false,
+          "nextBass": 0.2429288324330125,
+          "nextKick": 0.00021865872116503862
+        },
+        "label": "Outro",
+        "start_seconds": 231.88
+      }
+    ],
+    "durationSeconds": 251.1129931972789,
+    "expectedEventSeconds": [
+      71.1,
+      106.78,
+      142.44,
+      178.12
+    ],
+    "title": "Adagio for Strings (BYØRN Hard Techno Edit)"
+  },
+  {
+    "djPhrases": [
+      {
+        "end_seconds": 10.48,
+        "featureEvidence": {
+          "bassLevel": 0.0018582209800963282,
+          "drumLevel": 0.4015743297573061,
+          "drumOnset": 0.3930429088788407,
+          "drumSustainedPeak": 0.4101057506357717,
+          "kickLevel": 0.4237999702889053,
+          "melodyRise": false,
+          "nextBass": 0.3054954928536173,
+          "nextKick": 0.39448477063198867
+        },
+        "label": "Intro",
+        "start_seconds": 0.0
+      },
+      {
+        "end_seconds": 101.14,
+        "featureEvidence": {
+          "bassLevel": 0.40582744527741155,
+          "drumLevel": 0.3472318819898261,
+          "drumOnset": 0.3143527066462117,
+          "drumSustainedPeak": 0.4548225036190023,
+          "kickLevel": 0.36958177511613644,
+          "melodyRise": false,
+          "nextBass": 1.245647168052268,
+          "nextKick": 1.790115994851534
+        },
+        "label": "Transition",
+        "start_seconds": 10.48
+      },
+      {
+        "end_seconds": 114.38,
+        "featureEvidence": {
+          "bassLevel": 1.3100950653577306,
+          "drumLevel": 1.522737461416599,
+          "drumOnset": 1.6931250290147624,
+          "drumSustainedPeak": 1.6931250290147624,
+          "kickLevel": 1.5540855663125202,
+          "melodyRise": false,
+          "nextBass": 1.255037042441599,
+          "nextKick": 1.7408655858248685
+        },
+        "label": "High-energy groove",
+        "start_seconds": 101.14
+      },
+      {
+        "end_seconds": 134.24,
+        "featureEvidence": {
+          "bassLevel": 0.8904938851237475,
+          "drumLevel": 1.1813175868204313,
+          "drumOnset": 1.6410793329996411,
+          "drumSustainedPeak": 1.6710387720368736,
+          "kickLevel": 1.195995334256403,
+          "melodyRise": false,
+          "nextBass": 1.5056582040209496,
+          "nextKick": 1.602876622409372
+        },
+        "label": "High-energy groove",
+        "start_seconds": 114.38
+      },
+      {
+        "end_seconds": 147.46,
+        "featureEvidence": {
+          "bassLevel": 1.529611915824737,
+          "drumLevel": 1.388057301242847,
+          "drumOnset": 1.5020360164065705,
+          "drumSustainedPeak": 1.5326631392686485,
+          "kickLevel": 1.4574880277959854,
+          "melodyRise": false,
+          "nextBass": 1.4963860168388183,
+          "nextKick": 1.620516874113489
+        },
+        "label": "High-energy groove",
+        "start_seconds": 134.24
+      },
+      {
+        "end_seconds": 168.58,
+        "featureEvidence": {
+          "bassLevel": 1.0504339668691476,
+          "drumLevel": 1.0117389411551319,
+          "drumOnset": 1.5289971741539738,
+          "drumSustainedPeak": 1.55750748759052,
+          "kickLevel": 1.0739348609365444,
+          "melodyRise": false,
+          "nextBass": 0.7261185898986207,
+          "nextKick": 0.31800986480564136
+        },
+        "label": "Groove",
+        "start_seconds": 147.46
+      },
+      {
+        "end_seconds": 220.84,
+        "featureEvidence": {
+          "bassLevel": 0.5238200298950085,
+          "drumLevel": 0.3282765241955387,
+          "drumOnset": 0.3012702380106257,
+          "drumSustainedPeak": 0.42760298457251084,
+          "kickLevel": 0.3379881273295462,
+          "melodyRise": false,
+          "nextBass": 1.4884255572683858,
+          "nextKick": 1.6006659005196033
+        },
+        "label": "Transition",
+        "start_seconds": 168.58
+      },
+      {
+        "end_seconds": 234.06,
+        "featureEvidence": {
+          "bassLevel": 1.5050086900063604,
+          "drumLevel": 1.383418258034306,
+          "drumOnset": 1.4881481256710118,
+          "drumSustainedPeak": 1.5299793556823507,
+          "kickLevel": 1.4541422001762219,
+          "melodyRise": false,
+          "nextBass": 1.482755612194614,
+          "nextKick": 1.6116648302086756
+        },
+        "label": "High-energy groove",
+        "start_seconds": 220.84
+      },
+      {
+        "end_seconds": 260.56,
+        "featureEvidence": {
+          "bassLevel": 1.3821071468453405,
+          "drumLevel": 1.4513879339332927,
+          "drumOnset": 1.5173538251426626,
+          "drumSustainedPeak": 1.6810669969643464,
+          "kickLevel": 1.495483523690069,
+          "melodyRise": false,
+          "nextBass": 1.536445798150309,
+          "nextKick": 0.38382833256578514
+        },
+        "label": "High-energy groove",
+        "start_seconds": 234.06
+      },
+      {
+        "end_seconds": 273.82,
+        "featureEvidence": {
+          "bassLevel": 1.5329204985402276,
+          "drumLevel": 0.4803065843687492,
+          "drumOnset": 0.5124111144681011,
+          "drumSustainedPeak": 0.5124111144681011,
+          "kickLevel": 0.3348458261297938,
+          "melodyRise": false,
+          "nextBass": 0.015608757550172285,
+          "nextKick": 0.0002731460300341643
+        },
+        "label": "Groove",
+        "start_seconds": 260.56
+      },
+      {
+        "end_seconds": 286.987052154195,
+        "featureEvidence": {
+          "bassLevel": 0.008025391813061476,
+          "drumLevel": 0.0293053005472118,
+          "drumOnset": 0.0574025227940753,
+          "drumSustainedPeak": 0.001208078300348536,
+          "kickLevel": 0.00017572321060448817,
+          "melodyRise": false,
+          "nextBass": 0.008025391813061476,
+          "nextKick": 0.00017572321060448817
+        },
+        "label": "Outro",
+        "start_seconds": 273.82
+      }
+    ],
+    "durationSeconds": 286.987052154195,
+    "expectedEventSeconds": [],
+    "title": "Africa (Jesse Bloch Bootleg)"
+  },
+  {
+    "djPhrases": [
+      {
+        "end_seconds": 15.34,
+        "featureEvidence": {
+          "bassLevel": 0.0021836078023719768,
+          "drumLevel": 0.9175139684247726,
+          "drumOnset": 0.38033763705258034,
+          "drumSustainedPeak": 1.579338737797476,
+          "kickLevel": 1.0645667408866395,
+          "melodyRise": false,
+          "nextBass": 0.0029610085599802096,
+          "nextKick": 2.162405546254483
+        },
+        "label": "Intro",
+        "start_seconds": 0.0
+      },
+      {
+        "end_seconds": 31.44,
+        "featureEvidence": {
+          "bassLevel": 0.0031179740103547634,
+          "drumLevel": 1.6557383749874133,
+          "drumOnset": 1.6989683259874415,
+          "drumSustainedPeak": 1.7680156386120598,
+          "kickLevel": 2.020228613886903,
+          "melodyRise": false,
+          "nextBass": 0.003529965951437007,
+          "nextKick": 0.18456991666132777
+        },
+        "label": "Groove",
+        "start_seconds": 15.34
+      },
+      {
+        "end_seconds": 39.26,
+        "featureEvidence": {
+          "bassLevel": 0.003583436574926481,
+          "drumLevel": 0.1685773119914217,
+          "drumOnset": 0.13609495483316003,
+          "drumSustainedPeak": 0.13609495483316003,
+          "kickLevel": 0.1833806025306454,
+          "melodyRise": false,
+          "nextBass": 0.005012222993345321,
+          "nextKick": 0.009380825599641185
+        },
+        "label": "Breakdown",
+        "start_seconds": 31.44
+      },
+      {
+        "end_seconds": 54.88,
+        "featureEvidence": {
+          "bassLevel": 0.00726622438873559,
+          "drumLevel": 0.006938171796015662,
+          "drumOnset": 0.005708205793955281,
+          "drumSustainedPeak": 0.005708205793955281,
+          "kickLevel": 0.007044517835921918,
+          "melodyRise": false,
+          "nextBass": 0.03906733781180364,
+          "nextKick": 0.02163182535486218
+        },
+        "label": "Breakdown",
+        "start_seconds": 39.26
+      },
+      {
+        "end_seconds": 70.48,
+        "featureEvidence": {
+          "bassLevel": 0.034979529955885366,
+          "drumLevel": 0.18640113797680105,
+          "drumOnset": 0.11020154463142026,
+          "drumSustainedPeak": 0.26015136919330845,
+          "kickLevel": 0.1083832602006682,
+          "melodyRise": false,
+          "nextBass": 0.14437601580331058,
+          "nextKick": 0.730007327396594
+        },
+        "label": "Buildup",
+        "start_seconds": 54.88
+      },
+      {
+        "end_seconds": 93.9,
+        "featureEvidence": {
+          "bassLevel": 0.05165158253755342,
+          "drumLevel": 0.540772023092902,
+          "drumOnset": 0.7249429692326879,
+          "drumSustainedPeak": 0.7249429692326879,
+          "kickLevel": 0.5169494323668138,
+          "melodyRise": false,
+          "nextBass": 2.267738783554358,
+          "nextKick": 2.063989203278361
+        },
+        "label": "Groove",
+        "start_seconds": 70.48
+      },
+      {
+        "end_seconds": 109.01,
+        "featureEvidence": {
+          "bassLevel": 2.2702484985136357,
+          "drumLevel": 1.5097039343255896,
+          "drumOnset": 1.6412982675395347,
+          "drumSustainedPeak": 1.6412982675395347,
+          "kickLevel": 2.0309362337017873,
+          "melodyRise": false,
+          "nextBass": 1.9717245548789193,
+          "nextKick": 2.031050952591167
+        },
+        "label": "Drop entrance",
+        "start_seconds": 93.9
+      },
+      {
+        "end_seconds": 125.12,
+        "featureEvidence": {
+          "bassLevel": 1.919968047469912,
+          "drumLevel": 1.4893817589058533,
+          "drumOnset": 1.592060961708424,
+          "drumSustainedPeak": 1.592060961708424,
+          "kickLevel": 1.9791989139047288,
+          "melodyRise": false,
+          "nextBass": 0.8750449396356637,
+          "nextKick": 0.7276556559929102
+        },
+        "label": "High-energy groove",
+        "start_seconds": 109.01
+      },
+      {
+        "end_seconds": 140.72,
+        "featureEvidence": {
+          "bassLevel": 0.6330051335604561,
+          "drumLevel": 0.758440141525886,
+          "drumOnset": 0.6690429520029509,
+          "drumSustainedPeak": 0.8759460203754608,
+          "kickLevel": 0.6480840297175975,
+          "melodyRise": false,
+          "nextBass": 2.126899936995313,
+          "nextKick": 2.1130905609119757
+        },
+        "label": "Groove",
+        "start_seconds": 125.12
+      },
+      {
+        "end_seconds": 156.32,
+        "featureEvidence": {
+          "bassLevel": 2.0811984443209264,
+          "drumLevel": 1.563075639189318,
+          "drumOnset": 1.5866936369453652,
+          "drumSustainedPeak": 1.5866936369453652,
+          "kickLevel": 2.102198134820951,
+          "melodyRise": false,
+          "nextBass": 2.006624190891204,
+          "nextKick": 2.062614183712539
+        },
+        "label": "High-energy groove",
+        "start_seconds": 140.72
+      },
+      {
+        "end_seconds": 179.74,
+        "featureEvidence": {
+          "bassLevel": 1.2022041252537394,
+          "drumLevel": 1.0857645034778194,
+          "drumOnset": 1.5158959460996786,
+          "drumSustainedPeak": 1.578176850740848,
+          "kickLevel": 1.4648919117885904,
+          "melodyRise": false,
+          "nextBass": 0.007648353172937891,
+          "nextKick": 0.011797185758807154
+        },
+        "label": "Groove",
+        "start_seconds": 156.32
+      },
+      {
+        "end_seconds": 234.4,
+        "featureEvidence": {
+          "bassLevel": 0.03691100601072091,
+          "drumLevel": 0.2841874622990731,
+          "drumOnset": 0.004017025871018598,
+          "drumSustainedPeak": 0.7170675785885727,
+          "kickLevel": 0.25299641348437124,
+          "melodyRise": false,
+          "nextBass": 2.2579893963791258,
+          "nextKick": 2.062456335762013
+        },
+        "label": "Buildup",
+        "start_seconds": 179.74
+      },
+      {
+        "end_seconds": 250.56,
+        "featureEvidence": {
+          "bassLevel": 1.8366243242273552,
+          "drumLevel": 1.2556166926928738,
+          "drumOnset": 1.5924771982833517,
+          "drumSustainedPeak": 1.5924771982833517,
+          "kickLevel": 1.7038013014458477,
+          "melodyRise": false,
+          "nextBass": 1.8366243242273552,
+          "nextKick": 1.7038013014458477
+        },
+        "label": "Drop entrance",
+        "start_seconds": 234.4
+      }
+    ],
+    "durationSeconds": 250.56,
+    "expectedEventSeconds": [
+      93.9,
+      234.4
+    ],
+    "title": "Alors On Danse (Dubdogz Remake)"
+  },
+  {
+    "djPhrases": [
+      {
+        "end_seconds": 13.9,
+        "featureEvidence": {
+          "bassLevel": 0.04905623732459239,
+          "drumLevel": 0.2618007427688376,
+          "drumOnset": 0.2846823151460666,
+          "drumSustainedPeak": 0.2846823151460666,
+          "kickLevel": 0.10262413804169891,
+          "melodyRise": false,
+          "nextBass": 0.029749024944242933,
+          "nextKick": 0.10137463035514507
+        },
+        "label": "Intro",
+        "start_seconds": 0.0
+      },
+      {
+        "end_seconds": 83.48,
+        "featureEvidence": {
+          "bassLevel": 0.38145881362206396,
+          "drumLevel": 0.6517068392494142,
+          "drumOnset": 0.25445597321902,
+          "drumSustainedPeak": 0.842546315539264,
+          "kickLevel": 0.5964639109163734,
+          "melodyRise": false,
+          "nextBass": 0.8875157758603887,
+          "nextKick": 0.7634642621128171
+        },
+        "label": "Drop entrance",
+        "start_seconds": 13.9
+      },
+      {
+        "end_seconds": 97.4,
+        "featureEvidence": {
+          "bassLevel": 0.8920894573040021,
+          "drumLevel": 0.8044376066614078,
+          "drumOnset": 0.8004535886269543,
+          "drumSustainedPeak": 0.8051726619662105,
+          "kickLevel": 0.7608307156086546,
+          "melodyRise": false,
+          "nextBass": 0.8584214196908846,
+          "nextKick": 0.7624075585743318
+        },
+        "label": "Groove",
+        "start_seconds": 83.48
+      },
+      {
+        "end_seconds": 139.1,
+        "featureEvidence": {
+          "bassLevel": 0.8483669076922524,
+          "drumLevel": 0.6611492232064241,
+          "drumOnset": 0.7936340967873463,
+          "drumSustainedPeak": 0.8012746033568923,
+          "kickLevel": 0.6186137079138226,
+          "melodyRise": false,
+          "nextBass": 0.34493532484354494,
+          "nextKick": 0.0891916955584902
+        },
+        "label": "Groove",
+        "start_seconds": 97.4
+      },
+      {
+        "end_seconds": 222.84,
+        "featureEvidence": {
+          "bassLevel": 0.36539731535611464,
+          "drumLevel": 0.028093863323688826,
+          "drumOnset": 0.07433517172789787,
+          "drumSustainedPeak": 0.11163235709940465,
+          "kickLevel": 0.026970796591852485,
+          "melodyRise": true,
+          "nextBass": 0.1871370926846241,
+          "nextKick": 0.09137883749511706
+        },
+        "label": "Breakdown",
+        "start_seconds": 139.1
+      },
+      {
+        "end_seconds": 250.44,
+        "featureEvidence": {
+          "bassLevel": 0.130340310640576,
+          "drumLevel": 0.11832682744856356,
+          "drumOnset": 0.07754209978771172,
+          "drumSustainedPeak": 0.20127258487325028,
+          "kickLevel": 0.09778739617493841,
+          "melodyRise": false,
+          "nextBass": 0.8810195626204441,
+          "nextKick": 0.7336113008274491
+        },
+        "label": "Buildup",
+        "start_seconds": 222.84
+      },
+      {
+        "end_seconds": 264.36,
+        "featureEvidence": {
+          "bassLevel": 0.8793669998902824,
+          "drumLevel": 0.7608866557715488,
+          "drumOnset": 0.7635078856638419,
+          "drumSustainedPeak": 0.769792802884877,
+          "kickLevel": 0.7381067351680005,
+          "melodyRise": false,
+          "nextBass": 0.9416823384630488,
+          "nextKick": 0.7356548552543727
+        },
+        "label": "Drop entrance",
+        "start_seconds": 250.44
+      },
+      {
+        "end_seconds": 333.92,
+        "featureEvidence": {
+          "bassLevel": 0.8751535787165882,
+          "drumLevel": 0.6634786891046974,
+          "drumOnset": 0.76046597093857,
+          "drumSustainedPeak": 0.7645935012935755,
+          "kickLevel": 0.6402914916601692,
+          "melodyRise": false,
+          "nextBass": 0.8612031582479514,
+          "nextKick": 0.7337733313970466
+        },
+        "label": "Groove",
+        "start_seconds": 264.36
+      },
+      {
+        "end_seconds": 347.84,
+        "featureEvidence": {
+          "bassLevel": 0.8610842580376241,
+          "drumLevel": 0.7754975068460425,
+          "drumOnset": 0.7730305468734496,
+          "drumSustainedPeak": 0.7823225826821466,
+          "kickLevel": 0.7414214160908682,
+          "melodyRise": false,
+          "nextBass": 0.8691651663783705,
+          "nextKick": 0.7419565672785401
+        },
+        "label": "Groove",
+        "start_seconds": 333.92
+      },
+      {
+        "end_seconds": 389.58,
+        "featureEvidence": {
+          "bassLevel": 0.6080221737250953,
+          "drumLevel": 0.7978676626968499,
+          "drumOnset": 0.7800538265580926,
+          "drumSustainedPeak": 0.8417979441498435,
+          "kickLevel": 0.7545162267784992,
+          "melodyRise": false,
+          "nextBass": 0.007822789906933149,
+          "nextKick": 0.00019178061182736653
+        },
+        "label": "Groove",
+        "start_seconds": 347.84
+      },
+      {
+        "end_seconds": 403.47825396825397,
+        "featureEvidence": {
+          "bassLevel": 0.006905509964721572,
+          "drumLevel": 0.022029096038960003,
+          "drumOnset": 0.05379127763172841,
+          "drumSustainedPeak": 0.05379127763172841,
+          "kickLevel": 0.0001797761834007379,
+          "melodyRise": false,
+          "nextBass": 0.006905509964721572,
+          "nextKick": 0.0001797761834007379
+        },
+        "label": "Outro",
+        "start_seconds": 389.58
+      }
+    ],
+    "durationSeconds": 403.47825396825397,
+    "expectedEventSeconds": [
+      13.9,
+      250.44
+    ],
+    "title": "Atlantis (Extended Mix)"
+  },
+  {
+    "djPhrases": [
+      {
+        "end_seconds": 24.34,
+        "featureEvidence": {
+          "bassLevel": 0.003402001793669745,
+          "drumLevel": 0.8112050075631608,
+          "drumOnset": 0.8126612874387653,
+          "drumSustainedPeak": 0.8154634018393878,
+          "kickLevel": 0.7496056636636557,
+          "melodyRise": false,
+          "nextBass": 0.11494286932274488,
+          "nextKick": 0.7448806894928125
+        },
+        "label": "Intro",
+        "start_seconds": 0.0
+      },
+      {
+        "end_seconds": 41.74,
+        "featureEvidence": {
+          "bassLevel": 0.1749827385926387,
+          "drumLevel": 0.6455652041581353,
+          "drumOnset": 0.8122033460986404,
+          "drumSustainedPeak": 0.8165932500039236,
+          "kickLevel": 0.576562404373732,
+          "melodyRise": false,
+          "nextBass": 0.9127746505515273,
+          "nextKick": 0.7240341561775722
+        },
+        "label": "Groove",
+        "start_seconds": 24.34
+      },
+      {
+        "end_seconds": 55.66,
+        "featureEvidence": {
+          "bassLevel": 0.8958135375917387,
+          "drumLevel": 0.7697902594998843,
+          "drumOnset": 0.7922293733832011,
+          "drumSustainedPeak": 0.7968576827524013,
+          "kickLevel": 0.703616126823474,
+          "melodyRise": false,
+          "nextBass": 0.8968596004382906,
+          "nextKick": 0.7068334836611511
+        },
+        "label": "Drop entrance",
+        "start_seconds": 41.74
+      },
+      {
+        "end_seconds": 69.58,
+        "featureEvidence": {
+          "bassLevel": 0.8868331253968561,
+          "drumLevel": 0.758271712306413,
+          "drumOnset": 0.7741070099911327,
+          "drumSustainedPeak": 0.7741070099911327,
+          "kickLevel": 0.6974372803129706,
+          "melodyRise": false,
+          "nextBass": 0.876951799405522,
+          "nextKick": 0.6742132630814861
+        },
+        "label": "Groove",
+        "start_seconds": 55.66
+      },
+      {
+        "end_seconds": 111.32,
+        "featureEvidence": {
+          "bassLevel": 0.8069726175640607,
+          "drumLevel": 0.6157663336931657,
+          "drumOnset": 0.7265337639649457,
+          "drumSustainedPeak": 0.7265337639649457,
+          "kickLevel": 0.5607782752478722,
+          "melodyRise": false,
+          "nextBass": 0.4353222564896527,
+          "nextKick": 0.05319215452274009
+        },
+        "label": "Groove",
+        "start_seconds": 69.58
+      },
+      {
+        "end_seconds": 180.88,
+        "featureEvidence": {
+          "bassLevel": 0.38094265008730144,
+          "drumLevel": 0.016695661207777875,
+          "drumOnset": 0.01943018316889243,
+          "drumSustainedPeak": 0.03225610257647855,
+          "kickLevel": 0.0141433276137033,
+          "melodyRise": false,
+          "nextBass": 0.37085110170675817,
+          "nextKick": 0.11941215973114179
+        },
+        "label": "Breakdown",
+        "start_seconds": 111.32
+      },
+      {
+        "end_seconds": 208.7,
+        "featureEvidence": {
+          "bassLevel": 0.38326253143842387,
+          "drumLevel": 0.23129784620957222,
+          "drumOnset": 0.09760423398010706,
+          "drumSustainedPeak": 0.4205159261430561,
+          "kickLevel": 0.22527836337616447,
+          "melodyRise": false,
+          "nextBass": 0.7726838598782945,
+          "nextKick": 0.6880313064574674
+        },
+        "label": "Buildup",
+        "start_seconds": 180.88
+      },
+      {
+        "end_seconds": 264.36,
+        "featureEvidence": {
+          "bassLevel": 0.7492232701736761,
+          "drumLevel": 0.6914437530788987,
+          "drumOnset": 0.7336590007863387,
+          "drumSustainedPeak": 0.7510701006834951,
+          "kickLevel": 0.6444524909657188,
+          "melodyRise": false,
+          "nextBass": 0.8848601333540912,
+          "nextKick": 0.7187959691483486
+        },
+        "label": "Groove",
+        "start_seconds": 208.7
+      },
+      {
+        "end_seconds": 278.26,
+        "featureEvidence": {
+          "bassLevel": 0.8800409141842144,
+          "drumLevel": 0.7799455877285675,
+          "drumOnset": 0.7804964918189019,
+          "drumSustainedPeak": 0.7842409360369198,
+          "kickLevel": 0.7214091094688553,
+          "melodyRise": false,
+          "nextBass": 0.8837567181720147,
+          "nextKick": 0.7201804561742038
+        },
+        "label": "Groove",
+        "start_seconds": 264.36
+      },
+      {
+        "end_seconds": 292.18,
+        "featureEvidence": {
+          "bassLevel": 0.8821575527442831,
+          "drumLevel": 0.7340587584622434,
+          "drumOnset": 0.7813574552310052,
+          "drumSustainedPeak": 0.7814850155448827,
+          "kickLevel": 0.67597317109508,
+          "melodyRise": false,
+          "nextBass": 0.797736745648801,
+          "nextKick": 0.7236700414106869
+        },
+        "label": "Groove",
+        "start_seconds": 278.26
+      },
+      {
+        "end_seconds": 306.1,
+        "featureEvidence": {
+          "bassLevel": 0.7902510152893113,
+          "drumLevel": 0.7794626959985003,
+          "drumOnset": 0.7726660043050267,
+          "drumSustainedPeak": 0.7844398465956285,
+          "kickLevel": 0.7204254677868642,
+          "melodyRise": false,
+          "nextBass": 0.8022585154182543,
+          "nextKick": 0.7194671879661869
+        },
+        "label": "Groove",
+        "start_seconds": 292.18
+      },
+      {
+        "end_seconds": 320.0,
+        "featureEvidence": {
+          "bassLevel": 0.7831968371272796,
+          "drumLevel": 0.5211688710806615,
+          "drumOnset": 0.7680425979766763,
+          "drumSustainedPeak": 0.777008121440359,
+          "kickLevel": 0.46059255290408274,
+          "melodyRise": false,
+          "nextBass": 0.6856207131567138,
+          "nextKick": 0.2641609248903133
+        },
+        "label": "Groove",
+        "start_seconds": 306.1
+      },
+      {
+        "end_seconds": 332.18,
+        "featureEvidence": {
+          "bassLevel": 0.5768650543219406,
+          "drumLevel": 0.3921864280572458,
+          "drumOnset": 0.2624433670426449,
+          "drumSustainedPeak": 0.5697699323732182,
+          "kickLevel": 0.38135721506640924,
+          "melodyRise": false,
+          "nextBass": 0.7181426107004442,
+          "nextKick": 0.5767875626713841
+        },
+        "label": "Buildup",
+        "start_seconds": 320.0
+      },
+      {
+        "end_seconds": 419.14,
+        "featureEvidence": {
+          "bassLevel": 0.7392578094098798,
+          "drumLevel": 0.6485152015825004,
+          "drumOnset": 0.7232939829738444,
+          "drumSustainedPeak": 0.7362326680829607,
+          "kickLevel": 0.6059152422546831,
+          "melodyRise": false,
+          "nextBass": 0.8998734090789117,
+          "nextKick": 0.7205226025043729
+        },
+        "label": "Groove",
+        "start_seconds": 332.18
+      },
+      {
+        "end_seconds": 431.3,
+        "featureEvidence": {
+          "bassLevel": 0.8924494142314834,
+          "drumLevel": 0.7881576046095262,
+          "drumOnset": 0.7890164302825017,
+          "drumSustainedPeak": 0.7942602634992253,
+          "kickLevel": 0.723440768307725,
+          "melodyRise": false,
+          "nextBass": 0.8916593189400522,
+          "nextKick": 0.7297109494399787
+        },
+        "label": "Groove",
+        "start_seconds": 419.14
+      },
+      {
+        "end_seconds": 446.96,
+        "featureEvidence": {
+          "bassLevel": 0.8963688945773519,
+          "drumLevel": 0.7503711773030348,
+          "drumOnset": 0.7931957736841243,
+          "drumSustainedPeak": 0.7996408446451492,
+          "kickLevel": 0.6885336034609784,
+          "melodyRise": false,
+          "nextBass": 0.014381421393456394,
+          "nextKick": 0.7493787922708511
+        },
+        "label": "Groove",
+        "start_seconds": 431.3
+      },
+      {
+        "end_seconds": 474.92,
+        "featureEvidence": {
+          "bassLevel": 0.00826158576890799,
+          "drumLevel": 0.7775558991775262,
+          "drumOnset": 0.808004892648565,
+          "drumSustainedPeak": 0.8179418912629055,
+          "kickLevel": 0.7224769306696622,
+          "melodyRise": false,
+          "nextBass": 0.003304143182045441,
+          "nextKick": 3.4666004400683475e-05
+        },
+        "label": "Groove",
+        "start_seconds": 446.96
+      },
+      {
+        "end_seconds": 480.0,
+        "featureEvidence": {
+          "bassLevel": 0.003304143182045441,
+          "drumLevel": 0.0013947999629646164,
+          "drumOnset": 0.0013953124013242903,
+          "drumSustainedPeak": 0.001394287524604942,
+          "kickLevel": 3.4666004400683475e-05,
+          "melodyRise": false,
+          "nextBass": 0.003304143182045441,
+          "nextKick": 3.4666004400683475e-05
+        },
+        "label": "Outro",
+        "start_seconds": 474.92
+      }
+    ],
+    "durationSeconds": 480.0,
+    "expectedEventSeconds": [
+      41.74
+    ],
+    "title": "Back Home (Jaco & Lemon Remix)"
+  },
+  {
+    "djPhrases": [
+      {
+        "end_seconds": 11.52,
+        "featureEvidence": {
+          "bassLevel": 0.0010762248131408081,
+          "drumLevel": 0.09646149433670786,
+          "drumOnset": 0.041030750681878427,
+          "drumSustainedPeak": 0.12210253495653854,
+          "kickLevel": 0.08343036071276637,
+          "melodyRise": false,
+          "nextBass": 0.002259105716246658,
+          "nextKick": 0.2921418199879726
+        },
+        "label": "Intro",
+        "start_seconds": 0.0
+      },
+      {
+        "end_seconds": 26.52,
+        "featureEvidence": {
+          "bassLevel": 0.003074510515790693,
+          "drumLevel": 0.6427795563802432,
+          "drumOnset": 0.3398038170043499,
+          "drumSustainedPeak": 0.9950280990858087,
+          "kickLevel": 0.40901371124319935,
+          "melodyRise": false,
+          "nextBass": 0.12064643176563514,
+          "nextKick": 0.3826882801842167
+        },
+        "label": "Groove",
+        "start_seconds": 11.52
+      },
+      {
+        "end_seconds": 56.52,
+        "featureEvidence": {
+          "bassLevel": 0.18848493294163424,
+          "drumLevel": 0.35321167430448286,
+          "drumOnset": 0.265645208192731,
+          "drumSustainedPeak": 0.34912764838979066,
+          "kickLevel": 0.2943089476768637,
+          "melodyRise": false,
+          "nextBass": 0.003549201532332137,
+          "nextKick": 0.6492346629201585
+        },
+        "label": "Groove",
+        "start_seconds": 26.52
+      },
+      {
+        "end_seconds": 86.52,
+        "featureEvidence": {
+          "bassLevel": 0.09939063861700814,
+          "drumLevel": 0.5680253941344378,
+          "drumOnset": 0.3767030072127998,
+          "drumSustainedPeak": 0.9045833680083708,
+          "kickLevel": 0.5546744865935777,
+          "melodyRise": false,
+          "nextBass": 1.2512188133853697,
+          "nextKick": 1.6837912004760314
+        },
+        "label": "Buildup",
+        "start_seconds": 56.52
+      },
+      {
+        "end_seconds": 101.52,
+        "featureEvidence": {
+          "bassLevel": 0.9837509488999432,
+          "drumLevel": 1.0603004794694875,
+          "drumOnset": 1.2430604536999412,
+          "drumSustainedPeak": 1.2430604536999412,
+          "kickLevel": 1.4626298828649826,
+          "melodyRise": false,
+          "nextBass": 1.1246881396648007,
+          "nextKick": 1.6557832182040915
+        },
+        "label": "Groove",
+        "start_seconds": 86.52
+      },
+      {
+        "end_seconds": 116.52,
+        "featureEvidence": {
+          "bassLevel": 0.9559016437436082,
+          "drumLevel": 0.9088064393544846,
+          "drumOnset": 1.2583321469011484,
+          "drumSustainedPeak": 1.2583321469011484,
+          "kickLevel": 1.2327389664737554,
+          "melodyRise": false,
+          "nextBass": 0.0035356861309407085,
+          "nextKick": 0.5422996713724821
+        },
+        "label": "Groove",
+        "start_seconds": 101.52
+      },
+      {
+        "end_seconds": 131.52,
+        "featureEvidence": {
+          "bassLevel": 0.006267490362445825,
+          "drumLevel": 0.24253092617570307,
+          "drumOnset": 0.3733369309485247,
+          "drumSustainedPeak": 0.3733369309485247,
+          "kickLevel": 0.3188803322219144,
+          "melodyRise": false,
+          "nextBass": 2.5727592560698156,
+          "nextKick": 0.009040623041712196
+        },
+        "label": "Transition",
+        "start_seconds": 116.52
+      },
+      {
+        "end_seconds": 146.54,
+        "featureEvidence": {
+          "bassLevel": 2.3360459548965307,
+          "drumLevel": 0.24539186251417688,
+          "drumOnset": 0.20596472355620848,
+          "drumSustainedPeak": 0.20596472355620848,
+          "kickLevel": 0.11856979712025986,
+          "melodyRise": false,
+          "nextBass": 1.8661212700346435,
+          "nextKick": 0.6200438947396719
+        },
+        "label": "Breakdown",
+        "start_seconds": 131.52
+      },
+      {
+        "end_seconds": 191.52,
+        "featureEvidence": {
+          "bassLevel": 0.7241189573691739,
+          "drumLevel": 0.6022840157597646,
+          "drumOnset": 0.5911271830611676,
+          "drumSustainedPeak": 0.8948204688958996,
+          "kickLevel": 0.6104584802254099,
+          "melodyRise": false,
+          "nextBass": 1.2931314503822973,
+          "nextKick": 1.7129564298171642
+        },
+        "label": "Buildup",
+        "start_seconds": 146.54
+      },
+      {
+        "end_seconds": 206.52,
+        "featureEvidence": {
+          "bassLevel": 1.0009493765701685,
+          "drumLevel": 1.0815978953309253,
+          "drumOnset": 1.2826242955021268,
+          "drumSustainedPeak": 1.2826242955021268,
+          "kickLevel": 1.4789613943921167,
+          "melodyRise": false,
+          "nextBass": 1.1491042480962856,
+          "nextKick": 1.6727884379834796
+        },
+        "label": "Groove",
+        "start_seconds": 191.52
+      },
+      {
+        "end_seconds": 236.52,
+        "featureEvidence": {
+          "bassLevel": 1.1408794134992528,
+          "drumLevel": 1.0665181789393388,
+          "drumOnset": 1.2396803367612346,
+          "drumSustainedPeak": 1.2638937608479575,
+          "kickLevel": 1.4601240350526075,
+          "melodyRise": false,
+          "nextBass": 1.4325730029203214,
+          "nextKick": 1.6078493828584128
+        },
+        "label": "Groove",
+        "start_seconds": 206.52
+      },
+      {
+        "end_seconds": 251.52,
+        "featureEvidence": {
+          "bassLevel": 1.255724842576815,
+          "drumLevel": 1.0822565502463535,
+          "drumOnset": 1.2531759526422692,
+          "drumSustainedPeak": 1.2531759526422692,
+          "kickLevel": 1.446020228431972,
+          "melodyRise": false,
+          "nextBass": 0.0016201546477134364,
+          "nextKick": 0.13545107202091897
+        },
+        "label": "Groove",
+        "start_seconds": 236.52
+      },
+      {
+        "end_seconds": 266.54,
+        "featureEvidence": {
+          "bassLevel": 0.000994069211268724,
+          "drumLevel": 0.12376836869756404,
+          "drumOnset": 0.23580284233416077,
+          "drumSustainedPeak": 0.23580284233416077,
+          "kickLevel": 0.07850905178639803,
+          "melodyRise": false,
+          "nextBass": 0.0001933346054960076,
+          "nextKick": 2.975346941294981e-05
+        },
+        "label": "Sparse break",
+        "start_seconds": 251.52
+      },
+      {
+        "end_seconds": 270.57068027210886,
+        "featureEvidence": {
+          "bassLevel": 0.0001933346054960076,
+          "drumLevel": 3.498187443043377e-05,
+          "drumOnset": 3.138960208210311e-05,
+          "drumSustainedPeak": 3.857414677876445e-05,
+          "kickLevel": 2.975346941294981e-05,
+          "melodyRise": false,
+          "nextBass": 0.0001933346054960076,
+          "nextKick": 2.975346941294981e-05
+        },
+        "label": "Outro",
+        "start_seconds": 266.54
+      }
+    ],
+    "durationSeconds": 270.57068027210886,
+    "expectedEventSeconds": [],
+    "title": "Back In Black (MorganJ Bootleg)"
+  },
+  {
+    "djPhrases": [
+      {
+        "end_seconds": 15.02,
+        "featureEvidence": {
+          "bassLevel": 0.04953999838987844,
+          "drumLevel": 0.8972348643487852,
+          "drumOnset": 0.9830134035039637,
+          "drumSustainedPeak": 0.9830134035039637,
+          "kickLevel": 0.8941007203883221,
+          "melodyRise": false,
+          "nextBass": 0.017145779739918047,
+          "nextKick": 0.9457958686199555
+        },
+        "label": "Intro",
+        "start_seconds": 0.0
+      },
+      {
+        "end_seconds": 29.04,
+        "featureEvidence": {
+          "bassLevel": 0.009723694025860645,
+          "drumLevel": 0.9032269393035862,
+          "drumOnset": 0.9651000694423338,
+          "drumSustainedPeak": 0.9651000694423338,
+          "kickLevel": 0.8837932818052174,
+          "melodyRise": false,
+          "nextBass": 0.0021957982628813353,
+          "nextKick": 0.9058981504830442
+        },
+        "label": "Groove",
+        "start_seconds": 15.02
+      },
+      {
+        "end_seconds": 43.04,
+        "featureEvidence": {
+          "bassLevel": 0.002347686455554259,
+          "drumLevel": 0.8580760612552327,
+          "drumOnset": 0.8821477893649425,
+          "drumSustainedPeak": 0.9269725304173876,
+          "kickLevel": 0.8049289229818409,
+          "melodyRise": false,
+          "nextBass": 0.8697880519063086,
+          "nextKick": 0.8516045267368326
+        },
+        "label": "Groove",
+        "start_seconds": 29.04
+      },
+      {
+        "end_seconds": 85.1,
+        "featureEvidence": {
+          "bassLevel": 0.905382911390324,
+          "drumLevel": 0.8611468524463556,
+          "drumOnset": 0.8440861879878101,
+          "drumSustainedPeak": 0.9016368243349407,
+          "kickLevel": 0.8361490769590426,
+          "melodyRise": false,
+          "nextBass": 0.8625235513876701,
+          "nextKick": 0.8306918604887382
+        },
+        "label": "Groove",
+        "start_seconds": 43.04
+      },
+      {
+        "end_seconds": 127.14,
+        "featureEvidence": {
+          "bassLevel": 0.8534417419570585,
+          "drumLevel": 0.8039333609898777,
+          "drumOnset": 0.8260639136515068,
+          "drumSustainedPeak": 0.8607144476497088,
+          "kickLevel": 0.8103249002516313,
+          "melodyRise": true,
+          "nextBass": 0.7140980035526407,
+          "nextKick": 0.3049896805757169
+        },
+        "label": "Groove",
+        "start_seconds": 85.1
+      },
+      {
+        "end_seconds": 241.0,
+        "featureEvidence": {
+          "bassLevel": 0.6442966542042347,
+          "drumLevel": 0.08243982634630316,
+          "drumOnset": 0.3831328383663681,
+          "drumSustainedPeak": 0.3831328383663681,
+          "kickLevel": 0.070896819492357,
+          "melodyRise": false,
+          "nextBass": 0.8248914123221811,
+          "nextKick": 0.00995995739422492
+        },
+        "label": "Breakdown",
+        "start_seconds": 127.14
+      },
+      {
+        "end_seconds": 253.26,
+        "featureEvidence": {
+          "bassLevel": 0.7163361166902367,
+          "drumLevel": 0.15710634562640505,
+          "drumOnset": 0.05405024730110162,
+          "drumSustainedPeak": 0.21227589922673845,
+          "kickLevel": 0.011866741548273357,
+          "melodyRise": false,
+          "nextBass": 0.7956454245779628,
+          "nextKick": 0.7907925866736198
+        },
+        "label": "Buildup",
+        "start_seconds": 241.0
+      },
+      {
+        "end_seconds": 337.34,
+        "featureEvidence": {
+          "bassLevel": 0.8321266238626798,
+          "drumLevel": 0.7004672850725635,
+          "drumOnset": 0.7641366550755841,
+          "drumSustainedPeak": 0.7809032167291466,
+          "kickLevel": 0.7033522439587491,
+          "melodyRise": false,
+          "nextBass": 0.7830879339301524,
+          "nextKick": 0.23148379304159408
+        },
+        "label": "Drop entrance",
+        "start_seconds": 253.26
+      },
+      {
+        "end_seconds": 351.3,
+        "featureEvidence": {
+          "bassLevel": 0.852111880493503,
+          "drumLevel": 0.1051311977637934,
+          "drumOnset": 0.25651679591929605,
+          "drumSustainedPeak": 0.25651679591929605,
+          "kickLevel": 0.11769549540191376,
+          "melodyRise": false,
+          "nextBass": 0.8556237028322002,
+          "nextKick": 0.08725665154247474
+        },
+        "label": "Breakdown",
+        "start_seconds": 337.34
+      },
+      {
+        "end_seconds": 367.14,
+        "featureEvidence": {
+          "bassLevel": 0.7191352259851747,
+          "drumLevel": 0.42853044347162383,
+          "drumOnset": 0.10078169067949082,
+          "drumSustainedPeak": 0.8651560036019174,
+          "kickLevel": 0.37380696219447423,
+          "melodyRise": false,
+          "nextBass": 0.8512279737483779,
+          "nextKick": 0.8124361117826254
+        },
+        "label": "Buildup",
+        "start_seconds": 351.3
+      },
+      {
+        "end_seconds": 395.16,
+        "featureEvidence": {
+          "bassLevel": 0.8825954009491835,
+          "drumLevel": 0.8378515277788324,
+          "drumOnset": 0.8043395118205056,
+          "drumSustainedPeak": 0.8713300828709428,
+          "kickLevel": 0.8301143759543649,
+          "melodyRise": false,
+          "nextBass": 0.8854200100497006,
+          "nextKick": 0.823072978984568
+        },
+        "label": "Groove",
+        "start_seconds": 367.14
+      },
+      {
+        "end_seconds": 437.2,
+        "featureEvidence": {
+          "bassLevel": 0.5912394110555749,
+          "drumLevel": 0.8156916506644005,
+          "drumOnset": 0.8151625335432816,
+          "drumSustainedPeak": 0.9072773989649274,
+          "kickLevel": 0.8093095008124248,
+          "melodyRise": false,
+          "nextBass": 0.0015625201904672149,
+          "nextKick": 0.2746151615972294
+        },
+        "label": "Groove",
+        "start_seconds": 395.16
+      },
+      {
+        "end_seconds": 459.1022222222222,
+        "featureEvidence": {
+          "bassLevel": 0.000979609717764105,
+          "drumLevel": 0.08883559183461791,
+          "drumOnset": 0.3260605494968389,
+          "drumSustainedPeak": 0.3260605494968389,
+          "kickLevel": 0.08843334668681711,
+          "melodyRise": false,
+          "nextBass": 0.000979609717764105,
+          "nextKick": 0.08843334668681711
+        },
+        "label": "Outro",
+        "start_seconds": 437.2
+      }
+    ],
+    "durationSeconds": 459.1022222222222,
+    "expectedEventSeconds": [
+      253.26
+    ],
+    "title": "Carpe Diem (Angel Ace Remix)"
+  },
+  {
+    "djPhrases": [
+      {
+        "end_seconds": 30.28,
+        "featureEvidence": {
+          "bassLevel": 1.012036820873158,
+          "drumLevel": 0.8868765490933164,
+          "drumOnset": 0.922592161356999,
+          "drumSustainedPeak": 0.9300258254179118,
+          "kickLevel": 0.8425916540299633,
+          "melodyRise": false,
+          "nextBass": 0.8243191116167318,
+          "nextKick": 0.9456316481578771
+        },
+        "label": "Intro",
+        "start_seconds": 0.0
+      },
+      {
+        "end_seconds": 45.28,
+        "featureEvidence": {
+          "bassLevel": 0.8300657800991154,
+          "drumLevel": 0.9892604642774526,
+          "drumOnset": 0.988160255486665,
+          "drumSustainedPeak": 0.988160255486665,
+          "kickLevel": 0.950527505135785,
+          "melodyRise": false,
+          "nextBass": 0.8156242809607472,
+          "nextKick": 0.9274874522265103
+        },
+        "label": "Groove",
+        "start_seconds": 30.28
+      },
+      {
+        "end_seconds": 360.28,
+        "featureEvidence": {
+          "bassLevel": 0.8194789500559536,
+          "drumLevel": 0.7244022222472858,
+          "drumOnset": 0.965212901595177,
+          "drumSustainedPeak": 0.9695664083699818,
+          "kickLevel": 0.6610690968158058,
+          "melodyRise": true,
+          "nextBass": 0.7277695476180831,
+          "nextKick": 0.7074938672728567
+        },
+        "label": "Groove",
+        "start_seconds": 45.28
+      },
+      {
+        "end_seconds": 401.0086394557823,
+        "featureEvidence": {
+          "bassLevel": 0.7201739135056404,
+          "drumLevel": 0.6756907068028162,
+          "drumOnset": 0.7540703386936528,
+          "drumSustainedPeak": 0.8851815729802228,
+          "kickLevel": 0.6203830996731389,
+          "melodyRise": false,
+          "nextBass": 0.7201739135056404,
+          "nextKick": 0.6203830996731389
+        },
+        "label": "Groove",
+        "start_seconds": 360.28
+      }
+    ],
+    "durationSeconds": 401.0086394557823,
+    "expectedEventSeconds": [],
+    "title": "Harry Popper"
+  },
+  {
+    "djPhrases": [
+      {
+        "end_seconds": 26.52,
+        "featureEvidence": {
+          "bassLevel": 0.002426095326052009,
+          "drumLevel": 0.22437707178178615,
+          "drumOnset": 0.23676634500198138,
+          "drumSustainedPeak": 0.23676634500198138,
+          "kickLevel": 0.1260317156740271,
+          "melodyRise": false,
+          "nextBass": 1.549859966725554,
+          "nextKick": 1.513163913339677
+        },
+        "label": "Intro",
+        "start_seconds": 0.0
+      },
+      {
+        "end_seconds": 53.0,
+        "featureEvidence": {
+          "bassLevel": 1.4708704435001267,
+          "drumLevel": 1.0814421584439164,
+          "drumOnset": 1.163259122444272,
+          "drumSustainedPeak": 1.1724653877233495,
+          "kickLevel": 1.4246720387432685,
+          "melodyRise": false,
+          "nextBass": 0.004006195927442227,
+          "nextKick": 0.13845134773963366
+        },
+        "label": "Drop entrance",
+        "start_seconds": 26.52
+      },
+      {
+        "end_seconds": 79.5,
+        "featureEvidence": {
+          "bassLevel": 0.004019142919966981,
+          "drumLevel": 0.26094387522769985,
+          "drumOnset": 0.19830295761920644,
+          "drumSustainedPeak": 0.3463037284363918,
+          "kickLevel": 0.21822648372818165,
+          "melodyRise": false,
+          "nextBass": 1.4845967598055998,
+          "nextKick": 1.5007638028396362
+        },
+        "label": "Buildup",
+        "start_seconds": 53.0
+      },
+      {
+        "end_seconds": 92.74,
+        "featureEvidence": {
+          "bassLevel": 1.323786749862214,
+          "drumLevel": 1.012194332903351,
+          "drumOnset": 1.1630417873298293,
+          "drumSustainedPeak": 1.1630417873298293,
+          "kickLevel": 1.3248751667997283,
+          "melodyRise": false,
+          "nextBass": 1.505115206151699,
+          "nextKick": 1.4739809991820452
+        },
+        "label": "Drop entrance",
+        "start_seconds": 79.5
+      },
+      {
+        "end_seconds": 119.22,
+        "featureEvidence": {
+          "bassLevel": 0.5776270027642697,
+          "drumLevel": 0.45403900331338465,
+          "drumOnset": 1.1568915048890547,
+          "drumSustainedPeak": 1.1568915048890547,
+          "kickLevel": 0.5757982204345242,
+          "melodyRise": false,
+          "nextBass": 0.7920020440079163,
+          "nextKick": 0.0006089696647977295
+        },
+        "label": "Groove",
+        "start_seconds": 92.74
+      },
+      {
+        "end_seconds": 158.92,
+        "featureEvidence": {
+          "bassLevel": 0.7570064327558009,
+          "drumLevel": 0.01570633467881818,
+          "drumOnset": 0.0012224100638206384,
+          "drumSustainedPeak": 0.0350202877811036,
+          "kickLevel": 0.007828457796377789,
+          "melodyRise": false,
+          "nextBass": 0.8989286620982546,
+          "nextKick": 0.2574026275085824
+        },
+        "label": "Breakdown",
+        "start_seconds": 119.22
+      },
+      {
+        "end_seconds": 172.18,
+        "featureEvidence": {
+          "bassLevel": 0.8770467811254006,
+          "drumLevel": 0.2100473391291188,
+          "drumOnset": 0.17715775876824058,
+          "drumSustainedPeak": 0.26478540964548625,
+          "kickLevel": 0.2361071868328984,
+          "melodyRise": false,
+          "nextBass": 1.3488585234840458,
+          "nextKick": 1.4927159593425103
+        },
+        "label": "Buildup",
+        "start_seconds": 158.92
+      },
+      {
+        "end_seconds": 185.42,
+        "featureEvidence": {
+          "bassLevel": 1.1839209126085868,
+          "drumLevel": 0.9804686325487116,
+          "drumOnset": 1.1125059544932352,
+          "drumSustainedPeak": 1.1125059544932352,
+          "kickLevel": 1.3121368694944502,
+          "melodyRise": false,
+          "nextBass": 1.3010164510952853,
+          "nextKick": 1.451679891304624
+        },
+        "label": "Drop entrance",
+        "start_seconds": 172.18
+      },
+      {
+        "end_seconds": 198.66,
+        "featureEvidence": {
+          "bassLevel": 1.0185822173120331,
+          "drumLevel": 0.8252977463016689,
+          "drumOnset": 1.1040198745882903,
+          "drumSustainedPeak": 1.1040198745882903,
+          "kickLevel": 1.0820854516871552,
+          "melodyRise": false,
+          "nextBass": 1.4556670749480656,
+          "nextKick": 1.4083834367163344
+        },
+        "label": "Groove",
+        "start_seconds": 185.42
+      },
+      {
+        "end_seconds": 225.14,
+        "featureEvidence": {
+          "bassLevel": 1.1854947534847498,
+          "drumLevel": 0.8890344320448704,
+          "drumOnset": 1.057040955712089,
+          "drumSustainedPeak": 1.10381373431192,
+          "kickLevel": 1.1608665254956791,
+          "melodyRise": false,
+          "nextBass": 0.0020165532799362863,
+          "nextKick": 1.39637564776473
+        },
+        "label": "Drop entrance",
+        "start_seconds": 198.66
+      },
+      {
+        "end_seconds": 251.64,
+        "featureEvidence": {
+          "bassLevel": 0.001823950041072785,
+          "drumLevel": 1.023106755131128,
+          "drumOnset": 1.074817030681371,
+          "drumSustainedPeak": 1.118468978158476,
+          "kickLevel": 1.3147152681109189,
+          "melodyRise": false,
+          "nextBass": 0.002278585018440077,
+          "nextKick": 0.1151951868172499
+        },
+        "label": "Groove",
+        "start_seconds": 225.14
+      },
+      {
+        "end_seconds": 278.12,
+        "featureEvidence": {
+          "bassLevel": 0.002348883809076877,
+          "drumLevel": 0.20028892552827784,
+          "drumOnset": 0.21543281723985025,
+          "drumSustainedPeak": 0.22495611563960566,
+          "kickLevel": 0.11010308395219692,
+          "melodyRise": false,
+          "nextBass": 0.0013635416001150623,
+          "nextKick": 0.025860151492670604
+        },
+        "label": "Sparse break",
+        "start_seconds": 251.64
+      },
+      {
+        "end_seconds": 284.28190476190474,
+        "featureEvidence": {
+          "bassLevel": 0.0013635416001150623,
+          "drumLevel": 0.02821244348827736,
+          "drumOnset": 0.05404010715623719,
+          "drumSustainedPeak": 0.002384779820317533,
+          "kickLevel": 0.025860151492670604,
+          "melodyRise": false,
+          "nextBass": 0.0013635416001150623,
+          "nextKick": 0.025860151492670604
+        },
+        "label": "Outro",
+        "start_seconds": 278.12
+      }
+    ],
+    "durationSeconds": 284.28190476190474,
+    "expectedEventSeconds": [
+      26.52,
+      79.5,
+      172.18,
+      198.66
+    ],
+    "title": "High Energy (Extended Mix)"
+  },
+  {
+    "djPhrases": [
+      {
+        "end_seconds": 15.36,
+        "featureEvidence": {
+          "bassLevel": 0.7756720620711842,
+          "drumLevel": 0.5178235523801811,
+          "drumOnset": 0.5167271016575932,
+          "drumSustainedPeak": 0.5405147923259844,
+          "kickLevel": 0.5256942629255013,
+          "melodyRise": false,
+          "nextBass": 0.7773935778997912,
+          "nextKick": 0.525275656541598
+        },
+        "label": "Intro",
+        "start_seconds": 0.0
+      },
+      {
+        "end_seconds": 330.38,
+        "featureEvidence": {
+          "bassLevel": 0.7809808398225064,
+          "drumLevel": 0.532105138936682,
+          "drumOnset": 0.5115251725046119,
+          "drumSustainedPeak": 0.5679306196222782,
+          "kickLevel": 0.5338525909998472,
+          "melodyRise": false,
+          "nextBass": 0.005662491803392244,
+          "nextKick": 0.0018412296230941984
+        },
+        "label": "Groove",
+        "start_seconds": 15.36
+      },
+      {
+        "end_seconds": 337.58492063492065,
+        "featureEvidence": {
+          "bassLevel": 0.005662491803392244,
+          "drumLevel": 0.0032051194220245847,
+          "drumOnset": 0.005414736106858492,
+          "drumSustainedPeak": 0.0009955027371907137,
+          "kickLevel": 0.0018412296230941984,
+          "melodyRise": false,
+          "nextBass": 0.005662491803392244,
+          "nextKick": 0.0018412296230941984
+        },
+        "label": "Outro",
+        "start_seconds": 330.38
+      }
+    ],
+    "durationSeconds": 337.58492063492065,
+    "expectedEventSeconds": [],
+    "title": "One More Time (Feat Ana Gartner)"
+  },
+  {
+    "djPhrases": [
+      {
+        "end_seconds": 26.76,
+        "featureEvidence": {
+          "bassLevel": 3.726489141302172,
+          "drumLevel": 0.7410260069836622,
+          "drumOnset": 0.7443250735505065,
+          "drumSustainedPeak": 0.7489349720434437,
+          "kickLevel": 0.6724203616196947,
+          "melodyRise": false,
+          "nextBass": 3.9976272426368418,
+          "nextKick": 0.6726014386946793
+        },
+        "label": "Groove",
+        "start_seconds": 0.0
+      },
+      {
+        "end_seconds": 99.72,
+        "featureEvidence": {
+          "bassLevel": 1.9334155215089557,
+          "drumLevel": 0.6723760575966758,
+          "drumOnset": 0.7459438401104566,
+          "drumSustainedPeak": 0.7459438401104566,
+          "kickLevel": 0.633370735852312,
+          "melodyRise": false,
+          "nextBass": 2.7539004184367877,
+          "nextKick": 0.35111580729716035
+        },
+        "label": "Groove",
+        "start_seconds": 26.76
+      },
+      {
+        "end_seconds": 118.16,
+        "featureEvidence": {
+          "bassLevel": 1.4346061947518967,
+          "drumLevel": 0.22854259009115052,
+          "drumOnset": 0.6757340356153902,
+          "drumSustainedPeak": 0.6757340356153902,
+          "kickLevel": 0.16659662819723975,
+          "melodyRise": false,
+          "nextBass": 0.035468417831934024,
+          "nextKick": 0.6773743723178614
+        },
+        "label": "Breakdown",
+        "start_seconds": 99.72
+      },
+      {
+        "end_seconds": 147.7,
+        "featureEvidence": {
+          "bassLevel": 0.022118812502000287,
+          "drumLevel": 0.7080224582044172,
+          "drumOnset": 0.704432536430632,
+          "drumSustainedPeak": 0.7220339134612471,
+          "kickLevel": 0.6737585408935794,
+          "melodyRise": false,
+          "nextBass": 0.019086111902955633,
+          "nextKick": 0.6768684112014104
+        },
+        "label": "Groove",
+        "start_seconds": 118.16
+      },
+      {
+        "end_seconds": 162.48,
+        "featureEvidence": {
+          "bassLevel": 0.01816502825435618,
+          "drumLevel": 0.7125100410832508,
+          "drumOnset": 0.715332514359988,
+          "drumSustainedPeak": 0.7241165963485604,
+          "kickLevel": 0.6770555507764883,
+          "melodyRise": false,
+          "nextBass": 0.01750367910750779,
+          "nextKick": 0.6755695833621028
+        },
+        "label": "Groove",
+        "start_seconds": 147.7
+      },
+      {
+        "end_seconds": 176.3,
+        "featureEvidence": {
+          "bassLevel": 0.027726279679398173,
+          "drumLevel": 0.7081168324669943,
+          "drumOnset": 0.7069004945966659,
+          "drumSustainedPeak": 0.7140334522754562,
+          "kickLevel": 0.6738552876469135,
+          "melodyRise": false,
+          "nextBass": 0.33412303172906793,
+          "nextKick": 0.11584751907633208
+        },
+        "label": "Groove",
+        "start_seconds": 162.48
+      },
+      {
+        "end_seconds": 236.32,
+        "featureEvidence": {
+          "bassLevel": 0.5666673764946268,
+          "drumLevel": 0.07394167501152497,
+          "drumOnset": 0.09425595521902107,
+          "drumSustainedPeak": 0.12173812576189755,
+          "kickLevel": 0.03243178912669757,
+          "melodyRise": false,
+          "nextBass": 0.017171671870124035,
+          "nextKick": 0.6699926882482172
+        },
+        "label": "Breakdown",
+        "start_seconds": 176.3
+      },
+      {
+        "end_seconds": 310.18,
+        "featureEvidence": {
+          "bassLevel": 0.07667695481150044,
+          "drumLevel": 0.6514114254049201,
+          "drumOnset": 0.7056591552976975,
+          "drumSustainedPeak": 0.7241416677320902,
+          "kickLevel": 0.6107884624554024,
+          "melodyRise": false,
+          "nextBass": 0.020101688351527366,
+          "nextKick": 0.6849435828714053
+        },
+        "label": "Groove",
+        "start_seconds": 236.32
+      },
+      {
+        "end_seconds": 341.56,
+        "featureEvidence": {
+          "bassLevel": 0.7978699210112161,
+          "drumLevel": 0.7120531137238486,
+          "drumOnset": 0.7096777922258527,
+          "drumSustainedPeak": 0.7270059096781842,
+          "kickLevel": 0.6812832358308769,
+          "melodyRise": false,
+          "nextBass": 3.1650531448597787,
+          "nextKick": 0.6763610235643951
+        },
+        "label": "Groove",
+        "start_seconds": 310.18
+      },
+      {
+        "end_seconds": 354.48,
+        "featureEvidence": {
+          "bassLevel": 3.346075203704296,
+          "drumLevel": 0.7023277897224204,
+          "drumOnset": 0.697678571993862,
+          "drumSustainedPeak": 0.7177097844705931,
+          "kickLevel": 0.6727116299949845,
+          "melodyRise": false,
+          "nextBass": 0.3802008483856791,
+          "nextKick": 0.00018295887808602391
+        },
+        "label": "Groove",
+        "start_seconds": 341.56
+      },
+      {
+        "end_seconds": 361.39791383219955,
+        "featureEvidence": {
+          "bassLevel": 0.3802008483856791,
+          "drumLevel": 0.0003223271485709724,
+          "drumOnset": 0.000571438458646512,
+          "drumSustainedPeak": 7.321583849543709e-05,
+          "kickLevel": 0.00018295887808602391,
+          "melodyRise": false,
+          "nextBass": 0.3802008483856791,
+          "nextKick": 0.00018295887808602391
+        },
+        "label": "Outro",
+        "start_seconds": 354.48
+      }
+    ],
+    "durationSeconds": 361.39791383219955,
+    "expectedEventSeconds": [],
+    "title": "Realm Of Resistance (Wigbert Remix)"
+  },
+  {
+    "djPhrases": [
+      {
+        "end_seconds": 14.32,
+        "featureEvidence": {
+          "bassLevel": 0.02233845503941989,
+          "drumLevel": 0.15556949279037807,
+          "drumOnset": 0.14213769841507934,
+          "drumSustainedPeak": 0.1441222315793457,
+          "kickLevel": 0.10633399029491457,
+          "melodyRise": false,
+          "nextBass": 0.8744752401780754,
+          "nextKick": 0.6342866139817841
+        },
+        "label": "Intro",
+        "start_seconds": 0.0
+      },
+      {
+        "end_seconds": 27.64,
+        "featureEvidence": {
+          "bassLevel": 0.8696142127488609,
+          "drumLevel": 0.6765625974460007,
+          "drumOnset": 0.6807113040406751,
+          "drumSustainedPeak": 0.6807113040406751,
+          "kickLevel": 0.6318446924880079,
+          "melodyRise": false,
+          "nextBass": 0.8681253868010641,
+          "nextKick": 0.6284119113171454
+        },
+        "label": "Drop entrance",
+        "start_seconds": 14.32
+      },
+      {
+        "end_seconds": 42.78,
+        "featureEvidence": {
+          "bassLevel": 1.0059067484809416,
+          "drumLevel": 0.6695870026573081,
+          "drumOnset": 0.6729846256389795,
+          "drumSustainedPeak": 0.6839435669442624,
+          "kickLevel": 0.6212402658267048,
+          "melodyRise": false,
+          "nextBass": 0.8171653077157974,
+          "nextKick": 0.6095895850329776
+        },
+        "label": "Groove",
+        "start_seconds": 27.64
+      },
+      {
+        "end_seconds": 71.2,
+        "featureEvidence": {
+          "bassLevel": 0.8604329131202167,
+          "drumLevel": 0.6480186418592182,
+          "drumOnset": 0.6485229476582715,
+          "drumSustainedPeak": 0.6543031206616138,
+          "kickLevel": 0.6208125312841982,
+          "melodyRise": false,
+          "nextBass": 0.1424669016850633,
+          "nextKick": 0.032052915641296156
+        },
+        "label": "Groove",
+        "start_seconds": 42.78
+      },
+      {
+        "end_seconds": 133.44,
+        "featureEvidence": {
+          "bassLevel": 0.1423547105839194,
+          "drumLevel": 0.13889990209219363,
+          "drumOnset": 0.04059401959911513,
+          "drumSustainedPeak": 0.27724162289202114,
+          "kickLevel": 0.10023589834845835,
+          "melodyRise": false,
+          "nextBass": 0.8170236709295401,
+          "nextKick": 0.62621499585219
+        },
+        "label": "Buildup",
+        "start_seconds": 71.2
+      },
+      {
+        "end_seconds": 247.22,
+        "featureEvidence": {
+          "bassLevel": 0.8606982599193382,
+          "drumLevel": 0.5896392588034105,
+          "drumOnset": 0.6488076419575461,
+          "drumSustainedPeak": 0.6726328381969566,
+          "kickLevel": 0.5622779383488257,
+          "melodyRise": false,
+          "nextBass": 0.8340378273379861,
+          "nextKick": 0.6209555797358136
+        },
+        "label": "Drop entrance",
+        "start_seconds": 133.44
+      },
+      {
+        "end_seconds": 304.1,
+        "featureEvidence": {
+          "bassLevel": 0.6993199776480705,
+          "drumLevel": 0.6805233032309326,
+          "drumOnset": 0.6490562356640368,
+          "drumSustainedPeak": 0.6986833014974185,
+          "kickLevel": 0.6463011363287918,
+          "melodyRise": false,
+          "nextBass": 0.0021934926873362357,
+          "nextKick": 0.00027982296414770394
+        },
+        "label": "Groove",
+        "start_seconds": 247.22
+      },
+      {
+        "end_seconds": 309.011156462585,
+        "featureEvidence": {
+          "bassLevel": 0.0021934926873362357,
+          "drumLevel": 0.006898094386381714,
+          "drumOnset": 0.0012708042299321848,
+          "drumSustainedPeak": 0.0012708042299321848,
+          "kickLevel": 0.00027982296414770394,
+          "melodyRise": false,
+          "nextBass": 0.0021934926873362357,
+          "nextKick": 0.00027982296414770394
+        },
+        "label": "Outro",
+        "start_seconds": 304.1
+      }
+    ],
+    "durationSeconds": 309.011156462585,
+    "expectedEventSeconds": [
+      14.32,
+      133.44
+    ],
+    "title": "Spectral Flow (Original Mix)"
+  }
+]

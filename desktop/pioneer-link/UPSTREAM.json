@@ -1,0 +1,20 @@
+{
+  "project": "Vynull",
+  "repository": "https://github.com/vynulldev/vynull",
+  "commit": "8ad5432f92c14c83e14266013e75bf11e218cf94",
+  "license": "GPL-3.0-or-later",
+  "modifications": [
+    "interface/subnet scoping",
+    "fail-closed startup reporting",
+    "canonical export-root confinement",
+    "read-only serving adapter",
+    "macOS-compatible 8192-byte NFS read chunks and send-error reporting",
+    "canonical path confinement and unlinked/write rejection tests",
+    "discovery startup readiness after claiming completes",
+    "atomic catalog publication between player requests",
+    "stable ID remapping and immutable retained generations",
+    "catalog snapshots for asynchronous metadata analysis",
+    "atomic live track-count announcements",
+    "private PPTH path rewrite preserving waveform/grid tags"
+  ]
+}

@@ -201,7 +201,7 @@ namespace resonance.Transfers.Downloads
             Relay = relayService;
             EventBus = eventBus;
             ErrorNotifications = errorNotifications;
-            TransfersConnectionString = connectionStrings[Database.Transfers];
+            NetworkInfoStore = new TransferNetworkInfoStore(connectionStrings);
 
             Clock.EveryMinute += (_, _) => Task.Run(() => CleanupEnqueueSemaphoresAsync());
         }
@@ -226,7 +226,7 @@ namespace resonance.Transfers.Downloads
         /// </summary>
         private ConcurrentDictionary<Guid, CancellationTokenSource> CancellationTokens { get; } = new ConcurrentDictionary<Guid, CancellationTokenSource>();
         private ConcurrentDictionary<string, string> PeerAddresses { get; } = new ConcurrentDictionary<string, string>();
-        private string TransfersConnectionString { get; }
+        private TransferNetworkInfoStore NetworkInfoStore { get; }
         private ISoulseekClient Client { get; }
         private IDbContextFactory<TransfersDbContext> ContextFactory { get; }
         private IFTPService FTP { get; }
@@ -760,12 +760,7 @@ namespace resonance.Transfers.Downloads
             {
                 try
                 {
-                    using var conn = new Npgsql.NpgsqlConnection(TransfersConnectionString);
-
-                    var rows = conn.Query<(string Username, string IpAddress)>(
-                        @"SELECT ""Username"", ""IpAddress"" FROM transfers.""TransferNetworkInfo""
-                          WHERE ""Username"" = ANY(@Usernames) AND ""IpAddress"" IS NOT NULL AND ""IpAddress"" <> ''",
-                        new { Usernames = missing.ToArray() });
+                    var rows = NetworkInfoStore.GetPeerAddresses(missing);
 
                     foreach (var (username, ip) in rows)
                     {

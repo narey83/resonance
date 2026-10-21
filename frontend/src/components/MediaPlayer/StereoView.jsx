@@ -35,6 +35,7 @@ import React, { useEffect, useRef, useState } from 'react';
 
 // Mid/Side stereo width panel — see lib/dsp/StereoProcessor.js.
 const StereoView = ({
+  advanced = false,
   audioRef,
   detailContainerNode,
   isSelected,
@@ -123,8 +124,8 @@ const StereoView = ({
           <span>Width</span>
           <input
             className="mp-processing-slider"
-            max={WIDTH_MAX * 100}
-            min={WIDTH_MIN * 100}
+            max={advanced ? WIDTH_MAX * 100 : 110}
+            min={advanced ? WIDTH_MIN * 100 : 90}
             onChange={changeWidth}
             type="range"
             value={Math.round(width * 100)}

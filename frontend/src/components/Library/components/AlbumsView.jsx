@@ -44,8 +44,8 @@ import React, {
 } from 'react';
 
 const LIST_ROW_HEIGHT = 52;
-const TILE_GAP = 16;
-const TILE_INFO_HEIGHT = 82;
+const TILE_GAP = 10;
+const TILE_INFO_HEIGHT = 88;
 
 const AlbumsView = ({
   alphaHandlerRef,
@@ -116,7 +116,7 @@ const AlbumsView = ({
     );
     ro.observe(element);
     resizeObserverRef.current = ro;
-    setContainerWidth(element.getBoundingClientRect().width);
+    setContainerWidth(Math.max(0, element.clientWidth - 32));
   }, []);
 
   useEffect(() => () => resizeObserverRef.current?.disconnect(), []);
@@ -292,6 +292,7 @@ const AlbumsView = ({
           </div>
         ) : (
           <div
+            className="jb-album-tiles"
             ref={gridRef}
             style={{ minHeight: 4 }}
           >
@@ -447,7 +448,7 @@ const AlbumCard = ({
     >
       <div
         className="jb-album-card-art"
-        style={{ width: tileSize, height: tileSize }}
+        style={{ width: '100%', aspectRatio: '1' }}
       >
         <AlbumArt
           hasArtwork={album.hasArtwork}

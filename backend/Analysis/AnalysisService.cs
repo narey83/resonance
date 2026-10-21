@@ -30,6 +30,8 @@
 namespace resonance.Analysis
 {
     using System;
+    using Microsoft.Extensions.DependencyInjection;
+    using resonance.Analysis.Candidates;
     using System.Collections.Generic;
     using System.Linq;
     using System.Threading;
@@ -62,11 +64,6 @@ namespace resonance.Analysis
         // so this is generous rather than a tight heartbeat interval.
         private static readonly TimeSpan PlaybackIdleWindow = TimeSpan.FromSeconds(45);
 
-        // Upper bound on how long the auto BPM check waits for playback to go quiet before
-        // running anyway — a busy library shouldn't let a bad tag sit uncorrected indefinitely
-        // just because someone's been listening all evening.
-        private static readonly TimeSpan MaxPlaybackWait = TimeSpan.FromMinutes(10);
-
         // How often a running scan is allowed to broadcast a "something was analysed" update.
         // Every metric goes through this now: Bpm/Key used to just ride the tag-write's own
         // (debounced, up to 30s+) full-library sync broadcast, which left an open Library row
@@ -87,7 +84,8 @@ namespace resonance.Analysis
             IFfmpegService ffmpeg,
             AnalysisStore store,
             IMusicLibraryService musicLibrary = null,
-            IHubContext<LibraryActivityHub> hub = null)
+            IHubContext<LibraryActivityHub> hub = null,
+            IServiceProvider services = null)
         {
             ShareService = shareService;
             Options = optionsMonitor;
@@ -95,10 +93,13 @@ namespace resonance.Analysis
             Store = store;
             MusicLibrary = musicLibrary;
             Hub = hub;
+            Services = services;
         }
 
         public AnalysisScanState ScanState => CurrentState;
+        public bool PlaybackActive => IsPlaybackActive();
 
+        private IServiceProvider Services { get; }
         private IShareService ShareService { get; }
         private IOptionsMonitor<resonance.Options> Options { get; }
         private IFfmpegService Ffmpeg { get; }
@@ -116,11 +117,8 @@ namespace resonance.Analysis
         // ── IHostedService ────────────────────────────────────────────────────
         public Task StartAsync(CancellationToken cancellationToken)
         {
-            if (MusicLibrary != null)
-            {
-                MusicLibrary.NewTracksIndexed += OnNewTracksIndexed;
-            }
-
+            // PreparationService owns the durable automatic queue. Manual scans use this
+            // same orchestrator; newly indexed tracks wait instead of being discarded on busy.
             return Task.CompletedTask;
         }
 
@@ -159,6 +157,9 @@ namespace resonance.Analysis
         public IEnumerable<TrackAnalysisInfo> GetTracks(IEnumerable<string> maskedFilenames)
         {
             var status = Store.GetStatusMap();
+            var detected = Store.GetDetectedTags();
+            uint? Bpm(string path, uint? tag) => tag.HasValue && tag.Value > 0 ? tag : detected.GetValueOrDefault(MusicPath.ToRelative(path)).Bpm;
+            string Key(string path, string tag) => !string.IsNullOrEmpty(tag) ? tag : detected.GetValueOrDefault(MusicPath.ToRelative(path)).Key;
 
             return ShareService.FindFiles(maskedFilenames)
                 .Where(f => AudioExtensions.Contains(f.Extension))
@@ -170,8 +171,8 @@ namespace resonance.Analysis
 
                     return new TrackAnalysisInfo(
                         f.MaskedFilename, f.OriginalFilename, f.Directory, f.Filename, f.Extension,
-                        f.Tags == null || f.Tags.Bpm == 0 ? null : f.Tags.Bpm,
-                        f.Tags?.Key,
+                        Bpm(f.OriginalFilename, f.Tags?.Bpm),
+                        Key(f.OriginalFilename, f.Tags?.Key),
                         hasWaveform,
                         lufs,
                         f.Tags?.Artist, f.Tags?.Title, f.Tags?.Album);
@@ -183,6 +184,9 @@ namespace resonance.Analysis
         public IEnumerable<TrackAnalysisInfo> GetAllTracks()
         {
             var status = Store.GetStatusMap();
+            var detected = Store.GetDetectedTags();
+            uint? Bpm(string path, uint? tag) => tag.HasValue && tag.Value > 0 ? tag : detected.GetValueOrDefault(MusicPath.ToRelative(path)).Bpm;
+            string Key(string path, string tag) => !string.IsNullOrEmpty(tag) ? tag : detected.GetValueOrDefault(MusicPath.ToRelative(path)).Key;
 
             (bool HasWaveform, double? Lufs) Cached(string original) =>
                 status.TryGetValue(MusicPath.ToRelative(original), out var s) ? s : (false, null);
@@ -194,8 +198,8 @@ namespace resonance.Analysis
                     var (hasWaveform, lufs) = Cached(f.OriginalFilename);
                     return new TrackAnalysisInfo(
                         f.MaskedFilename, f.OriginalFilename, f.Directory, f.Filename, f.Extension,
-                        f.Tags.Bpm == 0 ? null : f.Tags.Bpm,
-                        f.Tags.Key,
+                        Bpm(f.OriginalFilename, f.Tags?.Bpm),
+                        Key(f.OriginalFilename, f.Tags?.Key),
                         hasWaveform,
                         lufs,
                         f.Tags.Artist, f.Tags.Title, f.Tags.Album);
@@ -208,7 +212,7 @@ namespace resonance.Analysis
                     var (hasWaveform, lufs) = Cached(f.OriginalFilename);
                     return new TrackAnalysisInfo(
                         f.MaskedFilename, f.OriginalFilename, f.Directory, f.Filename, f.Extension,
-                        null, null, hasWaveform, lufs, null, null, null);
+                        Bpm(f.OriginalFilename, null), Key(f.OriginalFilename, null), hasWaveform, lufs, null, null, null);
                 });
 
             return tagged
@@ -229,6 +233,7 @@ namespace resonance.Analysis
 
             // Mark as scanning immediately so GET /scan reports it as soon as the POST response
             // lands, rather than only once the background task has spun up.
+            CurrentState = CurrentState with { EnhancedTotal = 0, EnhancedCompleted = 0, EnhancedFailed = 0, EnhancedPath = null };
             SetState(true, false, false, 0, 0, 0, 0, metrics: request.Metrics.ToString());
 
             Cts = CancellationTokenSource.CreateLinkedTokenSource(Program.MasterCancellationTokenSource.Token);
@@ -288,9 +293,23 @@ namespace resonance.Analysis
             ShareService.WriteFileTags(maskedFilename, updated);
         }
 
-        public void ClearBpm(string maskedFilename) => UpdateTags(maskedFilename, t => t with { Bpm = 0 });
+        public void ClearBpm(string maskedFilename)
+        {
+            UpdateTags(maskedFilename, t => t with { Bpm = 0 });
+            foreach (var file in ShareService.FindFiles([maskedFilename]).Take(1))
+            {
+                Store.ClearDetectedValue(file.OriginalFilename, bpm: true);
+            }
+        }
 
-        public void ClearKey(string maskedFilename) => UpdateTags(maskedFilename, t => t with { Key = null });
+        public void ClearKey(string maskedFilename)
+        {
+            UpdateTags(maskedFilename, t => t with { Key = null });
+            foreach (var file in ShareService.FindFiles([maskedFilename]).Take(1))
+            {
+                Store.ClearDetectedValue(file.OriginalFilename, bpm: false);
+            }
+        }
 
         public void RecordPlaybackActivity() => Interlocked.Exchange(ref lastPlaybackActivityTicks, DateTime.UtcNow.Ticks);
 
@@ -325,39 +344,6 @@ namespace resonance.Analysis
             DateTime.UtcNow.Ticks - Interlocked.Read(ref lastPlaybackActivityTicks) < PlaybackIdleWindow.Ticks;
 
         /// <summary>
-        ///     Polls until no client has streamed audio for <see cref="PlaybackIdleWindow"/>, so
-        ///     the auto BPM check's decode+Essentia pass never competes with someone actively
-        ///     listening. Gives up and proceeds anyway after <see cref="MaxPlaybackWait"/> so a
-        ///     bad tag can't be starved of correction by continuous listening.
-        /// </summary>
-        private async Task WaitForPlaybackIdleAsync()
-        {
-            if (!IsPlaybackActive())
-            {
-                return;
-            }
-
-            Log.Information("Auto analysis: playback is active — waiting for it to go idle before analysing new tracks.");
-
-            var deadline = DateTime.UtcNow + MaxPlaybackWait;
-            while (IsPlaybackActive() && DateTime.UtcNow < deadline)
-            {
-                await Task.Delay(TimeSpan.FromSeconds(10));
-            }
-
-            if (IsPlaybackActive())
-            {
-                Log.Information(
-                    "Auto analysis: gave up waiting for playback to go idle after {Minutes:F0} minutes — proceeding anyway.",
-                    MaxPlaybackWait.TotalMinutes);
-            }
-            else
-            {
-                Log.Information("Auto analysis: playback went idle — proceeding.");
-            }
-        }
-
-        /// <summary>
         ///     True if a track's BPM tag looks like real data rather than a half-/double-time
         ///     mistag some DJ-pool release shipped with (e.g. "42" for a 168bpm track).
         /// </summary>
@@ -377,53 +363,6 @@ namespace resonance.Analysis
 
             var analysis = Options.CurrentValue.Analysis;
             return AudioAnalyzer.FoldOctave(track.Bpm.Value, analysis.MinBpm, analysis.MaxBpm) == track.Bpm.Value;
-        }
-
-        /// <summary>
-        ///     Runs the full analysis pass (BPM, key, waveform, loudness) on tracks a library sync
-        ///     just added — the same single-decode pipeline a manual scan uses — so a fresh
-        ///     download doesn't sit incomplete, or wrong (an implausible BPM tag, per
-        ///     <see cref="HasReliableBpm"/>), until someone runs a scan by hand.
-        /// </summary>
-        /// <remarks>
-        ///     Automatic and user-requested scans deliberately share the same missing-metric
-        ///     policy, including filling a missing BPM. Reset-and-rescan is the only mode that
-        ///     overwrites an existing result.
-        /// </remarks>
-        private void OnNewTracksIndexed(IReadOnlyList<string> paths)
-        {
-            // Offloaded: this runs synchronously on the library sync's own thread, and resolving
-            // masked filenames / starting a scan must not delay that sync from completing.
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    var masked = ShareService
-                        .FindMaskedFilenames(paths.Select(MusicPath.ToRelative).Distinct(StringComparer.OrdinalIgnoreCase))
-                        .Distinct()
-                        .ToArray();
-
-                    if (masked.Length == 0)
-                    {
-                        return;
-                    }
-
-                    await WaitForPlaybackIdleAsync();
-                    await StartScanAsync(new AnalysisScanRequest(
-                        Metrics: AnalysisMetrics.All, SkipAnalysed: true, OnlyFilenames: masked));
-                }
-                catch (InvalidOperationException)
-                {
-                    // A manual/other scan was already running. Rare enough not to warrant queuing
-                    // or retrying — the next scan someone runs will still catch these via the
-                    // normal SkipAnalysed=true plausibility check.
-                    Log.Debug("Skipped auto analysis for {Count} new track(s) — a scan was already running.", paths.Count);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warning("Auto analysis for new tracks failed: {Error}", ex.Message);
-                }
-            });
         }
 
         /// <summary>
@@ -577,6 +516,7 @@ namespace resonance.Analysis
 
                 if (total == 0)
                 {
+                    await RunEnhanced(tracks, ct, !request.SkipAnalysed || request.ResetAll);
                     SetState(false, true, false, 0, 0, 0, 0, 1.0);
                     return;
                 }
@@ -641,9 +581,12 @@ namespace resonance.Analysis
                                 continue;
                             }
 
-                            Apply(track.MaskedFilename, result.Bpm, result.Key);
+                            if (options.WriteToTags)
+                            {
+                                Apply(track.MaskedFilename, result.Bpm, result.Key);
+                            }
 
-                            if (result.Waveform != null || result.Loudness != null)
+                            if (result.Bpm.HasValue || result.Key != null || result.Waveform != null || result.Loudness != null)
                             {
                                 Store.Save(path, result);
                             }
@@ -735,6 +678,7 @@ namespace resonance.Analysis
                 { /* expected on cancel */
                 }
 
+                if (!ct.IsCancellationRequested) await RunEnhanced(tracks, ct, !request.SkipAnalysed || request.ResetAll);
                 var cancelled = ct.IsCancellationRequested;
                 SetState(false, !cancelled, cancelled, total, analysed, skipped, failed,
                     cancelled ? CurrentState.Progress : 1.0);
@@ -775,13 +719,44 @@ namespace resonance.Analysis
             }
         }
 
+        private async Task RunEnhanced(IReadOnlyList<TrackAnalysisInfo> tracks, CancellationToken ct, bool force)
+        {
+            var enhanced = Services?.GetService<CandidateAnalysisService>();
+            if (enhanced?.Enabled != true) return;
+            CurrentState = CurrentState with { Scanning = true, Completed = false, EnhancedTotal = tracks.Count, EnhancedCompleted = 0, EnhancedFailed = 0 };
+            foreach (var track in tracks)
+            {
+                ct.ThrowIfCancellationRequested();
+                CurrentState = CurrentState with { EnhancedPath = track.OriginalFilename };
+                try
+                {
+                    await enhanced.EnsureEnhanced(MusicPath.ToAbsolute(track.OriginalFilename), ct, force);
+                    CurrentState = CurrentState with { EnhancedCompleted = CurrentState.EnhancedCompleted + 1 };
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    CurrentState = CurrentState with { EnhancedFailed = CurrentState.EnhancedFailed + 1 };
+                    Log.Warning("Enhanced analysis failed for {Path}: {Error}", track.OriginalFilename, exception.Message);
+                }
+            }
+
+            CurrentState = CurrentState with { EnhancedPath = null };
+            _ = Hub?.BroadcastLibraryUpdatedAsync(0, tracks.Count, 0);
+        }
+
         private void SetState(
             bool scanning, bool completed, bool cancelled, int total, int analysed, int skipped, int failed,
             double progress = 0, int inFlight = 0, string metrics = null, IReadOnlyList<string> inFlightPaths = null)
         {
             CurrentState = new AnalysisScanState(
                 scanning, completed, cancelled, total, analysed, skipped, failed, progress, inFlight,
-                metrics ?? CurrentState?.Metrics, inFlightPaths ?? Array.Empty<string>());
+                metrics ?? CurrentState?.Metrics, inFlightPaths ?? Array.Empty<string>())
+            {
+                EnhancedTotal = CurrentState.EnhancedTotal,
+                EnhancedCompleted = CurrentState.EnhancedCompleted,
+                EnhancedFailed = CurrentState.EnhancedFailed,
+                EnhancedPath = CurrentState.EnhancedPath,
+            };
         }
     }
 }

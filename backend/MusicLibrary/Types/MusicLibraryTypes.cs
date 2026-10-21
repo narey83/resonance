@@ -104,7 +104,12 @@ namespace resonance.MusicLibrary
         // Integrated loudness in LUFS, joined from analysis.track_analysis the same way as
         // HasWaveform. Null until the track has been analysed.
         public double? Lufs { get; init; }
+
+        public string DjSummary { get; init; }
     }
+
+    public record DjLibraryFilters(double? BpmMin = null, double? BpmMax = null, string[] Keys = null, string Energy = null, string Vocals = null, string[] Paths = null,
+        long? AddedAfter = null, long? NotPlayedSince = null, bool NeverPlayed = false, bool LovedOnly = false, string Username = null);
 
     public record MusicGenre(string Genre, int TrackCount, double? TotalDuration);
     public record MusicKey(string Key, int TrackCount);

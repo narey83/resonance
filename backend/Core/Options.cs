@@ -1795,7 +1795,7 @@ namespace resonance
         /// <summary>
         ///     Logger options.
         /// </summary>
-        public class LoggerOptions
+        public class LoggerOptions : IValidatableObject
         {
             /// <summary>
             ///     Gets the URL to a Grafana Loki instance to which to log.
@@ -1835,6 +1835,22 @@ namespace resonance
             [Description("persist application logs to PostgreSQL and serve the log viewer from there")]
             [RequiresRestart]
             public bool Postgres { get; init; } = false;
+
+            [EnvironmentVariable("DATABASE_LOGGER")]
+            [Description("persist logs using the selected database provider; JSONL diagnostics remain available")]
+            [RequiresRestart]
+            public bool Database { get; init; } = true;
+
+            [EnvironmentVariable("LOG_STORAGE")]
+            [Description("log storage; Database (default), Disk, or Both")]
+            [RequiresRestart]
+            public string Storage { get; init; }
+
+            public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+            {
+                if (Storage != null && !new[] { "database", "disk", "both" }.Contains(Storage.ToLowerInvariant()))
+                    yield return new ValidationResult("Logging storage must be Database, Disk, or Both.");
+            }
         }
 
         /// <summary>
@@ -2115,37 +2131,26 @@ namespace resonance
         /// </summary>
         public class DatabaseOptions : IValidatableObject
         {
-            /// <summary>
-            ///     Gets the database type. PostgreSQL is the only supported backend.
-            /// </summary>
-            [Description("database type; postgresql")]
-            [EnvironmentVariable("DATABASE_TYPE")]
-            public string Type { get; init; } = "postgresql";
+            [Description("database provider; Sqlite (default) or PostgreSql")]
+            [EnvironmentVariable("DATABASE_PROVIDER")]
+            public string Provider { get; init; }
 
-            /// <summary>
-            ///     Gets the connection string for the database.
-            /// </summary>
-            /// <remarks>
-            ///     This is the one setting that cannot be stored in the database; it is bootstrap-only and must
-            ///     be supplied via the environment (or, for legacy installs, the configuration file).
-            /// </remarks>
-            [Description("connection string; required")]
+            // Legacy configuration alias retained for existing installations.
+            [Description("legacy alias for database provider")]
+            [EnvironmentVariable("DATABASE_TYPE")]
+            public string Type { get; init; }
+
+            [Description("database connection string; defaults to data/resonance.db")]
             [EnvironmentVariable("DATABASE_CONNECTION_STRING")]
             [Secret]
-            public string ConnectionString { get; init; } = null;
+            public string ConnectionString { get; init; }
 
             public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
             {
-                if (!Type.Equals("postgresql", StringComparison.OrdinalIgnoreCase))
-                {
-                    yield return new ValidationResult("The database type must be 'postgresql'; SQLite is no longer supported.");
-                    yield break;
-                }
-
-                if (string.IsNullOrWhiteSpace(ConnectionString))
-                {
-                    yield return new ValidationResult("A connection_string is required.");
-                }
+                string error = null;
+                try { _ = RuntimeDatabase.Resolve(this, Program.AppDirectory ?? AppContext.BaseDirectory); }
+                catch (ArgumentException ex) { error = ex.Message; }
+                if (error != null) yield return new ValidationResult(error);
             }
         }
 

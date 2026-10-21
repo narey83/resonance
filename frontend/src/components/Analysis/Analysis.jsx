@@ -119,7 +119,9 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
         <div className="ka-field">
           <span className="ka-field-hint">
             Every track is analysed for key, BPM, loudness and waveform in a
-            single decode.
+            single decode. When enhanced analysis is configured, the same scan
+            also generates vocals, phrases, downbeats and genre; this stage can
+            take longer.
           </span>
         </div>
 
@@ -1118,6 +1120,17 @@ const Analysis = () => {
           list.
         </p>
       </PageInfo>
+      {scanState?.enhancedTotal > 0 && (
+        <p
+          role="status"
+          style={{ padding: '0.5rem 1rem' }}
+        >
+          Enhanced analysis: {scanState.enhancedCompleted} /{' '}
+          {scanState.enhancedTotal} ready · {scanState.enhancedFailed || 0}{' '}
+          failed{scanState.enhancedPath ? ` · ${scanState.enhancedPath}` : ''}.
+          Vocal and phrase predictions appear on the player waveform.
+        </p>
+      )}
       {/* ── Stats bar ── */}
       <div className="ka-stats-bar">
         <div className="ka-stat">

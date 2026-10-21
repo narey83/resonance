@@ -161,7 +161,7 @@ namespace resonance.Core.API
 
         private static DbConnection OpenConnection(DbSource source)
         {
-            DbConnection conn = new NpgsqlConnection(source.ConnectionString);
+            DbConnection conn = source.IsPostgres ? new NpgsqlConnection(source.ConnectionString) : new Microsoft.Data.Sqlite.SqliteConnection(source.ConnectionString);
             conn.Open();
 
             // Scope unqualified table names (used by the viewer's generated queries) to the module's schema.
@@ -272,8 +272,8 @@ namespace resonance.Core.API
             {
                 dict[db.Name] = new DbSource(
                     ConnectionString: ConnectionStrings[db].Value,
-                    IsPostgres: true,
-                    Schema: PostgresSchema(db));
+                    IsPostgres: ConnectionStrings.UsePostgres,
+                    Schema: ConnectionStrings.UsePostgres ? PostgresSchema(db) : null);
             }
 
             return dict;

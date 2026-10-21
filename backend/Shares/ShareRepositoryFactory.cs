@@ -45,10 +45,10 @@ namespace resonance.Shares
     {
         public ShareRepositoryFactory(IOptionsMonitor<Options> optionsMonitor)
         {
-            PostgresConnectionString = optionsMonitor.CurrentValue.Database.ConnectionString;
+            Database = Program.SelectedDatabase;
         }
 
-        private string PostgresConnectionString { get; }
+        private RuntimeDatabase Database { get; }
 
         /// <summary>
         ///     Create a repository for the specified <paramref name="name"/>.
@@ -56,13 +56,15 @@ namespace resonance.Shares
         /// <param name="name">The name of the agent.</param>
         /// <returns>The created repository.</returns>
         public IShareRepository CreateFromHost(string name)
-            => new PostgresShareRepository(PostgresConnectionString, host: name);
+            => Database.UsePostgres
+                ? new PostgresShareRepository(Database.ConnectionString, host: name)
+                : new SqliteShareRepository($"Data Source={System.IO.Path.Combine(System.IO.Path.GetDirectoryName(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(Database.ConnectionString).DataSource), $"shares.{name}.db")}");
 
         /// <summary>
         ///     Not supported on PostgreSQL — share caches aren't portable DB files.
         /// </summary>
         /// <returns>Never returns; always throws.</returns>
         public IShareRepository CreateFromFile(string filename, bool pooling = false)
-            => throw new NotSupportedException("File-based share repositories are not supported on PostgreSQL.");
+            => new SqliteShareRepository($"Data Source={filename};Pooling={pooling}");
     }
 }

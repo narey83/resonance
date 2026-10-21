@@ -59,6 +59,7 @@ export const usePagedList = (
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(enabled);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState(null);
 
   // Refs are the source of truth; state is the render mirror. loadMore fires from a scroll
   // handler and has to see what's already loaded without waiting for a re-render to land.
@@ -98,6 +99,7 @@ export const usePagedList = (
     setItems([]);
     setTotal(0);
     setLoadingMore(false);
+    setError(null);
 
     if (!enabled) {
       busyRef.current = false;
@@ -128,8 +130,9 @@ export const usePagedList = (
           offset: 0,
         });
         apply(generation, page, false);
-      } catch {
-        // leave the list empty; changing the query or scrolling retries
+      } catch (error_) {
+        if (mountedRef.current && generation === generationRef.current)
+          setError(error_);
       } finally {
         if (mountedRef.current && generation === generationRef.current) {
           busyRef.current = false;
@@ -169,18 +172,35 @@ export const usePagedList = (
       }
 
       const count = itemsRef.current.length;
-      if (count === 0) return;
-
       const generation = generationRef.current;
+      busyRef.current = true;
       try {
         const page = await fetchRef.current({
           ...JSON.parse(key),
-          limit: count,
+          limit: Math.max(pageSize, count),
           offset: 0,
         });
-        if (!cancelled) apply(generation, page, false);
-      } catch {
-        // keep showing what's there; the next update or query change retries
+        if (
+          !cancelled &&
+          mountedRef.current &&
+          generation === generationRef.current
+        ) {
+          apply(generation, page, false);
+          setError(null);
+        }
+      } catch (error_) {
+        if (
+          !cancelled &&
+          mountedRef.current &&
+          generation === generationRef.current
+        )
+          setError(error_);
+      } finally {
+        if (mountedRef.current && generation === generationRef.current) {
+          // Only the owner of this query generation may release its fetch lock.
+          // eslint-disable-next-line require-atomic-updates
+          busyRef.current = false;
+        }
       }
     };
 
@@ -233,8 +253,9 @@ export const usePagedList = (
           offset,
         });
         apply(generation, page, true);
-      } catch {
-        // keep what's loaded; the next scroll retries this same offset
+      } catch (error_) {
+        if (mountedRef.current && generation === generationRef.current)
+          setError(error_);
       } finally {
         if (mountedRef.current && generation === generationRef.current) {
           busyRef.current = false;
@@ -244,7 +265,7 @@ export const usePagedList = (
     })();
   }, [apply, enabled, key, pageSize]);
 
-  return { items, loading, loadingMore, loadMore, total };
+  return { items, loading, loadingMore, loadMore, total, error };
 };
 
 // Sorts the server can bucket into letters for the A-Z rail. null is the default (artist).

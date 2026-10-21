@@ -36,9 +36,9 @@ const dbToGain = (db) => 10 ** (db / 20);
 // and a firmer, still-musical setting — separate Threshold/Ratio/Knee
 // sliders would be more precise but less usable for a player aimed at
 // "make this sound more even," not mix engineering.
-const THRESHOLD_MIN_DB = -6;
+const THRESHOLD_MIN_DB = 0;
 const THRESHOLD_MAX_DB = -18;
-const RATIO_MIN = 1.5;
+const RATIO_MIN = 1;
 const RATIO_MAX = 4;
 const KNEE_DB = 6;
 

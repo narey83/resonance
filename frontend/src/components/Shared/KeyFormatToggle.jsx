@@ -40,7 +40,7 @@ const ROOT = {
 const button = (active) => ({
   background: active ? 'var(--accent)' : 'none',
   border: 'none',
-  color: active ? '#fff' : 'var(--text-muted)',
+  color: active ? 'var(--on-accent, #fff)' : 'var(--text-muted)',
   cursor: 'pointer',
   fontSize: '0.72rem',
   fontWeight: 600,

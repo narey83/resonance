@@ -284,7 +284,7 @@ namespace resonance
 
             ConnectionWatchdog = connectionWatchdog;
             HttpClientFactory = httpClientFactory;
-            TransfersConnectionString = connectionStrings[Database.Transfers];
+            NetworkInfoStore = new TransferNetworkInfoStore(connectionStrings);
             UsePostgres = connectionStrings.UsePostgres;
 
             Clock.EveryMinute += Clock_EveryMinute;
@@ -348,7 +348,7 @@ namespace resonance
         private IHttpClientFactory HttpClientFactory { get; set; }
         private resonance.Network.GeoService GeoService { get; set; }
         private resonance.Integrations.Fcm.IFcmPushService FcmPushService { get; set; }
-        private string TransfersConnectionString { get; set; }
+        private TransferNetworkInfoStore NetworkInfoStore { get; }
         private bool UsePostgres { get; set; }
         private ConcurrentDictionary<string, IPEndPoint> UserEndpointCache { get; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -1952,33 +1952,8 @@ namespace resonance
                     }
                 }
 
-                using var conn = new Npgsql.NpgsqlConnection(TransfersConnectionString);
+                await NetworkInfoStore.UpsertAsync(username, ip, country, city, isVpn, lat, lon);
 
-                await conn.OpenAsync();
-                {
-                    var sql = @"
-                            INSERT INTO transfers.""TransferNetworkInfo"" (""Username"", ""IpAddress"", ""Country"", ""City"", ""IsVpn"", ""Lat"", ""Lon"", ""LastSeen"")
-                            VALUES (@Username, @Ip, @Country, @City, @IsVpn, @Lat, @Lon, @LastSeen)
-                            ON CONFLICT (""Username"") DO UPDATE SET
-                                ""IpAddress"" = EXCLUDED.""IpAddress"",
-                                ""Country""   = EXCLUDED.""Country"",
-                                ""City""      = EXCLUDED.""City"",
-                                ""IsVpn""     = EXCLUDED.""IsVpn"",
-                                ""Lat""       = EXCLUDED.""Lat"",
-                                ""Lon""       = EXCLUDED.""Lon"",
-                                ""LastSeen""  = EXCLUDED.""LastSeen""";
-                    using var cmd = new Npgsql.NpgsqlCommand(sql, conn);
-                    cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@Username", username));
-                    cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@Ip", ip));
-                    cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@Country", (object)country ?? DBNull.Value));
-                    cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@City", (object)city ?? DBNull.Value));
-                    cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@IsVpn", isVpn ? 1 : 0));
-                    cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@Lat", (object)lat ?? DBNull.Value));
-                    cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@Lon", (object)lon ?? DBNull.Value));
-                    cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@LastSeen", DateTime.UtcNow));
-
-                    await cmd.ExecuteNonQueryAsync();
-                }
             }
             catch (Exception ex)
             {

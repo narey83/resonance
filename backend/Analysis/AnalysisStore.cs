@@ -43,21 +43,35 @@ namespace resonance.Analysis
     ///     <c>waveform.waveform_cache</c> and <c>loudness.loudness_cache</c> tables.
     /// </summary>
     /// <remarks>
-    ///     BPM and key are deliberately not stored here. They live in the files' own tags, which
-    ///     is what the music library reads during a scan and what travels with a file when it
-    ///     leaves — a second copy in this table would just be a cache that can silently disagree
-    ///     with the tag.
+    ///     Detected BPM and key are cached so disabling tag writes does not discard them.
+    ///     Library queries prefer explicit file tags, then use cache values guarded by file size.
     /// </remarks>
     public class AnalysisStore
     {
-        public AnalysisStore(string connectionString)
+        public AnalysisStore(string connectionString, bool usePostgres = true)
         {
             ConnectionString = connectionString;
+            UsePostgres = usePostgres;
             EnsureSchema();
         }
 
+        private bool UsePostgres { get; }
+        private string Table => UsePostgres ? "analysis.track_analysis" : "track_analysis";
         private string ConnectionString { get; }
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Analysis);
+
+        // Compact, content-guarded DJ metadata for paged collection queries.
+        public void SaveDjSummary(string path, string json)
+        {
+            var size = new FileInfo(MusicPath.ToAbsolute(path)).Length;
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"UPDATE {Table} SET dj_summary = @json WHERE masked_filename = @path AND file_size = @size";
+            AddParam(cmd, "@json", json);
+            AddParam(cmd, "@path", Key(path));
+            AddParam(cmd, "@size", size);
+            cmd.ExecuteNonQuery();
+        }
 
         public WaveformData GetWaveform(string path)
         {
@@ -135,7 +149,7 @@ namespace resonance.Analysis
             var map = new Dictionary<string, (bool, double?)>(StringComparer.OrdinalIgnoreCase);
             using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT masked_filename, num_bars IS NOT NULL, lufs FROM analysis.track_analysis";
+            cmd.CommandText = $"SELECT masked_filename, num_bars IS NOT NULL, lufs FROM {Table}";
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
@@ -165,29 +179,31 @@ namespace resonance.Analysis
 
             using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = @"
-                INSERT INTO analysis.track_analysis
+            cmd.CommandText = $@"
+                INSERT INTO {Table}
                     (masked_filename, file_size, num_bars, overall_peaks, low_peaks, mid_peaks, high_peaks,
                      waveform_duration_seconds, sample_rate, waveform_version, lufs, true_peak, lra,
-                     beat_offset_seconds, beats, downbeat_offset_seconds, downbeat_confidence, analysed_at)
-                VALUES (@m, @s, @n, @op, @lp, @mp, @hp, @wd, @sr, @wv, @lufs, @tp, @lra, @bo, @bts, @dbo, @dbc, @t)
+                     beat_offset_seconds, beats, downbeat_offset_seconds, downbeat_confidence, detected_bpm, detected_key, analysed_at)
+                VALUES (@m, @s, @n, @op, @lp, @mp, @hp, @wd, @sr, @wv, @lufs, @tp, @lra, @bo, @bts, @dbo, @dbc, @bpm, @key, @t)
                 ON CONFLICT(masked_filename) DO UPDATE SET
                     file_size            = EXCLUDED.file_size,
-                    num_bars             = COALESCE(EXCLUDED.num_bars,             analysis.track_analysis.num_bars),
-                    overall_peaks        = COALESCE(EXCLUDED.overall_peaks,        analysis.track_analysis.overall_peaks),
-                    low_peaks            = COALESCE(EXCLUDED.low_peaks,            analysis.track_analysis.low_peaks),
-                    mid_peaks            = COALESCE(EXCLUDED.mid_peaks,            analysis.track_analysis.mid_peaks),
-                    high_peaks           = COALESCE(EXCLUDED.high_peaks,           analysis.track_analysis.high_peaks),
-                    waveform_duration_seconds = COALESCE(EXCLUDED.waveform_duration_seconds, analysis.track_analysis.waveform_duration_seconds),
-                    sample_rate          = COALESCE(EXCLUDED.sample_rate,          analysis.track_analysis.sample_rate),
-                    waveform_version     = COALESCE(EXCLUDED.waveform_version,     analysis.track_analysis.waveform_version),
-                    lufs                 = COALESCE(EXCLUDED.lufs,                 analysis.track_analysis.lufs),
-                    true_peak            = COALESCE(EXCLUDED.true_peak,            analysis.track_analysis.true_peak),
-                    lra                  = COALESCE(EXCLUDED.lra,                  analysis.track_analysis.lra),
-                    beat_offset_seconds  = COALESCE(EXCLUDED.beat_offset_seconds,  analysis.track_analysis.beat_offset_seconds),
-                    beats                = COALESCE(EXCLUDED.beats,                analysis.track_analysis.beats),
-                    downbeat_offset_seconds = COALESCE(EXCLUDED.downbeat_offset_seconds, analysis.track_analysis.downbeat_offset_seconds),
-                    downbeat_confidence  = COALESCE(EXCLUDED.downbeat_confidence,  analysis.track_analysis.downbeat_confidence),
+                    num_bars             = COALESCE(EXCLUDED.num_bars,             {Table}.num_bars),
+                    overall_peaks        = COALESCE(EXCLUDED.overall_peaks,        {Table}.overall_peaks),
+                    low_peaks            = COALESCE(EXCLUDED.low_peaks,            {Table}.low_peaks),
+                    mid_peaks            = COALESCE(EXCLUDED.mid_peaks,            {Table}.mid_peaks),
+                    high_peaks           = COALESCE(EXCLUDED.high_peaks,           {Table}.high_peaks),
+                    waveform_duration_seconds = COALESCE(EXCLUDED.waveform_duration_seconds, {Table}.waveform_duration_seconds),
+                    sample_rate          = COALESCE(EXCLUDED.sample_rate,          {Table}.sample_rate),
+                    waveform_version     = COALESCE(EXCLUDED.waveform_version,     {Table}.waveform_version),
+                    lufs                 = COALESCE(EXCLUDED.lufs,                 {Table}.lufs),
+                    true_peak            = COALESCE(EXCLUDED.true_peak,            {Table}.true_peak),
+                    lra                  = COALESCE(EXCLUDED.lra,                  {Table}.lra),
+                    beat_offset_seconds  = COALESCE(EXCLUDED.beat_offset_seconds,  {Table}.beat_offset_seconds),
+                    beats                = COALESCE(EXCLUDED.beats,                {Table}.beats),
+                    downbeat_offset_seconds = COALESCE(EXCLUDED.downbeat_offset_seconds, {Table}.downbeat_offset_seconds),
+                    downbeat_confidence  = COALESCE(EXCLUDED.downbeat_confidence,  {Table}.downbeat_confidence),
+                    detected_bpm         = COALESCE(EXCLUDED.detected_bpm, {Table}.detected_bpm),
+                    detected_key         = COALESCE(EXCLUDED.detected_key, {Table}.detected_key),
                     analysed_at          = EXCLUDED.analysed_at";
 
             var w = result.Waveform;
@@ -209,7 +225,39 @@ namespace resonance.Analysis
             AddParam(cmd, "@bts", (object)(result.Beats == null ? null : FloatsToBlob(result.Beats)) ?? DBNull.Value);
             AddParam(cmd, "@dbo", (object)result.DownbeatOffsetSeconds ?? DBNull.Value);
             AddParam(cmd, "@dbc", (object)result.DownbeatConfidence ?? DBNull.Value);
+            AddParam(cmd, "@bpm", result.Bpm.HasValue ? (object)checked((int)result.Bpm.Value) : DBNull.Value);
+            AddParam(cmd, "@key", (object)result.Key ?? DBNull.Value);
             AddParam(cmd, "@t", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            cmd.ExecuteNonQuery();
+        }
+
+        public Dictionary<string, (uint? Bpm, string Key)> GetDetectedTags()
+        {
+            var values = new Dictionary<string, (uint?, string)>(StringComparer.OrdinalIgnoreCase);
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"SELECT a.masked_filename, a.detected_bpm, a.detected_key
+                FROM {Table} a JOIN {(UsePostgres ? "music.tracks" : "tracks")} t
+                ON a.masked_filename = t.path AND a.file_size = t.file_size";
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                values[reader.GetString(0)] = (
+                    reader.IsDBNull(1) ? null : Convert.ToUInt32(reader.GetValue(1)),
+                    reader.IsDBNull(2) ? null : reader.GetString(2));
+            }
+
+            return values;
+        }
+
+        public void ClearDetectedValue(string path, bool bpm)
+        {
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = bpm
+                ? "UPDATE {Table} SET detected_bpm = NULL WHERE masked_filename = @path"
+                : "UPDATE {Table} SET detected_key = NULL WHERE masked_filename = @path";
+            AddParam(cmd, "@path", Key(path));
             cmd.ExecuteNonQuery();
         }
 
@@ -217,7 +265,7 @@ namespace resonance.Analysis
         {
             using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "DELETE FROM analysis.track_analysis";
+            cmd.CommandText = $"DELETE FROM {Table}";
 
             // The app-wide 30s default (see the other commands in this file) is tuned for
             // per-track reads/writes, not a full-table admin wipe — on this shared, resource-
@@ -240,8 +288,22 @@ namespace resonance.Analysis
 
             using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "DELETE FROM analysis.track_analysis WHERE masked_filename = ANY(@m)";
-            AddParam(cmd, "@m", keys);
+            if (UsePostgres)
+            {
+                cmd.CommandText = $"DELETE FROM {Table} WHERE masked_filename = ANY(@m)";
+                AddParam(cmd, "@m", keys);
+            }
+            else
+            {
+                cmd.CommandText = $"DELETE FROM {Table} WHERE masked_filename = @m";
+                foreach (var key in keys)
+                {
+                    cmd.Parameters.Clear();
+                    AddParam(cmd, "@m", key);
+                    cmd.ExecuteNonQuery();
+                }
+                return;
+            }
             cmd.ExecuteNonQuery();
         }
 
@@ -282,7 +344,7 @@ namespace resonance.Analysis
 
         private DbConnection OpenConnection()
         {
-            DbConnection conn = new NpgsqlConnection(ConnectionString);
+            DbConnection conn = UsePostgres ? new NpgsqlConnection(ConnectionString) : new Microsoft.Data.Sqlite.SqliteConnection(ConnectionString);
             conn.Open();
             return conn;
         }
@@ -304,7 +366,7 @@ namespace resonance.Analysis
 
             // file_size guards against a file being replaced in place: a different size means the
             // cached peaks describe audio that is no longer there.
-            cmd.CommandText = $"SELECT {columns} FROM analysis.track_analysis WHERE masked_filename = @m AND file_size = @s";
+            cmd.CommandText = $"SELECT {columns} FROM {Table} WHERE masked_filename = @m AND file_size = @s";
             AddParam(cmd, "@m", Key(path));
             AddParam(cmd, "@s", fileSize);
 
@@ -322,6 +384,26 @@ namespace resonance.Analysis
         private void EnsureSchema()
         {
             using var conn = OpenConnection();
+            if (!UsePostgres)
+            {
+                using var sqliteCommand = conn.CreateCommand();
+                sqliteCommand.CommandText = @"CREATE TABLE IF NOT EXISTS track_analysis (
+                    masked_filename TEXT PRIMARY KEY, file_size INTEGER NOT NULL,
+                    num_bars INTEGER, overall_peaks BLOB, low_peaks BLOB, mid_peaks BLOB, high_peaks BLOB,
+                    waveform_duration_seconds REAL, sample_rate INTEGER, waveform_version INTEGER,
+                    lufs REAL, true_peak REAL, lra REAL, beat_offset_seconds REAL, beats BLOB,
+                    downbeat_offset_seconds REAL, downbeat_confidence REAL, analysed_at INTEGER NOT NULL, detected_bpm INTEGER, detected_key TEXT, dj_summary TEXT)";
+                sqliteCommand.ExecuteNonQuery();
+                sqliteCommand.CommandText = @"CREATE TABLE IF NOT EXISTS imported_track_analysis (
+                    collection_sha256 TEXT NOT NULL, source_xml_sha256 TEXT NOT NULL,
+                    library_path TEXT NOT NULL, source_kind TEXT NOT NULL CHECK(source_kind='rekordbox'),
+                    source_track_id TEXT NOT NULL, audio_sha256 TEXT NOT NULL, audio_bytes INTEGER NOT NULL,
+                    document_sha256 TEXT NOT NULL, export_json TEXT NOT NULL,
+                    allowed_end_overrun_seconds REAL NOT NULL, imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY(collection_sha256,library_path))";
+                sqliteCommand.ExecuteNonQuery();
+                return;
+            }
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
                 CREATE SCHEMA IF NOT EXISTS analysis;
@@ -348,7 +430,25 @@ namespace resonance.Analysis
                 ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS downbeat_confidence DOUBLE PRECISION;
                 ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS waveform_duration_seconds DOUBLE PRECISION;
                 ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS sample_rate INTEGER;
-                ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS waveform_version INTEGER;";
+                ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS waveform_version INTEGER;
+ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS detected_bpm INTEGER;
+                ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS detected_key TEXT;
+                ALTER TABLE analysis.track_analysis ADD COLUMN IF NOT EXISTS dj_summary TEXT;
+CREATE TABLE IF NOT EXISTS analysis.imported_track_analysis (
+                        collection_sha256 TEXT NOT NULL,
+                        source_xml_sha256 TEXT NOT NULL,
+                        library_path TEXT NOT NULL,
+                        source_kind TEXT NOT NULL CHECK(source_kind = 'rekordbox'),
+                        source_track_id TEXT NOT NULL,
+                        audio_sha256 TEXT NOT NULL,
+                        audio_bytes BIGINT NOT NULL,
+                        document_sha256 TEXT NOT NULL,
+                        export_json TEXT NOT NULL,
+                        allowed_end_overrun_seconds DOUBLE PRECISION NOT NULL,
+                        imported_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY(collection_sha256, library_path)
+                    );
+                ALTER TABLE analysis.imported_track_analysis ADD COLUMN IF NOT EXISTS source_xml_sha256 TEXT;";
             cmd.ExecuteNonQuery();
 
             MigrateLegacyTables(conn);

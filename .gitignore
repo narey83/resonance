@@ -48,3 +48,16 @@ backend/resonance.csproj.lscache
 
 # Generated knowledge-graph output
 graphify-out/
+
+# Optional worker/helper build output and local model configuration
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+/tools/**/bin/
+/tools/**/obj/
+/tools/analysis-worker/local-config.json
+/tools/analysis-worker/models/
+/desktop/pioneer-link/dist/
+/desktop/pioneer-link/resonance-pioneer-link
+/desktop/pioneer-link/resonance-pioneer-link.exe

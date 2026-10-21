@@ -34,6 +34,7 @@ namespace resonance.Mixtapes
     using System.Data;
     using System.Data.Common;
     using Npgsql;
+using Microsoft.Data.Sqlite;
     using resonance.Common;
 
     public class MixtapeRepository
@@ -106,6 +107,31 @@ namespace resonance.Mixtapes
         }
 
         // ── Mixtape CRUD ──────────────────────────────────────────────────────
+        // A set snapshot is one transaction; a retry of its deterministic ID
+        // returns the first complete snapshot instead of adding duplicate tracks.
+        public bool InsertSnapshot(Mixtape mixtape, IReadOnlyList<MixtapeTrack> tracks)
+        {
+            using var conn = OpenConnection();
+            using var transaction = conn.BeginTransaction();
+            using var insert = conn.CreateCommand();
+            insert.Transaction = transaction;
+            insert.CommandText = $@"INSERT INTO {M} (id,name,description,is_published,public_token,created_at,updated_at)
+                VALUES (@id,@name,@desc,@pub,@token,@created,@updated) ON CONFLICT(id) DO NOTHING";
+            BindMixtape(insert, mixtape);
+            if (insert.ExecuteNonQuery() == 0) { transaction.Rollback(); return false; }
+            foreach (var track in tracks)
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.Transaction = transaction;
+                cmd.CommandText = $@"INSERT INTO {MT} (id,mixtape_id,file_path,title,artist,album,duration,sort_order)
+                    VALUES (@id,@mid,@path,@title,@artist,@album,@dur,@ord)";
+                BindTrack(cmd, track);
+                cmd.ExecuteNonQuery();
+            }
+            transaction.Commit();
+            return true;
+        }
+
         public void InsertMixtape(Mixtape m)
         {
             using var conn = OpenConnection();
@@ -328,7 +354,7 @@ namespace resonance.Mixtapes
 
         private DbConnection OpenConnection()
         {
-            DbConnection conn = new NpgsqlConnection(ConnectionString);
+            DbConnection conn = UsePostgres ? new NpgsqlConnection(ConnectionString) : new SqliteConnection(ConnectionString);
             conn.Open();
             return conn;
         }

@@ -46,13 +46,15 @@ using Serilog;
 /// </remarks>
 public class SettingsService
 {
-    public SettingsService(string connectionString)
+    public SettingsService(string connectionString, bool usePostgres = true)
     {
         ConnectionString = connectionString;
+        UsePostgres = usePostgres;
         EnsureSchema();
     }
 
-    private static string T => "settings.\"Setting\"";
+    private bool UsePostgres { get; }
+    private string T => UsePostgres ? "settings.\"Setting\"" : "Setting";
 
     private string ConnectionString { get; }
     private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", resonance.Logs.Settings);
@@ -147,12 +149,12 @@ public class SettingsService
         tx.Commit();
     }
 
-    private DbConnection CreateConnection() => new NpgsqlConnection(ConnectionString);
+    private DbConnection CreateConnection() => UsePostgres ? new NpgsqlConnection(ConnectionString) : new Microsoft.Data.Sqlite.SqliteConnection(ConnectionString);
 
     private void EnsureSchema()
     {
         using var conn = CreateConnection();
-        conn.Execute("CREATE SCHEMA IF NOT EXISTS settings");
+        if (UsePostgres) conn.Execute("CREATE SCHEMA IF NOT EXISTS settings");
         conn.Execute($"CREATE TABLE IF NOT EXISTS {T} (\"Key\" TEXT PRIMARY KEY NOT NULL, \"Value\" TEXT NOT NULL)");
     }
 }

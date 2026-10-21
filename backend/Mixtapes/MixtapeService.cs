@@ -223,6 +223,19 @@ namespace resonance.Mixtapes
             return m with { Tracks = Array.Empty<MixtapeTrack>() };
         }
 
+        public Mixtape CreateSnapshot(string id, string name, string? description, IReadOnlyList<MusicTrack> tracks)
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var mixtape = new Mixtape(id, name, description, false, null, now, now);
+            var rows = tracks.Select((track, index) => new MixtapeTrack(Guid.NewGuid().ToString("N"), id,
+                track.Path, track.Title, track.Artist, track.Album, track.Duration, index)).ToArray();
+            Repository.InsertSnapshot(mixtape, rows);
+            var saved = GetById(id)!;
+            WriteMixtapeFolder(saved, saved.Tracks!);
+            _ = Hub.BroadcastUpdatedAsync();
+            return saved;
+        }
+
         public Mixtape Update(string id, string name, string? description)
         {
             var old = Repository.GetById(id) ?? throw new KeyNotFoundException($"Mixtape {id} not found");

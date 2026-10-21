@@ -28,7 +28,13 @@
 // </copyright>
 
 import { applyPreset, PRESETS } from '../../lib/dsp/presets';
+import {
+  applySubtleSettings,
+  persistProcessingSettings,
+  SUBTLE_PRESETS,
+} from '../../lib/dsp/processingPolicy';
 import { getMediaAudioGraph } from '../../lib/mediaAudioGraph';
+import * as prefs from '../../lib/prefs';
 import CompressorView from './CompressorView';
 import EqView from './EqView';
 import FilterView from './FilterView';
@@ -37,7 +43,7 @@ import PerformanceMode from './PerformanceMode';
 import SaturationView from './SaturationView';
 import StereoView from './StereoView';
 import { X } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 // Every processor that can appear in the rack. Adding a new one is:
@@ -65,12 +71,60 @@ const PROCESSORS = [
 // The modal is always in the DOM (visibility toggled via CSS), not
 // conditionally mounted, so every processor stays alive and running
 // regardless of whether the modal happens to be open.
-const AudioProcessing = ({ audioRef, targetLufs }) => {
+const AudioProcessing = ({
+  audioRef,
+  launcherTarget = null,
+  modalTarget = null,
+  targetLufs,
+}) => {
   const [open, setOpen] = useState(false);
   const [selectedId, setSelectedId] = useState('performance');
   const [activeById, setActiveById] = useState({});
   const [detailNode, setDetailNode] = useState(null);
   const [presetId, setPresetId] = useState('');
+  const [bypassed, setBypassed] = useState(() =>
+    prefs.get('mediaPlayer.processingBypassed', true),
+  );
+  const [advanced, setAdvanced] = useState(() =>
+    prefs.get('mediaPlayer.processingAdvanced', false),
+  );
+  // Keep the portal container identity stable when docking. Remounting the
+  // processor views would dispose Performance Mode and alter the live sound.
+  const modalHostRef = useRef(null);
+  if (!modalHostRef.current)
+    modalHostRef.current = document.createElement('div');
+  const modalHost = modalHostRef.current;
+  useLayoutEffect(() => {
+    (modalTarget || document.body).append(modalHost);
+    return () => modalHost.remove();
+  }, [modalHost, modalTarget]);
+
+  useEffect(() => {
+    if (!audioRef.current) return undefined;
+    return getMediaAudioGraph(audioRef.current).processing.subscribe(
+      setBypassed,
+    );
+  }, [audioRef]);
+
+  const toggleBypass = () => {
+    const next = !bypassed;
+    getMediaAudioGraph(audioRef.current)?.processing.setBypassed(next);
+    prefs.set('mediaPlayer.processingBypassed', next);
+  };
+
+  const toggleAdvanced = () => {
+    const next = !advanced;
+    if (audioRef.current)
+      getMediaAudioGraph(audioRef.current).dsp.performance.setAdvanced(next);
+    if (!next && audioRef.current) {
+      const { dsp } = getMediaAudioGraph(audioRef.current);
+      applySubtleSettings(dsp);
+      persistProcessingSettings(dsp);
+    }
+
+    setAdvanced(next);
+    prefs.set('mediaPlayer.processingAdvanced', next);
+  };
 
   const setActive = (id, active) => {
     setActiveById((previous) =>
@@ -82,13 +136,18 @@ const AudioProcessing = ({ audioRef, targetLufs }) => {
 
   useEffect(() => {
     if (!open) return undefined;
+    const modalDocument = modalHost.ownerDocument;
     const onKeyDown = (event) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        setOpen(false);
+      }
     };
 
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [open]);
+    modalDocument.addEventListener('keydown', onKeyDown);
+    modalHost.querySelector('.mp-processing-modal-close')?.focus();
+    return () => modalDocument.removeEventListener('keydown', onKeyDown);
+  }, [modalHost, modalTarget, open]);
 
   const handleSelectPreset = (event) => {
     const nextPresetId = event.target.value;
@@ -98,7 +157,11 @@ const AudioProcessing = ({ audioRef, targetLufs }) => {
     const audio = audioRef.current;
     if (!audio) return;
 
-    applyPreset(getMediaAudioGraph(audio).dsp, nextPresetId);
+    if (!advanced && !SUBTLE_PRESETS.includes(nextPresetId)) return;
+    const { dsp } = getMediaAudioGraph(audio);
+    applyPreset(dsp, nextPresetId);
+    if (!advanced) applySubtleSettings(dsp);
+    persistProcessingSettings(dsp);
     // Presets act through the same processor instances every panel reads,
     // so each panel's own subscription (enabled) and this shell's
     // per-track effect (params, on next mount) pick the change up — this
@@ -108,20 +171,27 @@ const AudioProcessing = ({ audioRef, targetLufs }) => {
     setPresetId('');
   };
 
+  const launcher = (
+    <button
+      aria-expanded={open}
+      className={`mp-processing-btn${!bypassed && anyActive ? ' mp-processing-btn--active' : ''}`}
+      onClick={() => setOpen((previous) => !previous)}
+      title="Audio processing"
+      type="button"
+    >
+      {bypassed ? 'Processing · Bypassed' : 'Processing'}
+    </button>
+  );
+
   return (
     <div className="mp-processing">
-      <button
-        className={`mp-processing-btn${anyActive ? ' mp-processing-btn--active' : ''}`}
-        onClick={() => setOpen((previous) => !previous)}
-        title="Audio processing"
-        type="button"
-      >
-        Processing
-      </button>
+      {launcher}
+      {launcherTarget && createPortal(launcher, launcherTarget)}
 
       {createPortal(
         <div
           aria-label="Audio processing"
+          aria-modal="true"
           className={`mp-processing-overlay${open ? '' : ' mp-processing-overlay--hidden'}`}
           onClick={() => setOpen(false)}
           role="dialog"
@@ -135,11 +205,14 @@ const AudioProcessing = ({ audioRef, targetLufs }) => {
               <select
                 aria-label="Preset"
                 className="mp-processing-preset-select"
+                disabled={bypassed}
                 onChange={handleSelectPreset}
                 value={presetId}
               >
                 <option value="">Preset…</option>
-                {PRESETS.map((preset) => (
+                {PRESETS.filter(
+                  (preset) => advanced || SUBTLE_PRESETS.includes(preset.id),
+                ).map((preset) => (
                   <option
                     key={preset.id}
                     value={preset.id}
@@ -158,10 +231,46 @@ const AudioProcessing = ({ audioRef, targetLufs }) => {
               </button>
             </div>
 
-            <div className="mp-processing-modal-body">
+            <div className="mp-processing-master">
+              <label className="mp-processing-master-toggle">
+                <input
+                  aria-label="Enable audio processing"
+                  checked={!bypassed}
+                  onChange={toggleBypass}
+                  type="checkbox"
+                />
+                <strong>
+                  {bypassed
+                    ? 'Original audio · all processing bypassed'
+                    : 'Audio processing enabled'}
+                </strong>
+              </label>
+              <p>
+                {bypassed
+                  ? 'Bypasses effects and loudness normalisation. Your settings are kept; player volume still works.'
+                  : advanced
+                    ? 'Advanced controls unlocked. Wider ranges can change the sound substantially.'
+                    : 'Subtle controls: gentle tone, dynamics and stereo adjustments.'}
+              </p>
+              <button
+                aria-pressed={advanced}
+                className="mp-processing-unlock"
+                onClick={toggleAdvanced}
+                type="button"
+              >
+                {advanced
+                  ? 'Use subtle controls · reset advanced values'
+                  : 'Unlock advanced controls'}
+              </button>
+            </div>
+            <fieldset
+              className="mp-processing-modal-body"
+              disabled={bypassed}
+            >
               <div className="mp-processing-modal-list">
                 {PROCESSORS.map(({ Component, id }) => (
                   <Component
+                    advanced={advanced}
                     audioRef={audioRef}
                     detailContainerNode={detailNode}
                     isSelected={selectedId === id}
@@ -177,10 +286,10 @@ const AudioProcessing = ({ audioRef, targetLufs }) => {
                 className="mp-processing-modal-detail"
                 ref={setDetailNode}
               />
-            </div>
+            </fieldset>
           </div>
         </div>,
-        document.body,
+        modalHost,
       )}
     </div>
   );

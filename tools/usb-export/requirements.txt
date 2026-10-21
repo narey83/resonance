@@ -1,0 +1,3 @@
+git+https://github.com/fragmede/rekordbox-pdb.git@ee3bac2f22ca11a5ce61eea35f8cb951c246eaef
+git+https://github.com/dylanljones/pyrekordbox.git@2dcb57f2ea907c51fa15850f5433ec09ff3223ff
+sqlcipher3-binary

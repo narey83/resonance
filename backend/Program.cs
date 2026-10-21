@@ -316,6 +316,10 @@ namespace resonance
         /// <summary>
         ///     Gets a task that completes once the deferred schema/index checks for every database context have run.
         /// </summary>
+        internal static bool DatabaseLoggingEnabled => resonance.Core.LogStore.LoggingStorage.Database(OptionsAtStartup.Logger);
+
+        internal static RuntimeDatabase SelectedDatabase { get; private set; }
+
         internal static Task DatabaseInitialization => DatabaseInitializationCompletion.Task;
 
         private static IConfigurationRoot Configuration { get; set; }
@@ -919,11 +923,10 @@ namespace resonance
             // wire up all of the connection strings we'll use. this is somewhat annoying but necessary because of the
             // intersection of run-time options (volatile, non-volatile) and ORM/mappers in use (EF, Dapper)
             var connectionStringDictionary = new ConnectionStringDictionary(Database.List
-                .Select(database => new KeyValuePair<Database, ConnectionString>(database, OptionsAtStartup.Database.ConnectionString))
-                .ToDictionary(x => x.Key, x => x.Value));
+                .Select(database => new KeyValuePair<Database, ConnectionString>(database, SelectedDatabase.ConnectionString))
+                .ToDictionary(x => x.Key, x => x.Value), usePostgres: SelectedDatabase.UsePostgres);
 
-            // The app is PostgreSQL-only; repositories that still carry a backend flag are always Postgres.
-            const bool usePostgres = true;
+            var usePostgres = SelectedDatabase.UsePostgres;
 
             services.AddDbContext<SearchDbContext>(connectionStringDictionary[Database.Search]);
 
@@ -932,6 +935,7 @@ namespace resonance
             // below, which is what creates TransfersDbContext's trigram index on Username --
             // otherwise that statement fails with "operator class gin_trgm_ops does not exist" and
             // the schema init swallows it as a warning, silently leaving the search unindexed.
+            if (usePostgres)
             {
                 using var trgmConn = new Npgsql.NpgsqlConnection(connectionStringDictionary[Database.Transfers]);
                 trgmConn.Open();
@@ -945,6 +949,7 @@ namespace resonance
             // TransferNetworkInfo is a custom (non-EF) table. The EF schema check for TransfersDbContext now
             // runs in the background after the host starts, so on a fresh database the schema isn't there
             // yet; create it here rather than relying on that ordering.
+            if (usePostgres)
             {
                 using var pgConn = new Npgsql.NpgsqlConnection(connectionStringDictionary[Database.Transfers]);
                 pgConn.Open();
@@ -971,6 +976,8 @@ namespace resonance
                 pgCmd.ExecuteNonQuery();
             }
 
+            new TransferNetworkInfoStore(connectionStringDictionary).Initialize();
+
             services.AddDbContext<MessagingDbContext>(connectionStringDictionary[Database.Messaging]);
             services.AddDbContext<EventsDbContext>(connectionStringDictionary[Database.Events]);
             services.AddDbContext<UsersDbContext>(connectionStringDictionary[Database.Users]);
@@ -990,7 +997,8 @@ namespace resonance
                 // wait. Each month's partition carries a large trigram index on Message; the insert that
                 // triggers a merge of its pending list, or that lands while the disk is busy, could run
                 // past the 30-second default -- dropping the whole batch and logging two EF errors.
-                options.UseNpgsql(connectionStringDictionary[Database.Logs], npgsql => npgsql.CommandTimeout(120));
+                SelectedDatabase.Configure(options);
+                if (usePostgres) options.UseNpgsql(connectionStringDictionary[Database.Logs], npgsql => npgsql.CommandTimeout(120));
 
                 if (OptionsAtStartup.Flags.LogSQL)
                 {
@@ -1009,11 +1017,18 @@ namespace resonance
             // Postgres is cooperating. That's the exact failure mode (a bad schema-init statement
             // fatal to IHostedService.StartAsync) that killed the previous attempt at this -- see
             // LogsSchemaInitializer's remarks for the full incident.
-            if (OptionsAtStartup.Logger.Postgres)
+            if (resonance.Core.LogStore.LoggingStorage.Database(OptionsAtStartup.Logger))
             {
                 try
                 {
-                    resonance.Core.LogStore.LogsSchemaInitializer.Initialize(connectionStringDictionary[Database.Logs]);
+                    if (usePostgres) resonance.Core.LogStore.LogsSchemaInitializer.Initialize(connectionStringDictionary[Database.Logs]);
+                    else
+                    {
+                        var logOptions = new DbContextOptionsBuilder<resonance.Core.LogStore.LogsDbContext>();
+                        SelectedDatabase.Configure(logOptions);
+                        using var logs = new resonance.Core.LogStore.LogsDbContext(logOptions.Options);
+                        SqliteSchema.Initialize(logs);
+                    }
                     services.AddHostedService<resonance.Core.LogStore.LogPersistenceService>();
                 }
                 catch (Exception ex)
@@ -1064,10 +1079,21 @@ namespace resonance
             services.AddSingleton<resonance.Common.Ffmpeg.IFfmpegService, resonance.Common.Ffmpeg.FfmpegService>();
             services.AddHostedService(sp => sp.GetRequiredService<resonance.Common.Ffmpeg.IFfmpegService>());
 
-            services.AddSingleton(sp => new resonance.Analysis.AnalysisStore(connectionStringDictionary[Database.Analysis]));
-            services.AddSingleton(sp => new resonance.MusicLibrary.ArtworkStore(connectionStringDictionary[Database.Music]));
+            services.AddSingleton(sp => new resonance.Analysis.AnalysisStore(connectionStringDictionary[Database.Analysis], usePostgres));
+            services.AddSingleton<resonance.Analysis.Imports.IImportedAnalysisStore>(sp => new resonance.Analysis.Imports.ImportedAnalysisStore(
+                () => connectionStringDictionary.CreateConnection(Database.Analysis), usePostgres));
+            services.AddSingleton(sp => new resonance.MusicLibrary.ArtworkStore(connectionStringDictionary[Database.Music], usePostgres));
             services.AddSingleton<resonance.Analysis.AnalysisService>();
             services.AddSingleton<resonance.Analysis.IAnalysisService>(sp => sp.GetRequiredService<resonance.Analysis.AnalysisService>());
+            services.AddSingleton(new resonance.Analysis.Candidates.CandidateAnalysisOptions(
+                Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_PYTHON"),
+                Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_WORKER"),
+                Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_CONFIG"),
+                Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_OUTPUT_ROOT"),
+                int.TryParse(Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_TIMEOUT_SECONDS"), out var candidateTimeout) ? candidateTimeout : 660));
+            services.AddSingleton<resonance.Analysis.Candidates.CandidateAnalysisService>();
+            services.AddHostedService<resonance.Analysis.Candidates.CandidateLibraryIndexService>();
+            services.AddSingleton<resonance.Analysis.UsbExport.UsbExportService>();
             services.AddHostedService(sp => sp.GetRequiredService<resonance.Analysis.AnalysisService>());
             services.AddSingleton<resonance.MetadataLookup.MusicBrainzClient>();
             services.AddSingleton<resonance.MetadataLookup.DiscogsClient>();
@@ -1089,6 +1115,9 @@ namespace resonance
             });
             services.AddSingleton<resonance.MusicLibrary.IMusicLibraryService, resonance.MusicLibrary.MusicLibraryService>();
             services.AddHostedService(p => p.GetRequiredService<resonance.MusicLibrary.IMusicLibraryService>());
+            services.AddSingleton<resonance.MusicLibrary.Workspace.WorkspaceStore>();
+            services.AddSingleton<resonance.MusicLibrary.Workspace.PreparationService>();
+            services.AddHostedService(p => p.GetRequiredService<resonance.MusicLibrary.Workspace.PreparationService>());
 
             services.AddSingleton<resonance.MusicLibrary.Converter.IConverterService, resonance.MusicLibrary.Converter.ConverterService>();
 
@@ -1117,7 +1146,11 @@ namespace resonance
 
             services.AddSingleton<IUserService, UserService>();
 
-            services.AddHostedService<DiscoveryService>();
+            if (string.IsNullOrWhiteSpace(OptionsAtStartup.Web.IpAddress)
+                || OptionsAtStartup.Web.IpAddress.Split(',').Any(address => !IPAddress.IsLoopback(IPAddress.Parse(address.Trim()))))
+            {
+                services.AddHostedService<DiscoveryService>();
+            }
 
             services.AddSingleton<IRoomService, RoomService>();
 
@@ -1829,27 +1862,22 @@ namespace resonance
                     outputTemplate: outputTemplate)
                 .WriteTo.Async(config =>
                     config.Conditional(
-                        e => OptionsAtStartup.Logger.Disk,
+                        e => resonance.Core.LogStore.LoggingStorage.Disk(OptionsAtStartup.Logger),
                         config => config.File(
                             Path.Combine(LogDirectory, $"{AppName}-.log"),
                             outputTemplate: outputTemplate,
                             rollingInterval: RollingInterval.Day,
                             retainedFileTimeLimit: TimeSpan.FromDays(OptionsAtStartup.Retention.Logs))))
 
-                // Structured feed for the log viewer (LogsController / LogFileReader), replacing what
-                // used to be a Postgres LogEntries table -- that table's search timed out once it grew
-                // (leading-wildcard LIKE, no usable index) and even a trigram index took too long to
-                // build in place. One JSON object per line so the viewer can parse Level/SourceContext/
-                // SubContext/Exception back out reliably; the plain-text sink above stays untouched for
-                // human tailing/grepping.
-                .WriteTo.Async(config =>
-                    config.Conditional(
-                        e => OptionsAtStartup.Logger.Disk,
-                        config => config.File(
-                            new Serilog.Formatting.Json.JsonFormatter(renderMessage: true),
-                            Path.Combine(LogDirectory, $"{AppName}-.jsonl"),
-                            rollingInterval: RollingInterval.Day,
-                            retainedFileTimeLimit: TimeSpan.FromDays(OptionsAtStartup.Retention.Logs))))
+                // Structured disk logs feed the viewer in disk-only mode; database-only mode
+                // does not write files. Console diagnostics remain independent of either store.
+                .WriteTo.Async(config => config.Conditional(
+                    e => resonance.Core.LogStore.LoggingStorage.Disk(OptionsAtStartup.Logger),
+                    config => config.File(
+                        new Serilog.Formatting.Json.JsonFormatter(renderMessage: true),
+                        Path.Combine(LogDirectory, $"{AppName}-.jsonl"),
+                        rollingInterval: RollingInterval.Day,
+                        retainedFileTimeLimit: TimeSpan.FromDays(OptionsAtStartup.Retention.Logs))))
                 .WriteTo.Conditional(
                     e => !string.IsNullOrEmpty(OptionsAtStartup.Logger.Loki),
                     config => config.GrafanaLoki(
@@ -1951,7 +1979,19 @@ namespace resonance
                     commandLine: Environment.CommandLine)
                 .Build();
 
-            return bootstrap.GetValue<string>($"{AppName}:database:connectionstring");
+            var file = new ConfigurationBuilder()
+                .AddJsonFile(Path.Combine(AppDirectory, "database.json"), optional: true)
+                .AddEnvironmentVariables()
+                .Build();
+            var options = new Options.DatabaseOptions
+            {
+                Provider = bootstrap.GetValue<string>($"{AppName}:database:provider") ?? file["Database:Provider"],
+                Type = bootstrap.GetValue<string>($"{AppName}:database:type"),
+                ConnectionString = bootstrap.GetValue<string>($"{AppName}:database:connectionstring") ?? file["Database:ConnectionString"],
+            };
+            SelectedDatabase = RuntimeDatabase.Resolve(options, AppDirectory);
+            SelectedDatabase.InitializeDirectory();
+            return SelectedDatabase.ConnectionString;
         }
 
         /// <summary>
@@ -1980,7 +2020,7 @@ namespace resonance
             {
                 try
                 {
-                    var settingsStore = new resonance.Core.Settings.SettingsService(connectionString);
+                    var settingsStore = new resonance.Core.Settings.SettingsService(connectionString, SelectedDatabase.UsePostgres);
                     _ = settingsStore.GetAll();
 
                     SettingsStore = settingsStore;
@@ -2028,7 +2068,7 @@ namespace resonance
             {
                 services.AddDbContextFactory<T>(options =>
                 {
-                    options.UseNpgsql(connectionString);
+                    SelectedDatabase.Configure(options);
 
                     if (OptionsAtStartup.Flags.LogSQL)
                     {
@@ -2060,13 +2100,23 @@ namespace resonance
                         // EnsureCreated() short-circuits after the first context creates tables because
                         // HasTables() returns true globally. For all subsequent contexts we generate the
                         // DDL script and execute it with IF NOT EXISTS guards.
+                        if (!ctx.Database.IsNpgsql())
+                        {
+                            SqliteSchema.Initialize(ctx);
+                            StartupProgress.Ready(databaseServiceId, "SQLite schema ready");
+                            return;
+                        }
                         var freshDb = ctx.Database.EnsureCreated();
                         if (!freshDb)
                         {
                             // RetryOfId was added after first release; EnsureCreated won't alter an existing
                             // table. Must run before the create-script loop below, which (re)creates the index
                             // on this column and would otherwise fail against a table that doesn't have it yet.
-                            if (typeof(T) == typeof(resonance.Transfers.TransfersDbContext))
+                            if (typeof(T) == typeof(resonance.Transfers.TransfersDbContext)
+                                && (!ctx.Database.IsNpgsql() || ctx.Database
+                                    .SqlQueryRaw<int>("SELECT 1 FROM information_schema.tables WHERE table_schema = 'transfers' AND table_name = 'Transfers'")
+                                    .AsEnumerable()
+                                    .Any()))
                             {
                                 if (ctx.Database.IsNpgsql())
                                 {
