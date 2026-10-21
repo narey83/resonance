@@ -187,6 +187,23 @@ See [database configuration, logging, migration and backup](docs/database/archit
 - Distinct "connecting" (first load) vs. "lost connection" (mid-session) states with manual retry and backoff.
 - Desktop-oriented web layout; compact interface scale does not imply a phone layout. The companion React Native app and cookie-sync browser extension are separate applications.
 
+## Android and iOS companion apps
+
+The [mobile guide](mobile/README.md) includes native screenshots, build status and a platform comparison. This is an evolving source snapshot: features and design can change, and more features are being added.
+
+- Server-address sign-in or short-lived QR pairing, secure session storage and live connection updates.
+- Server library browsing by artist, album, track, folder, genre and year; search, sorting, list/tile layouts, loved tracks and history.
+- Mini-player and full-screen player with artwork, waveform seeking, queue selection, shuffle/repeat and available BPM, key, LUFS and genre metadata.
+- Automatic, Original and Data saver streaming quality; native background playback and Google Cast controls.
+- Create, rename, delete, edit, reorder, play and share server mixtapes, subject to account permissions.
+- Soulseek search, shared-folder browsing and transfer management; rooms, mentions and private chat.
+- Role-dependent overview, server, connection, logs and relay screens.
+- Light, Dark, AMOLED and Midnight themes, system appearance, notification preferences, and optional diagnostic logging.
+- SQLite metadata/artwork caches for repeat browsing. Cached server metadata is distinct from downloaded audio.
+- Android-specific local audio-library support, Storage Access Framework folder/USB copying, Android Auto browse/playback, an optional native floating overlay and APK update flow. iOS does not inherit these platform capabilities; its local audio-library access needs separate validation.
+
+The mobile USB copy action copies local audio files; it does not create the desktop Pioneer export databases or analysis files. Desktop set planning, full-set rehearsal and detailed beat/phrase overlays are not implied mobile features. Native screenshots cover the displayed server-library/player screens, not external hardware, push delivery or production-store acceptance.
+
 ## Notable configuration-driven behaviors
 
 - `remote-configuration` / `remote-file-management` flags gate remote settings/file changes via the API.

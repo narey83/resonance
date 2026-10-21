@@ -1,7 +1,7 @@
 # Screenshots
 
 This directory holds the [README gallery](../../README.md#screenshots) and supporting captures.
-They are produced by [`frontend/scripts/capture-screenshots.mjs`](../../frontend/scripts/capture-screenshots.mjs),
+Desktop screenshots are produced by [`frontend/scripts/capture-screenshots.mjs`](../../frontend/scripts/capture-screenshots.mjs),
 which drives a running instance with Playwright. Stable filenames keep the gallery
 links usable when the screens are recaptured.
 
@@ -10,6 +10,11 @@ The README gallery was captured on **21 October 2026** from the isolated, analys
 Midnight and Daylight themes. Larger workspace views use 80% interface scale; the
 library and player use 100%. Each image's settings and capture date are recorded in
 `manifest.json`. Screens and features can change after that date.
+
+The [Android and iOS gallery](../../mobile/README.md#screenshots) uses separate native
+development builds. See the [mobile capture guide](mobile/README.md) and
+[`mobile/manifest.json`](mobile/manifest.json) for devices, dates and scope; these
+images are not produced by the desktop Playwright script.
 
 ## Capturing
 

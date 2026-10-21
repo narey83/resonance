@@ -71,6 +71,16 @@ Resonance is a modified version of [slskd](https://github.com/slskd/slskd). It i
 
 These Pioneer features are **experimental**. Physical player acceptance, including OPUS-QUAD, is still pending; network support depends on the player's LINK EXPORT capabilities. Installer signing and native Windows/Linux validation also remain outstanding. See the [helper guide](desktop/pioneer-link/README.md) before testing.
 
+### Take the library mobile
+
+- Use the Android or iOS companion app to browse your server library, stream music and manage mixtapes.
+- Open a full-screen player with artwork, waveform seeking, queue controls and available BPM, key, LUFS and genre information.
+- Search Soulseek, manage server transfers, browse shares, use rooms/chat and access administration according to your role.
+- Choose Light, Dark, AMOLED, Midnight or system appearance, and Automatic, Original or Data saver streaming quality.
+- Android also implements a local audio library, Android Auto, an optional player overlay over other apps and copying local tracks to a chosen folder or USB storage. These have different platform requirements from iOS and from the desktop Pioneer export.
+
+See the [mobile feature guide and platform comparison](mobile/README.md). The apps are in active development: features and design can change, with more features being added.
+
 ### Operate it your way
 
 - Use JWT, API-key, or trusted reverse-proxy authentication with built-in and custom roles.
@@ -111,6 +121,19 @@ Captured **21 October 2026** from the isolated 15-track test library, with enhan
 </details>
 
 See the [screenshot guide](docs/screenshots/README.md) for capture instructions and privacy checks.
+
+### Android and iOS
+
+Native development builds captured **21 October 2026** against the same 15-track test library. Android uses a Pixel 9 emulator; iOS uses an iPhone 17 simulator. These show the current apps, whose features and design continue to grow and change.
+
+| Android | iOS |
+| :---: | :---: |
+| <a href="docs/screenshots/mobile/android/albums.png"><img src="docs/screenshots/mobile/android/albums.png" alt="Android Resonance app with album artwork tiles and native navigation" width="240"></a> | <a href="docs/screenshots/mobile/ios/albums.png"><img src="docs/screenshots/mobile/ios/albums.png" alt="iOS Resonance app with album artwork tiles and native navigation" width="240"></a> |
+| **Android library** | **iOS library** |
+| <a href="docs/screenshots/mobile/android/player.png"><img src="docs/screenshots/mobile/android/player.png" alt="Android full-screen music player with artwork, waveform, BPM, key and LUFS" width="240"></a> | <a href="docs/screenshots/mobile/ios/player.png"><img src="docs/screenshots/mobile/ios/player.png" alt="iOS full-screen music player with artwork, waveform, BPM, key and LUFS" width="240"></a> |
+| **Android player** | **iOS player** |
+
+Explore [all mobile screenshots, features and platform differences](mobile/README.md), including tracks, queue, mixtapes and light-mode preferences. Simulator captures do not imply store availability or verification of vehicle, casting, push or USB hardware integrations.
 
 ## Quick start
 
@@ -157,6 +180,8 @@ Basic analysis currently allows BPM/key tag writes by default. Set `analysis.wri
 | [Pioneer helper](desktop/pioneer-link/README.md) | USB transfer, Network Link, pairing, installation and compatibility limits |
 | [Beatgrid verification](docs/beatgrid-verification.md) | Repeatable rendering checks and what those checks establish |
 | [Frontend development](frontend/README.md) | Local web development and focused test commands |
+| [Mobile apps](mobile/README.md) | Native Android/iOS screenshots, current features and platform differences |
+| [Mobile development](mobile/EXPO_GUIDE.md) | Expo SDK requirements, native builds and device connectivity |
 
 ## Architecture
 
@@ -192,12 +217,12 @@ npm ci
 npm start
 ```
 
-The web development server runs on port 3000 and proxies API/SignalR requests to the backend on port 5030. For the separate mobile app, start another terminal at the repository root:
+The web development server runs on port 3000 and proxies API/SignalR requests to the backend on port 5030. For the separate mobile app, first install a compatible native development build using the [mobile development guide](mobile/EXPO_GUIDE.md), then start Metro from another terminal:
 
 ```bash
 cd mobile
 npm ci
-npx expo start
+npx expo start --dev-client
 ```
 
 Useful checks before submitting a change:

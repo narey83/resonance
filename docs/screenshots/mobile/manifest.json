@@ -1,0 +1,200 @@
+{
+  "capturedOn": "2026-10-21",
+  "captureKind": "native device framebuffer",
+  "sourceRevision": "b8a514e703aa16a7f690cc6de5c18fc9023cdc9f",
+  "sourceState": "Includes existing local mobile SDK/runtime and playback-service updates; these files are not part of the screenshot/docs commit.",
+  "localMobileFiles": [
+    {
+      "file": "mobile/app.json",
+      "sha256": "fc472588ff08302d0d74574398ef870dfb6ccfbbbc23d17a32fd45d596d19a51"
+    },
+    {
+      "file": "mobile/package.json",
+      "sha256": "187127cbe891491340b24fc63d4929a9580c5a7630157c530628cbc7497c70c4"
+    },
+    {
+      "file": "mobile/package-lock.json",
+      "sha256": "31b2c227b4e204e1dcd49006ae2de86109f2f2089f602354c94e0854925ac9fb"
+    },
+    {
+      "file": "mobile/src/services/playback-service.ts",
+      "sha256": "910bed086699bb937159a6e8ca09867c3c1713e262d233527327c68f7c485533"
+    }
+  ],
+  "library": "Isolated 15-track server library",
+  "buildType": "development",
+  "externalIntegrationsTested": false,
+  "images": [
+    {
+      "file": "android/albums.png",
+      "platform": "android",
+      "device": "Pixel 9 emulator",
+      "os": "Android 16 / API 36",
+      "appVersion": "0.1.0",
+      "theme": "dark",
+      "caption": "Album artwork browser",
+      "width": 1080,
+      "height": 2424,
+      "capturedAt": "2026-10-21T17:00:17.036961+00:00",
+      "sha256": "ca3ff234eea171778993e056e942c9f4a00def9a71ada3e5e675271e8dcbc5e7"
+    },
+    {
+      "file": "android/tracks.png",
+      "platform": "android",
+      "device": "Pixel 9 emulator",
+      "os": "Android 16 / API 36",
+      "appVersion": "0.1.0",
+      "theme": "dark",
+      "caption": "Server tracks and mini-player",
+      "width": 1080,
+      "height": 2424,
+      "capturedAt": "2026-10-21T17:01:01.464854+00:00",
+      "sha256": "51c1764dcb788e2da5761fb8d3b066d1a732a71bfcb191f17b3170b1d4c9d666"
+    },
+    {
+      "file": "android/player.png",
+      "platform": "android",
+      "device": "Pixel 9 emulator",
+      "os": "Android 16 / API 36",
+      "appVersion": "0.1.0",
+      "theme": "dark",
+      "caption": "Full player, waveform and track metadata",
+      "width": 1080,
+      "height": 2424,
+      "capturedAt": "2026-10-21T17:01:28.168865+00:00",
+      "sha256": "3029a12e09b3395de215e7564adeda9b4b632d64e86e7d10a7746ee25df658f9"
+    },
+    {
+      "file": "android/queue.png",
+      "platform": "android",
+      "device": "Pixel 9 emulator",
+      "os": "Android 16 / API 36",
+      "appVersion": "0.1.0",
+      "theme": "dark",
+      "caption": "Player queue",
+      "width": 1080,
+      "height": 2424,
+      "capturedAt": "2026-10-21T17:01:42.811527+00:00",
+      "sha256": "14ae174f5064836a650b39ccdef8fcf3e9fd29df366514ed5c12f3774c2a6c4f"
+    },
+    {
+      "file": "android/mixtape.png",
+      "platform": "android",
+      "device": "Pixel 9 emulator",
+      "os": "Android 16 / API 36",
+      "appVersion": "0.1.0",
+      "theme": "light",
+      "caption": "Saved mixtape and ordering controls",
+      "width": 1080,
+      "height": 2424,
+      "capturedAt": "2026-10-21T17:04:11.746408+00:00",
+      "sha256": "8a36adf3413b85bb2d1a825ea574475fb5ead9f4301d8c667dbbb0f52d8e1e00"
+    },
+    {
+      "file": "android/settings.png",
+      "platform": "android",
+      "device": "Pixel 9 emulator",
+      "os": "Android 16 / API 36",
+      "appVersion": "0.1.0",
+      "theme": "light",
+      "caption": "Appearance and playback preferences",
+      "width": 1080,
+      "height": 2424,
+      "capturedAt": "2026-10-21T17:02:39.454231+00:00",
+      "sha256": "618e8434ed3245f5474654c0b21c0ad966e72ed718dddd20b02d8a49cd00a3b8"
+    },
+    {
+      "file": "ios/albums.png",
+      "platform": "ios",
+      "device": "iPhone 17 simulator",
+      "os": "iOS 27.0",
+      "appVersion": "0.1.0",
+      "theme": "dark",
+      "caption": "Album artwork browser",
+      "width": 1206,
+      "height": 2622,
+      "capturedAt": "2026-10-21T15:36:30.257879+00:00",
+      "sha256": "8484497aac8a4ece7c00927b90ebb69df110ec76af02cc29a0c9da11c24fe43d"
+    },
+    {
+      "file": "ios/tracks.png",
+      "platform": "ios",
+      "device": "iPhone 17 simulator",
+      "os": "iOS 27.0",
+      "appVersion": "0.1.0",
+      "theme": "dark",
+      "caption": "Server tracks and mini-player",
+      "width": 1206,
+      "height": 2622,
+      "capturedAt": "2026-10-21T15:40:00.661308+00:00",
+      "sha256": "fddce17eb0b793655d9ea075f0d42e360deea4f44da1e30b842b66f2f1877c7d"
+    },
+    {
+      "file": "ios/player.png",
+      "platform": "ios",
+      "device": "iPhone 17 simulator",
+      "os": "iOS 27.0",
+      "appVersion": "0.1.0",
+      "theme": "dark",
+      "caption": "Full player, waveform and track metadata",
+      "width": 1206,
+      "height": 2622,
+      "capturedAt": "2026-10-21T15:38:13.656631+00:00",
+      "sha256": "820a8de79364f6478e67c5bd110e32eae292469f7b756b187d7eb68bab81e03b"
+    },
+    {
+      "file": "ios/queue.png",
+      "platform": "ios",
+      "device": "iPhone 17 simulator",
+      "os": "iOS 27.0",
+      "appVersion": "0.1.0",
+      "theme": "dark",
+      "caption": "Player queue",
+      "width": 1206,
+      "height": 2622,
+      "capturedAt": "2026-10-21T15:39:30.521150+00:00",
+      "sha256": "8b13021fa19e5bff77db5fef7ffa9dcd4cb5ea209896890e13948e8b5ce21860"
+    },
+    {
+      "file": "ios/mixtape.png",
+      "platform": "ios",
+      "device": "iPhone 17 simulator",
+      "os": "iOS 27.0",
+      "appVersion": "0.1.0",
+      "theme": "light",
+      "caption": "Saved mixtape and ordering controls",
+      "width": 1206,
+      "height": 2622,
+      "capturedAt": "2026-10-21T15:41:39.549572+00:00",
+      "sha256": "4f88dd50718d4b7b6d1d4547e7dd467d777f9987618b3b854688bbec5890144d"
+    },
+    {
+      "file": "ios/settings.png",
+      "platform": "ios",
+      "device": "iPhone 17 simulator",
+      "os": "iOS 27.0",
+      "appVersion": "0.1.0",
+      "theme": "light",
+      "caption": "Appearance and playback preferences",
+      "width": 1206,
+      "height": 2622,
+      "capturedAt": "2026-10-21T15:40:54.917356+00:00",
+      "sha256": "90a3cb91a7cdc76a5ddd29121430968497fcb12b5891a91ac05fff4c758d5e9b"
+    }
+  ],
+  "nativeBuildOverrides": {
+    "android": {
+      "googleServicesFile": "omitted for isolated capture build",
+      "googleCastFrameworkVersion": "22.3.1"
+    },
+    "ios": {
+      "binary": "existing Expo SDK 57 simulator development client",
+      "javascript": "current local mobile source"
+    }
+  },
+  "captureObservations": {
+    "androidNavigation": "Navigation stopped responding after initial sign-in and development-menu use. Restarting the app restored normal navigation before capture; cause not established and no source fix claimed.",
+    "androidMixtapeNavigation": "Artists and Albums tabs were temporarily hidden using Library Options to bring Mixtapes into view in the capture emulator.",
+    "androidTheme": "Auto resolved to Dark for library, track and player captures; Light selected for settings and mixtape."
+  }
+}
