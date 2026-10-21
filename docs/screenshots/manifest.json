@@ -1,40 +1,205 @@
 {
-  "capturedAt": "2026-09-07T20:45:09.767Z",
-  "scale": 2,
+  "capturedAt": "2026-10-21T13:55:44.725591Z",
+  "scale": 1.5,
   "shots": [
     {
-      "caption": "Audio converter",
+      "caption": "Album browser",
+      "capturedAt": "2026-10-21T13:51:26.176553Z",
+      "file": "albums.png",
+      "path": "library",
+      "route": "albums",
+      "scale": 1.5,
+      "sourceRevision": "0abfc16e01f6e592d9baedd30b3cb937cffd3bc9",
+      "theme": "light",
+      "viewport": {
+        "height": 1000,
+        "width": 1600
+      },
+      "uiScale": 100
+    },
+    {
+      "caption": "Audio converter with individual track selection",
+      "capturedAt": "2026-10-21T13:55:44.725591Z",
       "file": "converter.png",
-      "route": "converter"
+      "path": "converter",
+      "route": "converter",
+      "scale": 1.5,
+      "sourceRevision": "0abfc16e01f6e592d9baedd30b3cb937cffd3bc9",
+      "theme": "light",
+      "uiScale": 100,
+      "viewport": {
+        "height": 1000,
+        "width": 1600
+      }
     },
     {
-      "caption": "Duplicate detection",
-      "file": "duplicates.png",
-      "route": "duplicates"
+      "caption": "Folder-aware Pioneer USB export wizard",
+      "capturedAt": "2026-10-21T13:51:29.959752Z",
+      "file": "export.png",
+      "path": "export",
+      "route": "export",
+      "scale": 1.5,
+      "sourceRevision": "0abfc16e01f6e592d9baedd30b3cb937cffd3bc9",
+      "theme": "light",
+      "viewport": {
+        "height": 1000,
+        "width": 1600
+      },
+      "uiScale": 100
     },
     {
-      "caption": "Music library",
+      "caption": "Music library with analysed waveforms and docked player",
+      "capturedAt": "2026-10-21T13:28:17.521839Z",
       "file": "library.png",
-      "route": "library"
+      "path": "library",
+      "route": "library",
+      "scale": 1.5,
+      "sourceRevision": "0abfc16e01f6e592d9baedd30b3cb937cffd3bc9",
+      "theme": "midnight",
+      "viewport": {
+        "height": 1000,
+        "width": 1600
+      },
+      "uiScale": 100
+    },
+    {
+      "caption": "Ending-to-opening mix compatibility and synced preview",
+      "capturedAt": "2026-10-21T13:52:57.581522Z",
+      "file": "mix-preview.png",
+      "path": "library",
+      "route": "mix-preview",
+      "scale": 1.5,
+      "sourceRevision": "0abfc16e01f6e592d9baedd30b3cb937cffd3bc9",
+      "theme": "midnight",
+      "uiScale": 80,
+      "viewport": {
+        "height": 1000,
+        "width": 1600
+      }
+    },
+    {
+      "caption": "Whole-library Pioneer Network Link",
+      "capturedAt": "2026-10-21T13:52:43.272475Z",
+      "file": "network-link.png",
+      "path": "networklink",
+      "route": "networklink",
+      "scale": 1.5,
+      "sourceRevision": "0abfc16e01f6e592d9baedd30b3cb937cffd3bc9",
+      "theme": "midnight",
+      "uiScale": 80,
+      "viewport": {
+        "height": 1000,
+        "width": 1600
+      }
     },
     {
       "caption": "Overview dashboard",
+      "capturedAt": "2026-10-21T13:52:53.603514Z",
       "file": "overview.png",
-      "route": "overview"
+      "path": "overview",
+      "route": "overview",
+      "scale": 1.5,
+      "sourceRevision": "0abfc16e01f6e592d9baedd30b3cb937cffd3bc9",
+      "theme": "midnight",
+      "uiScale": 80,
+      "viewport": {
+        "height": 1000,
+        "width": 1600
+      }
     },
     {
-      "caption": "Soulseek search",
-      "file": "search.png",
-      "route": "searches"
+      "caption": "Separate player window with phrase-coloured waveform",
+      "capturedAt": "2026-10-21T13:31:18.815868Z",
+      "file": "player.png",
+      "path": "library",
+      "route": "player",
+      "scale": 1.5,
+      "sourceRevision": "0abfc16e01f6e592d9baedd30b3cb937cffd3bc9",
+      "theme": "midnight",
+      "viewport": {
+        "height": 1000,
+        "width": 1600
+      },
+      "uiScale": 100
+    },
+    {
+      "caption": "Automatic library preparation",
+      "capturedAt": "2026-10-21T13:52:36.979391Z",
+      "file": "preparation.png",
+      "path": "library",
+      "route": "preparation",
+      "scale": 1.5,
+      "sourceRevision": "0abfc16e01f6e592d9baedd30b3cb937cffd3bc9",
+      "theme": "midnight",
+      "uiScale": 80,
+      "viewport": {
+        "height": 1000,
+        "width": 1600
+      }
+    },
+    {
+      "caption": "Set planner with fixed master tempo and transition guidance",
+      "capturedAt": "2026-10-21T13:52:28.495279Z",
+      "file": "set-planner.png",
+      "path": "library",
+      "route": "set-planner",
+      "scale": 1.5,
+      "sourceRevision": "0abfc16e01f6e592d9baedd30b3cb937cffd3bc9",
+      "theme": "midnight",
+      "uiScale": 80,
+      "viewport": {
+        "height": 1000,
+        "width": 1600
+      }
+    },
+    {
+      "caption": "Full-set rehearsal",
+      "capturedAt": "2026-10-21T13:52:32.874486Z",
+      "file": "set-rehearsal.png",
+      "path": "library",
+      "route": "set-rehearsal",
+      "scale": 1.5,
+      "sourceRevision": "0abfc16e01f6e592d9baedd30b3cb937cffd3bc9",
+      "theme": "midnight",
+      "uiScale": 80,
+      "viewport": {
+        "height": 1000,
+        "width": 1600
+      }
+    },
+    {
+      "caption": "Smart crates and saved library rules",
+      "capturedAt": "2026-10-21T13:52:41.053949Z",
+      "file": "smart-crates.png",
+      "path": "library",
+      "route": "smart-crates",
+      "scale": 1.5,
+      "sourceRevision": "0abfc16e01f6e592d9baedd30b3cb937cffd3bc9",
+      "theme": "midnight",
+      "uiScale": 80,
+      "viewport": {
+        "height": 1000,
+        "width": 1600
+      }
     },
     {
       "caption": "Track analysis",
+      "capturedAt": "2026-10-21T13:52:49.863534Z",
       "file": "track-analysis.png",
-      "route": "trackanalysis"
+      "path": "trackanalysis",
+      "route": "trackanalysis",
+      "scale": 1.5,
+      "sourceRevision": "0abfc16e01f6e592d9baedd30b3cb937cffd3bc9",
+      "theme": "midnight",
+      "uiScale": 80,
+      "viewport": {
+        "height": 1000,
+        "width": 1600
+      }
     }
   ],
   "viewport": {
-    "height": 900,
-    "width": 1440
+    "height": 1000,
+    "width": 1600
   }
 }

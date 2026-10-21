@@ -83,26 +83,30 @@ The full, detailed capability list lives in [FEATURES.md](FEATURES.md).
 
 ## Screenshots
 
-The checked-in screenshots were captured on 7 September 2026 and predate the current DJ workspace. They illustrate earlier screens; they are not a record of the latest layout or theme behaviour.
+Captured **21 October 2026** from the isolated 15-track test library, with enhanced analysis and export workers configured. The gallery shows the current desktop design in Midnight and Daylight. Screens and features can change as development continues.
 
 <div align="center">
-  <img src="docs/screenshots/overview.png" alt="Resonance overview dashboard" width="900">
-  <p><em>The overview dashboard — transfer analytics, share ratio and catalogue reach.</em></p>
+  <a href="docs/screenshots/library.png"><img src="docs/screenshots/library.png" alt="Resonance Midnight library showing track analysis status, BPM, key and the docked player with coloured DJ phrases" width="1000"></a>
+  <p><em>The music workspace: analysed tracks, a persistent player and phrase-coloured waveforms.</em></p>
 </div>
 
 <details>
-<summary><strong>More of the web app</strong></summary>
+<summary><strong>Explore the library, player and DJ tools</strong></summary>
 
 <br>
 
 | | |
 | :---: | :---: |
-| <img src="docs/screenshots/library.png" alt="Music library" width="420"> | <img src="docs/screenshots/track-analysis.png" alt="Track analysis" width="420"> |
-| **Library** — the persistent catalogue, by artist, album and genre | **Track analysis** — Camelot key and BPM per track, ready for harmonic mixing |
-| <img src="docs/screenshots/search.png" alt="Soulseek search" width="420"> | <img src="docs/screenshots/duplicates.png" alt="Duplicate detection" width="420"> |
-| **Search** — Soulseek results with filters for bitrate, format and free slots | **Duplicates** — grouped by track identity, with the best copy flagged |
-| <img src="docs/screenshots/converter.png" alt="Audio converter" width="420"> | |
-| **Converter** — transcode library folders in place | |
+| <a href="docs/screenshots/albums.png"><img src="docs/screenshots/albums.png" alt="Daylight album browser with artwork and collection navigation" width="460"></a> | <a href="docs/screenshots/player.png"><img src="docs/screenshots/player.png" alt="Separate Midnight player window with track metadata, phrase waveform and vertical volume and level meters" width="460"></a> |
+| **Album browser** — artwork and collection browsing in Daylight | **Player window** — dedicated playback, waveform controls and metering |
+| <a href="docs/screenshots/set-planner.png"><img src="docs/screenshots/set-planner.png" alt="Set planner with a running order, fixed master tempo and transition guidance" width="460"></a> | <a href="docs/screenshots/set-rehearsal.png"><img src="docs/screenshots/set-rehearsal.png" alt="Full-set rehearsal with fixed master tempo, handover navigation and crossfader" width="460"></a> |
+| **Set planner** — build the order and review each transition | **Full-set rehearsal** — audition consecutive handovers at one master tempo |
+| <a href="docs/screenshots/mix-preview.png"><img src="docs/screenshots/mix-preview.png" alt="Mix compatibility comparing the ending of one track with the opening of another" width="460"></a> | <a href="docs/screenshots/preparation.png"><img src="docs/screenshots/preparation.png" alt="Automatic preparation showing analysis progress and completed tracks" width="460"></a> |
+| **Mix compatibility** — compare tempo, key and suggested handover regions | **Preparation** — automatic analysis progress, status and retry controls |
+| <a href="docs/screenshots/smart-crates.png"><img src="docs/screenshots/smart-crates.png" alt="Smart crates with saved rules and live collection counts" width="460"></a> | <a href="docs/screenshots/converter.png"><img src="docs/screenshots/converter.png" alt="Daylight audio converter with source selection and conversion settings" width="460"></a> |
+| **Smart crates** — collections that follow saved library rules | **Audio converter** — source selection, format settings and conversion jobs |
+| <a href="docs/screenshots/export.png"><img src="docs/screenshots/export.png" alt="Pioneer USB export wizard with folder-aware track selection" width="460"></a> | <a href="docs/screenshots/network-link.png"><img src="docs/screenshots/network-link.png" alt="Pioneer Network Link page with whole-library preparation and shared helper setup" width="460"></a> |
+| **USB Export** — select folders and tracks, then prepare a player export | **Network Link** — prepare the whole library for the shared desktop helper |
 
 </details>
 

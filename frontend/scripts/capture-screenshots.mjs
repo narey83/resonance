@@ -34,6 +34,7 @@
 //
 // See docs/screenshots/README.md for the shot list and the privacy note.
 
+import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,6 +47,110 @@ const repoRoot = path.resolve(here, '..', '..');
 // new device on the account every time.
 const DEVICE_ID = 'f0c8b1de-5f2a-4f0e-9a6b-5c4d3e2a1b09';
 const DEVICE_NAME = 'Screenshot capture';
+
+const librarySection = async (page, title) => {
+  // Hover the visible rail before clicking: labels extend beyond its collapsed width.
+  await page.locator('.jb-nav-rail').hover({ position: { x: 16, y: 16 } });
+  await page.locator(`.jb-nav-item[title="${title}"]`).click({
+    position: { x: 18, y: 16 },
+  });
+  await page.mouse.move(1_000, 75);
+};
+
+const preparePlayer = async (page, config) => {
+  await librarySection(page, 'Tracks');
+  const rows = page.locator('.jb-track-row');
+  await rows.first().waitFor();
+  const row = config.track
+    ? rows.filter({ has: page.getByTitle(config.track, { exact: true }) })
+    : rows.first();
+  await row.hover();
+  const play = row.locator('.jb-track-play-btn');
+  if ((await play.count()) > 0) {
+    await play.click();
+    const initialPause = page.getByTitle('Pause', { exact: true });
+    await initialPause.waitFor();
+    await initialPause.click();
+  }
+
+  const waveform = page.getByRole('button', { name: 'Waveform', exact: true });
+  if ((await waveform.getAttribute('aria-pressed')) !== 'true')
+    await waveform.click();
+  await page.getByRole('combobox', { name: 'Waveform zoom' }).selectOption('1');
+  await page
+    .getByRole('combobox', { name: 'Waveform phrase labels' })
+    .selectOption('dj');
+  await page.locator('.mp-waveform-toolbar').waitFor();
+  const scrubber = page.locator('.media-player-scrubber');
+  const bounds = await scrubber.boundingBox();
+  if (bounds)
+    await scrubber.click({ position: { x: bounds.width * 0.36, y: 2 } });
+  const pause = page.getByTitle('Pause', { exact: true });
+  if (await pause.isVisible()) await pause.click();
+  const closeInspector = page.getByRole('button', {
+    name: 'Close track inspector',
+  });
+  if (await closeInspector.isVisible()) await closeInspector.click();
+};
+
+const prepareSet = async (page, config) => {
+  await librarySection(page, 'Set Planner');
+  const select = page.getByRole('combobox', { name: 'Saved sets' });
+  await select.waitFor();
+  await page.waitForFunction(() =>
+    [...document.querySelector('[aria-label="Saved sets"]').options].some(
+      (option) => option.value && /[1-9]\d* tracks$/u.test(option.text),
+    ),
+  );
+  const options = await select
+    .locator('option')
+    .evaluateAll((items) =>
+      items.map((option) => ({ value: option.value, text: option.text })),
+    );
+  const selected = options.find((option) =>
+    config.setName
+      ? option.text.startsWith(`${config.setName} ·`)
+      : option.value && /[1-9]\d* tracks$/u.test(option.text),
+  );
+  if (!selected)
+    throw new Error('A populated saved set is required for this shot');
+  await select.selectOption(selected.value);
+  await page.getByRole('list', { name: 'Set running order' }).waitFor();
+};
+
+const prepareMix = async (page, config) => {
+  await page.getByRole('button', { name: 'Mix preview', exact: true }).click();
+  const back = page.getByRole('button', {
+    name: 'Back to comparison',
+    exact: true,
+  });
+  if ((await back.count()) > 0) await back.click();
+  for (const [side, title] of [
+    ['A', config.mixFrom],
+    ['B', config.mixWith],
+  ]) {
+    await page
+      .locator('.mix-deck')
+      .nth(side === 'A' ? 0 : 1)
+      .getByRole('button', { name: /^(?:Change track|Choose track)$/u })
+      .click();
+    const picker = page.getByRole('region', { name: `Choose ${side} track` });
+    const search = page.getByRole('textbox', {
+      name: 'Search mix preview library',
+    });
+    if (title) await search.fill(title);
+    const choice = title
+      ? page.getByRole('button', {
+          name: `Choose ${title} for ${side}`,
+          exact: true,
+        })
+      : picker.locator('button[aria-label^="Choose "]:enabled').first();
+    await choice.click();
+  }
+
+  await page.getByRole('dialog', { name: 'Mix compatibility' }).waitFor();
+  await page.locator('.mix-deck').first().waitFor();
+};
 
 // route: the path under the app's base URL.  file: the name the README expects.
 const SHOTS = [
@@ -74,7 +179,98 @@ const SHOTS = [
     },
     route: 'searches',
   },
-  { caption: 'Music library', file: 'library.png', route: 'library' },
+  {
+    caption: 'Music library with analysed waveforms and docked player',
+    file: 'library.png',
+    prepare: preparePlayer,
+    route: 'library',
+  },
+  {
+    caption: 'Album browser',
+    file: 'albums.png',
+    path: 'library',
+    prepare: (page) => librarySection(page, 'Albums'),
+    route: 'albums',
+  },
+  {
+    caption: 'Automatic library preparation',
+    file: 'preparation.png',
+    path: 'library',
+    prepare: (page) => librarySection(page, 'Preparation'),
+    route: 'preparation',
+  },
+  {
+    caption: 'Smart crates and saved library rules',
+    file: 'smart-crates.png',
+    path: 'library',
+    prepare: (page) => librarySection(page, 'Smart crates'),
+    route: 'smart-crates',
+  },
+  {
+    caption: 'Set planner with fixed master tempo and transition guidance',
+    file: 'set-planner.png',
+    path: 'library',
+    prepare: prepareSet,
+    route: 'set-planner',
+  },
+  {
+    caption: 'Full-set rehearsal',
+    file: 'set-rehearsal.png',
+    path: 'library',
+    prepare: async (page, config) => {
+      await prepareSet(page, config);
+      await page
+        .getByRole('button', { name: 'Rehearse set', exact: true })
+        .click();
+      await page.getByRole('dialog', { name: 'Full-set rehearsal' }).waitFor();
+      await page
+        .getByRole('slider', { name: 'Crossfader', exact: true })
+        .scrollIntoViewIfNeeded();
+    },
+    route: 'set-rehearsal',
+  },
+  {
+    caption: 'Ending-to-opening mix compatibility and synced preview',
+    file: 'mix-preview.png',
+    path: 'library',
+    prepare: prepareMix,
+    route: 'mix-preview',
+  },
+  {
+    caption: 'Separate player window with phrase-coloured waveform',
+    file: 'player.png',
+    path: 'library',
+    prepare: async (page, config) => {
+      await preparePlayer(page, config);
+      const opened = page.waitForEvent('popup');
+      await page
+        .getByRole('button', { name: 'Open player window', exact: true })
+        .click();
+      const player = await opened;
+      await player.setViewportSize({
+        height: config.height,
+        width: config.width,
+      });
+      await player.locator('.mp-expanded--popout').waitFor();
+      return player;
+    },
+    route: 'player',
+  },
+  {
+    caption: 'Folder-aware Pioneer USB export wizard',
+    file: 'export.png',
+    prepare: async (page) => {
+      await page
+        .getByRole('button', { name: 'Select all', exact: true })
+        .click();
+    },
+    route: 'export',
+  },
+  {
+    caption: 'Whole-library Pioneer Network Link',
+    file: 'network-link.png',
+    route: 'networklink',
+  },
   {
     caption: 'Track analysis',
     file: 'track-analysis.png',
@@ -124,7 +320,22 @@ const SHOTS = [
     },
     route: 'duplicates',
   },
-  { caption: 'Audio converter', file: 'converter.png', route: 'converter' },
+  {
+    caption: 'Audio converter with individual track selection',
+    file: 'converter.png',
+    prepare: async (page) => {
+      await page.locator('.converter-folder-toggle').first().click();
+      const tracks = page.locator('.converter-track input[type="checkbox"]');
+      await tracks.first().waitFor();
+      for (let index = 0; index < Math.min(3, await tracks.count()); index++)
+        await tracks.nth(index).check();
+      await page
+        .getByRole('group', { name: 'Output format' })
+        .getByRole('button', { name: /^FLAC/u })
+        .click();
+    },
+    route: 'converter',
+  },
   { caption: 'yt-dlp ingest', file: 'ytdlp.png', route: 'ytdlp' },
 ];
 
@@ -151,10 +362,15 @@ Options
   --only <a,b>         Capture just these routes
   --include <a,b>      Add opt-in routes: ${OPTIONAL_SHOTS.map((s) => s.route).join(', ')}
   --all                Every route, opt-in ones included
-  --theme <name>       light | amoled | current         (default current)
+  --theme <name>       light | amoled | midnight | violet | ember | current
+  --track <title>      Track to load for library/player captures (default first displayed)
+  --mix-from <title>   Outgoing track for the mix-preview capture
+  --mix-with <title>   Incoming track for the mix-preview capture
+  --set <name>         Existing populated set for planner/rehearsal captures
   --width <px>         Viewport width                   (default 1440)
   --height <px>        Viewport height                  (default 900)
   --scale <n>          Device pixel ratio               (default 2)
+  --ui-scale <n>       Interface scale from 50 to 100    (default 100)
   --settle <ms>        Pause before each shot           (default 2500)
   --full-page          Capture the full scroll height rather than the viewport
   --no-redact          Leave the instance's public IP visible in the status bar
@@ -162,8 +378,8 @@ Options
   --list               Print the shot list and exit
   --help               This message
 
-Capturing does not change the instance: preference writes (theme, tab choices)
-are blocked for the duration of the run, so they stay local to the browser.
+Display preference writes are isolated to the capture browser. Loading or playing
+tracks can update play history; use an isolated instance with test music.
 `;
 
 const parseArgs = (argv) => {
@@ -218,18 +434,27 @@ const buildConfig = (options) => {
     headed: Boolean(options.headed),
     height: Number(options.height ?? 900),
     noRedact: Boolean(options['no-redact']),
+    mixFrom: options['mix-from'],
+    mixWith: options['mix-with'],
     outputDir: path.resolve(repoRoot, options.out ?? 'docs/screenshots'),
     password: options.password ?? RESONANCE_PASSWORD,
     scale: Number(options.scale ?? 2),
     settle: Number(options.settle ?? 2_500),
+    setName: options.set,
     theme: options.theme ?? 'current',
+    track: options.track,
     username: options.username ?? RESONANCE_USERNAME,
+    uiScale: Number(options['ui-scale'] ?? 100),
     width: Number(options.width ?? 1_440),
   };
 
-  if (!['amoled', 'current', 'light'].includes(config.theme)) {
+  if (
+    !['amoled', 'current', 'ember', 'light', 'midnight', 'violet'].includes(
+      config.theme,
+    )
+  ) {
     throw new UsageError(
-      `--theme must be light, amoled or current (got "${config.theme}")`,
+      `Unknown theme "${config.theme}"; see --help for supported themes`,
     );
   }
 
@@ -238,6 +463,13 @@ const buildConfig = (options) => {
       throw new UsageError(`--${name} must be a positive number`);
     }
   }
+
+  if (
+    !Number.isInteger(config.uiScale) ||
+    config.uiScale < 50 ||
+    config.uiScale > 100
+  )
+    throw new UsageError('--ui-scale must be an integer from 50 to 100');
 
   return config;
 };
@@ -324,27 +556,17 @@ const redact = async (page) => {
 
 const applyTheme = async (page, config) => {
   if (config.theme === 'current') return;
-
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const isAmoled = await page.evaluate(() =>
-      document.documentElement.classList.contains('amoled'),
-    );
-    if (isAmoled === (config.theme === 'amoled')) return;
-
-    const button = page
-      .locator('.app-nav-item-label', { hasText: /^(?:Light|AMOLED)$/u })
-      .first();
-    if ((await button.count()) === 0) {
-      console.warn('⚠ theme button not found — leaving the theme as it is');
-      return;
-    }
-
-    await button.click();
-    await page.waitForTimeout(400);
-  }
-
-  console.warn(
-    `⚠ could not settle on the "${config.theme}" theme — carrying on regardless`,
+  await page.waitForFunction(
+    (theme) => {
+      const root = document.documentElement;
+      return theme === 'light'
+        ? !['amoled', 'dark', 'midnight', 'violet', 'ember'].some((name) =>
+            root.classList.contains(name),
+          )
+        : root.classList.contains(theme);
+    },
+    config.theme,
+    { timeout: 10_000 },
   );
 };
 
@@ -357,7 +579,7 @@ const waitForPage = async (page, config) => {
   // SignalR holds a connection open, so networkidle may never arrive.  Give it a
   // moment, then fall back to the settle delay.
   await page
-    .waitForLoadState('networkidle', { timeout: 8_000 })
+    .waitForLoadState('networkidle', { timeout: 1_500 })
     .catch(() => {});
   await page.waitForTimeout(config.settle);
 };
@@ -374,8 +596,30 @@ const writeManifest = async (config, captured) => {
   }
 
   const merged = new Map(existing.map((shot) => [shot.file, shot]));
-  for (const { caption, file, route } of captured) {
-    merged.set(file, { caption, file, route });
+  for (const {
+    caption,
+    capturedAt,
+    file,
+    path: routePath,
+    route,
+    theme,
+    uiScale,
+  } of captured) {
+    merged.set(file, {
+      caption,
+      capturedAt,
+      file,
+      path: routePath ?? route,
+      route,
+      scale: config.scale,
+      sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+      }).trim(),
+      theme,
+      uiScale,
+      viewport: { height: config.height, width: config.width },
+    });
   }
 
   await writeFile(
@@ -404,20 +648,45 @@ const capture = async (config, shots) => {
     `  ${config.width}×${config.height} @${config.scale}x · theme: ${config.theme} · ${shots.length} shot(s)\n`,
   );
 
-  const browser = await chromium.launch({ headless: !config.headed });
+  const browser = await chromium.launch({
+    args: ['--mute-audio'],
+    headless: !config.headed,
+  });
   const context = await browser.newContext({
     deviceScaleFactor: config.scale,
     reducedMotion: 'reduce',
+    screen: { height: config.height, width: config.width },
     viewport: { height: config.height, width: config.width },
   });
   const page = await context.newPage();
 
+  await context.addInitScript(
+    ({ theme, uiScale }) => {
+      localStorage.setItem('resonance-ui-zoom', String(uiScale));
+      localStorage.setItem('resonance-ui-zoom-mode', 'manual');
+      if (theme !== 'current') localStorage.setItem('resonance-theme', theme);
+    },
+    { theme: config.theme, uiScale: config.uiScale },
+  );
+
   // Switching a tab or a theme calls prefs.set, which PATCHes /preferences and
   // would rewrite the account's saved settings.  Dropping the PATCH keeps those
   // changes local to this browser, so capturing never edits the instance.
-  await page.route('**/api/v0/preferences', async (route) => {
+  await context.route('**/api/v0/preferences', async (route) => {
     if (route.request().method() === 'PATCH') {
-      await route.abort();
+      await route.fulfill({ status: 204 });
+      return;
+    }
+
+    if (route.request().method() === 'GET' && config.theme !== 'current') {
+      const response = await route.fetch();
+      if (response.ok()) {
+        const preferences = await response.json();
+        await route.fulfill({
+          json: { ...preferences, 'resonance-theme': config.theme },
+          response,
+        });
+      } else await route.fulfill({ response });
       return;
     }
 
@@ -443,8 +712,9 @@ const capture = async (config, shots) => {
     await waitForPage(page, config);
 
     for (const shot of shots) {
+      let target = page;
       try {
-        await page.goto(`${config.baseUrl}/${shot.route}`, {
+        await page.goto(`${config.baseUrl}/${shot.path ?? shot.route}`, {
           timeout: 30_000,
           waitUntil: 'domcontentloaded',
         });
@@ -454,24 +724,70 @@ const capture = async (config, shots) => {
         // did not survive the reload would otherwise skew every later shot.
         await applyTheme(page, config);
 
-        if (shot.prepare) {
-          await shot.prepare(page);
-          await page.waitForTimeout(config.settle);
+        if (!['library', 'player'].includes(shot.route)) {
+          const closePlayer = page.getByRole('button', {
+            name: 'Close player',
+            exact: true,
+          });
+          if (await closePlayer.isVisible()) await closePlayer.click();
         }
 
-        if (!config.noRedact) await redact(page);
+        if (shot.prepare) {
+          target = (await shot.prepare(page, config)) ?? page;
+          await target.waitForTimeout(config.settle);
+        }
 
-        await page.screenshot({
+        await target.evaluate(async () => {
+          await document.fonts.ready;
+          // Offscreen lazy artwork has no pending download to wait for. Even visible
+          // images get a bounded wait so one unavailable cover cannot stall a run.
+          const visible = [...document.images].filter((image) => {
+            const bounds = image.getBoundingClientRect();
+            return (
+              bounds.width > 0 &&
+              bounds.height > 0 &&
+              bounds.bottom > 0 &&
+              bounds.top < window.innerHeight &&
+              bounds.left < window.innerWidth
+            );
+          });
+          await Promise.race([
+            Promise.all(visible.map((image) => image.decode().catch(() => {}))),
+            new Promise((resolve) => {
+              setTimeout(resolve, 2_000);
+            }),
+          ]);
+        });
+        await target.mouse.move(2, 2);
+        if (!config.noRedact) await redact(target);
+
+        await target.screenshot({
+          animations: 'disabled',
           fullPage: config.fullPage,
           path: path.join(config.outputDir, shot.file),
         });
         console.log(`  ✓ ${shot.file.padEnd(20)} ${shot.caption}`);
-        captured.push(shot);
+        const appearance = await target.evaluate(() => ({
+          theme:
+            ['amoled', 'midnight', 'violet', 'ember'].find((name) =>
+              document.documentElement.classList.contains(name),
+            ) ?? 'light',
+          uiScale: Math.round(
+            (Number.parseFloat(document.documentElement.style.zoom) || 1) * 100,
+          ),
+        }));
+        captured.push({
+          ...shot,
+          ...appearance,
+          capturedAt: new Date().toISOString(),
+        });
       } catch (error) {
         console.warn(
           `  ✗ ${shot.file.padEnd(20)} ${error.message.split('\n')[0]}`,
         );
         failed.push(shot);
+      } finally {
+        if (target !== page && !target.isClosed()) await target.close();
       }
     }
   } finally {
