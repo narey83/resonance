@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 # Cancel superseded runs on the same ref.
 concurrency:
@@ -19,6 +20,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - name: Local commit gate regression tests
+        run: python3 .githooks/test_pre_commit.py
       - name: Development container shutdown
         run: python3 docker/scripts/test-backend-watch.py
       - name: Restore
@@ -76,27 +79,25 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
-  # The APK build is by far the longest job in CI (a native CMake/ninja compile on a
+  # Native builds are the longest jobs in CI (a native CMake/ninja compile on a
   # single-capacity runner), and nothing it produces can change unless the app itself
-  # does -- so a backend- or frontend-only push should not pay for it. This job decides
-  # that, and mobile-apk below reads its answer. Kept as a plain git diff rather than a
+  # does -- so backend- or frontend-only changes skip these builds. This job decides
+  # that, and both native build jobs below read its answer. Kept as a plain git diff rather than a
   # paths-filter action: no third-party dependency to resolve, and it behaves the same
   # if Gitea Actions is ever pointed at this repo.
   mobile-changes:
     name: Detect mobile changes
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.check.outputs.changed }}
     steps:
-      # Full history: the diff base is the commit this push moved main off, which a
-      # default depth-1 checkout does not fetch.
+      # Full history includes the pull request base or the previous push commit.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - id: check
         env:
-          BEFORE: ${{ github.event.before }}
+          BEFORE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           # A first push, a force-push, or a base that is simply not in this clone leaves
           # nothing to compare against. Build in that case: a redundant APK costs runner
@@ -108,7 +109,7 @@ jobs:
             exit 0
           fi
 
-          # This workflow counts too: a change to how the APK is built needs a build to prove it.
+          # Workflow changes also need native builds to verify them.
           if git diff --name-only "$BEFORE" "$GITHUB_SHA" -- mobile .github/workflows/ci.yml | grep -q .; then
             echo "mobile/ or ci.yml changed in $BEFORE..$GITHUB_SHA — building the APK"
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -119,8 +120,7 @@ jobs:
 
   mobile-apk:
     name: Mobile APK (Android)
-    # mobile-changes carries the main-push condition; a skipped dependency skips this job
-    # too, so pull requests still never reach the APK build.
+    # Build native artifacts on mobile/workflow changes, including pull requests.
     if: needs.mobile-changes.outputs.changed == 'true'
     needs: [mobile, mobile-changes]
     runs-on: ubuntu-latest
@@ -181,4 +181,48 @@ jobs:
         with:
           name: resonance-mobile-apk
           path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  mobile-ios:
+    name: Mobile app (iOS simulator)
+    if: needs.mobile-changes.outputs.changed == 'true'
+    needs: [mobile, mobile-changes]
+    runs-on: macos-26
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      CI: 'true'
+      DEVELOPER_DIR: /Applications/Xcode_26.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - name: Prebuild native iOS project
+        run: npx expo prebuild --platform ios --no-install
+      - name: Install CocoaPods dependencies
+        working-directory: mobile/ios
+        run: pod install
+      - name: Build simulator app
+        run: |
+          xcodebuild -workspace ios/Resonance.xcworkspace \
+            -scheme Resonance -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath ios/build CODE_SIGNING_ALLOWED=NO build
+      - name: Package simulator app
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            ios/build/Build/Products/Release-iphonesimulator/Resonance.app \
+            resonance-ios-simulator.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: resonance-mobile-ios-simulator
+          path: mobile/resonance-ios-simulator.zip
+          if-no-files-found: error
           retention-days: 14

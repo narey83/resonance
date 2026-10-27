@@ -375,7 +375,6 @@ namespace resonance.Analysis.Candidates
             File.Move(temporary, Path.Combine(directory, "job.json"), true);
         }
 
-
         private void RequireStorageConfiguration()
         {
             if (!StorageAvailable)

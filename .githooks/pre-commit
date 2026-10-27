@@ -1,42 +1,87 @@
-#!/bin/sh
-# Pre-commit: lint/format-check only the files staged for this commit, per
-# sub-project. Fast for JS/TS (ESLint), light whitespace check for C#.
-#
-# Enable once per clone:   git config core.hooksPath .githooks
-# Skip in a pinch:         git commit --no-verify
-#
-# Note: the mobile/frontend ESLint configs require Node 20+. If you use nvm,
-# make sure a recent Node is the default (`nvm alias default 22`).
-set -e
+#!/usr/bin/env python3
+"""Validate the staged snapshot before committing. Enable: git config core.hooksPath .githooks."""
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
 
-STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
-[ -z "$STAGED" ] && exit 0
 
-fail=0
+def git(*args):
+    return subprocess.check_output(["git", *args])
 
-run_eslint() {
-  dir=$1
-  files=$(printf '%s\n' "$STAGED" | grep -E "^$dir/.*\.(js|jsx|ts|tsx)$" || true)
-  [ -z "$files" ] && return 0
-  [ -x "$dir/node_modules/.bin/eslint" ] || { echo "⚠ $dir: eslint not installed, skipping"; return 0; }
-  rel=$(printf '%s\n' "$files" | sed "s#^$dir/##")
-  echo "▶ eslint ($dir)"
-  ( cd "$dir" && printf '%s\n' "$rel" | xargs ./node_modules/.bin/eslint ) || fail=1
-}
 
-run_eslint frontend
-run_eslint mobile
+def main():
+    root = Path(os.fsdecode(git("rev-parse", "--show-toplevel")).strip())
+    os.chdir(root)
+    staged = [os.fsdecode(name) for name in git(
+        "diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"
+    ).split(b"\0") if name]
+    if not staged:
+        return 0
 
-# Backend C# — verify staged files are already formatted (whitespace only = fast).
-cs=$(printf '%s\n' "$STAGED" | grep -E '^backend/.*\.cs$' || true)
-if [ -n "$cs" ]; then
-  inc=$(printf '%s\n' "$cs" | sed 's#^backend/##' | paste -sd ' ' -)
-  echo "▶ dotnet format whitespace (backend)"
-  ( cd backend && dotnet format whitespace resonance.csproj --verify-no-changes --no-restore --include $inc ) || fail=1
-fi
+    # Validate the index, so unstaged fixes cannot hide a broken staged version.
+    # No stash, working-tree edits, live data or existing build outputs are used.
+    with tempfile.TemporaryDirectory(prefix="resonance-precommit-") as directory:
+        snapshot = Path(directory)
+        subprocess.run(
+            ["git", "checkout-index", "--all", "--prefix", str(snapshot) + os.sep],
+            check=True,
+        )
+        failed = False
+        for project in ("frontend", "mobile"):
+            suffixes = {".js", ".jsx", ".ts", ".tsx", ".cjs", ".mjs"}
+            if project == "frontend":
+                suffixes.add(".json")
+            files = [
+                str(Path(name).relative_to(project)) for name in staged
+                if name.startswith(project + "/") and Path(name).suffix in suffixes
+            ]
+            if not files:
+                continue
+            dependencies = root / project / "node_modules"
+            eslint = dependencies / ".bin" / "eslint"
+            if not eslint.is_file():
+                print(f"{project}: install dependencies with npm ci before committing.", flush=True)
+                failed = True
+                continue
+            (snapshot / project / "node_modules").symlink_to(dependencies, target_is_directory=True)
+            print(f"Checking staged {project} files with ESLint", flush=True)
+            result = subprocess.run(
+                [str(eslint), "--", *files], cwd=snapshot / project, check=False
+            )
+            failed |= result.returncode != 0
 
-if [ "$fail" -ne 0 ]; then
-  echo "✗ pre-commit checks failed — fix the issues above (or commit with --no-verify)"
-  exit 1
-fi
-echo "✓ pre-commit checks passed"
+        backend_changed = any(
+            (name.startswith(("backend/", "tests/")) and Path(name).suffix in {
+                ".cs", ".csproj", ".props", ".targets", ".ruleset", ".json"
+            }) or name in {
+                "Directory.Build.props", "Directory.Build.targets", "resonance.sln",
+                ".editorconfig", "NuGet.Config", "nuget.config"
+            } for name in staged
+        )
+        if backend_changed:
+            print("Checking staged Release build and StyleCop (same gate as CI)", flush=True)
+            result = subprocess.run(
+                ["dotnet", "build", str(snapshot / "resonance.sln"),
+                 "--configuration", "Release", "--artifacts-path",
+                 str(snapshot / ".artifacts")],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=False,
+            )
+            print(result.stdout, end="", flush=True)
+            if result.returncode or re.search(r"warning SA\d+:", result.stdout):
+                failed = True
+        if failed:
+            print("Pre-commit checks failed. Fix and stage the changes before committing.", flush=True)
+            return 1
+    print("Pre-commit checks passed.", flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, subprocess.CalledProcessError) as error:
+        print(f"Pre-commit validation could not run: {error}", file=sys.stderr)
+        sys.exit(1)
