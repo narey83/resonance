@@ -129,3 +129,27 @@ dependency advisory](../docs/dj-workspace.md#independent-enhanced-analysis).
 The migration helpers have fixture tests and Compose validation. Installing on the
 new physical host, its SMB credentials and its boot ordering must still be verified
 there; repository checks cannot establish those environment-specific results.
+
+
+## Laptop hosts
+
+To keep a Linux laptop serving Resonance with its lid closed, install the optional
+user service and enable the user manager at boot and after logout:
+
+~~~sh
+install -Dm644 docker/systemd/resonance-lid-inhibitor.service   "$HOME/.config/systemd/user/resonance-lid-inhibitor.service"
+loginctl --no-ask-password enable-linger "$USER"
+systemctl --user daemon-reload
+systemctl --user enable --now resonance-lid-inhibitor.service
+systemd-inhibit --list
+~~~
+
+The service holds a low-level lid-switch inhibitor. On GNOME desktops, also save
+the existing power preferences and set sleep-inactive-ac-type and
+sleep-inactive-battery-type to nothing in the
+org.gnome.settings-daemon.plugins.power schema, so idle suspend does not stop the
+server after the lid is closed. The deployment keeps the previous values in the
+private power-before.json file beside its bootstrap configuration.
+
+Check the service is active and enabled, and loginctl reports Linger=yes. A real
+lid-close or reboot test still needs to be performed on the hardware.

@@ -1,0 +1,13 @@
+[Unit]
+Description=Keep Resonance available when the laptop lid is closed
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/systemd-inhibit --no-ask-password --what=handle-lid-switch --mode=block --who=Resonance "--why=Keep the Resonance server running with the lid closed" /usr/bin/sleep infinity
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
