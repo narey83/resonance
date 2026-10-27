@@ -67,6 +67,7 @@ namespace resonance.Analysis
             var size = new FileInfo(MusicPath.ToAbsolute(path)).Length;
             using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
+
             // Enhanced analysis can finish before the separate native analysis queue.
             // Keep the native metric columns empty; their readiness checks still apply.
             cmd.CommandText = $@"INSERT INTO {Table} (masked_filename, file_size, analysed_at, dj_summary)
@@ -103,27 +104,6 @@ namespace resonance.Analysis
         {
             var row = Read(path, "dj_summary");
             return row is { Length: > 0 } && row[0] is string json ? ExportReference(json) : null;
-        }
-
-        private static string ExportReference(string json)
-        {
-            try
-            {
-                using var document = JsonDocument.Parse(json);
-                var root = document.RootElement;
-                if (root.TryGetProperty("exportReady", out var ready) && ready.ValueKind == JsonValueKind.False)
-                {
-                    return null;
-                }
-
-                return root.TryGetProperty("complete", out var complete) && complete.ValueKind == JsonValueKind.True
-                    && root.TryGetProperty("analysisId", out var id) && id.ValueKind == JsonValueKind.String
-                    && Guid.TryParseExact(id.GetString(), "N", out _) ? id.GetString() : null;
-            }
-            catch (Exception exception) when (exception is JsonException or InvalidOperationException)
-            {
-                return null;
-            }
         }
 
         public WaveformData GetWaveform(string path)
@@ -360,6 +340,27 @@ namespace resonance.Analysis
             }
 
             cmd.ExecuteNonQuery();
+        }
+
+        private static string ExportReference(string json)
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(json);
+                var root = document.RootElement;
+                if (root.TryGetProperty("exportReady", out var ready) && ready.ValueKind == JsonValueKind.False)
+                {
+                    return null;
+                }
+
+                return root.TryGetProperty("complete", out var complete) && complete.ValueKind == JsonValueKind.True
+                    && root.TryGetProperty("analysisId", out var id) && id.ValueKind == JsonValueKind.String
+                    && Guid.TryParseExact(id.GetString(), "N", out _) ? id.GetString() : null;
+            }
+            catch (Exception exception) when (exception is JsonException or InvalidOperationException)
+            {
+                return null;
+            }
         }
 
         /// <summary>

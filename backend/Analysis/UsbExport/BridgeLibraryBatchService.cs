@@ -90,8 +90,6 @@ namespace resonance.Analysis.UsbExport
             }
         }
 
-        private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", "Bridge");
-
         public BridgeLibraryView Status
         {
             get
@@ -102,6 +100,8 @@ namespace resonance.Analysis.UsbExport
                 }
             }
         }
+
+        private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", "Bridge");
 
         public BridgeLibraryView Request(string batch)
         {
@@ -128,12 +128,14 @@ namespace resonance.Analysis.UsbExport
                             jobs[batch] = cached;
                             Log.Warning("Bridge batch {BatchId} failed; retry delayed for five minutes", batch[..12]);
                         }
+
                         if (DateTimeOffset.UtcNow >= cached.RetryAt && leases.GetValueOrDefault(cached.JobId) == 0 && exports.RemoveStagedJob(cached.JobId))
                         {
                             jobs.Remove(batch);
                             job = null;
                         }
                     }
+
                     if (job != null && (job.Status != "completed" || File.Exists(exports.Download(job.JobId))))
                     {
                         if (job.Status != cached.LastStatus)
@@ -141,11 +143,14 @@ namespace resonance.Analysis.UsbExport
                             Log.Information("Bridge batch {BatchId} is {BatchStatus}; {Prepared}/{Total} tracks", batch[..12], job.Status, job.Prepared, job.Total);
                             jobs[batch] = cached with { LastStatus = job.Status };
                         }
+
                         return view with { Job = job, Status = job.Status == "completed" ? "ready" : job.Status, Message = job.Status == "failed" ? "Batch preparation failed. Review Bridge server logs; the working local collection is preserved." : "Preparing a bounded batch of fully analysed tracks." };
                     }
+
                     exports.RemoveStagedJob(cached.JobId);
                     jobs.Remove(batch);
                 }
+
                 PruneExpired();
                 if (jobs.Values.Select(item => ReadJob(item.JobId)).Any(job => job != null && job.Status is not ("completed" or "failed" or "cancelled")))
                 {
@@ -153,7 +158,7 @@ namespace resonance.Analysis.UsbExport
                 }
 
                 var bytes = jobs.Values.Sum(item => exports.StagedBytes(item.JobId));
-                if (bytes + input.Descriptor.EstimatedBytes * 2 > CacheByteLimit)
+                if (bytes + (input.Descriptor.EstimatedBytes * 2) > CacheByteLimit)
                 {
                     return view with { Status = "waiting-storage", Message = "Server batch cache is full. Waiting for completed downloads to be acknowledged." };
                 }
@@ -252,32 +257,43 @@ namespace resonance.Analysis.UsbExport
             }
         }
 
-        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        internal static BatchInput[] Plan(IEnumerable<VerifiedTrack> tracks)
         {
-            while (!stoppingToken.IsCancellationRequested)
+            var batches = new List<BatchInput>();
+
+            // Stable hash buckets keep a new track from reshuffling the whole collection.
+            foreach (var bucket in tracks.GroupBy(track => track.SourceKey[..2]).OrderBy(group => group.Key, StringComparer.Ordinal))
             {
-                if (DateTimeOffset.UtcNow >= refreshAt)
+                var current = new List<VerifiedTrack>();
+                long bytes = 0;
+                void Flush()
                 {
-                    try
-                    {
-                        await Refresh(stoppingToken);
-                    }
-                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    if (current.Count == 0)
                     {
                         return;
                     }
-                    catch (Exception exception)
-                    {
-                        Log.Error(exception, "Bridge readiness check failed; no unverified tracks will be exported");
-                        lock (gate)
-                        {
-                            view = view with { Status = "readiness-failed", Message = "Full-analysis verification failed. Review Bridge server logs." };
-                        }
-                    }
-                    refreshAt = DateTimeOffset.UtcNow.AddMinutes(2);
+
+                    var id = Hash(string.Join("|", current.Select(track => track.SourceKey + ":" + track.SourceSha256 + ":" + track.AnalysisId)));
+                    batches.Add(new(new(id, current.Count, bytes), current.Select(track => track.Path).ToArray()));
+                    current.Clear();
+                    bytes = 0;
                 }
-                await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+
+                foreach (var track in bucket.OrderBy(track => track.SourceKey, StringComparer.Ordinal))
+                {
+                    if (current.Count > 0 && (current.Count >= BatchTrackLimit || bytes + track.EstimatedBytes > BatchByteLimit))
+                    {
+                        Flush();
+                    }
+
+                    current.Add(track);
+                    bytes += track.EstimatedBytes;
+                }
+
+                Flush();
             }
+
+            return batches.ToArray();
         }
 
         internal async Task Refresh(CancellationToken ct)
@@ -308,6 +324,7 @@ namespace resonance.Analysis.UsbExport
                         observed.Add(job.LibraryPath);
                         continue;
                     }
+
                     var result = await candidates.Read(job.JobId, ct);
                     if (!result.ContentCurrent || !result.Analysis.HasValue || !ExportAnalysisContract.Ready(result.Analysis.Value))
                     {
@@ -332,6 +349,7 @@ namespace resonance.Analysis.UsbExport
                     Log.Debug("Bridge analysis {AnalysisId} is not export-ready ({Reason})", job.JobId, exception.GetType().Name);
                 }
             }
+
             var planned = Plan(ready);
             var revision = Hash(string.Join("|", planned.Select(batch => batch.Descriptor.Id)));
             var status = !exports.Enabled ? "waiting-worker" : ready.Count == 0 ? "waiting-analysis" : ready.Count > 65535 ? "player-limit" : "ready";
@@ -358,6 +376,7 @@ namespace resonance.Analysis.UsbExport
                 view = new(2, revision, indexed.Count, ready.Count, status, message, planned.Select(batch => batch.Descriptor).ToArray());
                 PruneExpired();
             }
+
             var retained = ready.Select(entry => entry.AnalysisId).ToHashSet(StringComparer.Ordinal);
             foreach (var id in verified.Keys.Where(id => !retained.Contains(id)).ToArray())
             {
@@ -365,40 +384,34 @@ namespace resonance.Analysis.UsbExport
             }
         }
 
-        internal static BatchInput[] Plan(IEnumerable<VerifiedTrack> tracks)
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            var batches = new List<BatchInput>();
-
-            // Stable hash buckets keep a new track from reshuffling the whole collection.
-            foreach (var bucket in tracks.GroupBy(track => track.SourceKey[..2]).OrderBy(group => group.Key, StringComparer.Ordinal))
+            while (!stoppingToken.IsCancellationRequested)
             {
-                var current = new List<VerifiedTrack>();
-                long bytes = 0;
-                void Flush()
+                if (DateTimeOffset.UtcNow >= refreshAt)
                 {
-                    if (current.Count == 0)
+                    try
+                    {
+                        await Refresh(stoppingToken);
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                     {
                         return;
                     }
-
-                    var id = Hash(string.Join("|", current.Select(track => track.SourceKey + ":" + track.SourceSha256 + ":" + track.AnalysisId)));
-                    batches.Add(new(new(id, current.Count, bytes), current.Select(track => track.Path).ToArray()));
-                    current.Clear();
-                    bytes = 0;
-                }
-                foreach (var track in bucket.OrderBy(track => track.SourceKey, StringComparer.Ordinal))
-                {
-                    if (current.Count > 0 && (current.Count >= BatchTrackLimit || bytes + track.EstimatedBytes > BatchByteLimit))
+                    catch (Exception exception)
                     {
-                        Flush();
+                        Log.Error(exception, "Bridge readiness check failed; no unverified tracks will be exported");
+                        lock (gate)
+                        {
+                            view = view with { Status = "readiness-failed", Message = "Full-analysis verification failed. Review Bridge server logs." };
+                        }
                     }
 
-                    current.Add(track);
-                    bytes += track.EstimatedBytes;
+                    refreshAt = DateTimeOffset.UtcNow.AddMinutes(2);
                 }
-                Flush();
+
+                await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
             }
-            return batches.ToArray();
         }
 
         private static string ImportedAnalysisContractPath(string path) => Imports.ImportedAnalysisContract.RequireLibraryPath(MusicPath.Root, path);
@@ -416,6 +429,7 @@ namespace resonance.Analysis.UsbExport
                 return null;
             }
         }
+
         private void PruneExpired()
         {
             foreach (var pair in jobs.Where(pair => pair.Value.Requested < DateTimeOffset.UtcNow.AddHours(-2)).ToArray())
@@ -426,6 +440,7 @@ namespace resonance.Analysis.UsbExport
                 }
             }
         }
+
         private void Save()
         {
             Directory.CreateDirectory(Path.GetDirectoryName(stateFile));
@@ -435,6 +450,7 @@ namespace resonance.Analysis.UsbExport
                 JsonSerializer.Serialize(file, jobs);
                 file.Flush(true);
             }
+
             if (!OperatingSystem.IsWindows())
             {
                 File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite);
@@ -442,6 +458,7 @@ namespace resonance.Analysis.UsbExport
 
             File.Move(temporary, stateFile, true);
         }
+
         internal record VerifiedTrack(string Path, string SourceKey, string AnalysisId, string SourceSha256, long Bytes, long Modified, long EstimatedBytes);
         internal record BatchInput(BridgeBatch Descriptor, string[] Paths);
         private record BatchJob(string JobId, DateTimeOffset Requested, string LastStatus, DateTimeOffset RetryAt = default);
