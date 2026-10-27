@@ -7,7 +7,6 @@ import {
   Download,
   Laptop,
   Monitor,
-  Smartphone,
   Terminal,
 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
@@ -266,18 +265,27 @@ const AppsIntegrations = () => {
           Resonance on your phone. Downloads will appear here when available.
         </p>
         <div className="mobile-app-platforms">
-          {['Android', 'iOS'].map((platform) => (
+          {['iOS', 'Android'].map((platform) => (
             <section
               aria-labelledby={`mobile-${platform}`}
               className={`bridge-platform mobile-app-${platform.toLowerCase()}`}
               key={platform}
             >
               <div className="bridge-platform-heading">
-                <Smartphone
-                  aria-hidden="true"
-                  size={25}
-                />
                 <h3 id={`mobile-${platform}`}>Resonance for {platform}</h3>
+              </div>
+              <div className="mobile-store-badge">
+                <img
+                  alt={
+                    platform === 'iOS'
+                      ? 'Download on the App Store'
+                      : 'Get it on Google Play'
+                  }
+                  className={
+                    platform === 'iOS' ? 'app-store-badge' : 'google-play-badge'
+                  }
+                  src={`${urlBase}/assets/store-badges/${platform === 'iOS' ? 'app-store.svg' : 'google-play.png'}`}
+                />
               </div>
               <p className="mobile-app-status">Coming soon</p>
               <p>The {platform} app is not available to download yet.</p>

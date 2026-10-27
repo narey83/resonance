@@ -97,6 +97,16 @@ describe('Apps & integrations', () => {
     }
 
     expect(mobile.querySelectorAll('.mobile-app-status')).toHaveLength(2);
+    expect(
+      mobile
+        .querySelector('img[alt="Download on the App Store"]')
+        .getAttribute('src'),
+    ).toContain('/assets/store-badges/app-store.svg');
+    expect(
+      mobile
+        .querySelector('img[alt="Get it on Google Play"]')
+        .getAttribute('src'),
+    ).toContain('/assets/store-badges/google-play.png');
     expect(mobile.querySelector('a, button')).toBeNull();
   });
   it('uses the authenticated blob API and Bridge filename for the installer', async () => {
