@@ -78,12 +78,14 @@ jobs:
         run: npx eslint .
       - name: Typecheck
         run: npx tsc --noEmit
+      - name: Test
+        run: npm test
 
   # Native builds are the longest jobs in CI (a native CMake/ninja compile on a
-  # single-capacity runner), and nothing it produces can change unless the app itself
+  # single-capacity runner), and their outputs change only when the app itself
   # does -- so backend- or frontend-only changes skip these builds. This job decides
-  # that, and both native build jobs below read its answer. Kept as a plain git diff rather than a
-  # paths-filter action: no third-party dependency to resolve, and it behaves the same
+  # that, and both native build jobs below read its answer. A plain git diff avoids a
+  # third-party dependency and behaves the same
   # if Gitea Actions is ever pointed at this repo.
   mobile-changes:
     name: Detect mobile changes
@@ -104,17 +106,17 @@ jobs:
           # minutes, a wrongly skipped one means main has no artifact for a real change.
           if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
             || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
-            echo "no usable diff base ($BEFORE) — building the APK"
+            echo "no usable diff base ($BEFORE) — building native apps"
             echo "changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           # Workflow changes also need native builds to verify them.
           if git diff --name-only "$BEFORE" "$GITHUB_SHA" -- mobile .github/workflows/ci.yml | grep -q .; then
-            echo "mobile/ or ci.yml changed in $BEFORE..$GITHUB_SHA — building the APK"
+            echo "mobile/ or ci.yml changed in $BEFORE..$GITHUB_SHA — building native apps"
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "no mobile/ or ci.yml changes in $BEFORE..$GITHUB_SHA — skipping the APK"
+            echo "no mobile/ or ci.yml changes in $BEFORE..$GITHUB_SHA — skipping native apps"
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
