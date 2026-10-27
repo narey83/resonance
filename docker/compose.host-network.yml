@@ -1,0 +1,13 @@
+# Optional Linux host networking for Soulseek, UPnP and DLNA multicast.
+# The web proxy remains on the configured HTTP listener.
+services:
+  backend:
+    network_mode: host
+    ports: !reset []
+    environment:
+      DLNA: ${DLNA_ENABLED:-false}
+      DLNA_BIND_ADDRESS: ${LAN_ADDRESS:-0.0.0.0}
+      DLNA_FRIENDLY_NAME: Resonance
+  web:
+    extra_hosts:
+      - "backend:host-gateway"

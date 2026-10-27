@@ -52,8 +52,8 @@ def environment_text(values):
     return "\n".join(lines) + "\n"
 
 
-def compose_command(environment):
-    return [
+def compose_command(environment, host_network=False):
+    command = [
         "docker",
         "compose",
         "--env-file",
@@ -61,6 +61,9 @@ def compose_command(environment):
         "-f",
         str(ROOT / "docker/compose.portable.yml"),
     ]
+    if host_network:
+        command += ["-f", str(ROOT / "docker/compose.host-network.yml")]
+    return command
 
 
 def probe_music(volume, uid, gid):
@@ -141,6 +144,8 @@ def main():
         ),
         "HTTP_PORT": int(config.get("httpPort", 8080)),
         "PEER_PORT": int(config.get("peerPort", 50300)),
+        "DLNA_ENABLED": str(bool(config.get("dlnaEnabled", False))).lower(),
+        "LAN_ADDRESS": str(ipaddress.ip_address(config.get("lanAddress", "0.0.0.0"))),
     }
     for key in ("HTTP_PORT", "PEER_PORT"):
         if not 1 <= values[key] <= 65535:
@@ -250,8 +255,14 @@ def main():
     run(command)
     if os.geteuid() == 0:
         run(["chown", "-R", f"{uid}:{gid}", state])
-    run(compose_command(environment) + ["config", "--quiet"])
-    run(compose_command(environment) + ["up", "-d", "--wait", "--wait-timeout", "900"])
+    run(
+        compose_command(environment, config.get("hostNetworking", False))
+        + ["config", "--quiet"]
+    )
+    run(
+        compose_command(environment, config.get("hostNetworking", False))
+        + ["up", "-d", "--wait", "--wait-timeout", "900"]
+    )
     print(
         "Stack healthy. HTTP listener:",
         str(values["HTTP_BIND"]) + ":" + str(values["HTTP_PORT"]),

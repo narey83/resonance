@@ -27,6 +27,15 @@ configuration = module("configuration", "docker/scripts/configure-analysis-worke
 
 
 class PortableStackTests(unittest.TestCase):
+    def test_host_network_is_explicit_and_adds_override(self):
+        environment = Path("/private/compose.env")
+        command = bootstrap.compose_command(environment)
+        self.assertNotIn(str(ROOT / "docker/compose.host-network.yml"), command)
+        command = bootstrap.compose_command(environment, True)
+        self.assertEqual(
+            command[-2:], ["-f", str(ROOT / "docker/compose.host-network.yml")]
+        )
+
     def test_mount_guard_rejects_empty_local_music_directory(self):
         mounts = "1 0 0:1 / / rw - overlay overlay rw\n2 1 8:1 /state /config rw - ext4 /dev/sda rw\n3 1 8:1 /empty /downloads rw - ext4 /dev/sda rw"
         with self.assertRaisesRegex(RuntimeError, "SMB music share"):

@@ -121,8 +121,12 @@ python3 -m unittest discover -s docker/scripts -p test_install_analysis_models.p
 
 The larger host has no inherited 1.5-CPU development-container ceiling. The tested
 inference thread limits and single-track queue remain unchanged; concurrency
-tuning is separate from this migration. DLNA discovery needs LAN multicast
-networking beyond the default Docker bridge. Hardware acceptance for Network Link
+tuning is separate from this migration. For Linux LAN discovery, explicitly set
+hostNetworking and dlnaEnabled to true, and lanAddress to the host LAN IP in
+the private JSON. This adds the host-network override for the backend: its
+authenticated API on 5030, DLNA on 8200 and peer port 50300 listen on the host.
+The web proxy remains on its configured HTTP listener. Only enable this on a
+trusted LAN; it shares the host network namespace with the backend. Hardware acceptance for Network Link
 and USB export remains experimental. See [analysis deployment and its remaining
 dependency advisory](../docs/dj-workspace.md#independent-enhanced-analysis).
 
