@@ -83,6 +83,22 @@ describe('Apps & integrations', () => {
     expect(container.querySelector('a[href$="/networklink"]')).not.toBeNull();
     expect(container.textContent).toContain('Start at sign-in');
   });
+  it('shows mobile app placeholders without advertising downloads', async () => {
+    expect.hasAssertions();
+    await render();
+    const mobile = container.querySelector(
+      '[aria-labelledby="mobile-apps-title"]',
+    );
+    for (const platform of ['Android', 'iOS']) {
+      expect(mobile.textContent).toContain(`Resonance for ${platform}`);
+      expect(mobile.textContent).toContain(
+        `The ${platform} app is not available to download yet.`,
+      );
+    }
+
+    expect(mobile.querySelectorAll('.mobile-app-status')).toHaveLength(2);
+    expect(mobile.querySelector('a, button')).toBeNull();
+  });
   it('uses the authenticated blob API and Bridge filename for the installer', async () => {
     expect.hasAssertions();
     await render();

@@ -37,3 +37,10 @@
 .bridge-page :is(a, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (max-width: 1000px) { .bridge-platforms { grid-template-columns: 1fr; } .bridge-platform-detail { min-height: 0; } }
 @media (max-width: 600px) { .bridge-intro { flex-wrap: wrap; gap: 12px; } .bridge-preview { margin-left: 0; } .bridge-platform, .bridge-setup { padding: 18px; } .bridge-source { flex-wrap: wrap; } }
+
+.mobile-apps { margin-top: 32px; }
+.mobile-app-platforms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.mobile-app-ios { border-radius: 14px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+.mobile-app-android { border-radius: 16px; font-family: Roboto, system-ui, sans-serif; }
+.bridge-page .mobile-app-status { display: inline-block; color: var(--accent); background: var(--bg-primary); border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600; }
+@media (max-width: 600px) { .mobile-app-platforms { grid-template-columns: 1fr; } }
