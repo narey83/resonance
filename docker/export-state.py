@@ -53,6 +53,22 @@ def export_state(application, archive):
                         if not path.is_file() or path.is_symlink():
                             continue
                         relative = path.relative_to(application)
+                        # Historical conversion backups remain on the source host.
+                        if (
+                            relative.parts[0] == "data"
+                            and len(relative.parts) > 2
+                            and (
+                                relative.parts[1] == "backups"
+                                or relative.parts[1].startswith(
+                                    (
+                                        "sqlite-conversion-",
+                                        "sqlite-enable-",
+                                        "sqlite-final-",
+                                    )
+                                )
+                            )
+                        ):
+                            continue
                         if "bin" in relative.parts or path.name.endswith(
                             ("-wal", "-shm", "-journal")
                         ):

@@ -7,7 +7,7 @@ RUN python3 -m venv /opt/resonance/venvs/beats \
  && /opt/resonance/venvs/beats/bin/pip install --no-cache-dir torch==2.10.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cpu \
  && /opt/resonance/venvs/beats/bin/pip install --no-cache-dir numpy==1.26.4 scipy beat-this==1.1.0 transformers==4.57.6 demucs==4.0.1 hydra-core librosa soundfile einops rotary-embedding-torch \
  && /opt/resonance/venvs/beats/bin/pip freeze --all > /opt/resonance/installed-analysis-requirements.txt
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential python3-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential python3-dev git && rm -rf /var/lib/apt/lists/*
 RUN python3 -m venv /opt/resonance/venvs/dbn \
  && /opt/resonance/venvs/dbn/bin/pip install --no-cache-dir --upgrade pip \
  && /opt/resonance/venvs/dbn/bin/pip install --no-cache-dir numpy==1.26.4 scipy Cython==0.29.37 setuptools wheel mido \

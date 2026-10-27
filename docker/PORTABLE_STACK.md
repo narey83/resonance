@@ -68,7 +68,8 @@ python3 docker/export-state.py export \
 ```
 
 The exporter uses SQLite's online backup API for each database, omits transient
-journals and downloaded executable caches, and includes completed analysis,
+journals, downloaded executable caches and historical database conversion backups,
+and includes completed analysis,
 models and the existing signed Bridge installers/update files. It does not alter
 the live database or touch PostgreSQL. The archive and checksum are private files;
 transfer both directly to the new host over SSH, outside the repository.

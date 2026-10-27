@@ -112,11 +112,28 @@ class PortableStackTests(unittest.TestCase):
                 database.execute("CREATE TABLE example(value TEXT)")
                 database.execute("INSERT INTO example VALUES (?)", ("retained",))
             (application / "resonance.yml").write_text("private settings fixture")
+            for directory in (
+                "sqlite-conversion-1",
+                "sqlite-enable-20261025-211958",
+                "sqlite-final-20261026-095038",
+                "backups",
+            ):
+                historical = data / directory
+                historical.mkdir()
+                (historical / "resonance.db").write_bytes(b"historical backup")
             archive = root / "private.state.tar.gz"
             state.export_state(application, archive)
             self.assertEqual(archive.stat().st_mode & 0o777, 0o600)
             target = root / "target"
             state.import_state(archive, target)
+            for directory in (
+                "sqlite-conversion-1",
+                "sqlite-enable-20261025-211958",
+                "sqlite-final-20261026-095038",
+                "backups",
+            ):
+                self.assertFalse((target / "data" / directory).exists())
+                self.assertTrue((data / directory / "resonance.db").exists())
             with sqlite3.connect(target / "data/resonance.db") as database:
                 self.assertEqual(
                     database.execute("SELECT value FROM example").fetchone()[0],
