@@ -52,7 +52,7 @@ def environment_text(values):
     return "\n".join(lines) + "\n"
 
 
-def compose_command(environment, host_network=False):
+def compose_command(environment, host_network=False, tls=False):
     command = [
         "docker",
         "compose",
@@ -63,6 +63,8 @@ def compose_command(environment, host_network=False):
     ]
     if host_network:
         command += ["-f", str(ROOT / "docker/compose.host-network.yml")]
+    if tls:
+        command += ["-f", str(ROOT / "docker/compose.tls.yml")]
     return command
 
 
@@ -150,6 +152,15 @@ def main():
     for key in ("HTTP_PORT", "PEER_PORT"):
         if not 1 <= values[key] <= 65535:
             raise ValueError("Invalid port: " + key)
+    if config.get("tlsEnabled", False):
+        tls_config = Path(config["tlsCaddyfile"]).expanduser().resolve()
+        if not tls_config.is_file():
+            raise ValueError("Provide the private HTTPS Caddyfile before enabling TLS")
+        values.update(
+            TLS_CADDYFILE=tls_config,
+            TLS_IMAGE=config.get("tlsImage", "resonance-caddy:portable"),
+            TLS_DATA_VOLUME=name + "_tls_data",
+        )
     environment_text(values)
     if args.plan:
         print("SMB:", config["smbSource"], "-> Docker-managed /downloads volume")
@@ -175,6 +186,9 @@ def main():
     )
     probe_music(values["MUSIC_VOLUME_NAME"], uid, gid)
     state.mkdir(parents=True, exist_ok=True)
+    fresh_import = bool(
+        args.import_state and not (state / "data/resonance.db").exists()
+    )
     if args.import_state:
         run(
             [
@@ -187,6 +201,16 @@ def main():
                 state,
             ]
         )
+    if fresh_import:
+        command = [
+            sys.executable,
+            ROOT / "docker/scripts/relocate-instance-settings.py",
+            "--data-dir",
+            state / "data",
+        ]
+        if config.get("lanAddress"):
+            command += ["--lan-address", config["lanAddress"]]
+        run(command)
     for directory in (state / "data", state / "home", state / "incomplete"):
         directory.mkdir(parents=True, exist_ok=True)
     application = state / "resonance.yml"
@@ -222,6 +246,19 @@ def main():
             ]
         )
         run([sys.executable, ROOT / "docker/scripts/build-analysis-worker.py"])
+        if config.get("tlsEnabled", False):
+            run(
+                [
+                    "docker",
+                    "build",
+                    "-f",
+                    "docker/caddy/Dockerfile",
+                    "-t",
+                    values["TLS_IMAGE"],
+                    ".",
+                ],
+                cwd=ROOT,
+            )
         run(
             [
                 "docker",
@@ -230,6 +267,8 @@ def main():
                 "docker/web.Dockerfile",
                 "--build-arg",
                 "CADDYFILE=docker/caddy/Caddyfile.portable",
+                "--build-arg",
+                "CADDY_RUNTIME_IMAGE=" + values.get("TLS_IMAGE", "caddy:2"),
                 "-t",
                 "resonance-web:portable",
                 ".",
@@ -255,12 +294,22 @@ def main():
     run(command)
     if os.geteuid() == 0:
         run(["chown", "-R", f"{uid}:{gid}", state])
+    if config.get("tlsEnabled", False):
+        run(["docker", "volume", "create", values["TLS_DATA_VOLUME"]])
     run(
-        compose_command(environment, config.get("hostNetworking", False))
+        compose_command(
+            environment,
+            config.get("hostNetworking", False),
+            config.get("tlsEnabled", False),
+        )
         + ["config", "--quiet"]
     )
     run(
-        compose_command(environment, config.get("hostNetworking", False))
+        compose_command(
+            environment,
+            config.get("hostNetworking", False),
+            config.get("tlsEnabled", False),
+        )
         + ["up", "-d", "--wait", "--wait-timeout", "900"]
     )
     print(

@@ -66,7 +66,7 @@ def credentials(config, directory):
     return values
 
 
-def volume_definition(source, account, uid, gid, address):
+def volume_definition(source, account, uid, gid, address, posix=False):
     for key in ("username", "password", "domain"):
         if any(char in account.get(key, "") for char in ",\r\n\0"):
             raise ValueError(
@@ -84,6 +84,8 @@ def volume_definition(source, account, uid, gid, address):
         "nodev",
         "noexec",
     ]
+    if posix:
+        options.append("posix")
     if account.get("domain"):
         options.append("domain=" + account["domain"])
     return {"type": "cifs", "device": source, "o": ",".join(options)}
@@ -94,10 +96,10 @@ def ensure_music_volume(config, directory, name, uid, gid, api=None):
     account = credentials(config, directory)
     host = source[2:].split("/", 1)[0]
     address = socket.gethostbyname(host)
-    options = volume_definition(source, account, uid, gid, address)
-    suffix = hashlib.sha256((source + "\0" + account["username"]).encode()).hexdigest()[
-        :12
-    ]
+    posix = bool(config.get("smbPosix", False))
+    options = volume_definition(source, account, uid, gid, address, posix=posix)
+    identity = source + "\0" + account["username"] + ("\0posix" if posix else "")
+    suffix = hashlib.sha256(identity.encode()).hexdigest()[:12]
     volume = name + "_music_" + suffix
     api = api or DockerAPI()
     status, existing = api.request("GET", "/volumes/" + quote(volume, safe=""))

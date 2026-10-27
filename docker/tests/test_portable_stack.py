@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -20,6 +21,9 @@ def module(name, path):
 
 sys.path.insert(0, str(ROOT / "docker"))
 bootstrap = module("bootstrap", "docker/bootstrap.py")
+updater = module("updater", "docker/update-frontend.py")
+logs = module("runtime_logs", "docker/collect-runtime-logs.py")
+relocation = module("relocation", "docker/scripts/relocate-instance-settings.py")
 guard = module("guard", "docker/scripts/music-mount-guard.py")
 state = module("state", "docker/export-state.py")
 smb = module("docker_smb_test", "docker/scripts/docker_smb.py")
@@ -57,6 +61,136 @@ class PortableStackTests(unittest.TestCase):
         mounts = "1 0 0:1 / / rw - overlay overlay rw\n2 1 8:1 / /a\\040b rw - ext4 /dev/sda rw\n3 2 0:2 / /a\\040b/music rw - cifs //server/music rw"
         self.assertEqual(guard.filesystem("/a b/music/song.mp3", mounts), "cifs")
         self.assertEqual(guard.filesystem("/a bc", mounts), "overlay")
+
+    def test_tls_proxy_is_optional_and_adds_separate_override(self):
+        environment = Path("/private/compose.env")
+        command = bootstrap.compose_command(environment, True, True)
+        self.assertEqual(command[-2:], ["-f", str(ROOT / "docker/compose.tls.yml")])
+        self.assertIn(str(ROOT / "docker/compose.host-network.yml"), command)
+
+    def test_posix_music_mount_is_opt_in(self):
+        account = {"username": "fixture", "password": "fixture-only"}
+        standard = smb.volume_definition(
+            "//server/music", account, 1000, 1000, "192.0.2.1"
+        )
+        posix = smb.volume_definition(
+            "//server/music", account, 1000, 1000, "192.0.2.1", posix=True
+        )
+        self.assertNotIn("posix", standard["o"].split(","))
+        self.assertIn("posix", posix["o"].split(","))
+        self.assertIn("seal", posix["o"].split(","))
+
+    def test_frontend_update_refreshes_proxy_without_backend_build(self):
+        commands = updater.build_commands(
+            {"tlsEnabled": True, "tlsImage": "proxy:fixture"}
+        )
+        self.assertIn("--pull", commands[0])
+        self.assertIn("--no-cache", commands[0])
+        self.assertNotIn("--pull", commands[1])
+        self.assertIn("CADDY_RUNTIME_IMAGE=proxy:fixture", commands[1])
+        self.assertFalse(any("docker/prod.Dockerfile" in cmd for cmd in commands))
+        self.assertFalse(
+            any("docker/analysis-worker.Dockerfile" in cmd for cmd in commands)
+        )
+
+    def test_frontend_validation_failure_restores_image_without_activation(self):
+        calls = []
+
+        def run(command):
+            calls.append(command)
+            if "validate" in command:
+                raise subprocess.CalledProcessError(1, command)
+
+        with self.assertRaises(subprocess.CalledProcessError):
+            updater.update({}, Path("/private/compose.env"), run)
+        self.assertEqual(calls[-1][:3], ["docker", "image", "tag"])
+        self.assertEqual(calls[-1][-1], "resonance-web:portable")
+        self.assertFalse(any("compose" in c for c in calls))
+
+    def test_frontend_health_failure_rolls_back_only_frontend(self):
+        calls = []
+        failed = False
+
+        def run(command):
+            nonlocal failed
+            calls.append(command)
+            if "compose" in command and not failed:
+                failed = True
+                raise subprocess.CalledProcessError(1, command)
+
+        with self.assertRaises(subprocess.CalledProcessError):
+            updater.update({}, Path("/private/compose.env"), run)
+        activations = [c for c in calls if "compose" in c]
+        self.assertEqual(len(activations), 2)
+        self.assertTrue(all(c[-1] == "web" and "--no-deps" in c for c in activations))
+
+    def test_diagnostic_bundle_redacts_headers_queries_and_known_secrets(self):
+        text = "2026-10-27T00:00:00Z " + json.dumps(
+            {
+                "level": "error",
+                "request": {
+                    "headers": {
+                        "Authorization": "Bearer fixture",
+                        "X-Resonance-Link-Token": "fixture-pairing",
+                    },
+                    "uri": "/hub?access_token=fixture-jwt",
+                },
+                "message": "fixture-private-value",
+            }
+        )
+        result = logs.redact(text, ["fixture-private-value"])
+        for value in (
+            "fixture-pairing",
+            "fixture-jwt",
+            "fixture-private-value",
+            "Bearer fixture",
+        ):
+            self.assertNotIn(value, result)
+        self.assertIn("[REDACTED]", result)
+
+    def test_diagnostic_severity_uses_event_level_before_message_words(self):
+        self.assertEqual(
+            logs.severity("WRN [Shares] Error initializing shares"), "warning"
+        )
+        self.assertIsNone(
+            logs.severity('{"level":"info","msg":"previous error resolved"}')
+        )
+        self.assertEqual(
+            logs.severity('{"level":"error","msg":"upstream failed"}'), "error"
+        )
+
+    def test_instance_relocation_preserves_custom_settings_and_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            data = Path(temporary)
+            (data / "profile").mkdir()
+            (data / "profile/avatar.jpg").write_bytes(b"fixture")
+            values = {
+                "resonance:integrations:yt_dlp:executable_path": "/src/backend/tools/yt-dlp",
+                "resonance:integrations:yt_dlp:ffmpeg_path": "/opt/custom/ffmpeg",
+                "resonance:dlna:bind_address": "192.0.2.1",
+                "resonance:soulseek:picture": "/src/backend/data/profile/avatar.jpg",
+            }
+            with sqlite3.connect(data / "resonance.db") as c:
+                c.execute('CREATE TABLE Setting ("Key" TEXT PRIMARY KEY, "Value" TEXT)')
+                c.executemany("INSERT INTO Setting VALUES (?,?)", values.items())
+            changes = relocation.relocate(data, "192.0.2.80")
+            self.assertEqual(len(changes), 3)
+            with sqlite3.connect(data / "resonance.db") as c:
+                current = dict(c.execute('SELECT "Key","Value" FROM Setting'))
+            self.assertEqual(
+                current["resonance:integrations:yt_dlp:executable_path"], "yt-dlp"
+            )
+            self.assertEqual(
+                current["resonance:integrations:yt_dlp:ffmpeg_path"],
+                "/opt/custom/ffmpeg",
+            )
+            self.assertEqual(
+                current["resonance:soulseek:picture"], "/config/data/profile/avatar.jpg"
+            )
+            self.assertEqual(relocation.relocate(data, "192.0.2.80"), [])
+            backups = list(data.glob("instance-relocation-*.json"))
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(backups[0].stat().st_mode & 0o777, 0o600)
 
     def test_proxy_trust_is_explicit_and_validates_networks(self):
         self.assertEqual(bootstrap.trusted_proxies(["192.0.2.1"]), "192.0.2.1/32")

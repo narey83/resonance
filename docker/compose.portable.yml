@@ -1,12 +1,14 @@
 name: ${STACK_NAME:-resonance-stack}
 services:
   backend:
+    container_name: resonance-backend
     image: resonance-backend:portable
     user: "${APP_UID:-1000}:${APP_GID:-1000}"
     entrypoint: ["python3", "/opt/resonance-analysis/music-mount-guard.py"]
-    command: ["python3", "/opt/resonance/with-helper.py", "backend", "dotnet", "resonance.dll", "--http-port", "5030", "--http-ip-address", "0.0.0.0", "--no-https", "--downloads", "/downloads", "--incomplete", "/config/incomplete", "--content-path", "/app/wwwroot"]
+    command: ["python3", "/opt/resonance/with-helper.py", "backend", "dotnet", "resonance.dll", "--http-port", "5030", "--http-ip-address", "0.0.0.0", "--no-https", "--downloads", "/downloads", "--incomplete", "/config/incomplete", "--content-path", "wwwroot"]
     environment:
       HOME: /config/home
+      SHELL: /bin/bash
       RESONANCE_APP_DIR: /config
       RESONANCE_DATABASE_PROVIDER: Sqlite
       RESONANCE_DATABASE_CONNECTION_STRING: Data Source=/config/data/resonance.db
@@ -41,6 +43,7 @@ services:
     restart: unless-stopped
     stop_grace_period: 120s
   web:
+    container_name: resonance-frontend
     image: resonance-web:portable
     environment:
       BACKEND_URL: http://backend:5030

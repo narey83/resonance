@@ -2,7 +2,7 @@
 
 The portable stack builds from this checkout. It uses two services: the backend
 (including its media, export and analysis tools) and the static web UI/proxy
-(including maintenance coordination). It needs no development-server images,
+(including maintenance coordination and optional HTTPS in its built-in Caddy). It needs no development-server images,
 external Docker networks, PostgreSQL service or extra Bridge container.
 
 Keep the checkout and application state on the new host's local disk. Only music
@@ -76,7 +76,7 @@ python3 docker/export-state.py export \
 The exporter uses SQLite's online backup API for each database, omits transient
 journals, downloaded executable caches and historical database conversion backups,
 and includes completed analysis,
-models and the existing signed Bridge installers/update files. It does not alter
+models and the existing signed Bridge installers/update files. Known development-only\nmedia-tool paths and the saved DLNA bind address are relocated during a fresh import. It does not alter
 the live database or touch PostgreSQL. The archive and checksum are private files;
 transfer both directly to the new host over SSH, outside the repository.
 
@@ -100,6 +100,12 @@ Settings page. The SMB music host can remain the old development server. Keep th
 old database and backups until the new instance has been checked.
 
 ## Options and checks
+
+For Samba 4.22+ and a compatible Linux CIFS client, set smbPosix to true to
+preserve Linux filenames, including trailing spaces. This deployment was verified
+with Samba 4.23.8 and Linux 7.0: all 59,402 original indexed paths matched after
+mounting with encrypted SMB 3.1.1 POSIX extensions. The old mount definition is
+preserved when the POSIX option creates a separate managed volume.
 
 The private JSON supports `smbSource`, `smbUsername`, `smbCredentialsFile`,
 `stateDir`, `httpBind`, `httpPort`, `peerPort`, `uid`, `gid` and `stackName`.
@@ -157,3 +163,61 @@ private power-before.json file beside its bootstrap configuration.
 
 Check the service is active and enabled, and loginctl reports Linger=yes. A real
 lid-close or reboot test still needs to be performed on the hardware.
+
+## Frontend with built-in HTTPS Caddy
+
+The runtime containers are resonance-frontend and resonance-backend. Dozzle is
+installed as its own Compose project. There is no standalone Resonance Caddy
+container: the frontend serves the compiled UI and proxies API/hub requests.
+
+For direct HTTPS on port 8443, set tlsEnabled to true, tlsCaddyfile to the
+absolute path of a private production Caddyfile, and tlsImage to the Caddy runtime
+image containing the required modules. The frontend build embeds that runtime;
+the TLS override mounts the private configuration and persistent certificate
+volume into the frontend. The private file must serve /srv, proxy API/hub traffic
+to backend:5030, and maintenance traffic to 127.0.0.1:8090. DNS API credentials
+and certificate keys belong outside Git. Back up that configuration and the
+external TLS data volume privately alongside the application state.
+
+### Update Caddy and frontend independently
+
+From the checkout:
+
+~~~sh
+python3 docker/update-frontend.py --plan
+python3 docker/update-frontend.py
+~~~
+
+The updater pulls the current Caddy build/runtime images and rebuilds its modules,
+rebuilds the frontend runtime, validates its Caddyfile, and replaces only the
+frontend. It retains the previous frontend image and restores it if activation
+fails. The backend and analysis images are not rebuilt; application data, private
+configuration and certificate volumes are retained. Update output is stored in a
+private log beside the bootstrap configuration. Updates run when this command is
+invoked.
+
+### Collect startup warnings and errors
+
+~~~sh
+python3 docker/collect-runtime-logs.py \
+  --container resonance-backend --container resonance-frontend --container dozzle \
+  --secret-file "$HOME/.local/share/resonance-stack/resonance.yml" \
+  --secret-file "$HOME/.config/resonance-stack/https/Caddyfile" \
+  --output "$HOME/resonance-support"
+~~~
+
+The bundle includes all Docker logs still available for the selected containers,
+separate warning/error files and a count summary. Credentials and token-bearing
+headers/queries are redacted; files are private. Historical application logs
+remain in the migrated SQLite database.
+
+A GitHub 401 during release checking means the saved release-check credential is
+invalid. Supply a valid credential with read access to the private release
+repository through the instance settings; never copy a broader push credential
+into the application just to suppress the warning.
+
+For a host whose checkout is ~/projects/resonance, the optional user unit
+docker/systemd/resonance-stack.service retries startup if Docker or the SMB server
+is not available during boot. Install it under ~/.config/systemd/user, enable
+user lingering and enable the unit. Container restart policies handle process
+restarts after startup; this unit handles the initial network-mount dependency.

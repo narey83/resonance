@@ -1,0 +1,17 @@
+# HTTPS is served by the frontend's built-in Caddy; no separate edge container.
+services:
+  web:
+    ports:
+      - "${HTTP_BIND:-127.0.0.1}:8443:8443"
+    volumes:
+      - type: bind
+        source: ${TLS_CADDYFILE:?Provide the private HTTPS Caddyfile}
+        target: /etc/caddy/Caddyfile
+        read_only: true
+        bind:
+          create_host_path: false
+      - tls_data:/data
+volumes:
+  tls_data:
+    external: true
+    name: ${TLS_DATA_VOLUME:?Run docker/bootstrap.py first}

@@ -472,8 +472,12 @@ const App = () => {
           setInitialized(true);
           setConnection({ attempt: 0, since: null, status: 'online' });
         }
-      } catch {
+      } catch (error) {
         if (cancelled) return;
+        if (initAttemptRef.current === 0) {
+          console.warn('Resonance startup check failed:', error?.message);
+        }
+
         initAttemptRef.current += 1;
         setConnection((c) => ({
           attempt: initAttemptRef.current,

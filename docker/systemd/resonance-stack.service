@@ -1,0 +1,14 @@
+[Unit]
+Description=Start Resonance with network-share recovery
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 %h/projects/resonance/docker/bootstrap.py --skip-build
+Restart=on-failure
+RestartSec=30
+TimeoutStartSec=1200
+
+[Install]
+WantedBy=default.target

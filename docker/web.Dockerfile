@@ -2,6 +2,7 @@
 # API/hub routing to the backend is the reverse proxy's job, not this image's.
 # Build from the repo root: docker build -f docker/web.Dockerfile .
 
+ARG CADDY_RUNTIME_IMAGE=caddy:2
 FROM node:22 AS build
 WORKDIR /web
 COPY frontend/package.json frontend/package-lock.json ./
@@ -10,7 +11,7 @@ RUN npm ci
 COPY frontend/ .
 RUN npm run build
 
-FROM caddy:2
+FROM ${CADDY_RUNTIME_IMAGE} AS runtime
 RUN apk add --no-cache python3
 COPY docker/maintenance/maintenance.py /opt/resonance/maintenance.py
 COPY docker/scripts/with-helper.py /opt/resonance/with-helper.py
