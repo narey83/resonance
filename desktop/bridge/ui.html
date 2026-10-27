@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Resonance Bridge</title>
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
     <link rel="stylesheet" href="/assets/bridge.css" />
     <script src="/assets/bridge.js" defer></script>
   </head>
@@ -11,7 +12,44 @@
     <div class="app-shell">
       <aside class="sidebar">
         <a class="brand" href="/" aria-label="Resonance Bridge home"
-          ><span class="brand-mark" aria-hidden="true">≋</span
+          ><span class="brand-mark" aria-hidden="true">
+            <svg
+              class="resonance-mark"
+              viewBox="0 0 24 24"
+              fill="none"
+              width="34"
+              height="34"
+            >
+              <circle
+                class="resonance-mark-ring"
+                cx="12"
+                cy="12"
+                r="8"
+                stroke="currentColor"
+                stroke-width="1.7"
+              />
+              <path
+                class="resonance-mark-wave"
+                d="M4 12 C6 6.5 10 6.5 12 12 C14 17.5 18 17.5 20 12"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-width="1.7"
+              />
+              <path
+                class="resonance-mark-highlight"
+                d="M6.4 6.4 A8 8 0 0 1 12 4"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-width="1.7"
+              />
+              <circle
+                class="resonance-mark-core"
+                cx="12"
+                cy="12"
+                fill="currentColor"
+                r="1.3"
+              />
+            </svg> </span
           ><span>Resonance<span class="brand-subtitle">Bridge</span></span></a
         >
         <div class="nav-label">WORKSPACE</div>
@@ -338,6 +376,99 @@
               <button id="check-update">Check for updates</button>
             </section>
           </div>
+          <section
+            class="card appearance-card"
+            aria-labelledby="appearance-title"
+          >
+            <h2 id="appearance-title">Make yourself at home</h2>
+            <p>
+              Same Resonance, wherever you open it. Follow your instance’s theme
+              or choose a look just for Bridge.
+            </p>
+            <div
+              class="theme-options"
+              role="group"
+              aria-label="Bridge appearance"
+            >
+              <button
+                class="theme-choice"
+                data-theme-choice="resonance"
+                aria-pressed="true"
+              >
+                Follow Resonance
+              </button>
+              <button
+                class="theme-choice"
+                data-theme-choice="system"
+                aria-pressed="false"
+              >
+                Use system
+              </button>
+              <button
+                class="theme-choice"
+                data-theme-choice="light"
+                aria-pressed="false"
+              >
+                <span
+                  class="theme-swatch"
+                  style="--swatch: #ffffff"
+                  aria-hidden="true"
+                ></span
+                >Daylight
+              </button>
+              <button
+                class="theme-choice"
+                data-theme-choice="amoled"
+                aria-pressed="false"
+              >
+                <span
+                  class="theme-swatch"
+                  style="--swatch: #000000"
+                  aria-hidden="true"
+                ></span
+                >AMOLED
+              </button>
+              <button
+                class="theme-choice"
+                data-theme-choice="midnight"
+                aria-pressed="false"
+              >
+                <span
+                  class="theme-swatch"
+                  style="--swatch: #65d9ef"
+                  aria-hidden="true"
+                ></span
+                >Midnight
+              </button>
+              <button
+                class="theme-choice"
+                data-theme-choice="violet"
+                aria-pressed="false"
+              >
+                <span
+                  class="theme-swatch"
+                  style="--swatch: #c6a0ff"
+                  aria-hidden="true"
+                ></span
+                >Ultraviolet
+              </button>
+              <button
+                class="theme-choice"
+                data-theme-choice="ember"
+                aria-pressed="false"
+              >
+                <span
+                  class="theme-swatch"
+                  style="--swatch: #ffb46b"
+                  aria-hidden="true"
+                ></span
+                >Ember
+              </button>
+            </div>
+            <p id="theme-status" role="status">
+              Following your system until Resonance connects.
+            </p>
+          </section>
           <section id="support" class="card support-card">
             <div>
               <h2>Support & diagnostics</h2>

@@ -38,6 +38,7 @@ function launch(t, page, options = {}) {
           expires: pairing.expires,
           status: "Connected. Waiting for fully analysed tracks.",
           error: "",
+          theme: options.theme,
         }
       : null,
     running: false,
@@ -90,8 +91,14 @@ function launch(t, page, options = {}) {
     else throw Error("Unexpected endpoint " + url);
     return { ok: true, json: async () => JSON.parse(JSON.stringify(data)) };
   };
-  w.eval(script);
-  return { w, document: w.document, calls };
+  w.matchMedia = () => ({
+    matches: !!options.dark,
+    addEventListener: () => {},
+  });
+  if (options.choice)
+    w.localStorage.setItem("resonance-bridge-appearance", options.choice);
+  w.eval(script + "\nwindow.refresh = refresh;");
+  return { w, document: w.document, calls, state };
 }
 test("Settings owns pairing and locked navigation guides an unpaired user there", async (t) => {
   const { document: d, calls } = launch(t, "/settings", { paired: false });
@@ -211,4 +218,81 @@ test("USB Export uses the paired instance and requires destination confirmation"
     confirm: true,
   });
   await until(() => !d.querySelector("#write").disabled);
+});
+
+test("Appearance follows Resonance live and allows a persistent local override", async (t) => {
+  const {
+    w,
+    document: d,
+    state,
+  } = launch(t, "/settings", { theme: "midnight" });
+  await until(() => d.documentElement.dataset.theme === "midnight");
+  assert.match(
+    d.querySelector("#theme-status").textContent,
+    /Following Resonance/,
+  );
+  state.sync.theme = "ember";
+  await w.refresh();
+  assert.equal(d.documentElement.dataset.theme, "ember");
+  d.querySelector('[data-theme-choice="violet"]').click();
+  assert.equal(d.documentElement.dataset.theme, "violet");
+  assert.equal(w.localStorage.getItem("resonance-bridge-appearance"), "violet");
+  state.sync.theme = "light";
+  await w.refresh();
+  assert.equal(d.documentElement.dataset.theme, "violet");
+  d.querySelector('[data-theme-choice="resonance"]').click();
+  assert.equal(d.documentElement.dataset.theme, "light");
+  assert.equal(
+    d
+      .querySelector('[data-theme-choice="resonance"]')
+      .getAttribute("aria-pressed"),
+    "true",
+  );
+});
+test("Appearance uses system fallback and ignores untrusted names", async (t) => {
+  const {
+    w,
+    document: d,
+    state,
+  } = launch(t, "/settings", { dark: true, theme: "__proto__" });
+  await until(() => d.querySelector("#version").textContent === "Bridge 0.3.2");
+  assert.equal(d.documentElement.dataset.theme, "amoled");
+  state.sync.theme = "midnight";
+  await w.refresh();
+  d.querySelector('[data-theme-choice="system"]').click();
+  assert.equal(d.documentElement.dataset.theme, "amoled");
+  w.dispatchEvent(
+    new w.StorageEvent("storage", {
+      key: "resonance-bridge-appearance",
+      newValue: "light",
+    }),
+  );
+  assert.equal(d.documentElement.dataset.theme, "light");
+});
+test("Appearance restores a local theme across page loads", async (t) => {
+  const { document: d } = launch(t, "/usb", {
+    choice: "ember",
+    theme: "midnight",
+  });
+  await until(() => d.querySelector("#version").textContent === "Bridge 0.3.2");
+  assert.equal(d.documentElement.dataset.theme, "ember");
+});
+
+test("Bridge uses the Resonance ring and wave mark and app favicon", async (t) => {
+  const { document: d } = launch(t, "/settings");
+  await until(() => d.querySelector("#version").textContent === "Bridge 0.3.2");
+  assert.ok(d.querySelector(".brand-mark .resonance-mark-ring"));
+  const canonical = fs.readFileSync(
+    path.join(
+      __dirname,
+      "../../frontend/src/components/Shared/ResonanceMark.jsx",
+    ),
+    "utf8",
+  );
+  const wave = d.querySelector(".resonance-mark-wave").getAttribute("d");
+  assert.ok(canonical.includes(wave), "Bridge mark diverged from Resonance");
+  assert.equal(
+    d.querySelector('link[rel="icon"]').getAttribute("href"),
+    "/assets/favicon.svg",
+  );
 });

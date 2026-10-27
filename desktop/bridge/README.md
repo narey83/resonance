@@ -330,3 +330,18 @@ The workspace uses a shared, embedded HTML/CSS/JavaScript shell with no remote
 assets or new runtime dependencies. UI flow tests use the existing frontend
 `jsdom` development dependency: `NODE_PATH=frontend/node_modules node --test
 desktop/bridge/web.test.cjs` from the repository root.
+
+## Appearance
+
+Bridge follows the paired instance's saved Resonance theme automatically. Changes
+arrive within about 15 seconds independently of library preparation. The last
+synced palette is kept for offline use and restarts, scoped to that instance.
+
+In Settings → Make yourself at home, choose Follow Resonance, Use system, or a
+local Daylight, AMOLED, Midnight, Ultraviolet or Ember override. Local choices
+are stored in this browser and sync between its Bridge tabs. They never change
+the server's preference. Reduced-motion preferences are respected.
+
+Only an allowlisted theme name crosses the pairing API; no other preferences or
+server-provided CSS are exposed. Run `python3 generate-themes.py --check` after
+web theme changes and regenerate with `python3 generate-themes.py` if required.

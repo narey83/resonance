@@ -226,6 +226,35 @@ public class BridgeUpdateTests : IDisposable
         Directory.Delete(root, true);
     }
 
+    [Fact]
+    public void Appearance_Requires_Pairing_And_Exposes_Only_Theme()
+    {
+        Assert.IsType<UnauthorizedResult>(Controller(null).Appearance(null!));
+        Assert.IsType<UnauthorizedResult>(Controller(DateTimeOffset.UtcNow.AddMinutes(-1)).Appearance(null!));
+        var preferences = new global::resonance.Core.Preferences.PreferencesService(
+            new global::resonance.ConnectionStringDictionary(new Dictionary<global::resonance.Database, global::resonance.ConnectionString>
+            {
+                [global::resonance.Database.Preferences] = "Data Source=" + Path.Combine(root, "appearance.db") + ";Pooling=False",
+            }, usePostgres: false));
+        preferences.Patch(new Dictionary<string, JsonElement>
+        {
+            ["resonance-theme"] = JsonSerializer.SerializeToElement("violet"),
+            ["private-preference"] = JsonSerializer.SerializeToElement("must-not-leak"),
+        });
+        var controller = Controller(DateTimeOffset.UtcNow.AddHours(1));
+        var result = Assert.IsType<OkObjectResult>(controller.Appearance(preferences));
+        Assert.Equal("{\"theme\":\"violet\"}", JsonSerializer.Serialize(result.Value));
+        Assert.Equal("no-store", controller.Response.Headers.CacheControl);
+        Assert.Null(preferences.Get("missing' OR 1=1 --"));
+        foreach (var invalid in new object[] { 123, "url(evil)", "unknown" })
+        {
+            preferences.Patch(new Dictionary<string, JsonElement> { ["resonance-theme"] = JsonSerializer.SerializeToElement(invalid) });
+            Assert.Equal("{\"theme\":\"system\"}", JsonSerializer.Serialize(Assert.IsType<OkObjectResult>(controller.Appearance(preferences)).Value));
+        }
+        pairings.Remove(inserted.Last());
+        Assert.IsType<UnauthorizedResult>(controller.Appearance(preferences));
+    }
+
     private BridgeController Controller(DateTimeOffset? expires)
     {
         var context = new DefaultHttpContext();

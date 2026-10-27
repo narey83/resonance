@@ -80,6 +80,27 @@ public class PreferencesService
         return result;
     }
 
+    public JsonElement? Get(string key)
+    {
+        using var conn = CreateConnection();
+        var raw = conn.QuerySingleOrDefault<string>($"SELECT \"Value\" FROM {T} WHERE \"Key\" = @Key", new { Key = key });
+        if (raw is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(raw);
+            return document.RootElement.Clone();
+        }
+        catch (JsonException ex)
+        {
+            Log.Warning(ex, "Skipping malformed preference {Key}", key);
+            return null;
+        }
+    }
+
     public void Patch(Dictionary<string, JsonElement> updates)
     {
         using var conn = CreateConnection();

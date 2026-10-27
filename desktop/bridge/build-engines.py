@@ -11,7 +11,7 @@ if key.is_relative_to(root):raise ValueError('Keep the private key outside the s
 private=base64.b64decode(key.read_text().strip(),validate=True)
 if len(private)!=64:raise ValueError('Invalid Ed25519 private key')
 public=base64.b64encode(private[32:]).decode()
-version='0.3.2'
+version='0.3.3'
 info={'version':version,'publicKey':public,'binaries':{}}
 for goos,arch in [('darwin','arm64'),('windows','amd64'),('linux','amd64')]:
  name=goos+'-'+arch+('.exe' if goos=='windows' else '')

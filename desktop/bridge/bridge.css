@@ -1,19 +1,15 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
 :root {
   color-scheme: light dark;
-  --canvas: #f6f8f9;
-  --surface: #fff;
-  --sidebar: #fff;
-  --ink: #192a32;
-  --muted: #6c7c86;
-  --line: #e5eaed;
-  --accent: #087f88;
-  --accent-hover: #066b73;
-  --tint: #eaf5f5;
-  --soft: #f4f7f8;
-  --danger: #b3454e;
-  --success: #15856b;
-  --shadow: 0 3px 16px #243b4804;
+  --canvas: var(--bg-primary);
+  --surface: var(--bg-surface);
+  --sidebar: var(--nav-bg);
+  --ink: var(--text-primary);
+  --muted: var(--text-muted);
+  --line: var(--border);
+  --tint: var(--nav-item-active-bg);
+  --soft: var(--bg-elevated);
+  --shadow: none;
   font-family:
     Inter,
     -apple-system,
@@ -74,7 +70,7 @@ button.primary,
 .button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 button.primary:hover,
 .button.primary:hover {
@@ -175,7 +171,7 @@ strong {
   width: 37px;
   height: 37px;
   border-radius: 11px;
-  color: #fff;
+  color: var(--on-accent);
   background: var(--accent);
   font-size: 38px;
   line-height: 1;
@@ -871,42 +867,6 @@ progress {
   height: 7px;
   margin-bottom: 20px;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --canvas: #111a20;
-    --surface: #19252d;
-    --sidebar: #152027;
-    --ink: #e1e9ed;
-    --muted: #97a9b4;
-    --line: #2b3a44;
-    --accent: #54c7c4;
-    --accent-hover: #6bd4d1;
-    --tint: #1d383d;
-    --soft: #1d2c35;
-    --success: #6dc4a7;
-    --danger: #ef989e;
-    --shadow: none;
-  }
-  button.primary,
-  .button.primary {
-    color: #11272c;
-  }
-  select {
-    border-color: var(--line);
-  }
-  .brand-mark {
-    color: #173038;
-  }
-  .status-dot.connected {
-    background: var(--success);
-  }
-  .setting-toggle input {
-    background: #465c69;
-  }
-  .setting-toggle input:checked {
-    background: #24878b;
-  }
-}
 @media (min-width: 1550px) {
   main {
     padding: 52px 64px 30px;
@@ -1144,4 +1104,73 @@ progress {
   .pairing-management > #disconnect {
     margin-left: 0;
   }
+}
+
+/* Theme changes feel continuous; honour reduced motion and keyboard focus. */
+body,
+.sidebar,
+.card,
+.collection-strip,
+button,
+select {
+  transition:
+    background-color 220ms ease,
+    color 220ms ease,
+    border-color 220ms ease;
+}
+.appearance-card {
+  margin-top: 24px;
+}
+.theme-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.theme-choice {
+  justify-content: flex-start;
+}
+.theme-choice[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--tint);
+}
+.theme-swatch {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--swatch, var(--accent));
+  border: 1px solid var(--muted);
+}
+#theme-status {
+  margin-top: 14px;
+  font-size: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+.brand-mark {
+  color: var(--accent);
+  background: var(--tint);
+  border: 1px solid var(--line);
+}
+.resonance-mark {
+  flex-shrink: 0;
+  overflow: visible;
+}
+.resonance-mark-ring {
+  opacity: 0.65;
+}
+.resonance-mark-highlight,
+.resonance-mark-core {
+  opacity: 0.9;
+}
+.resonance-mark-wave {
+  filter: drop-shadow(0 0 2px currentColor);
 }

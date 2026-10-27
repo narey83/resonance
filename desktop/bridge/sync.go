@@ -23,6 +23,7 @@ type connection struct {
 	Expires       time.Time `json:"expires"`
 }
 type synchronization struct {
+	Theme      string
 	Rejected   bool
 	Connection connection
 	Cancel     context.CancelFunc
@@ -93,12 +94,13 @@ func (h *helper) connect(c connection) error {
 		h.Sync.Cancel()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &synchronization{Connection: c, Cancel: cancel, Status: "Connecting"}
+	s := &synchronization{Connection: c, Cancel: cancel, Status: "Connecting", Theme: h.savedAppearance(c)}
 	h.Sync = s
 	h.Error = ""
 	h.mu.Unlock()
 	h.Diagnostics.event("info", "connection.saved", map[string]any{"server": c.ServerURL})
 	go h.syncLoop(ctx, s)
+	go h.appearanceLoop(ctx, s)
 	if h.Updates != nil {
 		h.Updates.check()
 	}

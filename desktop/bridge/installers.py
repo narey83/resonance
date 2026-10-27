@@ -4,7 +4,7 @@ from pathlib import Path
 import os,shutil,subprocess,tempfile,zipfile,tarfile,io,time,json,hashlib
 root=Path(__file__).resolve().parent
 output=Path(os.environ.get('RESONANCE_HELPER_OUTPUT',root/'dist'));output.mkdir(parents=True,exist_ok=True)
-version='0.3.2'
+version='0.3.3'
 def unpack(platform,dest):
  with zipfile.ZipFile(output/f'resonance-bridge-{platform}.zip') as z:
   z.extractall(dest)
@@ -71,7 +71,7 @@ Section "Resonance Bridge"
  CreateShortcut "$SMPROGRAMS\Resonance Bridge\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
  WriteRegStr HKCU "Software\Resonance\PioneerLink" "InstallDir" "$INSTDIR"
  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ResonancePioneerLink" "DisplayName" "Resonance Bridge"
- WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ResonancePioneerLink" "DisplayVersion" "0.3.2"
+ WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ResonancePioneerLink" "DisplayVersion" "0.3.3"
  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ResonancePioneerLink" "Publisher" "Resonance"
  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ResonancePioneerLink" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ResonancePioneerLink" "NoModify" 1

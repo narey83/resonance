@@ -36,6 +36,12 @@ var dashboard []byte
 //go:embed bridge.css
 var bridgeStyles []byte
 
+//go:embed assets/favicon.svg
+var bridgeFavicon []byte
+
+//go:embed themes.css
+var bridgeThemeStyles []byte
+
 //go:embed bridge.js
 var bridgeScript []byte
 
@@ -120,7 +126,7 @@ func (h *helper) snapshot() any {
 	}
 	var syncView any
 	if h.Sync != nil {
-		syncView = map[string]any{"server": h.Sync.Connection.ServerURL, "status": h.Sync.Status, "error": h.Sync.Error, "updated": h.Sync.Updated, "expires": h.Sync.Connection.Expires}
+		syncView = map[string]any{"server": h.Sync.Connection.ServerURL, "status": h.Sync.Status, "error": h.Sync.Error, "updated": h.Sync.Updated, "expires": h.Sync.Connection.Expires, "theme": h.Sync.Theme}
 	}
 	usbStatus := ""
 	if h.USB != nil {
@@ -322,9 +328,14 @@ func (h *helper) routes(address string) http.Handler {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(dashboard)
 	})
+	mux.HandleFunc("GET /assets/favicon.svg", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Write(bridgeFavicon)
+	})
 	mux.HandleFunc("GET /assets/bridge.css", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/css; charset=utf-8")
 		w.Write(bridgeStyles)
+		w.Write(bridgeThemeStyles)
 	})
 	mux.HandleFunc("GET /assets/bridge.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")

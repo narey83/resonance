@@ -57,6 +57,9 @@ namespace resonance.Analysis.Candidates
 
         public bool Enabled => Options.Enabled;
 
+        public bool StorageAvailable => !string.IsNullOrWhiteSpace(Options.OutputRoot)
+            && Path.IsPathFullyQualified(Options.OutputRoot) && Directory.Exists(Options.OutputRoot);
+
         private AnalysisStore Store { get; }
 
         private CandidateAnalysisOptions Options { get; }
@@ -237,6 +240,54 @@ namespace resonance.Analysis.Candidates
             return (job, result, identity.Sha256 == job.AudioSha256 && identity.Bytes == job.AudioBytes);
         }
 
+        public async Task<IReadOnlyList<CandidateJob>> ExportCandidates(CancellationToken ct)
+        {
+            var result = new List<CandidateJob>();
+            if (!StorageAvailable)
+            {
+                return result;
+            }
+
+            RequireStorageConfiguration();
+            foreach (var reference in Store.ExportReferences())
+            {
+                ct.ThrowIfCancellationRequested();
+                try
+                {
+                    var job = JsonSerializer.Deserialize<CandidateJob>(await File.ReadAllTextAsync(Path.Combine(JobDirectory(reference.AnalysisId), "job.json"), ct));
+                    if (job is { RequestedSeconds: null, Status: "completed" } && job.LibraryPath == reference.Path)
+                    {
+                        result.Add(job);
+                    }
+                }
+                catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
+                {
+                    // Invalid or missing evidence never enters a sharing batch.
+                }
+            }
+
+            return result;
+        }
+
+        public async Task<(CandidateJob Job, JsonElement Analysis)?> LatestExportReady(string path, CancellationToken ct)
+        {
+            if (!StorageAvailable)
+            {
+                return null;
+            }
+
+            var id = Store.ExportReferenceFor(path);
+            if (id == null)
+            {
+                return null;
+            }
+
+            var result = await Read(id, ct);
+            return result.Job.Status == "completed" && result.Job.RequestedSeconds == null && result.ContentCurrent
+                && result.Analysis.HasValue && ExportAnalysisContract.Ready(result.Analysis.Value)
+                ? (result.Job, result.Analysis.Value) : null;
+        }
+
         internal static bool HasEnhanced(JsonElement document)
         {
             if (!document.TryGetProperty("scope", out var scope)
@@ -322,57 +373,6 @@ namespace resonance.Analysis.Candidates
             var temporary = Path.Combine(directory, "job-" + Guid.NewGuid().ToString("N") + ".tmp");
             await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(job), ct);
             File.Move(temporary, Path.Combine(directory, "job.json"), true);
-        }
-
-        public bool StorageAvailable => !string.IsNullOrWhiteSpace(Options.OutputRoot)
-            && Path.IsPathFullyQualified(Options.OutputRoot) && Directory.Exists(Options.OutputRoot);
-
-        public async Task<IReadOnlyList<CandidateJob>> ExportCandidates(CancellationToken ct)
-        {
-            var result = new List<CandidateJob>();
-            if (!StorageAvailable)
-            {
-                return result;
-            }
-
-            RequireStorageConfiguration();
-            foreach (var reference in Store.ExportReferences())
-            {
-                ct.ThrowIfCancellationRequested();
-                try
-                {
-                    var job = JsonSerializer.Deserialize<CandidateJob>(await File.ReadAllTextAsync(Path.Combine(JobDirectory(reference.AnalysisId), "job.json"), ct));
-                    if (job is { RequestedSeconds: null, Status: "completed" } && job.LibraryPath == reference.Path)
-                    {
-                        result.Add(job);
-                    }
-                }
-                catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
-                {
-                    // Invalid or missing evidence never enters a sharing batch.
-                }
-            }
-
-            return result;
-        }
-
-        public async Task<(CandidateJob Job, JsonElement Analysis)?> LatestExportReady(string path, CancellationToken ct)
-        {
-            if (!StorageAvailable)
-            {
-                return null;
-            }
-
-            var id = Store.ExportReferenceFor(path);
-            if (id == null)
-            {
-                return null;
-            }
-
-            var result = await Read(id, ct);
-            return result.Job.Status == "completed" && result.Job.RequestedSeconds == null && result.ContentCurrent
-                && result.Analysis.HasValue && ExportAnalysisContract.Ready(result.Analysis.Value)
-                ? (result.Job, result.Analysis.Value) : null;
         }
 
         private void RequireStorageConfiguration()

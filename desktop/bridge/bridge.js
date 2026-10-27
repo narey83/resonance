@@ -23,6 +23,73 @@ let status = null,
   refreshing = false,
   pollFailed = false,
   previousPairing = null;
+const themeLabels = {
+  light: "Daylight",
+  amoled: "AMOLED",
+  midnight: "Midnight",
+  violet: "Ultraviolet",
+  ember: "Ember",
+};
+const knownTheme = (value) =>
+  Object.prototype.hasOwnProperty.call(themeLabels, value);
+const themeQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
+let themeChoice = "resonance";
+try {
+  const saved = localStorage.getItem("resonance-bridge-appearance");
+  if (saved === "system" || saved === "resonance" || knownTheme(saved))
+    themeChoice = saved;
+} catch {
+  /* Storage may be unavailable in private browser sessions. */
+}
+function applyAppearance() {
+  const remoteTheme = status?.paired ? status.sync?.theme : null;
+  const remote =
+    knownTheme(remoteTheme) || remoteTheme === "system" ? remoteTheme : null;
+  const selected = themeChoice === "resonance" ? remote : themeChoice;
+  const effective = knownTheme(selected)
+    ? selected
+    : themeQuery?.matches
+      ? "amoled"
+      : "light";
+  document.documentElement.dataset.theme = effective;
+  for (const button of document.querySelectorAll("[data-theme-choice]"))
+    button.setAttribute(
+      "aria-pressed",
+      String(button.dataset.themeChoice === themeChoice),
+    );
+  const label = themeLabels[effective];
+  $("#theme-status").textContent =
+    themeChoice === "resonance"
+      ? remote
+        ? "Following Resonance · " +
+          label +
+          ". Remembers this look while offline."
+        : "Following your system · " +
+          label +
+          ". Pair to match Resonance automatically."
+      : (themeChoice === "system"
+          ? "Following your system · "
+          : "Just for Bridge · ") + label;
+}
+for (const button of document.querySelectorAll("[data-theme-choice]"))
+  button.onclick = () => {
+    themeChoice = button.dataset.themeChoice;
+    try {
+      localStorage.setItem("resonance-bridge-appearance", themeChoice);
+    } catch {
+      /* Optional cache. */
+    }
+    applyAppearance();
+  };
+themeQuery?.addEventListener?.("change", applyAppearance);
+window.addEventListener("storage", (event) => {
+  if (event.key !== "resonance-bridge-appearance") return;
+  const choice = event.newValue;
+  themeChoice =
+    choice === "system" || knownTheme(choice) ? choice : "resonance";
+  applyAppearance();
+});
+applyAppearance();
 const paths = {
   network: [
     "M8 16a6 6 0 0 1 0-8",
@@ -114,11 +181,9 @@ async function request(path, body) {
           body: JSON.stringify(body),
         };
   const response = await fetch("/api/" + path, options);
-  const data = await response
-    .json()
-    .catch(() => ({
-      error: "Bridge is temporarily unavailable. Please retry.",
-    }));
+  const data = await response.json().catch(() => ({
+    error: "Bridge is temporarily unavailable. Please retry.",
+  }));
   if (!response.ok)
     throw Error(data.error || "Bridge could not complete this request.");
   return data;
@@ -353,6 +418,7 @@ function renderUSB() {
       : "Safely eject the drive after the transfer completes.";
 }
 function render() {
+  applyAppearance();
   renderCommon();
   if (page === "settings") renderSettings();
   if (page === "network") renderNetwork();

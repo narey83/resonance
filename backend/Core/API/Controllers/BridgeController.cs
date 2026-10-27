@@ -90,6 +90,7 @@ namespace resonance.Core.API
                 helperPlatforms = Platforms.Where(p => System.IO.File.Exists(Archive(p))).ToArray(),
             });
         }
+
         [HttpPost]
         [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         public IActionResult PrepareLibrary()
