@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Platform } from 'react-native';
+import { importedMusicFiles, importedMusicDirectory } from './importedMusic';
 import {
   requestPermissionsAsync,
   Asset,
@@ -56,6 +58,7 @@ export const isLocalPath = (path: string) =>
 export const isLocalFolderPath = (path: string) => path.startsWith('/');
 
 export const requestPermissions = async (): Promise<boolean> => {
+  if (Platform.OS !== 'android') return true;
   const { status } = await requestPermissionsAsync(false, ['audio']);
   return status === 'granted';
 };
@@ -77,7 +80,7 @@ const filenameFromUri = (uri: string): string => {
 // schema_info key for the persisted local-library signature (file count + newest mtime).
 const LIBRARY_SIGNATURE_KEY = 'local_lib_signature';
 const librarySignature = (count: number, latestMtime: number | null): string =>
-  JSON.stringify({ c: count, m: latestMtime });
+  JSON.stringify({ c: count, m: latestMtime, imports: importedMusicDirectory().uri });
 
 const metadataToMusicTrack = (uri: string, filename: string, meta: TrackMetadata): MusicTrack => ({
   path: uri,
@@ -100,7 +103,7 @@ const metadataToMusicTrack = (uri: string, filename: string, meta: TrackMetadata
 });
 
 interface AssetBasics {
-  asset: Asset;
+  asset?: Asset;
   uri: string;         // file:// path — used as DB cache key and for directory extraction
   contentUri: string;  // content://media/... URI — used for actual file reading (Android 13+ scoped storage)
   filename: string;
@@ -182,7 +185,7 @@ const parseId3 = async (basics: AssetBasics): Promise<TrackMetadata> => {
   }
   if (!album) {
     const dir = extractDirectory(basics.uri);
-    album = dir ? (dir.split('/').filter(Boolean).pop() ?? null) : null;
+    album = basics.uri.startsWith(importedMusicDirectory().uri) ? 'Imported audio' : dir ? (dir.split('/').filter(Boolean).pop() ?? null) : null;
   }
 
   return {
@@ -251,13 +254,14 @@ export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
   const now = Date.now();
   if (_trackCache && now - _trackCacheTime < 5 * 60_000) return _trackCache;
 
-  if (!await requestPermissions()) return [];
+  const imported = importedMusicFiles();
+  const canScanDevice = Platform.OS === 'android' && await requestPermissions();
 
   // Enumerate asset HANDLES only — cheap, no per-asset field reads yet.
   const tEnum = Date.now();
-  const assets = await new Query()
+  const assets = canScanDevice ? await new Query()
     .eq(AssetField.MEDIA_TYPE, MediaType.AUDIO)
-    .exe();
+    .exe() : [];
   notePerfBlock('local:enumerate', tEnum);
 
   // Change-detection fast path: if the file count + newest mtime match what we persisted
@@ -265,8 +269,10 @@ export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
   // track list straight from SQLite — no per-asset enumeration (thousands of native calls)
   // and no re-parse. This is what makes the library survive app/phone restarts and only
   // rebuild when the local files actually change.
-  const latestMtime = await probeLatestMtime();
-  const signature = librarySignature(assets.length, latestMtime);
+  const nativeMtime = canScanDevice ? await probeLatestMtime() : null;
+  const latestMtime = imported.reduce((latest, file) => Math.max(latest ?? 0, file.modificationTime ?? 0), nativeMtime);
+  const count = assets.length + imported.length;
+  const signature = librarySignature(count, latestMtime);
   const storedSignature = await getSchemaValue(LIBRARY_SIGNATURE_KEY).catch(() => null);
 
   if (storedSignature && storedSignature === signature) {
@@ -279,7 +285,7 @@ export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
     // let that partial cache satisfy the fast path forever, since nothing about the signature check
     // ever changes again. Falling through to the slow path re-detects the missing files as stale
     // and finishes the interrupted scan instead of silently serving it as "done".
-    if (rows.length >= assets.length) {
+    if (rows.length === count) {
       const tMap = Date.now();
       _trackCache = rows.map(m => metadataToMusicTrack(m.path, filenameFromUri(m.path), m));
       notePerfBlock(`local:mapTracks(${rows.length})`, tMap);
@@ -292,8 +298,10 @@ export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
   // Slow path: the file set changed (or first ever run). Read per-asset basics and diff
   // against the cached metadata; only genuinely new/modified files get re-parsed.
   const tBasics = Date.now();
-  const basics = (await Promise.all(assets.map(fetchAssetBasics)))
-    .filter((b): b is AssetBasics => b !== null);
+  const basics: AssetBasics[] = [
+    ...(await Promise.all(assets.map(fetchAssetBasics))).filter((b): b is AssetBasics => b !== null),
+    ...imported.map(file => ({ uri: file.uri, contentUri: file.uri, filename: file.name, durationSec: null, mtime: file.modificationTime })),
+  ];
   notePerfBlock(`local:assetBasics(${assets.length})`, tBasics);
 
   const uris = basics.map(b => b.uri);
@@ -327,7 +335,7 @@ export const getAllLocalTracks = async (): Promise<MusicTrack[]> => {
   // added between the two queries, so pin the signature to the max mtime actually seen here.
   const maxMtime = basics.reduce<number | null>(
     (mx, b) => (b.mtime != null && (mx == null || b.mtime > mx) ? b.mtime : mx), null);
-  const finalSignature = librarySignature(assets.length, maxMtime ?? latestMtime);
+  const finalSignature = librarySignature(count, maxMtime ?? latestMtime);
   const persistSignature = () => setSchemaValue(LIBRARY_SIGNATURE_KEY, finalSignature).catch(() => {});
 
   if (stale.length === 0) {

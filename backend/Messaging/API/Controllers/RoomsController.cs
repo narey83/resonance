@@ -246,6 +246,25 @@ namespace resonance.Messaging.API
         /// <returns></returns>
         /// <response code="200">The request completed successfully.</response>
         /// <response code="404">The specified roomName could not be found.</response>
+        [HttpGet("joined/message-counts")]
+        public IActionResult GetMessageCounts()
+        {
+            if (Program.IsRelayAgent)
+            {
+                return Forbid();
+            }
+
+            var rooms = Tracker.Rooms.Keys.ToArray();
+            using var context = ContextFactory.CreateDbContext();
+            var self = ApplicationStateMonitor.CurrentValue.User.Username;
+            var counts = context.RoomMessages.AsNoTracking()
+                .Where(m => rooms.Contains(m.RoomName) && m.Username != self)
+                .GroupBy(m => m.RoomName)
+                .Select(g => new { Room = g.Key, Count = g.LongCount() })
+                .ToDictionary(g => g.Room, g => g.Count);
+            return Ok(rooms.Select(room => new { room, count = counts.GetValueOrDefault(room) }).ToArray());
+        }
+
         [HttpGet("joined/{roomName}/messages")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(typeof(IList<RoomMessage>), 200)]
@@ -291,7 +310,24 @@ namespace resonance.Messaging.API
                 return Forbid();
             }
 
-            var list = await Client.GetRoomListAsync();
+            if (!Client.State.HasFlag(SoulseekClientStates.LoggedIn))
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new { code = "SOULSEEK_UNAVAILABLE", error = "Soulseek is disconnected. Reconnect to browse rooms." });
+            }
+
+            RoomList list;
+            try
+            {
+                list = await Client.GetRoomListAsync();
+            }
+            catch (InvalidOperationException) when (!Client.State.HasFlag(SoulseekClientStates.LoggedIn))
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new { code = "SOULSEEK_UNAVAILABLE", error = "Soulseek disconnected while retrieving rooms. Reconnect and try again." });
+            }
+            catch (Exception ex) when (ex is SoulseekClientException or TimeoutException)
+            {
+                return StatusCode(StatusCodes.Status504GatewayTimeout, new { code = "SOULSEEK_TIMEOUT", error = "Soulseek did not return the room list in time. Try again shortly." });
+            }
 
             var response = new List<RoomInfoResponse>();
 

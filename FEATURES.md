@@ -65,7 +65,7 @@ Setup and operating details are linked from the [README](README.md#documentation
 
 - Central SQLite- or PostgreSQL-backed catalogue: cancellable sync, track/genre/year/folder/album/artist listings, recently added, history and loved tracks. Scans include subfolders under configured shared library locations.
 - Saved Browse, Prepare and Export table layouts, with column visibility/order/width preferences, DJ filters, saved filters, analysis status and bulk selection actions.
-- Track inspection before playback; selection actions include analysis, mixtape preparation and export where permissions allow.
+- Track inspection before playback; selection actions include analysis, playlist preparation and export where permissions allow.
 - Smart crates with saved rules for BPM, harmonic key neighbours, genre, energy, vocals, analysis, folders, recency and listening history. Results follow the current library.
 - Preparation view with durable queue status, pause/resume and retry controls.
 - Signed, HMAC-based streaming/artwork URLs with configurable TTL.
@@ -74,7 +74,7 @@ Setup and operating details are linked from the [README](README.md#documentation
 - **Tag Manager** and a tag-sanitization scanner/consolidator.
 - **Duplicates** — dedicated library duplicate detection with folder-name normalization/grouping.
 - **Audio Converter** — background conversion job queue backed by a managed, self-updating ffmpeg.
-- **Mixtapes** — create/edit playlists, reorder tracks, set artwork, publish through a no-login token link, export as `.m3u` or download as `.zip`. Confirmed deletion removes the mixtape and its generated assets, leaving original library tracks in place.
+- **Playlists** — create/edit playlists, reorder tracks, set artwork, publish through a no-login token link, export as `.m3u` or download as `.zip`. Confirmed deletion removes the playlist and its generated assets, leaving original library tracks in place.
 - **yt-dlp ingestion** — search or direct-URL jobs, configurable audio format/quality/output template, duration filters, SponsorBlock stripping, bandwidth/concurrency limits, auto-retry sweeps, post-download conversion, channel/playlist subscriptions with polling, and cookie management (paired with a browser extension that syncs YouTube cookies for age-restricted content).
 
 ## Analysis and automatic preparation
@@ -98,7 +98,7 @@ See [automatic preparation](docs/auto-analysis.md), [worker setup](docs/dj-works
 - **Mix compatibility** — compares tempo, key, genre evidence, energy, vocals and candidate phrase handovers.
 - **Genre warnings** — distinguish cross-genre pairings, unknown genres and conflicts between tags and predictions. The source-reviewed genre guide is conservative guidance, not a verified list of individual tracks that will mix successfully.
 - **Transition preview** — plays the ending of one track against the opening of the next, with a crossfader and pitch-preserving tempo synchronization when supported by the saved timing.
-- **Set planner** — saved, ordered plans assembled from the library, folders or smart crates, with transition analysis, mixtape and USB-export actions.
+- **Set planner** — saved, ordered plans assembled from the library, folders or smart crates, with transition analysis, playlist and USB-export actions.
 - **Full-set rehearsal** — auditions consecutive handovers at one fixed master tempo from beginning to end. It defaults to the first track's BPM, or uses a manually selected master. Unsupported timing or tempo combinations are explained rather than silently changing tempo.
 
 These are preparation and audition tools. A numerical compatibility result or successful rehearsal does not establish that the source analysis is musically correct.
@@ -125,7 +125,7 @@ These are preparation and audition tools. A numerical compatibility result or su
 - The helper runs on the players' IPv4 LAN. The main Resonance server may run elsewhere. Saved, revocable server connections survive helper restarts; player sharing starts off each time.
 - Source and installer tooling cover macOS Apple silicon, Windows x64 and Linux amd64. Development installers are unsigned/not notarized; native Windows/Linux acceptance remains pending.
 
-Physical USB and network/player validation is still required, including OPUS-QUAD. A USB-enabled player does not necessarily support network LINK EXPORT. The network engine currently queries the classic database, even when a dual-format bundle also contains OneLibrary. See the [helper guide](desktop/pioneer-link/README.md).
+Physical USB and network/player validation is still required, including OPUS-QUAD. A USB-enabled player does not necessarily support network LINK EXPORT. The network engine currently queries the classic database, even when a dual-format bundle also contains OneLibrary. See the [Resonance Bridge guide](desktop/bridge/README.md).
 
 ## Integrations
 
@@ -176,7 +176,7 @@ See [database configuration, logging, migration and backup](docs/database/archit
 
 ## Frontend / UI
 
-- Pages: Overview, Map, Searches, Browse, Users, Chat, Rooms, Uploads, Downloads, Library, Track Analysis, Export, Network Link, Tag Manager, Duplicates, Converter, yt-dlp, System (Info/Options/Permissions/User Management/Shares/Events/Logs/Files/Data/Database Viewer), plus standalone public Mixtape and raw Database Viewer routes. Smart crates, preparation and set planning are part of the library workspace.
+- Pages: Overview, Map, Searches, Browse, Users, Chat, Rooms, Uploads, Downloads, Library, Track Analysis, Export, Network Link, Tag Manager, Duplicates, Converter, yt-dlp, System (Info/Options/Permissions/User Management/Shares/Events/Logs/Files/Data/Database Viewer), plus standalone public Playlist and raw Database Viewer routes. Smart crates, preparation and set planning are part of the library workspace.
 - Real-time updates via a persistent SignalR hub with automatic reconnect/backoff and a reconnecting overlay.
 - Daylight, AMOLED, Midnight, Ultraviolet and Ember themes, with cross-tab synchronization.
 - Main and library navigation rails expand on hover or keyboard focus; compact spacing keeps the desktop workspace available. Status information retains the same shell across routes.
@@ -191,11 +191,17 @@ See [database configuration, logging, migration and backup](docs/database/archit
 
 The [mobile guide](mobile/README.md) includes native screenshots, build status and a platform comparison. This is an evolving source snapshot: features and design can change, and more features are being added.
 
+- Discover home with listening history, recent artwork shelves, unheard arrivals and saved playlists; five primary tabs with community and share browsing under More.
+- Explained track matching by BPM, harmonic key and available analysed RMS energy proxy; audition, queue and file suggestions into playlists.
+- Account-scoped wanted searches with daily foreground rechecks, search activity, arrival triage and completed-download visibility.
+- Offline-persistent preparation notes, set roles and listening bookmarks, with revision-aware server sync and explicit conflict resolution. Desktop track inspector reads the shared preparation and bookmarks.
+- Original-audio offline playlist crates with progress, cancellation, refresh, storage use and removal. Completed audio persists per account/server; background download completion is not guaranteed.
 - Server-address sign-in or short-lived QR pairing, secure session storage and live connection updates.
 - Server library browsing by artist, album, track, folder, genre and year; search, sorting, list/tile layouts, loved tracks and history.
 - Mini-player and full-screen player with artwork, waveform seeking, queue selection, shuffle/repeat and available BPM, key, LUFS and genre metadata.
 - Automatic, Original and Data saver streaming quality; native background playback and Google Cast controls.
-- Create, rename, delete, edit, reorder, play and share server mixtapes, subject to account permissions.
+- Create, rename, delete, edit, reorder, play and share server playlists, subject to account permissions.
+- Separate handset-only playlists for local music on Android and iOS: create, rename, delete, add/remove/reorder tracks and play, without server playlist calls or synchronization. Local collections remain on the handset across server changes and sign-out.
 - Soulseek search, shared-folder browsing and transfer management; rooms, mentions and private chat.
 - Role-dependent overview, server, connection, logs and relay screens.
 - Light, Dark, AMOLED and Midnight themes, system appearance, notification preferences, and optional diagnostic logging.

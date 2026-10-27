@@ -31,6 +31,7 @@ import {
   buildRows,
   contextsOf,
   dedupeAgainstSeen,
+  hasMoreHistory,
   LIVE_MAX_ENTRIES,
   logKey,
   mergeContexts,
@@ -267,5 +268,33 @@ describe('contextsOf / mergeContexts', () => {
 
     expect(trimmed.map((e) => e.id)).toEqual([3]);
     expect(contextsOf(trimmed)).toEqual(new Set(['Transfers / Uploads']));
+  });
+});
+
+describe('SQLite log cursors', () => {
+  it('keeps adjacent large string IDs distinct', () => {
+    const records = [
+      entry('639286000000000001', '2026-10-26T17:00:00Z'),
+      entry('639286000000000002', '2026-10-26T17:00:00Z'),
+    ];
+    expect(dedupeAgainstSeen(records, new Set())).toHaveLength(2);
+    expect(pollCursor(records[1])).toEqual({ afterId: '639286000000000002' });
+  });
+});
+
+describe('history progress', () => {
+  it('stops automatic loading when a full page repeats the loaded boundary', () => {
+    const items = [entry('1', '2026-10-26T17:00:00Z')];
+    const seen = new Set(items.map(logKey));
+    expect(hasMoreHistory(items, dedupeAgainstSeen(items, seen), 1)).toBe(
+      false,
+    );
+  });
+
+  it('continues only when a full page adds entries', () => {
+    const items = [entry('2', '2026-10-26T17:00:00Z')];
+    expect(hasMoreHistory(items, items, 1)).toBe(true);
+    expect(hasMoreHistory(items, items, 2)).toBe(false);
+    expect(hasMoreHistory([], [], 1)).toBe(false);
   });
 });

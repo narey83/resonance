@@ -58,14 +58,14 @@ export const exportFolderTree = (tracks) => {
 };
 
 const FolderSelection = ({
-  depth = 0,
   disabled,
+  kind = 'folder',
   node,
   onChange,
   searching,
   selected,
 }) => {
-  const [expanded, setExpanded] = useState(depth === 0 || searching);
+  const [expanded, setExpanded] = useState(true);
   useEffect(() => {
     if (searching) setExpanded(true);
   }, [searching]);
@@ -89,7 +89,7 @@ const FolderSelection = ({
     <div className="usb-picker-folder">
       <div className="usb-picker-folder-row">
         <input
-          aria-label={`Select folder ${node.name}`}
+          aria-label={`Select ${kind} ${node.name}`}
           checked={count === node.paths.length}
           disabled={disabled}
           onChange={(event) => selectFolder(event.target.checked)}
@@ -117,9 +117,9 @@ const FolderSelection = ({
         <div className="usb-picker-folder-contents">
           {node.folders.map((folder) => (
             <FolderSelection
-              depth={depth + 1}
               disabled={disabled}
               key={folder.path}
+              kind={kind}
               node={folder}
               onChange={onChange}
               searching={searching}
@@ -162,10 +162,11 @@ const FolderSelection = ({
 
 const ExportTrackPicker = ({ disabled, onChange, selected, tracks }) => {
   const [search, setSearch] = useState('');
+  const [view, setView] = useState('folder');
   const query = search.trim().toLowerCase();
   const visible = query
     ? tracks.filter((track) =>
-        `${track.title} ${track.artist || ''} ${track.path}`
+        `${track.title} ${track.artist || ''} ${track.album || ''} ${track.path}`
           .toLowerCase()
           .includes(query),
       )
@@ -183,37 +184,78 @@ const ExportTrackPicker = ({ disabled, onChange, selected, tracks }) => {
     };
   };
 
-  const tree = prune(
-    exportFolderTree(tracks),
-    new Set(visible.map((track) => track.path)),
-  );
+  const groups = new Map();
+  for (const track of tracks) {
+    const name =
+      view === 'tracks'
+        ? 'All tracks'
+        : view === 'artist'
+          ? track.artist || 'Unknown artist'
+          : `${track.album || 'Unknown album'} · ${track.albumArtist || track.artist || 'Unknown artist'}`;
+    if (!groups.has(name))
+      groups.set(name, {
+        name,
+        path: name,
+        folders: [],
+        tracks: [],
+        paths: [],
+      });
+    groups.get(name).tracks.push(track);
+    groups.get(name).paths.push(track.path);
+  }
+
+  const roots =
+    view === 'folder'
+      ? [exportFolderTree(tracks)].filter(Boolean)
+      : [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const trees = roots
+    .map((root) => prune(root, new Set(visible.map((track) => track.path))))
+    .filter((tree) => tree.paths.length);
   return (
     <div className="usb-track-picker">
+      <label className="usb-picker-search">
+        Browse by
+        <select
+          aria-label="Browse export tracks by"
+          onChange={(event) => setView(event.target.value)}
+          value={view}
+        >
+          <option value="folder">Folder</option>
+          <option value="album">Album</option>
+          <option value="artist">Artist</option>
+          <option value="tracks">All tracks</option>
+        </select>
+      </label>
       <label className="usb-picker-search">
         <Search size={15} />
         <input
           aria-label="Search export folders and tracks"
           disabled={disabled}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search folders, tracks or artists…"
+          placeholder="Search folders, albums, tracks or artists…"
           value={search}
         />
       </label>
       <p className="usb-picker-help">
-        Folder selections include subfolders.{' '}
+        {view === 'folder'
+          ? 'Folder selections include subfolders.'
+          : 'Select a group to include its tracks.'}{' '}
         {query
           ? 'While searching, folder selection applies to matching tracks only.'
-          : 'Expand a folder to choose individual tracks.'}
+          : 'Expand a group to choose individual tracks.'}
       </p>
-      {tree?.paths.length ? (
-        <FolderSelection
-          disabled={disabled}
-          key={tree.path}
-          node={tree}
-          onChange={onChange}
-          searching={Boolean(query)}
-          selected={selected}
-        />
+      {trees.length ? (
+        trees.map((tree) => (
+          <FolderSelection
+            disabled={disabled}
+            key={`${view}:${tree.path}`}
+            kind={view === 'tracks' ? 'group' : view}
+            node={tree}
+            onChange={onChange}
+            searching={Boolean(query)}
+            selected={selected}
+          />
+        ))
       ) : (
         <p role="status">
           {tracks.length

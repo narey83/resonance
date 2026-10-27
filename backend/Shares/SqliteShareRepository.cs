@@ -39,8 +39,8 @@ namespace resonance.Shares
     using System.Collections.Generic;
     using System.Globalization;
     using System.Linq;
-    using Microsoft.Data.Sqlite;
     using Dapper;
+    using Microsoft.Data.Sqlite;
     using Serilog;
     using Soulseek;
 
@@ -49,6 +49,9 @@ namespace resonance.Shares
     /// </summary>
     public class SqliteShareRepository : IShareRepository
     {
+        internal const string CountFilesPrefixSql = """SELECT COUNT(*) FROM files WHERE maskedFilename LIKE @prefix ESCAPE '\'""";
+        internal const string CountDirectoriesPrefixSql = """SELECT COUNT(*) FROM directories WHERE name LIKE @prefix ESCAPE '\'""";
+
         /// <summary>
         ///     Initializes a new instance of the <see cref="SqliteShareRepository"/> class.
         /// </summary>
@@ -85,8 +88,8 @@ namespace resonance.Shares
                 }
                 else
                 {
-                    cmd = new SqliteCommand("SELECT COUNT(*) FROM directories WHERE name LIKE @prefix || '%'", conn);
-                    cmd.Parameters.AddWithValue("prefix", parentDirectory);
+                    cmd = new SqliteCommand(CountDirectoriesPrefixSql, conn);
+                    cmd.Parameters.AddWithValue("prefix", PrefixPattern(parentDirectory));
                 }
 
                 var reader = cmd.ExecuteReader();
@@ -118,8 +121,8 @@ namespace resonance.Shares
                 }
                 else
                 {
-                    cmd = new SqliteCommand("SELECT COUNT(*) FROM files WHERE maskedFilename LIKE @prefix || '%'", conn);
-                    cmd.Parameters.AddWithValue("prefix", parentDirectory);
+                    cmd = new SqliteCommand(CountFilesPrefixSql, conn);
+                    cmd.Parameters.AddWithValue("prefix", PrefixPattern(parentDirectory));
                 }
 
                 var reader = cmd.ExecuteReader();
@@ -190,6 +193,7 @@ namespace resonance.Shares
             conn.ExecuteNonQuery("CREATE INDEX IF NOT EXISTS idx_files_timestamp ON files(timestamp)");
             conn.ExecuteNonQuery("CREATE INDEX IF NOT EXISTS idx_directories_timestamp ON directories(timestamp)");
             conn.ExecuteNonQuery("CREATE INDEX IF NOT EXISTS idx_scans_timestamp ON scans(timestamp DESC)");
+            EnsureCountIndexes(conn);
 
             // migration: add tagsJson column to existing databases that predate this feature
             var hasTagsColumn = false;
@@ -414,6 +418,7 @@ namespace resonance.Shares
         public IEnumerable<string> FindMaskedFilenames(IEnumerable<string> originalFilenames)
         {
             using var connection = GetConnection();
+
             // SQLite share caches may contain absolute paths from scans or relative paths
             // from migrations. Resolve both representations of the same library file.
             return originalFilenames.SelectMany(path => new[] { path, resonance.Common.MusicPath.ToAbsolute(path), resonance.Common.MusicPath.ToRelative(path) })
@@ -883,6 +888,7 @@ namespace resonance.Shares
 
                 using var conn = new SqliteConnection(ConnectionString);
                 conn.Open();
+                EnsureCountIndexes(conn);
 
                 using var cmd = new SqliteCommand("SELECT name, sql from sqlite_master WHERE type = 'table';", conn);
 
@@ -959,6 +965,15 @@ namespace resonance.Shares
             {
                 Disposed = true;
             }
+        }
+
+        private static string PrefixPattern(string prefix) =>
+            prefix.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+
+        private static void EnsureCountIndexes(SqliteConnection connection)
+        {
+            connection.ExecuteNonQuery("CREATE INDEX IF NOT EXISTS idx_files_prefix_nocase ON files(maskedFilename COLLATE NOCASE)");
+            connection.ExecuteNonQuery("CREATE INDEX IF NOT EXISTS idx_directories_prefix_nocase ON directories(name COLLATE NOCASE)");
         }
 
         private SqliteConnection GetConnection(string connectionString = null)

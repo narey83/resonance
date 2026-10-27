@@ -1134,8 +1134,12 @@ const TrackTable = ({
                         <>
                           <span className="jb-track-num-text">{index + 1}</span>
                           <button
+                            aria-label={`Play ${track.title || track.filename}`}
                             className="jb-track-play-btn"
-                            onClick={() => playQueue(filteredQueue, vRow.index)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              playQueue(filteredQueue, vRow.index);
+                            }}
                             type="button"
                           >
                             <Play size={12} />

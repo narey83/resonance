@@ -1532,12 +1532,34 @@ html.amoled {
   color: var(--text-muted);
 }
 
+.user-reports-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: 10px 16px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.user-reports-ranges {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .user-reports-search-row {
   display: flex;
   align-items: center;
+  flex: 1 1 280px;
+  min-width: 0;
+  max-width: 460px;
   gap: 8px;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--border);
+}
+
+.user-reports-range-note {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .user-reports-reset {
@@ -1563,7 +1585,8 @@ html.amoled {
 
 .user-reports-search {
   width: 100%;
-  max-width: 300px;
+  min-width: 0;
+  flex: 1;
   padding: 5px 10px;
   background: var(--surface-input);
   border: 1px solid var(--border);
@@ -3399,3 +3422,48 @@ html.amoled {
   text-align: center;
   margin: 8px 0 0;
 }
+
+/* Calm global header: only connection, active work and transfer activity stay visible. */
+.status-strip { position: relative; overflow: visible; gap: 12px; padding: 0 18px; }
+.status-strip > .status-strip-sep { display: none; }
+.status-strip > .status-user-wrap { min-width: 0; }
+.status-strip > .status-user-wrap .status-comment-chip,
+.status-strip > .status-user-wrap .privilege { display: none; }
+.status-strip > .status-user-wrap .status-strip-username-btn { max-width: 220px; }
+.status-strip > .status-user-wrap .status-strip-text { overflow: hidden; text-overflow: ellipsis; }
+.status-scan-summary, .status-live-rates { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.status-strip > .enrichment-status > span:last-child:not(:first-of-type) { display: none; }
+.status-details { flex-shrink: 0; }
+.status-details > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; color: var(--text-primary); background: var(--bg-surface); }
+.status-details > summary::-webkit-details-marker { display: none; }
+.status-details > summary:hover, .status-details[open] > summary { background: var(--surface-hover); border-color: var(--accent); }
+.status-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.status-details[open] > summary svg { transform: rotate(180deg); }
+.status-details-panel { position: absolute; right: 12px; top: calc(100% + 8px); width: 340px; max-width: calc(100vw - 32px); max-height: 70vh; overflow: auto; white-space: normal; padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 12px 36px #0003; display: flex; flex-direction: column; align-items: stretch; gap: 14px; }
+.status-details-heading { font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-muted); }
+.status-details-panel .status-strip-sep { display: none; }
+.status-details-panel .status-strip-item { width: auto; min-height: 22px; flex-wrap: wrap; gap: 8px; }
+.status-details-panel .status-strip-item--shares .status-strip-text { flex: 1; }
+@media (max-width: 800px) {
+  .status-strip { gap: 8px; padding: 0 10px; }
+  .status-strip > .status-brand .status-brand-name { display: none; }
+  .status-strip > .enrichment-status { display: none; }
+  .status-strip > .status-user-wrap .status-strip-username-btn { max-width: 160px; }
+}
+@media (max-width: 480px) {
+  .status-strip { height: auto; min-height: 48px; flex-wrap: wrap; padding-block: 8px; }
+  .status-strip > .status-strip-spacer { min-width: 0; }
+  .status-scan-summary { font-size: 10px; }
+  .status-strip > .status-live-rates { display: none; }
+}
+
+/* A transient status panel must remain usable over the floating startup card. */
+.status-strip:has(.status-details[open]) { z-index: 10001; }
+
+/* Keep status meanings visible without hover tooltips. */
+.status-details-panel { width: 390px; gap: 8px; }
+.status-details-label { margin-top: 8px; font-weight: 600; color: var(--text-primary); }
+.status-details-panel .status-details-heading:not(:first-child) { margin-top: 12px; padding-top: 14px; border-top: 1px solid var(--border); }
+.status-details-panel .status-strip-text { white-space: normal; overflow: visible; }
+.status-details-panel .status-strip-speed { width: auto; min-width: 0; }
+.status-details-panel > .status-strip-btn--label { justify-content: flex-start; align-self: flex-start; }

@@ -70,7 +70,7 @@ const ConnectionScreen = ({
       className={
         variant === 'overlay'
           ? 'app-connecting app-connecting--panel'
-          : 'app-connecting'
+          : 'app-connecting dj-workspace'
       }
     >
       <div className="app-connecting-icon">
@@ -90,7 +90,7 @@ const ConnectionScreen = ({
       )}
       {onRetryNow && (
         <Button
-          className="hover-fx"
+          className="app-connection-retry hover-fx"
           onClick={onRetryNow}
           size="small"
         >
@@ -101,7 +101,7 @@ const ConnectionScreen = ({
   );
 
   if (variant === 'overlay') {
-    return <div className="app-connection-overlay">{panel}</div>;
+    return <div className="app-connection-overlay dj-workspace">{panel}</div>;
   }
 
   return panel;

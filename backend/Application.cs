@@ -153,11 +153,9 @@ namespace resonance
             IHttpClientFactory httpClientFactory,
             ConnectionStringDictionary connectionStrings,
             resonance.Network.GeoService geoService,
-            BlockedUsersService blockedUsersService,
-            resonance.Integrations.Fcm.IFcmPushService fcmPushService)
+            BlockedUsersService blockedUsersService)
         {
             GeoService = geoService;
-            FcmPushService = fcmPushService;
             Console.CancelKeyPress += (_, args) =>
             {
                 ShuttingDown = true;
@@ -301,6 +299,7 @@ namespace resonance
 
         private static bool ShuttingDown { get; set; } = false;
 
+        private resonance.Transfers.Uploads.UploadWorkLifetime TransferCallbacks { get; } = new();
         private ISoulseekClient Client { get; set; }
         private FileService Files { get; }
         private IRoomService RoomService { get; set; }
@@ -347,7 +346,6 @@ namespace resonance
         private BrowseRateLimiter BrowseRateLimiter { get; set; }
         private IHttpClientFactory HttpClientFactory { get; set; }
         private resonance.Network.GeoService GeoService { get; set; }
-        private resonance.Integrations.Fcm.IFcmPushService FcmPushService { get; set; }
         private TransferNetworkInfoStore NetworkInfoStore { get; }
         private bool UsePostgres { get; set; }
         private ConcurrentDictionary<string, IPEndPoint> UserEndpointCache { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -376,9 +374,9 @@ namespace resonance
         /// <returns>The operation context.</returns>
         public async Task CheckVersionAsync()
         {
-            if (Program.IsDevelopment)
+            if (Program.IsDevelopment || string.Equals(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"), "Development", StringComparison.OrdinalIgnoreCase))
             {
-                Log.Information("Skipping version check for Development build");
+                Log.Debug("Skipping version check for Development build");
                 return;
             }
 
@@ -473,8 +471,14 @@ namespace resonance
 
             Clock.Stop();
 
+            var uploadsStopped = Transfers.Uploads.StopAsync();
+            var callbacksStopped = TransferCallbacks.StopAsync();
             Client.Disconnect("Shutting down", new ApplicationShutdownException("Shutting down"));
+
+            // Keep the client and DI services alive until upload callbacks and cleanup have exited.
+            await Task.WhenAll(uploadsStopped, callbacksStopped);
             Client.Dispose();
+            await TransferCallbacks.DisposeAsync();
             Log.Information("Client stopped");
         }
 
@@ -489,7 +493,7 @@ namespace resonance
             // records to be updated if the application has started to shut down so that we can do this cleanup and properly
             // disposition them as having failed due to an application shutdown, instead of some random exception thrown while
             // things are being disposed.
-            var activeUploads = Transfers.Uploads.List(t => t.EndedAt == null || !TransferStateCategories.Completed.Contains(t.State), includeRemoved: true);
+            var activeUploads = Transfers.Uploads.ListForRecovery();
 
             foreach (var upload in activeUploads)
             {
@@ -497,10 +501,10 @@ namespace resonance
                 upload.State = TransferStates.Completed | TransferStates.Errored;
                 upload.EndedAt = DateTime.UtcNow;
                 upload.Exception = ApplicationShutdownTransferExceptionMessage;
-                Transfers.Uploads.Update(upload);
+                await TransferRecovery.RetryBusyWriteAsync(() => Transfers.Uploads.Update(upload), cancellationToken);
             }
 
-            var activeDownloads = Transfers.Downloads.List(t => t.EndedAt == null || !TransferStateCategories.Completed.Contains(t.State), includeRemoved: true);
+            var activeDownloads = Transfers.Downloads.ListForRecovery();
 
             foreach (var download in activeDownloads)
             {
@@ -508,7 +512,7 @@ namespace resonance
                 download.State = TransferStates.Completed | TransferStates.Errored;
                 download.EndedAt = DateTime.UtcNow;
                 download.Exception = ApplicationShutdownTransferExceptionMessage;
-                Transfers.Downloads.Update(download);
+                await TransferRecovery.RetryBusyWriteAsync(() => Transfers.Downloads.Update(download), cancellationToken);
             }
 
             /*
@@ -651,7 +655,9 @@ namespace resonance
                 {
                     try
                     {
+                        StartupProgress.Starting("shares", "Shared music", "Preparing the share cache before connecting to Soulseek");
                         await Shares.InitializeAsync(forceRescan: OptionsAtStartup.Flags.ForceShareScan);
+                        StartupProgress.Ready("shares", "Share cache is ready");
 
                         if (!isRelayAgent)
                         {
@@ -661,6 +667,7 @@ namespace resonance
                     }
                     catch (Exception)
                     {
+                        StartupProgress.Failed("shares", "Share preparation failed; check the server logs before reconnecting");
                         Log.Error("Failed to initialize shares. Sharing is disabled; not connecting to the Soulseek network until shares are ready (connect manually to override)");
                     }
                 });
@@ -1814,6 +1821,12 @@ namespace resonance
 
         private void Client_TransferStateChanged(object sender, TransferStateChangedEventArgs args)
         {
+            using var callback = TransferCallbacks.TryEnter();
+            if (callback is null || ShuttingDown)
+            {
+                return;
+            }
+
             var xfer = args.Transfer;
             var direction = xfer.Direction.ToString().ToUpper();
             var user = xfer.Username;
@@ -1845,19 +1858,40 @@ namespace resonance
 
             if (xfer.Direction == TransferDirection.Upload && xfer.State.HasFlag(TransferStates.Completed | TransferStates.Succeeded) && args.Transfer.AverageSpeed > 0)
             {
-                try
-                {
-                    _ = Client.SendUploadSpeedAsync(Convert.ToInt32(Math.Ceiling(args.Transfer.AverageSpeed)));
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, "Failed to report upload speed");
-                }
+                _ = ReportUploadSpeedAsync(args.Transfer.AverageSpeed);
+            }
+        }
+
+        private async Task ReportUploadSpeedAsync(double averageSpeed)
+        {
+            using var callback = TransferCallbacks.TryEnter();
+            if (callback is null)
+            {
+                return;
+            }
+
+            try
+            {
+                await Client.SendUploadSpeedAsync(Convert.ToInt32(Math.Ceiling(averageSpeed)));
+            }
+            catch (Exception) when (ShuttingDown)
+            {
+                // The connection is deliberately closed during shutdown.
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to report upload speed");
             }
         }
 
         private void Client_UserStatusChanged(object sender, UserStatus args)
         {
+            using var callback = TransferCallbacks.TryEnter();
+            if (callback is null || ShuttingDown)
+            {
+                return;
+            }
+
             // a peer going offline is the cue to eventually clear out the uploads parked for them, once we're sure
             // it isn't just a brief disconnect (see PurgeParkedUploadsAfterGracePeriodAsync). a peer returning is the
             // cue to restart uploads that were parked for a fresh disconnect (see UploadService.UploadAsync).
@@ -1879,9 +1913,15 @@ namespace resonance
 
         private async Task PurgeParkedUploadsAfterGracePeriodAsync(string username)
         {
+            using var callback = TransferCallbacks.TryEnter();
+            if (callback is null)
+            {
+                return;
+            }
+
             try
             {
-                await Task.Delay(ParkedUploadPurgeGracePeriod);
+                await Task.Delay(ParkedUploadPurgeGracePeriod, TransferCallbacks.Token);
 
                 // re-check presence rather than purging unconditionally; the peer may have already reconnected
                 // (and had their uploads resumed) during the grace period.
@@ -1889,6 +1929,10 @@ namespace resonance
                 {
                     Transfers.Uploads.PurgeParkedUploads(username);
                 }
+            }
+            catch (OperationCanceledException) when (TransferCallbacks.Token.IsCancellationRequested)
+            {
+                // No delayed purge may outlive application services.
             }
             catch (Exception ex)
             {
@@ -1898,6 +1942,12 @@ namespace resonance
 
         private async Task UpdateTransferNetworkInfoAsync(string username, string filename = null, TransferDirection direction = default)
         {
+            using var callback = TransferCallbacks.TryEnter();
+            if (callback is null)
+            {
+                return;
+            }
+
             try
             {
                 if (!UserEndpointCache.TryGetValue(username, out var endpoint))
@@ -1953,7 +2003,6 @@ namespace resonance
                 }
 
                 await NetworkInfoStore.UpsertAsync(username, ip, country, city, isVpn, lat, lon);
-
             }
             catch (Exception ex)
             {
@@ -2189,19 +2238,8 @@ namespace resonance
 
                 if (pendingRestart)
                 {
-                    // Only announce the transition into a pending restart. Re-firing on every
-                    // subsequent options reload would push again for a restart already outstanding.
-                    var wasPending = State.CurrentValue.PendingRestart;
-
                     State.SetValue(state => state with { PendingRestart = true });
                     Log.Information("One or more updated options requires an application restart to take effect.");
-
-                    if (!wasPending)
-                    {
-                        // Fire-and-forget: reaches an administrator's phone even when the app is
-                        // killed, which the SignalR state broadcast below cannot do.
-                        _ = FcmPushService.SendRestartRequiredAsync();
-                    }
                 }
 
                 if (PreviousOptions.Qos.Schedule.ToJson() != newOptions.Qos.Schedule.ToJson())
@@ -2234,6 +2272,12 @@ namespace resonance
         /// <returns>A Task resolving a SearchResponse, or null.</returns>
         private async Task<SearchResponse> SearchResponseResolver(string username, int token, SearchQuery query)
         {
+            // Incoming queries can outlive the connection while the host is stopping.
+            if (IsShuttingDown)
+            {
+                return null;
+            }
+
             Metrics.Search.Incoming.RequestsReceived.Inc(1);
             Metrics.Search.Incoming.CurrentRequestReceiveRate.CountUp(1);
 
@@ -2271,6 +2315,11 @@ namespace resonance
 
             try
             {
+                if (IsShuttingDown)
+                {
+                    return null;
+                }
+
                 var sw = new Stopwatch();
                 sw.Start();
 
@@ -2324,6 +2373,11 @@ namespace resonance
                         // or Soulseek.NET does it under the hood doesn't really matter.
                         try
                         {
+                            if (IsShuttingDown || !Client.State.HasFlag(SoulseekClientStates.Connected | SoulseekClientStates.LoggedIn))
+                            {
+                                return null;
+                            }
+
                             var endpoint = await Client.GetUserEndPointAsync(username);
 
                             if (Users.IsBlacklisted(username, endpoint.Address))
@@ -2338,6 +2392,11 @@ namespace resonance
                         }
                         catch (Soulseek.UserOfflineException)
                         {
+                            return null;
+                        }
+                        catch (InvalidOperationException) when (!Client.State.HasFlag(SoulseekClientStates.Connected | SoulseekClientStates.LoggedIn))
+                        {
+                            // The connection may close between the state check and endpoint lookup.
                             return null;
                         }
 
@@ -2375,6 +2434,11 @@ namespace resonance
                     // if no results, either return null or an instance of SearchResponse with a fileList of length 0 in either case, no
                     // response will be sent to the requestor.
                     return response;
+                }
+                catch (Exception) when (IsShuttingDown)
+                {
+                    // Returning no response avoids duplicate Application/Soulseek shutdown warnings.
+                    return null;
                 }
                 catch (Exception ex)
                 {

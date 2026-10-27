@@ -30,20 +30,22 @@
 import {
   HubConnectionBuilder,
   JsonHubProtocol,
-  LogLevel,
 } from '@microsoft/signalr';
+import { useAppMode } from '../store/appModeStore';
+import { createHubLogger, trackHubConnection } from '../lib/hubLifecycle';
 import { useAuthStore } from '../store/auth';
-import { getValidToken } from './client';
+import { createAccessTokenFactory } from './client';
 
 export const MIXTAPES_UPDATED = 'UPDATED';
 
 export const createMixtapesHubConnection = () => {
   const { serverUrl } = useAuthStore.getState();
-  if (!serverUrl) return null;
+  if (useAppMode.getState().mode !== 'remote' || !serverUrl || !useAuthStore.getState().accessToken) return null;
 
-  return new HubConnectionBuilder()
+  const logger = createHubLogger('playlists');
+  return trackHubConnection(new HubConnectionBuilder()
     .withUrl(`${serverUrl}/hub/mixtapes`, {
-      accessTokenFactory: () => getValidToken(),
+      accessTokenFactory: createAccessTokenFactory(),
     })
     .withAutomaticReconnect({
       nextRetryDelayInMilliseconds: (context) =>
@@ -54,6 +56,6 @@ export const createMixtapesHubConnection = () => {
     .withServerTimeout(120_000)
     .withKeepAliveInterval(15_000)
     .withHubProtocol(new JsonHubProtocol())
-    .configureLogging(LogLevel.Information)
-    .build();
+    .configureLogging(logger)
+    .build(), logger);
 };

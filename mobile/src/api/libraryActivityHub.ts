@@ -30,10 +30,11 @@
 import {
   HubConnectionBuilder,
   JsonHubProtocol,
-  LogLevel,
 } from '@microsoft/signalr';
+import { useAppMode } from '../store/appModeStore';
+import { createHubLogger, trackHubConnection } from '../lib/hubLifecycle';
 import { useAuthStore } from '../store/auth';
-import { getValidToken } from './client';
+import { createAccessTokenFactory } from './client';
 
 export const LIBRARY_ACTIVITY_SNAPSHOT        = 'SNAPSHOT';
 export const LIBRARY_ACTIVITY_LOVED           = 'TRACK_LOVED';
@@ -47,11 +48,12 @@ export const LIBRARY_ACTIVITY_SYNC_STATE      = 'SYNC_STATE';
 
 export const createLibraryActivityHubConnection = () => {
   const { serverUrl } = useAuthStore.getState();
-  if (!serverUrl) return null;
+  if (useAppMode.getState().mode !== 'remote' || !serverUrl || !useAuthStore.getState().accessToken) return null;
 
-  return new HubConnectionBuilder()
+  const logger = createHubLogger('library activity');
+  return trackHubConnection(new HubConnectionBuilder()
     .withUrl(`${serverUrl}/hub/libraryactivity`, {
-      accessTokenFactory: () => getValidToken(),
+      accessTokenFactory: createAccessTokenFactory(),
     })
     .withAutomaticReconnect({
       nextRetryDelayInMilliseconds: (context) =>
@@ -62,6 +64,6 @@ export const createLibraryActivityHubConnection = () => {
     .withServerTimeout(120_000)
     .withKeepAliveInterval(15_000)
     .withHubProtocol(new JsonHubProtocol())
-    .configureLogging(LogLevel.Information)
-    .build();
+    .configureLogging(logger)
+    .build(), logger);
 };

@@ -27,9 +27,14 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { shallowEqual } from '../lib/shallowEqual';
+import { onSessionReset, sessionGuard } from '../lib/sessionScope';
 import { create } from 'zustand';
 import * as chatAPI from '../api/chat';
 import type { Conversation, PrivateMessage } from '../api/chat';
+
+let listRequest = 0;
+const messageRequests = new Map<string, number>();
 
 interface ConversationStore {
   conversations: Conversation[];
@@ -51,28 +56,46 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
   totalUnread: 0,
 
   loadConversations: async () => {
+    const session = sessionGuard();
+    const request = ++listRequest;
+    const current = () => session() && request === listRequest;
     set({ isLoading: true });
     try {
       const conversations = await chatAPI.getAll();
+      if (!current()) return;
       const totalUnread = conversations.reduce((n, c) => n + c.unAcknowledgedMessageCount, 0);
       set({ conversations, totalUnread, isLoading: false });
     } catch {
+      if (!current()) return;
       set({ isLoading: false });
     }
   },
 
   loadMessages: async (username) => {
+    const session = sessionGuard();
+    const request = (messageRequests.get(username) ?? 0) + 1;
+    messageRequests.set(username, request);
+    const current = () => session() && messageRequests.get(username) === request;
     const messages = await chatAPI.getMessages(username);
-    set((s) => ({ messages: { ...s.messages, [username]: messages } }));
+    if (!current()) return;
+    set((s) => {
+      const prev = s.messages[username];
+      return prev && prev.length === messages.length && prev.every((m, i) => shallowEqual(m, messages[i]))
+        ? s : { messages: { ...s.messages, [username]: messages } };
+    });
   },
 
   sendMessage: async (username, text) => {
+    const current = sessionGuard();
     await chatAPI.send(username, text);
+    if (!current()) return;
     await get().loadMessages(username);
+    if (!current()) return;
     await get().loadConversations();
   },
 
   acknowledge: async (username) => {
+    const current = sessionGuard();
     const prev = get().conversations.find((c) => c.username === username);
     const delta = prev?.unAcknowledgedMessageCount ?? 0;
     // Optimistically clear the badge before the API call
@@ -86,14 +109,19 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
     }));
     try {
       await chatAPI.acknowledge(username);
+      if (!current()) return;
     } catch {
+      if (!current()) return;
       // Restore on failure
       await get().loadConversations();
+      if (!current()) return;
     }
   },
 
   removeConversation: async (username) => {
+    const current = sessionGuard();
     await chatAPI.remove(username);
+    if (!current()) return;
     set((s) => ({
       conversations: s.conversations.filter((c) => c.username !== username),
     }));
@@ -101,3 +129,6 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
   },
 }));
 
+onSessionReset(() => {
+  useConversationStore.setState(useConversationStore.getInitialState(), true);
+});

@@ -30,8 +30,8 @@
 namespace resonance.Core.LogStore;
 
 using System;
-using System.Linq;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -42,7 +42,7 @@ using Npgsql;
 using Serilog;
 
 /// <summary>
-///     Drains <see cref="Program.LogEmitted"/> into PostgreSQL: a bounded, drop-oldest queue between
+///     Drains <see cref="Program.LogEmitted"/> into the configured log database: a bounded, drop-oldest queue between
 ///     the Serilog emit path and the database (requirement: logging must never block the thread that
 ///     emitted it), batched inserts (requirement: never one INSERT per event), and periodic partition
 ///     maintenance (create partitions ahead of need, drop expired ones -- see
@@ -64,14 +64,18 @@ public class LogPersistenceService : BackgroundService
     // batch-size requirement (100-500) -- these aren't exposed as CLI/env options since nothing
     // outside this file has a reason to tune them.
     internal const int BatchSize = 200;
+    internal const int RetentionBatchSize = 1000;
     private static readonly TimeSpan BatchLinger = TimeSpan.FromMilliseconds(500);
-    private static readonly TimeSpan MaintenanceInterval = TimeSpan.FromHours(1);
+    private static readonly TimeSpan MaintenanceInterval = TimeSpan.FromMinutes(1);
+    private static long nextSqliteId = DateTime.UtcNow.Ticks;
+    private readonly CancellationTokenSource maintenanceCancellation = new();
 
     private readonly Channel<LogRecord> channel = Channel.CreateBounded<LogRecord>(new BoundedChannelOptions(ChannelCapacity)
     {
         FullMode = BoundedChannelFullMode.DropOldest,
         SingleReader = true,
     });
+    private int disposed;
 
     public LogPersistenceService(
         IDbContextFactory<LogsDbContext> dbContextFactory,
@@ -82,6 +86,8 @@ public class LogPersistenceService : BackgroundService
         ConnectionStrings = connectionStrings;
         Options = options;
     }
+
+    internal TimeSpan ShutdownFlushTimeout { get; init; } = TimeSpan.FromSeconds(5);
 
     private IDbContextFactory<LogsDbContext> DbContextFactory { get; }
 
@@ -97,11 +103,45 @@ public class LogPersistenceService : BackgroundService
         return base.StartAsync(cancellationToken);
     }
 
-    public override Task StopAsync(CancellationToken cancellationToken)
+    public override async Task StopAsync(CancellationToken cancellationToken)
     {
         Program.LogEmitted -= OnLogEmitted;
         channel.Writer.TryComplete();
-        return base.StopAsync(cancellationToken);
+        maintenanceCancellation.Cancel();
+
+        // The host deadline may already have expired while other services stopped. Give the
+        // queued and in-flight log batches their own bounded window before cancelling the writer.
+        using var flushDeadline = new CancellationTokenSource(ShutdownFlushTimeout);
+        try
+        {
+            if (ExecuteTask is not null)
+            {
+                await ExecuteTask.WaitAsync(flushDeadline.Token);
+            }
+        }
+        catch (OperationCanceledException) when (flushDeadline.IsCancellationRequested)
+        {
+            Log.Warning("Timed out draining database log entries after {Seconds} seconds; some entries may not have been persisted", ShutdownFlushTimeout.TotalSeconds);
+        }
+        finally
+        {
+            // Only cancel background writes after the drain has finished or its real deadline elapsed.
+            await base.StopAsync(flushDeadline.Token);
+        }
+    }
+
+    public override void Dispose()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) != 0)
+        {
+            return;
+        }
+
+        Program.LogEmitted -= OnLogEmitted;
+        channel.Writer.TryComplete();
+        maintenanceCancellation.Cancel();
+        base.Dispose();
+        maintenanceCancellation.Dispose();
     }
 
     // Never blocks: TryWrite on a bounded DropOldest channel always succeeds, evicting the oldest
@@ -110,9 +150,21 @@ public class LogPersistenceService : BackgroundService
     // Program.LogEmitted event to do it.
     internal void Enqueue(LogRecord record) => channel.Writer.TryWrite(record);
 
+    internal async Task<int> PruneSqliteBatchAsync(DateTime cutoff, CancellationToken stoppingToken)
+    {
+        await using var context = await DbContextFactory.CreateDbContextAsync(stoppingToken);
+        return await context.Database.ExecuteSqlInterpolatedAsync($"""
+            DELETE FROM "LogEntries" WHERE ("Timestamp","Id") IN (
+                SELECT "Timestamp","Id" FROM "LogEntries"
+                WHERE "Timestamp" < {cutoff}
+                ORDER BY "Timestamp","Id" LIMIT {RetentionBatchSize})
+            """, stoppingToken);
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await RunPartitionMaintenanceAsync(stoppingToken);
+        using var maintenance = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, maintenanceCancellation.Token);
+        await RunPartitionMaintenanceAsync(maintenance.Token);
         var lastMaintenance = DateTime.UtcNow;
 
         while (!stoppingToken.IsCancellationRequested)
@@ -137,9 +189,9 @@ public class LogPersistenceService : BackgroundService
                 break;
             }
 
-            if (DateTime.UtcNow - lastMaintenance > MaintenanceInterval)
+            if (!maintenance.IsCancellationRequested && DateTime.UtcNow - lastMaintenance > MaintenanceInterval)
             {
-                await RunPartitionMaintenanceAsync(stoppingToken);
+                await RunPartitionMaintenanceAsync(maintenance.Token);
                 lastMaintenance = DateTime.UtcNow;
             }
         }
@@ -175,8 +227,19 @@ public class LogPersistenceService : BackgroundService
     {
         var batch = new List<LogRecord>(BatchSize);
 
-        if (!await channel.Reader.WaitToReadAsync(stoppingToken) || !channel.Reader.TryRead(out var first))
+        LogRecord first;
+        using var maintenanceCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        maintenanceCts.CancelAfter(MaintenanceInterval);
+        try
         {
+            if (!await channel.Reader.WaitToReadAsync(maintenanceCts.Token) || !channel.Reader.TryRead(out first))
+            {
+                return batch;
+            }
+        }
+        catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
+        {
+            // Let the outer loop run retention even when logging is completely quiet.
             return batch;
         }
 
@@ -226,7 +289,18 @@ public class LogPersistenceService : BackgroundService
 
             // Pure inserts of untracked entities -- nothing here needs change detection.
             context.ChangeTracker.AutoDetectChangesEnabled = false;
-            context.Entries.AddRange(batch.ConvertAll(ToEntry));
+            var entries = batch.ConvertAll(ToEntry);
+            if (!ConnectionStrings.UsePostgres)
+            {
+                // SQLite cannot auto-generate one component of this composite key.
+                // Concurrent log events can share a timestamp; keep every event distinct.
+                foreach (var entry in entries)
+                {
+                    entry.Id = Interlocked.Increment(ref nextSqliteId);
+                }
+            }
+
+            context.Entries.AddRange(entries);
 
             await context.SaveChangesAsync(stoppingToken);
         }
@@ -242,15 +316,41 @@ public class LogPersistenceService : BackgroundService
         {
             if (!ConnectionStrings.UsePostgres)
             {
-                var retention = Options.CurrentValue.Retention.Logs;
-                if (retention > 0)
+                var retention = Options.CurrentValue.Retention;
+                var now = DateTime.UtcNow;
+                for (var batch = 0; batch < 32; batch++)
                 {
-                    await using var context = await DbContextFactory.CreateDbContextAsync(stoppingToken);
-                    var cutoff = DateTime.UtcNow.AddDays(-retention);
-                    await context.Entries.Where(e => e.Timestamp < cutoff).ExecuteDeleteAsync(stoppingToken);
+                    await using var db = await DbContextFactory.CreateDbContextAsync(stoppingToken);
+                    var count = await LogRollupStore.CompactBatchAsync(
+                        db, now.AddDays(-retention.Logs),
+                        now.AddDays(-Math.Max(retention.Logs, retention.WarningLogs)),
+                        now.AddDays(-Math.Max(retention.Logs, retention.ErrorLogs)),
+                        now.AddDays(-retention.LogSummaries), stoppingToken);
+                    if (count < RetentionBatchSize)
+                    {
+                        var legacyExists = await db.Database.SqlQueryRaw<long>(
+                            "SELECT COUNT(*) AS \"Value\" FROM sqlite_master WHERE type='table' AND name='legacy_public_LogEntries'").SingleAsync(stoppingToken);
+                        if (legacyExists != 0)
+                        {
+                            count += await LogRollupStore.CompactBatchAsync(
+                                db, now.AddDays(-retention.Logs),
+                                now.AddDays(-Math.Max(retention.Logs, retention.WarningLogs)),
+                                now.AddDays(-Math.Max(retention.Logs, retention.ErrorLogs)),
+                                now.AddDays(-retention.LogSummaries), stoppingToken, legacy: true);
+                        }
+                    }
+
+                    if (count < RetentionBatchSize)
+                    {
+                        break;
+                    }
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(50), stoppingToken);
                 }
+
                 return;
             }
+
             await using var connection = new NpgsqlConnection(ConnectionStrings[Database.Logs]);
             await connection.OpenAsync(stoppingToken);
 
@@ -274,6 +374,10 @@ public class LogPersistenceService : BackgroundService
                     Log.Information("Dropped expired log partition {Partition}", name);
                 }
             }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Retention is background housekeeping; final writes have priority during shutdown.
         }
         catch (Exception ex)
         {

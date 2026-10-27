@@ -291,7 +291,7 @@ namespace resonance.Dlna
 
             var sb = new StringBuilder();
             sb.Append(Container("T", "0", "All Tracks", "object.container.storageFolder", trackTotal, searchable: true));
-            sb.Append(Container("MX", "0", "Mixtapes", "object.container.storageFolder", mixtapeCount, searchable: true));
+            sb.Append(Container("MX", "0", "Playlists", "object.container.storageFolder", mixtapeCount, searchable: true));
             sb.Append(Container("F", "0", "Folders", "object.container.storageFolder", folderCount, searchable: true));
             sb.Append(Container("A", "0", "Albums", "object.container.album.musicAlbum", albumCount, searchable: true));
             sb.Append(Container("R", "0", "Artists", "object.container.person.musicArtist", artistCount, searchable: true));

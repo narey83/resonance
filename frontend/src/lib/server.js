@@ -75,7 +75,7 @@ export const checkPort = async () => {
 // The picture lives at a fixed path, so callers pass a cache-busting version
 // (e.g. a timestamp) to force the browser to re-fetch after a change.
 export const pictureUrl = (version) =>
-  `${apiBaseUrl}/server/picture${version ? `?v=${version}` : ''}`;
+  `${apiBaseUrl}/server/picture?size=192${version ? `&v=${version}` : ''}`;
 
 export const uploadPicture = (file) => {
   const form = new FormData();

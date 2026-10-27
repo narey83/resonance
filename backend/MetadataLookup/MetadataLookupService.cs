@@ -69,6 +69,7 @@ namespace resonance.MetadataLookup
         public MetadataLookupService(IShareService shareService, IOptionsMonitor<resonance.Options> optionsMonitor, MusicBrainzClient musicBrainz, DiscogsClient discogs, LastfmClient lastfm, DeezerClient deezer, EventBus eventBus, IMusicLibraryService musicLibrary = null)
         {
             ShareService = shareService;
+            IndexGate = new EnrichmentIndexGate(() => ShareService.StateMonitor.CurrentValue);
             Options = optionsMonitor;
             MusicBrainz = musicBrainz;
             Discogs = discogs;
@@ -90,7 +91,8 @@ namespace resonance.MetadataLookup
                 {
                     var done = Written + Skipped + Failed;
                     var progress = Total > 0 ? (double)done / Total : 0;
-                    var eta = EstimateEtaSeconds(done);
+                    var paused = Scanning && IndexGate.Blocked;
+                    var eta = paused ? 0 : EstimateEtaSeconds(done);
 
                     var recent = InFlightItems.Values
                         .Concat(RecentItems)
@@ -108,12 +110,15 @@ namespace resonance.MetadataLookup
                         Progress: progress,
                         InFlight: InFlightItems.Count,
                         EtaSeconds: eta,
-                        Recent: recent);
+                        Recent: recent,
+                        Paused: paused,
+                        PauseReason: paused ? "Waiting for share indexing" : null);
                 }
             }
         }
 
         private IShareService ShareService { get; }
+        private EnrichmentIndexGate IndexGate { get; }
         private IOptionsMonitor<resonance.Options> Options { get; }
         private MusicBrainzClient MusicBrainz { get; }
         private DiscogsClient Discogs { get; }
@@ -205,6 +210,10 @@ namespace resonance.MetadataLookup
                 if (o.MetadataLookup.Enabled)
                 {
                     Signal();
+                }
+                else
+                {
+                    RequestStop();
                 }
             });
 
@@ -445,6 +454,7 @@ namespace resonance.MetadataLookup
 
             foreach (var provider in EnabledProviders())
             {
+                await IndexGate.WaitAsync(ct);
                 var match = await QueryProviderAsync(provider, artist, title, album, minScore, ct);
                 if (match == null)
                 {
@@ -570,8 +580,6 @@ namespace resonance.MetadataLookup
 
         private async Task RunPassAsync(CancellationToken ct, bool fullRescan = false)
         {
-            // Don't start a fresh pass while a sanitization scan runs; retry shortly so enrichment
-            // resumes once it finishes. A pass already in flight is safe to continue (FileWriteLock).
             if (SanitizationActive)
             {
                 Log.Information("Metadata enrichment deferred — tag sanitization in progress.");
@@ -579,13 +587,16 @@ namespace resonance.MetadataLookup
                 return;
             }
 
-            var candidates = BuildCandidates(fullRescan);
-
+            // Install the cancellation source before waiting so Stop/disable also cancels a queued pass.
+            using var passCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            PassCts = passCts;
+            var passToken = passCts.Token;
+            var registered = false;
             lock (StateLock)
             {
                 Scanning = true;
                 Completed = false;
-                Total = candidates.Count;
+                Total = 0;
                 Written = 0;
                 Skipped = 0;
                 Failed = 0;
@@ -594,29 +605,24 @@ namespace resonance.MetadataLookup
                 RecentItems.Clear();
             }
 
-            if (candidates.Count == 0)
-            {
-                lock (StateLock)
-                {
-                    Scanning = false;
-                    Completed = true;
-                }
-
-                return;
-            }
-
-            Log.Information("Metadata enrichment pass started for {Count} track(s)", candidates.Count);
-            MusicLibrary?.RegisterQueue("metadata");
-
-            // A pass over a large backlog can run for days; give it its own token so RequestStop()
-            // (and a mid-pass config disable, checked in WorkerAsync) can end just this pass
-            // without tearing down the service.
-            using var passCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            PassCts = passCts;
-            var passToken = passCts.Token;
-
             try
             {
+                // Do not enumerate the share/tag caches while their index is being rebuilt.
+                await IndexGate.WaitAsync(passToken);
+                var candidates = BuildCandidates(fullRescan);
+                lock (StateLock)
+                {
+                    Total = candidates.Count;
+                }
+
+                if (candidates.Count == 0)
+                {
+                    return;
+                }
+
+                Log.Information("Metadata enrichment pass started for {Count} track(s)", candidates.Count);
+                MusicLibrary?.RegisterQueue("metadata");
+                registered = true;
                 var workers = Math.Max(1, Options.CurrentValue.MetadataLookup.Workers);
                 var channel = Channel.CreateUnbounded<Candidate>();
                 foreach (var candidate in candidates)
@@ -625,21 +631,23 @@ namespace resonance.MetadataLookup
                 }
 
                 channel.Writer.Complete();
-
                 var tasks = Enumerable.Range(0, workers)
                     .Select(_ => Task.Run(() => WorkerAsync(channel.Reader, passToken), passToken))
                     .ToArray();
-
                 await Task.WhenAll(tasks);
             }
             catch (OperationCanceledException)
             {
-                // expected on cancel
+                // expected on stop, disable or shutdown
             }
             finally
             {
                 PassCts = null;
-                MusicLibrary?.DeregisterQueue("metadata");
+                if (registered)
+                {
+                    MusicLibrary?.DeregisterQueue("metadata");
+                }
+
                 AttemptCache.Save();
                 lock (StateLock)
                 {
@@ -665,11 +673,13 @@ namespace resonance.MetadataLookup
                     break;
                 }
 
+                await IndexGate.WaitAsync(ct);
                 MarkLooking(candidate);
 
                 try
                 {
                     var match = await FindBestAsync(candidate.Artist, candidate.Title, candidate.Album, minScore, ct);
+                    await IndexGate.WaitAsync(ct);
 
                     if (match == null)
                     {
@@ -682,6 +692,8 @@ namespace resonance.MetadataLookup
                         continue;
                     }
 
+                    // Keep an already-fetched match in memory until indexing finishes.
+                    await IndexGate.WaitAsync(ct);
                     var written = WriteMatch(candidate.Masked, match);
 
                     // record against the post-write identity so the enriched file isn't re-queried

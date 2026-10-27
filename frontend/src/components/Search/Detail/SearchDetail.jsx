@@ -75,6 +75,7 @@ import {
   Layers,
   Lock,
   Play,
+  SlidersHorizontal,
   X,
 } from 'lucide-react';
 import React, {
@@ -139,9 +140,10 @@ const FileRow = React.memo(({ checked, disabled, file, onToggleFile }) => {
     <div className="sr-file-row">
       <div className="sr-file-check">
         <input
+          aria-label={`Select ${getFileName(file.filename)}`}
           checked={checked}
           className="sr-checkbox"
-          disabled={disabled}
+          disabled={disabled || file.locked}
           onChange={handleToggle}
           type="checkbox"
         />
@@ -180,7 +182,9 @@ const FileRow = React.memo(({ checked, disabled, file, onToggleFile }) => {
 
       <div className="sr-file-quality">{formatAttributes(file)}</div>
       <div className="sr-file-size">{formatBytes(file.size)}</div>
-      <div className="sr-file-length">{formatSeconds(file.length)}</div>
+      <div className="sr-file-length">
+        {file.length > 0 ? formatSeconds(file.length) : '—'}
+      </div>
 
       <div className="sr-file-source">
         <span
@@ -203,7 +207,8 @@ const FolderGroup = ({
   disabled,
   downloadedFolders,
   group,
-  initiallyOpen = true,
+  initiallyOpen = false,
+  onDownload,
   onToggleFile,
   onToggleFolder,
   selected,
@@ -241,7 +246,10 @@ const FolderGroup = ({
     [group.files, extraFiles],
   );
 
-  const allSelected = allGroupFiles.every((f) => selected.has(fileKey(f)));
+  const selectableFiles = allGroupFiles.filter((file) => !file.locked);
+  const allSelected =
+    selectableFiles.length > 0 &&
+    selectableFiles.every((f) => selected.has(fileKey(f)));
   const someSelected =
     !allSelected && allGroupFiles.some((f) => selected.has(fileKey(f)));
 
@@ -285,14 +293,17 @@ const FolderGroup = ({
     <div className="sr-folder-group">
       <div className="sr-folder-header">
         <input
+          aria-label={`Select matched files from ${username}`}
           checked={allSelected}
           className="sr-checkbox sr-folder-checkbox"
-          disabled={disabled}
-          onChange={() => onToggleFolder(allGroupFiles)}
+          disabled={disabled || selectableFiles.length === 0}
+          onChange={() => onToggleFolder(selectableFiles)}
           ref={checkboxRef}
           type="checkbox"
         />
         <button
+          aria-expanded={open}
+          aria-label={`${open ? 'Hide' : 'Show'} files from ${username}`}
           className="sr-folder-chevron"
           onClick={() => setOpen((v) => !v)}
           type="button"
@@ -324,12 +335,28 @@ const FolderGroup = ({
         )}
 
         <span className="sr-folder-meta">
-          {group.files.length} {group.files.length === 1 ? 'file' : 'files'}
+          {group.files.length} {group.files.length === 1 ? 'file' : 'files'} ·{' '}
+          {formatBytes(
+            group.files.reduce((sum, file) => sum + (file.size ?? 0), 0),
+          )}{' '}
+          ·{' '}
+          {[
+            ...new Set(
+              group.files
+                .filter((file) => isAudio(file.filename))
+                .map((file) => file.filename.split('.').pop().toUpperCase()),
+            ),
+          ].join(' / ') || 'Other files'}
           {' · '}
           <span
             className={`sr-slot-dot${group.hasFreeSlot ? ' sr-slot-dot--free' : ''}`}
           />
-          {formatBitrate(group.bestSpeed)}
+          {group.hasFreeSlot
+            ? 'Free slot'
+            : Number.isFinite(group.bestQueue)
+              ? `Queue ${group.bestQueue}`
+              : 'Queue unknown'}{' '}
+          · {formatBitrate(group.bestSpeed)}
         </span>
 
         {presence === 'Offline' ? (
@@ -347,6 +374,15 @@ const FolderGroup = ({
           />
         ) : null}
         {username && <UsernameLink username={username} />}
+        <button
+          className="sr-source-download"
+          disabled={disabled || !allGroupFiles.some((file) => !file.locked)}
+          onClick={() => onDownload(allGroupFiles)}
+          title="Choose a destination for the matched files from this source. Browse the full folder to find additional files."
+          type="button"
+        >
+          <Download size={14} /> Download files
+        </button>
 
         <button
           className={`sr-folder-browse-btn${browseState === 'done' && extraFiles.length > 0 ? ' sr-folder-browse-btn--has-extra' : ''}`}
@@ -417,38 +453,27 @@ const AlbumGroup = React.memo(
     albumGroup,
     disabled,
     downloadedFolders,
+    onDownload,
     onToggleFile,
     onToggleFolder,
     selected,
   }) => {
     const [open, setOpen] = useState(true);
-    const checkboxRef = useRef(null);
-
-    const allFiles = useMemo(
-      () => albumGroup.folders.flatMap((g) => g.files),
-      [albumGroup.folders],
-    );
-
-    const allSelected = allFiles.every((f) => selected.has(fileKey(f)));
-    const someSelected =
-      !allSelected && allFiles.some((f) => selected.has(fileKey(f)));
-
-    useEffect(() => {
-      if (checkboxRef.current) checkboxRef.current.indeterminate = someSelected;
-    }, [someSelected]);
-
+    const representativeFiles = albumGroup.folders[0]?.files ?? [];
+    const formats = [
+      ...new Set(
+        albumGroup.folders
+          .flatMap((folder) => folder.files)
+          .filter((file) => isAudio(file.filename))
+          .map((file) => file.filename.split('.').pop().toUpperCase()),
+      ),
+    ];
     return (
       <div className="sr-album-group">
         <div className="sr-album-header">
-          <input
-            checked={allSelected}
-            className="sr-checkbox"
-            disabled={disabled}
-            onChange={() => onToggleFolder(allFiles)}
-            ref={checkboxRef}
-            type="checkbox"
-          />
           <button
+            aria-expanded={open}
+            aria-label={`${open ? 'Hide' : 'Compare'} sources for ${albumGroup.displayName}`}
             className="sr-album-chevron"
             onClick={() => setOpen((v) => !v)}
             type="button"
@@ -460,7 +485,26 @@ const AlbumGroup = React.memo(
             strokeWidth={1.75}
             style={{ color: 'var(--text-muted)', flexShrink: 0 }}
           />
-          <span className="sr-album-name">{albumGroup.displayName}</span>
+          <button
+            aria-expanded={open}
+            className="sr-album-name"
+            onClick={() => setOpen((value) => !value)}
+            type="button"
+          >
+            {albumGroup.displayName}
+            <small>
+              {formats.join(' / ') || 'Other files'} ·{' '}
+              {representativeFiles.length} matched{' '}
+              {representativeFiles.length === 1 ? 'file' : 'files'} ·{' '}
+              {formatBytes(
+                representativeFiles.reduce(
+                  (sum, file) => sum + (file.size ?? 0),
+                  0,
+                ),
+              )}{' '}
+              in leading source
+            </small>
+          </button>
           <span className="sr-album-meta">
             {albumGroup.folders.length}{' '}
             {albumGroup.folders.length === 1 ? 'source' : 'sources'}
@@ -468,7 +512,8 @@ const AlbumGroup = React.memo(
             <span
               className={`sr-slot-dot${albumGroup.hasFreeSlot ? ' sr-slot-dot--free' : ''}`}
             />
-            {formatBitrate(albumGroup.bestSpeed)}
+            {albumGroup.hasFreeSlot ? 'Free slot available' : 'Queued sources'}{' '}
+            · {formatBitrate(albumGroup.bestSpeed)}
           </span>
         </div>
 
@@ -479,8 +524,9 @@ const AlbumGroup = React.memo(
                 disabled={disabled}
                 downloadedFolders={downloadedFolders}
                 group={fg}
-                initiallyOpen={false}
-                key={fg.directory}
+                initiallyOpen
+                key={fg.sourceKey}
+                onDownload={onDownload}
                 onToggleFile={onToggleFile}
                 onToggleFolder={onToggleFolder}
                 selected={selected}
@@ -498,6 +544,7 @@ const AlbumGroup = React.memo(
 const SearchDetail = ({
   creating,
   disabled,
+  initialFilters = {},
   onCreate,
   onRemove,
   onRestart,
@@ -548,9 +595,14 @@ const SearchDetail = ({
   }, []);
 
   const [resultSort, setResultSort] = useState('uploadSpeed');
-  const [activeFilters, setActiveFilters] = useState(new Set());
-  const [selectedExtensions, setSelectedExtensions] = useState([]);
-  const [groupSimilar, setGroupSimilar] = useState(false);
+  const [activeFilters, setActiveFilters] = useState(
+    new Set(initialFilters.flags ?? []),
+  );
+  const [selectedExtensions, setSelectedExtensions] = useState(
+    initialFilters.extensions ?? [],
+  );
+  const [groupSimilar, setGroupSimilar] = useState(true);
+  const [refineOpen, setRefineOpen] = useState(false);
   const [filenameOnly, setFilenameOnly] = useState(false);
 
   const terms = useMemo(
@@ -643,6 +695,7 @@ const SearchDetail = ({
           _hasFreeUploadSlot: r.hasFreeUploadSlot,
           _relevance: scoreFilename(terms, f.filename),
           _uploadSpeed: r.uploadSpeed,
+          _queueLength: r.queueLength,
           _username: r.username,
         })),
       );
@@ -697,10 +750,13 @@ const SearchDetail = ({
 
     for (const file of filteredByFilename) {
       const directory = file._directory;
+      const sourceKey = `${file._username}::${directory}`;
 
-      if (!byDirectory.has(directory)) {
-        byDirectory.set(directory, {
+      if (!byDirectory.has(sourceKey)) {
+        byDirectory.set(sourceKey, {
+          sourceKey,
           bestSpeed: 0,
+          bestQueue: Number.POSITIVE_INFINITY,
           directory,
           files: [],
           hasFreeSlot: false,
@@ -709,8 +765,12 @@ const SearchDetail = ({
         });
       }
 
-      const group = byDirectory.get(directory);
+      const group = byDirectory.get(sourceKey);
       group.files.push(file);
+      group.bestQueue = Math.min(
+        group.bestQueue,
+        file._queueLength ?? Number.POSITIVE_INFINITY,
+      );
 
       if (file._uploadSpeed > group.bestSpeed)
         group.bestSpeed = file._uploadSpeed;
@@ -724,18 +784,20 @@ const SearchDetail = ({
     return [...byDirectory.values()].sort((a, b) => {
       if (terms.length && b.relevance !== a.relevance)
         return b.relevance - a.relevance;
-      return b.bestSpeed - a.bestSpeed;
+      return resultSort === 'queueLength'
+        ? a.bestQueue - b.bestQueue || b.bestSpeed - a.bestSpeed
+        : b.bestSpeed - a.bestSpeed;
     });
-  }, [filteredByFilename, terms]);
+  }, [filteredByFilename, resultSort, terms]);
 
   const albumGroups = useMemo(() => {
     if (!groupSimilar) return null;
     const grouped = groupFoldersByName(folderGroups);
-    if (terms.length === 0) return grouped;
-    // groupFoldersByName sorts by source count; re-rank by relevance first.
+    // Keep relevance first, then honor the selected source ordering.
     return [...grouped]
       .map((album) => ({
         ...album,
+        bestQueue: Math.min(...album.folders.map((folder) => folder.bestQueue)),
         relevance: album.folders.reduce(
           (max, f) => Math.max(max, f.relevance ?? 0),
           0,
@@ -744,9 +806,11 @@ const SearchDetail = ({
       .sort((a, b) =>
         b.relevance !== a.relevance
           ? b.relevance - a.relevance
-          : b.folders.length - a.folders.length,
+          : resultSort === 'queueLength'
+            ? a.bestQueue - b.bestQueue || b.bestSpeed - a.bestSpeed
+            : b.bestSpeed - a.bestSpeed,
       );
-  }, [folderGroups, groupSimilar, terms]);
+  }, [folderGroups, groupSimilar, resultSort]);
 
   const visibleGroups =
     groupSimilar && albumGroups ? albumGroups : folderGroups;
@@ -757,7 +821,7 @@ const SearchDetail = ({
     getItemKey: (index) =>
       groupSimilar && albumGroups
         ? visibleGroups[index].normalizedName
-        : visibleGroups[index].directory,
+        : visibleGroups[index].sourceKey,
     getScrollElement: () => resultsScrollRef.current,
     overscan: 6,
   });
@@ -793,6 +857,12 @@ const SearchDetail = ({
       else next.add(key);
       return next;
     });
+  }, []);
+
+  const prepareDownload = useCallback((files) => {
+    const available = files.filter((file) => !file.locked);
+    setSelected(new Map(available.map((file) => [fileKey(file), file])));
+    setPickerOpen(true);
   }, []);
 
   const downloadSelected = async (folderOverride) => {
@@ -850,7 +920,7 @@ const SearchDetail = ({
     setPickerOpen(false);
     setActiveFilters(new Set());
     setSelectedExtensions([]);
-    setGroupSimilar(false);
+    setGroupSimilar(true);
     setFilenameOnly(false);
     setMetaFilters({ artist: '', folder: '', title: '', year: '' });
     lastSuggestionRef.current = '';
@@ -877,7 +947,9 @@ const SearchDetail = ({
   }
 
   return (
-    <div className="sr-detail">
+    <div
+      className={`sr-detail ${groupSimilar ? 'sr-release-view' : 'sr-compact-view'}`}
+    >
       <SearchDetailHeader
         creating={creating}
         disabled={disabled}
@@ -911,17 +983,93 @@ const SearchDetail = ({
 
       {loaded && (
         <>
-          <div className="sr-filters">
-            <div className="sr-filter-row">
-              <select
-                className="sr-filter-select"
-                onChange={(e) => setResultSort(e.target.value)}
-                value={resultSort}
+          <div className="sr-results-toolbar">
+            <div
+              aria-label="Result view"
+              className="sr-view-switch"
+            >
+              <button
+                aria-pressed={groupSimilar}
+                onClick={() => setGroupSimilar(true)}
+                type="button"
               >
-                <option value="uploadSpeed">Fastest Upload Speed</option>
-                <option value="queueLength">Shortest Queue</option>
-              </select>
+                <Layers size={15} /> Releases
+              </button>
+              <button
+                aria-pressed={!groupSimilar}
+                onClick={() => setGroupSimilar(false)}
+                type="button"
+              >
+                Compact files
+              </button>
+            </div>
+            <select
+              aria-label="Sort received files"
+              className="sr-filter-select"
+              onChange={(e) => setResultSort(e.target.value)}
+              value={resultSort}
+            >
+              <option value="uploadSpeed">Best match · fastest sources</option>
+              <option value="queueLength">Best match · shortest queue</option>
+            </select>
 
+            <button
+              aria-expanded={refineOpen}
+              className="sr-refine-toggle"
+              onClick={() => setRefineOpen((value) => !value)}
+              type="button"
+            >
+              <SlidersHorizontal size={14} /> Refine
+              {activeFilters.size +
+                selectedExtensions.length +
+                Object.values(metaFilters).filter(Boolean).length +
+                Number(filenameOnly) >
+              0
+                ? ` (${activeFilters.size + selectedExtensions.length + Object.values(metaFilters).filter(Boolean).length + Number(filenameOnly)})`
+                : ''}
+            </button>
+            <span className="sr-result-summary">
+              {filteredByFilename.length.toLocaleString()} shown ·{' '}
+              {(fileCount + (lockedFileCount ?? 0)).toLocaleString()} received ·{' '}
+              {groupSimilar
+                ? `${albumGroups?.length ?? 0} ${albumGroups?.length === 1 ? 'release' : 'releases'}`
+                : `${folderGroups.length} ${folderGroups.length === 1 ? 'source' : 'sources'}`}
+            </span>
+          </div>
+          {groupSimilar && (
+            <p className="sr-release-note">
+              Files are shown under each release. Sources can contain different
+              editions or partial matches.
+            </p>
+          )}
+          <div
+            className="sr-filters"
+            hidden={!refineOpen}
+          >
+            <div className="sr-result-filter-heading">
+              <span>
+                Refine received files · artist/title/year are inferred from file
+                paths
+              </span>
+              <button
+                className="sr-filter-pill"
+                onClick={() => {
+                  setActiveFilters(new Set());
+                  setSelectedExtensions([]);
+                  setFilenameOnly(false);
+                  setMetaFilters({
+                    artist: '',
+                    folder: '',
+                    title: '',
+                    year: '',
+                  });
+                }}
+                type="button"
+              >
+                Reset all filters
+              </button>
+            </div>
+            <div className="sr-filter-row">
               <div className="sr-filter-pills">
                 {STATIC_FILTERS.map((sf) => (
                   <button
@@ -957,6 +1105,7 @@ const SearchDetail = ({
 
               {availableFormats.length > 0 && (
                 <Dropdown
+                  aria-label="Filter by file formats"
                   className="sr-ext-dropdown"
                   clearable
                   multiple
@@ -966,31 +1115,11 @@ const SearchDetail = ({
                     text: fmt,
                     value: fmt,
                   }))}
-                  placeholder="Extension"
+                  placeholder="File formats"
                   search
                   selection
                   value={selectedExtensions}
                 />
-              )}
-
-              <button
-                className={`sr-filter-adv-btn hover-fx${groupSimilar ? ' sr-filter-adv-btn--active' : ''}`}
-                onClick={() => setGroupSimilar((v) => !v)}
-                title="Group similar folders by album"
-                type="button"
-              >
-                <Layers size={13} />
-              </button>
-
-              {folderGroups.length > 0 && (
-                <span className="sr-file-count">
-                  {filteredByFilename.length}{' '}
-                  {filteredByFilename.length === 1 ? 'file' : 'files'}
-                  {' · '}
-                  {groupSimilar && albumGroups
-                    ? `${albumGroups.length} ${albumGroups.length === 1 ? 'album' : 'albums'}`
-                    : `${folderGroups.length} ${folderGroups.length === 1 ? 'folder' : 'folders'}`}
-                </span>
               )}
             </div>
 
@@ -1006,6 +1135,7 @@ const SearchDetail = ({
                   key={key}
                 >
                   <input
+                    aria-label={`Filter received files by ${placeholder.toLowerCase()}`}
                     className="sr-meta-filter-input"
                     onChange={(e) => {
                       const { value } = e.target;
@@ -1043,7 +1173,10 @@ const SearchDetail = ({
           >
             {folderGroups.length > 0 && (
               <>
-                <div className="sr-file-table-head">
+                <div
+                  className="sr-file-table-head"
+                  hidden={groupSimilar}
+                >
                   <div className="sr-file-check" />
                   <div className="sr-file-play" />
                   <div className="sr-file-name">File</div>
@@ -1077,6 +1210,7 @@ const SearchDetail = ({
                           albumGroup={visibleGroups[vItem.index]}
                           disabled={disabled}
                           downloadedFolders={downloadedFolders}
+                          onDownload={prepareDownload}
                           onToggleFile={toggleFile}
                           onToggleFolder={toggleFolder}
                           selected={selected}
@@ -1086,6 +1220,8 @@ const SearchDetail = ({
                           disabled={disabled}
                           downloadedFolders={downloadedFolders}
                           group={visibleGroups[vItem.index]}
+                          initiallyOpen
+                          onDownload={prepareDownload}
                           onToggleFile={toggleFile}
                           onToggleFolder={toggleFolder}
                           selected={selected}
@@ -1097,7 +1233,11 @@ const SearchDetail = ({
               </>
             )}
             {folderGroups.length === 0 && isComplete && !loading && (
-              <div className="sr-no-results">No results found</div>
+              <div className="sr-no-results">
+                {allFiles.length > 0
+                  ? `No files match your filters (${allFiles.length} received). Try resetting the filters.`
+                  : 'No files received. Try fewer search words or search again.'}
+              </div>
             )}
           </div>
 

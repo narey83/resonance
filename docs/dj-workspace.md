@@ -82,6 +82,41 @@ environments for BeatThis/CLAP/singing, Madmom DBN, Essentia, and Demucs/semanti
 where their dependency requirements differ. The worker currently uses POSIX process
 groups for cancellation; Windows worker execution needs separate validation.
 
+The deployed Docker runtime is built with `docker/analysis-worker.Dockerfile`, extending
+`resonance-backend-dev:bridge-worker`. It runs inside the existing backend service.
+Model assets are installed explicitly with:
+
+```sh
+python3 docker/scripts/install-analysis-models.py
+```
+
+`tools/analysis-worker/models.lock.json` pins every downloaded asset by SHA-256 and
+byte length. The installer checks cached assets too and publishes downloads only
+after verification. Assets stay under `backend/data/analysis-models`; the private
+runtime configuration is `backend/data/analysis-config.json`. Neither music nor
+model weights belong in the image build context. Build the analysis image with `python3 docker/scripts/build-analysis-worker.py`
+after building its export/base image. The helper includes worker source and the
+mount guard while excluding runtime data and credentials. The image records installed dependency versions and retains
+the compiler only in its build stage. Model licenses are retained alongside the
+worker sources. The checked-in singing provenance supplies the detector
+configuration and pins its checkpoint.
+
+Enable the startup variables below only after checking all configured engines and
+local models inside the built image. Keep bulk preparation paused during a bounded
+sample run; configuring the runtime otherwise makes the existing library eligible
+for the automatic enhanced-analysis queue. Full-track results must still pass
+`ExportAnalysisContract`; no unavailable feature is treated as successful analysis.
+
+The 27 October deployment audit retains one finding in PyTorch 2.11.0:
+`PYSEC-2025-194` (`torch.jit.script`, fixed upstream in 2.13.0). The paired
+Torchaudio runtime is 2.11.0. Worker entry points do not accept model/code uploads
+or call `torch.jit.script`; the Silero TorchScript file is loaded only after its
+pinned SHA-256 is verified. This constrains the current inference input path; it
+does not make the dependency audit clean. Recheck compatible tensor/audio versions
+when updating. The DBN environment has no reported PyPI advisories; its Madmom
+source commit is pinned separately because the development build has no PyPI
+release to audit. Private audit reports are retained under `.dev/`.
+
 Relevant engines/dependencies include `beat_this`, PyTorch/torchaudio, Transformers,
 NumPy/SciPy, Essentia, Demucs, Madmom, and the included All-In-One and singing model
 adapters. Install compatible dependencies for each environment and retain the model
@@ -118,9 +153,9 @@ export RESONANCE_USB_EXPORT_WORKER=/opt/resonance/tools/usb-export/usb_export.py
 export RESONANCE_USB_EXPORT_FFMPEG=/usr/bin/ffmpeg
 ```
 
-`desktop/pioneer-link/` contains the shared USB and Network Link helper, native launcher,
+`desktop/bridge/` contains Resonance Bridge with USB Export and Network Link, native launcher,
 installer builders, protocol sources and licenses. Build/install instructions are in
-its [README](../desktop/pioneer-link/README.md). Both actions use `.resonance` files.
+its [README](../desktop/bridge/README.md). Both actions use `.resonance` files.
 Network Link serves the prepared whole library, checks for changes every 15 seconds
 and refreshes as its revision changes. Tracks need indexing and complete enhanced
 analysis before becoming available; there is no manual track picker.
@@ -147,7 +182,7 @@ npm run build
 node scripts/test-mix-dsp.mjs
 cd ..
 dotnet test tests/Resonance.Tests.csproj
-cd desktop/pioneer-link
+cd desktop/bridge
 go test ./...
 ```
 

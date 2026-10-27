@@ -86,7 +86,7 @@ const transformHistogram = (data, intervalMinutes) => {
     });
 };
 
-const ActivityChart = ({ data, intervalMinutes = 60 }) => {
+const ActivityChart = ({ data, direction, intervalMinutes = 60 }) => {
   const [hidden, setHidden] = useState(new Set());
 
   const toggleSeries = ({ dataKey }) =>
@@ -173,24 +173,28 @@ const ActivityChart = ({ data, intervalMinutes = 60 }) => {
               paddingTop: 8,
             }}
           />
-          <Bar
-            dataKey="downloads"
-            fill="var(--accent)"
-            hide={hidden.has('downloads')}
-            isAnimationActive={false}
-            maxBarSize={20}
-            name="Downloads"
-            radius={[2, 2, 0, 0]}
-          />
-          <Bar
-            dataKey="uploads"
-            fill="var(--success)"
-            hide={hidden.has('uploads')}
-            isAnimationActive={false}
-            maxBarSize={20}
-            name="Uploads"
-            radius={[2, 2, 0, 0]}
-          />
+          {direction !== 'upload' && (
+            <Bar
+              dataKey="downloads"
+              fill="var(--accent)"
+              hide={hidden.has('downloads')}
+              isAnimationActive={false}
+              maxBarSize={20}
+              name="Downloads"
+              radius={[2, 2, 0, 0]}
+            />
+          )}
+          {direction !== 'download' && (
+            <Bar
+              dataKey="uploads"
+              fill="var(--success)"
+              hide={hidden.has('uploads')}
+              isAnimationActive={false}
+              maxBarSize={20}
+              name="Uploads"
+              radius={[2, 2, 0, 0]}
+            />
+          )}
         </BarChart>
       </ResponsiveContainer>
     </div>

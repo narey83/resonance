@@ -215,6 +215,16 @@ namespace resonance
             }
         }
 
+        // Expose only stable, safe codes: exception messages may contain private configuration.
+        internal static string ConnectionErrorCode(Exception exception) => exception switch
+        {
+            LoginRejectedException => "LOGIN_REJECTED",
+            TimeoutException => "TIMEOUT",
+            System.Net.Sockets.SocketException => "NETWORK_ERROR",
+            System.IO.IOException => "NETWORK_ERROR",
+            _ => "CONNECTION_FAILED",
+        };
+
         /// <summary>
         ///     Disposes this instance.
         /// </summary>
@@ -340,6 +350,10 @@ namespace resonance
                             var opt = OptionsMonitor.CurrentValue.Soulseek;
 
                             LastConnectionAttemptAt = DateTime.UtcNow;
+                            ApplicationState.SetValue(state => state with
+                            {
+                                Server = state.Server with { LastConnectionErrorCode = null },
+                            });
 
                             // note: cancelling the CTS before the connect logic is fully complete (e.g. reacting to the connect event)
                             // will cause the client to connect, then disconnect immediately
@@ -366,6 +380,10 @@ namespace resonance
                             // answer the login in time; the server may yet finish it, leaving a session behind us
                             lingeringLogin = ex is TimeoutException;
 
+                            ApplicationState.SetValue(state => state with
+                            {
+                                Server = state.Server with { LastConnectionErrorCode = ConnectionErrorCode(ex) },
+                            });
                             Log.Error("Failed to reconnect: {Message}", ex.Message);
                         }
                     }

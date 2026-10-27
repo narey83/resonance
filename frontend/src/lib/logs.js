@@ -80,6 +80,7 @@ export const getLogs = async ({
   from,
   to,
   afterId,
+  beforeId,
 } = {}) => {
   const params = new URLSearchParams({ offset, limit });
 
@@ -97,7 +98,10 @@ export const getLogs = async ({
   if (afterId !== undefined && afterId !== null)
     params.append('afterId', afterId);
 
-  const response = await api.get(`/logs?${params}`);
+  if (beforeId !== undefined && beforeId !== null)
+    params.append('beforeId', beforeId);
+
+  const response = await api.get(`/logs?${params}`, { timeout: 10_000 });
 
   return {
     logs: response.data,
@@ -127,3 +131,12 @@ export const getHttpCaptureHar = async () => {
 };
 
 export const clearHttpCapture = () => api.delete('/httpcapture');
+
+export const getLogSummaries = async (days, signal) =>
+  (
+    await api.get('/logs/summaries', {
+      params: { days },
+      signal,
+      timeout: 10_000,
+    })
+  ).data;

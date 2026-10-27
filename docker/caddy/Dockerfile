@@ -7,4 +7,10 @@ RUN xcaddy build --with github.com/mholt/caddy-ratelimit
 FROM caddy:2
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 # Baked in for standalone use; the compose bind-mount overrides it for live edits.
-COPY Caddyfile /etc/caddy/Caddyfile
+RUN apk add --no-cache python3
+COPY docker/caddy/Caddyfile /etc/caddy/Caddyfile
+COPY docker/maintenance/maintenance.py /opt/resonance/maintenance.py
+COPY docker/scripts/with-helper.py /opt/resonance/with-helper.py
+ENV STATE_DIR=/srv/maintenance MAINTENANCE_LISTEN=127.0.0.1 PYTHONDONTWRITEBYTECODE=1
+ENTRYPOINT ["python3", "/opt/resonance/with-helper.py", "caddy"]
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

@@ -55,6 +55,7 @@ namespace resonance.Analysis.Imports
             ConnectionFactory = connectionFactory;
             Table = usePostgres ? "analysis.imported_track_analysis" : "imported_track_analysis";
         }
+
         private string Table { get; }
 
         private Func<DbConnection> ConnectionFactory { get; }

@@ -27,9 +27,10 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { prepareImageUpload } from '../services/imageUpload';
 import { apiClient } from './client';
 import { useAuthStore } from '../store/auth';
-import { seedSignatures } from './streamSignatures';
+import { seedSignatures, signedQuery } from './streamSignatures';
 
 export interface MixtapeTrack {
   id: string;
@@ -55,19 +56,20 @@ export interface Mixtape {
   createdAt: number;
   updatedAt: number;
   tracks: MixtapeTrack[];
+  artworkSig?: string | null;
+  artworkExp?: number;
 }
 
 // Mixtape artwork is an uploaded image, often a multi-megabyte photo, so pass the pixel size it
 // is shown at (ARTWORK_THUMB_SIZE for rows, the tile's thumbSize for grids) and the server sends
 // a resized copy.
 export const getMixtapeArtworkUrl = (id: string, size?: number): string | null => {
-  const { serverUrl, accessToken } = useAuthStore.getState();
+  const { serverUrl } = useAuthStore.getState();
   if (!serverUrl) return null;
   const params = new URLSearchParams();
-  if (size) params.set('size', String(size));
-  if (accessToken) params.set('access_token', accessToken);
+  params.set('size', String(Number.isFinite(size) && size! > 0 ? Math.min(2048, Math.ceil(size!)) : 192));
   const query = params.toString();
-  return `${serverUrl}/api/v0/mixtapes/${encodeURIComponent(id)}/artwork${query ? `?${query}` : ''}`;
+  return `${serverUrl}/api/v0/mixtapes/${encodeURIComponent(id)}/artwork?${query}${signedQuery(`playlist-artwork:${id}`)}`;
 };
 
 // expo-image cacheKey for a mixtape's artwork: per size, and per updatedAt so replacing the
@@ -98,14 +100,17 @@ export const getPublicZipUrl = (publicToken: string): string | null => {
 const seedTracks = (tracks: MixtapeTrack[]) =>
   seedSignatures(tracks.map(t => ({ path: t.filePath, sig: t.sig, exp: t.exp })));
 
+const seedArtwork = (m: Mixtape) => seedSignatures([{ path: `playlist-artwork:${m.id}`, sig: m.artworkSig, exp: m.artworkExp }]);
+
 export const getAll        = async (): Promise<Mixtape[]> => {
   const data = await apiClient.get<Mixtape[]>('/mixtapes').then(r => r.data);
-  data.forEach(m => seedTracks(m.tracks));
+  data.forEach(m => { seedTracks(m.tracks); seedArtwork(m); });
   return data;
 };
 export const getById       = async (id: string): Promise<Mixtape> => {
   const data = await apiClient.get<Mixtape>(`/mixtapes/${encodeURIComponent(id)}`).then(r => r.data);
   seedTracks(data.tracks);
+  seedArtwork(data);
   return data;
 };
 export const create        = (name: string, description?: string) => apiClient.post<Mixtape>('/mixtapes', { name, description }).then(r => r.data);
@@ -119,12 +124,12 @@ export const publish       = (id: string)                   => apiClient.post<Mi
 export const unpublish     = (id: string)                   => apiClient.delete(`/mixtapes/${encodeURIComponent(id)}/publish`);
 
 export const uploadArtwork = async (id: string, uri: string): Promise<void> => {
-  const form = new FormData();
-  const filename = uri.split('/').pop() ?? 'artwork.jpg';
-  const ext = filename.split('.').pop()?.toLowerCase() ?? 'jpg';
-  const type = ext === 'png' ? 'image/png' : 'image/jpeg';
-  form.append('file', { uri, name: filename, type } as any);
-  await apiClient.post(`/mixtapes/${encodeURIComponent(id)}/artwork`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  const image = await prepareImageUpload(uri, 1024);
+  try {
+    const form = new FormData();
+    form.append('file', { uri: image.uri, name: 'artwork.jpg', type: 'image/jpeg' } as any);
+    await apiClient.post(`/mixtapes/${encodeURIComponent(id)}/artwork`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  } finally { image.dispose(); }
 };

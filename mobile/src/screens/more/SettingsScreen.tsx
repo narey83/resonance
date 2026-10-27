@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { useRemoteAccess } from '../../lib/remoteAccess';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   AppState,
@@ -45,8 +46,9 @@ import { getDeviceName } from '../../store/auth';
 import { useAppSettings } from '../../store/appSettingsStore';
 import type { StreamQuality } from '../../store/appSettingsStore';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
+import { Radius, Spacing, ThemeColors, Typography, themes } from '../../theme';
 import type { ThemeName } from '../../theme';
+import { ACCENT_OPTIONS } from '../../lib/appearance';
 import type { MoreStackParamList } from '../../navigation/MainTabs';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'Settings'>;
@@ -54,11 +56,10 @@ type Props = NativeStackScreenProps<MoreStackParamList, 'Settings'>;
 // ── Theme options ─────────────────────────────────────────────────────────────
 
 const THEMES: { name: ThemeName; label: string; swatch: string; swatch2?: string }[] = [
-  { name: 'system',   label: 'Auto',     swatch: '#0d1117', swatch2: '#f6f8fa' },
-  { name: 'dark',     label: 'Dark',     swatch: '#0d1117' },
-  { name: 'amoled',   label: 'Amoled',   swatch: '#000000' },
-  { name: 'midnight', label: 'Midnight', swatch: '#0a0f1e' },
-  { name: 'light',    label: 'Light',    swatch: '#f6f8fa' },
+  { name: 'dark',     label: 'Dark',     swatch: themes.dark.bgPrimary },
+  { name: 'amoled',   label: 'Amoled',   swatch: themes.amoled.bgPrimary },
+  { name: 'midnight', label: 'Midnight', swatch: themes.midnight.bgPrimary },
+  { name: 'light',    label: 'Light',    swatch: themes.light.bgPrimary },
 ];
 
 const STREAM_QUALITIES: { value: StreamQuality; label: string }[] = [
@@ -76,24 +77,26 @@ const STREAM_QUALITY_SUBTITLE: Record<StreamQuality, string> = {
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function SettingsScreen({ navigation }: Props) {
-  const { colors } = useTheme();
+  const { colors, palette, isDark } = useTheme();
+  const remote = useRemoteAccess();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
   const {
-    theme, setTheme,
+    theme, setTheme, accentColour, setAccentColour,
     remoteLogging, loaded, setRemoteLogging,
     librarySyncDebug, setLibrarySyncDebug,
     perfProbe, setPerfProbe,
     backendLogs, setBackendLogs,
     streamQuality, setStreamQuality,
     playerMode, setPlayerMode,
+    showTrackNumbers, setShowTrackNumbers,
   } = useAppSettings();
 
   const [deviceName, setDeviceName] = useState<string>('');
 
   useEffect(() => {
-    getDeviceName().then(setDeviceName);
-  }, []);
+    if (remote) getDeviceName().then(setDeviceName);
+  }, [remote]);
 
   return (
     <ScrollView contentContainerStyle={s.container} style={s.scroll}>
@@ -101,12 +104,19 @@ export default function SettingsScreen({ navigation }: Props) {
       {/* Appearance */}
       <SectionHeader title="Appearance" colors={colors} />
       <View style={s.group}>
+        <SettingRow label="Match handset" subtitle={theme === 'system' ? `Follows your phone. Currently ${isDark ? 'dark' : 'light'}.` : 'Switch automatically with your phone’s light or dark mode.'} colors={colors}>
+          <Switch accessibilityLabel="Match handset light and dark mode" disabled={!loaded} value={theme === 'system'} onValueChange={enabled => setTheme(enabled ? 'system' : palette)} thumbColor={colors.textPrimary} trackColor={{ false: colors.bgElevated, true: colors.accent }} />
+        </SettingRow>
         <View style={s.themeRow}>
-          <Text style={s.rowLabel}>Theme</Text>
+          <Text style={s.rowLabel}>Appearance</Text>
           <View style={s.swatchRow}>
             {THEMES.map(({ name, label, swatch, swatch2 }) => (
               <Pressable
                 key={name}
+                accessibilityRole="radio"
+                accessibilityLabel={`${label} appearance`}
+                accessibilityState={{ checked: theme === name, disabled: !loaded }}
+                disabled={!loaded}
                 onPress={() => setTheme(name)}
                 style={[s.swatchBtn, theme === name && s.swatchBtnActive]}
               >
@@ -128,10 +138,46 @@ export default function SettingsScreen({ navigation }: Props) {
         </View>
       </View>
 
+      <View style={s.group}>
+        <View style={s.themeRow}>
+          <Text style={s.rowLabel}>Theme colour</Text>
+          <Text style={s.segmentHint}>Your accent colour adapts to light and dark appearances.</Text>
+          <View style={s.colourGrid}>
+            {ACCENT_OPTIONS.map(option => {
+              const selected = accentColour === option.name;
+              const swatch = option.name === 'default' ? themes[palette].accent : isDark ? option.dark : option.light;
+              return <Pressable key={option.name} accessibilityRole="radio" accessibilityLabel={`${option.label} theme colour`} accessibilityState={{ checked: selected, disabled: !loaded }} disabled={!loaded} onPress={() => setAccentColour(option.name)} style={[s.colourOption, selected && { borderColor: colors.accent }]}>
+                <View style={[s.colourChip, { backgroundColor: swatch }]}>{selected && <Ionicons name="checkmark" size={16} color={isDark ? themes.dark.bgPrimary : '#FFFFFF'} />}</View>
+                <Text style={[s.swatchLabel, selected && s.swatchLabelActive]}>{option.label}</Text>
+              </Pressable>;
+            })}
+          </View>
+        </View>
+      </View>
+
+      <SectionHeader title="Library" colors={colors} />
+      <View style={s.group}>
+        <SettingRow
+          label="Show track numbers"
+          subtitle="Display numbers beside tracks. Track order stays the same."
+          colors={colors}
+          last
+        >
+          <Switch
+            accessibilityLabel="Show track numbers"
+            disabled={!loaded}
+            onValueChange={setShowTrackNumbers}
+            thumbColor={colors.textPrimary}
+            trackColor={{ false: colors.bgElevated, true: colors.accent }}
+            value={showTrackNumbers}
+          />
+        </SettingRow>
+      </View>
+
       {/* Playback */}
       <SectionHeader title="Playback" colors={colors} />
       <View style={s.group}>
-        <View style={s.themeRow}>
+        {remote && <View style={s.themeRow}>
           <Text style={s.rowLabel}>Streaming quality</Text>
           <View style={s.segmentRow}>
             {STREAM_QUALITIES.map(({ value, label }) => (
@@ -148,7 +194,7 @@ export default function SettingsScreen({ navigation }: Props) {
             ))}
           </View>
           <Text style={s.segmentHint}>{STREAM_QUALITY_SUBTITLE[streamQuality]}</Text>
-        </View>
+        </View>}
         <SettingRow
           label="Floating player"
           subtitle="Draggable bubble instead of the docked mini-bar"
@@ -169,6 +215,7 @@ export default function SettingsScreen({ navigation }: Props) {
       </View>
 
       {/* Debugging */}
+      {remote && <>
       <SectionHeader title="Debugging" colors={colors} />
       <View style={s.group}>
         <SettingRow
@@ -243,6 +290,7 @@ export default function SettingsScreen({ navigation }: Props) {
         </Pressable>
       </View>
 
+      </>}
     </ScrollView>
   );
 }
@@ -354,6 +402,9 @@ function makeStyles(c: ThemeColors) {
       gap: Spacing.sm,
     },
     rowLabel: { fontSize: Typography.base, fontWeight: '500', color: c.textPrimary },
+    colourGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    colourOption: { minWidth: 88, flexGrow: 1, flexBasis: '28%', minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 9, borderWidth: 1, borderColor: c.border },
+    colourChip: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
     swatchRow: {
       flexDirection: 'row',
       gap: Spacing.sm,

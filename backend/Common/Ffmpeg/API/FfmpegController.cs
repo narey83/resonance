@@ -62,6 +62,7 @@ public class FfmpegController : ControllerBase
     }
 
     [HttpPost("update")]
+    [Authorize(Policy = AuthPolicy.JwtOnly, Roles = AuthRole.AdministratorOnly)]
     public async Task<IActionResult> Update(CancellationToken cancellationToken)
     {
         try

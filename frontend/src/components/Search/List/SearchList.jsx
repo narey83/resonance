@@ -52,7 +52,11 @@ const SearchList = ({
   }
 
   return (
-    <div className="sr-search-list">
+    <div
+      aria-label="Previous searches"
+      className="sr-search-list"
+      role="listbox"
+    >
       {sorted.map((search) => (
         <SearchListRow
           key={search.id}

@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { onSessionReset, sessionGuard } from '../lib/sessionScope';
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
 import * as translationAPI from '../api/translation';
@@ -85,6 +86,7 @@ export const useTranslationStore = create<TranslationStore>((set, get) => ({
   sentOriginals: {},
 
   loadStatus: async () => {
+    const current = sessionGuard();
     // Persisted per-thread toggles (fire-and-forget on first load).
     if (!get().loaded) {
       try {
@@ -92,23 +94,27 @@ export const useTranslationStore = create<TranslationStore>((set, get) => ({
           SecureStore.getItemAsync(AUTO_STORE_KEY),
           SecureStore.getItemAsync(REPLY_STORE_KEY),
         ]);
+        if (!current()) return;
         set({
           autoByThread: autoRaw ? (JSON.parse(autoRaw) as Record<string, boolean>) : {},
           replyByThread: replyRaw ? (JSON.parse(replyRaw) as Record<string, boolean>) : {},
         });
       } catch {
+        if (!current()) return;
         // ignore malformed/absent persisted prefs
       }
     }
 
     try {
       const status = await translationAPI.getStatus();
+      if (!current()) return;
       set({
         enabled: status.enabled,
         targetLang: status.defaultTargetLanguage || 'EN',
         loaded: true,
       });
     } catch {
+      if (!current()) return;
       set({ loaded: true });
     }
   },
@@ -116,16 +122,20 @@ export const useTranslationStore = create<TranslationStore>((set, get) => ({
   isAuto: (threadKey) => Boolean(get().autoByThread[threadKey]),
 
   toggleAuto: async (threadKey) => {
+    const current = sessionGuard();
     const turningOn = !get().autoByThread[threadKey];
     const next = { ...get().autoByThread, [threadKey]: turningOn };
     set({ autoByThread: next });
     try {
       await SecureStore.setItemAsync(AUTO_STORE_KEY, JSON.stringify(next));
+      if (!current()) return;
     } catch {
+      if (!current()) return;
       // best-effort persistence
     }
     if (turningOn && !get().replyByThread[threadKey]) {
       await get().toggleReply(threadKey);
+      if (!current()) return;
     }
   },
 
@@ -140,12 +150,14 @@ export const useTranslationStore = create<TranslationStore>((set, get) => ({
   },
 
   ensureTranslated: async (threadKey, items) => {
+    const current = sessionGuard();
     const { translations, targetLang } = get();
     const pending = items.filter((i) => i.text && i.text.trim() && !(i.key in translations));
     if (pending.length === 0) return;
 
     try {
       const results = await translationAPI.translate(pending.map((p) => p.text), targetLang);
+      if (!current()) return;
       set((s) => {
         const next = { ...s.translations };
         pending.forEach((p, index) => {
@@ -161,6 +173,7 @@ export const useTranslationStore = create<TranslationStore>((set, get) => ({
         set((s) => ({ detectedLangByThread: { ...s.detectedLangByThread, [threadKey]: detected } }));
       }
     } catch {
+      if (!current()) return;
       // Translation is best-effort; leave originals in place on failure.
     }
   },
@@ -170,6 +183,7 @@ export const useTranslationStore = create<TranslationStore>((set, get) => ({
   },
 
   translateOutgoing: async (threadKey, text, latestInboundText) => {
+    const current = sessionGuard();
     if (!text.trim()) return text;
     const targetUpper = get().targetLang.toUpperCase();
 
@@ -179,12 +193,14 @@ export const useTranslationStore = create<TranslationStore>((set, get) => ({
     if (!lang && latestInboundText?.trim()) {
       try {
         const [probe] = await translationAPI.translate([latestInboundText], get().targetLang);
+        if (!current()) throw new Error('Session changed');
         const detected = baseLang(probe?.detectedSourceLanguage);
         if (detected && detected !== targetUpper) {
           lang = detected;
           set((s) => ({ detectedLangByThread: { ...s.detectedLangByThread, [threadKey]: detected } }));
         }
       } catch {
+        if (!current()) throw new Error('Session changed');
         // fall through — send untranslated
       }
     }
@@ -193,6 +209,7 @@ export const useTranslationStore = create<TranslationStore>((set, get) => ({
 
     try {
       const [result] = await translationAPI.translate([text], lang);
+      if (!current()) throw new Error('Session changed');
       const translated = result?.text || text;
       // Remember what was typed so the sent bubble can reveal the original.
       if (translated !== text) {
@@ -200,7 +217,12 @@ export const useTranslationStore = create<TranslationStore>((set, get) => ({
       }
       return translated;
     } catch {
+      if (!current()) throw new Error('Session changed');
       return text;
     }
   },
 }));
+
+onSessionReset(() => {
+  useTranslationStore.setState(useTranslationStore.getInitialState(), true);
+});

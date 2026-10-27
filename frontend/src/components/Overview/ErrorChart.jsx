@@ -91,7 +91,7 @@ const transformErrors = (data, intervalMinutes) => {
     });
 };
 
-const ErrorChart = ({ data, intervalMinutes = 60 }) => {
+const ErrorChart = ({ data, direction, intervalMinutes = 60 }) => {
   const [hidden, setHidden] = useState(new Set());
 
   const toggleSeries = ({ dataKey }) =>
@@ -194,24 +194,28 @@ const ErrorChart = ({ data, intervalMinutes = 60 }) => {
               paddingTop: 8,
             }}
           />
-          <Bar
-            dataKey="dlFailed"
-            fill="var(--danger)"
-            hide={hidden.has('dlFailed')}
-            isAnimationActive={false}
-            maxBarSize={20}
-            name="Download errors"
-            radius={[2, 2, 0, 0]}
-          />
-          <Bar
-            dataKey="ulFailed"
-            fill="var(--warning)"
-            hide={hidden.has('ulFailed')}
-            isAnimationActive={false}
-            maxBarSize={20}
-            name="Upload errors"
-            radius={[2, 2, 0, 0]}
-          />
+          {direction !== 'upload' && (
+            <Bar
+              dataKey="dlFailed"
+              fill="var(--danger)"
+              hide={hidden.has('dlFailed')}
+              isAnimationActive={false}
+              maxBarSize={20}
+              name="Download errors"
+              radius={[2, 2, 0, 0]}
+            />
+          )}
+          {direction !== 'download' && (
+            <Bar
+              dataKey="ulFailed"
+              fill="var(--warning)"
+              hide={hidden.has('ulFailed')}
+              isAnimationActive={false}
+              maxBarSize={20}
+              name="Upload errors"
+              radius={[2, 2, 0, 0]}
+            />
+          )}
         </BarChart>
       </ResponsiveContainer>
     </div>

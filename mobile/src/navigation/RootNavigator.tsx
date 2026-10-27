@@ -27,8 +27,12 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { useServerProfiles } from '../store/serverProfilesStore';
+import { tokenUsername } from '../lib/jwt';
+import StudioController from '../components/StudioController';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useEffect } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Pressable, Text } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import TrackPlayer from 'react-native-track-player';
@@ -38,23 +42,35 @@ import { useMixtapesHub } from '../store/mixtapeStore';
 import { useLibraryActivityHub } from '../store/libraryActivityStore';
 import { enableRemoteLogging, disableRemoteLogging } from '../api/remoteLogger';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
-import { initNotifications, useNotificationHub, usePushNotifications } from '../services/notificationService';
+import { initNotifications, useNotificationHub } from '../services/notificationService';
 import { useConnectionMonitor } from '../services/connectionMonitor';
 import { OverlayProgressRing, useFloatingOverlay } from '../hooks/useFloatingOverlay';
 import { PerfProfiler, usePerfProbe } from '../lib/perfProbe';
+import { occludingFold, useWindowFold } from '../lib/adaptiveWindow';
 import PlayerOverlay from '../components/PlayerOverlay';
 import { PlayerBubble } from '../components/PlayerBubble';
 import ConnectionBanner from '../components/ConnectionBanner';
 import AuthStack from './AuthStack';
 import MainTabs  from './MainTabs';
+import StartScreen from '../screens/auth/StartScreen';
+import { useAppMode } from '../store/appModeStore';
+import { useLibrarySettings } from '../store/librarySettingsStore';
 
-function AuthenticatedApp() {
+function RemoteServices() {
+  useEffect(() => { void initNotifications(); }, []);
   useMixtapesHub();
   useLibraryActivityHub();
   useNotificationHub();
-  usePushNotifications();
   useConnectionMonitor();
+  return <ConnectionBanner />;
+}
+
+function MusicApp({ remote }: { remote: boolean }) {
   usePerfProbe();
+  const fold = occludingFold(useWindowFold());
+  const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const browsingPane = fold ? (fold.vertical ? { width: fold.x } : { flex: 0, height: fold.y }) : undefined;
   const playerMode = useAppSettings((s) => s.playerMode);
   // The native overlay (draws over other apps + home screen) takes over as the
   // controller when it's available and permitted; otherwise fall back to the
@@ -63,19 +79,26 @@ function AuthenticatedApp() {
   // Each always-mounted piece is profiled separately so a perf summary names the subtree that's
   // actually committing, instead of attributing every frame to "the app".
   return (
-    <>
+    <View style={{ flex: 1, backgroundColor: colors.bgPrimary }}>
+      <View style={[{ flex: 1, backgroundColor: colors.bgPrimary, paddingLeft: insets.left, paddingRight: fold?.vertical ? 0 : insets.right }, browsingPane]}>
       <PerfProfiler id="tabs"><MainTabs /></PerfProfiler>
       {playerMode === 'bubble' && !overlayActive && <PerfProfiler id="bubble"><PlayerBubble /></PerfProfiler>}
       {overlayActive && <OverlayProgressRing />}
+      </View>
       <PerfProfiler id="overlay"><PlayerOverlay /></PerfProfiler>
-      <PerfProfiler id="banner"><ConnectionBanner /></PerfProfiler>
-    </>
+      <PerfProfiler id="banner">{remote && <RemoteServices />}</PerfProfiler>
+    </View>
   );
 }
 
 function AppContent() {
   // Selectors: this is the root of the tree, so a whole-store read here re-rendered everything
   // below it (NavigationContainer included) on any unrelated auth or settings write.
+  const hydrationError = useAuthStore((s) => s.hydrationError);
+  const sessionId = useAuthStore((s) => s.sessionId);
+  const mode = useAppMode(state => state.mode);
+  const modeLoaded = useAppMode(state => state.loaded);
+  const libraryLoaded = useLibrarySettings(state => state.loaded);
   const isReady     = useAuthStore((s) => s.isReady);
   const accessToken = useAuthStore((s) => s.accessToken);
   const serverUrl   = useAuthStore((s) => s.serverUrl);
@@ -87,17 +110,24 @@ function AppContent() {
   useEffect(() => {
     hydrate();
     load();
-    initNotifications();
+    void useAppMode.getState().load();
+    void useLibrarySettings.getState().load();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (isReady && !accessToken) {
+    if (isReady && modeLoaded && mode !== 'local' && !hydrationError && !accessToken) {
       TrackPlayer.reset().catch(() => {});
     }
-  }, [isReady, accessToken]);
+  }, [isReady, modeLoaded, mode, hydrationError, accessToken]);
 
-  const isAuthenticated = !!accessToken && !!serverUrl;
+  const isAuthenticated = mode === 'remote' && !!accessToken && !!serverUrl;
+  useEffect(() => {
+    if (!isAuthenticated || !serverUrl) return;
+    const current = useAuthStore.getState();
+    if (current.serverUrl !== serverUrl) return;
+    void useServerProfiles.getState().remember(serverUrl, tokenUsername(current.accessToken) ?? undefined).catch(() => {});
+  }, [isAuthenticated, serverUrl, sessionId]);
 
   useEffect(() => {
     if (isAuthenticated && remoteLogging) {
@@ -107,10 +137,21 @@ function AppContent() {
     }
   }, [isAuthenticated, remoteLogging]);
 
-  if (!isReady) {
+  if (!isReady || !modeLoaded || !libraryLoaded) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bgPrimary }}>
         <ActivityIndicator color={colors.accent} />
+      </View>
+    );
+  }
+
+  if (hydrationError) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, gap: 16, backgroundColor: colors.bgPrimary }}>
+        <Text style={{ color: colors.textPrimary, textAlign: 'center' }}>{hydrationError}</Text>
+        <Pressable accessibilityRole="button" onPress={() => { void hydrate(); }} style={{ padding: 12 }}>
+          <Text style={{ color: colors.accent }}>Try again</Text>
+        </Pressable>
       </View>
     );
   }
@@ -119,7 +160,7 @@ function AppContent() {
     <>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <NavigationContainer>
-        {isAuthenticated ? <AuthenticatedApp /> : <AuthStack />}
+        {mode === 'choose' ? <StartScreen /> : isAuthenticated || mode === 'local' ? <MusicApp remote={isAuthenticated} key={isAuthenticated ? `${serverUrl}:${sessionId}` : 'local'} /> : <AuthStack />}
       </NavigationContainer>
     </>
   );
@@ -128,6 +169,7 @@ function AppContent() {
 export default function RootNavigator() {
   return (
     <ThemeProvider>
+      <StudioController />
       <AppContent />
     </ThemeProvider>
   );

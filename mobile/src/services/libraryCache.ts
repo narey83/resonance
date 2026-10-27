@@ -30,6 +30,7 @@
 import { InteractionManager } from 'react-native';
 import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 import { notePerfBlock } from '../lib/perfProbe';
+import { getSessionScope, onSessionReset } from '../lib/sessionScope';
 
 // Persistent stale-while-revalidate cache for the server library list endpoints (artists,
 // albums, tracks, folders, genres, years, loved). These lists are large (artists/albums are
@@ -76,23 +77,42 @@ const memBytes = new Map<string, number>();
 // Last ETag per key, for conditional (If-None-Match) requests → incremental updates.
 const memEtag = new Map<string, string>();
 
+// Legacy unscoped rows are deliberately never read: their owner cannot be established.
+const scopedKey = (key: string): string | null => {
+  const scope = getSessionScope();
+  return scope === null ? null : `${scope}:${key}`;
+};
+
+onSessionReset(() => {
+  generation += 1;
+  mem.clear();
+  memBytes.clear();
+  memEtag.clear();
+});
+
 /** Synchronous read of the in-memory layer only (undefined if not loaded this session yet). */
 export function peekListCache<T>(key: string): T | undefined {
-  return mem.get(key) as T | undefined;
+  const scoped = scopedKey(key);
+  return scoped === null ? undefined : mem.get(scoped) as T | undefined;
 }
 
 /** Last known payload size (bytes) for a key, for download-progress estimation. */
 export function peekListCacheBytes(key: string): number | undefined {
-  return memBytes.get(key);
+  const scoped = scopedKey(key);
+  return scoped === null ? undefined : memBytes.get(scoped);
 }
 
 /** Cheap existence check (no data parse) — used to skip the first-sync overlay on restart. */
 export async function hasListCache(key: string): Promise<boolean> {
+  const scoped = scopedKey(key);
+  if (scoped === null) return false;
+  key = scoped;
+  const started = generation;
   if (mem.has(key)) return true;
   try {
     const d = await db();
     const row = await d.getFirstAsync<{ one: number }>('SELECT 1 AS one FROM list_cache WHERE key = ?', key);
-    return !!row;
+    return started === generation && !!row;
   } catch {
     return false;
   }
@@ -100,6 +120,10 @@ export async function hasListCache(key: string): Promise<boolean> {
 
 /** Last ETag for a key (memory, falling back to disk), for conditional requests. */
 export async function getListCacheETag(key: string): Promise<string | undefined> {
+  const scoped = scopedKey(key);
+  if (scoped === null) return undefined;
+  key = scoped;
+  const started = generation;
   if (memEtag.has(key)) return memEtag.get(key);
   try {
     const d = await db();
@@ -107,6 +131,7 @@ export async function getListCacheETag(key: string): Promise<string | undefined>
       'SELECT etag FROM list_cache WHERE key = ?',
       key,
     );
+    if (started !== generation) return undefined;
     if (row?.etag) { memEtag.set(key, row.etag); return row.etag; }
   } catch { /* ignore */ }
   return undefined;
@@ -114,6 +139,10 @@ export async function getListCacheETag(key: string): Promise<string | undefined>
 
 /** Read from memory, falling back to the SQLite blob (which then warms the memory layer). */
 export async function readListCache<T>(key: string): Promise<T | undefined> {
+  const scoped = scopedKey(key);
+  if (scoped === null) return undefined;
+  key = scoped;
+  const started = generation;
   if (mem.has(key)) {
     return mem.get(key) as T;
   }
@@ -124,7 +153,7 @@ export async function readListCache<T>(key: string): Promise<T | undefined> {
       'SELECT data, etag FROM list_cache WHERE key = ?',
       key,
     );
-    if (!row) {
+    if (started !== generation || !row) {
       return undefined;
     }
 
@@ -155,6 +184,10 @@ export async function readListCache<T>(key: string): Promise<T | undefined> {
  * this runs on resume, exactly when taps are queued up waiting.
  */
 export async function writeListCache<T>(key: string, data: T, etag?: string, rawJson?: string): Promise<void> {
+  const scoped = scopedKey(key);
+  if (scoped === null) return ;
+  key = scoped;
+  const started = generation;
   mem.set(key, data);
   let json = rawJson;
   if (json === undefined) {
@@ -166,7 +199,7 @@ export async function writeListCache<T>(key: string, data: T, etag?: string, raw
   memBytes.set(key, body.length);
   if (etag) memEtag.set(key, etag);
 
-  const writtenAtGeneration = generation;
+  const writtenAtGeneration = started;
   InteractionManager.runAfterInteractions(() => {
     void (async () => {
       if (writtenAtGeneration !== generation) return; // cleared while we waited
@@ -190,13 +223,16 @@ export async function writeListCache<T>(key: string, data: T, etag?: string, raw
 
 /** Drop everything (e.g. on logout / server change). */
 export async function clearListCache(): Promise<void> {
+  const scope = getSessionScope();
   generation += 1;
   mem.clear();
   memBytes.clear();
   memEtag.clear();
+  if (scope === null) return;
   try {
     const d = await db();
-    await d.execAsync('DELETE FROM list_cache');
+    const prefix = `${scope}:`;
+    await d.runAsync('DELETE FROM list_cache WHERE substr(key, 1, ?) = ?', prefix.length, prefix);
   } catch {
     /* best-effort */
   }

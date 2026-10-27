@@ -30,7 +30,7 @@ describe('player metadata recovery', () => {
       ReactDOM.unmountComponentAtNode(container);
     });
   });
-  it('recovers missing mixtape metrics without mutating playback identity', async () => {
+  it('recovers missing playlist metrics without mutating playback identity', async () => {
     expect.hasAssertions();
     const track = { path: 'song', filename: 'song', localRelativePath: 'song' };
     resolveLibraryTracks.mockResolvedValue([

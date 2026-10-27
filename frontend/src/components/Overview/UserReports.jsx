@@ -43,8 +43,22 @@ import {
   TriangleAlert,
   User,
 } from 'lucide-react';
-import React, { useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { unstable_batchedUpdates as batchUpdates } from 'react-dom';
 
+const RANGES = [
+  { days: 1, label: '24h' },
+  { days: 7, label: '7d' },
+  { days: 30, label: '30d' },
+  { days: 365, label: '1y' },
+  { days: 0, label: 'All history' },
+];
 const PAGE_SIZE = 50;
 const AUTO_REFRESH_MS = 30_000;
 // A busy server can complete many transfers per second; coalesce the resulting
@@ -114,9 +128,22 @@ const UserReports = () => {
   // Local text for the editable page-number box; kept in sync with `page` so
   // programmatic navigation (prev/next/reset) updates the field too.
   const [pageInput, setPageInput] = useState('1');
-  const [tick, setTick] = useState(0);
+  const [refreshWindow, setRefreshWindow] = useState(() => new Date());
+  const [rangeDays, setRangeDays] = useState(() =>
+    new URLSearchParams(window.location.search).has('user') ? 0 : 7,
+  );
+  const reportWindow = useMemo(() => {
+    if (rangeDays === 0) return {};
+    const end = refreshWindow;
+    return {
+      start: new Date(end.getTime() - rangeDays * 86_400_000).toISOString(),
+      end: end.toISOString(),
+    };
+  }, [rangeDays, refreshWindow]);
   const [newUsernames, setNewUsernames] = useState(() => new Set());
   const debounceRef = useRef(null);
+  const activeRequest = useRef(null);
+  const [error, setError] = useState(null);
   const scrollRef = useRef(null);
   // Tracks the usernames last seen for the current view (page/search/sort).
   // Used to flash rows that appear on a background auto-refresh; reset to null
@@ -124,18 +151,22 @@ const UserReports = () => {
   const seenRef = useRef(null);
 
   useEffect(() => {
-    let cancelled = false;
-    const ctxKey = `${page}|${search}|${sortBy}|${sortOrder}`;
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    setError(null);
+    const ctxKey = `${rangeDays}|${page}|${search}|${sortBy}|${sortOrder}`;
     reportsAPI
       .getUserList({
+        ...reportWindow,
         search: search || undefined,
+        signal: controller.signal,
         sortBy,
         sortOrder,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       })
       .then(({ items: rows, total: t }) => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           const keys = rows
             .map((r) => r.username ?? r.Username)
             .filter(Boolean);
@@ -156,18 +187,21 @@ const UserReports = () => {
           setPaging(false);
         }
       })
-      .catch(() => {
-        if (!cancelled) {
-          setItems([]);
-          setTotal(0);
+      .catch((loadError) => {
+        if (!controller.signal.aborted) {
+          setError(loadError?.message ?? 'Unable to load user activity');
           setLoading(false);
           setPaging(false);
         }
+      })
+      .finally(() => {
+        if (activeRequest.current === controller) activeRequest.current = null;
       });
     return () => {
-      cancelled = true;
+      controller.abort();
+      if (activeRequest.current === controller) activeRequest.current = null;
     };
-  }, [page, search, sortBy, sortOrder, tick]);
+  }, [page, rangeDays, reportWindow, search, sortBy, sortOrder]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -175,10 +209,17 @@ const UserReports = () => {
     }
   }, [page]);
 
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), AUTO_REFRESH_MS);
-    return () => clearInterval(id);
+  const refresh = useCallback(() => {
+    if (!activeRequest.current && !document.hidden)
+      setRefreshWindow(new Date());
   }, []);
+
+  useEffect(() => () => clearTimeout(debounceRef.current), []);
+
+  useEffect(() => {
+    const id = setInterval(refresh, AUTO_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [refresh]);
 
   // Live refresh: a completed peer transfer means the user list just changed,
   // so refetch immediately instead of waiting for the poll. Leading-edge
@@ -191,7 +232,7 @@ const UserReports = () => {
     const settle = () => {
       if (pending) {
         pending = false;
-        setTick((t) => t + 1);
+        refresh();
         cooldownTimer = setTimeout(settle, LIVE_REFRESH_COOLDOWN_MS);
       } else {
         cooldownTimer = null;
@@ -204,7 +245,7 @@ const UserReports = () => {
         return;
       }
 
-      setTick((t) => t + 1);
+      refresh();
       cooldownTimer = setTimeout(settle, LIVE_REFRESH_COOLDOWN_MS);
     });
 
@@ -212,7 +253,7 @@ const UserReports = () => {
       off();
       if (cooldownTimer) clearTimeout(cooldownTimer);
     };
-  }, []);
+  }, [refresh]);
 
   const pageCount = Math.ceil(total / PAGE_SIZE);
 
@@ -251,10 +292,14 @@ const UserReports = () => {
     setSearchInput(value);
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      setSearch(value);
-      setLoading(true);
-      setItems([]);
-      setPage(0);
+      const next = value.trim();
+      if (next === search) return;
+      batchUpdates(() => {
+        setSearch(next);
+        setLoading(true);
+        setItems([]);
+        setPage(0);
+      });
     }, 300);
   };
 
@@ -272,12 +317,16 @@ const UserReports = () => {
 
   // Back to the pristine view: no filter, sorted by most recently seen.
   const isDefaultView =
-    searchInput === '' && sortBy === 'LastSeen' && sortOrder === 'DESC';
+    searchInput === '' &&
+    sortBy === 'LastSeen' &&
+    sortOrder === 'DESC' &&
+    rangeDays === 7;
 
   const handleReset = () => {
     clearTimeout(debounceRef.current);
     setSearchInput('');
     setSearch('');
+    setRangeDays(7);
     setSortBy('LastSeen');
     setSortOrder('DESC');
     setLoading(true);
@@ -289,38 +338,78 @@ const UserReports = () => {
     <div className="section-card user-reports-card">
       <div className="section-card-header">
         <span className="section-card-title">User Activity</span>
-        <span className="user-reports-total">
+        <span
+          className="user-reports-total"
+          title="Cached totals refresh about every two minutes."
+        >
           {total.toLocaleString()} users
         </span>
       </div>
 
-      <div className="user-reports-search-row">
-        <input
-          className="user-reports-search"
-          onChange={handleSearchChange}
-          placeholder="Filter by username, IP, country, city…"
-          type="text"
-          value={searchInput}
-        />
-        <button
-          className="user-reports-reset hover-fx"
-          disabled={isDefaultView}
-          onClick={handleReset}
-          title="Clear the filter and sort by Last Seen"
-          type="button"
+      {/* Range and search controls share one wrapping toolbar. */}
+      <div className="user-reports-toolbar">
+        <div
+          aria-label="User activity range"
+          className="overview-pills user-reports-ranges"
+          role="group"
         >
-          <RotateCcw
-            size={13}
-            strokeWidth={1.75}
+          {RANGES.map((range) => (
+            <button
+              aria-pressed={rangeDays === range.days}
+              className={`overview-pill${rangeDays === range.days ? ' active' : ''}`}
+              key={range.days}
+              onClick={() => {
+                if (rangeDays === range.days) return;
+                setRefreshWindow(new Date());
+                setRangeDays(range.days);
+                setPage(0);
+                setLoading(true);
+                setItems([]);
+              }}
+              type="button"
+            >
+              {range.label}
+            </button>
+          ))}
+        </div>
+        <div className="user-reports-search-row">
+          <input
+            className="user-reports-search"
+            onChange={handleSearchChange}
+            placeholder="Filter by username, IP, country, city…"
+            type="text"
+            value={searchInput}
           />
-          Reset
-        </button>
+          <button
+            className="user-reports-reset hover-fx"
+            disabled={isDefaultView}
+            onClick={handleReset}
+            title="Clear the filter and sort by Last Seen"
+            type="button"
+          >
+            <RotateCcw
+              size={13}
+              strokeWidth={1.75}
+            />
+            Reset
+          </button>
+        </div>
+        {rangeDays === 0 && (
+          <span className="user-reports-range-note">
+            All history can take longer to calculate on its first load.
+          </span>
+        )}
       </div>
 
+      {error && <div role="alert">Could not update user activity: {error}</div>}
       {loading ? (
         <div className="leaderboard-empty">Loading…</div>
       ) : items.length === 0 ? (
-        <div className="leaderboard-empty">No users found</div>
+        <div className="leaderboard-empty">
+          {error
+            ? 'User activity is temporarily unavailable'
+            : 'No users found'}
+        </div>
       ) : (
         <div
           className={`user-reports-scroll${paging ? ' user-reports-scroll--paging' : ''}`}

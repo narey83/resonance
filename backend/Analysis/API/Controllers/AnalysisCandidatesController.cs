@@ -42,7 +42,7 @@ namespace resonance.Analysis.API
     [ApiVersion("0")]
     [Produces("application/json")]
     [Route("api/v{version:apiVersion}/analysis/candidates")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.FeatureLibrary)]
     public class AnalysisCandidatesController : ControllerBase
     {
         public AnalysisCandidatesController(CandidateAnalysisService candidates) => Candidates = candidates;
@@ -50,6 +50,7 @@ namespace resonance.Analysis.API
         private CandidateAnalysisService Candidates { get; }
 
         [HttpPost]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         public async Task<IActionResult> Analyze([FromBody] CandidateAnalysisRequest request, CancellationToken ct)
         {
             try
@@ -94,31 +95,44 @@ namespace resonance.Analysis.API
             try
             {
                 var result = await Candidates.LatestEnhanced(path, ct);
-                if (result == null) return Ok(new { available = false, enabled = Candidates.Enabled });
+                if (result == null)
+                {
+                    return Ok(new { available = false, enabled = Candidates.Enabled });
+                }
+
                 var features = result.Value.Analysis.GetProperty("features");
                 var beats = features.GetProperty("beats").GetProperty("result");
                 var phrases = features.GetProperty("semanticPhrases").GetProperty("result");
                 var voice = features.GetProperty("vocalPresence").GetProperty("result");
-                return Ok(new {
+                return Ok(new
+                {
                     available = true, jobId = result.Value.Job.JobId, source = "independent-enhanced", experimental = true,
                     durationSeconds = result.Value.Analysis.GetProperty("durationSeconds"),
                     beats = beats.GetProperty("beats_seconds"), downbeats = beats.GetProperty("downbeats_seconds"),
                     musicalPhrases = phrases.GetProperty("segments"),
                     djPhrases = phrases.TryGetProperty("djStructure", out var dj) ? dj.GetProperty("segments") : default(System.Text.Json.JsonElement?),
-                    djPhraseAnalysis = phrases.TryGetProperty("djStructure", out var arrangement) ? new {
+                    djPhraseAnalysis = phrases.TryGetProperty("djStructure", out var arrangement) ? new
+                    {
                         revision = arrangement.TryGetProperty("revision", out var revision) ? revision.GetString() : null,
                         automatic = arrangement.TryGetProperty("automatic", out var automatic) && automatic.ValueKind == System.Text.Json.JsonValueKind.True,
                         genreContext = arrangement.TryGetProperty("genreContext", out var context) ? context : default(System.Text.Json.JsonElement?),
                         diagnostics = arrangement.TryGetProperty("boundaryDiagnostics", out var diagnostics) ? diagnostics : default(System.Text.Json.JsonElement?),
-                    } : null,
+                    }
+                    : null,
                     singing = voice.GetProperty("segments"),
                     processedVoice = voice.TryGetProperty("processedVoice", out var speech) && speech.TryGetProperty("sustainedSegments", out var spans) ? spans : default(System.Text.Json.JsonElement?),
                     cues = features.TryGetProperty("cues", out var cues) && cues.TryGetProperty("result", out var cueResult) ? cueResult : default(System.Text.Json.JsonElement?),
-                    genre = features.GetProperty("genre").GetProperty("result")
+                    genre = features.GetProperty("genre").GetProperty("result"),
                 });
             }
-            catch (ArgumentException exception) { return BadRequest(exception.Message); }
-            catch (IOException) { return Ok(new { available = false, enabled = Candidates.Enabled }); }
+            catch (ArgumentException exception)
+            {
+                return BadRequest(exception.Message);
+            }
+            catch (IOException)
+            {
+                return Ok(new { available = false, enabled = Candidates.Enabled });
+            }
         }
 
         [HttpGet("{jobId}")]

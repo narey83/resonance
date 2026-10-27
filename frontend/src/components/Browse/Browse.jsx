@@ -35,6 +35,7 @@
 
 import './Browse.css';
 import '../Search/Search.css';
+import '../Chat/Chat.css';
 import { flattenDirectories } from '../../lib/browseFiles';
 import {
   addToBrowseHistory,
@@ -44,6 +45,7 @@ import {
 import { createBrowseHubConnection } from '../../lib/hubFactory';
 import * as prefs from '../../lib/prefs';
 import * as users from '../../lib/users';
+import CommunityWorkspace from '../Chat/CommunityWorkspace';
 import BrowseResults from './BrowseResults';
 import { FolderOpen, Plus, User, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -88,10 +90,11 @@ const BrowseModal = ({ onBrowse, onClose, open }) => {
       open={open}
       size="small"
     >
-      <div className="smm-modal">
+      <div className="smm-modal dj-workspace">
         <div className="smm-header">
           <span className="smm-title">Browse User</span>
           <button
+            aria-label="Close browse dialog"
             className="smm-close hover-fx"
             onClick={onClose}
             type="button"
@@ -101,9 +104,15 @@ const BrowseModal = ({ onBrowse, onClose, open }) => {
         </div>
         <div className="smm-body">
           <div className="smm-field">
-            <label className="smm-label">Username</label>
+            <label
+              className="smm-label"
+              htmlFor="browse-username"
+            >
+              Username
+            </label>
             <input
               className="smm-input"
+              id="browse-username"
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handle()}
               placeholder="Enter a username"
@@ -362,141 +371,161 @@ const Browse = ({ location }) => {
 
   return (
     <>
-      <div
-        className="sr-root"
-        ref={rootRef}
+      <CommunityWorkspace
+        action={
+          <button
+            className="sr-wizard-primary"
+            onClick={() => setBrowseModalOpen(true)}
+            type="button"
+          >
+            <Plus size={16} /> Browse a user
+          </button>
+        }
+        description="Explore shared music, find a release and choose your files."
+        eyebrow="SOULSEEK"
+        title="Browse shares"
       >
-        {/* ── Sidebar ── */}
         <div
-          className="sr-sidebar"
-          style={{ width: sidebarWidth, minWidth: sidebarWidth }}
+          className="sr-root community-root browse-root"
+          ref={rootRef}
         >
-          <div className="sr-sidebar-top">
-            <span className="sr-sidebar-title">Browse</span>
-            {pending && (
-              <span
-                className="sr-searching-spinner"
-                style={{ flexShrink: 0 }}
-              />
-            )}
-            <button
-              className="sr-create-btn hover-fx"
-              onClick={() => setBrowseModalOpen(true)}
-              title="Browse user"
-              type="button"
-            >
-              <Plus size={15} />
-            </button>
-            {browseState !== 'idle' && (
-              <button
-                className="sr-create-btn br-clear-btn hover-fx"
-                onClick={clear}
-                title="Clear"
-                type="button"
-              >
-                <X size={15} />
-              </button>
-            )}
-          </div>
+          {/* ── Sidebar ── */}
+          <div
+            className="sr-sidebar"
+            style={{ width: sidebarWidth, minWidth: sidebarWidth }}
+          >
+            <div className="sr-sidebar-top">
+              <span className="sr-sidebar-title">Recent shares</span>
+              {pending && (
+                <span
+                  className="sr-searching-spinner"
+                  style={{ flexShrink: 0 }}
+                />
+              )}
 
-          {pending && (
-            <div className="sr-sidebar-status">
-              Downloading… {Math.round(browseStatus?.percentComplete || 0)}%
-            </div>
-          )}
-          {browseState === 'error' && (
-            <div className="sr-sidebar-status sr-sidebar-status--error">
-              Failed to browse {username}
-            </div>
-          )}
-          {browseState === 'complete' && hasResults && (
-            <div className="br-info-bar">
-              {(info.files + info.lockedFiles).toLocaleString()} files ·{' '}
-              {(info.directories + info.lockedDirectories).toLocaleString()}{' '}
-              folders
-            </div>
-          )}
-
-          <div className="sr-search-list">
-            {browseHistory.length === 0 && (
-              <div className="sr-search-list-empty">No users browsed yet</div>
-            )}
-            {browseHistory.map((user) => (
-              <div
-                aria-selected={user === username}
-                className={`sr-search-item${user === username ? ' sr-search-item--active' : ''}`}
-                key={user}
-                onClick={() => doBrowse(user)}
-                onKeyDown={(e) => e.key === 'Enter' && doBrowse(user)}
-                role="option"
-                tabIndex={0}
-                title={user}
-              >
-                <span className="sr-search-item-icon">
-                  <User size={13} />
-                </span>
-                <span className="sr-search-item-text">{user}</span>
+              {browseState !== 'idle' && (
                 <button
-                  aria-label="Remove from history"
-                  className="sr-search-item-action"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeHistoryEntry(user);
-                  }}
-                  title="Remove"
+                  className="sr-create-btn br-clear-btn hover-fx"
+                  onClick={clear}
+                  title="Clear"
                   type="button"
                 >
-                  <X size={12} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* ── Resize divider ── */}
-        <div
-          aria-orientation="vertical"
-          className="sr-divider"
-          onMouseDown={onDividerMouseDown}
-          role="separator"
-        />
-
-        {/* ── Main panel ── */}
-        <div className="sr-main">
-          {browseState === 'complete' && hasResults ? (
-            <BrowseResults
-              files={files}
-              key={username}
-              username={username}
-            />
-          ) : (
-            <div className="sr-empty">
-              <FolderOpen
-                size={32}
-                strokeWidth={1.25}
-              />
-              <p>
-                {browseState === 'idle'
-                  ? 'Browse a user to view their shared files'
-                  : pending
-                    ? 'Downloading file list…'
-                    : browseState === 'error'
-                      ? `Failed to browse ${username}`
-                      : 'User is not sharing any files'}
-              </p>
-              {browseState === 'idle' && (
-                <button
-                  className="chat-start-btn hover-fx"
-                  onClick={() => setBrowseModalOpen(true)}
-                  type="button"
-                >
-                  Browse a User
+                  <X size={15} />
                 </button>
               )}
             </div>
-          )}
+
+            {pending && (
+              <div className="sr-sidebar-status">
+                Receiving file list…{' '}
+                {Math.round(browseStatus?.percentComplete || 0)}%
+              </div>
+            )}
+            {browseState === 'error' && (
+              <div className="sr-sidebar-status sr-sidebar-status--error">
+                Failed to browse {username}
+              </div>
+            )}
+            {browseState === 'complete' && hasResults && (
+              <div className="br-info-bar">
+                {(info.files + info.lockedFiles).toLocaleString()} files ·{' '}
+                {(info.directories + info.lockedDirectories).toLocaleString()}{' '}
+                folders
+              </div>
+            )}
+
+            <div
+              aria-label="Recently browsed users"
+              className="sr-search-list"
+              role="listbox"
+            >
+              {browseHistory.length === 0 && (
+                <div className="sr-search-list-empty">No users browsed yet</div>
+              )}
+              {browseHistory.map((user) => (
+                <div
+                  aria-selected={user === username}
+                  className={`sr-search-item${user === username ? ' sr-search-item--active' : ''}`}
+                  key={user}
+                  onClick={() => doBrowse(user)}
+                  onKeyDown={(e) => e.key === 'Enter' && doBrowse(user)}
+                  role="option"
+                  tabIndex={0}
+                  title={user}
+                >
+                  <span className="sr-search-item-icon">
+                    <User size={13} />
+                  </span>
+                  <span className="sr-search-item-text">{user}</span>
+                  <button
+                    aria-label="Remove from history"
+                    className="sr-search-item-action"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeHistoryEntry(user);
+                    }}
+                    title="Remove"
+                    type="button"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Resize divider ── */}
+          <div
+            aria-orientation="vertical"
+            className="sr-divider"
+            onMouseDown={onDividerMouseDown}
+            role="separator"
+          />
+
+          {/* ── Main panel ── */}
+          <div className="sr-main">
+            {browseState === 'complete' && hasResults ? (
+              <BrowseResults
+                files={files}
+                key={username}
+                username={username}
+              />
+            ) : (
+              <div className="sr-empty">
+                <FolderOpen
+                  size={32}
+                  strokeWidth={1.25}
+                />
+                <h2>
+                  {pending
+                    ? 'Loading shared files'
+                    : browseState === 'error'
+                      ? 'Unable to browse this user'
+                      : 'Explore a shared collection'}
+                </h2>
+                <p>
+                  {browseState === 'idle'
+                    ? 'Browse a user to view their shared files'
+                    : pending
+                      ? 'Downloading file list…'
+                      : browseState === 'error'
+                        ? `Failed to browse ${username}`
+                        : 'User is not sharing any files'}
+                </p>
+                {browseState === 'idle' && (
+                  <button
+                    className="chat-start-btn hover-fx"
+                    onClick={() => setBrowseModalOpen(true)}
+                    type="button"
+                  >
+                    Browse a User
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      </CommunityWorkspace>
       <BrowseModal
         onBrowse={doBrowse}
         onClose={() => setBrowseModalOpen(false)}

@@ -50,6 +50,8 @@ namespace resonance.Core.API
         public static readonly string DownloadDirectoryComplete = "DOWNLOAD_DIRECTORY_COMPLETE";
         public static readonly string UploadFileComplete = "UPLOAD_FILE_COMPLETE";
         public static readonly string PrivateMessage = "PRIVATE_MESSAGE";
+        public static readonly string ConversationChanged = "CONVERSATION_CHANGED";
+        public static readonly string RoomMessage = "ROOM_MESSAGE";
         public static readonly string Browsed = "BROWSED";
         public static readonly string RoomMention = "ROOM_MENTION";
         public static readonly string ServerRestarting = "SERVER_RESTARTING";
@@ -64,6 +66,10 @@ namespace resonance.Core.API
     /// </summary>
     public static class ApplicationHubExtensions
     {
+        public const string MessagingGroup = "feature:messaging";
+        public const string TransfersGroup = "feature:transfers";
+        public const string BrowsingGroup = "feature:user-browsing";
+
         /// <summary>
         ///     Broadcast the present application state.
         /// </summary>
@@ -88,27 +94,37 @@ namespace resonance.Core.API
 
         public static Task BroadcastDownloadDirectoryCompleteAsync(this IHubContext<ApplicationHub> hub, string username, string directoryName)
         {
-            return hub.Clients.All.SendAsync(ApplicationHubMethods.DownloadDirectoryComplete, new { username, directoryName });
+            return hub.Clients.Group(TransfersGroup).SendAsync(ApplicationHubMethods.DownloadDirectoryComplete, new { username, directoryName });
         }
 
         public static Task BroadcastUploadFileCompleteAsync(this IHubContext<ApplicationHub> hub, string username, string filename)
         {
-            return hub.Clients.All.SendAsync(ApplicationHubMethods.UploadFileComplete, new { username, filename });
+            return hub.Clients.Group(TransfersGroup).SendAsync(ApplicationHubMethods.UploadFileComplete, new { username, filename });
         }
 
         public static Task BroadcastPrivateMessageAsync(this IHubContext<ApplicationHub> hub, string username, string message)
         {
-            return hub.Clients.All.SendAsync(ApplicationHubMethods.PrivateMessage, new { username, message });
+            return hub.Clients.Group(MessagingGroup).SendAsync(ApplicationHubMethods.PrivateMessage, new { username, message });
+        }
+
+        public static Task BroadcastConversationChangedAsync(this IHubContext<ApplicationHub> hub, string username)
+        {
+            return hub.Clients.Group(MessagingGroup).SendAsync(ApplicationHubMethods.ConversationChanged, new { username });
+        }
+
+        public static Task BroadcastRoomMessageAsync(this IHubContext<ApplicationHub> hub, string roomName)
+        {
+            return hub.Clients.Group(MessagingGroup).SendAsync(ApplicationHubMethods.RoomMessage, new { roomName });
         }
 
         public static Task BroadcastBrowsedAsync(this IHubContext<ApplicationHub> hub, string username)
         {
-            return hub.Clients.All.SendAsync(ApplicationHubMethods.Browsed, username);
+            return hub.Clients.Group(BrowsingGroup).SendAsync(ApplicationHubMethods.Browsed, username);
         }
 
         public static Task BroadcastRoomMentionAsync(this IHubContext<ApplicationHub> hub, string roomName, string username, string message)
         {
-            return hub.Clients.All.SendAsync(ApplicationHubMethods.RoomMention, new { roomName, username, message });
+            return hub.Clients.Group(MessagingGroup).SendAsync(ApplicationHubMethods.RoomMention, new { roomName, username, message });
         }
 
         public static Task BroadcastServerRestartingAsync(this IHubContext<ApplicationHub> hub)
@@ -160,19 +176,30 @@ namespace resonance.Core.API
         public ApplicationHub(
             IStateMonitor<State> stateMonitor,
             IOptionsMonitor<Options> optionsMonitor,
-            resonance.Users.Blocking.BlockedUsersService blockedUsersService)
+            resonance.Users.Blocking.BlockedUsersService blockedUsersService,
+            IAuthorizationService authorization)
         {
             StateMonitor = stateMonitor;
             OptionsMonitor = optionsMonitor;
             BlockedUsers = blockedUsersService;
+            Authorization = authorization;
         }
 
+        private IAuthorizationService Authorization { get; }
         private IStateMonitor<State> StateMonitor { get; }
         private IOptionsMonitor<Options> OptionsMonitor { get; }
         private resonance.Users.Blocking.BlockedUsersService BlockedUsers { get; }
 
         public override async Task OnConnectedAsync()
         {
+            foreach (var feature in new[] { "messaging", "transfers", "user-browsing" })
+            {
+                if ((await Authorization.AuthorizeAsync(Context.User, null, AuthPolicy.Feature(feature))).Succeeded)
+                {
+                    await Groups.AddToGroupAsync(Context.ConnectionId, "feature:" + feature);
+                }
+            }
+
             await Clients.Caller.SendAsync(ApplicationHubMethods.State, StateMonitor.CurrentValue);
             await Clients.Caller.SendAsync(ApplicationHubMethods.Options, OptionsMonitor.CurrentValue.Redact());
             await Clients.Caller.SendAsync(ApplicationHubMethods.BlockedUsers, ApplicationHubExtensions.BuildBlockedUsersPayload(BlockedUsers));

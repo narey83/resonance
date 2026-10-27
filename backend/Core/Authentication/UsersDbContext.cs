@@ -42,7 +42,6 @@ public class UsersDbContext : DbContext
     public DbSet<UserSession> Sessions { get; set; }
     public DbSet<CustomRole> CustomRoles { get; set; }
     public DbSet<FeaturePermission> FeaturePermissions { get; set; }
-    public DbSet<PushToken> PushTokens { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -60,9 +59,5 @@ public class UsersDbContext : DbContext
 
         modelBuilder.Entity<FeaturePermission>()
             .HasKey(p => new { p.RoleName, p.FeatureKey });
-
-        modelBuilder.Entity<PushToken>()
-            .HasIndex(t => new { t.Username, t.DeviceId })
-            .IsUnique();
     }
 }

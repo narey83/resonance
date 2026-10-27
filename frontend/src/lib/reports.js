@@ -38,9 +38,24 @@ const buildParameters = (parameters) => {
   return qs.toString();
 };
 
-export const getSummary = async ({ start, end, direction, username } = {}) => {
-  const q = buildParameters({ start, end, direction, username });
-  return (await api.get(`/telemetry/reports/transfers/summary?${q}`)).data;
+export const getSummary = async ({
+  start,
+  end,
+  direction,
+  username,
+  includeTimings,
+  signal,
+} = {}) => {
+  const q = buildParameters({
+    start,
+    end,
+    direction,
+    username,
+    includeTimings,
+  });
+  return (
+    await api.get(`/telemetry/reports/transfers/summary?${q}`, { signal })
+  ).data;
 };
 
 export const getHistogram = async ({
@@ -49,9 +64,12 @@ export const getHistogram = async ({
   interval = 60,
   direction,
   username,
+  signal,
 } = {}) => {
   const q = buildParameters({ start, end, interval, direction, username });
-  return (await api.get(`/telemetry/reports/transfers/histogram?${q}`)).data;
+  return (
+    await api.get(`/telemetry/reports/transfers/histogram?${q}`, { signal })
+  ).data;
 };
 
 export const getLeaderboard = async ({
@@ -61,9 +79,12 @@ export const getLeaderboard = async ({
   sortBy = 'TotalBytes',
   limit = 10,
   offset = 0,
+  signal,
 } = {}) => {
   const q = buildParameters({ direction, start, end, sortBy, limit, offset });
-  return (await api.get(`/telemetry/reports/transfers/leaderboard?${q}`)).data;
+  return (
+    await api.get(`/telemetry/reports/transfers/leaderboard?${q}`, { signal })
+  ).data;
 };
 
 export const getDirectories = async ({
@@ -71,9 +92,12 @@ export const getDirectories = async ({
   end,
   limit = 10,
   offset = 0,
+  signal,
 } = {}) => {
   const q = buildParameters({ start, end, limit, offset });
-  return (await api.get(`/telemetry/reports/transfers/directories?${q}`)).data;
+  return (
+    await api.get(`/telemetry/reports/transfers/directories?${q}`, { signal })
+  ).data;
 };
 
 export const getTopFiles = async ({
@@ -81,9 +105,11 @@ export const getTopFiles = async ({
   end,
   limit = 10,
   offset = 0,
+  signal,
 } = {}) => {
   const q = buildParameters({ start, end, limit, offset });
-  return (await api.get(`/telemetry/reports/transfers/files?${q}`)).data;
+  return (await api.get(`/telemetry/reports/transfers/files?${q}`, { signal }))
+    .data;
 };
 
 export const getExceptionsPareto = async ({
@@ -92,11 +118,15 @@ export const getExceptionsPareto = async ({
   end,
   limit = 10,
   offset = 0,
+  signal,
 } = {}) => {
   if (!direction) return [];
   const q = buildParameters({ direction, start, end, limit, offset });
-  return (await api.get(`/telemetry/reports/transfers/exceptions/pareto?${q}`))
-    .data;
+  return (
+    await api.get(`/telemetry/reports/transfers/exceptions/pareto?${q}`, {
+      signal,
+    })
+  ).data;
 };
 
 export const getUserDetail = async ({ username, start, end } = {}) => {
@@ -120,6 +150,7 @@ export const getExceptions = async ({
   return (await api.get(`/telemetry/reports/transfers/exceptions?${q}`)).data;
 };
 
+// The map requests its bounded peer set once; table callers still paginate.
 export const getUserList = async ({
   start,
   end,
@@ -128,6 +159,7 @@ export const getUserList = async ({
   sortOrder = 'DESC',
   limit = 25,
   offset = 0,
+  signal,
 } = {}) => {
   const q = buildParameters({
     start,
@@ -138,7 +170,9 @@ export const getUserList = async ({
     limit,
     offset,
   });
-  const res = await api.get(`/telemetry/reports/transfers/users?${q}`);
+  const res = await api.get(`/telemetry/reports/transfers/users?${q}`, {
+    signal,
+  });
   return {
     items: res.data,
     total: Number.parseInt(res.headers['x-total-count'] ?? '0', 10),
@@ -190,6 +224,7 @@ export const getTransferHistory = async ({
   search,
   limit = 50,
   offset = 0,
+  signal,
 } = {}) => {
   const q = buildParameters({
     direction,
@@ -201,7 +236,9 @@ export const getTransferHistory = async ({
     limit,
     offset,
   });
-  const res = await api.get(`/telemetry/reports/transfers/history?${q}`);
+  const res = await api.get(`/telemetry/reports/transfers/history?${q}`, {
+    signal,
+  });
   return {
     items: res.data,
     total: Number.parseInt(res.headers['x-total-count'] ?? '0', 10),
@@ -213,17 +250,20 @@ export const getTransferHistory = async ({
  * The full chain of attempts leading up to a transfer, oldest first: the failed attempt(s) that
  * were retried, if any, followed by the transfer itself.
  */
-export const getTransferAttempts = async (id) => {
+export const getTransferAttempts = async (id, { signal } = {}) => {
   const res = await api.get(
     `/telemetry/reports/transfers/history/${encodeURIComponent(id)}/attempts`,
+    { signal },
   );
   return res.data;
 };
 
-export const getUserEventCounts = async ({ usernames, start } = {}) => {
+export const getUserEventCounts = async ({ usernames, start, signal } = {}) => {
   const q = start ? `?start=${encodeURIComponent(start)}` : '';
   return (
-    await api.post(`/telemetry/reports/users/event-counts${q}`, usernames)
+    await api.post(`/telemetry/reports/users/event-counts${q}`, usernames, {
+      signal,
+    })
   ).data;
 };
 
@@ -239,38 +279,48 @@ export const getUserNetworkInfo = async ({ username } = {}) => {
   }
 };
 
-export const getHeatmap = async ({ start, end, direction } = {}) => {
+export const getHeatmap = async ({ start, end, direction, signal } = {}) => {
   const q = buildParameters({ start, end, direction });
-  return (await api.get(`/telemetry/reports/transfers/heatmap?${q}`)).data;
+  return (
+    await api.get(`/telemetry/reports/transfers/heatmap?${q}`, { signal })
+  ).data;
 };
 
-export const getGeography = async ({ start, end, limit = 10 } = {}) => {
+export const getGeography = async ({ start, end, limit = 10, signal } = {}) => {
   const q = buildParameters({ start, end, limit });
-  return (await api.get(`/telemetry/reports/transfers/geography?${q}`)).data;
+  return (
+    await api.get(`/telemetry/reports/transfers/geography?${q}`, { signal })
+  ).data;
 };
 
-export const getRetryFunnel = async ({ start, end } = {}) => {
+export const getRetryFunnel = async ({ start, end, signal } = {}) => {
   const q = buildParameters({ start, end });
-  return (await api.get(`/telemetry/reports/transfers/retries?${q}`)).data;
+  return (
+    await api.get(`/telemetry/reports/transfers/retries?${q}`, { signal })
+  ).data;
 };
 
-export const getQueueWait = async ({ start, end } = {}) => {
+export const getQueueWait = async ({ start, end, signal } = {}) => {
   const q = buildParameters({ start, end });
-  return (await api.get(`/telemetry/reports/transfers/queue-wait?${q}`)).data;
+  return (
+    await api.get(`/telemetry/reports/transfers/queue-wait?${q}`, { signal })
+  ).data;
 };
 
-export const getPeerRetention = async ({ start, end } = {}) => {
+export const getPeerRetention = async ({ start, end, signal } = {}) => {
   const q = buildParameters({ start, end });
-  return (await api.get(`/telemetry/reports/transfers/peers?${q}`)).data;
+  return (await api.get(`/telemetry/reports/transfers/peers?${q}`, { signal }))
+    .data;
 };
 
-export const getCoverage = async () => {
-  return (await api.get('/telemetry/reports/transfers/coverage')).data;
+export const getCoverage = async ({ signal } = {}) => {
+  return (await api.get('/telemetry/reports/transfers/coverage', { signal }))
+    .data;
 };
 
-export const getSocialActivity = async ({ start, end } = {}) => {
+export const getSocialActivity = async ({ start, end, signal } = {}) => {
   const q = buildParameters({ start, end });
-  return (await api.get(`/telemetry/reports/social?${q}`)).data;
+  return (await api.get(`/telemetry/reports/social?${q}`, { signal })).data;
 };
 
 export const getUserBrowseEvents = async ({

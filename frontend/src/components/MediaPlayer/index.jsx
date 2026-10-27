@@ -45,7 +45,7 @@ import {
 } from '../../lib/ambientColour';
 import * as castApi from '../../lib/cast';
 import { getLocalStreamUrl } from '../../lib/files';
-import { getArtworkUrl } from '../../lib/musicLibrary';
+import { getArtworkUrl, recordPlaybackActivity } from '../../lib/musicLibrary';
 import {
   applyAuditionTempo,
   ORIGINAL_AUDITION_TEMPO,
@@ -298,6 +298,24 @@ const MediaPlayer = () => {
   const triggerPlayRef = useRef(null);
 
   const [playing, setPlaying] = useState(false);
+  useEffect(() => {
+    if (!playing || !track?.path || track.localRelativePath) return undefined;
+    let inFlight = false;
+    const report = () => {
+      if (inFlight) return;
+      inFlight = true;
+      recordPlaybackActivity()
+        .catch(() => {})
+        .finally(() => {
+          inFlight = false;
+        });
+    };
+
+    report();
+    const timer = setInterval(report, 20_000);
+    return () => clearInterval(timer);
+  }, [playing, track?.path, track?.localRelativePath]);
+
   const [currentTime, setCurrentTime] = useState(0);
 
   useEffect(() => {
@@ -527,26 +545,20 @@ const MediaPlayer = () => {
     return () => targetWindow.removeEventListener('keydown', onKey);
   }, [popout.container, closePopout]);
 
-  // When the player appears, any scrollable container that is near its bottom
-  // edge will have content clipped by the player. Nudge those containers down
-  // so the content that was visible stays visible.
+  // Keep the playing row visible when the player first appears.
   const previousTrackNullRef = useRef(track === null);
   useEffect(() => {
     const wasNull = previousTrackNullRef.current;
     previousTrackNullRef.current = track === null;
     if (!wasNull || track === null) return;
-    const playerH = playerRef.current?.offsetHeight ?? 83;
     const main = document.querySelector('.app-main');
     if (!main) return;
-    for (const element of main.querySelectorAll('*')) {
-      if (element.scrollHeight > element.clientHeight + 2) {
-        const distributionToBottom =
-          element.scrollHeight - element.clientHeight - element.scrollTop;
-        if (distributionToBottom < playerH * 2) {
-          element.scrollTop += playerH;
-        }
-      }
-    }
+    // Only the playing row needs adjustment. Walking every waveform/SVG node forces
+    // repeated layout work on a large library precisely when audio is starting.
+    main.querySelector('.jb-track-row--playing')?.scrollIntoView?.({
+      block: 'nearest',
+      inline: 'nearest',
+    });
   }, [track]);
 
   const wasCastingRef = useRef(false);
@@ -1046,12 +1058,9 @@ const MediaPlayer = () => {
   const artistMeta = [displayArtist, attributes].filter(Boolean).join(' · ');
   const upNext = queueIndex == null ? [] : queue.slice(queueIndex + 1);
 
-  // One URL for the mini thumbnail, the expanded hero and the blurred backdrop.
-  // Every distinct size is a separate cold decode+resize on the server, so asking
-  // for three of them meant expanding the player waited on two fresh renders
-  // (and showed the page through a still-transparent backdrop meanwhile). Sharing
-  // the largest size we'd render anyway means expanding is a browser cache hit.
-  // 512 is AlbumArt's own ceiling; under a 64px blur the backdrop can't tell.
+  // Fetch hero artwork only when the expanded player is mounted. Small thumbnails
+  // and the blurred backdrop share the inexpensive browser-cached rendition.
+  const thumbArtUrl = track.path ? getArtworkUrl(track.path, 192) : null;
   const artUrl = track.path ? getArtworkUrl(track.path, 512) : null;
   const integratedLufs = Number.isFinite(trackLoudness?.integratedLufs)
     ? trackLoudness.integratedLufs.toFixed(1)
@@ -1087,7 +1096,7 @@ const MediaPlayer = () => {
               }
               style={
                 track.hasArtwork
-                  ? { backgroundImage: `url(${artUrl})` }
+                  ? { backgroundImage: `url(${thumbArtUrl})` }
                   : undefined
               }
             />
@@ -1533,7 +1542,7 @@ const MediaPlayer = () => {
               path={track.path}
               radius={5}
               size={64}
-              src={artUrl}
+              src={thumbArtUrl}
             />
           </div>
 

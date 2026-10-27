@@ -1,0 +1,39 @@
+.bridge-page { padding: var(--page-spacing, 20px) var(--page-gutter, 24px); color: var(--text-primary); overflow: auto; height: 100%; }
+.bridge-page > * { max-width: 1200px; margin-left: auto; margin-right: auto; }
+.bridge-page h1 { font-size: 24px; margin: 4px 0 8px; letter-spacing: -.025em; }
+.bridge-page h2 { font-size: 20px; margin: 0 0 8px; }
+.bridge-page p { color: var(--text-secondary); line-height: 1.6; }
+.bridge-page-heading { margin-bottom: 24px; }
+.bridge-eyebrow { font-size: 10px; letter-spacing: .12em; font-weight: 700; margin: 0; }
+.bridge-intro { display: flex; align-items: center; gap: 18px; margin-bottom: 24px; }
+.bridge-intro p { margin: 0; max-width: 680px; }
+.bridge-app-icon { padding: 15px; border-radius: 14px; color: var(--accent); background: var(--bg-surface); border: 1px solid var(--border); }
+.bridge-preview { margin-left: auto; flex-shrink: 0; font-size: 11px; border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; color: var(--text-secondary); }
+.bridge-platforms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-bottom: 24px; }
+.bridge-platform { background: var(--bg-surface); border: 1px solid var(--border); padding: 24px; min-width: 0; }
+.bridge-platform-macos { border-radius: 14px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+.bridge-platform-windows { border-radius: 4px; font-family: 'Segoe UI', system-ui, sans-serif; }
+.bridge-platform-linux { border-radius: 8px; font-family: Ubuntu, Cantarell, system-ui, sans-serif; }
+.bridge-platform-heading { display: flex; align-items: center; gap: 12px; }
+.bridge-platform h3 { font-family: inherit; font-size: 20px; margin: 0; }
+.bridge-platform-detail { min-height: 44px; font-size: 12px; }
+.bridge-recommendation { min-height: 28px; font-size: 11px; color: var(--accent); font-weight: 600; }
+.bridge-page button { font: inherit; cursor: pointer; }
+.bridge-page button:disabled { opacity: .5; cursor: default; }
+.bridge-page .bridge-download { width: 100%; display: flex; justify-content: center; align-items: center; gap: 8px; border: 1px solid var(--accent); background: var(--accent); color: var(--bg-primary); padding: 11px 12px; font-size: 13px; font-weight: 650; }
+.bridge-platform-macos .bridge-download { border-radius: 9px; }
+.bridge-platform-windows .bridge-download { border-radius: 3px; }
+.bridge-platform-linux .bridge-download { border-radius: 6px; }
+.bridge-platform-note, .bridge-unavailable { font-size: 12px; }
+.bridge-setup { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; padding: 24px; }
+.bridge-setup ol { margin: 16px 0; padding-left: 22px; color: var(--text-secondary); }
+.bridge-setup li { padding: 5px 0; line-height: 1.6; }
+.bridge-page a { color: var(--accent); }
+.bridge-feature-links { display: flex; gap: 24px; margin-top: 20px; }
+.bridge-feature-links a { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
+.bridge-source { display: flex; gap: 12px; align-items: center; padding-top: 20px; color: var(--text-secondary); font-size: 12px; }
+.bridge-source button, .bridge-error button { color: var(--accent); background: transparent; border: 1px solid var(--border); border-radius: 5px; padding: 7px 10px; }
+.bridge-error { padding: 12px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 5px; margin-bottom: 16px; }
+.bridge-page :is(a, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 1000px) { .bridge-platforms { grid-template-columns: 1fr; } .bridge-platform-detail { min-height: 0; } }
+@media (max-width: 600px) { .bridge-intro { flex-wrap: wrap; gap: 12px; } .bridge-preview { margin-left: 0; } .bridge-platform, .bridge-setup { padding: 18px; } .bridge-source { flex-wrap: wrap; } }

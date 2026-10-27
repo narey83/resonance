@@ -107,6 +107,14 @@ namespace resonance.Transfers.Downloads
         /// <returns>The list of downloads matching the specified expression, or all downloads if no expression is specified.</returns>
         List<Transfer> List(Expression<Func<Transfer, bool>> expression = null, bool includeRemoved = false);
 
+        /// <summary>Lists every active download and a database-limited recent history.</summary>
+        /// <returns>All matching active transfers and at most the requested number of completed transfers.</returns>
+        List<Transfer> ListCapped(bool includeRemoved, bool activeOnly, int maxCompleted);
+
+        /// <summary>Lists dangling transfers, including removed records, for startup recovery.</summary>
+        /// <returns>Transfers that are unfinished or lack a completed state, including removed records.</returns>
+        List<Transfer> ListForRecovery() => List(t => t.EndedAt == null || !TransferStateCategories.Completed.Contains(t.State), includeRemoved: true);
+
         /// <summary>
         ///     Gets the last known peer addresses for the specified <paramref name="usernames"/>, falling back to
         ///     persisted network info for users not seen with an in-progress transfer since the application started.
@@ -830,6 +838,19 @@ namespace resonance.Transfers.Downloads
                 Log.Error(ex, "Failed to get place in queue for download {Id}: {Message}", id, ex.Message);
                 throw;
             }
+        }
+
+        /// <inheritdoc/>
+        public List<Transfer> ListForRecovery()
+        {
+            using var context = ContextFactory.CreateDbContext();
+            return TransferListQuery.ListForRecovery(context, TransferDirection.Download);
+        }
+
+        public List<Transfer> ListCapped(bool includeRemoved, bool activeOnly, int maxCompleted)
+        {
+            using var context = ContextFactory.CreateDbContext();
+            return TransferListQuery.ListCapped(context, TransferDirection.Download, includeRemoved, activeOnly, maxCompleted);
         }
 
         /// <summary>

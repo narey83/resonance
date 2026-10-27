@@ -27,8 +27,10 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { sessionGuard } from '../../lib/sessionScope';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
+  AppState,
   Platform,
   Pressable,
   StyleSheet,
@@ -39,7 +41,7 @@ import {
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useIsFocused, useFocusEffect } from '@react-navigation/native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useConversationStore } from '../../store/conversationStore';
@@ -102,6 +104,7 @@ function formatDayLabel(iso: string): string {
 
 export default function ChatConversationScreen({ navigation, route }: Props) {
   const { username } = route.params;
+  const focused = useIsFocused();
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
@@ -203,11 +206,20 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      loadMessages(username).then(() => {
-        acknowledge(username);
-      });
+      const current = sessionGuard();
+      let active = true;
+      void loadMessages(username).then(() => {
+        if (active && current()) return acknowledge(username);
+      }).catch(() => {});
+      return () => { active = false; };
     }, [username, loadMessages, acknowledge])
   );
+
+  React.useEffect(() => {
+    if (focused && AppState.currentState === 'active' && thread.some((m) => m.direction === 'In' && !m.isAcknowledged)) {
+      void acknowledge(username).catch(() => {});
+    }
+  }, [focused, thread, acknowledge, username]);
 
   React.useEffect(() => {
     loadTranslationStatus();
@@ -361,7 +373,7 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
         renderItem={renderMessage}
         contentContainerStyle={s.list}
         ListHeaderComponent={<Animated.View style={spacerAnimatedStyle} />}
-        onRefresh={() => loadMessages(username)}
+        onRefresh={() => { void loadMessages(username).catch(() => {}); }}
         refreshing={false}
       />
       <KeyboardStickyView offset={{ opened: tabBarHeight }}>

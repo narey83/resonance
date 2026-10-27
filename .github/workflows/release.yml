@@ -46,17 +46,6 @@ jobs:
       - uses: android-actions/setup-android@v4
         with:
           packages: platform-tools
-      - name: Write google-services.json
-        working-directory: mobile
-        env:
-          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
-        run: |
-          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
-            echo "::error::GOOGLE_SERVICES_JSON secret is not set. Add it with:" \
-                 "gh secret set GOOGLE_SERVICES_JSON < <(base64 -w0 mobile/google-services.json)"
-            exit 1
-          fi
-          printf '%s' "$GOOGLE_SERVICES_JSON" | base64 -d > google-services.json
       - name: Prebuild native Android project
         working-directory: mobile
         run: npx expo prebuild --platform android --no-install

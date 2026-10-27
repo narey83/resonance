@@ -1,3 +1,16 @@
+diff --git a/node_modules/react-native-track-player/android/build.gradle b/node_modules/react-native-track-player/android/build.gradle
+index 763583c..4e4f127 100644
+--- a/node_modules/react-native-track-player/android/build.gradle
++++ b/node_modules/react-native-track-player/android/build.gradle
+@@ -27,6 +27,8 @@ def getExtOrIntegerDefault(name) {
+
+ android {
+   namespace "com.doublesymmetry.trackplayer"
++  ndkVersion rootProject.ext.ndkVersion
++  externalNativeBuild { cmake { path "src/main/cpp/studio/CMakeLists.txt" } }
+
+   compileSdkVersion getExtOrIntegerDefault("compileSdkVersion")
+
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/kotlinaudio/models/AudioItem.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/kotlinaudio/models/AudioItem.kt
 index 5a1b2bf..04fcecd 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/kotlinaudio/models/AudioItem.kt
@@ -34,8 +47,51 @@ index 5a1b2bf..04fcecd 100644
 +            else -> null
 +        }
      }
- 
+
      companion object {
+diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/kotlinaudio/players/BaseAudioPlayer.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/kotlinaudio/players/BaseAudioPlayer.kt
+index a0f995c..209217f 100644
+--- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/kotlinaudio/players/BaseAudioPlayer.kt
++++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/kotlinaudio/players/BaseAudioPlayer.kt
+@@ -142,8 +142,7 @@ abstract class BaseAudioPlayer internal constructor(
+         val audioOffloadPreferences =
+             TrackSelectionParameters.AudioOffloadPreferences.Builder()
+                 .setAudioOffloadMode(
+-                    if (offload) TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
+-                    else TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED)
++                    TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED)
+                 // Add additional options as needed
+                 .setIsGaplessSupportRequired(true)
+                 .setIsSpeedChangeSupportRequired(true)
+@@ -161,7 +160,7 @@ abstract class BaseAudioPlayer internal constructor(
+         }
+         playerEventHolder.updateAudioPlayerState(AudioPlayerState.IDLE)
+
+-        val renderer = DefaultRenderersFactory(context)
++        val renderer = com.doublesymmetry.trackplayer.studio.StudioRendererFactory(context)
+         renderer.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+         exoPlayer = ExoPlayer
+             .Builder(context)
+diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPackage.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPackage.kt
+index 3ce3fa0..3fdd76e 100644
+--- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPackage.kt
++++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPackage.kt
+@@ -10,6 +10,7 @@ import java.util.HashMap
+
+ class TrackPlayerPackage : BaseReactPackage() {
+   override fun getModule(name: String, reactContext: ReactApplicationContext): NativeModule? {
++    if (name == "ResonanceStudio") return com.doublesymmetry.trackplayer.studio.StudioModule(reactContext)
+     return if (name == MusicModule.NAME) {
+       MusicModule(reactContext)
+     } else {
+@@ -28,6 +29,7 @@ class TrackPlayerPackage : BaseReactPackage() {
+         false,  // isCxxModule
+         true // isTurboModule
+       )
++      moduleInfos["ResonanceStudio"] = ReactModuleInfo("ResonanceStudio", "ResonanceStudio", false, false, false, false)
+       moduleInfos
+     }
+   }
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/Track.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/Track.kt
 index 6527258..91a9174 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/Track.kt
@@ -49,7 +105,7 @@ index 6527258..91a9174 100644
 +            contentType = contentType
          )
      }
- 
+
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/TrackAudioItem.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/TrackAudioItem.kt
 index d6e3483..7028072 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/TrackAudioItem.kt
@@ -69,7 +125,7 @@ index fb92033..f472b97 100644
 +++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/model/TrackMetadata.kt
 @@ -19,7 +19,10 @@ abstract class TrackMetadata {
      var mediaId: String? = null
- 
+
      open fun setMetadata(context: Context, bundle: Bundle?, ratingType: Int) {
 +        // resonance patch: fall back to the app logo so the Android Auto now-playing screen (and the
 +        // notification) show branding instead of a blank/generic tile for artwork-less tracks.
@@ -91,7 +147,7 @@ index 2f9f28f..42aaf77 100644
 +        // Diagnostic-only: informs JS of a browse-caching anomaly worth remote-logging. Native does
 +        // not wait on a response — JS just forwards it to the remote log.
 +        const val BUTTON_BROWSE_DIAG = "remote-browse-diag"
- 
+
          // Playback Events
          const val PLAYBACK_PLAY_WHEN_READY_CHANGED = "playback-play-when-ready-changed"
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
@@ -101,7 +157,7 @@ index 13a6c60..49c2fd4 100644
 @@ -561,6 +561,25 @@ class MusicModule(reactContext: ReactApplicationContext) : NativeTrackPlayerSpec
          callback.resolve(musicService.onStartCommandIntentValid)
      }
- 
+
 +    // Android Auto browse tree (resonance patch). Receives the full content
 +    // hierarchy from JS and hands it to the service, which serves it to the
 +    // media3 MediaLibrarySession callbacks.
@@ -125,7 +181,7 @@ index 13a6c60..49c2fd4 100644
      // which causes an exception. We can work around this using a wrapper.
      private fun launchInScope(block: suspend () -> Unit) {
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
-index b495b5a..e82923e 100644
+index b495b5a..3e62307 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
 +++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
 @@ -19,7 +19,9 @@ import androidx.media3.common.Player
@@ -180,7 +236,7 @@ index b495b5a..e82923e 100644
 +    private var mediaButtonPreferences: List<CommandButton> = listOf()
      private var lastWake: Long = 0
      var onStartCommandIntentValid: Boolean = true
- 
+
 @@ -97,6 +125,7 @@ class MusicService : HeadlessJsMediaService() {
                  return "RNTP-${element.className}:${element.methodName}"
              }
@@ -205,7 +261,7 @@ index b495b5a..e82923e 100644
 @@ -290,12 +325,79 @@ class MusicService : HeadlessJsMediaService() {
                      playerCommandsBuilder.add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
                  }
- 
+
 +                Capability.SKIP_TO_NEXT -> {
 +                    playerCommandsBuilder.add(Player.COMMAND_SEEK_TO_NEXT)
 +                }
@@ -285,7 +341,7 @@ index b495b5a..e82923e 100644
 @@ -305,11 +407,15 @@ class MusicService : HeadlessJsMediaService() {
          sessionCommands = sessionCommandsBuilder.build()
          playerCommands = playerCommandsBuilder.build()
- 
+
 +        // Set the preferences as the session-wide default so controllers that connect outside the
 +        // notification controller (System UI, lock screen, Bluetooth) inherit them too.
 +        mediaSession.setMediaButtonPreferences(mediaButtonPreferences)
@@ -303,7 +359,7 @@ index b495b5a..e82923e 100644
 @@ -677,6 +783,231 @@ class MusicService : HeadlessJsMediaService() {
          reactContext?.emitDeviceEvent(event, data?.let { Arguments.fromBundle(it) })
      }
- 
+
 +    // ── Android Auto browse tree (resonance patch) ───────────────────────────────
 +
 +    // Builds one media3 MediaItem from the JS payload. `playable == "1"` marks a
@@ -532,7 +588,31 @@ index b495b5a..e82923e 100644
      @SuppressLint("VisibleForTests")
      @MainThread
      private fun emitList(event: String, data: List<Bundle> = emptyList()) {
-@@ -905,13 +1236,15 @@ class MusicService : HeadlessJsMediaService() {
+@@ -792,13 +1123,21 @@ class MusicService : HeadlessJsMediaService() {
+
+     @MainThread
+     override fun onDestroy() {
+-        if (::player.isInitialized) {
+-            Timber.d("Releasing media session and destroying player")
++        // Browsers can create and destroy the service before JS calls setupPlayer(). The
++        // session already exists then: retaining it makes the next service creation crash
++        // with "Session ID must be unique", even though the real player never started.
++        if (::mediaSession.isInitialized) {
+             mediaSession.release()
++        }
++        if (::player.isInitialized) {
++            Timber.d("Destroying player")
+             player.destroy()
++        } else if (::fakePlayer.isInitialized) {
++            fakePlayer.release()
+         }
+
+         progressUpdateJob?.cancel()
++        scope.cancel()
+         super.onDestroy()
+     }
+
+@@ -905,13 +1244,15 @@ class MusicService : HeadlessJsMediaService() {
                      onStartCommand(null, 0, 0)
                  }
              }
@@ -550,7 +630,7 @@ index b495b5a..e82923e 100644
                      .setAvailableSessionCommands(
                          sessionCommands
                              ?: MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
-@@ -937,6 +1270,8 @@ class MusicService : HeadlessJsMediaService() {
+@@ -937,6 +1278,8 @@ class MusicService : HeadlessJsMediaService() {
                      CustomCommandButton.JUMP_FORWARD.customAction -> { it.seekForward() }
                      CustomCommandButton.NEXT.customAction -> { it.seekToNext() }
                      CustomCommandButton.PREVIOUS.customAction -> { it.seekToPrevious() }
@@ -559,7 +639,7 @@ index b495b5a..e82923e 100644
                  }
              }
              return super.onCustomCommand(session, controller, command, args)
-@@ -976,6 +1311,116 @@ class MusicService : HeadlessJsMediaService() {
+@@ -976,6 +1319,126 @@ class MusicService : HeadlessJsMediaService() {
              }
              return super.onSetRating(session, controller, rating)
          }
@@ -612,7 +692,17 @@ index b495b5a..e82923e 100644
 +                    }
 +                }
 +                android.util.Log.i("ResoAA", "onGetChildren parent=$parentId held, waiting for JS")
-+                return pending
++                // Each caller can request a different page while this node is still loading.
++                // The shared future contains the whole node; slice only for this caller's reply.
++                return Futures.transform(pending, { loaded ->
++                    val items = loaded?.value
++                    if (items == null) loaded!!
++                    else {
++                        val slice = if (pageSize <= 0 || pageSize == Int.MAX_VALUE) items
++                            else items.drop((page.toLong() * pageSize).coerceIn(0L, items.size.toLong()).toInt()).take(pageSize)
++                        LibraryResult.ofItemList(ImmutableList.copyOf(slice), params)
++                    }
++                }, com.google.common.util.concurrent.MoreExecutors.directExecutor())
 +            }
 +            // Honour the requested page. Returning the whole list for every page (a 500-track
 +            // folder answering page 0, 1, 2… identically) makes the car re-render the list from
@@ -674,10 +764,10 @@ index b495b5a..e82923e 100644
 +            return Futures.immediateFuture(mutableListOf())
 +        }
      }
- 
+
      private fun getPendingIntentFlags(): Int {
-@@ -1029,5 +1474,12 @@ class MusicService : HeadlessJsMediaService() {
- 
+@@ -1029,5 +1492,12 @@ class MusicService : HeadlessJsMediaService() {
+
          const val DEFAULT_JUMP_INTERVAL = 15.0
          const val DEFAULT_STOP_FOREGROUND_GRACE_PERIOD = 5
 +
@@ -736,6 +826,19 @@ index 07d1fa8..b13ebf0 100644
 +export declare function browseFailed(mediaId: string): Promise<string>;
  //# sourceMappingURL=trackPlayer.d.ts.map
 \ No newline at end of file
+diff --git a/node_modules/react-native-track-player/react-native-track-player.podspec b/node_modules/react-native-track-player/react-native-track-player.podspec
+index ce4fee0..10c7bd0 100644
+--- a/node_modules/react-native-track-player/react-native-track-player.podspec
++++ b/node_modules/react-native-track-player/react-native-track-player.podspec
+@@ -17,6 +17,8 @@ Pod::Spec.new do |s|
+   s.source_files = "ios/**/*.{h,m,mm,swift}"
+   s.private_header_files = "ios/**/*.h"
+   s.swift_version = "4.2"
++  s.frameworks = "AVFoundation", "MediaToolbox"
++  s.libraries = "c++"
+
+   s.dependency "SwiftAudioEx", "1.1.0"
+
 diff --git a/node_modules/react-native-track-player/src/NativeTrackPlayer.ts b/node_modules/react-native-track-player/src/NativeTrackPlayer.ts
 index a5dcd75..c9ee905 100644
 --- a/node_modules/react-native-track-player/src/NativeTrackPlayer.ts
@@ -749,5 +852,5 @@ index a5dcd75..c9ee905 100644
 +  setBrowseTree(browseTree: UnsafeObject): Promise<string>;
 +  browseFailed(mediaId: string): Promise<string>;
  }
- 
+
  const module = TurboModuleRegistry.getEnforcing<Spec>('TrackPlayer');

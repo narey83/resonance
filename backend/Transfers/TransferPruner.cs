@@ -44,6 +44,7 @@ internal static class TransferPruner
                 .OrderBy(t => t.EndedAt).Select(t => t.Id).Take(BatchSize).ToList();
             return context.Transfers.Where(t => ids.Contains(t.Id)).ExecuteUpdate(set => set.SetProperty(t => t.Removed, true));
         }
+
         const string sql = """
             WITH candidates AS (
                 SELECT "Id"

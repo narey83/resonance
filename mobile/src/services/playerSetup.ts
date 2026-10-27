@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Platform } from 'react-native';
 import TrackPlayer, {
   AppKilledPlaybackBehavior,
   Capability,
@@ -42,21 +43,23 @@ import TrackPlayer, {
 // caller awaits the same promise.
 let setupPromise: Promise<void> | null = null;
 
+// Android's playBuffer controls its start threshold. iOS ignores playBuffer and
+// maps minBuffer to AVPlayer's preferred forward-buffer duration instead.
+export function buildPlayerSetupOptions(platform: string) {
+  return {
+    maxCacheSize: 1024 * 256,
+    minBuffer: platform === 'ios' ? 5 : 30,
+    maxBuffer: 120,
+    playBuffer: 1,
+    backBuffer: 30,
+  };
+}
+
 export function ensurePlayerSetup(): Promise<void> {
   if (!setupPromise) {
     setupPromise = (async () => {
       try {
-        await TrackPlayer.setupPlayer({
-          maxCacheSize: 1024 * 256, // 256 MB on-disk cache — fewer re-downloads on repeat plays
-          // Buffer generously so brief bandwidth dips (tunnels, weak cellular) don't stall:
-          minBuffer:  30,  // keep ≥30 s buffered ahead
-          maxBuffer:  120, // read up to 2 min ahead when bandwidth allows
-          // One second is enough to start promptly while minBuffer/maxBuffer continue filling
-          // ahead in the background. Five seconds made every tap feel artificially delayed even
-          // when the server delivered the first range immediately on the local network.
-          playBuffer: 1,
-          backBuffer: 30,  // retain 30 s behind for instant back-seek
-        });
+        await TrackPlayer.setupPlayer(buildPlayerSetupOptions(Platform.OS));
       } catch {
         // Already set up (e.g. the headless service initialised it first).
       }
@@ -73,6 +76,7 @@ export function ensurePlayerSetup(): Promise<void> {
 // controls survive Love-button updates.
 export function buildPlayerOptions(isLoved: boolean) {
   return {
+    progressUpdateEventInterval: 5,
     capabilities: [
       Capability.Play,
       Capability.Pause,

@@ -1,0 +1,36 @@
+:80 {
+	encode gzip
+	route {
+		handle /maintenance/* {
+			reverse_proxy 127.0.0.1:8090
+		}
+		@maintenance {
+			path /api/* /hub/*
+			file {
+				root /data/maintenance
+				try_files active.json
+			}
+		}
+		handle @maintenance {
+			header Content-Type application/json
+			header Cache-Control no-store
+			header Retry-After 5
+			header X-Resonance-Maintenance true
+			respond `{"code":"maintenance","message":"The server is being maintained. Reconnecting automatically."}` 503
+		}
+		@backend path /api/* /hub/*
+		handle @backend {
+			reverse_proxy backend:5030
+		}
+		handle {
+			root * /srv
+			try_files {path} /index.html
+			file_server
+		}
+	}
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options SAMEORIGIN
+	}
+}

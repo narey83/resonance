@@ -46,7 +46,7 @@ namespace resonance.MusicLibrary.API
     [Produces("application/json")]
     [Consumes("application/json")]
     [Route("api/v{version:apiVersion}/musiclibrary")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.FeatureLibrary)]
     public class LibraryActivityController : ControllerBase
     {
         public LibraryActivityController(ILibraryActivityService service, StreamUrlSigner urlSigner)

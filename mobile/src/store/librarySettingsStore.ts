@@ -30,17 +30,16 @@
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
 
-export type LibraryTab = 'Artists' | 'Albums' | 'Tracks' | 'Folders' | 'Genres' | 'Years' | 'Mixtapes' | 'Loved' | 'History';
+export type LibraryTab = 'Artists' | 'Albums' | 'Tracks' | 'Folders' | 'Genres' | 'Years' | 'Playlists' | 'Loved' | 'History';
 
-export const ALL_TABS: LibraryTab[] = ['Artists', 'Albums', 'Tracks', 'Folders', 'Genres', 'Years', 'Mixtapes', 'Loved', 'History'];
-const DEFAULT_TABS: LibraryTab[] = ['Artists', 'Albums', 'Tracks', 'Folders', 'Genres', 'Years', 'Mixtapes', 'Loved', 'History'];
-// Mixtapes are entirely server-backed (no local variant — a mixtape lives on the server whether
-// or not any of its tracks happen to be local files), so it's not a real option for Local Library.
-export const LOCAL_TABS: LibraryTab[] = ALL_TABS.filter((t) => t !== 'Mixtapes');
-const LOCAL_DEFAULT_TABS: LibraryTab[] = DEFAULT_TABS.filter((t) => t !== 'Mixtapes');
+export const ALL_TABS: LibraryTab[] = ['Folders', 'Artists', 'Albums', 'Tracks', 'Genres', 'Years', 'Playlists', 'Loved', 'History'];
+const DEFAULT_TABS: LibraryTab[] = ['Folders', 'Artists', 'Albums', 'Tracks', 'Genres', 'Years', 'Playlists', 'Loved', 'History'];
+// Both sources expose playlists, backed by independent stores.
+export const LOCAL_TABS: LibraryTab[] = [...ALL_TABS];
+const LOCAL_DEFAULT_TABS: LibraryTab[] = [...DEFAULT_TABS];
 const STORE_KEY = 'library_settings_v1';
 // Bumped when a new tab is introduced so settings saved before it existed pick it up
-const SETTINGS_VERSION = 2;
+const SETTINGS_VERSION = 3;
 
 type TabSource = 'server' | 'local';
 
@@ -57,11 +56,10 @@ interface LibrarySettingsStore {
 }
 
 function sanitizeTabs(tabs: string[] | undefined, allowed: LibraryTab[], fallback: LibraryTab[]): LibraryTab[] {
-  // Migrate: 'Playlists' was renamed to 'Mixtapes'; keep only known-and-allowed tabs, canonically
-  // sorted. `allowed` also strips anything that's since become source-inapplicable (e.g. Mixtapes
-  // for local) even out of an old persisted list that predates that restriction.
-  const mapped = (tabs ?? fallback).map((t) => t === 'Playlists' ? 'Mixtapes' : t);
-  const sorted = (mapped as LibraryTab[])
+  // Migrate the previous Mixtapes label; keep only known-and-allowed tabs, canonically
+  // sorted, retaining only supported tabs.
+  const mapped = (tabs ?? fallback).map((t) => t === 'Mixtapes' ? 'Playlists' : t);
+  const sorted = [...new Set(mapped as LibraryTab[])]
     .filter((t) => allowed.includes(t))
     .sort((a, b) => allowed.indexOf(a) - allowed.indexOf(b));
   return sorted.length ? sorted : fallback;
@@ -93,7 +91,7 @@ export const useLibrarySettings = create<LibrarySettingsStore>((set, get) => ({
         // Pre-split settings had one shared list; seed both sources from it once
         set({
           visibleTabsServer: sanitizeTabs(parsed.visibleTabsServer ?? legacy, ALL_TABS, DEFAULT_TABS),
-          visibleTabsLocal: sanitizeTabs(parsed.visibleTabsLocal ?? legacy, LOCAL_TABS, LOCAL_DEFAULT_TABS),
+          visibleTabsLocal: sanitizeTabs((parsed.version ?? 1) < 3 ? [...(parsed.visibleTabsLocal ?? legacy ?? LOCAL_DEFAULT_TABS), 'Playlists'] : parsed.visibleTabsLocal ?? legacy, LOCAL_TABS, LOCAL_DEFAULT_TABS),
           includeLocalLibrary: parsed.includeLocalLibrary ?? false,
           // Merging local and server library views is retired — force off even if a device
           // has an old settings blob on disk with it saved as true.

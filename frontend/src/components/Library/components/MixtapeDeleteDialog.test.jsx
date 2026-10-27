@@ -15,7 +15,7 @@ const keyDown = (key, shiftKey = false) => {
   );
 };
 
-describe('mixtape deletion confirmation', () => {
+describe('playlist deletion confirmation', () => {
   let container;
   let previousFocus;
   let onCancel;
@@ -77,7 +77,7 @@ describe('mixtape deletion confirmation', () => {
     expect(onDeleted).not.toHaveBeenCalled();
   });
 
-  it('deletes only the confirmed mixtape and reports success', async () => {
+  it('deletes only the confirmed playlist and reports success', async () => {
     expect.hasAssertions();
     mixtapes.remove.mockResolvedValue({});
     await act(async () => Simulate.click(deleteButton()));
@@ -117,7 +117,7 @@ describe('mixtape deletion confirmation', () => {
       .mockResolvedValueOnce({});
     await act(async () => Simulate.click(deleteButton()));
     expect(dialog().querySelector('[role="alert"]').textContent).toContain(
-      'Could not delete this mixtape. Please try again.',
+      'Could not delete this playlist. Please try again.',
     );
     expect(deleteButton().disabled).toBe(false);
     expect(cancelButton().disabled).toBe(false);

@@ -69,10 +69,11 @@ namespace resonance.MusicLibrary
         ///     or the file has changed since it was.
         /// </summary>
         /// <param name="path">The absolute path of the track.</param>
-        /// <param name="size">The requested size; 0 for the original, unresized image.</param>
+        /// <param name="size">The requested thumbnail size.</param>
         /// <param name="fileSize">The track's current size on disk, used to detect a changed file.</param>
+        /// <param name="modifiedTicks">Source modification timestamp, for equal-size replacements.</param>
         /// <returns>The cached bytes and mime type, or null.</returns>
-        public (byte[] Bytes, string Mime)? Get(string path, int size, long fileSize)
+        public (byte[] Bytes, string Mime)? Get(string path, int size, long fileSize, long modifiedTicks = 0)
         {
             try
             {
@@ -80,10 +81,11 @@ namespace resonance.MusicLibrary
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = $@"
                     SELECT bytes, mime FROM {Table}
-                    WHERE masked_filename = @m AND size = @z AND file_size = @s";
+                    WHERE masked_filename = @m AND size = @z AND file_size = @s AND source_modified = @v";
                 AddParam(cmd, "@m", Key(path));
                 AddParam(cmd, "@z", size);
                 AddParam(cmd, "@s", fileSize);
+                AddParam(cmd, "@v", modifiedTicks);
 
                 using var reader = cmd.ExecuteReader();
 
@@ -106,11 +108,12 @@ namespace resonance.MusicLibrary
         ///     Stores artwork for a track at a given size, replacing any previous entry.
         /// </summary>
         /// <param name="path">The absolute path of the track.</param>
-        /// <param name="size">The size the image was rendered at; 0 for the original.</param>
+        /// <param name="size">The size the thumbnail was rendered at.</param>
         /// <param name="fileSize">The track's size on disk at the time of rendering.</param>
         /// <param name="bytes">The encoded image.</param>
         /// <param name="mime">The image's mime type.</param>
-        public void Set(string path, int size, long fileSize, byte[] bytes, string mime)
+        /// <param name="modifiedTicks">Source modification timestamp.</param>
+        public void Set(string path, int size, long fileSize, byte[] bytes, string mime, long modifiedTicks = 0)
         {
             try
             {
@@ -120,16 +123,18 @@ namespace resonance.MusicLibrary
                 // file_size is part of the update, not the key: a re-tagged track keeps one row and
                 // replaces its artwork, rather than accumulating one per version of the file.
                 cmd.CommandText = $@"
-                    INSERT INTO {Table} (masked_filename, size, file_size, mime, bytes, cached_at)
-                    VALUES (@m, @z, @s, @t, @b, @c)
+                    INSERT INTO {Table} (masked_filename, size, file_size, mime, bytes, cached_at, source_modified)
+                    VALUES (@m, @z, @s, @t, @b, @c, @v)
                     ON CONFLICT (masked_filename, size) DO UPDATE SET
                         file_size = excluded.file_size,
+                        source_modified = excluded.source_modified,
                         mime      = excluded.mime,
                         bytes     = excluded.bytes,
                         cached_at = excluded.cached_at";
                 AddParam(cmd, "@m", Key(path));
                 AddParam(cmd, "@z", size);
                 AddParam(cmd, "@s", fileSize);
+                AddParam(cmd, "@v", modifiedTicks);
                 AddParam(cmd, "@t", mime);
                 AddParam(cmd, "@b", bytes);
                 AddParam(cmd, "@c", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
@@ -195,8 +200,26 @@ namespace resonance.MusicLibrary
             {
                 cmd.CommandText = "CREATE TABLE IF NOT EXISTS artwork_cache (masked_filename TEXT NOT NULL, size INTEGER NOT NULL, file_size INTEGER NOT NULL, mime TEXT NOT NULL, bytes BLOB NOT NULL, cached_at INTEGER NOT NULL, PRIMARY KEY(masked_filename,size))";
                 cmd.ExecuteNonQuery();
+                cmd.CommandText = "PRAGMA table_info(artwork_cache)";
+                using (var reader = cmd.ExecuteReader())
+                {
+                    var found = false;
+                    while (reader.Read())
+                    {
+                        found |= reader.GetString(1) == "source_modified";
+                    }
+
+                    if (found)
+                    {
+                        return;
+                    }
+                }
+
+                cmd.CommandText = "ALTER TABLE artwork_cache ADD COLUMN source_modified INTEGER NOT NULL DEFAULT 0";
+                cmd.ExecuteNonQuery();
                 return;
             }
+
             cmd.CommandText = @"
                 CREATE SCHEMA IF NOT EXISTS music;
                 CREATE TABLE IF NOT EXISTS music.artwork_cache (
@@ -208,6 +231,8 @@ namespace resonance.MusicLibrary
                     cached_at        BIGINT NOT NULL,
                     PRIMARY KEY (masked_filename, size)
                 )";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "ALTER TABLE music.artwork_cache ADD COLUMN IF NOT EXISTS source_modified BIGINT NOT NULL DEFAULT 0";
             cmd.ExecuteNonQuery();
         }
     }

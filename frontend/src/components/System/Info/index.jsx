@@ -38,19 +38,18 @@ import {
   getDumpUrl,
   getVersion,
   loopback,
-  restart,
   shutdown,
 } from '../../../lib/application';
 import * as metricsAPI from '../../../lib/metrics';
 import * as sessionAPI from '../../../lib/session';
 import { getSessionId } from '../../../lib/token';
 import { parseUtcDate } from '../../../lib/util';
+import MaintenanceButton from '../../MaintenanceButton';
 import {
   Globe,
   Monitor,
   Power,
   RefreshCw,
-  RotateCcw,
   Smartphone,
   Star,
 } from 'lucide-react';
@@ -398,13 +397,10 @@ const Info = ({ state }) => {
             className="confirm-box"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="confirm-box-title">
-              {confirm === 'shutdown' ? 'Shut Down' : 'Restart Application'}
-            </div>
+            <div className="confirm-box-title">Shut down Resonance</div>
             <div className="confirm-box-message">
-              {confirm === 'shutdown'
-                ? "This will stop the application. You'll need to manually restart it."
-                : 'Are you sure you want to restart the application?'}
+              This will stop the application. You'll need to manually restart
+              it.
             </div>
             <div className="confirm-box-actions">
               <button
@@ -415,15 +411,14 @@ const Info = ({ state }) => {
                 Cancel
               </button>
               <button
-                className={`shares-add-btn shares-add-btn--${confirm === 'shutdown' ? 'danger' : 'warn'}`}
+                className="shares-add-btn shares-add-btn--danger"
                 onClick={() => {
-                  if (confirm === 'shutdown') shutdown();
-                  else restart();
+                  shutdown();
                   setConfirm(null);
                 }}
                 type="button"
               >
-                {confirm === 'shutdown' ? 'Shut Down' : 'Restart'}
+                Shut Down
               </button>
             </div>
           </div>
@@ -455,14 +450,9 @@ const Info = ({ state }) => {
           </button>
         </div>
         <div className="info-actions-right">
-          <button
+          <MaintenanceButton
             className={`info-action-btn info-action-btn--warn hover-fx${pendingRestart ? ' info-action-btn--warn-active' : ''}`}
-            onClick={() => setConfirm('restart')}
-            type="button"
-          >
-            <RotateCcw size={13} />
-            Restart
-          </button>
+          />
           <button
             className="info-action-btn info-action-btn--danger hover-fx"
             onClick={() => setConfirm('shutdown')}

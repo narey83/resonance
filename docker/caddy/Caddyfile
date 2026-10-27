@@ -50,6 +50,28 @@
 	}
 }
 
+# Import first inside app_routes' route block. The marker is changed atomically;
+# toggling maintenance requires no Caddy reload and works while .NET is stopped.
+(maintenance_routes) {
+    handle /maintenance/* {
+        reverse_proxy 127.0.0.1:8090
+    }
+    @maintenance {
+        path /api/* /hub/*
+        file {
+            root /srv/maintenance
+            try_files active.json
+        }
+    }
+    handle @maintenance {
+        header Content-Type application/json
+        header Cache-Control "no-store"
+        header Retry-After "5"
+        header X-Resonance-Maintenance "true"
+        respond `{"code":"maintenance","message":"The server is being maintained. Reconnecting automatically."}` 503
+    }
+}
+
 (app_routes) {
 	log
 	import security_headers
@@ -59,6 +81,9 @@
 	# compressed by Kestrel). Caddy skips responses that already carry a
 	# Content-Encoding and never compresses WebSocket upgrades.
 	encode zstd gzip
+
+        route {
+            import maintenance_routes
 
 	# Auth endpoints — rate limited.
 	@auth_post {
@@ -91,6 +116,7 @@
 	reverse_proxy host.docker.internal:3000 {
 		flush_interval -1
 	}
+        }
 }
 
 # Behind the outer/main proxy — plain HTTP, TLS is the outer proxy's job.

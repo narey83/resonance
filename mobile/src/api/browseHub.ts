@@ -30,10 +30,11 @@
 import {
   HubConnectionBuilder,
   JsonHubProtocol,
-  LogLevel,
 } from '@microsoft/signalr';
+import { useAppMode } from '../store/appModeStore';
+import { createHubLogger, trackHubConnection } from '../lib/hubLifecycle';
 import { useAuthStore } from '../store/auth';
-import { getValidToken } from './client';
+import { createAccessTokenFactory } from './client';
 
 /// Fired whenever the browse history changes anywhere (web or mobile);
 /// payload is the full updated list of usernames, most recent first.
@@ -41,11 +42,12 @@ export const BROWSE_HISTORY = 'HISTORY';
 
 export const createBrowseHubConnection = () => {
   const { serverUrl } = useAuthStore.getState();
-  if (!serverUrl) return null;
+  if (useAppMode.getState().mode !== 'remote' || !serverUrl || !useAuthStore.getState().accessToken) return null;
 
-  return new HubConnectionBuilder()
+  const logger = createHubLogger('browse');
+  return trackHubConnection(new HubConnectionBuilder()
     .withUrl(`${serverUrl}/hub/browse`, {
-      accessTokenFactory: () => getValidToken(),
+      accessTokenFactory: createAccessTokenFactory(),
     })
     .withAutomaticReconnect({
       nextRetryDelayInMilliseconds: (context) =>
@@ -56,6 +58,6 @@ export const createBrowseHubConnection = () => {
     .withServerTimeout(120_000)
     .withKeepAliveInterval(15_000)
     .withHubProtocol(new JsonHubProtocol())
-    .configureLogging(LogLevel.Information)
-    .build();
+    .configureLogging(logger)
+    .build(), logger);
 };

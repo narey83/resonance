@@ -394,7 +394,7 @@ const YtDlp = ({ view }) => {
 
   if (isSearchView) {
     return (
-      <div className="ytdlp-root">
+      <div className="ytdlp-root ytdlp-root--search">
         <div className="ytdlp-panel">
           <SearchPane
             onDownload={handleSearchDownload}

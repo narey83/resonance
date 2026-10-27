@@ -44,6 +44,7 @@ namespace resonance
         ///     null for anything sourced from the JSONL files or the in-memory ring buffer, which
         ///     have no equivalent stable id. What GET /logs?afterId=&lt;id&gt; keys off.
         /// </summary>
+        [System.Text.Json.Serialization.JsonNumberHandling(System.Text.Json.Serialization.JsonNumberHandling.WriteAsString)]
         public long? Id { get; init; }
 
         public DateTime Timestamp { get; init; }

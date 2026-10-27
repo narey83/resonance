@@ -30,6 +30,8 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { create } from 'zustand';
+import { accountScope, decodeJwt } from '../lib/jwt';
+import { getSessionGeneration, isCurrentSession, resetSessionScope } from '../lib/sessionScope';
 
 const KEYS = {
   serverUrl:    'resonance_server_url',
@@ -53,8 +55,9 @@ interface DecodedToken {
 const decodeToken = (token: string | null): DecodedToken => {
   if (!token) return { role: null, expiresAt: null };
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    const role = payload?.[ROLE_CLAIM] ?? payload?.role ?? null;
+    const payload = decodeJwt(token);
+    const claim = payload?.[ROLE_CLAIM] ?? payload?.role;
+    const role = typeof claim === 'string' ? claim : null;
     const expiresAt = typeof payload?.exp === 'number' ? payload.exp * 1000 : null;
     return { role, expiresAt };
   } catch {
@@ -71,70 +74,153 @@ interface AuthState {
   isAdmin:      boolean;
   tokenExpiresAt: number | null; // ms epoch, decoded from the JWT `exp` claim
   isReady:      boolean; // true once SecureStore has been read on startup
+  hydrationError: string | null;
 
   hydrate: ()                                                                    => Promise<void>;
   setServerUrl: (url: string)                                                    => Promise<void>;
-  setTokens: (access: string, refresh: string, sessionId?: string | null)       => Promise<void>;
+  setTokens: (access: string, refresh: string, sessionId?: string | null,
+    options?: { generation: number; refresh?: boolean }) => Promise<void>;
   clearTokens: ()                                                                => Promise<void>;
   clearAll: ()                                                                   => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
-  serverUrl:    null,
-  accessToken:  null,
-  refreshToken: null,
-  sessionId:    null,
-  role:         null,
-  isAdmin:      false,
-  tokenExpiresAt: null,
-  isReady:      false,
+// Keep credential writes ordered: a slow refresh write must finish before a later logout
+// deletes it, and neither may race a new login's writes.
+let storageTail: Promise<unknown> = Promise.resolve();
+const storeCredentials = <T>(work: () => Promise<T>): Promise<T> => {
+  const next = storageTail.then(work, work);
+  storageTail = next.catch(() => {});
+  return next;
+};
+// Promise.all rejects before the remaining native writes finish. Wait for every write before
+// allowing the next queued login/logout to touch those keys, even when one operation fails.
+const settleWrites = async (operations: Promise<void>[]): Promise<void> => {
+  const results = await Promise.allSettled(operations);
+  const failed = results.find((result) => result.status === 'rejected');
+  if (failed?.status === 'rejected') throw failed.reason;
+};
+// CarPlay may restore its existing session while the phone is locked. Biometric
+// saved-server passwords remain separately protected; only session keys use this class.
+const SESSION_STORAGE = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY };
+let hydration: Promise<void> | null = null;
+const signedOut = {
+  accessToken: null, refreshToken: null, sessionId: null,
+  role: null, isAdmin: false, tokenExpiresAt: null,
+};
 
-  hydrate: async () => {
-    const [serverUrl, accessToken, refreshToken, sessionId] = await Promise.all([
-      SecureStore.getItemAsync(KEYS.serverUrl),
-      SecureStore.getItemAsync(KEYS.accessToken),
-      SecureStore.getItemAsync(KEYS.refreshToken),
-      SecureStore.getItemAsync(KEYS.sessionId),
-    ]);
-    const { role, expiresAt } = decodeToken(accessToken);
-    set({ serverUrl, accessToken, refreshToken, sessionId, role, isAdmin: role === 'Administrator', tokenExpiresAt: expiresAt, isReady: true });
+export const useAuthStore = create<AuthState>((set, get) => ({
+  serverUrl: null,
+  ...signedOut,
+  isReady: false,
+  hydrationError: null,
+
+  hydrate: () => {
+    if (hydration) return hydration;
+    const started = getSessionGeneration();
+    set({ hydrationError: null, isReady: false });
+    hydration = storeCredentials(async () => {
+      try {
+        const [serverUrl, accessToken, refreshToken, sessionId] = await Promise.all([
+          SecureStore.getItemAsync(KEYS.serverUrl),
+          SecureStore.getItemAsync(KEYS.accessToken),
+          SecureStore.getItemAsync(KEYS.refreshToken),
+          SecureStore.getItemAsync(KEYS.sessionId),
+        ]);
+        if (!isCurrentSession(started)) return;
+        // Migrate older session entries after the first unlocked launch of this build.
+        await Promise.allSettled(([
+          [KEYS.serverUrl, serverUrl], [KEYS.accessToken, accessToken],
+          [KEYS.refreshToken, refreshToken], [KEYS.sessionId, sessionId],
+        ] as const).filter(([, value]) => value !== null)
+          .map(([key, value]) => SecureStore.setItemAsync(key, value!, SESSION_STORAGE)));
+        if (!isCurrentSession(started)) return;
+        resetSessionScope(accountScope(serverUrl, accessToken), true);
+        const { role, expiresAt } = decodeToken(accessToken);
+        set({ serverUrl, accessToken, refreshToken, sessionId, role, isAdmin: role === 'Administrator', tokenExpiresAt: expiresAt, isReady: true });
+      } catch {
+        if (isCurrentSession(started)) {
+          set({ isReady: true, hydrationError: 'Could not read saved sign-in details. Please try again.' });
+        }
+      }
+    }).finally(() => { hydration = null; });
+    return hydration;
   },
 
   setServerUrl: async (url) => {
-    await SecureStore.setItemAsync(KEYS.serverUrl, url);
-    set({ serverUrl: url });
+    const changed = url !== get().serverUrl;
+    const clearCredentials = changed || !get().accessToken;
+    if (changed) {
+      set({ serverUrl: url, ...signedOut, isReady: true });
+      resetSessionScope(null);
+    }
+    const started = getSessionGeneration();
+    await storeCredentials(async () => {
+      if (!isCurrentSession(started)) return;
+      if (clearCredentials) await settleWrites([
+        SecureStore.deleteItemAsync(KEYS.accessToken),
+        SecureStore.deleteItemAsync(KEYS.refreshToken),
+        SecureStore.deleteItemAsync(KEYS.sessionId),
+      ]);
+      await SecureStore.setItemAsync(KEYS.serverUrl, url, SESSION_STORAGE);
+    });
   },
 
-  setTokens: async (access, refresh, sessionId) => {
-    const ops: Promise<void>[] = [
-      SecureStore.setItemAsync(KEYS.accessToken, access),
-      SecureStore.setItemAsync(KEYS.refreshToken, refresh),
-    ];
-    if (sessionId != null) ops.push(SecureStore.setItemAsync(KEYS.sessionId, sessionId));
-    await Promise.all(ops);
+  setTokens: async (access, refresh, sessionId, options) => {
+    const expectedGeneration = options?.generation;
+    const refreshOnly = options?.refresh ?? false;
+    if (expectedGeneration !== undefined && !isCurrentSession(expectedGeneration)) return;
+    if (!refreshOnly) {
+      set(signedOut);
+      resetSessionScope(accountScope(get().serverUrl, access));
+    }
+    const started = getSessionGeneration();
+    const nextSessionId = sessionId ?? (refreshOnly ? get().sessionId : null);
+    await storeCredentials(async () => {
+      if (!isCurrentSession(started)) return;
+      try {
+        await settleWrites([
+          SecureStore.setItemAsync(KEYS.accessToken, access, SESSION_STORAGE),
+          SecureStore.setItemAsync(KEYS.refreshToken, refresh, SESSION_STORAGE),
+          nextSessionId === null
+            ? SecureStore.deleteItemAsync(KEYS.sessionId)
+            : SecureStore.setItemAsync(KEYS.sessionId, nextSessionId, SESSION_STORAGE),
+        ]);
+      } catch (error) {
+        // A partially saved token pair must never become the next startup's credentials.
+        await settleWrites([
+          SecureStore.deleteItemAsync(KEYS.accessToken),
+          SecureStore.deleteItemAsync(KEYS.refreshToken),
+          SecureStore.deleteItemAsync(KEYS.sessionId),
+        ]).catch(() => {});
+        if (isCurrentSession(started)) {
+          set(signedOut);
+          resetSessionScope(null);
+        }
+        throw error;
+      }
+    });
+    if (!isCurrentSession(started)) return;
     const { role, expiresAt } = decodeToken(access);
-    set((s) => ({
-      accessToken: access,
-      refreshToken: refresh,
-      sessionId: sessionId ?? s.sessionId,
-      role,
-      isAdmin: role === 'Administrator',
-      tokenExpiresAt: expiresAt,
-    }));
+    set({ accessToken: access, refreshToken: refresh, sessionId: nextSessionId,
+      role, isAdmin: role === 'Administrator', tokenExpiresAt: expiresAt, isReady: true, hydrationError: null });
   },
 
   clearTokens: async () => {
-    await Promise.all([
+    set({ ...signedOut, isReady: true });
+    resetSessionScope(null);
+    await storeCredentials(() => settleWrites([
       SecureStore.deleteItemAsync(KEYS.accessToken),
       SecureStore.deleteItemAsync(KEYS.refreshToken),
       SecureStore.deleteItemAsync(KEYS.sessionId),
-    ]);
-    set({ accessToken: null, refreshToken: null, sessionId: null, role: null, isAdmin: false, tokenExpiresAt: null });
+    ]));
   },
 
   clearAll: async () => {
-    await Promise.all(Object.values(KEYS).map((k) => SecureStore.deleteItemAsync(k)));
-    set({ serverUrl: null, accessToken: null, refreshToken: null, sessionId: null, role: null, isAdmin: false, tokenExpiresAt: null });
+    set({ serverUrl: null, ...signedOut, isReady: true });
+    resetSessionScope(null);
+    await storeCredentials(() => settleWrites(
+      Object.values(KEYS).map((k) => SecureStore.deleteItemAsync(k)),
+    ));
   },
 }));
 

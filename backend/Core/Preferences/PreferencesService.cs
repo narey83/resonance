@@ -34,8 +34,8 @@ using System.Collections.Generic;
 using System.Data.Common;
 using System.Text.Json;
 using Dapper;
-using Npgsql;
 using Microsoft.Data.Sqlite;
+using Npgsql;
 using Serilog;
 
 public class PreferencesService

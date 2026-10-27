@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { onSessionReset } from '../lib/sessionScope';
 import { create } from 'zustand';
 
 // Where a captured entry came from. 'http' = REST via apiClient; 'img' = native artwork
@@ -114,3 +115,7 @@ export function recordMediaLoad(
     error:      opts.error,
   });
 }
+
+onSessionReset(() => {
+  useNetworkLog.setState(useNetworkLog.getInitialState(), true);
+});

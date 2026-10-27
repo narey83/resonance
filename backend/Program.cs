@@ -998,7 +998,10 @@ namespace resonance
                 // triggers a merge of its pending list, or that lands while the disk is busy, could run
                 // past the 30-second default -- dropping the whole batch and logging two EF errors.
                 SelectedDatabase.Configure(options);
-                if (usePostgres) options.UseNpgsql(connectionStringDictionary[Database.Logs], npgsql => npgsql.CommandTimeout(120));
+                if (usePostgres)
+                {
+                    options.UseNpgsql(connectionStringDictionary[Database.Logs], npgsql => npgsql.CommandTimeout(120));
+                }
 
                 if (OptionsAtStartup.Flags.LogSQL)
                 {
@@ -1021,7 +1024,10 @@ namespace resonance
             {
                 try
                 {
-                    if (usePostgres) resonance.Core.LogStore.LogsSchemaInitializer.Initialize(connectionStringDictionary[Database.Logs]);
+                    if (usePostgres)
+                    {
+                        resonance.Core.LogStore.LogsSchemaInitializer.Initialize(connectionStringDictionary[Database.Logs]);
+                    }
                     else
                     {
                         var logOptions = new DbContextOptionsBuilder<resonance.Core.LogStore.LogsDbContext>();
@@ -1029,7 +1035,9 @@ namespace resonance
                         using var logs = new resonance.Core.LogStore.LogsDbContext(logOptions.Options);
                         SqliteSchema.Initialize(logs);
                     }
-                    services.AddHostedService<resonance.Core.LogStore.LogPersistenceService>();
+
+                    // Start the writer before log producers so it stops last and captures their final messages.
+                    services.Insert(0, ServiceDescriptor.Singleton<Microsoft.Extensions.Hosting.IHostedService, resonance.Core.LogStore.LogPersistenceService>());
                 }
                 catch (Exception ex)
                 {
@@ -1040,7 +1048,6 @@ namespace resonance
             services.AddSingleton<resonance.MusicLibrary.Activity.ILibraryActivityService, resonance.MusicLibrary.Activity.LibraryActivityService>();
             services.AddSingleton<AppUserService>();
             services.AddSingleton<SessionService>();
-            services.AddSingleton<PushTokenService>();
             services.AddSingleton<LoginRateLimiter>();
             services.AddSingleton<MobilePairingService>();
             services.AddSingleton<PermissionService>();
@@ -1089,11 +1096,13 @@ namespace resonance
                 Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_PYTHON"),
                 Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_WORKER"),
                 Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_CONFIG"),
-                Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_OUTPUT_ROOT"),
+                Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_OUTPUT_ROOT") ?? Path.Combine(DataDirectory, "candidates"),
                 int.TryParse(Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_TIMEOUT_SECONDS"), out var candidateTimeout) ? candidateTimeout : 660));
             services.AddSingleton<resonance.Analysis.Candidates.CandidateAnalysisService>();
             services.AddHostedService<resonance.Analysis.Candidates.CandidateLibraryIndexService>();
             services.AddSingleton<resonance.Analysis.UsbExport.UsbExportService>();
+            services.AddSingleton<resonance.Analysis.UsbExport.BridgeLibraryBatchService>();
+            services.AddHostedService(sp => sp.GetRequiredService<resonance.Analysis.UsbExport.BridgeLibraryBatchService>());
             services.AddHostedService(sp => sp.GetRequiredService<resonance.Analysis.AnalysisService>());
             services.AddSingleton<resonance.MetadataLookup.MusicBrainzClient>();
             services.AddSingleton<resonance.MetadataLookup.DiscogsClient>();
@@ -1166,8 +1175,6 @@ namespace resonance
 
             services.AddSingleton<IPushbulletService, PushbulletService>();
 
-            services.AddSingleton<resonance.Integrations.Fcm.IFcmPushService, resonance.Integrations.Fcm.FcmPushService>();
-
             services.AddSingleton<resonance.Dlna.DlnaService>();
             services.AddHostedService(p => p.GetRequiredService<resonance.Dlna.DlnaService>());
 
@@ -1181,7 +1188,7 @@ namespace resonance
         private static IServiceCollection ConfigureAspDotNetServices(this IServiceCollection services)
         {
             services.AddCors(options => options.AddPolicy("AllowAll", builder => builder
-                .SetIsOriginAllowed((host) => true)
+                .WithOrigins(OptionsAtStartup.Web.CorsOrigins ?? Array.Empty<string>())
                 .AllowAnyHeader()
                 .AllowAnyMethod()
                 .AllowCredentials()
@@ -1322,7 +1329,7 @@ namespace resonance
                                             var (name, role) = service.AuthenticateWithApiKey(token, callerIpAddress: context.HttpContext.Connection.RemoteIpAddress);
 
                                             // the API key is valid. create a new, short lived jwt for the key name and role
-                                            context.Token = service.GenerateJwt(name, role, ttl: 1000).Serialize();
+                                            context.Token = service.GenerateJwt(name, role).Serialize();
                                         }
                                         catch
                                         {
@@ -1346,7 +1353,7 @@ namespace resonance
                                 {
                                     var sessions = context.HttpContext.RequestServices.GetRequiredService<SessionService>();
 
-                                    if (sessions.IsJwtRevoked(sessionId))
+                                    if (sessions.IsJwtRevoked(sessionId, context.Principal.Identity?.Name, context.Principal.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value))
                                     {
                                         context.Fail("Session has been revoked");
                                     }
@@ -1381,6 +1388,10 @@ namespace resonance
                         policy.AuthenticationSchemes.Add(PassthroughAuthentication.AuthenticationScheme);
                         policy.RequireAuthenticatedUser();
                     });
+                    foreach (var feature in resonance.Authentication.Feature.All)
+                    {
+                        options.AddPolicy(AuthPolicy.Feature(feature), policy => policy.RequireAuthenticatedUser());
+                    }
                 });
 
                 services.AddAuthentication(PassthroughAuthentication.AuthenticationScheme)
@@ -1421,6 +1432,7 @@ namespace resonance
                 {
                     // https://github.com/SignalR/SignalR/issues/1149#issuecomment-973887222
                     options.MaximumParallelInvocationsPerClient = 2;
+                    Microsoft.AspNetCore.SignalR.HubOptionsExtensions.AddFilter<resonance.Authentication.HubSecurityFilter>(options);
 
                     // default 15s/30s is too aggressive — browser tabs throttle timers
                     options.KeepAliveInterval = TimeSpan.FromSeconds(30);
@@ -1610,6 +1622,17 @@ namespace resonance
             // be compared against the mobile app's network log. Registered here so it wraps auth, routing
             // and endpoint execution, yielding representative server-side processing times.
             app.UseMiddleware<resonance.Core.Http.RequestCaptureMiddleware>();
+            app.Use(async (context, next) =>
+            {
+                if (context.Request.Path.StartsWithSegments("/hub") &&
+                    !resonance.Core.Http.BrowserOrigin.IsAllowed(context.Request, OptionsAtStartup.Web.CorsOrigins))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    return;
+                }
+
+                await next();
+            });
 
             if (OptionsAtStartup.Web.Logging)
             {
@@ -1676,14 +1699,14 @@ namespace resonance
 #pragma warning disable ASP0014 // Suggest using top level route registrations
             app.UseEndpoints(endpoints =>
             {
-                endpoints.MapHub<ApplicationHub>("/hub/application");
-                endpoints.MapHub<LogsHub>("/hub/logs");
-                endpoints.MapHub<SearchHub>("/hub/search");
-                endpoints.MapHub<RelayHub>("/hub/relay");
-                endpoints.MapHub<resonance.Mixtapes.API.MixtapesHub>("/hub/mixtapes");
-                endpoints.MapHub<resonance.Core.API.BrowseHub>("/hub/browse");
-                endpoints.MapHub<resonance.MusicLibrary.API.LibraryActivityHub>("/hub/libraryactivity");
-                endpoints.MapHub<Resonance.Integrations.YtDlp.API.Hubs.YtDlpHub>("/hub/ytdlp");
+                endpoints.MapHub<ApplicationHub>("/hub/application", options => options.CloseOnAuthenticationExpiration = true);
+                endpoints.MapHub<LogsHub>("/hub/logs", options => options.CloseOnAuthenticationExpiration = true);
+                endpoints.MapHub<SearchHub>("/hub/search", options => options.CloseOnAuthenticationExpiration = true);
+                endpoints.MapHub<RelayHub>("/hub/relay", options => options.CloseOnAuthenticationExpiration = true);
+                endpoints.MapHub<resonance.Mixtapes.API.MixtapesHub>("/hub/mixtapes", options => options.CloseOnAuthenticationExpiration = true);
+                endpoints.MapHub<resonance.Core.API.BrowseHub>("/hub/browse", options => options.CloseOnAuthenticationExpiration = true);
+                endpoints.MapHub<resonance.MusicLibrary.API.LibraryActivityHub>("/hub/libraryactivity", options => options.CloseOnAuthenticationExpiration = true);
+                endpoints.MapHub<Resonance.Integrations.YtDlp.API.Hubs.YtDlpHub>("/hub/ytdlp", options => options.CloseOnAuthenticationExpiration = true);
 
                 endpoints.MapControllers();
                 endpoints.MapHealthChecks("/health");
@@ -2103,9 +2126,15 @@ namespace resonance
                         if (!ctx.Database.IsNpgsql())
                         {
                             SqliteSchema.Initialize(ctx);
+                            if (ctx is resonance.Transfers.TransfersDbContext transfersContext)
+                            {
+                                resonance.Transfers.TransferListQuery.EnsureSqliteIndexes(transfersContext);
+                            }
+
                             StartupProgress.Ready(databaseServiceId, "SQLite schema ready");
                             return;
                         }
+
                         var freshDb = ctx.Database.EnsureCreated();
                         if (!freshDb)
                         {

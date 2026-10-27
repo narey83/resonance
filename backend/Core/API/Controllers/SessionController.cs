@@ -336,7 +336,12 @@ namespace resonance.Core.API
             {
                 var (username, newRefreshToken, sessionId) = Sessions.RotateRefreshToken(request.RefreshToken);
                 var user = Users.Get(username);
-                var role = user?.Role ?? Role.ReadWrite;
+                if (user is null)
+                {
+                    return Unauthorized();
+                }
+
+                var role = user.Role;
                 var jwt = Security.GenerateJwt(username, role, sessionId: sessionId);
                 return Ok(new TokenResponse(jwt, newRefreshToken, sessionId));
             }

@@ -317,6 +317,11 @@ body {
   min-width: var(--nav-collapsed-width);
   flex-shrink: 0;
   z-index: 100;
+  transition: width var(--dur-base) var(--ease-emphasized);
+}
+
+.app-nav-rail:has(.app-nav:is(:hover, :has(:focus-visible))) {
+  width: var(--nav-width);
 }
 
 .app-nav {
@@ -339,8 +344,8 @@ body {
               box-shadow var(--dur-base) var(--ease-standard);
 }
 
-/* Reveal over the page without resizing it or moving links under the pointer.
-   Keyboard focus opens the same panel; mouse-click focus does not pin it open. */
+/* Reserve the expanded rail in the shared flex layout so pages and the player
+   stay beside it. Keyboard focus opens the same panel without pinning click focus. */
 .app-nav:is(:hover, :has(:focus-visible)) {
   width: var(--nav-width);
   box-shadow: 8px 0 24px #00000018;
@@ -632,12 +637,14 @@ body {
 .app-zoom-controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .app-zoom-controls button:disabled { opacity: 0.4; cursor: default; }
 @media (prefers-reduced-motion: reduce) {
-  .app-nav, .app-nav :is(.app-nav-label > span, .app-nav-item-label), .app-nav-label::after { transition: none; }
+  .app-nav-rail, .app-nav, .app-nav :is(.app-nav-label > span, .app-nav-item-label), .app-nav-label::after { transition: none; }
 }
 
 /* ─── Main content ──────────────────────────────────────────────────────────── */
 .app-main {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -646,6 +653,8 @@ body {
 
 .app-content {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow: auto;
   position: relative;
 }
@@ -1898,7 +1907,16 @@ body {
 .app-connecting-attempt {
   font-size: 11px;
   color: var(--text-muted);
-  opacity: 0.6;
+  opacity: 1;
+}
+
+.app-connecting .ui.button.app-connection-retry {
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+  border: 1px solid transparent;
+}
+.app-connecting .ui.button.app-connection-retry:hover {
+  background: var(--accent-hover);
 }
 
 @keyframes connecting-pulse {
@@ -2014,21 +2032,24 @@ body {
 .startup-status {
   position: fixed;
   z-index: 10000;
-  top: 12px;
+  top: 56px;
   left: 50%;
   width: min(680px, calc(100vw - 24px));
   padding: 10px 14px;
   transform: translateX(-50%);
-  border: 1px solid rgba(57, 213, 213, 0.3);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(14, 20, 26, 0.96);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  background: var(--bg-surface);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
   color: var(--text-primary, #f4f4f4);
-  pointer-events: none;
+  pointer-events: auto;
+  max-height: calc(100vh - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
 }
 
 .startup-status--failed {
-  border-color: rgba(230, 107, 107, 0.45);
+  border-color: var(--danger);
   pointer-events: auto;
 }
 
@@ -2036,7 +2057,7 @@ body {
   display: flex;
   justify-content: space-between;
   margin-bottom: 6px;
-  color: #39d5d5;
+  color: var(--accent);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -2044,8 +2065,30 @@ body {
 }
 
 .startup-status--failed .startup-status-title {
-  color: #e66b6b;
+  color: var(--danger);
 }
+
+.startup-status-move {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: left;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.startup-status-move:active { cursor: grabbing; }
+.startup-status-move:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+.startup-status-grip { font-size: 18px; line-height: 1; }
 
 .startup-status-dismiss {
   padding: 0 4px;
@@ -2057,6 +2100,12 @@ body {
   line-height: 1;
 }
 
+.startup-status-progress {
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .startup-status-services {
   display: flex;
   flex-wrap: wrap;
@@ -2065,6 +2114,7 @@ body {
 }
 
 .startup-status-service {
+  color: inherit;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2074,17 +2124,17 @@ body {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #39d5d5;
+  background: var(--accent);
   animation: startup-status-pulse 1.2s ease-in-out infinite;
 }
 
 .startup-status-service--ready .startup-status-dot {
-  background: #55c97a;
+  background: var(--success);
   animation: none;
 }
 
 .startup-status-service--failed .startup-status-dot {
-  background: #e66b6b;
+  background: var(--danger);
   animation: none;
 }
 
@@ -2102,3 +2152,22 @@ body {
 .status-strip-view-controls .app-zoom-controls button { min-height: 26px; padding: 2px 5px; background: var(--bg-primary); border-color: var(--border); }
 .app-zoom-controls button[aria-pressed="true"], .status-strip-view-controls .app-zoom-controls button[aria-pressed="true"] { background:color-mix(in srgb,var(--accent) 12%,var(--bg-surface)); border-color:var(--accent); color:var(--text-primary); font-weight:600; }
 @media (max-width: 600px) { .status-strip-view-label { display: none; } .status-strip-view-controls { padding: 0 8px; } }
+
+.maintenance-notice { position: fixed; inset: 0; z-index: 30000; display: grid; place-items: center; padding: 24px; background: color-mix(in srgb, var(--bg-primary, #111820) 86%, transparent); backdrop-filter: blur(8px); color: var(--text-primary, #eef3f6); }
+.maintenance-notice-card { max-width: 480px; padding: 32px; background: var(--bg-surface, #1b252d); border: 1px solid var(--border, #36424d); border-radius: 16px; box-shadow: 0 20px 60px #0003; }
+.maintenance-notice-label { color: var(--accent, #52caca); text-transform: uppercase; letter-spacing: .1em; font-size: 11px; font-weight: 700; }
+.maintenance-notice-card h2 { margin: 14px 0; font-size: 25px; }
+.maintenance-notice-card p { line-height: 1.6; }
+.maintenance-notice-card > span:last-child { color: var(--text-muted, #a8b7c4); font-size: 12px; }
+.maintenance-action p { font-size: 12px; line-height: 1.5; white-space: normal; }
+
+.maintenance-action { display: flex; flex-wrap: wrap; gap: 8px; }
+.maintenance-action p { flex-basis: 100%; margin: 0 0 4px; }
+.maintenance-action .status-strip-btn { min-height: 32px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; }
+.maintenance-action .status-strip-btn:first-of-type { border-color: var(--accent); color: var(--accent); }
+.maintenance-action .status-strip-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Reconnect/maintenance owns the screen; do not show the floating startup card through it. */
+body:has(.app-connection-overlay) .startup-status,
+body:has(.maintenance-notice) .startup-status { display: none; }
+.app-connection-overlay { z-index: 20000; }

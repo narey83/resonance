@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "python": "/opt/resonance/venvs/beats/bin/python",
-  "ffmpeg": "/opt/resonance/venvs/essentia/lib/python3.12/site-packages",
+  "ffmpeg": "/opt/resonance-tools/ffmpeg",
   "timeoutSeconds": 600,
   "beats": {
     "enabled": true,

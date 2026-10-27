@@ -30,6 +30,33 @@ public class LogQueryServiceTests
         LogQueryService.QueryAsync(context, afterId, levels!, contexts!, search!, from, to, offset, limit);
 
     [Fact]
+    public async Task QueryAsync_BeforeId_PaginatesIdenticalTimestampsWithoutRepeating()
+    {
+        using var connection = LogsTestSupport.OpenConnection();
+        using var context = Seed(connection, Enumerable.Range(1, 120)
+            .Select(i => Entry(639286000000000000L + i, "2026-10-26T17:00:00Z", "Information", $"event {i}")).ToArray());
+        var seen = new HashSet<long?>();
+        long? before = null;
+        for (var page = 0; page < 4; page++)
+        {
+            var (items, _) = await LogQueryService.QueryAsync(context, null, null!, null!, null!, null,
+                DateTime.Parse("2026-10-26T17:00:00Z").ToUniversalTime(), 0, 50, beforeId: before);
+            foreach (var item in items) Assert.True(seen.Add(item.Id));
+            if (items.Count == 0) break;
+            before = items[^1].Id;
+        }
+        Assert.Equal(120, seen.Count);
+    }
+
+    [Fact]
+    public void LogRecord_SerializesLargeIdWithoutJavaScriptPrecisionLoss()
+    {
+        var record = new LogRecord { Id = 639286000000000001L };
+        using var json = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(record));
+        Assert.Equal("639286000000000001", json.RootElement.GetProperty("Id").GetString());
+    }
+
+    [Fact]
     public async Task QueryAsync_AfterId_ReturnsOnlyNewerRecords_InAscendingIdOrder()
     {
         using var connection = LogsTestSupport.OpenConnection();

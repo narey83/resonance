@@ -79,7 +79,7 @@ namespace resonance.MusicLibrary.API
             => hub.Clients.All.SendAsync(LibraryActivityHubMethods.SyncState, state);
     }
 
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.FeatureLibrary)]
     public class LibraryActivityHub : Hub
     {
         public LibraryActivityHub(ILibraryActivityService service, IMusicLibraryService library)

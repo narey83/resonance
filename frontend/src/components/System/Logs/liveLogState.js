@@ -165,3 +165,8 @@ export const mergeContexts = (knownContexts, ...contextSets) => {
 
   return [...set].sort((a, b) => a.localeCompare(b));
 };
+
+// A full response is not progress if every entry was already loaded. Never let
+// infinite scroll immediately request the same inclusive boundary again.
+export const hasMoreHistory = (items, fresh, limit) =>
+  fresh.length > 0 && items.length === limit;

@@ -53,7 +53,7 @@ namespace resonance.Core.API
     ///     Pushes browse-history changes to all connected clients so web and mobile
     ///     stay in sync in real time.
     /// </summary>
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.FeatureUserBrowsing)]
     public class BrowseHub : Hub
     {
     }

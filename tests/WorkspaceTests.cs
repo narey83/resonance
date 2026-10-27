@@ -50,6 +50,30 @@ public class WorkspaceTests : IDisposable
         using var db=Db();
         db.Execute($"INSERT INTO {CacheTable} (masked_filename,file_size,overall_peaks,lufs,analysed_at,dj_summary) VALUES (@path,100,@peaks,-8,@now,@summary) ON CONFLICT(masked_filename) DO UPDATE SET overall_peaks=excluded.overall_peaks,lufs=excluded.lufs,dj_summary=excluded.dj_summary",new { path,peaks=new byte[]{1,2,3},now=Now,summary=enhanced?"{\"complete\":true,\"vocals\":false,\"genre\":\"Trance\",\"energy\":0.2}":null });
     }
+    [Fact] public void DiscoveryNotesPersistPerAccountAndRejectStaleEdits()
+    {
+        var saved = store.SaveTrackPreparation("alice", new("nested/a.mp3", "opener", "Intro works", [new("cue", 42, "Bass enters")]));
+        Assert.Equal(1, saved.Revision);
+        Assert.Empty(store.ListTrackPreparation("bob"));
+        var reopened = new WorkspaceStore(new(new Dictionary<Database,ConnectionString>{[Database.Music]=connection},postgres));
+        Assert.Equal(42, reopened.ListTrackPreparation("alice").Single().Bookmarks.Single().Seconds);
+        var updated = reopened.SaveTrackPreparation("alice", saved with { Notes = "Desktop edit" });
+        Assert.Equal(2, updated.Revision);
+        Assert.Throws<InvalidOperationException>(() => store.SaveTrackPreparation("alice", saved));
+        Assert.Throws<InvalidOperationException>(() => store.SaveTrackPreparation("alice", saved with { Revision = 0 }));
+        Assert.Throws<ArgumentException>(() => store.SaveTrackPreparation("alice", saved with { Bookmarks = [new("bad", double.NaN, "Invalid")] }));
+    }
+    [Fact] public void WantedSearchesAreAccountScopedAndDeletionsCannotCrossAccounts()
+    {
+        var wish = store.AddWish("alice", "  Artist release  ");
+        Assert.Equal("Artist release", wish.Query);
+        Assert.Empty(store.ListWishes("bob"));
+        store.DeleteWish("bob", wish.Id);
+        Assert.Single(store.ListWishes("alice"));
+        store.DeleteWish("alice", wish.Id);
+        Assert.Empty(store.ListWishes("alice"));
+        Assert.Throws<ArgumentException>(() => store.AddWish("alice", " "));
+    }
     [Fact] public void CratesPersistPerAccountAndDetectConflictingEdits()
     {
         var crate=store.SaveCrate("alice",null,new("My set","",new(BpmMin:125,BpmMax:130)));

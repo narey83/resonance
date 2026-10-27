@@ -5,7 +5,7 @@ import ReactDOM from 'react-dom';
 import { act, Simulate } from 'react-dom/test-utils';
 
 jest.mock('../../../lib/mixtapes', () => ({ addTrack: jest.fn() }));
-describe('selected tracks to mixtape', () => {
+describe('selected tracks to playlist', () => {
   beforeEach(() => jest.resetAllMocks());
   it('deduplicates paths and tolerates already-present tracks', async () => {
     expect.hasAssertions();
@@ -33,8 +33,8 @@ describe('selected tracks to mixtape', () => {
   });
 });
 
-describe('mixtape drop target', () => {
-  it('adds the dragged library path to the destination mixtape', async () => {
+describe('playlist drop target', () => {
+  it('adds the dragged library path to the destination playlist', async () => {
     expect.hasAssertions();
     api.addTrack.mockReset().mockResolvedValue({});
     const container = document.createElement('div');

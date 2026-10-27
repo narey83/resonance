@@ -35,8 +35,8 @@ using System.Data.Common;
 using System.Linq;
 using System.Text.Json;
 using Dapper;
-using Npgsql;
 using Microsoft.Data.Sqlite;
+using Npgsql;
 using Serilog;
 
 /// <summary>

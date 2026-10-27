@@ -3,7 +3,7 @@
     "name": "Resonance",
     "slug": "resonance-mobile",
     "version": "0.1.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -12,7 +12,6 @@
     },
     "android": {
       "package": "com.resonance.mobile",
-      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -29,15 +28,19 @@
     },
     "plugins": [
       "expo-dev-client",
+      "./plugins/withStudio",
       "./plugins/withAndroidAuto",
+      "./plugins/withCarPlay",
       "./plugins/withFloatingOverlay",
+      "./plugins/withAdaptiveWindow",
       "./plugins/withGradleProperties",
       "./plugins/withLocalNetworkAccess",
       "./plugins/withGradleWrapperVersion",
       [
         "react-native-google-cast",
         {
-          "receiverAppId": "CC1AD845"
+          "receiverAppId": "CC1AD845",
+          "androidPlayServicesCastFrameworkVersion": "22.3.1"
         }
       ],
       [
@@ -64,11 +67,25 @@
         }
       ],
       "expo-audio",
-      "expo-secure-store",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "Allow $(PRODUCT_NAME) to use Face ID to sign in to your saved Resonance servers."
+        }
+      ],
       "expo-sqlite",
       "expo-status-bar",
       "expo-font",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "enableSceneSupport": true,
+            "usePrecompiledModules": false
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {

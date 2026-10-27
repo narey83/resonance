@@ -1,6 +1,6 @@
 # Mobile development with Expo
 
-Updated **21 October 2026** for the current Expo SDK 57 source. Dependencies and native tooling can change; check `package.json`, `app.json`, the lockfile and the [versioned Expo SDK documentation](https://docs.expo.dev/versions/v57.0.0/) before making changes.
+Updated **22 October 2026** for the current Expo SDK 57 source. Dependencies and native tooling can change; check `package.json`, `app.json`, the lockfile and the [versioned Expo SDK documentation](https://docs.expo.dev/versions/v57.0.0/) before making changes.
 
 ## Use a development build
 
@@ -33,9 +33,9 @@ npx expo run:ios
 
 The native `android/` and `ios/` directories are generated and ignored by Git. Configuration plugins apply the native customisations from `app.json`; keep durable changes in those plugins rather than only editing generated files.
 
-The configured Android Firebase file, `google-services.json`, is private and intentionally ignored. Supply your own project's file when building with that configuration. The CI workflow obtains it from a repository secret. A capture or test build that deliberately omits push configuration must not be described as a push-delivery test.
+The app connects directly to your Resonance server over HTTP and SignalR. No Firebase project, Google services configuration, or push-service secret is required. SignalR delivers live updates while connected; returning to the app checks the server for changes missed while suspended. Local notifications remain available for events received by the app. A closed or suspended app cannot promise immediate alerts without an operating-system push service.
 
-The 21 October screenshot build also needed a fixed Google Cast Android dependency: the plugin's default `+` selected a media-router release requiring a newer Android Gradle plugin. The isolated capture build used Cast 22.3.1. The plugin exposes `androidPlayServicesCastFrameworkVersion` for a durable version pin; see the [capture notes](../docs/screenshots/mobile/README.md#capture-setup). Review native dependency compatibility before treating a fresh build as reproducible.
+Google Cast's Android SDK is pinned to **22.3.1** through `androidPlayServicesCastFrameworkVersion` in `app.json`. The plugin defaults to `+`, which now resolves Cast 23 and a media-router dependency requiring Android 37 / AGP 9.1; Expo SDK 57 uses Android 36 / AGP 8.12. Keep this pin when regenerating native projects, and review the complete native toolchain before upgrading Cast. A first build needs network access to download uncached Maven artifacts; offline mode works only after those dependencies have been cached.
 
 ## Normal development
 
@@ -63,19 +63,52 @@ Enter the server's base address in the app or scan its pairing QR. Pairing excha
 - An iOS simulator can normally reach a Mac-hosted service through the Mac's loopback address.
 - Android emulators can use their host gateway, or an explicit development `adb reverse` tunnel to a local service.
 
-Use an isolated server/library when testing downloads, file management, mixtape edits or playback history. Never commit credentials, pairing codes, signed stream URLs, Firebase credentials or captured private messages.
+Use an isolated server/library when testing downloads, file management, mixtape edits or playback history. Never commit credentials, pairing codes, signed stream URLs, captured private messages.
 
 ## Checks
 
 ```bash
+npm test
 npx eslint .
 npx tsc --noEmit
 ```
 
 Then build and exercise the affected platform. Type checks cannot validate native linking, background playback, notification delivery, device permissions, casting or Android Auto. Screenshots are visual evidence for the displayed screens, not a substitute for those integration tests.
 
+After installing a rebuilt Android development APK, the playback-service lifecycle regression can run on an emulator with Metro disconnected:
+
+```bash
+ANDROID_SERIAL=emulator-5554 npm run test:android-service
+```
+
+Set `ADB_PATH` if `adb` is outside your shell's path. This test stops the Resonance test app, opens its development launcher, and creates and destroys its playback service three times before the real player is initialized. It verifies that the service is destroyed and that the app survives without a new native crash. The playback package patch must release the media session even when `setupPlayer()` has not run; otherwise the next service creation can fail with “Session ID must be unique.”
+
 ## Distribution
 
 `eas.json` defines development, preview and production profiles. Local builds do not require an EAS cloud build. The repository's CI/release workflows build Android APKs; production store distribution and iOS signing/provisioning need their own configuration and validation.
 
 Feature descriptions, platform differences and the current gallery live in the [mobile guide](README.md). Native screenshot capture instructions live in the [screenshot guide](../docs/screenshots/mobile/README.md).
+
+Studio changes require rebuilding the Android/iOS development client. The `withStudio` plugin installs the shared DSP and native bridges into TrackPlayer, and adds a CocoaPods post-install adjustment to preload SwiftAudioEx audio tracks. Keep `patch-package && node scripts/install-studio.cjs` as the postinstall command. Android uses the app's NDK version and CMake 3.22.1 or newer. Audio offload stays disabled to preserve the processing path.
+
+Expo modules are built from source (`expo-build-properties.ios.usePrecompiledModules: false`) to avoid the Swift 6.3 precompiled-module interface mismatch with the installed Swift 6.4 / Xcode 27.1 toolchain. React Native can continue using its prebuilt core.
+
+The ExpoModulesJSI patch also extends its existing Swift-interface cleanup to match Swift 6.4's `__ObjC::` spelling, as well as `__ObjC.`. These C++ extensions are already intended to be stripped by Expo's build script; leaving the newer spelling in the public interface prevents importing ExpoModulesJSI on Xcode 27.1.
+
+Recent-server biometric sign-in uses the existing `expo-secure-store` native module, with `requireAuthentication: true` and a dedicated keychain service. Its config-plugin Face ID description explains saved-server sign-in. No new biometric library is required; rebuild an older client if its Face ID usage description is missing. Real-device verification requires an enrolled Face ID / Touch ID / strong Android biometric.
+
+### macOS emulator launcher stability
+
+The custom Android Emulator app bundle must launch the SDK's `emulator` launcher with the SDK and AVD directories configured, rather than invoking `qemu-system-aarch64` directly. Direct launches produced repeated macOS DYLD failures for `libandroid-emu-tracing.dylib`. The launcher establishes the emulator library paths and selects the test AVD.
+
+The test Mac also recorded EGL/gfxstream segmentation faults. Its test AVD now uses software graphics and cold boots (`-gpu software -no-snapshot`), with the previous launcher and AVD settings backed up beside the original files. This avoids restoring incompatible graphics snapshots without wiping installed apps or user data. Verify a completed Android boot and usable app window after changing the host setup.
+
+Android Auto DHU testing requires the full Android Auto app; the placeholder package in a Google APIs image cannot provide projection. Use a Play-enabled image or a connected test handset and complete Google's Android Auto setup before treating DHU connection attempts as app tests.
+
+## Adaptive screens (October 2026)
+
+`app.json` allows system orientation on Android and iOS. Rebuild native apps after changing orientation configuration or `withAdaptiveWindow`; Metro refresh alone cannot update the native orientation mask or install the hinge module.
+
+The player uses live window dimensions, two columns on wide windows, and scrollable controls in short windows. Android WindowManager reports separating folds/occluding hinges through `AdaptiveWindow`: player panels straddle the fold, while sheets stay in a single usable pane. Browsing fills the window across a non-occluding crease; it is constrained to a pane only for a physical hinge gap. A normal unfolded crease is not treated as an occlusion. The floating player reclamps after resizing.
+
+Simulator QA: iPhone 17 portrait and landscape, direct playlist chooser and Studio entry; Pixel Fold unfolded, folded cover display, half-open book posture and rotated tabletop posture. A local track kept playing and retained its position through fold/unfold. Physical dual-screen hardware with an occluding gap still needs device QA; synthetic geometry tests cover nonzero hinge widths and stale rotation geometry. Android and iOS native development builds passed; 91 mobile tests passed.

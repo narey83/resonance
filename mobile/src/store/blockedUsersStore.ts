@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { onSessionReset, sessionGuard } from '../lib/sessionScope';
 import { create } from 'zustand';
 import {
   blockUser as apiBlockUser,
@@ -95,42 +96,62 @@ export const useBlockedUsersStore = create<BlockedUsersStore>((set, get) => ({
     })),
 
   fetch: async () => {
+    const current = sessionGuard();
     const payload = await getBlockedUsers();
+    if (!current()) return;
     get().apply(payload);
   },
 
   block: async (username: string, reason?: string) => {
+    const current = sessionGuard();
     const users = await apiBlockUser(username, reason);
+    if (!current()) return;
     set({ blockedSet: toSet(users), users });
   },
 
   unblock: async (username: string) => {
+    const current = sessionGuard();
     const users = await apiUnblockUser(username);
+    if (!current()) return;
     set({ blockedSet: toSet(users), users });
   },
 
   unblockAll: async () => {
+    const current = sessionGuard();
     const users = await apiUnblockAllUsers();
+    if (!current()) return;
     set({ blockedSet: toSet(users), users });
   },
 
   blockIp: async (cidr: string, reason?: string) => {
+    const current = sessionGuard();
     const ips = await apiBlockIp(cidr, reason);
+    if (!current()) return;
     set({ ips });
   },
 
   unblockIp: async (cidr: string) => {
+    const current = sessionGuard();
     const ips = await apiUnblockIp(cidr);
+    if (!current()) return;
     set({ ips });
   },
 
   blockPlace: async (country: string, city?: string, reason?: string) => {
+    const current = sessionGuard();
     const places = await apiBlockPlace(country, city, reason);
+    if (!current()) return;
     set({ places });
   },
 
   unblockPlace: async (id: number) => {
+    const current = sessionGuard();
     const places = await apiUnblockPlace(id);
+    if (!current()) return;
     set({ places });
   },
 }));
+
+onSessionReset(() => {
+  useBlockedUsersStore.setState(useBlockedUsersStore.getInitialState(), true);
+});

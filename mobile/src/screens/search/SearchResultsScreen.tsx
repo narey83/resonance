@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { stopHubConnection } from '../../lib/hubLifecycle';
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { File, Directory, Paths } from 'expo-file-system';
 import {
@@ -883,7 +885,7 @@ function DownloadModal({
   const s = useMemo(() => makeModalStyles(colors), [colors]);
 
   return (
-    <Modal visible={pending !== null} transparent animationType="fade" onRequestClose={onCancel}>
+    <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']} visible={pending !== null} transparent animationType="fade" onRequestClose={onCancel}>
       <Pressable style={s.overlay} onPress={onCancel} />
       <View style={s.container}>
         <View style={s.sheet}>
@@ -1146,11 +1148,11 @@ export default function SearchResultsScreen({ route, navigation }: Props) {
         applySearchUpdate(s);
       });
 
-      const startPromise = hub.start().catch(() => {});
+      void hub.start().catch(() => {});
 
       return () => {
         cancelled = true;
-        startPromise.then(() => hub.stop().catch(() => {}));
+        void stopHubConnection(hub);
       };
     }, [searchId]),
   );

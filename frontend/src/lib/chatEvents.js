@@ -38,3 +38,14 @@ export const onPrivateMessage = (handler) => {
   target.addEventListener('private-message', listener);
   return () => target.removeEventListener('private-message', listener);
 };
+
+// SignalR notification handlers must return void, not dispatchEvent's boolean.
+export const emitRoomMessage = (detail) => {
+  target.dispatchEvent(new CustomEvent('room-message', { detail }));
+};
+
+export const onRoomMessage = (handler) => {
+  const listener = (event) => handler(event.detail);
+  target.addEventListener('room-message', listener);
+  return () => target.removeEventListener('room-message', listener);
+};

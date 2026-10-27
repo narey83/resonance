@@ -42,9 +42,6 @@ namespace resonance.Dlna
     using Microsoft.Extensions.Hosting;
     using Microsoft.Extensions.Options;
     using Serilog;
-    using SixLabors.ImageSharp;
-    using SixLabors.ImageSharp.Formats.Jpeg;
-    using SixLabors.ImageSharp.Processing;
 
     public sealed class DlnaService : IHostedService, IDisposable
     {
@@ -173,18 +170,11 @@ namespace resonance.Dlna
         {
             try
             {
-                using var img = Image.Load(source);
-                int size = Math.Min(img.Width, img.Height);
-                img.Mutate(ctx => ctx
-                    .Crop(new Rectangle((img.Width - size) / 2, (img.Height - size) / 2, size, size))
-                    .Resize(ThumbnailSize, ThumbnailSize));
-                using var ms = new MemoryStream();
-                img.SaveAsJpeg(ms, new JpegEncoder { Quality = 85 });
-                return ms.ToArray();
+                return resonance.Common.ArtworkResizer.ResizeToJpeg(source, ThumbnailSize, square: true);
             }
             catch
             {
-                return source;
+                return Array.Empty<byte>();
             }
         }
 

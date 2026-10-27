@@ -28,46 +28,96 @@
 // </copyright>
 
 import { getStatus } from '../../lib/metadataLookup';
-import { useEffect, useRef } from 'react';
+import { Loader2 } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 
-// Renders nothing. Polls the background metadata-lookup service so the user is made
+// Polls metadata enrichment and renders its active progress in the status strip.
+// The user is also made
 // aware — via toasts — when an enrichment pass starts and finishes, from anywhere in
 // the app (the Tags → Online lookup tab shows the detailed live progress).
+const hasActiveWork = (status) =>
+  status?.scanning &&
+  !status.paused &&
+  status.total > 0 &&
+  ((status.inFlight || 0) > 0 ||
+    (status.written || 0) + (status.skipped || 0) + (status.failed || 0) > 0);
+
 const MetadataLookupWatcher = () => {
-  const wasScanningRef = useRef(false);
+  const observedWorkRef = useRef(false);
+  const [scanStatus, setScanStatus] = useState(null);
 
   useEffect(() => {
     let active = true;
+    let timer;
 
     const poll = async () => {
       try {
         const status = await getStatus();
         if (!active) return;
+        setScanStatus(status);
 
-        if (status.scanning && !wasScanningRef.current) {
-          toast.info('Filling in missing track details…');
-        } else if (!status.scanning && wasScanningRef.current) {
-          toast.success(
-            `Metadata lookup finished — ${status.written} updated.`,
-          );
+        if (hasActiveWork(status) && !observedWorkRef.current) {
+          toast.info('Looking up missing track details…');
+          observedWorkRef.current = true;
         }
 
-        wasScanningRef.current = status.scanning;
+        if (!status.scanning) {
+          if (
+            observedWorkRef.current &&
+            status.completed &&
+            ((status.written || 0) > 0 || (status.failed || 0) > 0)
+          ) {
+            const notify = status.failed ? toast.warn : toast.success;
+            notify(
+              `Enrichment finished — ${status.written} updated, ${status.failed} failed.`,
+            );
+          }
+
+          observedWorkRef.current = false;
+        }
       } catch {
-        /* ignore transient errors */
+        if (active) setScanStatus(null);
+      } finally {
+        if (active) timer = setTimeout(poll, 8_000);
       }
     };
 
     poll();
-    const id = setInterval(poll, 8_000);
     return () => {
       active = false;
-      clearInterval(id);
+      clearTimeout(timer);
     };
   }, []);
 
-  return null;
+  if (!hasActiveWork(scanStatus)) return null;
+  const percent = Math.round(
+    Math.min(1, Math.max(0, Number(scanStatus.progress) || 0)) * 100,
+  );
+  return (
+    <div
+      className="status-strip-item enrichment-status"
+      role="status"
+      title={`Metadata enrichment: ${scanStatus.written} updated, ${scanStatus.skipped} skipped, ${scanStatus.failed} failed. Music playback and Soulseek remain available.`}
+    >
+      <Loader2
+        className="status-icon status-spin"
+        size={13}
+      />
+      <span>{`Enrichment ${percent}%`}</span>
+      {scanStatus.total > 0 && (
+        <span>
+          {Math.min(
+            scanStatus.total,
+            (scanStatus.written || 0) +
+              (scanStatus.skipped || 0) +
+              (scanStatus.failed || 0),
+          )}
+          /{scanStatus.total} tracks
+        </span>
+      )}
+    </div>
+  );
 };
 
 export default MetadataLookupWatcher;

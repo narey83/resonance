@@ -47,8 +47,8 @@ export const remove = ({ id }) => {
   return api.delete(`/searches/${encodeURIComponent(id)}`);
 };
 
-export const create = ({ id, searchText }) => {
-  return api.post('/searches', { id, searchText });
+export const create = ({ id, searchText, ...options }) => {
+  return api.post('/searches', { id, searchText, ...options });
 };
 
 export const restart = ({ id }) => {

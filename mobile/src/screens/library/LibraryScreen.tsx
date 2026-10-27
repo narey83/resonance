@@ -1,3 +1,4 @@
+import { LocalPlaylists, LocalPlaylistPicker } from '../../components/LocalPlaylists';
 // <copyright file="LibraryScreen.tsx" company="John Narey">
 //    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
 //   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
@@ -71,6 +72,7 @@ import {
   cancelSync,
   MusicAlbum, MusicArtist, MusicFolder, MusicGenre, MusicTrack, MusicYear,
 } from '../../api/musicLibrary';
+import { useAppSettings } from '../../store/appSettingsStore';
 import { useLibrarySync } from '../../store/librarySyncStore';
 import { useLibraryViewMode } from '../../store/libraryViewStore';
 import type { LibraryViewMode } from '../../store/libraryViewStore';
@@ -97,13 +99,15 @@ import * as mixtapesAPI from '../../api/mixtapes';
 import { create as createSearch, stripRemixInfo } from '../../api/searches';
 import { Mixtape, MixtapeTrack, getMixtapeArtworkCacheKey, getMixtapeArtworkUrl } from '../../api/mixtapes';
 import { useLibrarySettings, ALL_TABS, LOCAL_TABS, LibraryTab } from '../../store/librarySettingsStore';
+import { useRemoteAccess } from '../../lib/remoteAccess';
+import { importAudioFiles } from '../../services/importedMusic';
 import { useAuthStore } from '../../store/auth';
 import { notePerfBlock } from '../../lib/perfProbe';
 import { LIST_PERF_PROPS } from '../../lib/listPerf';
 
 // ── Navigation types ──────────────────────────────────────────────────────────
 
-type LibraryStackParamList = {
+export type LibraryStackParamList = {
   LibraryHome:    undefined;
   Artist:         { artistName: string; isLocal?: boolean };
   Album:          { album: MusicAlbum; localAlbumTitle?: string };
@@ -111,6 +115,7 @@ type LibraryStackParamList = {
   GenreDetail:    { genre: string; trackCount: number; isLocal?: boolean };
   YearDetail:     { year: number; trackCount: number; isLocal?: boolean };
   PlaylistDetail: { playlistId: string };
+  LocalPlaylistDetail: { playlistId: string };
 };
 
 const Stack = createNativeStackNavigator<LibraryStackParamList>();
@@ -222,7 +227,7 @@ const ArtworkBox = React.memo(({ path, size, overrideUrl, overrideCacheKey, mixt
       <View style={{ width: size, height: size }}>
         <Image
           source={{ uri: url, cacheKey }}
-          style={[s.artwork, { width: size, height: size, borderRadius: size / 8 }]}
+          style={[s.artwork, { width: size, height: size, borderRadius: 1 }]}
           onError={() => setError(true)}
           cachePolicy="memory-disk"
           recyclingKey={cacheKey ?? url}
@@ -232,7 +237,7 @@ const ArtworkBox = React.memo(({ path, size, overrideUrl, overrideCacheKey, mixt
     );
   }
   return (
-    <View style={[s.artworkPlaceholder, { width: size, height: size, borderRadius: size / 8 }]}>
+    <View style={[s.artworkPlaceholder, { width: size, height: size, borderRadius: 1 }]}>
       <Ionicons name={placeholderIcon} size={size * 0.4} color={c.textDim} />
       {badge}
     </View>
@@ -298,7 +303,7 @@ const SortControl = ({ options, sortBy, sortDir, onSort }: {
       <Pressable onPress={() => setOpen(true)} hitSlop={10} style={s.sortTrigger}>
         <Ionicons name="swap-vertical" size={18} color={c.textMuted} />
       </Pressable>
-      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+      <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']} visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
         <Pressable style={s.overlay} onPress={() => setOpen(false)} />
         <View style={s.sheetContainer}>
           <View style={s.sheet}>
@@ -352,7 +357,7 @@ const ViewModeControl = ({ mode, onChange }: { mode: LibraryViewMode; onChange: 
       <Pressable onPress={() => setOpen(true)} hitSlop={10} style={s.sortTrigger}>
         <Ionicons name={mode === 'list' ? 'list' : 'grid-outline'} size={18} color={c.textMuted} />
       </Pressable>
-      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+      <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']} visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
         <Pressable style={s.overlay} onPress={() => setOpen(false)} />
         <View style={s.sheetContainer}>
           <View style={s.sheet}>
@@ -571,6 +576,7 @@ const TabBar = ({ tabs, active, onSelect }: {
 type SourceMode = 'server' | 'local';
 
 function SourcePicker() {
+  const remote = useRemoteAccess();
   const { s } = useLibStyles();
   const {
     includeLocalLibrary, setIncludeLocalLibrary,
@@ -584,6 +590,7 @@ function SourcePicker() {
     setIncludeLocalLibrary(m === 'local');
   };
 
+  if (!remote) return null;
   return (
     <View style={s.sourcePicker}>
       {(['server', 'local'] as SourceMode[]).map((m) => (
@@ -640,12 +647,12 @@ function PlaylistPickerModal({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']} visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={s.overlay} onPress={onClose} />
       <View style={s.sheetContainer}>
         <View style={s.sheet}>
           <View style={s.sheetHandle} />
-          <Text style={s.sheetTitle}>Add to Mixtape</Text>
+          <Text style={s.sheetTitle}>Add to Playlist</Text>
 
           {creating ? (
             <View style={s.inlineCreate}>
@@ -654,7 +661,7 @@ function PlaylistPickerModal({
                 style={s.inlineInput}
                 value={newName}
                 onChangeText={setNewName}
-                placeholder="Mixtape name…"
+                placeholder="Playlist name…"
                 placeholderTextColor={c.textDim}
                 returnKeyType="done"
                 onSubmitEditing={handleCreate}
@@ -667,11 +674,11 @@ function PlaylistPickerModal({
               </Pressable>
             </View>
           ) : (
-            <SheetRow icon="add-circle-outline" label="New Mixtape" onPress={() => setCreating(true)} />
+            <SheetRow icon="add-circle-outline" label="New Playlist" onPress={() => setCreating(true)} />
           )}
 
           {playlists.length === 0 && !creating && (
-            <Text style={[s.empty, { paddingVertical: Spacing.md }]}>No mixtapes yet</Text>
+            <Text style={[s.empty, { paddingVertical: Spacing.md }]}>No playlists yet</Text>
           )}
 
           {playlists.map((pl) => (
@@ -716,7 +723,7 @@ function RenameModal({
   const commit = () => { if (value.trim()) onConfirm(value.trim()); };
 
   return (
-    <Modal animationType="fade" onRequestClose={onCancel} transparent visible={visible}>
+    <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']} animationType="fade" onRequestClose={onCancel} transparent visible={visible}>
       <Pressable
         onPress={onCancel}
         style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.55)' }]}
@@ -763,12 +770,12 @@ function PlaylistRenameSheet({ name, onChange, onCancel, onConfirm }: {
         style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.55)' }]}
       />
       <View style={[s.renameSheet, { position: 'absolute', left: 0, right: 0, bottom: keyboardHeight }]}>
-        <Text style={s.renameTitle}>Rename mixtape</Text>
+        <Text style={s.renameTitle}>Rename playlist</Text>
         <TextInput
           autoFocus
           onChangeText={onChange}
           onSubmitEditing={onConfirm}
-          placeholder="Mixtape name…"
+          placeholder="Playlist name…"
           placeholderTextColor={c.textMuted}
           returnKeyType="done"
           style={s.renameInput}
@@ -797,6 +804,9 @@ function FolderActionSheet({
   onRename: (folder: MusicFolder) => void;
 }) {
   const { s } = useLibStyles();
+  const remote = useRemoteAccess();
+  const localSource = useLibrarySettings(st => st.includeLocalLibrary);
+  const [localPickerTracks, setLocalPickerTracks] = useState<MusicTrack[] | null>(null);
   const { addTrack } = useMixtapeStore();
   const [showPicker, setShowPicker] = useState(false);
 
@@ -837,7 +847,7 @@ function FolderActionSheet({
 
   return (
     <>
-      <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']} visible transparent animationType="slide" onRequestClose={onClose}>
         <Pressable style={s.overlay} onPress={onClose} />
         <View style={s.sheetContainer}>
           <View style={s.sheet}>
@@ -858,7 +868,8 @@ function FolderActionSheet({
               onPress={() => { onClose(); requestAnalysis(folderLabel, folderPaths, { reset: true }); }}
             />
             <View style={s.sheetDivider} />
-            <SheetRow icon="list" label="Add to Mixtape" onPress={() => setShowPicker(true)} />
+            {(localSource || remote) && <SheetRow icon="list" label="Add to Playlist" onPress={() => { if (localSource) void getLocalFolderTracks(folder.path).then(setLocalPickerTracks).catch(e => Alert.alert('Could not load local tracks', e.message)); else setShowPicker(true); }} />}
+
             <View style={s.sheetDivider} />
             <SheetRow icon="pencil-outline" label="Rename folder…" onPress={() => onRename(folder)} />
             <View style={s.sheetDivider} />
@@ -868,6 +879,7 @@ function FolderActionSheet({
             </Pressable>
           </View>
         </View>
+        {localPickerTracks && <LocalPlaylistPicker embedded tracks={localPickerTracks} onClose={() => { setLocalPickerTracks(null); onClose(); }} />}
       </Modal>
       {showPicker && (
         <PlaylistPickerModal
@@ -894,6 +906,9 @@ function AlbumActionSheet({ album, onClose }: {
   onClose: () => void;
 }) {
   const { s } = useLibStyles();
+  const remote = useRemoteAccess();
+  const localSource = useLibrarySettings(st => st.includeLocalLibrary);
+  const [localPickerTracks, setLocalPickerTracks] = useState<MusicTrack[] | null>(null);
   const navigation = useNavigation<LibraryNav>();
   const { playQueue, addToQueue, playNext } = usePlayer();
   const { addTrack } = useMixtapeStore();
@@ -902,6 +917,7 @@ function AlbumActionSheet({ album, onClose }: {
   if (!album) return null;
 
   const fetchAlbumTracks = async (): Promise<MusicTrack[]> => {
+    if (localSource || !remote) return getLocalAlbumTracksFor(album);
     try {
       const result = await getTracks({
         album: album.album,
@@ -945,7 +961,7 @@ function AlbumActionSheet({ album, onClose }: {
 
   return (
     <>
-      <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']} visible transparent animationType="slide" onRequestClose={onClose}>
         <Pressable style={s.overlay} onPress={onClose} />
         <View style={s.sheetContainer}>
           <View style={s.sheet}>
@@ -970,7 +986,8 @@ function AlbumActionSheet({ album, onClose }: {
             />
             <SheetRow icon="play-skip-forward" label="Play Next" onPress={withTracks((t) => playNext(t))} />
             <SheetRow icon="add-circle-outline" label="Add to Queue" onPress={withTracks((t) => addToQueue(t))} />
-            <SheetRow icon="list" label="Add to Mixtape" onPress={() => setShowPicker(true)} />
+            {(localSource || remote) && <SheetRow icon="list" label="Add to Playlist" onPress={() => { if (localSource) void getLocalAlbumTracksFor(album).then(setLocalPickerTracks).catch(e => Alert.alert('Could not load local tracks', e.message)); else setShowPicker(true); }} />}
+
             <SheetRow
               icon="analytics-outline"
               label="Analyse album"
@@ -1004,12 +1021,13 @@ function AlbumActionSheet({ album, onClose }: {
                 />
               </>
             )}
-            <SheetRow icon="search" label="Find album on Soulseek" onPress={searchSoulseek} />
+            {remote && <SheetRow icon="search" label="Find album on Soulseek" onPress={searchSoulseek} />}
             <Pressable style={s.sheetCancel} onPress={onClose}>
               <Text style={s.sheetCancelText}>Cancel</Text>
             </Pressable>
           </View>
         </View>
+        {localPickerTracks && <LocalPlaylistPicker embedded tracks={localPickerTracks} onClose={() => { setLocalPickerTracks(null); onClose(); }} />}
       </Modal>
       {showPicker && (
         <PlaylistPickerModal
@@ -1038,6 +1056,7 @@ function TrackActionSheet({
   track, onClose, onPlayNow, onPlayNext, onAddToQueue, onRename, extraActions = [],
 }: TrackActionSheetProps) {
   const { s } = useLibStyles();
+  const remote = useRemoteAccess();
   const navigation = useNavigation<LibraryNav>();
   const [showPicker, setShowPicker] = useState(false);
   const { mixtapes: playlists, addTrack } = useMixtapeStore();
@@ -1061,7 +1080,7 @@ function TrackActionSheet({
   const handleSelectPlaylist = async (playlistId: string) => {
     const playlist = playlists.find((p) => p.id === playlistId);
     if (playlist?.tracks?.some((t) => t.filePath === track.path)) {
-      Alert.alert('Already in mixtape', `"${getTrackTitle(track)}" is already in "${playlist.name}".`);
+      Alert.alert('Already in playlist', `"${getTrackTitle(track)}" is already in "${playlist.name}".`);
       setShowPicker(false);
       onClose();
       return;
@@ -1100,7 +1119,7 @@ function TrackActionSheet({
 
   return (
     <>
-      <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']} visible transparent animationType="slide" onRequestClose={onClose}>
         <Pressable style={s.overlay} onPress={onClose} />
         <View style={s.sheetContainer}>
           <View style={s.sheet}>
@@ -1116,7 +1135,11 @@ function TrackActionSheet({
             <SheetRow icon="play-circle" label="Play Now" onPress={() => onPlayNow(track)} />
             <SheetRow icon="play-skip-forward" label="Play Next" onPress={() => onPlayNext(track)} />
             <SheetRow icon="add-circle-outline" label="Add to Queue" onPress={() => onAddToQueue(track)} />
-            <SheetRow icon="list" label="Add to Mixtape" onPress={() => setShowPicker(true)} />
+            {(isLocal || remote) && <SheetRow icon="list" label="Add to Playlist" onPress={() => setShowPicker(true)} />}
+            {!isLocal && <>
+              <SheetRow icon="sparkles-outline" label="What goes with this?" onPress={() => { onClose(); navigation.getParent()?.navigate('DiscoverTab', { track, section: 'Matches' }); }} />
+              <SheetRow icon="create-outline" label="Preparation notes & bookmarks" onPress={() => { onClose(); navigation.getParent()?.navigate('DiscoverTab', { track, section: 'Prepare' }); }} />
+            </>}
             {!isLocal && (
               <>
                 <SheetRow
@@ -1151,7 +1174,7 @@ function TrackActionSheet({
                 onPress={() => { onRename(track); onClose(); }}
               />
             )}
-            {isLocal && (
+            {isLocal && Platform.OS === 'android' && (
               <SheetRow
                 icon="save-outline"
                 label="Export to USB"
@@ -1163,14 +1186,14 @@ function TrackActionSheet({
               />
             )}
             <View style={s.sheetDivider} />
-            {track.artist && (
+            {remote && track.artist && (
               <SheetRow
                 icon="search"
                 label={`More from ${track.artist}`}
                 onPress={() => searchSoulseek(track.artist!)}
               />
             )}
-            {track.title && (() => {
+            {remote && track.title && (() => {
               const clean = stripRemixInfo(track.title);
               return (
                 <>
@@ -1195,8 +1218,9 @@ function TrackActionSheet({
             </Pressable>
           </View>
         </View>
+        {showPicker && isLocal && <LocalPlaylistPicker embedded tracks={[track]} onClose={() => { setShowPicker(false); onClose(); }} />}
       </Modal>
-      {showPicker && (
+      {showPicker && !isLocal && (
         <PlaylistPickerModal
           visible
           onClose={() => setShowPicker(false)}
@@ -1215,6 +1239,7 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
     visibleTabsServer, visibleTabsLocal, setVisibleTabs,
     includeLocalLibrary,
   } = useLibrarySettings();
+  const remote = useRemoteAccess();
   const bumpLibraryRevision = useLibraryActivityStore((s) => s.bumpLibraryRevision);
   const [rescanning, setRescanning] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -1251,8 +1276,7 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
       : result.reason ?? 'Export failed.');
   };
 
-  // Mixtapes has no local variant (a mixtape is a server entity whether or not any of its tracks
-  // happen to be local files), so it's not offered as a Local Library tab option at all.
+  // Local and server playlists use separate stores and detail routes.
   const tabOptions = tabsSource === 'local' ? LOCAL_TABS : ALL_TABS;
 
   const toggle = (tab: LibraryTab) => {
@@ -1268,7 +1292,7 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']} visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={s.overlay} onPress={onClose} />
       <View style={s.sheetContainer}>
         <View style={s.sheet}>
@@ -1291,7 +1315,7 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
             </Pressable>
           )}
 
-          {includeLocalLibrary && (
+          {includeLocalLibrary && Platform.OS === 'android' && (
             <Pressable
               onPress={handleExportAll}
               disabled={exporting}
@@ -1312,7 +1336,7 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
             Tabs to show
           </Text>
           <View style={s.sourcePicker}>
-            {(['server', 'local'] as const).map((src) => (
+            {(remote ? ['server', 'local'] as const : ['local'] as const).map((src) => (
               <Pressable
                 key={src}
                 onPress={() => setTabsSource(src)}
@@ -2665,7 +2689,7 @@ function PlaylistsTab() {
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameName, setRenameName] = useState('');
   const { sortBy, sortDir, onSort } = useSort(null);
-  const [viewMode, setViewMode] = useLibraryViewMode('Mixtapes');
+  const [viewMode, setViewMode] = useLibraryViewMode('Playlists');
   const grid = useTileGrid(viewMode);
 
   const sorted = useMemo(
@@ -2696,7 +2720,7 @@ function PlaylistsTab() {
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => Alert.alert('Delete mixtape?', `"${item.name}" will be deleted.`, [
+        onPress: () => Alert.alert('Delete playlist?', `"${item.name}" will be deleted.`, [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Delete', style: 'destructive', onPress: () => remove(item.id) },
         ]),
@@ -2753,7 +2777,7 @@ function PlaylistsTab() {
             style={s.inlineBarInput}
             value={renameName}
             onChangeText={setRenameName}
-            placeholder="New mixtape name…"
+            placeholder="New playlist name…"
             placeholderTextColor={c.textDim}
             returnKeyType="done"
             onSubmitEditing={handleRename}
@@ -2774,7 +2798,7 @@ function PlaylistsTab() {
             style={s.inlineBarInput}
             value={newName}
             onChangeText={setNewName}
-            placeholder="Mixtape name…"
+            placeholder="Playlist name…"
             placeholderTextColor={c.textDim}
             returnKeyType="done"
             onSubmitEditing={handleCreate}
@@ -2794,7 +2818,7 @@ function PlaylistsTab() {
           <View style={[s.artistIcon, { backgroundColor: `${c.accent}22` }]}>
             <Ionicons name="add" size={20} color={c.accent} />
           </View>
-          <Text style={[s.rowTitle, { color: c.accent }]}>New Mixtape</Text>
+          <Text style={[s.rowTitle, { color: c.accent }]}>New Playlist</Text>
         </Pressable>
       )}
 
@@ -2819,7 +2843,7 @@ function PlaylistsTab() {
         contentContainerStyle={s.listContent}
         {...(grid ? tileListProps(grid, s) : {})}
         ListEmptyComponent={
-          <Text style={s.empty}>{'No mixtapes yet\nTap New Mixtape to get started'}</Text>
+          <Text style={s.empty}>{'No playlists yet\nTap New Playlist to get started'}</Text>
         }
       />
     </View>
@@ -2831,6 +2855,8 @@ function PlaylistsTab() {
 type HomeProps = NativeStackScreenProps<LibraryStackParamList, 'LibraryHome'>;
 
 function LibraryHome({ navigation }: HomeProps) {
+  const remote = useRemoteAccess();
+  const [importing, setImporting] = useState(false);
   const { s, c } = useLibStyles();
   const {
     visibleTabsServer, visibleTabsLocal, includeLocalLibrary,
@@ -2840,7 +2866,7 @@ function LibraryHome({ navigation }: HomeProps) {
   // targets the server list since it downloads server data regardless of what's on screen.
   const visibleTabs = includeLocalLibrary ? visibleTabsLocal : visibleTabsServer;
   const { load: loadMixtapes } = useMixtapeStore();
-  const [tab, setTab] = useState<LibraryTab>('Artists');
+  const [tab, setTab] = useState<LibraryTab>('Folders');
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const bumpRevisionOnce = useLibraryActivityStore((s) => s.bumpLibraryRevision);
@@ -2851,7 +2877,7 @@ function LibraryHome({ navigation }: HomeProps) {
       bumpRevisionOnce();
     });
     if (!settingsLoaded) loadSettings();
-    loadMixtapes();
+    if (remote) void loadMixtapes();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -2892,6 +2918,7 @@ function LibraryHome({ navigation }: HomeProps) {
   // the store then coalesces a burst of scans into a single sync.
   const wasScanningRef = useRef(false);
   useEffect(() => {
+    if (!remote) return;
     if (serverScanning) {
       wasScanningRef.current = true;
       dbg('[home] skip cache sync — backend rescan in progress');
@@ -2905,7 +2932,7 @@ function LibraryHome({ navigation }: HomeProps) {
     // which the store treats as a first fetch and so lets past the rate limit and the version gate.
     // Always the server list here (not the active-source `visibleTabs`) since this downloads
     // server data into the on-device cache regardless of whether Local Library is on screen.
-  }, [sync, libraryRevision, serverScanning, visibleTabsServer]);
+  }, [sync, libraryRevision, serverScanning, visibleTabsServer, remote]);
 
   // DEBUG (opt-in via "Library sync debug" setting): heartbeat that detects a frozen JS thread. A 1s
   // timer firing late means the JS engine stalled — either the OS suspended a backgrounded app, or
@@ -2937,7 +2964,7 @@ function LibraryHome({ navigation }: HomeProps) {
   // cachePresent is still null (checking) we must NOT show it: the cached library renders in a few
   // ms, and if the app is backgrounded during that check the overlay would otherwise freeze
   // on-screen until the app resumes — hiding a library that was actually ready instantly.
-  const showFirstSync = syncStatus === 'syncing' && !hasSyncedOnce && cachePresent === false;
+  const showFirstSync = remote && syncStatus === 'syncing' && !hasSyncedOnce && cachePresent === false;
   useEffect(() => {
     dbg(`[home] render showFirstSync=${showFirstSync} (status=${syncStatus} hasSynced=${hasSyncedOnce} cachePresent=${cachePresent})`);
   }, [showFirstSync, syncStatus, hasSyncedOnce, cachePresent]);
@@ -2970,10 +2997,16 @@ function LibraryHome({ navigation }: HomeProps) {
   // Background (refresh) sync feedback: a thin top progress line that overlays the very top edge
   // without shifting layout. The full % lives in the first-install overlay; here it's just a subtle
   // "library is updating" hint, shown only while an actual sync is running.
-  const showSyncBar = syncStatus === 'syncing' && !showFirstSync;
+  const showSyncBar = remote && syncStatus === 'syncing' && !showFirstSync;
 
   return (
     <View style={s.flex}>
+      {includeLocalLibrary && <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderColor: c.border }}><Text style={{ color: c.textMuted, fontFamily: Typography.mono, fontSize: 11 }}>ON THIS DEVICE</Text><Pressable accessibilityRole="button" disabled={importing} onPress={async () => {
+        setImporting(true);
+        try { const count = await importAudioFiles(); if (count) { await forceRescanLocalTracks(); await getAllLocalTracks(); bumpRevisionOnce(); } }
+        catch (error) { Alert.alert('Audio import', (error as Error).message); await forceRescanLocalTracks(); bumpRevisionOnce(); }
+        finally { setImporting(false); }
+      }} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 }}><Text style={{ color: c.accent, fontWeight: '600' }}>{importing ? 'Importing…' : 'Import audio'}</Text></Pressable></View>}
       <TabBar tabs={visibleTabs} active={tab} onSelect={(t) => setTab(t as LibraryTab)} />
       {serverScanning && (
         <View style={{
@@ -3027,7 +3060,7 @@ function LibraryHome({ navigation }: HomeProps) {
       {tab === 'Folders'   && <FoldersTab />}
       {tab === 'Genres'    && <GenresTab />}
       {tab === 'Years'     && <YearsTab />}
-      {tab === 'Mixtapes'  && <PlaylistsTab />}
+      {tab === 'Playlists' && (includeLocalLibrary ? <LocalPlaylists onOpen={id => navigation.push('LocalPlaylistDetail', { playlistId: id })} /> : <PlaylistsTab />)}
       <LibrarySettingsModal visible={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </View>
   );
@@ -3252,6 +3285,7 @@ function ArtistDetail({ route }: ArtistProps) {
 type AlbumProps = NativeStackScreenProps<LibraryStackParamList, 'Album'>;
 
 function AlbumDetail({ route }: AlbumProps) {
+  const showTrackNumbers = useAppSettings((state) => state.showTrackNumbers);
   const { s, c } = useLibStyles();
   const { album, localAlbumTitle } = route.params;
   const { playQueue, addToQueue, playNext } = usePlayer();
@@ -3317,7 +3351,7 @@ function AlbumDetail({ route }: AlbumProps) {
       onPress={() => { playQueue(tracksRef.current, index); }}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
     >
-      <Text style={s.trackNum}>{item.trackNumber ?? index + 1}</Text>
+      {showTrackNumbers && <Text style={s.trackNum}>{item.trackNumber ?? index + 1}</Text>}
       <View style={s.rowInfo}>
         <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
         {item.artist && item.artist !== album.artist && (
@@ -3329,7 +3363,7 @@ function AlbumDetail({ route }: AlbumProps) {
         <Ionicons name="ellipsis-horizontal" size={18} color={c.textMuted} />
       </Pressable>
     </Pressable>
-  ), [album.artist, playQueue, s, c]);
+  ), [album.artist, playQueue, showTrackNumbers, s, c]);
 
   return (
     <View style={s.flex}>
@@ -3808,6 +3842,7 @@ function YearDetail({ route }: YearDetailProps) {
 type FolderDetailProps = NativeStackScreenProps<LibraryStackParamList, 'FolderDetail'>;
 
 function FolderDetail({ route }: FolderDetailProps) {
+  const showTrackNumbers = useAppSettings((state) => state.showTrackNumbers);
   const { s, c } = useLibStyles();
   const { folderPath, folderName, isLocal } = route.params;
   const { playQueue, addToQueue, playNext } = usePlayer();
@@ -3954,13 +3989,13 @@ function FolderDetail({ route }: FolderDetailProps) {
       onPress={() => { playFromList(item, index); }}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
     >
-      <Text style={[s.trackNum, multiDisc && s.trackNumWide]} numberOfLines={1}>
+      {showTrackNumbers && <Text style={[s.trackNum, multiDisc && s.trackNumWide]} numberOfLines={1}>
         {item.trackNumber == null
           ? '–'
           : multiDisc
             ? `${item.discNumber ?? 1}-${String(item.trackNumber).padStart(2, '0')}`
             : item.trackNumber}
-      </Text>
+      </Text>}
       <ArtworkBox
         path={item.hasArtwork && !isLocal ? item.path : null}
         overrideUrl={isLocal && item.hasArtwork ? item.coverPath : undefined}
@@ -3976,7 +4011,7 @@ function FolderDetail({ route }: FolderDetailProps) {
       </Pressable>
     </Pressable>
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ), [playFromList, multiDisc, s, c]);
+  ), [playFromList, multiDisc, showTrackNumbers, s, c]);
 
   return (
     <View style={s.flex}>
@@ -4094,6 +4129,7 @@ function FolderDetail({ route }: FolderDetailProps) {
 type PlaylistDetailProps = NativeStackScreenProps<LibraryStackParamList, 'PlaylistDetail'>;
 
 function PlaylistDetail({ route, navigation: nav }: PlaylistDetailProps) {
+  const showTrackNumbers = useAppSettings((state) => state.showTrackNumbers);
   const { s, c } = useLibStyles();
   const { playlistId } = route.params;
   const { playQueue } = usePlayer();
@@ -4197,7 +4233,7 @@ function PlaylistDetail({ route, navigation: nav }: PlaylistDetailProps) {
 
   const handleClearTracks = useCallback(() => {
     if (!playlist) return;
-    Alert.alert('Clear all tracks', 'Remove all tracks from this mixtape?', [
+    Alert.alert('Clear all tracks', 'Remove all tracks from this playlist?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Clear', style: 'destructive', onPress: () => clearTracks(playlist.id) },
     ]);
@@ -4224,13 +4260,13 @@ function PlaylistDetail({ route, navigation: nav }: PlaylistDetailProps) {
   }, []);
 
   if (!playlist) return (
-    <View style={s.center}><Text style={s.empty}>Mixtape not found</Text></View>
+    <View style={s.center}><Text style={s.empty}>Playlist not found</Text></View>
   );
 
   return (
     <View style={s.flex}>
       {/* Rename modal */}
-      <Modal animationType="fade" onRequestClose={() => setRenaming(false)} transparent visible={renaming}>
+      <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']} animationType="fade" onRequestClose={() => setRenaming(false)} transparent visible={renaming}>
         <PlaylistRenameSheet
           name={newName}
           onChange={setNewName}
@@ -4240,7 +4276,7 @@ function PlaylistDetail({ route, navigation: nav }: PlaylistDetailProps) {
       </Modal>
 
       {/* Settings sheet */}
-      <Modal animationType="slide" onRequestClose={() => setSheetOpen(false)} transparent visible={sheetOpen}>
+      <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']} animationType="slide" onRequestClose={() => setSheetOpen(false)} transparent visible={sheetOpen}>
         <Pressable onPress={() => setSheetOpen(false)} style={s.overlay} />
         <View style={s.sheetContainer}>
           <View style={s.sheet}>
@@ -4372,7 +4408,7 @@ function PlaylistDetail({ route, navigation: nav }: PlaylistDetailProps) {
         keyExtractor={(item) => item.id}
         contentContainerStyle={s.listContent}
         ListEmptyComponent={
-          <Text style={s.empty}>{'No tracks yet\nUse "Add to Mixtape" when browsing your library'}</Text>
+          <Text style={s.empty}>{'No tracks yet\nUse "Add to Playlist" when browsing your library'}</Text>
         }
         renderItem={({ item, index }) => {
           const displayTitle = item.title || item.filePath.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, '') || '(Unknown)';
@@ -4401,7 +4437,7 @@ function PlaylistDetail({ route, navigation: nav }: PlaylistDetailProps) {
                   <Ionicons name="chevron-down" size={14} color={isLast ? c.textDim : c.textMuted} />
                 </Pressable>
               </View>
-              <Text style={s.trackNum}>{index + 1}</Text>
+              {showTrackNumbers && <Text style={s.trackNum}>{index + 1}</Text>}
               <ArtworkBox path={item.filePath} size={36} />
               <View style={s.rowInfo}>
                 <Text style={s.rowTitle} numberOfLines={1}>{displayTitle}</Text>
@@ -4449,8 +4485,8 @@ function makeLibStyles(c: ThemeColors) {
       marginHorizontal: Spacing.md,
       marginTop: Spacing.sm,
       marginBottom: Spacing.xs,
-      backgroundColor: c.bgElevated,
-      borderRadius: Radius.sm,
+      borderWidth: 1,
+      borderColor: c.borderStrong,
       padding: 2,
     },
     sourceBtn: {
@@ -4460,11 +4496,10 @@ function makeLibStyles(c: ThemeColors) {
       borderRadius: Radius.sm - 1,
     },
     sourceBtnActive: {
-      backgroundColor: c.bgSurface,
-      elevation: 1,
+      backgroundColor: c.bgElevated,
     },
-    sourceBtnText:       { fontSize: Typography.sm, color: c.textMuted, fontWeight: '500' },
-    sourceBtnTextActive: { fontSize: Typography.sm, color: c.textPrimary, fontWeight: '600' },
+    sourceBtnText:       { fontFamily: Typography.mono, fontSize: 11, color: c.textMuted, fontWeight: '500' },
+    sourceBtnTextActive: { fontFamily: Typography.mono, fontSize: 11, color: c.textPrimary, fontWeight: '600' },
 
     // Search
     searchRow: {
@@ -4480,11 +4515,10 @@ function makeLibStyles(c: ThemeColors) {
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: c.bgSurface,
-      borderWidth: 1,
-      borderColor: c.border,
-      borderRadius: Radius.md,
+      borderBottomWidth: 1,
+      borderBottomColor: c.textPrimary,
       paddingHorizontal: Spacing.sm,
-      height: 40,
+      height: 44,
     },
     searchSide: { flexDirection: 'row', alignItems: 'center' },
     searchIcon:  { marginRight: Spacing.xs },
@@ -4526,23 +4560,22 @@ function makeLibStyles(c: ThemeColors) {
     // Tab bar
     tabBarScroll: {
       flexGrow: 0,
-      backgroundColor: c.bgSurface,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: c.border,
+      backgroundColor: c.bgPrimary,
+      borderBottomWidth: 1,
+      borderBottomColor: c.borderStrong,
     },
     tabBarContent: {
       paddingHorizontal: Spacing.sm,
-      paddingVertical: Spacing.xs,
-      gap: Spacing.xs,
     },
     tabBtn: {
       paddingHorizontal: Spacing.md,
-      paddingVertical: Spacing.xs + 2,
-      borderRadius: Radius.md,
+      paddingVertical: 13,
+      borderBottomWidth: 2,
+      borderBottomColor: 'transparent',
     },
-    tabBtnActive:  { backgroundColor: c.bgElevated },
-    tabText:       { fontSize: Typography.sm, color: c.textMuted, fontWeight: '500' },
-    tabTextActive: { color: c.textPrimary },
+    tabBtnActive:  { borderBottomColor: c.accent },
+    tabText:       { fontFamily: Typography.mono, fontSize: 11, color: c.textMuted, fontWeight: '500' },
+    tabTextActive: { color: c.accent },
 
     // List rows
     listContent: { paddingBottom: Spacing.xxl },
@@ -4600,14 +4633,15 @@ function makeLibStyles(c: ThemeColors) {
     },
     trackNumWide: { width: 36 },
     trackDur: {
-      fontSize: Typography.sm,
+      fontFamily: Typography.mono,
+      fontSize: 11,
       color: c.textMuted,
       minWidth: 38,
       textAlign: 'right',
     },
     trackRight:  { alignItems: 'flex-end', gap: 2 },
-    trackKey:    { fontSize: Typography.xs, fontWeight: '700', color: c.accent, maxWidth: 64 },
-    trackBpm:    { fontSize: Typography.xs, color: c.textDim },
+    trackKey:    { fontFamily: Typography.mono, fontSize: Typography.xs, fontWeight: '700', color: c.accent, maxWidth: 64 },
+    trackBpm:    { fontFamily: Typography.mono, fontSize: Typography.xs, color: c.textMuted },
     trackMetaMissing: { color: c.textDim, fontWeight: '400' },
     moreBtn: { paddingLeft: Spacing.xs },
     clearAllBtn: { flexDirection: 'row', alignItems: 'center', padding: Spacing.md, opacity: 0.6 },
@@ -4620,7 +4654,7 @@ function makeLibStyles(c: ThemeColors) {
       paddingBottom: Spacing.lg,
     },
     albumArt:    { width: 200, height: 200, borderRadius: Radius.lg, marginBottom: Spacing.lg },
-    albumTitle:  { fontSize: Typography.xl, fontWeight: '700', color: c.textPrimary, textAlign: 'center' },
+    albumTitle:  { fontFamily: Typography.display, fontSize: 27, fontWeight: '700', color: c.textPrimary, textAlign: 'center' },
     albumArtist: { fontSize: Typography.base, color: c.textMuted, marginTop: Spacing.xs, textAlign: 'center' },
     albumMeta:   { fontSize: Typography.sm, color: c.textMuted, marginTop: 2 },
     albumActions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg },
@@ -4650,12 +4684,12 @@ function makeLibStyles(c: ThemeColors) {
       gap: Spacing.xs,
       paddingHorizontal: Spacing.lg,
       paddingVertical: Spacing.sm,
-      borderRadius: Radius.full,
+      borderRadius: 2,
       borderWidth: 1,
       borderColor: c.border,
       backgroundColor: c.bgSurface,
     },
-    actionBtnPrimary: { backgroundColor: c.accent, borderColor: c.accent },
+    actionBtnPrimary: { backgroundColor: '#262820', borderColor: '#262820' },
     actionBtnPressed: { opacity: 0.75 },
     actionBtnText:    { fontSize: Typography.sm, color: '#fff', fontWeight: '600' },
 
@@ -4862,10 +4896,18 @@ function makeLibStyles(c: ThemeColors) {
   });
 }
 
+function LocalPlaylistDetail({ route }: NativeStackScreenProps<LibraryStackParamList, 'LocalPlaylistDetail'>) {
+  return <LocalPlaylists playlistId={route.params.playlistId} />;
+}
+
 // ── Stack Navigator ───────────────────────────────────────────────────────────
 
 export default function LibraryScreen() {
   const { colors } = useTheme();
+  const remote = useRemoteAccess();
+  const includeLocal = useLibrarySettings(state => state.includeLocalLibrary);
+  useEffect(() => { if (!remote && !includeLocal) void useLibrarySettings.getState().setIncludeLocalLibrary(true); }, [remote, includeLocal]);
+  if (!remote && !includeLocal) return <View style={{ flex: 1, backgroundColor: colors.bgPrimary }}><ActivityIndicator color={colors.accent} /></View>;
   return (
     <Stack.Navigator screenOptions={makeScreenOptions(colors)}>
       <Stack.Screen
@@ -4898,11 +4940,12 @@ export default function LibraryScreen() {
         component={YearDetail}
         options={({ route }) => ({ title: String(route.params.year) })}
       />
-      <Stack.Screen
+      <Stack.Screen name="LocalPlaylistDetail" component={LocalPlaylistDetail} options={{ title: 'Device playlist' }} />
+      {remote && <Stack.Screen
         name="PlaylistDetail"
         component={PlaylistDetail}
-        options={{ title: 'Mixtape' }}
-      />
+        options={{ title: 'Playlist' }}
+      />}
     </Stack.Navigator>
   );
 }

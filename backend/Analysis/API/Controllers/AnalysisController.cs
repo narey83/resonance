@@ -44,6 +44,7 @@ namespace resonance.Analysis.API
     [Produces("application/json")]
     [Consumes("application/json")]
     [Route("api/v{version:apiVersion}/[controller]")]
+    [Authorize(Policy = AuthPolicy.FeatureLibrary)]
     public class AnalysisController : ControllerBase
     {
         // A requested waveform size below this is raised to it; fewer bars stop reading as a waveform.

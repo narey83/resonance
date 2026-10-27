@@ -185,13 +185,23 @@ const MetadataLookup = () => {
             ) : (
               <Play size={14} />
             )}
-            {status?.scanning ? 'Running…' : 'Run now'}
+            {status?.paused
+              ? 'Waiting for share indexing…'
+              : status?.scanning
+                ? 'Running…'
+                : 'Run now'}
           </button>
         </div>
       </div>
 
       {status?.scanning && (
         <div className="ml-progress">
+          {status.paused && (
+            <p role="status">
+              {status.pauseReason || 'Waiting for share indexing'} · resumes
+              automatically.
+            </p>
+          )}
           <div className="ml-progress-bar">
             <div
               className="ml-progress-fill"
@@ -211,7 +221,9 @@ const MetadataLookup = () => {
                 {status.failed} failed
               </span>
             )}
-            {eta && <span className="ml-eta">~{eta} left</span>}
+            {eta && !status.paused && (
+              <span className="ml-eta">~{eta} left</span>
+            )}
           </div>
         </div>
       )}

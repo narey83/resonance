@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { stopHubConnection } from '../../lib/hubLifecycle';
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
@@ -82,7 +84,7 @@ export default function BrowseScreen({ navigation }: Props) {
 
     return () => {
       cancelled = true;
-      hubRef.current?.stop().catch(() => {});
+      if (hubRef.current) void stopHubConnection(hubRef.current);
       hubRef.current = null;
     };
   }, []);

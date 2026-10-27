@@ -175,6 +175,12 @@ public sealed class SessionService : IDisposable
             // succeeds transparently and the session is left intact.
             if (RecentlyRotated.TryGetValue(hash, out var grace))
             {
+                if (IsJwtRevoked(grace.SessionId))
+                {
+                    RecentlyRotated.TryRemove(hash, out _);
+                    throw new UnauthorizedException("Session has been revoked");
+                }
+
                 Log.Debug("Refresh token replayed within grace window for user {Username}; reissuing same token", grace.Username);
                 return (grace.Username, grace.NewToken, grace.SessionId);
             }
@@ -250,20 +256,23 @@ public sealed class SessionService : IDisposable
     /// <returns></returns>
     public Guid? RevokeByToken(string refreshToken)
     {
-        var hash = HashToken(refreshToken);
-
-        using var db = ContextFactory.CreateDbContext();
-        var session = db.Sessions.FirstOrDefault(s => s.RefreshTokenHash == hash && !s.IsRevoked);
-
-        if (session is not null)
+        lock (RotationLock)
         {
+            var hash = HashToken(refreshToken);
+            using var db = ContextFactory.CreateDbContext();
+            var session = db.Sessions.FirstOrDefault(s =>
+                (s.RefreshTokenHash == hash || s.PreviousTokenHash == hash) && !s.IsRevoked);
+
+            if (session is null)
+            {
+                return null;
+            }
+
             session.IsRevoked = true;
             db.SaveChanges();
             CacheRevocation(session.Id);
             return session.Id;
         }
-
-        return null;
     }
 
     /// <summary>
@@ -295,14 +304,26 @@ public sealed class SessionService : IDisposable
     }
 
     /// <summary>
-    ///     Returns true if the given session has been revoked since this process started.
+    ///     Returns true for a revoked, missing, expired or no-longer-authorised session.
     ///     Used to reject JWTs bound to a revoked session before the JWT expires naturally.
     /// </summary>
     /// <returns></returns>
-    public bool IsJwtRevoked(Guid sessionId)
+    public bool IsJwtRevoked(Guid sessionId, string username = null, string role = null)
     {
         PruneRevocationCache();
-        return RevokedSessionCache.ContainsKey(sessionId);
+        if (RevokedSessionCache.ContainsKey(sessionId))
+        {
+            return true;
+        }
+
+        using var db = ContextFactory.CreateDbContext();
+        var valid = from session in db.Sessions.AsNoTracking()
+                    join user in db.Users.AsNoTracking() on session.Username equals user.Username
+                    where session.Id == sessionId && !session.IsRevoked && session.ExpiresAt > DateTime.UtcNow
+                    select new { session.Username, user.Role };
+        var record = valid.FirstOrDefault();
+        return record == null || (username != null && record.Username != username)
+            || (role != null && record.Role.ToString() != role);
     }
 
     /// <summary>
@@ -381,7 +402,11 @@ public sealed class SessionService : IDisposable
         }
     }
 
-    private void CacheRevocation(Guid sessionId) => RevokedSessionCache[sessionId] = DateTime.UtcNow;
+    private void CacheRevocation(Guid sessionId)
+    {
+        RevokedSessionCache[sessionId] = DateTime.UtcNow;
+        HubSecurityConnections.AbortSession(sessionId);
+    }
 
     // Drops grace-cache entries older than the grace period. Called under RotationLock.
     private void PruneGraceCache()

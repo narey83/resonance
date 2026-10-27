@@ -69,7 +69,7 @@ Resonance is a modified version of [slskd](https://github.com/slskd/slskd). It i
 - Prepare classic and OneLibrary databases, playlists, waveforms and beatgrids using the optional export worker.
 - Use one desktop helper for USB transfer and Network Link. Network Link serves the prepared whole library and checks for updates automatically.
 
-These Pioneer features are **experimental**. Physical player acceptance, including OPUS-QUAD, is still pending; network support depends on the player's LINK EXPORT capabilities. Installer signing and native Windows/Linux validation also remain outstanding. See the [helper guide](desktop/pioneer-link/README.md) before testing.
+These Pioneer features are **experimental**. Physical player acceptance, including OPUS-QUAD, is still pending; network support depends on the player's LINK EXPORT capabilities. Installer signing and native Windows/Linux validation also remain outstanding. See the [Resonance Bridge guide](desktop/bridge/README.md) before testing.
 
 ### Take the library mobile
 
@@ -137,6 +137,8 @@ Explore [all mobile screenshots, features and platform differences](mobile/READM
 
 ## Quick start
 
+For a new Linux Docker host using an existing SMB music share, run `python3 docker/bootstrap.py` after cloning this repository. The host needs Python 3 and Docker Compose; the SDKs and analysis tools build inside containers. See the [portable stack guide](docker/PORTABLE_STACK.md). It builds the tools, installs verified models, configures analysis and uses persistent Docker mounts and reboot startup. Private state export/import carries the existing SQLite instance across separately from GitHub.
+
 Resonance is currently aimed at self-hosters and developers. A local source setup needs:
 
 - [.NET SDK 10](https://dotnet.microsoft.com/download)
@@ -177,7 +179,7 @@ Basic analysis currently allows BPM/key tag writes by default. Set `analysis.wri
 | [DJ workspace](docs/dj-workspace.md) | Library tools, set planning, rehearsal, player controls and worker setup |
 | [Automatic preparation](docs/auto-analysis.md) | New-track detection, background work, retries and tag-writing behaviour |
 | [Database architecture](docs/database/architecture.md) | SQLite/PostgreSQL selection, migration, backups and logging |
-| [Pioneer helper](desktop/pioneer-link/README.md) | USB transfer, Network Link, pairing, installation and compatibility limits |
+| [Resonance Bridge](desktop/bridge/README.md) | USB transfer, Network Link, pairing, installation and compatibility limits |
 | [Beatgrid verification](docs/beatgrid-verification.md) | Repeatable rendering checks and what those checks establish |
 | [Frontend development](frontend/README.md) | Local web development and focused test commands |
 | [Mobile apps](mobile/README.md) | Native Android/iOS screenshots, current features and platform differences |
@@ -190,17 +192,34 @@ Basic analysis currently allows BPM/key tag writes by default. Set `analysis.wri
 | `backend/` | ASP.NET Core, EF Core, SignalR | Soulseek networking, API, transfers, library, integrations, auth, and telemetry |
 | `frontend/` | React, Semantic UI, Recharts | Desktop web workspace, library, playback, set planning, administration and analytics |
 | `mobile/` | Expo, React Native | Native companion experience for Android and iOS |
-| `desktop/pioneer-link/` | Go, native launcher and installer tooling | Shared USB transfer and local-network Pioneer helper |
+| `desktop/bridge/` | Go, native launcher and installer tooling | Resonance Bridge desktop app, USB transfer and device integration |
 | `tools/analysis-worker/` | Python, separately installed engines/models | Optional independent enhanced analysis |
 | `tools/usb-export/` | Python | Experimental Pioneer database and analysis writers |
 | `tools/DatabaseMigration/` | .NET | Explicit PostgreSQL-to-SQLite migration and validation |
 | `extension/` | WebExtensions | Optional browser bridge for synchronising YouTube cookies |
 | `tests/` | xUnit | Backend unit and integration coverage |
-| `docker/` | Docker Compose, Caddy | Development deployment for the project's multi-network server environment |
+| `docker/` | Docker Compose, Caddy | Portable live development stack and server deployment configuration |
 
 Real-time browser and mobile updates travel over SignalR. SQLite or PostgreSQL stores application state, the library catalogue, transfer history, and analytics data; media remains on storage you control. Logging defaults to database storage, with Disk and Both modes available.
 
 ## Development
+
+Manage the local backend, web UI and mobile Metro server from the repository root:
+
+```bash
+./bin/dev start
+./bin/dev status
+./bin/dev restart
+./bin/dev stop
+```
+
+You can target one service, for example `./bin/dev restart mobile` or `./bin/dev stop web`. After restarting your computer, run `./bin/dev start` again. This does not install an automatic login service.
+
+The managed backend uses .NET watch with clean process restarts when C# files change. In-process hot reload is disabled to avoid runtime metadata failures during concurrent development builds. It uses port **55450**, the web UI uses **3000**, and Metro uses **8081**. Logs, process state, configuration and persistent backend data live in ignored `.dev/`, rather than temporary storage. Open **http://localhost:3000** for the web UI; mobile clients connect to **http://localhost:55450** in the iOS simulator or **http://10.0.2.2:55450** in the standard Android emulator. A new data directory needs the usual first-run server setup.
+
+Install frontend/mobile dependencies with `npm ci` in each directory first. The script requires Python 3, Node/npm and .NET 10. It finds `dotnet` on PATH or in conventional user installation directories; for a custom SDK, set `"dotnet": "/absolute/path/to/dotnet"` in `.dev/config.json`. You can also change ports or `appDir` there while the services are stopped. The default bind address is loopback. To test physical phones on your trusted local network, set `"bindAddress": "0.0.0.0"`, restart the services, and connect the phone to `http://<your-Mac-LAN-IP>:55450`. This exposes the authenticated dev API and the web dev server to that network; use loopback again afterwards. Stop only affects processes started by this script; occupied ports belonging to other processes are left untouched.
+
+For manual development:
 
 Start the backend from the repository root:
 
@@ -239,7 +258,7 @@ npx eslint .
 npx tsc --noEmit
 ```
 
-The Compose stack in [`docker/`](docker/) mirrors the maintainer's development server and expects pre-existing networks and local paths. Read [docker/README.md](docker/README.md) before using it; it is not a generic one-command production deployment.
+For live development in Docker, run `./bin/dev-container build` then `./bin/dev-container start`. The portable stack bind-mounts source, reloads backend/web changes and preserves app data under `.dev/docker/app`; its default web/API ports are 3001/55451. Expo Metro stays on the host for iOS/Android simulators. See [docker/README.md](docker/README.md) for commands, data migration and local configuration. The older server Compose file remains separate and expects the maintainer's existing networks and paths.
 
 ## Security and privacy
 
@@ -256,3 +275,23 @@ Changes specific to Resonance are tracked in [CHANGES.md](CHANGES.md), and third
 ## License
 
 Licensed under the **GNU Affero General Public License v3.0 with Additional Terms**. See [LICENSE](LICENSE) for the complete terms.
+
+### API security and deployment
+
+Deploy the server, web build and mobile client changes together: chat badges use the joined-room counter endpoint, and private playlist artwork uses expiring scoped signatures supplied by authenticated playlist responses. Public playlist artwork continues to use its public sharing token. Diagnostics and HTTP capture exports require an administrator. Logout and role changes revoke persisted sessions and close affected live connections.
+
+Same-origin web hosting and native mobile clients need no CORS configuration. For a separately hosted web UI, explicitly list its origin in `web.cors_origins`; unlisted browser origins cannot open hub connections. For example:
+
+```yaml
+web:
+  cors_origins:
+    - https://music.example.com
+```
+
+Track pages are capped at 10,000 entries; signing requests accept up to 1,000 paths, with clients batching larger selections. Transcoding permits four concurrent FFmpeg processes and returns HTTP 429 with a retry delay when full.
+
+Artwork processing uses SkiaSharp, including Linux native assets, instead of ImageSharp. No Six Labors license key is required. Test native image decoding on each deployment platform when changing runtime packaging.
+
+On macOS, install native FFmpeg and ffprobe with `brew install ffmpeg`, or configure `ffmpeg.path` to the FFmpeg executable with ffprobe alongside it. The managed downloader supplies Windows/Linux builds and deliberately does not install those on macOS. Standard Homebrew bin directories are checked even when a GUI process has a minimal PATH.
+
+Container images bundle verified yt-dlp, Deno, FFmpeg and ffprobe. First startup copies these tools into the writable data volume, so it works without downloading executables at runtime. Missing tools on native installs are downloaded when needed (macOS FFmpeg still uses the native installation described above). Managed tools check for updates at startup and periodically, downloading verified replacements automatically when their auto-update options are enabled. User-configured/system executables are reused rather than overwritten. Keep the app data volume across container recreations; see [container dependency setup](docker/README.md#media-tool-dependencies).

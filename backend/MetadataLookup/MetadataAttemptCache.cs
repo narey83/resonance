@@ -34,14 +34,14 @@ namespace resonance.MetadataLookup
     using System.Collections.Generic;
     using System.IO;
     using System.Text.Json;
+    using resonance.Common;
     using Serilog;
 
     /// <summary>
     ///     A small persistent record of which files have already been looked up online, keyed by path
-    ///     and the query identity (normalized artist/title/album). Lets the enrichment service skip
-    ///     tracks it has already attempted, so unmatchable files aren't re-queried on every pass. An
-    ///     attempt is retried only if the queryable metadata changes or the retry window elapses — so a
-    ///     cosmetic file rewrite (e.g. a tag sanitization pass) does not, on its own, force a re-lookup.
+    ///     relative to the configured music root. Automatic passes skip every prior attempt; only an
+    ///     explicit full rescan or per-track lookup retries it. Moving a host or container mount must
+    ///     not make an already-attempted track appear new.
     /// </summary>
     internal sealed class MetadataAttemptCache
     {
@@ -76,12 +76,12 @@ namespace resonance.MetadataLookup
         ///     per-track lookup queries it again.
         /// </summary>
         /// <returns>A value indicating whether the file has already been attempted.</returns>
-        public bool ShouldSkip(string path) => entries.ContainsKey(path);
+        public bool ShouldSkip(string path) => entries.ContainsKey(NormalizeKey(path));
 
         /// <summary>Records an attempt for the specified file, query identity, provider and outcome.</summary>
         public void Record(string path, string identity, string provider, string outcome = null)
         {
-            entries[path] = new Attempt(identity, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), provider, outcome);
+            entries[NormalizeKey(path)] = new Attempt(identity, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), provider, outcome);
         }
 
         /// <summary>Persists the cache to disk (atomic write via a temp file).</summary>
@@ -101,6 +101,20 @@ namespace resonance.MetadataLookup
                     log.Warning("Could not persist metadata attempt cache: {Error}", ex.Message);
                 }
             }
+        }
+
+        private static string NormalizeKey(string path)
+        {
+            var key = MusicPath.ToRelative(path);
+            foreach (var root in LegacyAbsoluteRoots)
+            {
+                if (key.StartsWith(root, StringComparison.Ordinal))
+                {
+                    return key[root.Length..];
+                }
+            }
+
+            return key;
         }
 
         private static bool DirectoryAccessible(string path)
@@ -135,27 +149,21 @@ namespace resonance.MetadataLookup
                 var migrated = 0;
                 foreach (var (path, attempt) in loaded)
                 {
-                    // drop entries for deleted files, but only when the containing directory is
-                    // present — so an unmounted/unavailable share doesn't wipe valid entries
-                    if (!File.Exists(path) && DirectoryAccessible(path))
+                    // Normalize before checking existence: old mount paths may no longer exist,
+                    // while the corresponding file is present under the current music root.
+                    var key = NormalizeKey(path);
+                    if (!string.Equals(key, path, StringComparison.Ordinal))
+                    {
+                        migrated++;
+                    }
+
+                    // Relative keys are storage identities, not paths relative to the process cwd.
+                    // Without a configured root, retain them until the filesystem can be resolved.
+                    var physicalPath = MusicPath.ToAbsolute(key);
+                    if (Path.IsPathRooted(physicalPath) && !File.Exists(physicalPath) && DirectoryAccessible(physicalPath))
                     {
                         pruned++;
                         continue;
-                    }
-
-                    // One-time migration: shares moved to root-relative paths (2026-07-02), which
-                    // orphaned entries keyed by the old absolute root and made the entire backlog
-                    // look never-attempted. Re-key them so they match today's enumeration; when
-                    // both key forms exist, the newest attempt wins.
-                    var key = path;
-                    foreach (var root in LegacyAbsoluteRoots)
-                    {
-                        if (key.StartsWith(root, StringComparison.Ordinal))
-                        {
-                            key = key[root.Length..];
-                            migrated++;
-                            break;
-                        }
                     }
 
                     if (!entries.TryGetValue(key, out var existing) || existing.AttemptedAt < attempt.AttemptedAt)

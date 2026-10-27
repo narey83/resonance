@@ -75,6 +75,7 @@ public class ReportsController : ControllerBase
     /// <param name="end">The end time of the window (default: now).</param>
     /// <param name="direction">An optional direction (Upload, Download) by which to filter records.</param>
     /// <param name="username">An optional username by which to filter records.</param>
+    /// <param name="includeTimings">Whether to calculate timing averages; counter-only views can skip these.</param>
     /// <returns></returns>
     /// <response code="200">The request completed successfully.</response>
     /// <response code="400">Bad request.</response>
@@ -89,7 +90,8 @@ public class ReportsController : ControllerBase
         [FromQuery] DateTime? start = null,
         [FromQuery] DateTime? end = null,
         [FromQuery] string direction = null,
-        [FromQuery] string username = null)
+        [FromQuery] string username = null,
+        [FromQuery] bool includeTimings = true)
     {
         // Anyone may fetch their own summary (e.g. the personal Overview
         // page); the global aggregate (no username) or another user's
@@ -127,7 +129,8 @@ public class ReportsController : ControllerBase
                 start: start.Value,
                 end: end,
                 direction: transferDirection,
-                username: username));
+                username: username,
+                includeTimings: includeTimings));
         }
         catch (Exception ex)
         {
@@ -560,6 +563,7 @@ public class ReportsController : ControllerBase
         [FromQuery] int limit = 25,
         [FromQuery] int offset = 0)
     {
+        var liveWindow = end is null;
         start ??= Program.GenesisDateTime;
         end ??= DateTime.UtcNow;
 
@@ -603,7 +607,8 @@ public class ReportsController : ControllerBase
                 sortBy: parsedSortBy,
                 sortOrder: parsedSortOrder,
                 limit: limit,
-                offset: offset);
+                offset: offset,
+                liveWindow: liveWindow);
 
             Response.Headers.Append("X-Total-Count", total.ToString());
             return Ok(items);

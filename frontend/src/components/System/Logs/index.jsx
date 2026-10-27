@@ -45,10 +45,12 @@ import {
 import * as prefs from '../../../lib/prefs';
 import { downloadFile, parseUtcDate } from '../../../lib/util';
 import { LoaderSegment } from '../../Shared';
+import HourlySummary from './HourlySummary';
 import {
   buildRows,
   contextsOf,
   dedupeAgainstSeen,
+  hasMoreHistory,
   logKey,
   mergeContexts,
   mergeLiveEntries,
@@ -831,7 +833,7 @@ const LogsFeed = ({
     }
   };
 
-  // Scroll-back: cursor-paginated on the oldest loaded record's timestamp rather than a raw
+  // Scroll-back: cursor-paginated on the oldest loaded record's timestamp and exact ID rather than a raw
   // offset, so it stays correct regardless of how many new entries the tail poll has prepended
   // in the meantime. +1 on the limit absorbs the guaranteed one-record overlap at the inclusive
   // `to` boundary; a short page (< limit) means there's nothing further back to load. Unlike the
@@ -848,6 +850,7 @@ const LogsFeed = ({
     const lastLoaded =
       historyEntriesRef.current.at(-1) ?? liveEntriesRef.current.at(-1);
     const oldest = lastLoaded?.timestamp;
+    const beforeId = lastLoaded?.id;
 
     try {
       const { logs: items } = await getLogs({
@@ -855,6 +858,7 @@ const LogsFeed = ({
         limit: PER_PAGE + 1,
         from: from ? new Date(from).toISOString() : undefined,
         to: oldest,
+        beforeId,
         ...buildLogQueryParams(filtersRef.current),
       });
 
@@ -872,7 +876,7 @@ const LogsFeed = ({
         setHistoryContexts((prev) => new Set([...prev, ...contextsOf(fresh)]));
       }
 
-      setHasMoreOlder(items.length === PER_PAGE + 1);
+      setHasMoreOlder(hasMoreHistory(items, fresh, PER_PAGE + 1));
     } catch {
       if (gen === generationRef.current) setHasMoreOlder(false);
     } finally {
@@ -887,18 +891,21 @@ const LogsFeed = ({
   // the bounded live window while pinned to the top; otherwise queues in pendingRef (also
   // bounded) so a mid-read scroll position never gets disturbed.
   const poll = async () => {
-    if (pollInFlightRef.current || liveEntriesRef.current.length === 0) return;
+    if (pollInFlightRef.current || loadingInitial) return;
     pollInFlightRef.current = true;
     const gen = generationRef.current;
 
-    const { dateTo: to } = filtersRef.current;
-    const cursor = pollCursor(liveEntriesRef.current[0]);
+    const { dateFrom: from, dateTo: to } = filtersRef.current;
+    const cursor = pollCursor(
+      pendingRef.current[0] ?? liveEntriesRef.current[0],
+    );
     const usedAfterId = 'afterId' in cursor;
 
     try {
       const { logs: items } = await getLogs({
         offset: 0,
         limit: TAIL_POLL_LIMIT,
+        from: from ? new Date(from).toISOString() : undefined,
         ...cursor,
         to: to ? new Date(to + 'T23:59:59').toISOString() : undefined,
         ...buildLogQueryParams(filtersRef.current),
@@ -951,10 +958,19 @@ const LogsFeed = ({
   }, [liveEntries]);
 
   useEffect(() => {
+    let mounted = true;
+    const requestGeneration = generationRef;
     resetAndFetch();
     getLogContexts()
-      .then(setKnownContexts)
+      .then((contexts) => {
+        if (mounted) setKnownContexts(contexts);
+      })
       .catch(() => {});
+    return () => {
+      mounted = false;
+      // Discard every outstanding initial, history and tail response on unmount.
+      requestGeneration.current++;
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const applyFilters = () => {
@@ -1176,6 +1192,7 @@ const LogsFeed = ({
 
   return (
     <>
+      <HourlySummary />
       <div className="logs-toolbar">
         <div className="logs-toolbar-row">
           <LevelFilter

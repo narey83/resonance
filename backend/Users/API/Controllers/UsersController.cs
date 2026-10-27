@@ -401,10 +401,19 @@ namespace resonance.Users.API
                 return NotFound();
             }
 
+            if (!Client.State.HasFlag(SoulseekClientStates.LoggedIn))
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new { code = "SOULSEEK_UNAVAILABLE", error = "Soulseek is disconnected. Reconnect and try again." });
+            }
+
             try
             {
                 var response = await Users.GetStatusAsync(username);
                 return Ok(response);
+            }
+            catch (InvalidOperationException) when (!Client.State.HasFlag(SoulseekClientStates.LoggedIn))
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new { code = "SOULSEEK_UNAVAILABLE", error = "Soulseek disconnected while retrieving this user. Reconnect and try again." });
             }
             catch (UserOfflineException ex)
             {

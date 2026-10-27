@@ -100,10 +100,13 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
     private readonly object rescanGate = new();
     private readonly HashSet<string> pendingRescanDirs = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim dependencyGate = new(1, 1);
+    private readonly string managedTools = Path.Combine(resonance.Program.DataDirectory, "bin", "ytdlp");
     private DateTime lastRescanAt = DateTime.MinValue;
     private SemaphoreSlim workerSlots;
     private CancellationTokenSource cts = new();
     private string? jsRuntimeArg;
+    private string? resolvedExecutable;
 
     public YtDlpService(
         IOptionsMonitor<resonance.Options> options,
@@ -130,19 +133,32 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         resonance.Core.StartupProgress.Starting("ytdlp", "yt-dlp", "Loading jobs, events and subscriptions");
         _ = Task.Run(async () =>
         {
-            try
+            while (!cts.IsCancellationRequested)
             {
-                await InitializeAsync(cts.Token);
-                resonance.Core.StartupProgress.Ready("ytdlp", "yt-dlp is ready");
-            }
-            catch (OperationCanceledException) when (cts.IsCancellationRequested)
-            {
-                resonance.Core.StartupProgress.Failed("ytdlp", "Startup was cancelled");
-            }
-            catch (Exception ex)
-            {
-                resonance.Core.StartupProgress.Failed("ytdlp", ex.Message);
-                Log.Error(ex, "YtDlp: background initialization failed");
+                try
+                {
+                    await InitializeAsync(cts.Token);
+                    resonance.Core.StartupProgress.Ready("ytdlp", "yt-dlp is ready");
+                    return;
+                }
+                catch (OperationCanceledException) when (cts.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    resonance.Core.StartupProgress.Failed("ytdlp", $"{ex.Message} Retrying in one minute.");
+                    Log.Error(ex, "YtDlp: background initialization failed; retrying in one minute");
+                }
+
+                try
+                {
+                    await Task.Delay(TimeSpan.FromMinutes(1), cts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
             }
         }, CancellationToken.None);
 
@@ -200,6 +216,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     // ponytail: subscriptionId trails cancellationToken so the controller call site needs no change; only the poller sets it.
     public async Task<YtDlpJob> SubmitAsync(string url, string? outputDirectory = null, string? audioFormat = null, int? audioQuality = null, string? defaultGenre = null, int? minTrackDurationSeconds = null, int? maxTrackDurationSeconds = null, string? convertOnCompletionFormat = null, string? uploadedAfter = null, CancellationToken cancellationToken = default, Guid? subscriptionId = null)
     {
+        await EnsureDependenciesAsync(cancellationToken);
         var opts = options.CurrentValue.Integrations.YtDlp;
         var outDir = !string.IsNullOrWhiteSpace(outputDirectory) ? outputDirectory
             : !string.IsNullOrWhiteSpace(opts.OutputDirectory) ? opts.OutputDirectory
@@ -511,6 +528,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
     public async Task<IReadOnlyList<YtDlpSearchResult>> SearchAsync(string query, int limit = 25, string? type = null, string? duration = null, string? uploadDate = null, string? sortBy = null, CancellationToken cancellationToken = default)
     {
+        await EnsureDependenciesAsync(cancellationToken);
         var opts = options.CurrentValue.Integrations.YtDlp;
         var results = new List<YtDlpSearchResult>();
 
@@ -540,7 +558,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         var process = new Process
         {
-            StartInfo = new ProcessStartInfo(opts.ExecutablePath)
+            StartInfo = new ProcessStartInfo(Executable(opts))
             {
                 Arguments = args.ToString(),
                 UseShellExecute = false,
@@ -592,6 +610,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
     public async Task<YtDlpSearchResult?> ResolveUrlAsync(string url, CancellationToken cancellationToken = default)
     {
+        await EnsureDependenciesAsync(cancellationToken);
         var opts = options.CurrentValue.Integrations.YtDlp;
 
         // The url is interpolated into the argument string, so reject anything that could
@@ -624,7 +643,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         var process = new Process
         {
-            StartInfo = new ProcessStartInfo(opts.ExecutablePath)
+            StartInfo = new ProcessStartInfo(Executable(opts))
             {
                 Arguments = args.ToString(),
                 UseShellExecute = false,
@@ -659,8 +678,9 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
     public async Task<(string? YtDlpVersion, string? FfmpegVersion)> GetVersionsAsync(CancellationToken cancellationToken = default)
     {
+        await EnsureDependenciesAsync(cancellationToken);
         var opts = options.CurrentValue.Integrations.YtDlp;
-        var ytdlpVersion = await RunVersionCommandAsync(opts.ExecutablePath, "--version", cancellationToken);
+        var ytdlpVersion = await RunVersionCommandAsync(Executable(opts), "--version", cancellationToken);
         var ffmpegVersion = await ffmpeg.GetVersionAsync(cancellationToken);
         return (ytdlpVersion, ffmpegVersion);
     }
@@ -668,7 +688,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     public async Task<(string? Current, string? Latest, bool UpdateAvailable)> CheckForUpdateAsync(CancellationToken cancellationToken = default)
     {
         var opts = options.CurrentValue.Integrations.YtDlp;
-        var current = await RunVersionCommandAsync(opts.ExecutablePath, "--version", cancellationToken);
+        var current = await RunVersionCommandAsync(Executable(opts), "--version", cancellationToken);
 
         try
         {
@@ -690,46 +710,52 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
     public async Task<string> UpdateYtDlpAsync(CancellationToken cancellationToken = default)
     {
+        await EnsureDependenciesAsync(cancellationToken);
         var opts = options.CurrentValue.Integrations.YtDlp;
-
-        // Resolve the full path if only a bare name was given (e.g. "yt-dlp")
-        var execPath = opts.ExecutablePath;
-        if (!Path.IsPathRooted(execPath))
+        if (!string.Equals(Path.GetDirectoryName(Executable(opts)), managedTools, StringComparison.Ordinal))
         {
-            var which = await RunVersionCommandAsync(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "where" : "which", execPath, cancellationToken);
-            if (!string.IsNullOrWhiteSpace(which))
-            {
-                execPath = which.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0].Trim();
-            }
+            throw new InvalidOperationException("This yt-dlp installation is externally managed. Update it with its package manager; Resonance only replaces its own downloaded binary.");
         }
 
-        // Fetch latest release from GitHub
-        using var http = httpClientFactory.CreateClient();
-        http.DefaultRequestHeaders.Add("User-Agent", "resonance");
-        var release = await http.GetFromJsonAsync<JsonElement>(
-            "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest", cancellationToken);
-        var tag = release.GetProperty("tag_name").GetString()
-            ?? throw new InvalidOperationException("Could not determine latest yt-dlp version.");
-
-        var assetName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "yt-dlp.exe" : "yt-dlp";
-        var downloadUrl = $"https://github.com/yt-dlp/yt-dlp/releases/download/{tag}/{assetName}";
-
-        Log.Information("YtDlp: downloading {Version} from {Url}", tag, downloadUrl);
-
-        var bytes = await http.GetByteArrayAsync(downloadUrl, cancellationToken);
-        var tempPath = execPath + ".tmp";
-        await File.WriteAllBytesAsync(tempPath, bytes, cancellationToken);
-
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        await dependencyGate.WaitAsync(cancellationToken);
+        try
         {
-            var chmod = new Process { StartInfo = new ProcessStartInfo("chmod", $"+x \"{tempPath}\"") { UseShellExecute = false, CreateNoWindow = true } };
-            chmod.Start();
-            await chmod.WaitForExitAsync(cancellationToken);
+            var os = OperatingSystem.IsMacOS() ? "macos" : OperatingSystem.IsWindows() ? "windows" : "linux";
+            var asset = DependencyAssets(os, RuntimeInformation.ProcessArchitecture, RuntimeInformation.RuntimeIdentifier.Contains("musl", StringComparison.OrdinalIgnoreCase)).YtDlp;
+            return await new ManagedToolInstaller(httpClientFactory).InstallAsync("yt-dlp/yt-dlp", managedTools,
+                [new(asset, OperatingSystem.IsWindows() ? "yt-dlp.exe" : "yt-dlp", VersionArguments: "--version")], cancellationToken);
         }
+        finally
+        {
+            dependencyGate.Release();
+        }
+    }
 
-        File.Move(tempPath, execPath, overwrite: true);
-        Log.Information("YtDlp: updated to {Version}", tag);
-        return tag;
+    public async Task<(string? Current, string? Latest)> GetJavaScriptRuntimeVersionAsync(bool check, CancellationToken cancellationToken = default)
+    {
+        var path = Path.Combine(managedTools, OperatingSystem.IsWindows() ? "deno.exe" : "deno");
+        var version = File.Exists(path) ? await RunVersionCommandAsync(path, "--version", cancellationToken) : null;
+        var current = version?.Split('\n')[0].Split(' ', StringSplitOptions.RemoveEmptyEntries).ElementAtOrDefault(1);
+        var latest = check ? await new ManagedToolInstaller(httpClientFactory).LatestVersionAsync("denoland/deno", cancellationToken) : null;
+        return (current, latest?.TrimStart('v'));
+    }
+
+    public async Task<string> UpdateJavaScriptRuntimeAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureDependenciesAsync(cancellationToken);
+        await dependencyGate.WaitAsync(cancellationToken);
+        try
+        {
+            var os = OperatingSystem.IsMacOS() ? "macos" : OperatingSystem.IsWindows() ? "windows" : "linux";
+            var asset = DependencyAssets(os, RuntimeInformation.ProcessArchitecture, RuntimeInformation.RuntimeIdentifier.Contains("musl", StringComparison.OrdinalIgnoreCase)).Deno;
+            var name = OperatingSystem.IsWindows() ? "deno.exe" : "deno";
+            return await new ManagedToolInstaller(httpClientFactory).InstallAsync("denoland/deno", managedTools,
+                [new(asset, name, name, "--version")], cancellationToken);
+        }
+        finally
+        {
+            dependencyGate.Release();
+        }
     }
 
     public async Task ReconcileJobAsync(Guid jobId)
@@ -933,6 +959,62 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         publishLock.Dispose();
     }
 
+    internal static (string YtDlp, string Deno) DependencyAssets(string os, Architecture architecture, bool musl = false)
+    {
+        if (architecture is not (Architecture.X64 or Architecture.Arm64))
+        {
+            throw new PlatformNotSupportedException("Automatic yt-dlp setup requires x64 or ARM64.");
+        }
+
+        var arch = architecture == Architecture.Arm64 ? "aarch64" : "x86_64";
+        return os switch
+        {
+            "macos" => ("yt-dlp_macos", $"deno-{arch}-apple-darwin.zip"),
+            "windows" => (architecture == Architecture.Arm64 ? "yt-dlp_arm64.exe" : "yt-dlp.exe", $"deno-{arch}-pc-windows-msvc.zip"),
+            "linux" when !musl => (architecture == Architecture.Arm64 ? "yt-dlp_linux_aarch64" : "yt-dlp_linux", $"deno-{arch}-unknown-linux-gnu.zip"),
+            "linux" => (architecture == Architecture.Arm64 ? "yt-dlp_musllinux_aarch64" : "yt-dlp_musllinux", $"deno-{arch}-unknown-linux-gnu.zip"),
+            _ => throw new PlatformNotSupportedException("Automatic yt-dlp setup supports macOS, Windows and Linux."),
+        };
+    }
+
+    // Prefer a thumbnail suitable for list cells over the extractor's original cover.
+    internal static string? SelectThumbnail(JsonElement root)
+    {
+        string? selected = null;
+        var selectedWidth = int.MaxValue;
+        string? smaller = null;
+        var smallerWidth = 0;
+        if (root.TryGetProperty("thumbnails", out var thumbnails) && thumbnails.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var thumbnail in thumbnails.EnumerateArray())
+            {
+                if (!thumbnail.TryGetProperty("url", out var url) || url.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                if (!thumbnail.TryGetProperty("width", out var width) || width.ValueKind != JsonValueKind.Number || !width.TryGetInt32(out var pixels))
+                {
+                    smaller ??= url.GetString();
+                    continue;
+                }
+
+                if (pixels >= 320 && pixels < selectedWidth)
+                {
+                    selected = url.GetString();
+                    selectedWidth = pixels;
+                }
+                else if (pixels < 320 && pixels > smallerWidth)
+                {
+                    smaller = url.GetString();
+                    smallerWidth = pixels;
+                }
+            }
+        }
+
+        return selected ?? smaller ?? (root.TryGetProperty("thumbnail", out var fallback) ? fallback.GetString() : null);
+    }
+
     private static string? FindTrackFileUnderKnownExtensions(string filePath)
     {
         var stem = Path.ChangeExtension(filePath, null);
@@ -1022,17 +1104,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 : pageUrl.Contains("/playlist", StringComparison.OrdinalIgnoreCase) ? "playlist"
                 : "channel";
 
-            var thumbnail = root.TryGetProperty("thumbnail", out var th) ? th.GetString() : null;
-
-            // Channel/playlist dumps have no top-level "thumbnail", only a "thumbnails" array (smallest first)
-            if (thumbnail is null
-                && root.TryGetProperty("thumbnails", out var thumbs)
-                && thumbs.ValueKind == JsonValueKind.Array
-                && thumbs.GetArrayLength() > 0
-                && thumbs[thumbs.GetArrayLength() - 1].TryGetProperty("url", out var thumbUrl))
-            {
-                thumbnail = thumbUrl.GetString();
-            }
+            var thumbnail = SelectThumbnail(root);
 
             var duration = root.TryGetProperty("duration", out var dur) && dur.ValueKind == JsonValueKind.Number
                 ? (int?)(int)dur.GetDouble()
@@ -1135,12 +1207,11 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     // which applies to our standalone binary — so point it at the folder next to the binary
     // itself. --plugin-dirs takes the *parent* of a "yt-dlp-plugins" folder, matching how
     // yt-dlp's own default search dirs work. Currently ships the bgutil PO-token provider
-    // (backend/tools/yt-dlp-plugins), which talks to the bgutil-provider sidecar container
-    // (docker/docker-compose.yml). No-ops if the executable is a bare PATH name or the
+    // (backend/tools/yt-dlp-plugins), which talks to the backend-owned loopback token provider. No-ops if the executable is a bare PATH name or the
     // plugins folder isn't present next to it.
     private static string PluginDirsFlag(resonance.Options.IntegrationsOptions.YtDlpOptions opts)
     {
-        var dir = Path.GetDirectoryName(opts.ExecutablePath);
+        var dir = new[] { Path.GetDirectoryName(opts.ExecutablePath), Path.Combine(resonance.Program.AppDirectory, "tools"), Path.Combine(AppContext.BaseDirectory, "tools") }.FirstOrDefault(path => !string.IsNullOrWhiteSpace(path) && Directory.Exists(Path.Combine(path, "yt-dlp-plugins")));
         if (string.IsNullOrEmpty(dir) || !Directory.Exists(Path.Combine(dir, "yt-dlp-plugins")))
         {
             return string.Empty;
@@ -1149,15 +1220,13 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         return $" --plugin-dirs \"{dir}\"";
     }
 
-    // The bundled plugin's own default (http://127.0.0.1:4416) only resolves under host
-    // networking, where backend and the sidecar shared a loopback. docker/docker-compose.yml
-    // now runs both on a bridge network instead, so point it at the sidecar by container name.
+    // The bundled provider runs inside the backend container and listens on loopback only.
     // yt-dlp allows repeating --extractor-args for different extractors, so this is additive to
     // ExtractorArgsFlag's user-configurable value, never a conflict with it.
     private static string PoTokenProviderFlag(resonance.Options.IntegrationsOptions.YtDlpOptions opts) =>
         string.IsNullOrEmpty(PluginDirsFlag(opts))
             ? string.Empty
-            : " --extractor-args \"youtubepot-bgutilhttp:base_url=http://resonance-bgutil-pot-provider:4416\"";
+            : " --extractor-args \"youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416\"";
 
     private static void AppendPluginDirs(System.Text.StringBuilder args, resonance.Options.IntegrationsOptions.YtDlpOptions opts)
     {
@@ -1213,32 +1282,12 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
     private static async Task<string?> DetectJsRuntimeAsync()
     {
-        // Try each JS runtime yt-dlp supports, in preference order
-        string[] candidates = ["node", "bun", "deno"];
-        foreach (var runtime in candidates)
+        foreach (var runtime in new[] { "deno", "node", "bun" })
         {
-            var whichCmd = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "where" : "which";
-            try
+            var path = ManagedToolInstaller.FindExecutable(runtime);
+            if (path != null && await ManagedToolInstaller.IsUsableAsync(path, "--version", CancellationToken.None))
             {
-                using var p = new Process
-                {
-                    StartInfo = new ProcessStartInfo(whichCmd, runtime)
-                    {
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        RedirectStandardOutput = true,
-                    },
-                };
-                p.Start();
-                var path = (await p.StandardOutput.ReadLineAsync())?.Trim();
-                await p.WaitForExitAsync();
-                if (p.ExitCode == 0 && !string.IsNullOrWhiteSpace(path))
-                {
-                    return $"--js-runtimes {runtime}:{path}";
-                }
-            }
-            catch
-            {
+                return $"--js-runtimes \"{runtime}:{path}\"";
             }
         }
 
@@ -1338,6 +1387,97 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             || e.Contains("no longer available");
     }
 
+    private string Executable(resonance.Options.IntegrationsOptions.YtDlpOptions opts) =>
+        opts.ExecutablePath is "yt-dlp" or "yt-dlp.exe" ? resolvedExecutable ?? opts.ExecutablePath : opts.ExecutablePath;
+
+    private async Task EnsureDependenciesAsync(CancellationToken token)
+    {
+        await dependencyGate.WaitAsync(token);
+        try
+        {
+            var opts = options.CurrentValue.Integrations.YtDlp;
+            if (resolvedExecutable != null && File.Exists(Executable(opts)) && jsRuntimeArg != null)
+            {
+                return;
+            }
+
+            resonance.Core.StartupProgress.Starting("ytdlp-dependencies", "YouTube dependencies", "Checking yt-dlp, JavaScript runtime and FFmpeg");
+            var installer = new ManagedToolInstaller(httpClientFactory);
+            var os = OperatingSystem.IsMacOS() ? "macos" : OperatingSystem.IsWindows() ? "windows" : "linux";
+            var assets = DependencyAssets(os, RuntimeInformation.ProcessArchitecture, RuntimeInformation.RuntimeIdentifier.Contains("musl", StringComparison.OrdinalIgnoreCase));
+            var toolName = OperatingSystem.IsWindows() ? "yt-dlp.exe" : "yt-dlp";
+            var managedTool = Path.Combine(managedTools, toolName);
+            var isDefault = opts.ExecutablePath is "yt-dlp" or "yt-dlp.exe";
+            if (isDefault && !File.Exists(managedTool))
+            {
+                await ManagedToolInstaller.SeedAsync(toolName, managedTools, "--version", token);
+            }
+
+            var candidate = isDefault && File.Exists(managedTool) ? managedTool : ManagedToolInstaller.FindExecutable(opts.ExecutablePath);
+            if (candidate != null && await ManagedToolInstaller.IsUsableAsync(candidate, "--version", token))
+            {
+                resolvedExecutable = candidate;
+            }
+            else if (!isDefault)
+            {
+                throw new InvalidOperationException("The configured yt-dlp executable cannot run. Check integrations.yt_dlp.executable_path.");
+            }
+            else
+            {
+                resonance.Core.StartupProgress.Starting("ytdlp-dependencies", "YouTube dependencies", "Downloading and verifying yt-dlp");
+                if (!await ManagedToolInstaller.SeedAsync(toolName, managedTools, "--version", token))
+                {
+                    await installer.InstallAsync("yt-dlp/yt-dlp", managedTools, [new(assets.YtDlp, toolName, VersionArguments: "--version")], token);
+                }
+
+                resolvedExecutable = managedTool;
+            }
+
+            var bundledRuntime = Path.Combine(managedTools, OperatingSystem.IsWindows() ? "deno.exe" : "deno");
+            if (!File.Exists(bundledRuntime))
+            {
+                await ManagedToolInstaller.SeedAsync(Path.GetFileName(bundledRuntime), managedTools, "--version", token);
+            }
+
+            jsRuntimeArg = File.Exists(bundledRuntime) && await ManagedToolInstaller.IsUsableAsync(bundledRuntime, "--version", token)
+                ? $"--js-runtimes \"deno:{bundledRuntime}\"" : await DetectJsRuntimeAsync();
+            if (jsRuntimeArg == null)
+            {
+                var runtimeName = OperatingSystem.IsWindows() ? "deno.exe" : "deno";
+                var runtimePath = Path.Combine(managedTools, runtimeName);
+                if (!File.Exists(runtimePath))
+                {
+                    await ManagedToolInstaller.SeedAsync(runtimeName, managedTools, "--version", token);
+                }
+
+                if (!File.Exists(runtimePath) || !await ManagedToolInstaller.IsUsableAsync(runtimePath, "--version", token))
+                {
+                    resonance.Core.StartupProgress.Starting("ytdlp-dependencies", "YouTube dependencies", "Downloading and verifying the JavaScript runtime");
+                    if (!await ManagedToolInstaller.SeedAsync(runtimeName, managedTools, "--version", token))
+                    {
+                        await installer.InstallAsync("denoland/deno", managedTools, [new(assets.Deno, runtimeName, runtimeName, "--version")], token);
+                    }
+                }
+
+                jsRuntimeArg = $"--js-runtimes \"deno:{runtimePath}\"";
+            }
+
+            await ffmpeg.GetFfmpegPathAsync(token);
+            await ffmpeg.GetFfprobePathAsync(token);
+            resonance.Core.StartupProgress.Ready("ytdlp-dependencies", "yt-dlp, JavaScript runtime and FFmpeg are ready");
+        }
+        catch (Exception ex)
+        {
+            resolvedExecutable = null;
+            resonance.Core.StartupProgress.Failed("ytdlp-dependencies", ex.Message);
+            throw;
+        }
+        finally
+        {
+            dependencyGate.Release();
+        }
+    }
+
     /// <summary>
     ///     Reads a media file's duration with ffprobe, which decodes the container rather than
     ///     estimating from headers the way the tag reader does. Returns null if ffprobe is
@@ -1392,7 +1532,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     private async Task InitializeAsync(CancellationToken cancellationToken)
     {
         await resonance.Program.DatabaseInitialization.WaitAsync(cancellationToken);
-        jsRuntimeArg = await DetectJsRuntimeAsync();
+        await EnsureDependenciesAsync(cancellationToken);
         if (jsRuntimeArg != null)
         {
             Log.Information("YtDlp: using JS runtime {Arg}", jsRuntimeArg);
@@ -1574,7 +1714,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
             var process = new Process
             {
-                StartInfo = new ProcessStartInfo(opts.ExecutablePath)
+                StartInfo = new ProcessStartInfo(Executable(opts))
                 {
                     Arguments = $"{flat}--dump-json{(jsRuntimeArg != null ? " " + jsRuntimeArg : string.Empty)}{ExtractorArgsFlag(opts)}{PluginDirsFlag(opts)}{PoTokenProviderFlag(opts)} \"{job.Url}\"",
                     UseShellExecute = false,
@@ -1921,7 +2061,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         var process = new Process
         {
-            StartInfo = new ProcessStartInfo(opts.ExecutablePath)
+            StartInfo = new ProcessStartInfo(Executable(opts))
             {
                 Arguments = args,
                 UseShellExecute = false,
@@ -2837,17 +2977,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             var url = root.TryGetProperty("url", out var u) ? u.GetString() ?? string.Empty : string.Empty;
             var title = root.TryGetProperty("title", out var t) ? t.GetString() ?? string.Empty : string.Empty;
             var uploader = root.TryGetProperty("uploader", out var up) ? up.GetString() ?? string.Empty : string.Empty;
-            var thumbnail = root.TryGetProperty("thumbnail", out var th) ? th.GetString() : null;
-
-            // Flat-playlist output has no top-level "thumbnail", only a "thumbnails" array (smallest first)
-            if (thumbnail is null
-                && root.TryGetProperty("thumbnails", out var thumbs)
-                && thumbs.ValueKind == JsonValueKind.Array
-                && thumbs.GetArrayLength() > 0
-                && thumbs[thumbs.GetArrayLength() - 1].TryGetProperty("url", out var thumbUrl))
-            {
-                thumbnail = thumbUrl.GetString();
-            }
+            var thumbnail = SelectThumbnail(root);
 
             // duration is a float in flat-playlist output (e.g. 322.0)
             var duration = root.TryGetProperty("duration", out var dur) && dur.ValueKind == JsonValueKind.Number
@@ -3117,7 +3247,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         var process = new Process
         {
-            StartInfo = new ProcessStartInfo(opts.ExecutablePath)
+            StartInfo = new ProcessStartInfo(Executable(opts))
             {
                 Arguments = args.ToString(),
                 UseShellExecute = false,
@@ -3304,7 +3434,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         while (!cancellationToken.IsCancellationRequested)
         {
             var opts = options.CurrentValue.Integrations.YtDlp;
-            if (opts.Enabled && opts.AutoUpdate)
+            if (opts.AutoUpdate && string.Equals(Path.GetDirectoryName(Executable(opts)), managedTools, StringComparison.Ordinal))
             {
                 try
                 {
@@ -3319,6 +3449,36 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 catch (Exception ex)
                 {
                     Log.Warning(ex, "YtDlp: background update check failed: {Message}", ex.Message);
+                }
+            }
+
+            if (opts.AutoUpdate && File.Exists(Path.Combine(managedTools, "deno-release.txt")))
+            {
+                try
+                {
+                    var installer = new ManagedToolInstaller(httpClientFactory);
+                    var current = (await File.ReadAllTextAsync(Path.Combine(managedTools, "deno-release.txt"), cancellationToken)).Trim();
+                    var latest = await installer.LatestVersionAsync("denoland/deno", cancellationToken);
+                    if (!string.IsNullOrWhiteSpace(latest) && current != latest)
+                    {
+                        await dependencyGate.WaitAsync(cancellationToken);
+                        try
+                        {
+                            var os = OperatingSystem.IsMacOS() ? "macos" : OperatingSystem.IsWindows() ? "windows" : "linux";
+                            var asset = DependencyAssets(os, RuntimeInformation.ProcessArchitecture).Deno;
+                            var name = OperatingSystem.IsWindows() ? "deno.exe" : "deno";
+                            await installer.InstallAsync("denoland/deno", managedTools, [new(asset, name, name, "--version")], cancellationToken);
+                            await EmitEventAsync(null, "info", $"JavaScript runtime auto-updated to {latest}");
+                        }
+                        finally
+                        {
+                            dependencyGate.Release();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "YtDlp: JavaScript runtime update failed; keeping installed copy");
                 }
             }
 

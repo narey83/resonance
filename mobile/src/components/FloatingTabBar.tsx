@@ -27,9 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-// Floating pill-style replacement for the stock BottomTabBar — same 5 tabs
-// and navigation behavior, just rendered as a rounded bar with margin
-// instead of a full-width bar docked to the screen edge.
+// A fixed five-tab rail. Shared-folder browsing and community screens live under More.
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -37,11 +35,12 @@ import { Ionicons } from '@expo/vector-icons';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useTheme } from '../context/ThemeContext';
 import { notePerfInteraction } from '../lib/perfProbe';
-import { Radius, Spacing, ThemeColors } from '../theme';
+import { Spacing, ThemeColors, Typography } from '../theme';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
 const TAB_ICONS: Record<string, { active: IoniconName; inactive: IoniconName }> = {
+  DiscoverTab: { active: 'disc', inactive: 'disc-outline' },
   LibraryTab:   { active: 'musical-notes', inactive: 'musical-notes-outline' },
   SearchTab:    { active: 'search',        inactive: 'search-outline' },
   TransfersTab: { active: 'arrow-down',    inactive: 'arrow-down-outline' },
@@ -58,9 +57,10 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
   return (
     <View style={[s.wrapper, { paddingBottom: Math.max(insets.bottom, Spacing.sm) }]}>
       <View style={s.bar}>
-        {state.routes.map((route, index) => {
+        {state.routes.filter(route => !['BrowseTab', 'RoomsTab', 'ChatTab'].includes(route.name)).map((route) => {
+          const index = state.routes.findIndex(item => item.key === route.key);
           const { options } = descriptors[route.key];
-          const focused = state.index === index;
+          const focused = state.index === index || (route.name === 'MoreTab' && ['BrowseTab', 'RoomsTab', 'ChatTab'].includes(state.routes[state.index].name));
           const icons = TAB_ICONS[route.name];
           const label = typeof options.title === 'string' ? options.title : route.name;
           const badge = options.tabBarBadge;
@@ -70,18 +70,18 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
             // heard the touch feedback and is waiting for the screen to change.
             notePerfInteraction(`tab:${route.name}`);
             const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-            if (!focused && !event.defaultPrevented) {
+            if (state.index !== index && !event.defaultPrevented) {
               navigation.navigate(route.name);
             }
           };
 
           return (
-            <Pressable key={route.key} onPress={onPress} style={s.tab}>
-              <View style={[s.iconWrap, focused && { backgroundColor: colors.accent + '22' }]}>
+            <Pressable key={route.key} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: focused }} onPress={onPress} style={s.tab}>
+              <View style={[s.iconWrap, focused && { borderTopColor: colors.accent }]}>
                 <Ionicons
                   color={focused ? colors.accent : colors.textMuted}
                   name={icons ? (focused ? icons.active : icons.inactive) : 'ellipse-outline'}
-                  size={22}
+                  size={21}
                 />
                 {badge != null && badge !== 0 && (
                   <View style={s.badge}>
@@ -91,7 +91,7 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
               </View>
               {/* Backstop for a long label at a large font scale: clip rather
                   than wrap, which would make one tab taller and jog the bar. */}
-              <Text numberOfLines={1} style={[s.label, { color: focused ? colors.accent : colors.textMuted }]}>{label}</Text>
+              <Text numberOfLines={1} style={[s.label, { color: focused ? colors.accent : colors.textMuted }]}>{label.toUpperCase()}</Text>
             </Pressable>
           );
         })}
@@ -103,34 +103,27 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
 function makeStyles(c: ThemeColors) {
   return StyleSheet.create({
     wrapper: {
-      // Seven tabs: every dp of width is a dp the longest label ("Transfers")
-      // needs. sm over md keeps it un-clipped down to a 320dp screen.
-      paddingHorizontal: Spacing.sm,
-      paddingTop: Spacing.xs,
       backgroundColor: c.bgPrimary,
+      borderTopWidth: 1,
+      borderTopColor: c.tabBarBorder,
     },
     bar: {
       flexDirection: 'row',
       backgroundColor: c.tabBar,
-      borderRadius: Radius.full,
-      borderWidth: 1,
-      borderColor: c.tabBarBorder,
-      paddingVertical: Spacing.sm,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.15,
-      shadowRadius: 12,
-      elevation: 8,
+      paddingHorizontal: Spacing.sm,
+      paddingBottom: 3,
     },
     tab: {
       flex: 1,
       alignItems: 'center',
+      minHeight: 52,
       gap: 2,
     },
     iconWrap: {
-      width: 36,
-      height: 28,
-      borderRadius: Radius.full,
+      width: 40,
+      height: 35,
+      borderTopWidth: 3,
+      borderTopColor: 'transparent',
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -153,6 +146,8 @@ function makeStyles(c: ThemeColors) {
     },
     label: {
       fontSize: 9,
+      fontFamily: Typography.mono,
+      letterSpacing: .3,
     },
   });
 }

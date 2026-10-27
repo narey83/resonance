@@ -27,28 +27,48 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import './ResonanceMark.css';
 import React from 'react';
 
 const ResonanceMark = ({ size = 24 }) => (
   <svg
+    aria-hidden="true"
+    className="resonance-mark"
     fill="none"
+    focusable="false"
     height={size}
     viewBox="0 0 24 24"
     width={size}
     xmlns="http://www.w3.org/2000/svg"
   >
     <circle
+      className="resonance-mark-ring"
       cx="12"
       cy="12"
       r="8"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth="1.7"
     />
     <path
+      className="resonance-mark-wave"
       d="M4 12 C6 6.5 10 6.5 12 12 C14 17.5 18 17.5 20 12"
       stroke="currentColor"
       strokeLinecap="round"
-      strokeWidth="2"
+      strokeWidth="1.7"
+    />
+    <path
+      className="resonance-mark-highlight"
+      d="M6.4 6.4 A8 8 0 0 1 12 4"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeWidth="1.7"
+    />
+    <circle
+      className="resonance-mark-core"
+      cx="12"
+      cy="12"
+      fill="currentColor"
+      r="1.3"
     />
   </svg>
 );

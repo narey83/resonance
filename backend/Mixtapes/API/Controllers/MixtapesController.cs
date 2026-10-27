@@ -49,7 +49,7 @@ namespace resonance.Mixtapes.API
     [Produces("application/json")]
     [Consumes("application/json")]
     [Route("api/v{version:apiVersion}/mixtapes")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.FeatureLibrary)]
     public class MixtapesController : ControllerBase
     {
         public MixtapesController(IMixtapeService service, StreamUrlSigner urlSigner)
@@ -67,6 +67,7 @@ namespace resonance.Mixtapes.API
         public IActionResult GetAll() => Ok(Service.GetAll().Select(SignMixtape).ToList());
 
         [HttpPost]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [ProducesResponseType(typeof(Mixtape), 201)]
         public IActionResult Create([FromBody] CreateMixtapeRequest req)
         {
@@ -84,6 +85,7 @@ namespace resonance.Mixtapes.API
         }
 
         [HttpPut("{id}")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [ProducesResponseType(typeof(Mixtape), 200)]
         [ProducesResponseType(404)]
         public IActionResult Update(string id, [FromBody] UpdateMixtapeRequest req)
@@ -99,6 +101,7 @@ namespace resonance.Mixtapes.API
         }
 
         [HttpDelete("{id}")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [ProducesResponseType(204)]
         [ProducesResponseType(404)]
         public IActionResult Delete(string id)
@@ -115,6 +118,7 @@ namespace resonance.Mixtapes.API
         }
 
         [HttpPost("{id}/tracks")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [ProducesResponseType(typeof(MixtapeTrack), 201)]
         [ProducesResponseType(404)]
         [ProducesResponseType(409)]
@@ -136,6 +140,7 @@ namespace resonance.Mixtapes.API
         }
 
         [HttpDelete("{id}/tracks/{trackId}")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [ProducesResponseType(204)]
         [ProducesResponseType(404)]
         public IActionResult RemoveTrack(string id, string trackId)
@@ -152,6 +157,7 @@ namespace resonance.Mixtapes.API
         }
 
         [HttpDelete("{id}/tracks")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [ProducesResponseType(204)]
         [ProducesResponseType(404)]
         public IActionResult ClearTracks(string id)
@@ -168,6 +174,7 @@ namespace resonance.Mixtapes.API
         }
 
         [HttpPut("{id}/tracks")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [ProducesResponseType(204)]
         public IActionResult ReorderTracks(string id, [FromBody] ReorderTracksRequest req)
         {
@@ -179,13 +186,30 @@ namespace resonance.Mixtapes.API
         [AllowAnonymous]
         [ProducesResponseType(200)]
         [ProducesResponseType(404)]
-        public IActionResult GetArtwork(string id, [FromQuery] int? size)
+        public IActionResult GetArtwork(string id, [FromQuery] int? size, [FromQuery] long exp = 0, [FromQuery] string sig = null)
         {
+            if (!UrlSigner.Validate($"playlist-artwork:{id}", exp, sig))
+            {
+                return Unauthorized();
+            }
+
             var info = Service.GetArtworkInfo(id, size);
-            return info == null ? NotFound() : PhysicalFile(info.Value.Path, info.Value.ContentType);
+            if (info == null)
+            {
+                return NotFound();
+            }
+
+            var file = new System.IO.FileInfo(info.Value.Path);
+            Response.Headers.CacheControl = "private, max-age=0, must-revalidate";
+            return new PhysicalFileResult(file.FullName, info.Value.ContentType)
+            {
+                LastModified = file.LastWriteTimeUtc,
+                EntityTag = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{file.LastWriteTimeUtc.Ticks:x}-{file.Length:x}\""),
+            };
         }
 
         [HttpPost("{id}/artwork")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [Consumes("multipart/form-data")]
         [ProducesResponseType(200)]
         [ProducesResponseType(400)]
@@ -213,6 +237,7 @@ namespace resonance.Mixtapes.API
         }
 
         [HttpDelete("{id}/artwork")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [ProducesResponseType(204)]
         [ProducesResponseType(404)]
         public IActionResult DeleteArtwork(string id)
@@ -227,6 +252,7 @@ namespace resonance.Mixtapes.API
         }
 
         [HttpPost("{id}/publish")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [ProducesResponseType(typeof(Mixtape), 200)]
         [ProducesResponseType(404)]
         public IActionResult Publish(string id)
@@ -242,6 +268,7 @@ namespace resonance.Mixtapes.API
         }
 
         [HttpDelete("{id}/publish")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [ProducesResponseType(204)]
         [ProducesResponseType(404)]
         public IActionResult Unpublish(string id)
@@ -288,7 +315,7 @@ namespace resonance.Mixtapes.API
         {
             var invalid = System.IO.Path.GetInvalidFileNameChars();
             var safe = string.Concat(name.Select(c => invalid.Contains(c) ? '_' : c)).Trim();
-            return string.IsNullOrEmpty(safe) ? "mixtape" : safe;
+            return string.IsNullOrEmpty(safe) ? "playlist" : safe;
         }
 
         // Stamp each track's FilePath with a fresh artwork/stream signature so clients skip the
@@ -304,7 +331,15 @@ namespace resonance.Mixtapes.API
             return t with { Exp = exp, Sig = sig };
         }
 
-        private Mixtape SignMixtape(Mixtape m) =>
-            m.Tracks == null ? m : m with { Tracks = m.Tracks.Select(SignTrack).ToList() };
+        private Mixtape SignMixtape(Mixtape m)
+        {
+            var (exp, sig) = UrlSigner.Sign($"playlist-artwork:{m.Id}");
+            return m with
+            {
+                ArtworkExp = exp,
+                ArtworkSig = sig,
+                Tracks = m.Tracks?.Select(SignTrack).ToList(),
+            };
+        }
     }
 }

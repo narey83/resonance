@@ -145,19 +145,32 @@ namespace resonance.Transfers
             // covers the analytics/reports queries (ReportsService), which all filter on EndedAt
             // and aggregate the included columns; INCLUDE keeps the scans index-only so they never
             // touch the (Filename-heavy, much larger) heap
-            modelBuilder
-                .Entity<Transfer>()
-                .HasIndex(e => e.EndedAt)
-                .HasDatabaseName("IDX_Transfers_Reports")
-                .HasFilter("\"EndedAt\" IS NOT NULL")
-                .IncludeProperties(e => new { e.Direction, e.State, e.StateDescription, e.Size, e.Username, e.AverageSpeed, e.StartedAt, e.EnqueuedAt });
+            if (Database.IsSqlite())
+            {
+                // Counter-only overview queries can aggregate in index order without
+                // reading filename-heavy rows or sorting the complete transfer history.
+                modelBuilder.Entity<Transfer>()
+                    .HasIndex(e => new { e.Direction, e.State, e.EndedAt, e.Username, e.BytesTransferred, e.StartOffset, e.AverageSpeed }, "IX_Transfers_Overview")
+                    .HasDatabaseName("IX_Transfers_Overview")
+                    .HasFilter("\"EndedAt\" IS NOT NULL");
+            }
+
+            var reports = Database.IsSqlite()
+                ? modelBuilder.Entity<Transfer>().HasIndex(e => new { e.EndedAt, e.State, e.Direction }, "IX_Transfers_ReportWindow")
+                : modelBuilder.Entity<Transfer>().HasIndex(e => e.EndedAt, "IDX_Transfers_Reports");
+            reports.HasDatabaseName(Database.IsSqlite() ? "IX_Transfers_ReportWindow" : "IDX_Transfers_Reports")
+                .HasFilter("\"EndedAt\" IS NOT NULL");
+            if (Database.IsNpgsql())
+            {
+                reports.IncludeProperties(e => new { e.Direction, e.State, e.StateDescription, e.Size, e.Username, e.AverageSpeed, e.StartedAt, e.EnqueuedAt });
+            }
 
             // The 90-day activity heatmap filters to successful transfers and aggregates the
             // actual bytes moved. Keeping those operands in a small partial index avoids hundreds
             // of thousands of random heap reads through IDX_Transfers_State.
             modelBuilder
                 .Entity<Transfer>()
-                .HasIndex(e => e.EndedAt)
+                .HasIndex(e => e.EndedAt, "IDX_Transfers_Heatmap")
                 .HasDatabaseName("IDX_Transfers_Heatmap")
                 .HasFilter("\"State\" = 48 AND \"EndedAt\" IS NOT NULL")
                 .IncludeProperties(e => new { e.BytesTransferred, e.StartOffset });

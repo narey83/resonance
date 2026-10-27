@@ -47,7 +47,7 @@ export const MixtapeDropTarget = ({ children, mixtape, onUpdate }) => {
           toast.success(
             result.added
               ? `Added to ${mixtape.name}`
-              : 'Already in this mixtape',
+              : 'Already in this playlist',
           );
           onUpdate?.();
         } catch (error) {
@@ -80,7 +80,7 @@ const PlaylistTools = ({ paths = [] }) => {
     mixtapes
       .getAll()
       .then(setItems)
-      .catch(() => setError('Could not load mixtapes. Reopen to retry.'));
+      .catch(() => setError('Could not load playlists. Reopen to retry.'));
   useEffect(() => {
     load();
   }, []);
@@ -115,9 +115,9 @@ const PlaylistTools = ({ paths = [] }) => {
       }}
       ref={menuRef}
     >
-      <summary>Add to mixtape</summary>
+      <summary>Add to playlist</summary>
       <div className="library-playlist-menu">
-        <p>Drop a track onto a mixtape, or add your selection.</p>
+        <p>Drop a track onto a playlist, or add your selection.</p>
         {items.map((p) => (
           <MixtapeDropTarget
             key={p.id}
@@ -130,12 +130,12 @@ const PlaylistTools = ({ paths = [] }) => {
           </MixtapeDropTarget>
         ))}
         <label>
-          Mixtape
+          Playlist
           <select
             onChange={(e) => setId(e.target.value)}
             value={id}
           >
-            <option value="">Choose mixtape…</option>
+            <option value="">Choose playlist…</option>
             {items.map((p) => (
               <option
                 key={p.id}
@@ -155,11 +155,11 @@ const PlaylistTools = ({ paths = [] }) => {
           Add {paths.length} selected
         </button>
         <label>
-          New mixtape
+          New playlist
           <input
             maxLength={100}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Mixtape name"
+            placeholder="Playlist name"
             value={name}
           />
         </label>

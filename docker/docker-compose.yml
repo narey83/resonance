@@ -57,9 +57,8 @@
 # postgres-db is shared infrastructure defined elsewhere; set its resource
 # limits where that container is defined, not here.
 #
-# Build contexts are local to this directory, so the stack is self-contained and
-# can live anywhere (e.g. /home/narey/containers/resonance) independent of the
-# source it bind-mounts.
+# The backend build context is RESONANCE_SRC so shared provisioning scripts and
+# local packages are available. The Compose file itself can live in Dockge.
 networks:
   resonance_caddy_proxy_net:
     name: resonance_caddy_proxy_net
@@ -77,8 +76,8 @@ networks:
 services:
   backend:
     build:
-      context: .
-      dockerfile: backend.Dockerfile
+      context: ${RESONANCE_SRC:-/home/narey/projects/resonance}
+      dockerfile: docker/backend.Dockerfile
     image: resonance-backend-dev
     container_name: resonance-backend
     # local_lan_net is a macvlan (parent eno1) giving the container a fixed address
@@ -229,30 +228,16 @@ services:
       - backend
     restart: unless-stopped
 
-  # PO Token provider for yt-dlp's youtube extractor. YouTube increasingly requires a
-  # Proof-of-Origin token (bound to SABR-only client responses) before it will serve
-  # real media URLs; this generates them on request. Reachable from backend at
-  # http://resonance-bgutil-pot-provider:4416 on resonance_backend_net -- yt-dlp's
-  # plugin defaults to the old host-networking address (127.0.0.1:4416), so backend
-  # points it here explicitly via extractor-args (see YtDlpService.cs's
-  # PoTokenProviderFlag) rather than relying on that default.
-  bgutil-provider:
-    image: brainicism/bgutil-ytdlp-pot-provider
-    container_name: resonance-bgutil-pot-provider
-    networks:
-      - resonance_backend_net
-    mem_limit: 256m
-    cpus: 0.5
-    restart: unless-stopped
-
+  # YouTube's private token provider is bundled and supervised inside backend.
+  # Maintenance recovery is supervised inside Caddy; no extra services are needed.
   # Resonance's own reverse proxy. Owns all app routing, rate limiting, security
   # headers and body limits. Reaches backend/frontend by container name on
   # resonance_backend_net; the outer/main proxy reaches this one via the published
   # 192.168.0.254:8443.
   caddy:
     build:
-      context: caddy
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/caddy/Dockerfile
     image: resonance-caddy
     container_name: resonance-caddy
     networks:

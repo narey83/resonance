@@ -61,9 +61,9 @@
   "scripts": {
     "build": "craco build",
     "eject": "craco eject",
-    "lint": "NODE_OPTIONS=--no-deprecation eslint .",
-    "lint:fix": "NODE_OPTIONS=--no-deprecation eslint --fix .",
-    "postinstall": "semantic-ui-css-patch",
+    "lint": "eslint .",
+    "lint:fix": "eslint --fix .",
+    "postinstall": "semantic-ui-css-patch && node scripts/apply-node-compat.cjs",
     "screenshots": "node scripts/capture-screenshots.mjs",
     "start": "craco start",
     "test": "craco test",
@@ -71,7 +71,8 @@
     "test:mix-preview": "craco test --watchAll=false --runInBand mixSync mixAudioTimeline DualMixPlayer MixCompatibilityPreview playerTempo mixCompatibility PlayerTransport TrackTable TrackInspector usePlayerPopout && node scripts/test-mix-dsp.mjs",
     "test:set-planner": "craco test --watchAll=false --runInBand setPlanner SetPlanner SetPlanAnalysis genreCompatibility MixCompatibilityPreview UsbExportPanel PlaylistTools SmartCratesView PreparationView mixSync mixCompatibility DualMixPlayer PlayerTransport TrackTable TrackInspector usePlayerPopout",
     "test:set-rehearsal": "craco test --watchAll=false --runInBand setRehearsal SetRehearsal ZoomControl Converter IndependentAnalysisLibrary setPlanner SetPlanner SetPlanAnalysis genreCompatibility MixCompatibilityPreview UsbExportPanel PlaylistTools SmartCratesView PreparationView mixSync mixCompatibility DualMixPlayer PlayerTransport TrackTable TrackInspector usePlayerPopout AudioProcessing LoudnessMeter useTrackLoudness processingPolicy && node scripts/test-mix-dsp.mjs",
-    "test-unattended": "craco test --watchAll false --passWithNoTests"
+    "test-unattended": "craco test --watchAll false --passWithNoTests",
+    "test:node-compat": "node --throw-deprecation --test scripts/test-node-compat.cjs"
   },
   "version": "0.1.0"
 }

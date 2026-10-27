@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { getSessionScope, onSessionReset, sessionGuard } from '../lib/sessionScope';
 import { CastContext as GoogleCastContext, CastState, MediaPlayerState, RemoteMediaClient, SessionManager, useCastDevice, useCastSession, useCastState } from 'react-native-google-cast';
 import React, {
   createContext,
@@ -40,6 +41,7 @@ import React, {
 import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
 import { getArtworkUrl, MusicTrack } from '../api/musicLibrary';
 import { usePlayer } from './PlayerContext';
+import { useRemoteAccess } from '../lib/remoteAccess';
 import { useAuthStore } from '../store/auth';
 import { ensureSigned, signedQuery } from '../api/streamSignatures';
 
@@ -148,6 +150,7 @@ interface GoogleCastLayerProps {
 }
 
 function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
+  const isAuthenticated = useRemoteAccess();
   const { track, pause, setSuppressLocalPlay, restoreTrack } = usePlayer();
 
   const googleCastState = useCastState();
@@ -204,7 +207,7 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
   }, [isGoogleCasting]);
 
   useEffect(() => {
-    if (!isGoogleCasting || track || !mediaStatus?.mediaInfo) return;
+    if (!isAuthenticated || !isGoogleCasting || track || !mediaStatus?.mediaInfo) return;
     const info = mediaStatus.mediaInfo;
     const contentUrl = info.contentUrl ?? '';
     let path = '';
@@ -236,17 +239,19 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
     };
     restoreTrack(restored);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isGoogleCasting, track, mediaStatus]);
+  }, [isAuthenticated, isGoogleCasting, track, mediaStatus]);
 
   const pendingTrackRef    = useRef<MusicTrack | null>(null);
   const prevCastTrackPath  = useRef<string | null>(null);
 
   const loadTrack = useCallback(async (client: typeof nativeClient.current, trackToLoad: MusicTrack) => {
     if (!client) return;
+    const current = sessionGuard();
     // The cast device streams independently and holds this URL for the whole track. The path
     // signature is valid for ~24h (well beyond any track), so a fresh signature can't expire
     // mid-playback the way the old 15-min access token could.
     await ensureSigned([trackToLoad.path]);
+    if (!current()) throw new Error('Session changed');
     const { serverUrl } = useAuthStore.getState();
     const streamUrl = `${serverUrl}/api/v0/musiclibrary/stream?path=${encodeURIComponent(trackToLoad.path)}${signedQuery(trackToLoad.path)}`;
     // The receiver fetches the cover itself, so it gets the same signed URL the stream uses.
@@ -281,12 +286,12 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
   // Remember the path only once the load succeeds, so a rejected load is retried rather than
   // leaving the device connected and silent forever.
   useEffect(() => {
-    if (!castSession || !track) return;
+    if (!isAuthenticated || !castSession || !track) return;
     if (track.path === prevCastTrackPath.current) return;
     loadTrack(nativeClient.current, track)
       .then(() => { prevCastTrackPath.current = track.path; })
       .catch(() => {});
-  }, [track, castSession, loadTrack]);
+  }, [isAuthenticated, track, castSession, loadTrack]);
 
   // These reject when the receiver has no media loaded; nothing can be done about it here, and
   // an unhandled rejection puts a redbox over the player.
@@ -303,11 +308,13 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
   }, [nativeClient.current]);
 
   const connectAndPlayGoogle = useCallback(async (deviceId: string, trackToPlay: MusicTrack) => {
+    const current = sessionGuard();
     pendingTrackRef.current = trackToPlay;
     const sessionManager = new SessionManager();
     await sessionManager.startSession(deviceId);
     // Wait for the cast session to be fully ready before loading media
     await new Promise<void>((r) => setTimeout(r, 800));
+    if (!current()) return;
     if (pendingTrackRef.current) {
       const t = pendingTrackRef.current;
       pendingTrackRef.current = null;
@@ -327,6 +334,13 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
     prevCastTrackPath.current = null;
     await GoogleCastContext.getSessionManager().endCurrentSession(true);
   }, []);
+
+  useEffect(() => onSessionReset((restoring) => {
+    if (restoring && getSessionScope() !== null) return;
+    setMediaStatus(null);
+    setCastPositionSec(0);
+    void stopGoogleCast().catch(() => {});
+  }), [stopGoogleCast]);
 
   // Report state to parent
   useEffect(() => {
@@ -355,6 +369,7 @@ function GoogleCastLayer({ onState, actionsRef }: GoogleCastLayerProps) {
 // ── CastProvider ──────────────────────────────────────────────────────────────
 
 export const CastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const remote = useRemoteAccess();
   // ── Google Cast state (managed by GoogleCastLayer when available) ────────────
   const [gcState, setGcState] = useState<GCState>(GC_DEFAULT_STATE);
   const gcActionsRef = useRef<GCActions>({
@@ -383,7 +398,7 @@ export const CastProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <CastContext.Provider value={value}>
-      {CAST_AVAILABLE && (
+      {CAST_AVAILABLE && remote && (
         <GoogleCastLayer onState={setGcState} actionsRef={gcActionsRef} />
       )}
       {children}

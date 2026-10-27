@@ -228,7 +228,7 @@ describe('USB export selection and failures', () => {
       ReactDOM.render(<UsbExportPanel />, container);
     });
     await act(async () => {
-      Simulate.click(button('Download updated Mac helper installer'));
+      Simulate.click(button('Download Resonance Bridge for Mac'));
     });
     expect(api.get).toHaveBeenLastCalledWith(
       '/analysis/pioneer-link/helper?platform=macos',
@@ -258,6 +258,6 @@ describe('USB export selection and failures', () => {
     expect(container.querySelector('[role="alert"]').textContent).toBe(
       'Requested helper archive is not available on this instance.',
     );
-    expect(button('Download updated Mac helper installer').disabled).toBe(true);
+    expect(button('Download Resonance Bridge for Mac').disabled).toBe(true);
   });
 });

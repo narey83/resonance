@@ -29,6 +29,7 @@
 
 import { apiClient } from './client';
 import { remoteLog } from './remoteLogger';
+import { onSessionReset, sessionGuard } from '../lib/sessionScope';
 
 // Path-scoped signatures for stream/artwork URLs. The server signs each library path with a
 // secret we never see; we cache the resulting { exp, sig } and append it to media URLs instead
@@ -67,6 +68,7 @@ export const isSigned = (path: string): boolean => !needsSigning(path, Math.floo
  * the caller can retry.
  */
 export const ensureSigned = async (paths: (string | null | undefined)[]): Promise<void> => {
+  const current = sessionGuard();
   const nowSec = Math.floor(Date.now() / 1000);
   const todo = Array.from(
     new Set(paths.filter((p): p is string => !!p && needsSigning(p, nowSec))),
@@ -74,9 +76,12 @@ export const ensureSigned = async (paths: (string | null | undefined)[]): Promis
   if (todo.length === 0) return;
 
   try {
-    const { data } = await apiClient.post<Record<string, Signature>>('/musiclibrary/sign', { paths: todo });
-    for (const [path, sig] of Object.entries(data)) {
-      if (sig?.sig) cache.set(path, sig);
+    for (let offset = 0; offset < todo.length; offset += 1000) {
+      const { data } = await apiClient.post<Record<string, Signature>>('/musiclibrary/sign', { paths: todo.slice(offset, offset + 1000) });
+      if (!current()) return;
+      for (const [path, sig] of Object.entries(data)) {
+        if (sig?.sig) cache.set(path, sig);
+      }
     }
   } catch (err: unknown) {
     remoteLog('warn', `[sign] failed to sign ${todo.length} path(s) — ${err instanceof Error ? err.message : String(err)}`);
@@ -117,3 +122,5 @@ export const invalidateSignatures = (paths: (string | null | undefined)[]): void
 
 /** Drop all cached signatures (e.g. on logout / server change). */
 export const clearSignatures = (): void => cache.clear();
+
+onSessionReset(clearSignatures);

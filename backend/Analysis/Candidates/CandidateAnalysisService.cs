@@ -55,9 +55,9 @@ namespace resonance.Analysis.Candidates
             Store = store;
         }
 
-        private AnalysisStore Store { get; }
-
         public bool Enabled => Options.Enabled;
+
+        private AnalysisStore Store { get; }
 
         private CandidateAnalysisOptions Options { get; }
 
@@ -86,7 +86,17 @@ namespace resonance.Analysis.Candidates
             await WorkerGate.WaitAsync(ct);
             try
             {
-                return await Run(source, request.Seconds, request.Features, ct);
+                var job = await Run(source, request.Seconds, request.Features, ct);
+                if (job.Status == "completed" && job.RequestedSeconds == null)
+                {
+                    var saved = await Read(job.JobId, ct);
+                    if (saved.ContentCurrent && saved.Analysis.HasValue && HasEnhanced(saved.Analysis.Value))
+                    {
+                        CacheDjSummary(path: source, analysis: saved.Analysis.Value, analysisId: job.JobId);
+                    }
+                }
+
+                return job;
             }
             finally
             {
@@ -94,22 +104,9 @@ namespace resonance.Analysis.Candidates
             }
         }
 
-        internal static bool HasEnhanced(JsonElement document)
-        {
-            if (!document.TryGetProperty("scope", out var scope)
-                || !scope.TryGetProperty("fullTrack", out var full) || !full.GetBoolean()
-                || !document.TryGetProperty("featureAvailability", out var availability))
-            {
-                return false;
-            }
-
-            return new[] { "beats", "semanticPhrases", "vocalPresence", "genre" }.All(name =>
-                availability.TryGetProperty(name, out var value) && value.GetString() == "available");
-        }
-
         public async Task<(CandidateJob Job, JsonElement Analysis)?> LatestEnhanced(string path, CancellationToken ct)
         {
-            if (!Enabled)
+            if (!StorageAvailable)
             {
                 return null;
             }
@@ -132,62 +129,57 @@ namespace resonance.Analysis.Candidates
             return null;
         }
 
-        internal void CacheDjSummary(string path, JsonElement analysis, string analysisId)
-        {
-            var features = analysis.GetProperty("features");
-            var scores = features.GetProperty("genre").GetProperty("result").GetProperty("scores").EnumerateArray();
-            var genre = scores.OrderByDescending(score => score.GetProperty("cosine").GetDouble()).FirstOrDefault();
-            double? energy = null;
-            if (features.TryGetProperty("energy", out var feature) && feature.TryGetProperty("result", out var result)
-                && result.TryGetProperty("rms", out var rms) && rms.GetArrayLength() > 0)
-                energy = rms.EnumerateArray().Average(value => value.GetDouble());
-            var voice = features.GetProperty("vocalPresence").GetProperty("result");
-            var vocals = voice.GetProperty("segments").GetArrayLength() > 0;
-            if (voice.TryGetProperty("processedVoice", out var speech) && speech.TryGetProperty("sustainedSegments", out var spans))
-                vocals |= spans.GetArrayLength() > 0;
-            var arrangement = features.GetProperty("semanticPhrases").GetProperty("result");
-            var automatic = arrangement.TryGetProperty("djStructure", out var dj) && dj.TryGetProperty("automatic", out var auto) && auto.ValueKind == JsonValueKind.True;
-            var neutralPhrases = automatic ? dj.GetProperty("segments").EnumerateArray().Count(segment => segment.GetProperty("label").GetString() == "Transition") : 0;
-            Store.SaveDjSummary(path, JsonSerializer.Serialize(new {
-                complete = true, experimental = true, analysisId,
-                genre = genre.ValueKind == JsonValueKind.Object ? genre.GetProperty("label").GetString() : null,
-                energy, energySemantics = "Mean PCM RMS; loudness-based energy proxy", vocals,
-                automaticArrangement = automatic, neutralPhraseCount = neutralPhrases,
-                reviewReason = automatic ? null : "Independent predictions; audition beatgrid and phrase labels"
-            }));
-        }
-
         public async Task EnsureEnhanced(string path, CancellationToken ct, bool force = false)
         {
-            if (!Enabled) return;
+            if (!Enabled)
+            {
+                return;
+            }
+
             var existing = force ? null : await LatestEnhanced(path, ct);
             CandidateJob generated;
             if (existing.HasValue)
             {
                 var dj = existing.Value.Analysis.GetProperty("features").GetProperty("semanticPhrases").GetProperty("result");
-                if (dj.TryGetProperty("djStructure", out var structure) && structure.TryGetProperty("revision", out var revision) && revision.GetString() == "genre-arrangement-v1.1") return;
+                if (dj.TryGetProperty("djStructure", out var structure) && structure.TryGetProperty("revision", out var revision) && revision.GetString() == "genre-arrangement-v1.1")
+                {
+                    return;
+                }
+
                 using var config = JsonDocument.Parse(await File.ReadAllTextAsync(Options.ConfigFile, ct));
-                if (config.RootElement.TryGetProperty("semanticPhrases", out var settings) && settings.TryGetProperty("genreAware", out var enabled) && enabled.ValueKind == JsonValueKind.False) return;
+                if (config.RootElement.TryGetProperty("semanticPhrases", out var settings) && settings.TryGetProperty("genreAware", out var enabled) && enabled.ValueKind == JsonValueKind.False)
+                {
+                    return;
+                }
+
                 var source = ImportedAnalysisContract.RequireLibraryPath(MusicPath.Root, path);
                 await WorkerGate.WaitAsync(ct);
                 try
                 {
                     generated = await Run(source, null, null, ct, Path.Combine(JobDirectory(existing.Value.Job.JobId), "result", "analysis.json"), true);
                 }
-                finally { WorkerGate.Release(); }
+                finally
+                {
+                    WorkerGate.Release();
+                }
             }
-            else generated = await Analyze(new CandidateAnalysisRequest(path), ct);
+            else
+            {
+                generated = await Analyze(new CandidateAnalysisRequest(path), ct);
+            }
+
             var result = await Read(generated.JobId, ct);
             if (!result.ContentCurrent || !result.Analysis.HasValue || !HasEnhanced(result.Analysis.Value))
             {
                 throw new InvalidOperationException("Enhanced full-track analysis has missing features; inspect candidate results.");
             }
+
             CacheDjSummary(path, result.Analysis.Value, generated.JobId);
         }
 
         public async Task<IReadOnlyList<CandidateJob>> List(string path, CancellationToken ct)
         {
-            RequireConfiguration();
+            RequireStorageConfiguration();
             var source = ImportedAnalysisContract.RequireLibraryPath(MusicPath.Root, path);
             if (Analysis.ResolveMaskedFilename(source) == null)
             {
@@ -220,7 +212,7 @@ namespace resonance.Analysis.Candidates
 
         public async Task<(CandidateJob Job, JsonElement? Analysis, bool ContentCurrent)> Read(string jobId, CancellationToken ct)
         {
-            RequireConfiguration();
+            RequireStorageConfiguration();
             var directory = JobDirectory(jobId);
             var jobPath = Path.Combine(directory, "job.json");
             if (!File.Exists(jobPath))
@@ -243,6 +235,51 @@ namespace resonance.Analysis.Candidates
             }
 
             return (job, result, identity.Sha256 == job.AudioSha256 && identity.Bytes == job.AudioBytes);
+        }
+
+        internal static bool HasEnhanced(JsonElement document)
+        {
+            if (!document.TryGetProperty("scope", out var scope)
+                || !scope.TryGetProperty("fullTrack", out var full) || !full.GetBoolean()
+                || !document.TryGetProperty("featureAvailability", out var availability))
+            {
+                return false;
+            }
+
+            return new[] { "beats", "semanticPhrases", "vocalPresence", "genre" }.All(name =>
+                availability.TryGetProperty(name, out var value) && value.GetString() == "available");
+        }
+
+        internal void CacheDjSummary(string path, JsonElement analysis, string analysisId)
+        {
+            var features = analysis.GetProperty("features");
+            var scores = features.GetProperty("genre").GetProperty("result").GetProperty("scores").EnumerateArray();
+            var genre = scores.OrderByDescending(score => score.GetProperty("cosine").GetDouble()).FirstOrDefault();
+            double? energy = null;
+            if (features.TryGetProperty("energy", out var feature) && feature.TryGetProperty("result", out var result)
+                && result.TryGetProperty("rms", out var rms) && rms.GetArrayLength() > 0)
+            {
+                energy = rms.EnumerateArray().Average(value => value.GetDouble());
+            }
+
+            var voice = features.GetProperty("vocalPresence").GetProperty("result");
+            var vocals = voice.GetProperty("segments").GetArrayLength() > 0;
+            if (voice.TryGetProperty("processedVoice", out var speech) && speech.TryGetProperty("sustainedSegments", out var spans))
+            {
+                vocals |= spans.GetArrayLength() > 0;
+            }
+
+            var arrangement = features.GetProperty("semanticPhrases").GetProperty("result");
+            var automatic = arrangement.TryGetProperty("djStructure", out var dj) && dj.TryGetProperty("automatic", out var auto) && auto.ValueKind == JsonValueKind.True;
+            var neutralPhrases = automatic ? dj.GetProperty("segments").EnumerateArray().Count(segment => segment.GetProperty("label").GetString() == "Transition") : 0;
+            Store.SaveDjSummary(path, JsonSerializer.Serialize(new
+            {
+                complete = true, exportReady = ExportAnalysisContract.Ready(analysis), experimental = true, analysisId,
+                genre = genre.ValueKind == JsonValueKind.Object ? genre.GetProperty("label").GetString() : null,
+                energy, energySemantics = "Mean PCM RMS; loudness-based energy proxy", vocals,
+                automaticArrangement = automatic, neutralPhraseCount = neutralPhrases,
+                reviewReason = automatic ? null : "Independent predictions; audition beatgrid and phrase labels",
+            }));
         }
 
         private static async Task<(string Sha256, long Bytes)> Hash(string path, CancellationToken ct)
@@ -285,6 +322,72 @@ namespace resonance.Analysis.Candidates
             var temporary = Path.Combine(directory, "job-" + Guid.NewGuid().ToString("N") + ".tmp");
             await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(job), ct);
             File.Move(temporary, Path.Combine(directory, "job.json"), true);
+        }
+
+        public bool StorageAvailable => !string.IsNullOrWhiteSpace(Options.OutputRoot)
+            && Path.IsPathFullyQualified(Options.OutputRoot) && Directory.Exists(Options.OutputRoot);
+
+        public async Task<IReadOnlyList<CandidateJob>> ExportCandidates(CancellationToken ct)
+        {
+            var result = new List<CandidateJob>();
+            if (!StorageAvailable)
+            {
+                return result;
+            }
+
+            RequireStorageConfiguration();
+            foreach (var reference in Store.ExportReferences())
+            {
+                ct.ThrowIfCancellationRequested();
+                try
+                {
+                    var job = JsonSerializer.Deserialize<CandidateJob>(await File.ReadAllTextAsync(Path.Combine(JobDirectory(reference.AnalysisId), "job.json"), ct));
+                    if (job is { RequestedSeconds: null, Status: "completed" } && job.LibraryPath == reference.Path)
+                    {
+                        result.Add(job);
+                    }
+                }
+                catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
+                {
+                    // Invalid or missing evidence never enters a sharing batch.
+                }
+            }
+
+            return result;
+        }
+
+        public async Task<(CandidateJob Job, JsonElement Analysis)?> LatestExportReady(string path, CancellationToken ct)
+        {
+            if (!StorageAvailable)
+            {
+                return null;
+            }
+
+            var id = Store.ExportReferenceFor(path);
+            if (id == null)
+            {
+                return null;
+            }
+
+            var result = await Read(id, ct);
+            return result.Job.Status == "completed" && result.Job.RequestedSeconds == null && result.ContentCurrent
+                && result.Analysis.HasValue && ExportAnalysisContract.Ready(result.Analysis.Value)
+                ? (result.Job, result.Analysis.Value) : null;
+        }
+
+        private void RequireStorageConfiguration()
+        {
+            if (!StorageAvailable)
+            {
+                throw new InvalidOperationException("Saved full-track analysis is not available on this server.");
+            }
+
+            var music = Path.TrimEndingDirectorySeparator(Path.GetFullPath(MusicPath.Root));
+            var output = Path.GetFullPath(Options.OutputRoot);
+            if (output == music || output.StartsWith(music + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Saved analysis must be outside the music library.");
+            }
         }
 
         private void RequireConfiguration()
@@ -405,7 +508,10 @@ namespace resonance.Analysis.Candidates
             {
                 start.ArgumentList.Add("--reuse-candidate");
                 start.ArgumentList.Add(reuseCandidate);
-                if (refreshDjOnly) start.ArgumentList.Add("--refresh-dj-only");
+                if (refreshDjOnly)
+                {
+                    start.ArgumentList.Add("--refresh-dj-only");
+                }
             }
 
             using var process = new Process { StartInfo = start };

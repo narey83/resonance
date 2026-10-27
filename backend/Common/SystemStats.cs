@@ -70,6 +70,11 @@ namespace resonance.Common
         /// <returns>The used and total host memory in bytes, or null if /proc/meminfo can't be read.</returns>
         public static (long UsedBytes, long TotalBytes)? GetHostMemory()
         {
+            if (!OperatingSystem.IsLinux())
+            {
+                return null;
+            }
+
             try
             {
                 var lines = File.ReadAllLines("/proc/meminfo");
@@ -110,6 +115,11 @@ namespace resonance.Common
         /// <returns>The host CPU utilization percentage, or null if it can't yet be computed.</returns>
         public static double? GetHostCpuPercent()
         {
+            if (!OperatingSystem.IsLinux())
+            {
+                return null;
+            }
+
             try
             {
                 var fields = File.ReadLines("/proc/stat").First(l => l.StartsWith("cpu "))
@@ -148,6 +158,11 @@ namespace resonance.Common
         /// <returns>The container's CPU percentage and memory usage/limit, or null on failure.</returns>
         public static async Task<(double CpuPercent, long MemoryUsageBytes, long MemoryLimitBytes)?> GetContainerStatsAsync(string name)
         {
+            if (!File.Exists(DockerSocketPath))
+            {
+                return null;
+            }
+
             try
             {
                 // stream=false makes the daemon sample twice ~1s apart and return a single document

@@ -74,7 +74,8 @@ public static class LogQueryService
         DateTime? to,
         int offset,
         int limit,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        long? beforeId = null)
     {
         var query = context.Entries.AsNoTracking().AsQueryable();
 
@@ -115,6 +116,13 @@ public static class LogQueryService
         if (to.HasValue)
         {
             query = query.Where(e => e.Timestamp <= to.Value);
+        }
+
+        if (beforeId.HasValue)
+        {
+            query = to.HasValue
+                ? query.Where(e => e.Timestamp < to.Value || e.Id < beforeId.Value)
+                : query.Where(e => e.Id < beforeId.Value);
         }
 
         if (afterId.HasValue)

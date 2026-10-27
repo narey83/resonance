@@ -34,8 +34,8 @@ namespace resonance.MusicLibrary
     using System.Data;
     using System.Data.Common;
     using System.Linq;
+    using Microsoft.Data.Sqlite;
     using Npgsql;
-using Microsoft.Data.Sqlite;
     using resonance.Common;
 
     public class MusicRepository
@@ -199,8 +199,10 @@ using Microsoft.Data.Sqlite;
                         add.ExecuteNonQuery();
                     }
                 }
+
                 return;
             }
+
             using var alter = conn.CreateCommand();
             alter.CommandText = $@"
                 ALTER TABLE {T} ADD COLUMN IF NOT EXISTS tag_types   TEXT;
@@ -451,20 +453,49 @@ using Microsoft.Data.Sqlite;
             }
 
             var summary = $"(SELECT c.dj_summary FROM {TA} c WHERE {CacheMatch("c")})";
-            if (dj?.AddedAfter.HasValue == true) conditions.Add("indexed_at >= @addedAfter");
+            if (dj?.AddedAfter.HasValue == true)
+            {
+                conditions.Add("indexed_at >= @addedAfter");
+            }
+
             var history = UsePostgres ? "library_activity.\"PlayHistory\"" : "PlayHistory";
             var loved = UsePostgres ? "library_activity.\"LovedTracks\"" : "LovedTracks";
             if (dj?.NeverPlayed == true || dj?.NotPlayedSince.HasValue == true)
+            {
                 conditions.Add($"{T}.path NOT IN (SELECT h.\"Path\" FROM {history} h WHERE h.\"Path\" IS NOT NULL AND h.\"Username\"=@crateUsername" +
                     (dj.NeverPlayed ? ")" : " AND h.\"PlayedAt\">=@notPlayedSince)"));
+            }
+
             if (dj?.LovedOnly == true)
+            {
                 conditions.Add($"EXISTS (SELECT 1 FROM {loved} l WHERE l.\"Path\"={T}.path AND l.\"Username\"=@crateUsername)");
-            if (dj?.Paths?.Length > 0) conditions.Add("path IN (" + string.Join(",", dj.Paths.Select((_, index) => "@path" + index)) + ")");
-            if (dj?.BpmMin is double min) conditions.Add($"{CachedBpm} >= @bpmMin");
-            if (dj?.BpmMax is double max) conditions.Add($"{CachedBpm} <= @bpmMax");
-            if (dj?.Keys?.Length > 0) conditions.Add($"{CachedKey} IN (" + string.Join(",", dj.Keys.Select((_, index) => "@compatibleKey" + index)) + ")");
+            }
+
+            if (dj?.Paths?.Length > 0)
+            {
+                conditions.Add("path IN (" + string.Join(",", dj.Paths.Select((_, index) => "@path" + index)) + ")");
+            }
+
+            if (dj?.BpmMin is double min)
+            {
+                conditions.Add($"{CachedBpm} >= @bpmMin");
+            }
+
+            if (dj?.BpmMax is double max)
+            {
+                conditions.Add($"{CachedBpm} <= @bpmMax");
+            }
+
+            if (dj?.Keys?.Length > 0)
+            {
+                conditions.Add($"{CachedKey} IN (" + string.Join(",", dj.Keys.Select((_, index) => "@compatibleKey" + index)) + ")");
+            }
+
             if (dj?.Vocals is "yes" or "no")
+            {
                 conditions.Add(UsePostgres ? $"(({summary})::jsonb->>'vocals')::boolean = @vocals" : $"json_extract({summary},'$.vocals') = @vocals");
+            }
+
             if (dj?.Energy is "low" or "medium" or "high")
             {
                 var energy = UsePostgres ? $"(({summary})::jsonb->>'energy')::double precision" : $"json_extract({summary},'$.energy')";
@@ -475,8 +506,14 @@ using Microsoft.Data.Sqlite;
             // no missing* flag can express. Same predicate the stats count uses, so the list and the
             // headline number can't disagree.
             var analysed = analysis?.Trim().ToLowerInvariant();
-            if (analysed == "enhanced") conditions.Add(UsePostgres ? $"({summary})::jsonb->>'complete' = 'true'" : $"json_extract({summary},'$.complete') = 1");
-            else if (analysed == "pending") conditions.Add($"{summary} IS NULL");
+            if (analysed == "enhanced")
+            {
+                conditions.Add(UsePostgres ? $"({summary})::jsonb->>'complete' = 'true'" : $"json_extract({summary},'$.complete') = 1");
+            }
+            else if (analysed == "pending")
+            {
+                conditions.Add($"{summary} IS NULL");
+            }
             else if (analysed == "complete")
             {
                 conditions.Add(FullyAnalysedExists);
@@ -555,15 +592,53 @@ using Microsoft.Data.Sqlite;
 
             void BindDj(DbCommand command)
             {
-                if (dj?.AddedAfter is long addedAfter) AddParam(command, "@addedAfter", addedAfter);
-                if (dj?.NotPlayedSince is long notPlayedSince && !dj.NeverPlayed) AddParam(command, "@notPlayedSince", notPlayedSince);
-                if (dj?.NeverPlayed == true || dj?.NotPlayedSince.HasValue == true || dj?.LovedOnly == true) AddParam(command, "@crateUsername", dj.Username ?? "");
-                if (dj?.Paths?.Length > 0) for (var index = 0; index < dj.Paths.Length; index++) AddParam(command, "@path" + index, MusicPath.ToRelative(dj.Paths[index]));
-                if (dj?.BpmMin is double min) AddParam(command, "@bpmMin", min);
-                if (dj?.BpmMax is double max) AddParam(command, "@bpmMax", max);
-                if (dj?.Keys?.Length > 0) for (var index = 0; index < dj.Keys.Length; index++) AddParam(command, "@compatibleKey" + index, dj.Keys[index]);
-                if (dj?.Vocals is "yes" or "no") AddParam(command, "@vocals", dj.Vocals == "yes");
+                if (dj?.AddedAfter is long addedAfter)
+                {
+                    AddParam(command, "@addedAfter", addedAfter);
+                }
+
+                if (dj?.NotPlayedSince is long notPlayedSince && !dj.NeverPlayed)
+                {
+                    AddParam(command, "@notPlayedSince", notPlayedSince);
+                }
+
+                if (dj?.NeverPlayed == true || dj?.NotPlayedSince.HasValue == true || dj?.LovedOnly == true)
+                {
+                    AddParam(command, "@crateUsername", dj.Username ?? string.Empty);
+                }
+
+                if (dj?.Paths?.Length > 0)
+                {
+                    for (var index = 0; index < dj.Paths.Length; index++)
+                    {
+                        AddParam(command, "@path" + index, MusicPath.ToRelative(dj.Paths[index]));
+                    }
+                }
+
+                if (dj?.BpmMin is double min)
+                {
+                    AddParam(command, "@bpmMin", min);
+                }
+
+                if (dj?.BpmMax is double max)
+                {
+                    AddParam(command, "@bpmMax", max);
+                }
+
+                if (dj?.Keys?.Length > 0)
+                {
+                    for (var index = 0; index < dj.Keys.Length; index++)
+                    {
+                        AddParam(command, "@compatibleKey" + index, dj.Keys[index]);
+                    }
+                }
+
+                if (dj?.Vocals is "yes" or "no")
+                {
+                    AddParam(command, "@vocals", dj.Vocals == "yes");
+                }
             }
+
             BindDj(countCmd);
             var total = Convert.ToInt32(countCmd.ExecuteScalar());
 
@@ -622,7 +697,7 @@ using Microsoft.Data.Sqlite;
                        (SELECT a.lufs FROM {TA} a
                         WHERE a.masked_filename = {T}.path
                           AND a.file_size = {T}.file_size) AS lufs,
-                       {($"(SELECT c.dj_summary FROM {TA} c WHERE {CacheMatch("c")})")} AS dj_summary
+                       {$"(SELECT c.dj_summary FROM {TA} c WHERE {CacheMatch("c")})"} AS dj_summary
                 FROM {T} {where}
                 ORDER BY {orderBy}
                 LIMIT @limit OFFSET @offset";

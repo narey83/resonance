@@ -1,5 +1,5 @@
 import { urlBase } from '../config';
-import { ArrowUpRight, AudioWaveform, Disc3, Usb } from 'lucide-react';
+import { ArrowUpRight, AudioWaveform, Disc3 } from 'lucide-react';
 import React from 'react';
 import { Link } from 'react-router-dom';
 
@@ -25,14 +25,6 @@ const MusicWorkspaceHeader = ({ page }) => (
       {page !== 'trackanalysis' && (
         <Link to={`${urlBase}/trackanalysis`}>
           <AudioWaveform size={16} /> Analyse
-        </Link>
-      )}
-      {page !== 'export' && (
-        <Link
-          className="dj-primary-action"
-          to={`${urlBase}/export`}
-        >
-          <Usb size={16} /> Export set <ArrowUpRight size={14} />
         </Link>
       )}
       {page === 'export' && (

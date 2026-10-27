@@ -36,6 +36,7 @@
 // capped at a few in flight, so scrolling a long conversation list can't fan
 // out into fifty simultaneous peer requests.
 
+import { onSessionReset } from '../lib/sessionScope';
 import { create } from 'zustand';
 import { getUserInfo } from '../api/users';
 
@@ -56,6 +57,7 @@ const MAX_IN_FLIGHT = 4;
 const requested = new Set<string>();
 const queue: string[] = [];
 let inFlight = 0;
+let generation = 0;
 
 export const useUserInfoStore = create<UserInfoStore>((set) => {
   const record = (username: string, profile: UserProfile | null) =>
@@ -64,14 +66,18 @@ export const useUserInfoStore = create<UserInfoStore>((set) => {
   const pump = () => {
     while (inFlight < MAX_IN_FLIGHT && queue.length > 0) {
       const username = queue.shift() as string;
+      const started = generation;
       inFlight += 1;
       getUserInfo(username)
-        .then((info) => record(username, {
-          picture: info.hasPicture ? info.picture : null,
-          description: info.description?.trim() || null,
-        }))
+        .then((info) => {
+          if (started !== generation) return;
+          record(username, {
+            picture: info.hasPicture ? info.picture : null,
+            description: info.description?.trim() || null,
+          });
+        })
         // Offline, no response, or blocked — fall back to the initial avatar.
-        .catch(() => record(username, null))
+        .catch(() => { if (started === generation) record(username, null); })
         .finally(() => { inFlight -= 1; pump(); });
     }
   };
@@ -93,9 +99,12 @@ export const useUserInfoStore = create<UserInfoStore>((set) => {
     // must not be retried on every re-render), so pull-to-refresh needs a way to
     // ask again.
     reset: () => {
+      generation += 1;
       requested.clear();
       queue.length = 0;
       set({ profiles: {} });
     },
   };
 });
+
+onSessionReset(() => { useUserInfoStore.getState().reset(); });

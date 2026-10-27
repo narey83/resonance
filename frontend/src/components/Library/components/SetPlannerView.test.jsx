@@ -255,17 +255,19 @@ describe('desktop Set Planner workflow', () => {
     expect(planner.flush).toHaveBeenCalledWith(true);
     expect(preview.openSet).toHaveBeenCalledWith({ ...savedSet, revision: 2 });
   });
-  it('creates a mixtape only after saving, then lets the user open it', async () => {
+  it('creates a playlist only after saving, then lets the user open it', async () => {
     expect.hasAssertions();
     await render();
-    await act(async () => Simulate.click(button(container, 'Save as mixtape')));
+    await act(async () =>
+      Simulate.click(button(container, 'Save as playlist')),
+    );
     expect(planner.flush).toHaveBeenCalledWith(true);
     expect(setMixtape).toHaveBeenCalledWith(
       expect.objectContaining({ revision: 2 }),
       expect.stringMatching(/^[\da-f]{32}$/),
     );
     expect(container.textContent).toContain('2 tracks in set order');
-    act(() => Simulate.click(button(container, 'Open “Test set” mixtape')));
+    act(() => Simulate.click(button(container, 'Open “Test set” playlist')));
     expect(onMixtape).toHaveBeenCalledWith('mixtape');
   });
   it('hands the saved name and exact running order to USB export', async () => {
@@ -277,11 +279,13 @@ describe('desktop Set Planner workflow', () => {
       'Test set',
     );
   });
-  it('does not create a mixtape or export when saving fails', async () => {
+  it('does not create a playlist or export when saving fails', async () => {
     expect.hasAssertions();
     planner.flush.mockRejectedValue(new Error('Connection lost; draft kept'));
     await render();
-    await act(async () => Simulate.click(button(container, 'Save as mixtape')));
+    await act(async () =>
+      Simulate.click(button(container, 'Save as playlist')),
+    );
     expect(setMixtape).not.toHaveBeenCalled();
     await act(async () => Simulate.click(button(container, 'Export set')));
     expect(onExport).not.toHaveBeenCalled();

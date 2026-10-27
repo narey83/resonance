@@ -32,8 +32,10 @@ import { getTransferAttempts, getTransferHistory } from '../../lib/reports';
 import { onTransferComplete } from '../../lib/transferEvents';
 import { formatBitrate, formatBytes } from '../../lib/util';
 import UsernameLink from '../Shared/UsernameLink';
+import { historyOutcome } from './transferHistoryState';
 import { RefreshCw, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { unstable_batchedUpdates as batchUpdates } from 'react-dom';
 import { Modal } from 'semantic-ui-react';
 
 const PAGE_SIZE = 50;
@@ -78,11 +80,11 @@ const DIRECTIONS = [
   { key: 'Download', label: 'Downloads' },
 ];
 
-// Matched as a substring against StateDescription, which reads like "Completed, Succeeded".
+// Outcome filters preserve the backend state names; labels describe the result.
 const STATES = [
   { key: '', label: 'Any' },
   { key: 'Succeeded', label: 'Succeeded' },
-  { key: 'Errored', label: 'Errored' },
+  { key: 'Failed', label: 'Failed' },
   { key: 'Cancelled', label: 'Cancelled' },
 ];
 
@@ -96,12 +98,7 @@ const RANGES = [
 
 const shortName = (path) => (path ?? '').split(/[/\\]/).pop() || (path ?? '—');
 
-const stateClass = (description = '') => {
-  if (description.includes('Succeeded')) return 'th-state-ok';
-  if (description.includes('Errored')) return 'th-state-error';
-  if (description.includes('Cancelled')) return 'th-state-cancelled';
-  return '';
-};
+const stateClass = (description) => historyOutcome(description).className;
 
 const formatSpeed = (bytesPerSecond) =>
   bytesPerSecond > 0 ? formatBitrate(bytesPerSecond) : '—';
@@ -131,7 +128,7 @@ const transferDuration = (item) => {
 const TransferDetail = ({ item, onClose }) => {
   const details = [
     ['Direction', item.direction],
-    ['Outcome', item.stateDescription],
+    ['Outcome', historyOutcome(item.stateDescription).label],
     ['Requested', formatWhen(item.requestedAt)],
     ['Queued', formatWhen(item.enqueuedAt)],
     ['Started', formatWhen(item.startedAt)],
@@ -222,6 +219,9 @@ const TransferHistory = () => {
   const requestId = useRef(0);
   const attemptsRequestId = useRef(0);
   const resizeRef = useRef(null);
+  const activeRequest = useRef(null);
+  const attemptsController = useRef(null);
+  const windowEnd = useRef(null);
 
   useEffect(() => {
     if (!resizingColumn) return undefined;
@@ -256,48 +256,74 @@ const TransferHistory = () => {
   }, [resizingColumn]);
 
   useEffect(() => {
+    if (searchInput.trim() === search) return undefined;
     const handle = setTimeout(() => {
-      setSearch(searchInput.trim());
-      setPage(0);
+      // React 16 does not automatically batch timer updates: avoid querying the old page first.
+      batchUpdates(() => {
+        setSearch(searchInput.trim());
+        setPage(0);
+      });
     }, 350);
     return () => clearTimeout(handle);
-  }, [searchInput]);
+  }, [search, searchInput]);
 
   const load = useCallback(
     async ({ silent = false } = {}) => {
+      // Completion events and the fallback timer must share one in-flight request.
+      if (silent && (activeRequest.current || document.hidden)) return;
+      activeRequest.current?.abort();
+      const controller = new AbortController();
+      activeRequest.current = controller;
       const id = ++requestId.current;
+      const end =
+        page === 0 || !windowEnd.current
+          ? new Date().toISOString()
+          : windowEnd.current;
+      windowEnd.current = end;
       if (silent) setRefreshing(true);
-      else setLoading(true);
+      else {
+        setLoading(true);
+        setRefreshing(false);
+        setItems([]);
+        setTotal(0);
+      }
+
       setError(null);
 
       try {
         const result = await getTransferHistory({
           direction: direction || undefined,
+          end,
+          signal: controller.signal,
           limit: PAGE_SIZE,
           offset: page * PAGE_SIZE,
           search: search || undefined,
           start:
             rangeDays > 0
-              ? new Date(Date.now() - rangeDays * 86_400_000).toISOString()
+              ? new Date(
+                  new Date(end).getTime() - rangeDays * 86_400_000,
+                ).toISOString()
               : undefined,
           state: state || undefined,
         });
 
-        if (id !== requestId.current) return;
+        if (id !== requestId.current || controller.signal.aborted) return;
 
         setItems(result.items ?? []);
         setTotal(result.total ?? 0);
         setLastUpdated(new Date());
       } catch (loadError) {
-        if (id !== requestId.current) return;
+        if (id !== requestId.current || controller.signal.aborted) return;
         setError(
           loadError?.response?.data ?? loadError?.message ?? 'Request failed',
         );
-        setItems([]);
+        if (!silent) setItems([]);
       } finally {
         if (id === requestId.current) {
           setLoading(false);
           setRefreshing(false);
+          // eslint-disable-next-line require-atomic-updates -- The request ID guard above owns this ref.
+          activeRequest.current = null;
         }
       }
     },
@@ -308,6 +334,13 @@ const TransferHistory = () => {
     load();
     setExpandedId(null);
     setAttempts([]);
+    return () => {
+      requestId.current += 1;
+      activeRequest.current?.abort();
+      activeRequest.current = null;
+      attemptsRequestId.current += 1;
+      attemptsController.current?.abort();
+    };
   }, [load]);
 
   // The application hub emits transfer-complete events. Refresh promptly on the first event,
@@ -347,24 +380,32 @@ const TransferHistory = () => {
 
   const toggleAttempts = useCallback(
     async (item) => {
+      attemptsController.current?.abort();
       if (expandedId === item.id) {
         attemptsRequestId.current += 1;
         setExpandedId(null);
         return;
       }
 
+      const controller = new AbortController();
+      attemptsController.current = controller;
       const id = ++attemptsRequestId.current;
       setExpandedId(item.id);
       setAttempts([]);
       setAttemptsLoading(true);
 
       try {
-        const result = await getTransferAttempts(item.id);
-        if (id === attemptsRequestId.current) setAttempts(result ?? []);
+        const result = await getTransferAttempts(item.id, {
+          signal: controller.signal,
+        });
+        if (id === attemptsRequestId.current && !controller.signal.aborted)
+          setAttempts(result ?? []);
       } catch {
-        if (id === attemptsRequestId.current) setAttempts([]);
+        if (id === attemptsRequestId.current && !controller.signal.aborted)
+          setAttempts([]);
       } finally {
-        if (id === attemptsRequestId.current) setAttemptsLoading(false);
+        if (id === attemptsRequestId.current && !controller.signal.aborted)
+          setAttemptsLoading(false);
       }
     },
     [expandedId],
@@ -422,7 +463,7 @@ const TransferHistory = () => {
       case 'outcome':
         return (
           <td className={stateClass(item.stateDescription)}>
-            {item.stateDescription}
+            {historyOutcome(item.stateDescription).label}
             {item.exception ? (
               <span
                 className="th-exception"
@@ -628,7 +669,10 @@ const TransferHistory = () => {
                                     attempt.stateDescription,
                                   )}
                                 >
-                                  {attempt.stateDescription}
+                                  {
+                                    historyOutcome(attempt.stateDescription)
+                                      .label
+                                  }
                                   {attempt.exception ? (
                                     <span
                                       className="th-exception"
@@ -672,7 +716,9 @@ const TransferHistory = () => {
           ‹ Prev
         </button>
         <span className="th-pager-info">
-          {firstRow.toLocaleString()}–{lastRow.toLocaleString()}
+          {loading
+            ? 'Loading…'
+            : `${firstRow.toLocaleString()}–${lastRow.toLocaleString()}`}
         </span>
         <button
           disabled={!hasMore || loading}

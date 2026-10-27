@@ -1,0 +1,37 @@
+/* The ring and waveform stay crisp at navigation sizes; light is theme coloured. */
+.resonance-mark {
+  display: inline-block;
+  overflow: visible;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.resonance-mark-ring { opacity: .65; }
+.resonance-mark-highlight { opacity: .9; }
+.resonance-mark-wave { filter: drop-shadow(0 0 2px currentColor); }
+.resonance-mark-core { opacity: .9; }
+
+.status-brand .resonance-mark {
+  filter: drop-shadow(0 0 5px color-mix(in srgb, currentColor 24%, transparent));
+  transition: filter 220ms ease;
+}
+.status-brand-name { transition: text-shadow 220ms ease; }
+.status-brand:hover .resonance-mark {
+  filter: drop-shadow(0 0 7px color-mix(in srgb, currentColor 45%, transparent));
+}
+.status-brand:hover .status-brand-name {
+  text-shadow: 0 0 12px rgba(var(--accent-rgb), .22);
+}
+.status-brand:hover .resonance-mark-ring {
+  animation: resonance-mark-ripple 800ms ease-out 1;
+  transform-origin: 12px 12px;
+}
+@keyframes resonance-mark-ripple {
+  0% { transform: scale(1); opacity: .65; }
+  45% { transform: scale(1.12); opacity: .3; }
+  100% { transform: scale(1); opacity: .65; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-brand .resonance-mark,
+  .status-brand-name { transition: none; }
+  .status-brand:hover .resonance-mark-ring { animation: none; }
+}

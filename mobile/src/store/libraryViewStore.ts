@@ -35,7 +35,7 @@ import { create } from 'zustand';
 // tiles in one of three sizes. Chosen per tab — tiles suit albums, a list may suit artists.
 export type LibraryViewMode = 'list' | 'small' | 'medium' | 'large';
 
-export type TileTab = 'Artists' | 'Albums' | 'Folders' | 'Mixtapes';
+export type TileTab = 'Artists' | 'Albums' | 'Folders' | 'Playlists';
 
 const STORE_KEY = 'library_view_modes_v1';
 const MODES: LibraryViewMode[] = ['list', 'small', 'medium', 'large'];
@@ -56,6 +56,9 @@ export const useLibraryViewStore = create<LibraryViewStore>((set, get) => ({
     try {
       const raw = await SecureStore.getItemAsync(STORE_KEY);
       const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+      // Preserve layout choices saved under the previous display name.
+      if (!parsed.Playlists && parsed.Mixtapes) parsed.Playlists = parsed.Mixtapes;
+      delete parsed.Mixtapes;
       // Drop anything unrecognised so a stale or hand-edited value can't break the layout.
       const modes = Object.fromEntries(
         Object.entries(parsed).filter(([, m]) => MODES.includes(m as LibraryViewMode)),

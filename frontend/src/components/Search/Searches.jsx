@@ -35,75 +35,51 @@
 
 import './Search.css';
 import { createSearchHubConnection } from '../../lib/hubFactory';
-import * as prefs from '../../lib/prefs';
+import { createHubRetryLoop } from '../../lib/hubRetryLoop';
 import * as library from '../../lib/searches';
 import SearchDetail from './Detail/SearchDetail';
 import SearchList from './List/SearchList';
-import { Search } from 'lucide-react';
-import React, { useEffect, useRef, useState } from 'react';
+import SearchWizard from './SearchWizard';
+import { Plus, Search } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import { v4 as uuidv4 } from 'uuid';
-
-const SIDEBAR_WIDTH_KEY = 'resonance-search-sidebar-width';
-const SIDEBAR_MIN = 150;
-const SIDEBAR_MAX = 500;
 
 const Searches = ({ server } = {}) => {
   const [connecting, setConnecting] = useState(true);
   const [error, setError] = useState(undefined);
   const [searches, setSearches] = useState({});
   const [selectedId, setSelectedId] = useState(null);
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const saved = Number(prefs.get(SIDEBAR_WIDTH_KEY, 220));
-    return Number.isFinite(saved) ? saved : 220;
-  });
-
+  const [wizardOpen, setWizardOpen] = useState(true);
+  const [searchFilters, setSearchFilters] = useState({});
   const [removing, setRemoving] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [creating, setCreating] = useState(false);
   const [restarting, setRestarting] = useState(false);
 
-  const inputRef = useRef();
-  const rootRef = useRef(null);
-  const dividerMoveRef = useRef(null);
   const mountedRef = useRef(true);
-  useEffect(
-    () => () => {
+  const pendingSearchRef = useRef(null);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
-    },
-    [],
-  );
-
-  const onDividerMouseDown = (mouseDownEvent) => {
-    mouseDownEvent.preventDefault();
-    document.body.style.userSelect = 'none';
-    document.body.style.cursor = 'col-resize';
-
-    dividerMoveRef.current = (moveEvent) => {
-      const rootRect = rootRef.current?.getBoundingClientRect();
-      if (!rootRect) return;
-      setSidebarWidth(
-        Math.min(
-          SIDEBAR_MAX,
-          Math.max(SIDEBAR_MIN, moveEvent.clientX - rootRect.left),
-        ),
-      );
     };
+  }, []);
 
-    const onMouseUp = () => {
-      document.body.style.userSelect = '';
-      document.body.style.cursor = '';
-      setSidebarWidth((width) => {
-        prefs.set(SIDEBAR_WIDTH_KEY, width);
-        return width;
-      });
-      document.removeEventListener('mousemove', dividerMoveRef.current);
-      document.removeEventListener('mouseup', onMouseUp);
-    };
-
-    document.addEventListener('mousemove', dividerMoveRef.current);
-    document.addEventListener('mouseup', onMouseUp);
-  };
+  const acceptSearch = useCallback((search) => {
+    const pending = pendingSearchRef.current;
+    if (
+      !mountedRef.current ||
+      !pending ||
+      pending.id !== search.id ||
+      pending.accepted
+    )
+      return;
+    pending.accepted = true;
+    setSelectedId(search.id);
+    setWizardOpen(false);
+    setCreating(false);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -119,6 +95,7 @@ const Searches = ({ server } = {}) => {
           return accumulator;
         }, {}),
       );
+      for (const search of searchesEvent) acceptSearch(search);
       setConnecting(false);
       setError(undefined);
     });
@@ -126,6 +103,7 @@ const Searches = ({ server } = {}) => {
     searchHub.on('update', (search) => {
       if (!mounted) return;
       setSearches((old) => ({ ...old, [search.id]: search }));
+      acceptSearch(search);
     });
 
     searchHub.on('delete', (search) => {
@@ -140,40 +118,32 @@ const Searches = ({ server } = {}) => {
     searchHub.on('create', (search) => {
       if (!mounted) return;
       setSearches((old) => ({ ...old, [search.id]: search }));
+      acceptSearch(search);
     });
 
-    searchHub.onreconnecting((connectionError) => {
-      if (!mounted) return;
-      setConnecting(false);
-      setError(connectionError?.message ?? 'Disconnected');
+    const retryLoop = createHubRetryLoop({
+      start: () => searchHub.start(),
+      onOnline: () => {
+        if (mounted) {
+          setConnecting(false);
+          setError(undefined);
+        }
+      },
+      onRetry: () => {
+        if (mounted) {
+          setConnecting(false);
+          setError('Search updates disconnected. Reconnecting…');
+        }
+      },
     });
-    searchHub.onreconnected(() => {
-      if (!mounted) return;
-      setConnecting(false);
-      setError(undefined);
-    });
-    searchHub.onclose((connectionError) => {
-      if (!mounted) return;
-      setConnecting(false);
-      setError(connectionError?.message ?? 'Disconnected');
-    });
-
-    const connect = async () => {
-      try {
-        setConnecting(true);
-        await searchHub.start();
-      } catch (connectionError) {
-        if (!mounted) return;
-        toast.error(connectionError?.message ?? 'Failed to connect');
-        setConnecting(false);
-        setError(connectionError?.message ?? 'Failed to connect');
-      }
-    };
-
-    connect();
+    searchHub.onreconnecting(retryLoop.reconnecting);
+    searchHub.onreconnected(retryLoop.connected);
+    searchHub.onclose(retryLoop.closed);
+    retryLoop.start();
 
     return () => {
       mounted = false;
+      retryLoop.dispose();
       searchHub.off('list');
       searchHub.off('update');
       searchHub.off('delete');
@@ -182,30 +152,30 @@ const Searches = ({ server } = {}) => {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const create = async ({ search } = {}) => {
-    const searchText = search || inputRef.current?.value;
+  const create = async ({ filters = {}, options = {}, search } = {}) => {
+    const searchText = search;
     if (!searchText?.trim()) return;
     const id = uuidv4();
 
+    pendingSearchRef.current = { id, accepted: false };
+    setSearchFilters((old) => ({ ...old, [id]: filters }));
     try {
       setCreating(true);
-      await library.create({ id, searchText: searchText.trim() });
+      const { data } = await library.create({
+        id,
+        searchText: searchText.trim(),
+        ...options,
+      });
       if (!mountedRef.current) return;
-
-      if (inputRef.current) {
-        inputRef.current.value = '';
-        inputRef.current.focus();
-      }
-
-      setCreating(false);
-      setSelectedId(id);
+      setSearches((old) => ({ ...old, [id]: old[id] ?? data }));
+      acceptSearch(data);
     } catch (createError) {
       console.error(createError);
       if (!mountedRef.current) return;
       toast.error(
         createError?.response?.data ?? createError?.message ?? createError,
       );
-      setCreating(false);
+      if (pendingSearchRef.current?.id === id) setCreating(false);
     }
   };
 
@@ -266,81 +236,58 @@ const Searches = ({ server } = {}) => {
   };
 
   const selectedSearch = selectedId ? searches[selectedId] : null;
-  const isSearching =
-    creating || (selectedSearch != null && !selectedSearch.isComplete);
-
   return (
-    <div
-      className="sr-root"
-      ref={rootRef}
-    >
-      {/* ── Sidebar ── */}
-      <div
-        className="sr-sidebar"
-        style={{ minWidth: sidebarWidth, width: sidebarWidth }}
-      >
-        <div className="sr-sidebar-top">
-          <div className="sr-input-wrap">
-            <Search
-              className="sr-input-icon"
-              size={14}
-            />
-            <input
-              className="sr-input"
-              disabled={creating || !server?.isConnected}
-              onKeyDown={(keyDownEvent) =>
-                keyDownEvent.key === 'Enter' && create()
-              }
-              placeholder={
-                server?.isConnected ? 'Search phrase' : 'Not connected'
-              }
-              ref={inputRef}
-              type="search"
-            />
-          </div>
+    <div className="sr-root sr-workspace">
+      <header className="sr-workspace-header">
+        <div>
+          <span className="sr-eyebrow">SOULSEEK</span>
+          <h1>Soulseek search</h1>
+        </div>
+        {!wizardOpen && (
           <button
-            className={`sr-create-btn hover-fx${isSearching ? ' sr-create-btn--searching' : ''}`}
-            disabled={creating || !server?.isConnected}
-            onClick={() => create()}
-            title="New Search"
+            className="sr-wizard-primary"
+            onClick={() => setWizardOpen(true)}
             type="button"
           >
-            <Search size={16} />
+            <Plus size={16} /> New search
           </button>
-        </div>
-
+        )}
+      </header>
+      <nav
+        aria-label="Search history"
+        className="sr-history"
+      >
         {connecting ? (
-          <div className="sr-sidebar-status">Connecting…</div>
+          <span>Connecting…</span>
         ) : error ? (
-          <div className="sr-sidebar-status sr-sidebar-status--error">
-            {error?.message ?? error}
-          </div>
+          <span role="alert">{String(error)}</span>
         ) : (
           <SearchList
             onRemove={remove}
-            onSelect={setSelectedId}
+            onSelect={(id) => {
+              setSelectedId(id);
+              setWizardOpen(false);
+            }}
             onStop={stop}
             searches={searches}
             selectedId={selectedId}
           />
         )}
-      </div>
-
-      {/* ── Resize divider ── */}
-      <button
-        aria-label="Drag to resize sidebar"
-        className="sr-divider"
-        onMouseDown={onDividerMouseDown}
-        title="Drag to resize"
-        type="button"
-      />
-
-      {/* ── Main area ── */}
+      </nav>
+      {wizardOpen && (
+        <SearchWizard
+          busy={creating}
+          connected={server?.isConnected}
+          onCancel={selectedSearch ? () => setWizardOpen(false) : undefined}
+          onSearch={create}
+        />
+      )}
       <div className="sr-main">
-        {selectedSearch ? (
+        {!wizardOpen && selectedSearch ? (
           <SearchDetail
             creating={creating}
             disabled={!server?.isConnected}
+            initialFilters={searchFilters[selectedSearch.id]}
             key={selectedSearch.id}
             onCreate={create}
             onRemove={remove}
@@ -351,7 +298,7 @@ const Searches = ({ server } = {}) => {
             search={selectedSearch}
             stopping={stopping}
           />
-        ) : (
+        ) : !wizardOpen ? (
           <div className="sr-empty">
             <Search
               size={32}
@@ -361,7 +308,7 @@ const Searches = ({ server } = {}) => {
               Enter a search phrase and press Enter, or select a past search
             </p>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

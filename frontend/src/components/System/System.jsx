@@ -44,6 +44,7 @@ import Logs from './Logs';
 import Mobile from './Mobile/Mobile';
 import Options from './Options';
 import Permissions from './Permissions';
+import Tools from './Tools/Tools';
 import UserManagement from './UserManagement';
 import React, { useContext } from 'react';
 import { Redirect, useHistory, useRouteMatch } from 'react-router-dom';
@@ -87,6 +88,17 @@ const System = ({ options = {}, state = {}, theme }) => {
       ),
       route: 'info',
     },
+    {
+      adminOnly: true,
+      menuItem: { content: 'Tools & updates', icon: 'wrench', key: 'tools' },
+      render: () => (
+        <Tab.Pane>
+          <Tools />
+        </Tab.Pane>
+      ),
+      route: 'tools',
+    },
+
     {
       adminOnly: true,
       menuItem: {

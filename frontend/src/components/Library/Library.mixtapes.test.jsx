@@ -23,7 +23,7 @@ const button = (name) =>
     (node) => node.textContent.trim() === name,
   );
 
-describe('deleting from mixtape detail', () => {
+describe('deleting from playlist detail', () => {
   let container;
   let onUpdate;
   let onSelectId;
@@ -61,14 +61,14 @@ describe('deleting from mixtape detail', () => {
 
   it('removes the confirmation on Cancel and Escape without leaving orphaned dialogs', () => {
     expect.hasAssertions();
-    act(() => Simulate.click(button('Delete mixtape')));
+    act(() => Simulate.click(button('Delete playlist')));
     expect(document.querySelectorAll('[role="alertdialog"]')).toHaveLength(1);
     act(() => Simulate.click(button('Cancel')));
     expect(document.querySelectorAll('[role="alertdialog"]')).toHaveLength(0);
     expect(container.querySelector('.jb-mx-title-btn').textContent).toBe(
       'My set',
     );
-    act(() => Simulate.click(button('Delete mixtape')));
+    act(() => Simulate.click(button('Delete playlist')));
     act(() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     });
@@ -79,7 +79,7 @@ describe('deleting from mixtape detail', () => {
 
   it('closes the confirmed deletion, returns to the collection and refreshes it', async () => {
     expect.hasAssertions();
-    act(() => Simulate.click(button('Delete mixtape')));
+    act(() => Simulate.click(button('Delete playlist')));
     const confirm = document.querySelector(
       '[role="alertdialog"] button:last-child',
     );
@@ -88,7 +88,7 @@ describe('deleting from mixtape detail', () => {
     expect(onSelectId).toHaveBeenCalledWith(null);
     expect(onUpdate).toHaveBeenCalledTimes(1);
     expect(toast.success).toHaveBeenCalledWith(
-      'Mixtape deleted. Your music files are unchanged.',
+      'Playlist deleted. Your music files are unchanged.',
     );
     expect(document.querySelectorAll('[role="alertdialog"]')).toHaveLength(0);
   });

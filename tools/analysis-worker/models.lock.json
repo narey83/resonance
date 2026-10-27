@@ -1,0 +1,154 @@
+{
+  "files": [
+    {
+      "file": "allinone/README.md",
+      "sha256": "3e0e15fa0c5cc81675bd69af8eb469d128a725c1a7bfc71f03b7877b7b650567",
+      "url": "https://huggingface.co/taejunkim/allinone/resolve/379e5fd010b3fdd0ee8381ff8cbcfa51d70b5c19/README.md",
+      "bytes": 21
+    },
+    {
+      "file": "allinone/harmonix-fold0-0vra4ys2.pth",
+      "sha256": "0db596dfb0995f41d62f6267d76a9d54c046f1649bd35e1dbeca0c5f9a7b8acd",
+      "url": "https://huggingface.co/taejunkim/allinone/resolve/379e5fd010b3fdd0ee8381ff8cbcfa51d70b5c19/harmonix-fold0-0vra4ys2.pth",
+      "bytes": 1400571
+    },
+    {
+      "file": "allinone/harmonix-fold1-3ozjhtsj.pth",
+      "sha256": "607b4864eaabccd4f6951410d5ea6676666ad1cfa6ce2e18bc99f3824b77c3b7",
+      "url": "https://huggingface.co/taejunkim/allinone/resolve/379e5fd010b3fdd0ee8381ff8cbcfa51d70b5c19/harmonix-fold1-3ozjhtsj.pth",
+      "bytes": 1400571
+    },
+    {
+      "file": "allinone/harmonix-fold2-gmgo0nsy.pth",
+      "sha256": "67c28ec7ca612d365e5fcb152f6530eb53e34c4303940afb30fd17a295c958a4",
+      "url": "https://huggingface.co/taejunkim/allinone/resolve/379e5fd010b3fdd0ee8381ff8cbcfa51d70b5c19/harmonix-fold2-gmgo0nsy.pth",
+      "bytes": 1400571
+    },
+    {
+      "file": "allinone/harmonix-fold3-i92b7m8p.pth",
+      "sha256": "446d05672b2669cdb7d9b8bbbc228a4f3592484335a7995cca89a744e3950ddc",
+      "url": "https://huggingface.co/taejunkim/allinone/resolve/379e5fd010b3fdd0ee8381ff8cbcfa51d70b5c19/harmonix-fold3-i92b7m8p.pth",
+      "bytes": 1400571
+    },
+    {
+      "file": "allinone/harmonix-fold4-1bql5qo0.pth",
+      "sha256": "96327222ab9b33c005388b788ba602f529aa03cc4dde1c859c011f1004490493",
+      "url": "https://huggingface.co/taejunkim/allinone/resolve/379e5fd010b3fdd0ee8381ff8cbcfa51d70b5c19/harmonix-fold4-1bql5qo0.pth",
+      "bytes": 1400571
+    },
+    {
+      "file": "allinone/harmonix-fold5-x4z5zeef.pth",
+      "sha256": "c87f162a1090290bcbb863688746784919cf912c56744fb3d81a1a7dba3b114e",
+      "url": "https://huggingface.co/taejunkim/allinone/resolve/379e5fd010b3fdd0ee8381ff8cbcfa51d70b5c19/harmonix-fold5-x4z5zeef.pth",
+      "bytes": 1400571
+    },
+    {
+      "file": "allinone/harmonix-fold6-x7t226rq.pth",
+      "sha256": "13e7e639bf30fcd3fa049ad863088773a4e57b06d7c68581385b3ef625c60688",
+      "url": "https://huggingface.co/taejunkim/allinone/resolve/379e5fd010b3fdd0ee8381ff8cbcfa51d70b5c19/harmonix-fold6-x7t226rq.pth",
+      "bytes": 1400571
+    },
+    {
+      "file": "allinone/harmonix-fold7-qwwskhg6.pth",
+      "sha256": "b888b7fba95efa3d5a37ca013fe7efe2741621ea9ca335e6b2723e4fd0fade57",
+      "url": "https://huggingface.co/taejunkim/allinone/resolve/379e5fd010b3fdd0ee8381ff8cbcfa51d70b5c19/harmonix-fold7-qwwskhg6.pth",
+      "bytes": 1400571
+    },
+    {
+      "file": "clap/README.md",
+      "sha256": "fa3c15ecc9a6753f06a51205a0ca5213ae7be96a962ed9b2b1c970aea3b3c56e",
+      "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/README.md",
+      "bytes": 3493
+    },
+    {
+      "file": "clap/config.json",
+      "sha256": "6268f76a067e3104bf9001e97d7dcc0fcfb16f3086cfb478ee72d95900d7fc1d",
+      "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/config.json",
+      "bytes": 643
+    },
+    {
+      "file": "clap/merges.txt",
+      "sha256": "1ce1664773c50f3e0cc8842619a93edc4624525b728b188a9e0be33b7726adc5",
+      "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/merges.txt",
+      "bytes": 456318
+    },
+    {
+      "file": "clap/preprocessor_config.json",
+      "sha256": "9739f58296aa6f9ac18008fd0150fb2649bc554985fbde86d0a4041c882ac753",
+      "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/preprocessor_config.json",
+      "bytes": 541
+    },
+    {
+      "file": "clap/pytorch_model.bin",
+      "sha256": "314eb00cce6ad68d25237b8446b659ccdb136ed4672c1bca470f142f72455026",
+      "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/pytorch_model.bin",
+      "bytes": 776444665
+    },
+    {
+      "file": "clap/special_tokens_map.json",
+      "sha256": "06e405a36dfe4b9604f484f6a1e619af1a7f7d09e34a8555eb0b77b66318067f",
+      "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/special_tokens_map.json",
+      "bytes": 280
+    },
+    {
+      "file": "clap/tokenizer.json",
+      "sha256": "dc239041d98de27ffc3975473a1a23e3db4c937b23c138c38bbc66588bd247e5",
+      "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/tokenizer.json",
+      "bytes": 2108774
+    },
+    {
+      "file": "clap/tokenizer_config.json",
+      "sha256": "e2eb445cfdbf4711de620cbdf10478b0423950799e85652d9f28da47066ab86d",
+      "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/tokenizer_config.json",
+      "bytes": 1362
+    },
+    {
+      "file": "clap/vocab.json",
+      "sha256": "ed19656ea1707df69134c4af35c8ceda2cc9860bf2c3495026153a133670ab5e",
+      "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/vocab.json",
+      "bytes": 798293
+    },
+    {
+      "file": "beats/beat_this-final0.ckpt",
+      "sha256": "8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331",
+      "url": "https://huggingface.co/rtikw/localmusic-assets/resolve/main/analysis/beat_this-final0.ckpt",
+      "bytes": 81058141
+    },
+    {
+      "file": "demucs/955717e8-8726e21a.th",
+      "sha256": "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4",
+      "url": "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/955717e8-8726e21a.th",
+      "bytes": 84141911
+    },
+    {
+      "file": "demucs/htdemucs.yaml",
+      "sha256": "239c445d0b14454d541ad8bd9bb271c9e536d267e8a4625208744cbb2e7bb66c",
+      "url": "https://raw.githubusercontent.com/facebookresearch/demucs/e976d93ecc3865e5757426930257e200846a520a/demucs/remote/htdemucs.yaml",
+      "bytes": 21
+    },
+    {
+      "file": "singing/model.pt",
+      "sha256": "f09cd6a55c83c13640622ce67480443ce282e3124dd22fccee8a898bb2ba9dee",
+      "url": "https://raw.githubusercontent.com/CPJKU/veracity/0983900f136173015f3c5d0b116be014edd33905/dataset/jamendo/models/model_log_0mean/model.pt",
+      "bytes": 7433173
+    },
+    {
+      "file": "singing/model.vars",
+      "sha256": "3e27dd2bf027ac10998add291b33fac77bb9f53822b1dab3601f902a89086f77",
+      "url": "https://raw.githubusercontent.com/CPJKU/veracity/0983900f136173015f3c5d0b116be014edd33905/dataset/jamendo/models/model_log_0mean/model.vars",
+      "bytes": 541
+    },
+    {
+      "file": "voice/silero_vad.jit",
+      "sha256": "e1122837f4154c511485fe0b9c64455f7b929c96fbb8d79fbdb336383ebd3720",
+      "url": "https://raw.githubusercontent.com/snakers4/silero-vad/master/src/silero_vad/data/silero_vad.jit",
+      "bytes": 2272526
+    }
+  ],
+  "schemaVersion": 1,
+  "notes": [
+    "Explicit installation only; inference remains offline.",
+    "BeatThis upstream cloud returned HTTP 500; mirror bytes match the pinned final0 checkpoint.",
+    "Licenses retained in tools/analysis-worker/licenses and optional adapter directories."
+  ]
+}

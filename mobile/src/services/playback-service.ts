@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Platform } from 'react-native';
 import TrackPlayer, { Event, State } from 'react-native-track-player';
 import {
   buildAndroidAutoTree,
@@ -36,6 +37,7 @@ import {
   handleAndroidAutoLove,
 } from './androidAuto';
 import { ensurePlayerSetup } from './playerSetup';
+import { reportPlaybackActivity } from './playbackActivity';
 
 // Runs in a background thread — handles remote control events from
 // lock screen, notification, Android Auto, and Bluetooth controls.
@@ -43,6 +45,7 @@ export default async function () {
   // Ensure the player is initialised in the headless context (Android Auto can
   // fire remote-browse before the UI mounts and calls setupPlayer itself).
   await ensurePlayerSetup();
+  TrackPlayer.addEventListener(Event.PlaybackProgressUpdated, reportPlaybackActivity);
 
   TrackPlayer.addEventListener(Event.RemotePlay,     ()      => TrackPlayer.play());
   TrackPlayer.addEventListener(Event.RemotePause,    ()      => TrackPlayer.pause());
@@ -51,29 +54,32 @@ export default async function () {
   TrackPlayer.addEventListener(Event.RemoteSeek,     (event) => TrackPlayer.seekTo(event.position));
   TrackPlayer.addEventListener(Event.RemoteStop,     ()      => TrackPlayer.reset());
 
-  // Android Auto: a track was selected in the car (mediaId === track path).
-  TrackPlayer.addEventListener(Event.RemotePlayId, (event) => playAndroidAutoMediaId(event.id));
-  // Android Auto: the car opened a not-yet-loaded browse node.
-  (TrackPlayer.addEventListener as (e: string, cb: (event: { mediaId: string }) => void) => void)(
-    'remote-browse',
-    (event) => handleAndroidAutoBrowse(event.mediaId),
-  );
-  // Android Auto: the user tapped the heart/love button in the car.
-  (TrackPlayer.addEventListener as (e: string, cb: () => void) => void)(
-    'remote-love',
-    () => handleAndroidAutoLove(),
-  );
-  // Android Auto: native flagged a browse-caching anomaly — remote-log it, don't act on it.
-  (TrackPlayer.addEventListener as (e: string, cb: (event: { mediaId: string; reason: string }) => void) => void)(
-    'remote-browse-diag',
-    (event) => handleAndroidAutoBrowseDiag(event),
-  );
+  // Android Auto has no iOS counterpart, and the iOS native module rejects these event names.
+  if (Platform.OS === 'android') {
+    // Android Auto: a track was selected in the car (mediaId === track path).
+    TrackPlayer.addEventListener(Event.RemotePlayId, (event) => playAndroidAutoMediaId(event.id));
+    // Android Auto: the car opened a not-yet-loaded browse node.
+    (TrackPlayer.addEventListener as (e: string, cb: (event: { mediaId: string }) => void) => void)(
+      'remote-browse',
+      (event) => handleAndroidAutoBrowse(event.mediaId),
+    );
+    // Android Auto: the user tapped the heart/love button in the car.
+    (TrackPlayer.addEventListener as (e: string, cb: () => void) => void)(
+      'remote-love',
+      () => handleAndroidAutoLove(),
+    );
+    // Android Auto: native flagged a browse-caching anomaly — remote-log it, don't act on it.
+    (TrackPlayer.addEventListener as (e: string, cb: (event: { mediaId: string; reason: string }) => void) => void)(
+      'remote-browse-diag',
+      (event) => handleAndroidAutoBrowseDiag(event),
+    );
 
-  // Build the car's menu now rather than waiting to be asked. The car requests the root the
-  // instant it binds the service — measured 0.3s BEFORE this bundle finishes starting — so that
-  // request lands with nothing listening, and nothing ever asks again: the menu stays empty for
-  // the whole session. Publishing up front means the answer is ready when the request arrives.
-  buildAndroidAutoTree().catch(() => { /* logged inside; the car retries on next connect */ });
+    // Build the car's menu now rather than waiting to be asked. The car requests the root the
+    // instant it binds the service — measured 0.3s BEFORE this bundle finishes starting — so that
+    // request lands with nothing listening, and nothing ever asks again: the menu stays empty for
+    // the whole session. Publishing up front means the answer is ready when the request arrives.
+    buildAndroidAutoTree().catch(() => { /* logged inside; the car retries on next connect */ });
+  }
 
   let wasPlayingBeforeDuck = false;
 

@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(resonance_studio)
+add_library(resonance_studio SHARED StudioJNI.cpp)
+target_compile_features(resonance_studio PRIVATE cxx_std_17)
+target_compile_options(resonance_studio PRIVATE -O2)

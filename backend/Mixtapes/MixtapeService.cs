@@ -89,7 +89,7 @@ namespace resonance.Mixtapes
         // around ten seconds, even for a single mixtape.
         public Task StartAsync(CancellationToken cancellationToken)
         {
-            resonance.Core.StartupProgress.Starting("mixtapes", "Mixtapes", "Rebuilding mixtape folders and playlists");
+            resonance.Core.StartupProgress.Starting("mixtapes", "Playlists", "Rebuilding playlist folders");
 
             // blocking file I/O that can wait on the disk spinning up, so keep it off the thread pool
             _ = Task.Factory.StartNew(
@@ -98,7 +98,7 @@ namespace resonance.Mixtapes
                     try
                     {
                         RebuildFolders();
-                        resonance.Core.StartupProgress.Ready("mixtapes", "Mixtape folders are up to date");
+                        resonance.Core.StartupProgress.Ready("mixtapes", "Playlist folders are up to date");
                     }
                     catch (Exception ex)
                     {
@@ -125,18 +125,10 @@ namespace resonance.Mixtapes
                 return null;
             }
 
-            var ct = File.Exists(ArtworkCtPath(id)) ? File.ReadAllText(ArtworkCtPath(id)).Trim() : "image/jpeg";
-            var original = (path, ct);
-
-            if (size is not > 0)
-            {
-                return original;
-            }
-
-            // Uploaded artwork is served straight from the upload, often a multi-megabyte photo, while
+            // Original artwork is often a multi-megabyte photo, while
             // every tile showing it is a few hundred pixels across. Serve a resized copy instead, kept on
             // disk beside the original so each size is only made once.
-            var bucket = ThumbnailBucket(size.Value);
+            var bucket = ThumbnailBucket(size ?? ArtworkResizer.DefaultSize);
             var thumbnail = ArtworkThumbnailPath(id, bucket);
 
             try
@@ -148,13 +140,6 @@ namespace resonance.Mixtapes
 
                 var source = File.ReadAllBytes(path);
 
-                // an image already within the bounds gains nothing from a re-encode
-                var dimensions = SixLabors.ImageSharp.Image.Identify(source);
-                if (Math.Max(dimensions.Width, dimensions.Height) <= bucket)
-                {
-                    return original;
-                }
-
                 // write aside and move into place, so a concurrent request never reads a partial file
                 var temporary = $"{thumbnail}.{Guid.NewGuid():N}.tmp";
                 File.WriteAllBytes(temporary, ArtworkResizer.ResizeToJpeg(source, bucket));
@@ -164,8 +149,8 @@ namespace resonance.Mixtapes
             }
             catch (Exception ex)
             {
-                Log.Warning("Failed to resize artwork for mixtape {Id} to {Size}px, serving the original: {Message}", id, bucket, ex.Message);
-                return original;
+                Log.Warning("Failed to resize artwork for playlist {Id} to {Size}px: {Message}", id, bucket, ex.Message);
+                return null;
             }
         }
 
@@ -173,9 +158,13 @@ namespace resonance.Mixtapes
         {
             Directory.CreateDirectory(ArtworkDir);
             DeleteArtworkThumbnails(id);
-            await using var fs = File.Create(ArtworkFilePath(id));
-            await data.CopyToAsync(fs);
+            await using (var fs = File.Create(ArtworkFilePath(id)))
+            {
+                await data.CopyToAsync(fs);
+            }
+
             await File.WriteAllTextAsync(ArtworkCtPath(id), contentType);
+            TouchMixtape(id);
             await Hub.BroadcastUpdatedAsync();
         }
 
@@ -192,6 +181,7 @@ namespace resonance.Mixtapes
             }
 
             DeleteArtworkThumbnails(id);
+            TouchMixtape(id);
 
             _ = Hub.BroadcastUpdatedAsync();
         }
@@ -238,7 +228,7 @@ namespace resonance.Mixtapes
 
         public Mixtape Update(string id, string name, string? description)
         {
-            var old = Repository.GetById(id) ?? throw new KeyNotFoundException($"Mixtape {id} not found");
+            var old = Repository.GetById(id) ?? throw new KeyNotFoundException($"Playlist {id} not found");
             var updated = old with { Name = name, Description = description, UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() };
             Repository.UpdateMixtape(updated);
 
@@ -275,14 +265,14 @@ namespace resonance.Mixtapes
 
         public MixtapeTrack AddTrack(string mixtapeId, string filePath)
         {
-            var m = Repository.GetById(mixtapeId) ?? throw new KeyNotFoundException($"Mixtape {mixtapeId} not found");
+            var m = Repository.GetById(mixtapeId) ?? throw new KeyNotFoundException($"Playlist {mixtapeId} not found");
 
             var libraryTrack = MusicRepository.GetByPath(filePath);
             var existing = Repository.GetTracks(mixtapeId);
 
             if (existing.Any(t => t.FilePath == filePath))
             {
-                throw new InvalidOperationException("Track is already in this mixtape");
+                throw new InvalidOperationException("Track is already in this playlist");
             }
 
             var sortOrder = existing.Count > 0 ? existing.Max(t => t.SortOrder) + 1 : 0;
@@ -312,7 +302,7 @@ namespace resonance.Mixtapes
         {
             if (Repository.GetById(mixtapeId) == null)
             {
-                throw new KeyNotFoundException($"Mixtape {mixtapeId} not found");
+                throw new KeyNotFoundException($"Playlist {mixtapeId} not found");
             }
 
             Repository.DeleteTrack(trackId);
@@ -328,7 +318,7 @@ namespace resonance.Mixtapes
         {
             if (Repository.GetById(mixtapeId) == null)
             {
-                throw new KeyNotFoundException($"Mixtape {mixtapeId} not found");
+                throw new KeyNotFoundException($"Playlist {mixtapeId} not found");
             }
 
             Repository.ClearTracks(mixtapeId);
@@ -356,7 +346,7 @@ namespace resonance.Mixtapes
 
         public Mixtape Publish(string id)
         {
-            var m = Repository.GetById(id) ?? throw new KeyNotFoundException($"Mixtape {id} not found");
+            var m = Repository.GetById(id) ?? throw new KeyNotFoundException($"Playlist {id} not found");
             var token = m.PublicToken ?? Guid.NewGuid().ToString("N")[..16];
             var updated = m with { IsPublished = true, PublicToken = token, UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() };
             Repository.UpdateMixtape(updated);
@@ -366,7 +356,7 @@ namespace resonance.Mixtapes
 
         public void Unpublish(string id)
         {
-            var m = Repository.GetById(id) ?? throw new KeyNotFoundException($"Mixtape {id} not found");
+            var m = Repository.GetById(id) ?? throw new KeyNotFoundException($"Playlist {id} not found");
             var updated = m with { IsPublished = false, UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() };
             Repository.UpdateMixtape(updated);
             _ = Hub.BroadcastUpdatedAsync();
@@ -427,6 +417,19 @@ namespace resonance.Mixtapes
             }
 
             return sb.ToString();
+        }
+
+        // Requested sizes follow each client's layout and pixel density, so round them up to a power of
+        // two: a handful of files per mixtape rather than one for every size ever asked for.
+        internal static int ThumbnailBucket(int size)
+        {
+            var bucket = 64;
+            while (bucket < ArtworkResizer.Clamp(size))
+            {
+                bucket *= 2;
+            }
+
+            return Math.Min(bucket, ArtworkResizer.MaximumSize);
         }
 
         private static string MixtapeFolderName(Mixtape m) => SafeFileName(m.Name);
@@ -502,20 +505,7 @@ namespace resonance.Mixtapes
 
         private string ArtworkCtPath(string id) => Path.Combine(ArtworkDir, id + ".ct");
 
-        private string ArtworkThumbnailPath(string id, int size) => Path.Combine(ArtworkDir, $"{id}.thumb-{size}.jpg");
-
-        // Requested sizes follow each client's layout and pixel density, so round them up to a power of
-        // two: a handful of files per mixtape rather than one for every size ever asked for.
-        internal static int ThumbnailBucket(int size)
-        {
-            var bucket = 64;
-            while (bucket < ArtworkResizer.Clamp(size))
-            {
-                bucket *= 2;
-            }
-
-            return Math.Min(bucket, ArtworkResizer.MaximumSize);
-        }
+        private string ArtworkThumbnailPath(string id, int size) => Path.Combine(ArtworkDir, $"{id}.thumb-v2-{size}.jpg");
 
         private void DeleteArtworkThumbnails(string id)
         {

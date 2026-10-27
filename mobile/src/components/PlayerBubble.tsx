@@ -36,7 +36,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Dimensions, PanResponder, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, useWindowDimensions, PanResponder, Pressable, StyleSheet, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getArtworkUrl } from '../api/musicLibrary';
@@ -46,9 +46,9 @@ import { useTheme } from '../context/ThemeContext';
 import { usePlayerUI } from '../store/playerUIStore';
 import { useBubblePos, BubbleSide } from '../store/bubbleStore';
 import { getArtworkCacheKey, ARTWORK_THUMB_SIZE } from '../services/artworkCache';
+import { occludingFold, useWindowFold } from '../lib/adaptiveWindow';
 import { haptics } from '../lib/haptics';
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 const SIZE          = 80;   // bubble diameter
 const RING_STROKE   = 7;    // progress-ring thickness
@@ -88,9 +88,13 @@ const BubbleRing = React.memo(function BubbleRing({ color }: { color: string }) 
   );
 });
 
-const xForSide = (side: BubbleSide) => (side === 'left' ? MARGIN : SCREEN_W - SIZE - MARGIN);
 
 export function PlayerBubble() {
+  const window = useWindowDimensions();
+  const fold = occludingFold(useWindowFold());
+  const SCREEN_W = fold?.vertical ? fold.x : window.width;
+  const SCREEN_H = fold && !fold.vertical ? fold.y : window.height;
+  const xForSide = (side: BubbleSide) => (side === 'left' ? MARGIN : SCREEN_W - SIZE - MARGIN);
   const { colors } = useTheme();
   const { track, queue, togglePlayPause, next, prev } = usePlayer();
   const { isPlaying } = usePlaybackStatus();
@@ -143,6 +147,15 @@ export function PlayerBubble() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded]);
+
+  useEffect(() => {
+    tuckedRef.current = false;
+    pos.stopAnimation();
+    pos.setValue({ x: xForSide(sideRef.current), y: clampY(posRef.current.y) });
+    setControls(null);
+    controlsOpenRef.current = false;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [SCREEN_W, SCREEN_H, insets.top, insets.bottom]);
 
   // Reset artwork-error latch on track change.
   const prevPath = useRef<string | null>(null);
@@ -275,7 +288,7 @@ export function PlayerBubble() {
         },
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [SCREEN_W, SCREEN_H, minY, maxY],
   );
 
   if (!track) return null;

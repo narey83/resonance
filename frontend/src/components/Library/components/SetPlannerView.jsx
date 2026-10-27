@@ -1086,8 +1086,8 @@ const SetPlannerView = ({ onExport, onMixtape }) => {
             <div>
               <strong>Ready for the next step?</strong>
               <p>
-                Mixtapes and USB preserve your order. The fixed master and fades
-                remain rehearsal settings.
+                Playlists and USB preserve your order. The fixed master and
+                fades remain rehearsal settings.
               </p>
             </div>
             <div className="set-finish-actions">
@@ -1119,14 +1119,14 @@ const SetPlannerView = ({ onExport, onMixtape }) => {
                     request.done = true;
                     setSnapshot(result);
                     setNotice(
-                      `Mixtape “${result.name}” is ready with ${result.count} tracks in set order.`,
+                      `Playlist “${result.name}” is ready with ${result.count} tracks in set order.`,
                     );
                   });
                 }}
                 type="button"
               >
                 <ListMusic size={14} />{' '}
-                {action === 'mixtape' ? 'Saving mixtape…' : 'Save as mixtape'}
+                {action === 'mixtape' ? 'Saving playlist…' : 'Save as playlist'}
               </button>
               <button
                 className="jb-btn set-primary"
@@ -1158,7 +1158,7 @@ const SetPlannerView = ({ onExport, onMixtape }) => {
               onClick={() => onMixtape(snapshot.id)}
               type="button"
             >
-              Open “{snapshot.name}” mixtape <ArrowRight size={13} />
+              Open “{snapshot.name}” playlist <ArrowRight size={13} />
             </button>
           )}
           <div

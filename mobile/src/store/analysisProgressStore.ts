@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { onSessionReset, sessionGuard, getSessionScope } from '../lib/sessionScope';
 import { create } from 'zustand';
 import { getScanState } from '../api/musicLibrary';
 import { useLibraryActivityStore } from './libraryActivityStore';
@@ -61,6 +62,7 @@ const EMPTY: ReadonlySet<string> = new Set();
 let polling = false;
 let graceUntil = 0;
 let failures = 0;
+let timer: ReturnType<typeof setTimeout> | null = null;
 
 export const useAnalysisProgress = create<AnalysisProgressState>((set, get) => {
   const stop = () => {
@@ -69,8 +71,11 @@ export const useAnalysisProgress = create<AnalysisProgressState>((set, get) => {
   };
 
   const poll = async (): Promise<void> => {
+    const current = sessionGuard();
+    if (getSessionScope() === null) { stop(); return; }
     try {
       const state = await getScanState();
+      if (!current()) return;
       failures = 0;
       const inFlight = new Set(state.inFlightPaths ?? []);
 
@@ -83,13 +88,14 @@ export const useAnalysisProgress = create<AnalysisProgressState>((set, get) => {
           queued, inFlight, scanning: state.scanning,
           done: state.analysed + state.skipped + state.failed, total: state.total,
         });
-        setTimeout(poll, POLL_MS);
+        timer = setTimeout(poll, POLL_MS);
         return;
       }
 
       set({ queued: EMPTY, inFlight: EMPTY, scanning: false, done: 0, total: 0 });
       stop();
     } catch {
+      if (!current()) return;
       failures += 1;
       if (failures >= MAX_FAILURES) {
         // Can't reach the server; drop the indicators rather than leave them spinning forever.
@@ -97,7 +103,7 @@ export const useAnalysisProgress = create<AnalysisProgressState>((set, get) => {
         stop();
         return;
       }
-      setTimeout(poll, RETRY_MS);
+      timer = setTimeout(poll, RETRY_MS);
     }
   };
 
@@ -123,7 +129,7 @@ export const useAnalysisProgress = create<AnalysisProgressState>((set, get) => {
 // LIBRARY_UPDATED is the only sign of a scan started elsewhere (the web, or the automatic
 // analysis of new downloads): scans broadcast it as tracks finish. Each one checks for a scan.
 useLibraryActivityStore.subscribe((state, previous) => {
-  if (state.libraryRevision !== previous.libraryRevision) useAnalysisProgress.getState().refresh();
+  if (getSessionScope() !== null && state.libraryRevision !== previous.libraryRevision) useAnalysisProgress.getState().refresh();
 });
 
 /** Whether a track is waiting to be analysed or being analysed right now; null otherwise. */
@@ -133,3 +139,12 @@ export const useTrackAnalysisStatus = (path: string | null | undefined): TrackAn
     if (s.inFlight.has(path)) return 'analysing';
     return s.queued.has(path) ? 'queued' : null;
   });
+
+onSessionReset(() => {
+  if (timer) clearTimeout(timer);
+  timer = null;
+  polling = false;
+  graceUntil = 0;
+  failures = 0;
+  useAnalysisProgress.setState(useAnalysisProgress.getInitialState(), true);
+});

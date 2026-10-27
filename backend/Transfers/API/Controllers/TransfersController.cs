@@ -62,9 +62,10 @@ namespace resonance.Transfers.API
     {
         /// <summary>
         ///     How many finished transfers the list endpoints will return, newest first. In-flight
-        ///     transfers are always returned in full — see CapCompleted.
+        ///     transfers are always returned in full. Finished history is limited in the database query.
         /// </summary>
         private const int MaxCompletedInList = 500;
+        private static readonly SemaphoreSlim ListRequestLimiter = new(2, 2);
 
         /// <summary>
         ///     Initializes a new instance of the <see cref="TransfersController"/> class.
@@ -449,37 +450,43 @@ namespace resonance.Transfers.API
         [HttpGet("downloads")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(200)]
-        public IActionResult GetDownloadsAsync([FromQuery] bool includeRemoved = false, [FromQuery] bool activeOnly = false)
+        public async Task<IActionResult> GetDownloadsAsync([FromQuery] bool includeRemoved = false, [FromQuery] bool activeOnly = false)
         {
             if (Program.IsRelayAgent)
             {
                 return Forbid();
             }
 
-            var downloads = Transfers.Downloads.List(includeRemoved: includeRemoved);
-
-            if (activeOnly)
+            if (!await ListRequestLimiter.WaitAsync(TimeSpan.FromMilliseconds(500), HttpContext?.RequestAborted ?? CancellationToken.None))
             {
-                downloads = downloads.Where(t => !TransferStateCategories.Completed.Contains(t.State)).ToList();
+                Response.Headers.RetryAfter = "2";
+                return StatusCode(503, new { code = "server_busy", message = "Transfer status is busy; retry shortly." });
             }
 
-            downloads = CapCompleted(downloads);
-
-            var peerAddresses = Transfers.Downloads.GetPeerAddresses(downloads.Select(t => t.Username));
-
-            var response = downloads.GroupBy(t => t.Username).Select(grouping => new UserResponse()
+            try
             {
-                Username = grouping.Key,
-                PeerAddress = peerAddresses.GetValueOrDefault(grouping.Key),
-                Directories = grouping.GroupBy(g => g.Filename.DirectoryName()).Select(d => new DirectoryResponse()
-                {
-                    Directory = d.Key,
-                    FileCount = d.Count(),
-                    Files = d.ToList(),
-                }),
-            });
+                var downloads = Transfers.Downloads.ListCapped(includeRemoved, activeOnly, MaxCompletedInList);
 
-            return Ok(response);
+                var peerAddresses = Transfers.Downloads.GetPeerAddresses(downloads.Select(t => t.Username));
+
+                var response = downloads.GroupBy(t => t.Username).Select(grouping => new UserResponse()
+                {
+                    Username = grouping.Key,
+                    PeerAddress = peerAddresses.GetValueOrDefault(grouping.Key),
+                    Directories = grouping.GroupBy(g => g.Filename.DirectoryName()).Select(d => new DirectoryResponse()
+                    {
+                        Directory = d.Key,
+                        FileCount = d.Count(),
+                        Files = d.ToList(),
+                    }),
+                });
+
+                return Ok(response);
+            }
+            finally
+            {
+                ListRequestLimiter.Release();
+            }
         }
 
         /// <summary>
@@ -598,36 +605,43 @@ namespace resonance.Transfers.API
         [HttpGet("uploads")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(200)]
-        public IActionResult GetUploads([FromQuery] bool includeRemoved = false, [FromQuery] bool activeOnly = false)
+        public async Task<IActionResult> GetUploads([FromQuery] bool includeRemoved = false, [FromQuery] bool activeOnly = false)
         {
             if (Program.IsRelayAgent)
             {
                 return Forbid();
             }
 
-            var uploads = Transfers.Uploads.List(
-                activeOnly
-                    ? (t => !TransferStateCategories.Completed.Contains(t.State))
-                    : (t => true),
-                includeRemoved: includeRemoved);
-
-            uploads = CapCompleted(uploads);
-
-            var peerAddresses = Transfers.Uploads.GetPeerAddresses(uploads.Select(t => t.Username));
-
-            var response = uploads.GroupBy(t => t.Username).Select(grouping => new UserResponse()
+            if (!await ListRequestLimiter.WaitAsync(TimeSpan.FromMilliseconds(500), HttpContext?.RequestAborted ?? CancellationToken.None))
             {
-                Username = grouping.Key,
-                PeerAddress = peerAddresses.GetValueOrDefault(grouping.Key),
-                Directories = grouping.GroupBy(g => g.Filename.DirectoryName()).Select(d => new DirectoryResponse()
-                {
-                    Directory = d.Key,
-                    FileCount = d.Count(),
-                    Files = d.ToList(),
-                }),
-            });
+                Response.Headers.RetryAfter = "2";
+                return StatusCode(503, new { code = "server_busy", message = "Transfer status is busy; retry shortly." });
+            }
 
-            return Ok(response);
+            try
+            {
+                var uploads = Transfers.Uploads.ListCapped(includeRemoved, activeOnly, MaxCompletedInList);
+
+                var peerAddresses = Transfers.Uploads.GetPeerAddresses(uploads.Select(t => t.Username));
+
+                var response = uploads.GroupBy(t => t.Username).Select(grouping => new UserResponse()
+                {
+                    Username = grouping.Key,
+                    PeerAddress = peerAddresses.GetValueOrDefault(grouping.Key),
+                    Directories = grouping.GroupBy(g => g.Filename.DirectoryName()).Select(d => new DirectoryResponse()
+                    {
+                        Directory = d.Key,
+                        FileCount = d.Count(),
+                        Files = d.ToList(),
+                    }),
+                });
+
+                return Ok(response);
+            }
+            finally
+            {
+                ListRequestLimiter.Release();
+            }
         }
 
         /// <summary>
@@ -787,47 +801,6 @@ namespace resonance.Transfers.API
                 Log.Error(ex, "Failed to create folder {Path}: {Message}", request.Path, ex.Message);
                 return StatusCode(500, ex.Message);
             }
-        }
-
-        /// <summary>
-        ///     Returns every in-flight transfer plus only the most recently finished
-        ///     <see cref="MaxCompletedInList"/> completed ones.
-        /// </summary>
-        /// <remarks>
-        ///     These endpoints returned the entire transfer history. On a long-lived instance that is
-        ///     1.5 million rows and a 13 MB response taking four and a half seconds to build — polled
-        ///     every two seconds by the mobile transfers screen, so responses overlapped and piled up
-        ///     until the connection pool was full and the client spent seconds parsing each one. No
-        ///     client can display that many rows, and none tries to: they all filter client-side.
-        ///     In-flight transfers are never dropped, however many there are.
-        /// </remarks>
-        private static List<resonance.Transfers.Transfer> CapCompleted(IEnumerable<resonance.Transfers.Transfer> transfers)
-        {
-            var completed = new List<resonance.Transfers.Transfer>();
-            var live = new List<resonance.Transfers.Transfer>();
-
-            foreach (var t in transfers)
-            {
-                if (TransferStateCategories.Completed.Contains(t.State))
-                {
-                    completed.Add(t);
-                }
-                else
-                {
-                    live.Add(t);
-                }
-            }
-
-            if (completed.Count > MaxCompletedInList)
-            {
-                completed = completed
-                    .OrderByDescending(t => t.EndedAt ?? t.RequestedAt)
-                    .Take(MaxCompletedInList)
-                    .ToList();
-            }
-
-            live.AddRange(completed);
-            return live;
         }
 
         /// <summary>

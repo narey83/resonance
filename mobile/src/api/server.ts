@@ -31,6 +31,7 @@
 // Soulseek network login is independent of the app session (auth.ts), so
 // signing out here never touches the JWT/refresh token.
 
+import { prepareImageUpload } from '../services/imageUpload';
 import { apiClient } from './client';
 
 export const connectToSoulseek = () => apiClient.put('/server');
@@ -71,17 +72,17 @@ export const setSoulseekStatus = (body: { presence?: 'Online' | 'Away'; descript
 // the raw server URL rather than apiClient, since <Image> needs an absolute
 // URI outside of axios and the endpoint is anonymous (no auth header needed).
 export const soulseekPictureUrl = (serverUrl: string | null, version: number): string | null =>
-  serverUrl ? `${serverUrl}/api/v0/server/picture?v=${version}` : null;
+  serverUrl ? `${serverUrl}/api/v0/server/picture?size=192&v=${version}` : null;
 
 export const uploadSoulseekPicture = async (uri: string): Promise<void> => {
-  const form = new FormData();
-  const filename = uri.split('/').pop() ?? 'picture.jpg';
-  const ext = filename.split('.').pop()?.toLowerCase() ?? 'jpg';
-  const type = ext === 'png' ? 'image/png' : 'image/jpeg';
-  form.append('file', { uri, name: filename, type } as any);
-  await apiClient.post('/server/picture', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  const image = await prepareImageUpload(uri, 800);
+  try {
+    const form = new FormData();
+    form.append('file', { uri: image.uri, name: 'picture.jpg', type: 'image/jpeg' } as any);
+    await apiClient.post('/server/picture', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  } finally { image.dispose(); }
 };
 
 export const deleteSoulseekPicture = () => apiClient.delete('/server/picture');

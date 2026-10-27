@@ -40,7 +40,9 @@ namespace resonance.Messaging
     using System.Linq;
     using System.Linq.Expressions;
     using System.Threading.Tasks;
+    using Microsoft.AspNetCore.SignalR;
     using Microsoft.EntityFrameworkCore;
+    using resonance.Core.API;
     using resonance.Events;
     using Serilog;
     using Soulseek;
@@ -132,13 +134,16 @@ namespace resonance.Messaging
         public ConversationService(
             ISoulseekClient soulseekClient,
             EventBus eventBus,
-            IDbContextFactory<MessagingDbContext> contextFactory)
+            IDbContextFactory<MessagingDbContext> contextFactory,
+            IHubContext<ApplicationHub> applicationHub)
         {
             SoulseekClient = soulseekClient;
             EventBus = eventBus;
             ContextFactory = contextFactory;
+            ApplicationHub = applicationHub;
         }
 
+        private IHubContext<ApplicationHub> ApplicationHub { get; }
         private EventBus EventBus { get; }
         private IDbContextFactory<MessagingDbContext> ContextFactory { get; }
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Messaging.Private);
@@ -163,6 +168,7 @@ namespace resonance.Messaging
             }
 
             context.SaveChanges();
+            _ = ApplicationHub.BroadcastConversationChangedAsync(username);
         }
 
         /// <summary>
@@ -181,6 +187,7 @@ namespace resonance.Messaging
                 await SoulseekClient.AcknowledgePrivateMessageAsync(message.Id);
                 message.IsAcknowledged = true;
                 context.SaveChanges();
+                _ = ApplicationHub.BroadcastConversationChangedAsync(username);
             }
             else
             {
@@ -196,7 +203,7 @@ namespace resonance.Messaging
         public Task CreateAsync(string username)
         {
             ActivateConversation(username);
-            return Task.CompletedTask;
+            return ApplicationHub.BroadcastConversationChangedAsync(username);
         }
 
         /// <summary>
@@ -356,6 +363,7 @@ namespace resonance.Messaging
             }
 
             context.SaveChanges();
+            _ = ApplicationHub.BroadcastConversationChangedAsync(username);
 
             // only raise for messages we haven't seen before; a replay is the same message arriving again, and counting
             // it a second time inflates the private message stats in the social report
@@ -387,6 +395,7 @@ namespace resonance.Messaging
             {
                 conversation.IsActive = false;
                 context.SaveChanges();
+                _ = ApplicationHub.BroadcastConversationChangedAsync(username);
             }
             else
             {
@@ -421,6 +430,7 @@ namespace resonance.Messaging
             });
 
             context.SaveChanges();
+            _ = ApplicationHub.BroadcastConversationChangedAsync(username);
         }
 
         private void ActivateConversation(string username)

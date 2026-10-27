@@ -27,8 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import { lookupIp } from '../../lib/network';
 import { formatBitrate, parseUtcDate } from '../../lib/util';
+import { locateLivePeers } from '../Map/mapData';
 import UsernameLink from '../Shared/UsernameLink';
 import UserReportWindow from './UserReportWindow';
 import React, {
@@ -157,7 +157,8 @@ const WorldMap = ({
   uploads,
   vpnOnly = false,
 }) => {
-  const geoCache = useRef({});
+  // Cache local batches and fallback misses for the lifetime of this map.
+  const geoCache = useRef(new Map());
   const wrapRef = useRef(null);
   const [peerLocations, setPeerLocations] = useState([]);
   const [tooltip, setTooltip] = useState(null);
@@ -203,45 +204,29 @@ const WorldMap = ({
     });
   }, [direction, downloads, search, uploads]);
 
-  const peerKey = allPeers.map((p) => `${p.ip}:${p.active}`).join(',');
+  const peerKey = allPeers
+    .map((p) => `${p.ip}:${p.username}:${p.direction}:${p.active}`)
+    .join(',');
 
   useEffect(() => {
-    if (allPeers.length === 0) return undefined;
-    let cancelled = false;
-    const lookupAll = async () => {
-      const results = [];
-      for (const peer of allPeers) {
-        if (!geoCache.current[peer.ip]) {
-          let lookedUp = null;
-          try {
-            lookedUp = await lookupIp(peer.ip);
-          } catch {
-            /* lookup failed — cache the miss */
-          }
-
-          // eslint-disable-next-line require-atomic-updates -- ref cache; last write wins is fine
-          geoCache.current[peer.ip] = lookedUp;
-        }
-
-        const info = geoCache.current[peer.ip];
-        if (info?.lat != null && info?.lon != null)
-          results.push({
-            ...peer,
-            lat: info.lat,
-            lon: info.lon,
-            city: info.city,
-            country: info.country,
-            isVpn: info.isVpn,
-          });
-      }
-
-      if (!cancelled) setPeerLocations(results);
-    };
-
-    lookupAll();
-    return () => {
-      cancelled = true;
-    };
+    const controller = new AbortController();
+    if (allPeers.length === 0) setPeerLocations([]);
+    else
+      locateLivePeers(
+        allPeers,
+        geoCache.current,
+        controller.signal,
+        (locations) => {
+          if (!controller.signal.aborted) setPeerLocations(locations);
+        },
+      )
+        .then((locations) => {
+          if (!controller.signal.aborted) setPeerLocations(locations);
+        })
+        .catch(() => {
+          /* Keep existing locations if the network is unavailable. */
+        });
+    return () => controller.abort();
   }, [peerKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const liveDownSpeed = useMemo(

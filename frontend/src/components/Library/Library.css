@@ -38,127 +38,46 @@
   background: var(--bg-primary);
 }
 
-/* ── Left sidebar nav ────────────────────────────────────────── */
-.jb-nav-rail {
-  --music-nav-width: 190px;
-  --music-nav-rail-width: 52px;
-  position: relative;
-  width: var(--music-nav-rail-width);
-  min-width: var(--music-nav-rail-width);
-  flex-shrink: 0;
-  z-index: 50;
+/* The app sidebar is the only rail; collection navigation stays in the header. */
+.library-collection-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 30px;
 }
-
-.jb-nav {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: var(--music-nav-rail-width);
-  flex-shrink: 0;
-  background: var(--nav-bg);
-  border-right: 1px solid var(--nav-border);
-  display: flex;
-  flex-direction: column;
-  overflow: clip;
-  transition: width var(--dur-base) var(--ease-emphasized),
-              box-shadow var(--dur-base) var(--ease-standard);
-}
-
-.jb-nav:is(:hover, :has(:focus-visible)) {
-  width: var(--music-nav-width);
-  box-shadow: 8px 0 24px #00000018;
-}
-
-.jb-nav-scroll {
-  width: var(--music-nav-width);
-  flex: 1;
-  min-height: 0;
-  padding: 4px 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
-.jb-nav-section {
-  position: relative;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--nav-label-color);
-  line-height: 12px;
-  padding: 6px 16px;
-}
-
-.jb-nav-section::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 16px;
-  width: 20px;
-  height: 1px;
-  background: var(--nav-border);
-  transition: opacity var(--dur-fast) var(--ease-standard);
-}
-
-.jb-nav :is(.jb-nav-section > span, .jb-nav-label) {
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity var(--dur-fast) var(--ease-standard);
-}
-
-.jb-nav:is(:hover, :has(:focus-visible)) :is(.jb-nav-section > span, .jb-nav-label) {
-  opacity: 1;
-}
-
-.jb-nav:is(:hover, :has(:focus-visible)) .jb-nav-section::after {
-  opacity: 0;
-}
-
-.jb-nav-item {
+.library-navigation, .library-navigation-shortcuts {
   display: flex;
   align-items: center;
-  gap: 9px;
-  background: transparent;
-  border: none;
+  gap: 4px;
+}
+.library-navigation { flex-wrap: wrap; gap: 8px; }
+.library-navigation-shortcut {
+  padding: 6px 9px;
+  min-height: 32px;
+  border: 0;
   border-radius: 6px;
-  color: var(--nav-item-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
   cursor: pointer;
-  font-size: 13px;
-  margin: 0 8px;
-  width: calc(100% - 16px);
-  height: 28px;
-  padding: 0 10px;
-  line-height: 16px;
-  text-align: left;
-  transition: background-color var(--dur-fast) var(--ease-standard),
-              color var(--dur-fast) var(--ease-standard);
 }
-
-.jb-nav-item > svg {
-  flex-shrink: 0;
+.library-navigation-shortcut:hover,
+.library-navigation-shortcut[aria-current="page"],
+.library-menu-action[aria-current="page"] {
+  color: var(--accent);
+  background: var(--bg-elevated);
 }
-
-.jb-nav-item:hover {
-  background: var(--nav-item-hover-bg);
-  color: var(--nav-item-hover-color);
-}
-
-.jb-nav-item--active {
-  background: var(--nav-item-active-bg);
-  color: var(--nav-item-active-color);
-  font-weight: 500;
-}
-
-.jb-nav-item--active svg {
-  color: var(--nav-item-active-icon);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .jb-nav, .jb-nav :is(.jb-nav-section > span, .jb-nav-label), .jb-nav-section::after { transition: none; }
+.library-navigation-shortcut:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ── Main content ────────────────────────────────────────────── */
 .jb-content {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -171,9 +90,9 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 48px;
-  min-height: 48px;
-  padding: 0 20px;
+  flex-wrap: wrap;
+  min-height: 56px;
+  padding: 10px 16px;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -3731,3 +3650,23 @@
 
 /* Align virtual album rows with the other library tile grids. */
 .jb-album-tiles { padding: 16px; box-sizing: border-box; }
+
+/* Controls wrap inside one header on smaller screens. */
+.jb-topbar .jb-search-wrap,
+.jb-topbar--collection .jb-search-wrap {
+  flex: 1 1 200px;
+  min-width: 160px;
+  max-width: 440px;
+  width: auto;
+}
+.jb-topbar .library-toolbar-heading:empty,
+.jb-topbar .library-toolbar-tools:empty,
+.jb-topbar .library-toolbar-view:empty { display: none; }
+.jb-topbar .library-toolbar-heading .jb-view-header-title { display: none; }
+@media (max-width: 800px) {
+  .jb-topbar { padding: 10px 12px; gap: 8px; }
+  .library-navigation { flex: 1 1 auto; }
+  .jb-topbar .jb-search-wrap { max-width: none; }
+  .jb-topbar .library-toolbar-tools { flex-wrap: wrap; margin-left: 0; }
+  .jb-topbar-right { flex-wrap: wrap; }
+}

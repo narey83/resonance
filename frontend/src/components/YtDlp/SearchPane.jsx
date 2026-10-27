@@ -27,11 +27,11 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import '../Search/Search.css';
 import { getCurrent as getOptions } from '../../lib/options';
 import * as ytdlp from '../../lib/ytdlp';
-import { Bell, Download, Search, X } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
-import { toast } from 'react-toastify';
+import { Bell, Download, Plus, Search, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 
 const HISTORY_KEY = 'ytdlp.searchHistory';
 const HISTORY_MAX = 12;
@@ -97,6 +97,10 @@ const resultSubtitle = (r) => {
 
 const SearchPane = ({ onDownload, onSubscribe }) => {
   const [query, setQuery] = useState('');
+  const appliedSearch = useRef(null);
+  const [wizardOpen, setWizardOpen] = useState(true);
+  const [step, setStep] = useState(0);
+  const [searchError, setSearchError] = useState('');
   const [type, setType] = useState('video');
   const [mixPreset, setMixPreset] = useState('');
   const [uploadDate, setUploadDate] = useState('');
@@ -140,6 +144,17 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
   };
 
   const runSearch = async (q, overrides = {}) => {
+    appliedSearch.current = {
+      query: q,
+      type,
+      mixPreset,
+      uploadDate,
+      audioFormat,
+      sort,
+      limit,
+    };
+    setWizardOpen(false);
+    setSearchError('');
     setLoading(true);
     setResults([]);
     if (isUrl(q)) {
@@ -149,7 +164,9 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
         setResults(res.data ? [res.data] : []);
       } catch (error) {
         setResults([]);
-        toast.error(`Resolve failed: ${error.response?.data || error.message}`);
+        setSearchError(
+          `Could not resolve this URL: ${typeof error.response?.data === 'string' ? error.response.data : error.message}`,
+        );
       } finally {
         setSearched(true);
         setLoading(false);
@@ -171,6 +188,11 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
       setResults(res.data || []);
       setSearched(true);
       addToHistory(q);
+    } catch (error) {
+      setSearched(true);
+      setSearchError(
+        `Search failed: ${typeof error.response?.data === 'string' ? error.response.data : error.message}`,
+      );
     } finally {
       setLoading(false);
     }
@@ -178,23 +200,28 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
 
   const handleSearch = async (e) => {
     e.preventDefault();
-    if (!query.trim()) return;
+    if (!query.trim() || loading) return;
+    if (step < 2) {
+      setStep(step + 1);
+      return;
+    }
+
     await runSearch(query.trim());
   };
 
-  const handleFilterChange = (setter, key) => async (e) => {
-    const { value } = e.target;
-    setter(key === 'limit' ? Number(value) : value);
-    // For channels/playlists, upload date is a download-time filter (not a search filter),
-    // so changing it shouldn't re-run the search. A pasted URL always resolves to the same
-    // single result, so filter changes never warrant a re-resolve.
-    const skipResearch =
-      (key === 'uploadDate' && type !== 'video') || isUrl(query.trim());
-    if (!skipResearch && searched && query.trim() && !loading) {
-      await runSearch(query.trim(), {
-        [key]: key === 'limit' ? Number(value) : value,
-      });
+  const backToResults = () => {
+    const applied = appliedSearch.current;
+    if (applied) {
+      setQuery(applied.query);
+      setType(applied.type);
+      setMixPreset(applied.mixPreset);
+      setUploadDate(applied.uploadDate);
+      setAudioFormat(applied.audioFormat);
+      setSort(applied.sort);
+      setLimit(applied.limit);
     }
+
+    setWizardOpen(false);
   };
 
   const handleHistoryClick = async (q) => {
@@ -252,109 +279,308 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
   };
 
   return (
-    <div>
-      <form
-        className="ytdlp-add-form"
-        onSubmit={handleSearch}
-      >
-        <div className="ytdlp-search-row">
-          <div style={{ flex: 1 }}>
-            <label>Search YouTube</label>
-            <input
-              autoFocus
-              disabled={loading}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Artist, track, channel name, or a YouTube URL…"
-              type="text"
-              value={query}
-            />
-          </div>
+    <div className="ytdlp-search-workspace sr-workspace">
+      <header className="sr-workspace-header">
+        <div>
+          <span className="sr-eyebrow">YT-DLP · YOUTUBE</span>
+          <h1>YouTube search</h1>
+        </div>
+        {!wizardOpen && (
           <button
-            className="ytdlp-btn hover-fx ytdlp-btn--primary"
-            disabled={loading || !query.trim()}
-            type="submit"
+            className="sr-wizard-primary"
+            disabled={loading}
+            onClick={() => {
+              setWizardOpen(true);
+              setStep(0);
+            }}
+            type="button"
           >
-            <Search size={14} />
-            {loading ? 'Searching…' : 'Search'}
+            <Plus size={16} /> New search
+          </button>
+        )}
+      </header>
+      {wizardOpen && (
+        <form
+          className="sr-wizard"
+          onSubmit={handleSearch}
+        >
+          <ol
+            aria-label="YouTube search steps"
+            className="sr-wizard-steps"
+          >
+            {['Find the music', 'Shape your search', 'Review & search'].map(
+              (label, index) => (
+                <li
+                  aria-current={step === index ? 'step' : undefined}
+                  key={label}
+                >
+                  <span>{index + 1}</span>
+                  {label}
+                </li>
+              ),
+            )}
+          </ol>
+          <div className="sr-wizard-body">
+            <span className="sr-eyebrow">STEP {step + 1} OF 3</span>
+            <h2>
+              {
+                [
+                  'What would you like to find?',
+                  'Choose what suits your library',
+                  'Ready to discover?',
+                ][step]
+              }
+            </h2>
+            {step === 0 && (
+              <>
+                <p>
+                  Search YouTube for music, sets and channels, or paste a direct
+                  link.
+                </p>
+                <div className="sr-wizard-grid">
+                  <label className="ytdlp-query-field">
+                    Search words or URL
+                    <input
+                      autoFocus
+                      disabled={loading}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="Artist, track, channel or https://…"
+                      type="text"
+                      value={query}
+                    />
+                  </label>
+                  {!isUrl(query.trim()) && (
+                    <label>
+                      Look for
+                      <select
+                        onChange={(event) => setType(event.target.value)}
+                        value={type}
+                      >
+                        <option value="video">Videos / tracks</option>
+                        <option value="channel">Channels</option>
+                        <option value="playlist">Playlists</option>
+                      </select>
+                    </label>
+                  )}
+                </div>
+                {isUrl(query.trim()) && (
+                  <p className="sr-wizard-note">
+                    Direct link detected. We’ll look up that item rather than
+                    run a keyword search.
+                  </p>
+                )}
+              </>
+            )}
+            {step === 1 && (
+              <>
+                <p>
+                  Choose the results you want to see and the audio format to use
+                  if you download.
+                </p>
+                <div className="sr-wizard-grid">
+                  <label>
+                    Length preference
+                    <select
+                      onChange={(event) => setMixPreset(event.target.value)}
+                      value={mixPreset}
+                    >
+                      <option value="">Any length</option>
+                      {ytdlp.DURATION_PRESETS.map((item) => (
+                        <option
+                          key={item.value}
+                          value={item.value}
+                        >
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Audio format for downloads
+                    <select
+                      onChange={(event) => setAudioFormat(event.target.value)}
+                      value={audioFormat}
+                    >
+                      <option value="">Server default</option>
+                      {AUDIO_FORMATS.map((format) => (
+                        <option
+                          key={format}
+                          value={format}
+                        >
+                          {format === 'best'
+                            ? 'Best available'
+                            : format.toUpperCase()}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    {type === 'video' && !isUrl(query.trim())
+                      ? 'Uploaded'
+                      : 'Collection uploads to download'}
+                    <select
+                      onChange={(event) => setUploadDate(event.target.value)}
+                      value={uploadDate}
+                    >
+                      <option value="">Any time</option>
+                      <option value="today">Today</option>
+                      <option value="week">This week</option>
+                      <option value="month">This month</option>
+                      <option value="year">This year</option>
+                    </select>
+                  </label>
+                  {!isUrl(query.trim()) && (
+                    <>
+                      <label>
+                        Sort results
+                        <select
+                          onChange={(event) => setSort(event.target.value)}
+                          value={sort}
+                        >
+                          <option value="">Relevance</option>
+                          <option value="date">Upload date</option>
+                          <option value="views">View count</option>
+                          <option value="rating">Rating</option>
+                        </select>
+                      </label>
+                      <label>
+                        Results to collect
+                        <select
+                          onChange={(event) =>
+                            setLimit(Number(event.target.value))
+                          }
+                          value={limit}
+                        >
+                          <option value={10}>10 results</option>
+                          <option value={25}>25 results</option>
+                          <option value={50}>50 results</option>
+                        </select>
+                      </label>
+                    </>
+                  )}
+                </div>
+                <p className="sr-wizard-note">
+                  Length presets filter returned videos and collection
+                  downloads; they don’t identify a mix by its title. Direct
+                  single-video links bypass length and date filters. Converting
+                  to FLAC or WAV won’t restore quality missing from the source.
+                </p>
+                {(type !== 'video' || isUrl(query.trim())) && (
+                  <p>
+                    Date preferences apply when downloading a collection, rather
+                    than filtering channel or playlist search results.
+                  </p>
+                )}
+              </>
+            )}
+            {step === 2 && (
+              <>
+                <p>
+                  {isUrl(query.trim())
+                    ? 'Look up this link'
+                    : `Search YouTube for ${type === 'video' ? 'videos' : `${type}s`}`}
+                </p>
+                <blockquote className="sr-query-preview">
+                  {query.trim()}
+                </blockquote>
+                <p>
+                  {preset?.label || 'Any length'} ·{' '}
+                  {audioFormat
+                    ? audioFormat === 'best'
+                      ? 'Best available audio'
+                      : audioFormat.toUpperCase()
+                    : 'Server audio default'}
+                  {!isUrl(query.trim()) ? ` · up to ${limit} results` : ''}
+                </p>
+                <p>
+                  {!isUrl(query.trim()) && (
+                    <>
+                      Order:{' '}
+                      {sort === 'date'
+                        ? 'upload date'
+                        : sort === 'views'
+                          ? 'view count'
+                          : sort === 'rating'
+                            ? 'rating'
+                            : 'relevance'}{' '}
+                      ·{' '}
+                    </>
+                  )}
+                  Uploads:{' '}
+                  {uploadDate
+                    ? {
+                        today: 'today',
+                        week: 'this week',
+                        month: 'this month',
+                        year: 'this year',
+                      }[uploadDate]
+                    : 'any time'}
+                  {type !== 'video' || isUrl(query.trim())
+                    ? ' (collection downloads)'
+                    : ''}
+                </p>
+                <p>
+                  Searching only retrieves information. Choose a result
+                  afterwards to download it or subscribe to a collection.
+                </p>
+              </>
+            )}
+          </div>
+          <footer className="sr-wizard-actions">
+            {searched && (
+              <button
+                disabled={loading}
+                onClick={backToResults}
+                type="button"
+              >
+                Back to results
+              </button>
+            )}
+            {step > 0 && (
+              <button
+                disabled={loading}
+                onClick={() => setStep(step - 1)}
+                type="button"
+              >
+                Back
+              </button>
+            )}
+            <button
+              className="sr-wizard-primary"
+              disabled={loading || !query.trim()}
+              type="submit"
+            >
+              {step < 2
+                ? 'Continue'
+                : isUrl(query.trim())
+                  ? 'Look up link'
+                  : 'Search YouTube'}
+            </button>
+          </footer>
+        </form>
+      )}
+      {!wizardOpen && (
+        <div className="sr-results-toolbar">
+          <Search size={16} />
+          <strong>{query}</strong>
+          <span className="sr-result-summary">
+            {loading
+              ? 'Working…'
+              : `${visibleResults.length} shown · ${results.length} found`}
+          </span>
+          <button
+            className="sr-refine-toggle"
+            disabled={loading}
+            onClick={() => {
+              setWizardOpen(true);
+              setStep(1);
+            }}
+            type="button"
+          >
+            Edit search
           </button>
         </div>
-
-        <div className="ytdlp-search-filters">
-          <select
-            onChange={handleFilterChange(setType, 'type')}
-            title="Result type"
-            value={type}
-          >
-            <option value="video">Videos</option>
-            <option value="channel">Channels</option>
-            <option value="playlist">Playlists</option>
-          </select>
-          <select
-            onChange={(e) => setMixPreset(e.target.value)}
-            title="Mix length"
-            value={mixPreset}
-          >
-            <option value="">Any length</option>
-            {ytdlp.DURATION_PRESETS.map((p) => (
-              <option
-                key={p.value}
-                value={p.value}
-              >
-                {p.label}
-              </option>
-            ))}
-          </select>
-          <select
-            onChange={handleFilterChange(setUploadDate, 'uploadDate')}
-            title={
-              type === 'video'
-                ? 'Upload date'
-                : 'Only download uploads within this window'
-            }
-            value={uploadDate}
-          >
-            <option value="">Any time</option>
-            <option value="today">Today</option>
-            <option value="week">This week</option>
-            <option value="month">This month</option>
-            <option value="year">This year</option>
-          </select>
-          <select
-            onChange={(e) => setAudioFormat(e.target.value)}
-            title="Audio format"
-            value={audioFormat}
-          >
-            {AUDIO_FORMATS.map((f) => (
-              <option
-                key={f}
-                value={f}
-              >
-                {f}
-              </option>
-            ))}
-          </select>
-          <select
-            onChange={handleFilterChange(setSort, 'sort')}
-            title="Sort by"
-            value={sort}
-          >
-            <option value="">Relevance</option>
-            <option value="date">Upload date</option>
-            <option value="views">View count</option>
-            <option value="rating">Rating</option>
-          </select>
-          <select
-            onChange={handleFilterChange(setLimit, 'limit')}
-            title="Max results"
-            value={limit}
-          >
-            <option value={10}>10 results</option>
-            <option value={25}>25 results</option>
-            <option value={50}>50 results</option>
-          </select>
-        </div>
-      </form>
-
+      )}
       {history.length > 0 && (
         <div className="ytdlp-history">
           <span className="ytdlp-history-label">Recent:</span>
@@ -365,6 +591,7 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
             >
               <button
                 className="hover-fx"
+                disabled={loading}
                 onClick={() => handleHistoryClick(h)}
                 type="button"
               >
@@ -390,75 +617,106 @@ const SearchPane = ({ onDownload, onSubscribe }) => {
         </div>
       )}
 
-      {loading && (
+      {!wizardOpen && loading && (
         <div className="ytdlp-empty">
           {urlMode ? 'Resolving URL…' : 'Searching YouTube…'}
         </div>
       )}
 
-      {visibleResults.length === 0 && !loading && searched && (
-        <div className="ytdlp-empty">
-          {urlMode ? 'Could not resolve that URL' : 'No results'}
+      {!wizardOpen &&
+        !searchError &&
+        visibleResults.length === 0 &&
+        !loading &&
+        searched && (
+          <div className="ytdlp-empty">
+            {urlMode
+              ? 'No information found for that URL'
+              : results.length > 0
+                ? 'No videos match your length preference. Edit the search to broaden it.'
+                : 'No results. Try different search words.'}
+          </div>
+        )}
+
+      {!wizardOpen && searchError && (
+        <div
+          className="ytdlp-search-error"
+          role="alert"
+        >
+          <h2>We couldn’t complete this search</h2>
+          <p>{searchError}</p>
+          <button
+            className="ytdlp-btn"
+            onClick={() => {
+              setWizardOpen(true);
+              setStep(2);
+            }}
+            type="button"
+          >
+            Review and retry
+          </button>
         </div>
       )}
-
-      <div className="ytdlp-search-results">
-        {visibleResults.map((r) => (
-          <div
-            className="ytdlp-result"
-            key={r.videoId}
-          >
-            {r.thumbnailUrl ? (
-              <img
-                alt=""
-                className={`ytdlp-result-thumb${r.type === 'channel' ? ' ytdlp-result-thumb--round' : ''}`}
-                src={r.thumbnailUrl}
-              />
-            ) : (
-              <div className="ytdlp-result-thumb-placeholder" />
-            )}
-            <div className="ytdlp-result-info">
-              <div className="ytdlp-result-title">
-                {r.title}
-                {TYPE_LABELS[r.type] && (
-                  <span className="ytdlp-result-badge">
-                    {TYPE_LABELS[r.type]}
-                  </span>
-                )}
+      {!wizardOpen && (
+        <div className="ytdlp-search-results">
+          {visibleResults.map((r) => (
+            <div
+              className="ytdlp-result"
+              key={r.videoId}
+            >
+              {r.thumbnailUrl ? (
+                <img
+                  alt=""
+                  className={`ytdlp-result-thumb${r.type === 'channel' ? ' ytdlp-result-thumb--round' : ''}`}
+                  decoding="async"
+                  loading="lazy"
+                  src={r.thumbnailUrl}
+                />
+              ) : (
+                <div className="ytdlp-result-thumb-placeholder" />
+              )}
+              <div className="ytdlp-result-info">
+                <div className="ytdlp-result-title">
+                  {r.title}
+                  {TYPE_LABELS[r.type] && (
+                    <span className="ytdlp-result-badge">
+                      {TYPE_LABELS[r.type]}
+                    </span>
+                  )}
+                </div>
+                <div className="ytdlp-result-sub">{resultSubtitle(r)}</div>
               </div>
-              <div className="ytdlp-result-sub">{resultSubtitle(r)}</div>
+              <div className="ytdlp-job-actions">
+                {(r.type === 'channel' || r.type === 'playlist') &&
+                  onSubscribe && (
+                    <button
+                      className="ytdlp-btn"
+                      disabled={subscribing[r.videoId]}
+                      onClick={() => handleSubscribe(r)}
+                      title="Auto-download new items from this collection"
+                      type="button"
+                    >
+                      <Bell size={13} />
+                      {subscribing[r.videoId] ? 'Subscribing…' : 'Subscribe'}
+                    </button>
+                  )}
+                <button
+                  className="ytdlp-btn ytdlp-btn--primary"
+                  disabled={downloading[r.videoId]}
+                  onClick={() => handleDownload(r)}
+                  type="button"
+                >
+                  <Download size={13} />
+                  {downloading[r.videoId]
+                    ? 'Adding…'
+                    : r.type === 'video'
+                      ? 'Download'
+                      : 'Download all'}
+                </button>
+              </div>
             </div>
-            <div className="ytdlp-job-actions">
-              {(r.type === 'channel' || r.type === 'playlist') &&
-                onSubscribe && (
-                  <button
-                    className="ytdlp-btn"
-                    disabled={subscribing[r.videoId]}
-                    onClick={() => handleSubscribe(r)}
-                    title="Auto-download new uploads from this channel"
-                    type="button"
-                  >
-                    <Bell size={13} />
-                    {subscribing[r.videoId] ? 'Subscribing…' : 'Subscribe'}
-                  </button>
-                )}
-              <button
-                className="ytdlp-btn ytdlp-btn--primary"
-                disabled={downloading[r.videoId]}
-                onClick={() => handleDownload(r)}
-                type="button"
-              >
-                <Download size={13} />
-                {downloading[r.videoId]
-                  ? 'Adding…'
-                  : r.type === 'video'
-                    ? 'Download'
-                    : 'Download all'}
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

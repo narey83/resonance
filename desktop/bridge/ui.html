@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Resonance Bridge</title>
+    <link rel="stylesheet" href="/assets/bridge.css" />
+    <script src="/assets/bridge.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="/" aria-label="Resonance Bridge home"
+          ><span class="brand-mark" aria-hidden="true">≋</span
+          ><span>Resonance<span class="brand-subtitle">Bridge</span></span></a
+        >
+        <div class="nav-label">WORKSPACE</div>
+        <nav aria-label="Bridge navigation">
+          <a class="nav-item" href="/" data-nav="network"
+            ><span class="icon" data-icon="network"></span>Network Link<span
+              class="nav-lock"
+              aria-hidden="true"
+            ></span
+          ></a>
+          <a class="nav-item" href="/usb" data-nav="usb"
+            ><span class="icon" data-icon="usb"></span>USB Export<span
+              class="nav-lock"
+              aria-hidden="true"
+            ></span
+          ></a>
+        </nav>
+        <div class="sidebar-bottom">
+          <a class="nav-item" href="/settings" data-nav="settings"
+            ><span class="icon" data-icon="settings"></span>Settings</a
+          >
+          <div class="instance-card">
+            <span class="status-dot" id="instance-dot"></span>
+            <div>
+              <strong id="instance-name">Not paired</strong
+              ><span id="instance-caption">Set up your connection</span>
+            </div>
+          </div>
+          <span class="version" id="version">Resonance Bridge</span>
+        </div>
+      </aside>
+      <main>
+        <header class="page-header">
+          <div>
+            <div class="eyebrow">YOUR MUSIC. WITH YOU.</div>
+            <h1 id="page-title">Bridge settings</h1>
+            <p id="page-description">
+              One connection for your desktop workspace.
+            </p>
+          </div>
+          <span class="status-pill" id="connection-badge"
+            ><span class="status-dot"></span>Not paired</span
+          >
+        </header>
+        <div class="alert error" id="error" role="alert" hidden></div>
+        <div class="alert success" id="feedback" role="status" hidden></div>
+
+        <div data-page="network" hidden>
+          <section class="collection-strip">
+            <span class="strip-icon icon" data-icon="library"></span>
+            <div>
+              <strong id="collection-title">Your analysed library</strong>
+              <p id="sync-state">Checking library status…</p>
+            </div>
+            <a class="text-link" href="/settings"
+              >Connection settings <span aria-hidden="true">↗</span></a
+            >
+          </section>
+          <div class="workspace-grid">
+            <section class="card">
+              <div class="section-heading">
+                <span class="step">1</span>
+                <div>
+                  <h2>Choose your network</h2>
+                  <p>The connection beside your decks.</p>
+                </div>
+              </div>
+              <label for="adapter">Network adapter</label
+              ><select id="adapter">
+                <option value="">Loading adapters…</option>
+              </select>
+              <p class="field-hint">
+                Use wired Ethernet where possible. Close rekordbox Link Export
+                before starting.
+              </p>
+              <div class="network-state">
+                <span class="status-dot" id="sharing-dot"></span
+                ><span id="network-state">Sharing is off</span>
+              </div>
+              <div class="actions">
+                <button class="primary" id="start" disabled>
+                  <span class="icon" data-icon="play"></span>Start Network Link</button
+                ><button id="stop" hidden>Stop sharing</button>
+              </div>
+            </section>
+            <section class="card players-card">
+              <div class="section-heading">
+                <span class="step">2</span>
+                <div>
+                  <h2>Players on your network</h2>
+                  <p>Select Resonance in your player’s LINK sources.</p>
+                </div>
+              </div>
+              <div id="devices" class="device-list">
+                <div class="empty-state">
+                  <span class="empty-icon icon" data-icon="network"></span>
+                  <h3>Ready when your decks are</h3>
+                  <p>
+                    Start Network Link to discover compatible players on the
+                    selected network.
+                  </p>
+                </div>
+              </div>
+            </section>
+          </div>
+          <div class="page-note">
+            <span class="icon" data-icon="info"></span>
+            <p>
+              Player compatibility is experimental. Test browsing and playback
+              on your hardware before a performance.
+            </p>
+          </div>
+        </div>
+
+        <div data-page="usb" hidden>
+          <div class="workspace-grid">
+            <section class="card">
+              <div class="section-heading">
+                <span class="step">1</span>
+                <div>
+                  <h2>Your export</h2>
+                  <p>Prepare a set in your paired Resonance instance.</p>
+                </div>
+              </div>
+              <div id="export-empty" class="empty-state compact">
+                <span class="empty-icon icon" data-icon="library"></span>
+                <h3>Bring a set with you</h3>
+                <p>
+                  Choose your tracks in Resonance, prepare the export, then
+                  select <strong>Open in Bridge</strong>.
+                </p>
+                <a
+                  id="open-resonance"
+                  class="button primary"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >Open Resonance <span aria-hidden="true">↗</span></a
+                >
+              </div>
+              <div id="export-summary" hidden>
+                <div class="export-file">
+                  <span class="strip-icon icon" data-icon="music"></span>
+                  <div>
+                    <h3 id="export-name">Prepared export</h3>
+                    <p id="export-tracks"></p>
+                  </div>
+                </div>
+                <p id="export-status" role="status"></p>
+                <progress
+                  id="export-progress"
+                  max="1"
+                  value="0"
+                  hidden
+                ></progress>
+              </div>
+              <details class="advanced">
+                <summary>Open an export file manually</summary>
+                <p>
+                  Use the export action file downloaded from your paired
+                  instance. Your pairing is already saved.
+                </p>
+                <label class="file-picker" for="handoff"
+                  ><span class="icon" data-icon="file"></span
+                  ><span id="handoff-name">Choose export file</span
+                  ><input
+                    id="handoff"
+                    class="file-input"
+                    type="file"
+                    accept=".resonance,.resonanceusb,.json"
+                    aria-label="USB export action file" /></label
+                ><button id="receive">Receive export</button>
+              </details>
+            </section>
+            <section class="card">
+              <div class="section-heading">
+                <span class="step">2</span>
+                <div>
+                  <h2>Choose a USB drive</h2>
+                  <p>Copy and verify your prepared set.</p>
+                </div>
+              </div>
+              <div class="label-row">
+                <label for="drive">Destination drive</label
+                ><button id="refresh-drives" class="text-button">
+                  <span class="icon" data-icon="refresh"></span>Refresh
+                </button>
+              </div>
+              <select id="drive">
+                <option value="">Checking drives…</option>
+              </select>
+              <p id="destination" class="field-hint">
+                Mounted FAT32 and exFAT drives appear here.
+              </p>
+              <div class="safety-note">
+                <span class="icon" data-icon="shield"></span>
+                <p>
+                  Bridge never formats drives or overwrites an existing export.
+                  Use FAT32 for the broadest player compatibility.
+                </p>
+              </div>
+              <label class="check-row"
+                ><input id="confirm" type="checkbox" /><span id="confirmation"
+                  >I have checked the destination and want to copy this
+                  export.</span
+                ></label
+              >
+              <div class="actions">
+                <button id="write" class="primary" disabled>
+                  <span class="icon" data-icon="usb"></span>Write to USB</button
+                ><button id="cancel-transfer" hidden>Cancel transfer</button>
+              </div>
+              <p class="field-hint" id="transfer-progress" role="status">
+                Safely eject the drive after the transfer completes.
+              </p>
+            </section>
+          </div>
+          <div class="page-note">
+            <span class="icon" data-icon="info"></span>
+            <p>
+              Only fully analysed tracks are exported. Test the finished USB on
+              your players before performing.
+            </p>
+          </div>
+        </div>
+
+        <div data-page="settings" hidden>
+          <section class="card pairing-card">
+            <div class="card-heading">
+              <div>
+                <h2>Resonance connection</h2>
+                <p>
+                  Pair once. Use Network Link and USB Export from the same
+                  workspace.
+                </p>
+              </div>
+              <span class="mini-badge" id="pairing-label">SETUP</span>
+            </div>
+            <div id="pairing-empty">
+              <div class="setup-intro">
+                <span class="setup-icon icon" data-icon="link"></span>
+                <div>
+                  <h3>Connect your Resonance instance</h3>
+                  <p>
+                    In Resonance → Music → Network Link, download a Bridge
+                    pairing file. Choose it below to save this device’s pairing.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div id="paired-details" hidden>
+              <div class="connected-server">
+                <span class="server-icon icon" data-icon="server"></span>
+                <div>
+                  <h3 id="paired-host"></h3>
+                  <p id="paired-address"></p>
+                </div>
+                <span class="saved-label"
+                  ><span class="status-dot"></span>Pairing saved</span
+                >
+              </div>
+              <div class="connection-detail">
+                <span id="pairing-expiry"></span
+                ><span>Reconnects automatically after a restart</span>
+              </div>
+              <p id="pairing-health" class="field-hint"></p>
+              <div class="feature-links">
+                <a href="/" class="button"
+                  >Open Network Link <span aria-hidden="true">→</span></a
+                ><a href="/usb" class="button"
+                  >Open USB Export <span aria-hidden="true">→</span></a
+                >
+              </div>
+            </div>
+            <div class="pairing-management">
+              <details id="pairing-upload" open>
+                <summary id="pairing-upload-label">Replace pairing</summary>
+                <div class="pairing-controls">
+                  <label class="file-picker" for="connection"
+                    ><span class="icon" data-icon="file"></span
+                    ><span id="connection-file-name">Choose pairing file</span
+                    ><input
+                      class="file-input"
+                      id="connection"
+                      type="file"
+                      accept=".resonance,.resonancelink,.json"
+                      aria-label="Bridge pairing file" /></label
+                  ><button id="connect" class="primary" disabled>
+                    Pair this device
+                  </button>
+                </div>
+                <p class="field-hint">
+                  The file is imported into private app settings. You don’t need
+                  to select it again after restarting.
+                </p>
+              </details>
+              <button id="disconnect" class="danger text-button" hidden>
+                Forget pairing
+              </button>
+            </div>
+          </section>
+          <div class="settings-grid">
+            <section class="card">
+              <div class="card-icon icon" data-icon="power"></div>
+              <h2>Ready at sign-in</h2>
+              <p>Keep Bridge available in your menu bar or system tray.</p>
+              <label class="setting-toggle"
+                ><span>Start Bridge at sign-in</span
+                ><input id="startup" type="checkbox" role="switch"
+              /></label>
+              <p id="startup-error" class="field-hint"></p>
+            </section>
+            <section class="card">
+              <div class="card-icon icon" data-icon="refresh"></div>
+              <h2>Software updates</h2>
+              <p>
+                Verified updates come from your paired Resonance instance,
+                download automatically and install when idle.
+              </p>
+              <div class="update-status">
+                <strong id="update-version"></strong
+                ><span id="update-status">Checking update status…</span>
+              </div>
+              <p id="update-error" class="field-hint"></p>
+              <button id="check-update">Check for updates</button>
+            </section>
+          </div>
+          <section id="support" class="card support-card">
+            <div>
+              <h2>Support & diagnostics</h2>
+              <p>
+                Save recent events, version and connection status for
+                troubleshooting. Credentials and music are excluded.
+              </p>
+            </div>
+            <button id="diagnostics">
+              <span class="icon" data-icon="download"></span>Save diagnostic
+              report
+            </button>
+          </section>
+          <details class="about">
+            <summary>About Resonance Bridge</summary>
+            <p>
+              Built with Vynull’s GPL-3.0-or-later Pro DJ Link implementation,
+              pinned and modified for Resonance. Source, licenses and build
+              instructions are included with Bridge. Not affiliated with Pioneer
+              DJ or AlphaTheta.
+            </p>
+            <button id="quit" class="text-button danger">
+              Quit Resonance Bridge
+            </button>
+          </details>
+        </div>
+        <footer>
+          <span
+            >Resonance Bridge <span class="footer-dot">·</span> Your library,
+            connected.</span
+          ><a href="/settings#support">Support & diagnostics</a>
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>

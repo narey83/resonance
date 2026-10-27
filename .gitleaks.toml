@@ -1,0 +1,24 @@
+# Keep the default credential rules. These are exact, reviewed non-secret values.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Local device storage identifiers, not authentication keys"
+condition = "AND"
+paths = ['''mobile/src/(services/batteryOptimization|store/translationStore)\.ts$''']
+regexTarget = "secret"
+regexes = ['''^(battery_exemption_asked_v1|translation_reply_v1)$''']
+
+[[allowlists]]
+description = "RFC 6455's public WebSocket handshake nonce in a protocol test"
+condition = "AND"
+paths = ['''frontend/scripts/test-node-compat\.cjs$''']
+regexTarget = "secret"
+regexes = ['''^dGhlIHNhbXBsZSBub25jZQ==$''']
+
+[[allowlists]]
+description = "Documentation prose naming the signature algorithm"
+condition = "AND"
+paths = ['''docker/REMOTE_DEVELOPMENT\.md$''']
+regexTarget = "secret"
+regexes = ['''^Ed25519-signed$''']

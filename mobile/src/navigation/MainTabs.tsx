@@ -42,12 +42,17 @@ import { FloatingTabBar } from '../components/FloatingTabBar';
 import { useConversationStore } from '../store/conversationStore';
 import { totalMentions, useRoomStore } from '../store/roomStore';
 import { useAppSettings } from '../store/appSettingsStore';
+import { useRemoteAccess } from '../lib/remoteAccess';
 import { PerfProfiler } from '../lib/perfProbe';
 
 // Screens
+import DiscoveryScreen from '../screens/discovery/DiscoveryScreen';
+import type { MusicTrack } from '../api/musicLibrary';
+import type { SearchStackParamList } from '../screens/search/SearchScreen';
 import SearchScreen              from '../screens/search/SearchScreen';
 import TransfersScreen           from '../screens/transfers/TransfersScreen';
 import LibraryScreen             from '../screens/library/LibraryScreen';
+import type { LibraryStackParamList } from '../screens/library/LibraryScreen';
 import MoreScreen                from '../screens/more/MoreScreen';
 import OverviewScreen            from '../screens/more/OverviewScreen';
 import ConnectionScreen          from '../screens/more/ConnectionScreen';
@@ -62,6 +67,8 @@ import ChatConversationScreen    from '../screens/more/ChatConversationScreen';
 import LogsScreen                from '../screens/more/LogsScreen';
 import BlockedScreen             from '../screens/more/BlockedScreen';
 import BlockedUsersScreen        from '../screens/more/BlockedUsersScreen';
+import ServersScreen from '../screens/more/ServersScreen';
+import StudioScreen from '../screens/more/StudioScreen';
 import SettingsScreen            from '../screens/more/SettingsScreen';
 import NotificationsScreen       from '../screens/more/NotificationsScreen';
 import SoulseekRelayScreen       from '../screens/more/SoulseekRelayScreen';
@@ -69,8 +76,9 @@ import NetworkLogScreen          from '../screens/more/NetworkLogScreen';
 import AboutScreen               from '../screens/more/AboutScreen';
 
 export type MainTabParamList = {
-  LibraryTab:   undefined;
-  SearchTab:    undefined;
+  DiscoverTab: { track?: MusicTrack; section?: 'Matches' | 'Prepare' } | undefined;
+  LibraryTab:   NavigatorScreenParams<LibraryStackParamList> | undefined;
+  SearchTab:    NavigatorScreenParams<SearchStackParamList> | undefined;
   TransfersTab: undefined;
   BrowseTab:    NavigatorScreenParams<BrowseStackParamList> | undefined;
   RoomsTab:     NavigatorScreenParams<RoomsStackParamList> | undefined;
@@ -87,6 +95,8 @@ export type MoreStackParamList = {
   Blocked:          undefined;
   BlockedUsers:     undefined;
   Settings:         undefined;
+  Studio:           undefined;
+  Servers:          undefined;
   Notifications:    undefined;
   SoulseekRelay:    undefined;
   NetworkLog:       undefined;
@@ -116,21 +126,28 @@ const Rooms  = createNativeStackNavigator<RoomsStackParamList>();
 const Chat   = createNativeStackNavigator<ChatStackParamList>();
 
 function MoreStack() {
+  const remote = useRemoteAccess();
   const { colors } = useTheme();
   const navOpts = makeScreenOptions(colors);
   return (
     <More.Navigator screenOptions={navOpts}>
       <More.Screen name="More"             component={MoreScreen}             options={{ title: 'More' }} />
+      {remote && <>
       <More.Screen name="Overview"         component={OverviewScreen}         options={{ title: 'Overview' }} />
       <More.Screen name="Server"           component={ServerScreen}           options={{ title: 'Server' }} />
       <More.Screen name="Connection"       component={ConnectionScreen}       options={{ title: 'Connection' }} />
       <More.Screen name="Logs"             component={LogsScreen}             options={{ title: 'Server Logs' }} />
       <More.Screen name="Blocked"          component={BlockedScreen}          options={{ title: 'Blocked' }} />
       <More.Screen name="BlockedUsers"     component={BlockedUsersScreen}     options={{ title: 'Blocked Users' }} />
+      </>}
+      <More.Screen name="Servers" component={ServersScreen} options={{ title: 'Servers' }} />
+      <More.Screen name="Studio" component={StudioScreen} options={{ title: 'Studio' }} />
       <More.Screen name="Settings"         component={SettingsScreen}         options={{ title: 'Settings' }} />
+      {remote && <>
       <More.Screen name="Notifications"    component={NotificationsScreen}    options={{ title: 'Notifications' }} />
       <More.Screen name="SoulseekRelay"    component={SoulseekRelayScreen}    options={{ title: 'Soulseek Relay' }} />
       <More.Screen name="NetworkLog"       component={NetworkLogScreen}       options={{ title: 'Network Log' }} />
+      </>}
       <More.Screen name="About"            component={AboutScreen}            options={{ title: 'About' }} />
     </More.Navigator>
   );
@@ -223,13 +240,14 @@ const PerfChat      = perfScreen('s:chat', ChatStack);
 const PerfMore      = perfScreen('s:more', MoreStack);
 
 export default function MainTabs() {
+  const remote = useRemoteAccess();
   const { colors } = useTheme();
   const totalUnread  = useConversationStore((s) => s.totalUnread);
   const roomMentions = useRoomStore(totalMentions);
 
   return (
     <Tab.Navigator
-      initialRouteName="LibraryTab"
+      initialRouteName={remote ? 'DiscoverTab' : 'LibraryTab'}
       tabBar={(props) => <PerfProfiler id="tabbar"><TabBarWithPlayer {...props} /></PerfProfiler>}
       screenOptions={{
         ...makeScreenOptions(colors),
@@ -242,11 +260,13 @@ export default function MainTabs() {
         freezeOnBlur: true,
       }}
     >
+      {remote && <Tab.Screen name="DiscoverTab" component={DiscoveryScreen} options={{ title: 'Discover', headerShown: false }} />}
       <Tab.Screen
         component={PerfLibrary}
         name="LibraryTab"
         options={{ title: 'Library', headerShown: false }}
       />
+      {remote && <>
       <Tab.Screen
         component={PerfSearch}
         name="SearchTab"
@@ -280,10 +300,11 @@ export default function MainTabs() {
           tabBarBadge: totalUnread > 0 ? (totalUnread > 99 ? '99+' : totalUnread) : undefined,
         }}
       />
+      </>}
       <Tab.Screen
         component={PerfMore}
         name="MoreTab"
-        options={{ title: 'More', headerShown: false }}
+        options={{ title: 'More', headerShown: false, tabBarBadge: totalUnread + roomMentions || undefined }}
       />
     </Tab.Navigator>
   );

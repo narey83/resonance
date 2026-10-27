@@ -36,10 +36,10 @@ internal static class LogsTestSupport
         return context;
     }
 
-    public static ConnectionStringDictionary FakeConnectionStrings() => new(new Dictionary<Database, ConnectionString>
+    public static ConnectionStringDictionary SqliteConnectionStrings() => new(new Dictionary<Database, ConnectionString>
     {
-        [Database.Logs] = "Host=unused;Database=unused;Username=unused;Password=unused",
-    });
+        [Database.Logs] = "Data Source=unused.db",
+    }, usePostgres: false);
 
     public static IOptionsMonitor<global::resonance.Options> OptionsMonitor(global::resonance.Options value = null!) =>
         new StubOptionsMonitor(value ?? new global::resonance.Options());

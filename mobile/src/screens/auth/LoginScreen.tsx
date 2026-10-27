@@ -27,9 +27,11 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import React, { useMemo, useState } from 'react';
+import { isMaintenanceResponse } from '../../lib/maintenance';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Switch,
   Pressable,
   StyleSheet,
   Text,
@@ -39,10 +41,13 @@ import {
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { ResonanceLogo } from '../../components/ResonanceLogo';
 import { Ionicons } from '@expo/vector-icons';
+import { enterLocalMode } from '../../services/appMode';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
-import { login } from '../../api/session';
-import { getDeviceId, getDeviceName, useAuthStore } from '../../store/auth';
+import RecentServers from '../../components/RecentServers';
+import { biometricSignIn, signInToServer } from '../../services/serverSignIn';
+import { biometricsAvailable, useServerProfiles } from '../../store/serverProfilesStore';
+import { useAuthStore } from '../../store/auth';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/AuthStack';
 
@@ -53,28 +58,35 @@ export default function LoginScreen({ navigation }: Props) {
   const s = useMemo(() => makeStyles(colors), [colors]);
 
   const serverUrl    = useAuthStore((s) => s.serverUrl)!;
-  const setTokens    = useAuthStore((s) => s.setTokens);
   const clearAll     = useAuthStore((s) => s.clearAll);
-  const sessionId    = useAuthStore((s) => s.sessionId);
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
+  const [saveBiometric, setSaveBiometric] = useState(false);
+  const profiles = useServerProfiles(state => state.profiles);
+  const available = biometricsAvailable();
+  const savedProfile = profiles.find(profile => profile.url === serverUrl);
+  useEffect(() => {
+    const profile = profiles.find(p => p.url === serverUrl);
+    if (profile) setUsername(value => value || profile.username);
+  }, [profiles, serverUrl]);
 
   const handleLogin = async () => {
+    if (loading) return;
     if (!username || !password) { setError('Username and password are required'); return; }
     setError('');
     setLoading(true);
     try {
-      const [deviceName, deviceId] = await Promise.all([getDeviceName(), getDeviceId()]);
-      const data = await login(serverUrl, username, password, deviceName, deviceId, sessionId);
-      await setTokens(data.token, data.refreshToken, data.sessionId);
+      await signInToServer(serverUrl, username, password, saveBiometric);
     } catch (e: any) {
-      if (e?.response?.status === 401) {
+      if (isMaintenanceResponse(e?.response)) {
+        setError('This server is being maintained. Try again shortly, or use music on this device.');
+      } else if (e?.response?.status === 401) {
         setError('Incorrect username or password');
       } else {
-        setError('Login failed. Check your connection and try again.');
+        setError(e?.response ? 'Login failed. Check your connection and try again.' : e?.message || 'Login failed. Check your connection and try again.');
       }
     } finally {
       setLoading(false);
@@ -100,9 +112,17 @@ export default function LoginScreen({ navigation }: Props) {
         <Text style={s.sub}>{serverUrl}</Text>
 
         <View style={s.form}>
+          <Pressable accessibilityRole="button" disabled={loading} onPress={() => { void enterLocalMode().catch(() => setError('Could not open local music. Try again.')); }} style={{ paddingVertical: 12 }}><Text style={{ color: colors.accent }}>Use music on this device</Text></Pressable>
+          {savedProfile?.biometric && <Pressable accessibilityRole="button" disabled={loading || !available} onPress={async () => {
+            setLoading(true); setError('');
+            try { await biometricSignIn(savedProfile.id); }
+            catch (e) { setError((e as Error).message || 'Use your password to sign in.'); }
+            finally { setLoading(false); }
+          }} style={s.scanBtn}><Ionicons name="finger-print" size={20} color={colors.accent} /><Text style={s.scanBtnText}>Sign in with biometrics</Text></Pressable>}
           <View style={s.field}>
             <Text style={s.label}>Username</Text>
             <TextInput
+              editable={!loading}
               autoCapitalize="none"
               autoCorrect={false}
               onChangeText={setUsername}
@@ -118,6 +138,7 @@ export default function LoginScreen({ navigation }: Props) {
           <View style={s.field}>
             <Text style={s.label}>Password</Text>
             <TextInput
+              editable={!loading}
               autoCapitalize="none"
               autoCorrect={false}
               onChangeText={setPassword}
@@ -130,6 +151,12 @@ export default function LoginScreen({ navigation }: Props) {
               value={password}
             />
           </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={{ flex: 1 }}><Text style={s.label}>Save this sign-in with Face ID / fingerprint</Text><Text style={{ color: colors.textMuted, fontSize: 11 }}>Optional, for this server on this handset.</Text></View>
+            <Switch accessibilityLabel="Save biometric sign-in for this server" disabled={loading || !available} value={saveBiometric} onValueChange={setSaveBiometric} trackColor={{ true: colors.accent, false: colors.bgElevated }} />
+          </View>
+          {!available && <Text style={{ color: colors.textMuted, fontSize: 11 }}>Set up Face ID or a secure fingerprint on this handset to enable biometric sign-in.</Text>}
 
           {error ? <Text style={s.error}>{error}</Text> : null}
 
@@ -156,9 +183,10 @@ export default function LoginScreen({ navigation }: Props) {
             <Text style={s.scanBtnText}>Scan QR from Resonance</Text>
           </Pressable>
 
-          <Pressable onPress={() => { clearAll(); navigation.replace('Connect'); }}>
+          <Pressable disabled={loading} onPress={() => { void clearAll().then(() => navigation.replace('Connect')).catch(() => setError('Could not change server. Try again.')); }}>
             <Text style={s.link}>Change server</Text>
           </Pressable>
+          <RecentServers disabled={loading} onBusyChange={setLoading} onSelect={async profile => { await useAuthStore.getState().setServerUrl(profile.url); setUsername(profile.username); setPassword(''); setSaveBiometric(false); }} onForgetCurrent={() => navigation.replace('Connect')} />
         </View>
       </View>
     </KeyboardAwareScrollView>

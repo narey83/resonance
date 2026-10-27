@@ -43,10 +43,7 @@ import {
 } from 'recharts';
 
 const sumBytes = (directionData) =>
-  Object.values(directionData ?? {}).reduce(
-    (s, v) => s + (v.totalBytes ?? 0),
-    0,
-  );
+  (directionData?.Succeeded ?? directionData?.succeeded)?.totalBytes ?? 0;
 
 // Build a per-interval upload/download ratio sparkline from the histogram.
 const buildTrend = (histogram) => {

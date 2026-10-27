@@ -71,6 +71,10 @@ namespace resonance.Transfers.Uploads
         /// </summary>
         IUploadQueue Queue { get; }
 
+        /// <summary>Stops admission, cancels active uploads and drains their cleanup.</summary>
+        /// <returns>The task that completes when all upload work has exited.</returns>
+        Task StopAsync();
+
         /// <summary>
         ///     Adds the specified <paramref name="transfer"/>. Supersedes any existing record for the same file and username.
         /// </summary>
@@ -147,6 +151,14 @@ namespace resonance.Transfers.Uploads
         /// <returns>The list of uploads matching the specified expression, or all uploads if no expression is specified.</returns>
         List<Transfer> List(Expression<Func<Transfer, bool>> expression, bool includeRemoved);
 
+        /// <summary>Lists every active upload and a database-limited recent history.</summary>
+        /// <returns>All matching active transfers and at most the requested number of completed transfers.</returns>
+        List<Transfer> ListCapped(bool includeRemoved, bool activeOnly, int maxCompleted);
+
+        /// <summary>Lists dangling transfers, including removed records, for startup recovery.</summary>
+        /// <returns>Transfers that are unfinished or lack a completed state, including removed records.</returns>
+        List<Transfer> ListForRecovery() => List(t => t.EndedAt == null || !TransferStateCategories.Completed.Contains(t.State), includeRemoved: true);
+
         /// <summary>
         ///     Removes <see cref="TransferStates.Completed"/> uploads older than the specified <paramref name="age"/>.
         /// </summary>
@@ -210,7 +222,7 @@ namespace resonance.Transfers.Uploads
     /// <summary>
     ///     Manages uploads.
     /// </summary>
-    public class UploadService : IUploadService
+    public class UploadService : IUploadService, IAsyncDisposable
     {
         public UploadService(
             FileService fileService,
@@ -249,6 +261,8 @@ namespace resonance.Transfers.Uploads
         /// </summary>
         public IUploadQueue Queue { get; init; }
 
+        private UploadWorkLifetime Work { get; } = new();
+
         private FileService Files { get; }
         private ConcurrentDictionary<Guid, CancellationTokenSource> CancellationTokens { get; } = new ConcurrentDictionary<Guid, CancellationTokenSource>();
         private ISoulseekClient Client { get; set; }
@@ -263,6 +277,12 @@ namespace resonance.Transfers.Uploads
         private ConcurrentDictionary<string, bool> Locks { get; } = new();
         private ConcurrentDictionary<string, string> PeerAddresses { get; } = new();
         private TransferNetworkInfoStore NetworkInfoStore { get; }
+
+        /// <inheritdoc/>
+        public Task StopAsync() => Work.StopAsync();
+
+        /// <inheritdoc/>
+        public ValueTask DisposeAsync() => Work.DisposeAsync();
 
         /// <summary>
         ///     Gets the last known IP addresses for the specified <paramref name="usernames"/>, falling back to
@@ -370,7 +390,9 @@ namespace resonance.Transfers.Uploads
         /// <exception cref="NotFoundException">Thrown if the specified file can't be found on disk.</exception>
         public async Task<Transfer> UploadAsync(Transfer transfer)
         {
-            var cts = new CancellationTokenSource();
+            using var work = Work.Enter();
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(Work.Token);
+            var cancellationToken = cts.Token;
             var syncRoot = new SemaphoreSlim(1, 1);
 
             string host = default;
@@ -442,6 +464,8 @@ namespace resonance.Transfers.Uploads
                     Log.Warning(ex, "Failed to watch user {Username}", transfer.Username);
                 }
 
+                cancellationToken.ThrowIfCancellationRequested();
+
                 /*
                     now that the user is watched, if their last known presence is offline, don't hand a doomed transfer
                     to Soulseek.NET (which would hold a slot and wait on a long connection timeout before failing).
@@ -472,6 +496,12 @@ namespace resonance.Transfers.Uploads
                 var topts = new TransferOptions(
                     stateChanged: (args) =>
                     {
+                        using var callback = Work.TryEnter();
+                        if (callback is null)
+                        {
+                            return;
+                        }
+
                         Log.Debug("Upload of {Filename} to user {Username} changed state from {Previous} to {New}", localFilename, transfer.Username, args.PreviousState, args.Transfer.State);
 
                         // prevent Exceptions thrown during shutdown from updating the transfer record with related Exceptions;
@@ -490,19 +520,25 @@ namespace resonance.Transfers.Uploads
                         }
 
                         // todo: broadcast
-                        SynchronizedUpdate(transfer, semaphore: syncRoot, cancellationToken: cts.Token);
+                        SynchronizedUpdate(transfer, semaphore: syncRoot, cancellationToken: cancellationToken);
                     },
                     progressUpdated: (args) => rateLimiter.Invoke(() =>
                     {
                         // don't do anything unless the `transfer` within the outer scope is in the
                         // InProgress state; this will help prevent out-of-band updates that are sometimes
                         // being made after the transfer is completed, causing them to appear 'stuck'
+                        using var callback = Work.TryEnter();
+                        if (callback is null)
+                        {
+                            return;
+                        }
+
                         if (transfer.State == TransferStates.InProgress)
                         {
                             // don't wait for the semaphore; if a previous progress update is still hanging, don't make
                             // the problem worse. this will result in fewer/jumpy updates on systems with slow filesystems
                             // but the alternative is to continue to stack slow writes on top of one another
-                            if (syncRoot.Wait(millisecondsTimeout: 0, cts.Token))
+                            if (syncRoot.Wait(millisecondsTimeout: 0, cancellationToken))
                             {
                                 try
                                 {
@@ -532,7 +568,7 @@ namespace resonance.Transfers.Uploads
                     disposeInputStreamOnCompletion: true, // note: don't set this to false!
                     governor: (tx, req, ct) => Governor.GetBytesAsync(tx.Username, req, ct),
                     reporter: (tx, att, grant, act) => Governor.ReturnBytes(tx.Username, att, grant, act),
-                    slotAwaiter: (tx, ct) => Queue.AwaitStartAsync(tx.Username, tx.Filename),
+                    slotAwaiter: (tx, ct) => Queue.AwaitStartAsync(tx.Username, tx.Filename).WaitAsync(ct),
                     slotReleased: (tx) => Queue.Complete(tx.Username, tx.Filename));
 
                 // register the cancellation token
@@ -541,7 +577,7 @@ namespace resonance.Transfers.Uploads
                 // add the transfer to the UploadQueue so that it can become eligible for selection
                 Queue.Enqueue(transfer.Username, transfer.Filename);
                 transfer.EnqueuedAt = DateTime.UtcNow;
-                SynchronizedUpdate(transfer, semaphore: syncRoot, cancellationToken: cts.Token);
+                SynchronizedUpdate(transfer, semaphore: syncRoot, cancellationToken: cancellationToken);
 
                 Soulseek.Transfer completedTransfer;
 
@@ -562,7 +598,7 @@ namespace resonance.Transfers.Uploads
                             return Task.FromResult((Stream)stream);
                         },
                         options: topts,
-                        cancellationToken: cts.Token);
+                        cancellationToken: cancellationToken);
                 }
                 else
                 {
@@ -572,7 +608,7 @@ namespace resonance.Transfers.Uploads
                         size: localFileLength,
                         inputStreamFactory: (startOffset) => Relay.GetFileStreamAsync(agentName: host, filename: transfer.Filename, startOffset, id: transfer.Id),
                         options: topts,
-                        cancellationToken: cts.Token);
+                        cancellationToken: cancellationToken);
 
                     Relay.TryCloseFileStream(host, id: transfer.Id);
                 }
@@ -598,12 +634,18 @@ namespace resonance.Transfers.Uploads
 
                 return transfer;
             }
+            catch (Exception) when (Work.Token.IsCancellationRequested)
+            {
+                // Preserve shutdown records for the existing startup recovery pass.
+                Log.Debug("Upload of {Filename} to {Username} stopped for shutdown", transfer.Filename, transfer.Username);
+                return null;
+            }
             catch (NotFoundException ex)
             {
                 Log.Error(ex, "Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
 
                 TryFail(transfer.Id, "File could not be found", TransferStates.Completed | TransferStates.Aborted);
-                _ = ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, "File could not be found");
+                await ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, "File could not be found");
 
                 // todo: broadcast
                 SynchronizedUpdate(transfer, semaphore: syncRoot, cancellationToken: CancellationToken.None);
@@ -646,7 +688,7 @@ namespace resonance.Transfers.Uploads
                 }
 
                 TryFail(transfer.Id, exception: ex);
-                _ = ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, ex.Message);
+                await ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, ex.Message);
 
                 // todo: broadcast
                 SynchronizedUpdate(transfer, semaphore: syncRoot, cancellationToken: CancellationToken.None);
@@ -694,6 +736,7 @@ namespace resonance.Transfers.Uploads
         /// <returns>The operation context.</returns>
         public async Task<Transfer> EnqueueAsync(string username, string filename)
         {
+            using var work = Work.Enter();
             if (string.IsNullOrEmpty(username))
             {
                 throw new ArgumentNullException(nameof(username), "Username is required");
@@ -726,6 +769,7 @@ namespace resonance.Transfers.Uploads
             }
 
             Guid id = Guid.NewGuid();
+            var transferCreated = false;
 
             try
             {
@@ -781,9 +825,19 @@ namespace resonance.Transfers.Uploads
                     check the tracked upload dictionary in Soulseek.NET to see if it knows about this already
                     it shouldn't, if the slskd database doesn't. but things could get desynced
                 */
-                if (Client.Uploads.Any(u => u.Username == username && u.Filename == filename))
+                var trackedUpload = Client.Uploads.FirstOrDefault(u => u.Username == username && u.Filename == filename);
+                if (trackedUpload is not null)
                 {
-                    throw new DuplicateTransferException("A duplicate upload of the same file to the same user is already registered");
+                    if (!trackedUpload.State.HasFlag(TransferStates.Completed))
+                    {
+                        Log.Debug("Upload of {Filename} to {Username} is already active in the transfer client", filename, username);
+                        return null;
+                    }
+
+                    // Completed SDK entries can linger briefly. Do not acknowledge a new request
+                    // as queued when no active upload can fulfil it; let the peer retry instead.
+                    Log.Information("Upload of {Filename} to {Username} deferred while the previous transfer is being released", filename, username);
+                    throw new DownloadEnqueueException("Previous upload is finishing cleanup; please retry shortly.");
                 }
 
                 /*
@@ -843,6 +897,7 @@ namespace resonance.Transfers.Uploads
                 }
 
                 context.SaveChanges();
+                transferCreated = true;
 
                 Log.Information("Successfully enqueued upload of {Filename} to {Username} (id: {Id})", filename, username, id);
 
@@ -865,11 +920,21 @@ namespace resonance.Transfers.Uploads
 
                 return transfer;
             }
+            catch (OperationCanceledException) when (Work.Token.IsCancellationRequested)
+            {
+                // A persisted queued row is recovered on startup; do not stamp it as an enqueue failure.
+                throw;
+            }
+            catch (DownloadEnqueueException) when (!transferCreated)
+            {
+                // Expected peer-facing rejection; no database record exists to clean up.
+                throw;
+            }
             catch (Exception ex)
             {
                 Log.Error(ex, "Failed to enqueue upload of {Filename} to {Username}: {Message}", filename, username, ex.Message);
 
-                if (!TryFail(id, exception: ex))
+                if (transferCreated && !TryFail(id, exception: ex))
                 {
                     Log.Error(ex, "Failed to clean up transfer {Id} after failed enqueue: {Message}", id, ex.Message);
                     throw;
@@ -1015,6 +1080,19 @@ namespace resonance.Transfers.Uploads
             }
         }
 
+        /// <inheritdoc/>
+        public List<Transfer> ListForRecovery()
+        {
+            using var context = ContextFactory.CreateDbContext();
+            return TransferListQuery.ListForRecovery(context, TransferDirection.Upload);
+        }
+
+        public List<Transfer> ListCapped(bool includeRemoved, bool activeOnly, int maxCompleted)
+        {
+            using var context = ContextFactory.CreateDbContext();
+            return TransferListQuery.ListCapped(context, TransferDirection.Upload, includeRemoved, activeOnly, maxCompleted);
+        }
+
         /// <summary>
         ///     Returns a list of all uploads matching the optional <paramref name="expression"/>.
         /// </summary>
@@ -1128,7 +1206,15 @@ namespace resonance.Transfers.Uploads
         {
             if (CancellationTokens.TryRemove(id, out var cts))
             {
-                cts.Cancel();
+                try
+                {
+                    cts.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // The upload completed after we removed its cancellation source.
+                }
+
                 return true;
             }
 
@@ -1306,51 +1392,57 @@ namespace resonance.Transfers.Uploads
         /// <param name="transfer">The transfer to upload.</param>
         private void StartUploadTask(Transfer transfer)
         {
-            var id = transfer.Id;
-            var username = transfer.Username;
-            var filename = transfer.Filename;
-
-            /*
-                Task.Run can fail due to thread pool exhaustion or OOM, and this *SHOULD* throw up the chain and
-                fail the enqueue request
-            */
-            _ = Task.Run(() => UploadAsync(transfer)).ContinueWith(task =>
+            // Reserve before scheduling so shutdown cannot miss work waiting for a thread.
+            var work = Work.Enter();
+            try
             {
-                if (task.IsCompletedSuccessfully)
+                _ = Task.Run(async () =>
                 {
-                    // UploadAsync returns null when it declined to do the work (the transfer was parked because the
-                    // user is offline, or an identical upload already holds the lock); neither is a completed upload,
-                    // and logging them as such would be both wrong and very noisy during a re-request storm
-                    if (task.Result is not null)
+                    using (work)
                     {
-                        Log.Information("Task for upload of {Filename} to {Username} completed successfully", filename, username);
+                        try
+                        {
+                            var result = await UploadAsync(transfer);
+                            if (result is not null)
+                            {
+                                Log.Information("Task for upload of {Filename} to {Username} completed successfully", transfer.Filename, transfer.Username);
+                            }
+                        }
+                        catch (Exception) when (Work.Token.IsCancellationRequested)
+                        {
+                            // Startup recovery dispositions interrupted transfers.
+                        }
+                        catch (Exception ex)
+                        {
+                            if (IsExpectedPeerFailure(ex))
+                            {
+                                Log.Warning("Task for upload of {Filename} to {Username} did not complete successfully: {Error}", transfer.Filename, transfer.Username, ex.Message);
+                            }
+                            else
+                            {
+                                Log.Error(ex, "Task for upload of {Filename} to {Username} did not complete successfully: {Error}", transfer.Filename, transfer.Username, ex.Message);
+                            }
+
+                            try
+                            {
+                                if (!TryFail(transfer.Id, ex))
+                                {
+                                    Log.Error(ex, "Failed to clean up transfer {Id} after failed execution", transfer.Id);
+                                }
+                            }
+                            catch (Exception cleanupError)
+                            {
+                                Log.Error(cleanupError, "Failed to clean up transfer {Id}", transfer.Id);
+                            }
+                        }
                     }
-
-                    return;
-                }
-
-                /*
-                    things that can cause us to arrive here:
-
-                    * file not found (moved, deleted somehow)
-                    * transfer record deleted somehow
-                    * transfer record updated so that it's no longer in Queued | Locally
-                    * Soulseek.NET already tracking an identical upload (slskd <> Soulseek.NET desync)
-                */
-                if (IsExpectedPeerFailure(task.Exception))
-                {
-                    Log.Warning("Task for upload of {Filename} to {Username} did not complete successfully: {Error}", filename, username, task.Exception.Message);
-                }
-                else
-                {
-                    Log.Error(task.Exception, "Task for upload of {Filename} to {Username} did not complete successfully: {Error}", filename, username, task.Exception.Message);
-                }
-
-                if (!TryFail(id, task.Exception))
-                {
-                    Log.Error(task.Exception, "Failed to clean up transfer {Id} after failed execution: {Message}", id, task.Exception.Message);
-                }
-            });
+                });
+            }
+            catch
+            {
+                work.Dispose();
+                throw;
+            }
         }
 
         private bool TryFail(Guid id, string exception, TransferStates state)

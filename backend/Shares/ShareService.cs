@@ -353,7 +353,7 @@ namespace resonance.Shares
                     tagFile.Save();
                     break;
                 }
-                catch (System.IO.IOException) when (attempt < retryAttempts)
+                catch (System.IO.IOException ex) when (attempt < retryAttempts && FileSharingViolation.Is(ex))
                 {
                     Log.Debug(
                         "Tag write for '{File}' hit a locked file (attempt {Attempt}/{Total}) — retrying.",

@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+"""Manage the local Resonance backend, web UI and Expo Metro server."""
+import argparse
+import fcntl
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+
+ROOT = Path(__file__).resolve().parent.parent
+RUNTIME = ROOT / '.dev'
+SERVICES = ('backend', 'web', 'mobile')
+SCRIPT = str(Path(__file__).resolve())
+
+
+def load(path, default):
+    return json.loads(path.read_text()) if path.exists() else default
+
+
+def save(path, value):
+    temporary = path.with_suffix('.tmp')
+    temporary.write_text(json.dumps(value, indent=2) + '\n')
+    temporary.replace(path)
+
+
+def alive(pid, service):
+    if not isinstance(pid, int) or pid <= 1:
+        return False
+    result = subprocess.run(['ps', '-p', str(pid), '-o', 'command='], capture_output=True, text=True)
+    return result.returncode == 0 and f'{SCRIPT} _serve {service}' in result.stdout
+
+
+def serve(service):
+    spec = load(RUNTIME / f'{service}.command.json', {})
+    child = subprocess.Popen(spec['command'], cwd=spec['cwd'], env={**os.environ, **spec['env']})
+    # The manager signals our dedicated process group, including the child and its workers.
+    signal.signal(signal.SIGTERM, lambda *_: None)
+    signal.signal(signal.SIGINT, lambda *_: None)
+    return child.wait()
+
+
+def specifications(config):
+    dotnet = config.get('dotnet') or shutil.which('dotnet')
+    if not dotnet:
+        # Also recognise SDKs installed in conventional per-user locations.
+        candidates = [Path.home() / '.dotnet/dotnet', Path('/usr/local/share/dotnet/dotnet')]
+        dotnet = next((str(p) for p in candidates if p.is_file()), None)
+    npm = shutil.which('npm')
+    backend_port, web_port, metro_port = (int(config[k]) for k in ('backendPort', 'webPort', 'metroPort'))
+    app_dir = Path(config['appDir']).expanduser()
+    if not app_dir.is_absolute():
+        app_dir = ROOT / app_dir
+    return {
+        'backend': {'port': backend_port, 'path': '/api/v0/session/initialized', 'cwd': str(ROOT),
+                    'command': [dotnet or 'dotnet', 'watch', '--project', 'backend/resonance.csproj', '--non-interactive', '--no-hot-reload', 'run', '--no-launch-profile', '--',
+                                '--app-dir', str(app_dir), '--http-port', str(backend_port),
+                                '--http-ip-address', config.get('bindAddress', '127.0.0.1'), '--no-https', '--content-path', '../../../../frontend/build'],
+                    'env': {'ASPNETCORE_ENVIRONMENT': 'Development', 'DOTNET_USE_POLLING_FILE_WATCHER': '1'}},
+        'web': {'port': web_port, 'path': '/', 'cwd': str(ROOT / 'frontend'),
+                'command': [npm or 'npm', 'start'], 'env': {'BROWSER': 'none', 'HOST': config.get('bindAddress', '127.0.0.1'), 'PORT': str(web_port),
+                'REACT_APP_API_URL': '/api/v0', 'REACT_APP_HUB_URL': '/hub',
+                'RESONANCE_DEV_API_TARGET': f'http://127.0.0.1:{backend_port}'}},
+        'mobile': {'port': metro_port, 'path': '/status', 'cwd': str(ROOT / 'mobile'),
+                   'command': [npm or 'npm', 'exec', '--', 'expo', 'start', '--dev-client', '--port', str(metro_port)],
+                   'env': {'EXPO_NO_TELEMETRY': '1'}},
+    }
+
+
+def ready(spec):
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{spec['port']}{spec['path']}", timeout=2) as response:
+            return response.status == 200
+    except (OSError, urllib.error.URLError):
+        return False
+
+
+def port_busy(port):
+    with socket.socket() as sock:
+        return sock.connect_ex(('127.0.0.1', port)) == 0
+
+
+def stop(service, state):
+    pid = state.get(service, {}).get('pid')
+    if alive(pid, service):
+        os.killpg(pid, signal.SIGTERM)
+        deadline = time.monotonic() + 15
+        while alive(pid, service) and time.monotonic() < deadline:
+            time.sleep(.2)
+        if alive(pid, service):
+            os.killpg(pid, signal.SIGKILL)
+        print(f'{service}: stopped')
+    else:
+        print(f'{service}: already stopped')
+    state.pop(service, None)
+    save(RUNTIME / 'state.json', state)
+
+
+def main():
+    if len(sys.argv) == 3 and sys.argv[1] == '_serve' and sys.argv[2] in SERVICES:
+        return serve(sys.argv[2])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=('start', 'stop', 'restart', 'status'))
+    parser.add_argument('service', choices=('all', *SERVICES), nargs='?', default='all')
+    args = parser.parse_args()
+    RUNTIME.mkdir(mode=0o700, exist_ok=True)
+    with (RUNTIME / 'manager.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        config_path = RUNTIME / 'config.json'
+        config = load(config_path, {'backendPort': 55450, 'webPort': 3000, 'metroPort': 8081, 'appDir': '.dev/app'})
+        if not config_path.exists():
+            save(config_path, config)
+        specs = specifications(config)
+        state = load(RUNTIME / 'state.json', {})
+        selected = (('backend', 'web') if config.get('serverRuntime') == 'server' else SERVICES) if args.service == 'all' else (args.service,)
+        docker_result = 0
+        if config.get('serverRuntime') in ('remote', 'server'):
+            remote_services = [item for item in selected if item in ('backend', 'web')]
+            if remote_services:
+                helper = 'bin/dev-server' if config['serverRuntime'] == 'server' else 'bin/dev-remote'
+                docker_result = subprocess.run([str(ROOT / helper), args.action, *remote_services], cwd=ROOT).returncode
+            selected = tuple(item for item in selected if item == 'mobile')
+            if not selected:
+                return docker_result
+        if config.get('serverRuntime') == 'docker':
+            docker_services = ['web' if item == 'web' else 'backend' for item in selected if item in ('backend', 'web')]
+            if docker_services:
+                docker_result = subprocess.run([str(ROOT / 'bin/dev-container'), args.action, *docker_services], cwd=ROOT).returncode
+            selected = tuple(item for item in selected if item == 'mobile')
+            if not selected:
+                return docker_result
+        if config.get('serverRuntime') == 'remote' and 'mobile' in selected:
+            mirror_action = 'stop-mobile-sync' if args.action in ('stop', 'restart') else None
+            if mirror_action:
+                subprocess.run([str(ROOT / 'bin/dev-remote'), mirror_action], cwd=ROOT, check=True)
+            if args.action in ('start', 'restart'):
+                subprocess.run([str(ROOT / 'bin/dev-remote'), 'watch-mobile'], cwd=ROOT, check=True)
+        if args.action in ('stop', 'restart'):
+            for service in reversed(selected):
+                stop(service, state)
+        if args.action == 'stop':
+            return docker_result
+        failed = bool(docker_result)
+        for service in selected:
+            spec = specs[service]
+            pid = state.get(service, {}).get('pid')
+            running = alive(pid, service)
+            if args.action == 'status':
+                print(f"{service}: {'ready' if running and ready(spec) else 'starting' if running else 'stopped'} (port {spec['port']})")
+                continue
+            if running and ready(spec):
+                print(f'{service}: already running')
+                continue
+            if not running:
+                if port_busy(spec['port']):
+                    print(f"{service}: port {spec['port']} belongs to another process; leaving it untouched.", file=sys.stderr)
+                    failed = True
+                    continue
+                if not shutil.which(spec['command'][0]):
+                    print(f"{service}: executable missing: {spec['command'][0]}. Set dotnet in .dev/config.json if needed.", file=sys.stderr)
+                    failed = True
+                    continue
+                if service == 'backend' and not (ROOT / 'frontend/build').exists():
+                    (ROOT / 'frontend/build').mkdir(parents=True)
+                save(RUNTIME / f'{service}.command.json', spec)
+                with (RUNTIME / f'{service}.log').open('ab') as log:
+                    process = subprocess.Popen([sys.executable, SCRIPT, '_serve', service], cwd=ROOT,
+                                               stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
+                pid = process.pid
+                state[service] = {'pid': pid}
+                save(RUNTIME / 'state.json', state)
+            print(f'{service}: starting; log .dev/{service}.log', flush=True)
+            deadline = time.monotonic() + 180
+            while time.monotonic() < deadline:
+                if ready(spec):
+                    print(f"{service}: ready at http://localhost:{spec['port']}", flush=True)
+                    break
+                if not alive(pid, service):
+                    print(f'{service}: exited; inspect .dev/{service}.log', file=sys.stderr)
+                    failed = True
+                    break
+                time.sleep(1)
+            else:
+                print(f'{service}: still starting; inspect .dev/{service}.log', file=sys.stderr)
+                failed = True
+        return int(failed)
+
+
+if __name__ == '__main__':
+    sys.exit(main())

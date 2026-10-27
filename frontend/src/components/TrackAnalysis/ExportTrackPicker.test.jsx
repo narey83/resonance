@@ -43,6 +43,21 @@ describe('Export folder picker', () => {
       ReactDOM.unmountComponentAtNode(container);
     });
   });
+  it('starts expanded and preserves selection across browse views', () => {
+    expect(container.querySelector('[aria-expanded="true"]')).not.toBeNull();
+    expect(container.querySelectorAll('.usb-picker-track')).toHaveLength(3);
+    check('library', true);
+    const picker = container.querySelector('select');
+    for (const view of ['album', 'artist', 'tracks', 'folder']) {
+      act(() => {
+        Simulate.change(picker, {
+          target: { value: view },
+        });
+      });
+      expect(selected).toHaveLength(3);
+      expect(container.querySelectorAll('.usb-picker-track')).toHaveLength(3);
+    }
+  });
   it('groups nested folders beneath their shared library root', () => {
     expect.hasAssertions();
     const tree = exportFolderTree(tracks);

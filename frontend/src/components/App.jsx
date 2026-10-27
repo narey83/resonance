@@ -47,9 +47,16 @@ import { TagEditActivityProvider } from '../context/TagEditActivityContext';
 import * as applicationAPI from '../lib/application';
 import { applyBlockedUsers } from '../lib/blockedUsers';
 import * as chatAPI from '../lib/chat';
-import { emitPrivateMessage } from '../lib/chatEvents';
+import {
+  emitPrivateMessage,
+  emitRoomMessage,
+  onPrivateMessage,
+  onRoomMessage,
+} from '../lib/chatEvents';
 import * as eventsAPI from '../lib/events';
 import { createApplicationHubConnection } from '../lib/hubFactory';
+import { createHubRetryLoop } from '../lib/hubRetryLoop';
+import { createMessageBadgeSync } from '../lib/messageBadgeSync';
 import * as networkAPI from '../lib/network';
 import {
   formatNotification,
@@ -66,6 +73,7 @@ import * as transfersAPI from '../lib/transfers';
 import { parseUtcDate } from '../lib/util';
 import * as ytdlpAPI from '../lib/ytdlp';
 import AppContext from './AppContext';
+import AppsIntegrations from './AppsIntegrations/AppsIntegrations';
 import Browse from './Browse/Browse';
 import Chat from './Chat/Chat';
 import ConnectionScreen from './ConnectionScreen';
@@ -77,7 +85,6 @@ import Library from './Library/Library';
 import LoginForm from './LoginForm';
 import MapPage from './Map';
 import MediaPlayer from './MediaPlayer';
-import MetadataLookupWatcher from './MetadataLookup/MetadataLookupWatcher';
 import MusicWorkspaceHeader from './MusicWorkspaceHeader';
 import NotificationCentre from './Notifications/NotificationCentre';
 import Overview from './Overview';
@@ -115,11 +122,11 @@ import {
   MessageCircle,
   MessageSquare,
   Palette,
+  Plug,
   Search,
   Settings,
   Tag,
   Upload,
-  Users as UsersIcon,
   Wifi,
 } from 'lucide-react';
 import React, {
@@ -295,6 +302,7 @@ const getPage = () => {
 // ── App ───────────────────────────────────────────────────────────────────────
 
 const App = () => {
+  const page = getPage();
   // ── Auth / connection state ─────────────────────────────────────────────────
   // Do NOT initialise from storage — hub must not start until the session is
   // confirmed valid by doInit (mirrors the original class component behaviour).
@@ -336,6 +344,18 @@ const App = () => {
     loadNotificationSettings,
   );
   const [roomUnread, setRoomUnread] = useState(0);
+  // Share per-room counts between the room list and navigation.
+  const [roomUnreadCounts, setRoomUnreadCounts] = useState({});
+  const readRoomRef = useRef(null);
+  const badgeSyncRef = useRef(null);
+  const handleConversationRead = useCallback(() => {
+    badgeSyncRef.current?.refresh();
+  }, []);
+  const handleRoomRead = useCallback((roomName) => {
+    if (readRoomRef.current === roomName) return;
+    readRoomRef.current = roomName;
+    badgeSyncRef.current?.refresh();
+  }, []);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [theme, setTheme] = useState(
     () =>
@@ -494,7 +514,7 @@ const App = () => {
         const status = await session.getStartup();
         if (cancelled) return;
         setStartupStatus(status);
-        if (!status.ready) timer = setTimeout(pollStartup, 1_000);
+        timer = setTimeout(pollStartup, status.ready ? 15_000 : 1_000);
       } catch {
         if (!cancelled) timer = setTimeout(pollStartup, 2_000);
       }
@@ -581,8 +601,6 @@ const App = () => {
     // Distinguishes deliberate hub.stop() (logout, unmount, retry-now) from a
     // genuine connection loss in onclose.
     let intentionalStop = false;
-    let startRetryTimer = null;
-    let startAttempt = 0;
 
     const markReconnecting = (attempt) => {
       setConnection((c) => ({
@@ -596,25 +614,12 @@ const App = () => {
       onRetry: (context) => markReconnecting(context.previousRetryCount + 1),
     });
 
-    // Manual start loop covering the two cases automatic reconnect does not:
-    // a failed initial start, and onclose. Retries until it succeeds.
-    const startWithRetry = async () => {
-      try {
-        await hub.start();
-        if (intentionalStop) return;
-        startAttempt = 0;
-
-        setConnection({ attempt: 0, since: null, status: 'online' });
-      } catch {
-        if (intentionalStop) return;
-        startAttempt += 1;
-        markReconnecting(startAttempt);
-        startRetryTimer = setTimeout(
-          startWithRetry,
-          Math.min(2 ** startAttempt * 500, 30_000),
-        );
-      }
-    };
+    const retryLoop = createHubRetryLoop({
+      start: () => hub.start(),
+      onRetry: markReconnecting,
+      onOnline: () =>
+        setConnection({ attempt: 0, since: null, status: 'online' }),
+    });
 
     let pendingState = null;
     let pendingOptions = null;
@@ -670,20 +675,23 @@ const App = () => {
     });
 
     hub.onreconnecting(() => {
-      markReconnecting(1);
+      retryLoop.reconnecting();
     });
 
     hub.onclose(() => {
       if (intentionalStop) return;
       // Automatic reconnect gave up (or the connection was force-closed);
       // fall back to the manual start loop so we never dead-end.
-      markReconnecting(1);
-      startWithRetry();
+      retryLoop.closed();
     });
 
     hub.onreconnected(() => {
-      setConnection({ attempt: 0, since: null, status: 'online' });
+      emitPrivateMessage({ reconcile: true });
+      retryLoop.connected();
     });
+
+    hub.on('CONVERSATION_CHANGED', (detail) => emitPrivateMessage(detail));
+    hub.on('ROOM_MESSAGE', (detail) => emitRoomMessage(detail));
 
     hub.on('PRIVATE_MESSAGE', ({ message, username }) => {
       emitPrivateMessage({ message, username });
@@ -758,7 +766,7 @@ const App = () => {
 
     // Force an immediate attempt instead of waiting out the retry backoff.
     hubRetryRef.current = async () => {
-      clearTimeout(startRetryTimer);
+      retryLoop.pause();
       intentionalStop = true;
       try {
         await hub.stop();
@@ -767,16 +775,16 @@ const App = () => {
       }
 
       intentionalStop = false;
-      startWithRetry();
+      retryLoop.retryNow();
     };
 
-    startWithRetry();
+    retryLoop.start();
 
     // Cleanup: hub stops when isLoggedIn becomes false (logout) or component unmounts.
     return () => {
       intentionalStop = true;
       clearTimeout(flushTimeout);
-      clearTimeout(startRetryTimer);
+      retryLoop.dispose();
       hubRetryRef.current = null;
       hub.stop().catch(() => {});
     };
@@ -832,12 +840,8 @@ const App = () => {
 
     load();
     loadNetworkInfo();
-    // Poll network info so the VPN indicator reflects connect/disconnect
-    // without needing a full page reload.
-    const networkInterval = setInterval(loadNetworkInfo, 30_000);
     return () => {
       cancelled = true;
-      clearInterval(networkInterval);
     };
   }, [isLoggedIn]);
 
@@ -847,7 +851,10 @@ const App = () => {
   useEffect(() => {
     if (!isLoggedIn) return undefined;
 
+    let inFlight = false;
     const poll = async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
         const [downloadGroups, uploadGroups, ytdlpJobs] = await Promise.all([
           transfersAPI.getAll({ direction: 'download' }).catch(() => null),
@@ -908,6 +915,9 @@ const App = () => {
         });
       } catch {
         /* silently ignore */
+      } finally {
+        // eslint-disable-next-line require-atomic-updates -- Only the poll that set this flag can release it.
+        inFlight = false;
       }
     };
 
@@ -922,58 +932,38 @@ const App = () => {
   useEffect(() => {
     if (!isLoggedIn) return undefined;
 
-    const poll = async () => {
-      try {
-        const activePage = getPage();
-
-        const [conversations, joinedRooms] = await Promise.all([
-          chatAPI.getAll().catch(() => null),
-          roomsAPI.getJoined().catch(() => null),
-        ]);
-
-        const unreadChats = Array.isArray(conversations)
-          ? conversations.filter((c) => c.hasUnAcknowledgedMessages).length
-          : 0;
-
-        let unreadRooms = 0;
-        if (Array.isArray(joinedRooms) && joinedRooms.length > 0) {
-          const messageCounts = await Promise.all(
-            joinedRooms.map(async (room) => {
-              try {
-                const msgs = await roomsAPI.getMessages({ roomName: room });
-                return { room, count: Array.isArray(msgs) ? msgs.length : 0 };
-              } catch {
-                return { room, count: 0 };
-              }
-            }),
-          );
-
-          for (const { count, room } of messageCounts) {
-            if (activePage === 'rooms' || !(room in roomBaselines.current)) {
-              roomBaselines.current[room] = count;
-            } else {
-              unreadRooms += Math.max(0, count - roomBaselines.current[room]);
-            }
-          }
-
-          for (const room of Object.keys(roomBaselines.current)) {
-            if (!joinedRooms.includes(room)) delete roomBaselines.current[room];
-          }
-        }
-
+    const sync = createMessageBadgeSync({
+      getConversations: chatAPI.getAll,
+      getRoomCounts: roomsAPI.getMessageCounts,
+      getActiveRoom: () => readRoomRef.current,
+      getPage,
+      isVisible: () => !document.hidden,
+      baselines: roomBaselines.current,
+      update: ({ chats, roomUnreadCounts: counts, rooms }) =>
         unstable_batchedUpdates(() => {
-          setChatUnread(unreadChats);
-          setRoomUnread(unreadRooms);
-        });
-      } catch {
-        /* silently ignore */
-      }
+          if (chats !== undefined) setChatUnread(chats);
+          if (rooms !== undefined) setRoomUnread(rooms);
+          if (counts !== undefined) setRoomUnreadCounts(counts);
+        }),
+    });
+    badgeSyncRef.current = sync;
+    const refresh = () => sync.refresh();
+    const unsubscribeChat = onPrivateMessage(refresh);
+    const unsubscribeRoom = onRoomMessage(refresh);
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('popstate', refresh);
+    refresh();
+    const id = setInterval(refresh, 30_000);
+    return () => {
+      clearInterval(id);
+      unsubscribeChat();
+      unsubscribeRoom();
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener('popstate', refresh);
+      sync.stop();
+      badgeSyncRef.current = null;
     };
-
-    poll();
-    const id = setInterval(poll, 5_000);
-    return () => clearInterval(id);
-  }, [isLoggedIn]);
+  }, [isLoggedIn, page]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -1012,18 +1002,15 @@ const App = () => {
   }, []);
 
   const handleToggleNotificationPanel = useCallback(() => {
-    setNotificationPanelOpen((previous) => {
-      const opening = !previous;
-      if (opening)
-        localStorage.setItem(
-          'resonance-notifications-last-read',
-          new Date().toISOString(),
-        );
-      setNotifications((ns) =>
-        opening ? ns.map((n) => ({ ...n, read: true })) : ns,
-      );
-      return opening;
-    });
+    setNotificationPanelOpen((previous) => !previous);
+  }, []);
+
+  const handleMarkAllNotificationsRead = useCallback(() => {
+    localStorage.setItem(
+      'resonance-notifications-last-read',
+      new Date().toISOString(),
+    );
+    setNotifications((previous) => previous.map((n) => ({ ...n, read: true })));
   }, []);
 
   const handleClearNotifications = useCallback(() => {
@@ -1172,7 +1159,6 @@ const App = () => {
   const { scanPending: pendingShareRescan } = shares;
   const { mode } = relay;
   const isAgent = mode === 'Agent';
-  const page = getPage();
   const musicWorkspace = [
     'library',
     'trackanalysis',
@@ -1205,7 +1191,7 @@ const App = () => {
             <StatusStrip
               brand={
                 <div className="status-brand">
-                  <ResonanceMark size={18} />
+                  <ResonanceMark size={22} />
                   <span className="status-brand-name">Resonance</span>
                 </div>
               }
@@ -1218,6 +1204,7 @@ const App = () => {
               onLogout={handleLogout}
               server={server}
               shares={shares}
+              startupStatus={startupStatus}
               system={system}
               uploads={uploads}
               upnp={applicationState?.upnp}
@@ -1242,7 +1229,7 @@ const App = () => {
               <StatusStrip
                 brand={
                   <div className="status-brand">
-                    <ResonanceMark size={18} />
+                    <ResonanceMark size={22} />
                     <span className="status-brand-name">Resonance</span>
                     {version.isCanary && (
                       <span className="app-nav-brand-badge">canary</span>
@@ -1258,6 +1245,7 @@ const App = () => {
                 onLogout={handleLogout}
                 server={server}
                 shares={shares}
+                startupStatus={startupStatus}
                 system={system}
                 uploads={uploads}
                 upnp={applicationState?.upnp}
@@ -1378,23 +1366,17 @@ const App = () => {
                         </div>
                         <NavItem
                           active={page === 'rooms'}
-                          badge={page === 'rooms' ? 0 : roomUnread}
+                          badge={roomUnread}
                           icon={MessageSquare}
                           label="Rooms"
                           to={`${urlBase}/rooms`}
                         />
                         <NavItem
                           active={page === 'chat'}
-                          badge={page === 'chat' ? 0 : chatUnread}
+                          badge={chatUnread}
                           icon={MessageCircle}
                           label="Chat"
                           to={`${urlBase}/chat`}
-                        />
-                        <NavItem
-                          active={page === 'users'}
-                          icon={UsersIcon}
-                          label="Users"
-                          to={`${urlBase}/users`}
                         />
                         <NavItem
                           active={page === 'browse'}
@@ -1474,6 +1456,14 @@ const App = () => {
                       label="Notifications"
                       onClick={handleToggleNotificationPanel}
                     />
+                    {!isAgent && (
+                      <NavItem
+                        active={page === 'apps'}
+                        icon={Plug}
+                        label="Apps & integrations"
+                        to={`${urlBase}/apps`}
+                      />
+                    )}
                     <NavItem
                       active={page === 'system'}
                       icon={Settings}
@@ -1542,7 +1532,9 @@ const App = () => {
               </div>
 
               <main className="app-main">
-                {musicWorkspace && <MusicWorkspaceHeader page={page} />}
+                {musicWorkspace && page !== 'library' && (
+                  <MusicWorkspaceHeader page={page} />
+                )}
                 <div className="app-content">
                   <AppContext.Provider value={appContextValue}>
                     {isAgent ? (
@@ -1600,13 +1592,20 @@ const App = () => {
                           render={(props) => (
                             <Chat
                               {...props}
+                              onConversationRead={handleConversationRead}
                               state={applicationState}
                             />
                           )}
                         />
                         <Route
                           path={`${urlBase}/rooms`}
-                          render={(props) => <Rooms {...props} />}
+                          render={(props) => (
+                            <Rooms
+                              {...props}
+                              onRoomRead={handleRoomRead}
+                              unreadCounts={roomUnreadCounts}
+                            />
+                          )}
                         />
                         <Route
                           path={`${urlBase}/uploads`}
@@ -1642,6 +1641,10 @@ const App = () => {
                         <Route
                           path={`${urlBase}/library`}
                           render={(props) => <Library {...props} />}
+                        />
+                        <Route
+                          path={`${urlBase}/apps`}
+                          render={() => <AppsIntegrations />}
                         />
                         <Route
                           path={`${urlBase}/networklink`}
@@ -1706,13 +1709,12 @@ const App = () => {
 
           {connectionOverlay}
 
-          <MetadataLookupWatcher />
-
           {notificationPanelOpen && (
             <NotificationCentre
               notifications={notifications}
               onClear={handleClearNotifications}
               onClose={handleToggleNotificationPanel}
+              onMarkAllRead={handleMarkAllNotificationsRead}
               onSettingsChange={handleNotificationSettingsChange}
               settings={notificationSettings}
             />

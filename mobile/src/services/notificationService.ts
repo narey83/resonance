@@ -35,16 +35,16 @@
  * then rebuild the dev client.
  */
 
+import { startMessagingSync } from './messagingSync';
+import { maintainServerConnection } from '../lib/serverConnection';
+import { getApplicationState } from '../api/application';
+import { sessionGuard } from '../lib/sessionScope';
 import { useEffect } from 'react';
-import { AppState, Platform } from 'react-native';
 import { requireOptionalNativeModule } from 'expo';
-import { HubConnectionState } from '@microsoft/signalr';
 import { useAppSettings } from '../store/appSettingsStore';
-import { useAuthStore, getDeviceId } from '../store/auth';
+import { useAuthStore } from '../store/auth';
 import { createApplicationHubConnection } from '../api/applicationHub';
 import { attachHubLogging, remoteLog } from '../api/remoteLogger';
-import { registerPushToken } from '../api/pushTokens';
-import { useConversationStore } from '../store/conversationStore';
 import { useRoomStore } from '../store/roomStore';
 import { useBlockedUsersStore } from '../store/blockedUsersStore';
 import type { BlockedUsersPayload } from '../api/blockedUsers';
@@ -134,8 +134,7 @@ export async function notifyRoomMention(roomName: string, username: string, mess
   await send(`Mentioned in ${roomName}`, `${username}: ${message}`);
 }
 
-// Administrators only -- the backend's FCM push is already filtered to admin accounts, and the
-// hub path below is gated on isAdmin, so a non-admin never reaches this.
+// Restart alerts are only shown to administrators.
 export async function notifyRestartRequired() {
   const { notifications } = useAppSettings.getState();
   if (!notifications.restartRequired) return;
@@ -148,45 +147,10 @@ export async function notifyUserBlocked(username: string, ip: string) {
   await send('Ban evasion blocked', `"${username}" was auto-blocked — same IP (${ip}) as a blocked user.`);
 }
 
-// Hook — mount once at the top of the authenticated app to register this device's FCM push
-// token with the backend, so a library change can reach it via a background push even while
-// the app is backgrounded or killed (the SignalR hub in libraryActivityStore only reaches a
-// live, connected app). Re-registers on token rotation (device re-registration, app reinstall).
-export const usePushNotifications = () => {
-  useEffect(() => {
-    let subscription: { remove: () => void } | null = null;
-    let cancelled = false;
-
-    const register = async (token: string) => {
-      try {
-        const deviceId = await getDeviceId();
-        await registerPushToken(token, deviceId, Platform.OS);
-      } catch {}
-    };
-
-    (async () => {
-      const N = await getModule();
-      if (!N || cancelled) return;
-
-      try {
-        const { data } = await N.getDevicePushTokenAsync();
-        if (!cancelled) await register(data);
-      } catch {}
-
-      if (cancelled) return;
-      subscription = N.addPushTokenListener((newToken) => { register(newToken.data); });
-    })();
-
-    return () => {
-      cancelled = true;
-      subscription?.remove();
-    };
-  }, []);
-};
-
 // Hook — mount once at the top of the authenticated app to trigger native notifications
 export const useNotificationHub = () => {
   useEffect(() => {
+    const current = sessionGuard();
     const hub = createApplicationHubConnection();
     if (!hub) return;
 
@@ -197,34 +161,32 @@ export const useNotificationHub = () => {
 
     hub.on('OPTIONS', () => {});
 
-    // Re-fetch conversations on any incoming private message so all logged-in
-    // sessions stay in sync (messages sent from the web will appear here too).
-    // Also refresh the thread itself if it's already loaded, otherwise a
-    // conversation open on screen never sees the new message until reopened.
+    const messaging = startMessagingSync(hub, current);
     hub.on('PRIVATE_MESSAGE', ({ username, message }: { username: string; message: string }) => {
-      useConversationStore.getState().loadConversations();
-      if (username in useConversationStore.getState().messages) {
-        useConversationStore.getState().loadMessages(username);
-      }
+      if (!current()) return;
       notifyPrivateMessage(username, message);
     });
 
     hub.on('SESSION_REVOKED', (revokedIds: string[]) => {
+      if (!current()) return;
       const { sessionId, clearTokens } = useAuthStore.getState();
       if (sessionId && revokedIds.includes(sessionId)) {
-        clearTokens();
+        void clearTokens().catch(() => {});
       }
     });
 
     hub.on('DOWNLOAD_DIRECTORY_COMPLETE', ({ directoryName }: { directoryName: string }) => {
+      if (!current()) return;
       notifyDownloadComplete(directoryName);
     });
 
     hub.on('UPLOAD_FILE_COMPLETE', ({ filename }: { filename: string }) => {
+      if (!current()) return;
       notifyUploadComplete(filename);
     });
 
-    hub.on('STATE', (state: { shares?: { scanning?: boolean }; pendingRestart?: boolean }) => {
+    const applyState = (state: { shares?: { scanning?: boolean }; pendingRestart?: boolean }) => {
+      if (!current()) return;
       const scanning = state?.shares?.scanning ?? false;
 
       if (prevScanning === true && !scanning) {
@@ -233,53 +195,44 @@ export const useNotificationHub = () => {
 
       prevScanning = scanning;
 
-      // Only the false -> true edge, and only for admins (the restart endpoint refuses
-      // everyone else). prevPendingRestart starts null so the first STATE after connecting
-      // seeds it without notifying -- otherwise reopening the app with a restart already
-      // outstanding would alert every time.
+      // Include an outstanding restart on connection/resume, since it may have happened
+      // while disconnected. Suppress duplicates for the rest of this login.
       const pendingRestart = state?.pendingRestart ?? false;
 
-      if (prevPendingRestart === false && pendingRestart && useAuthStore.getState().isAdmin) {
+      if (prevPendingRestart !== true && pendingRestart && useAuthStore.getState().isAdmin) {
         notifyRestartRequired();
       }
 
       prevPendingRestart = pendingRestart;
-    });
+    };
+    hub.on('STATE', applyState);
 
     hub.on('BROWSED', () => {});
     hub.on('BLOCKED_USERS', (payload: BlockedUsersPayload) => {
+      if (!current()) return;
       useBlockedUsersStore.getState().apply(payload);
     });
     hub.on('BLOCKED_USER_ALERT', ({ username, ip }: { username: string; ip: string }) => {
+      if (!current()) return;
       notifyUserBlocked(username, ip);
     });
     hub.on('ROOM_MENTION', ({ roomName, username, message }: { roomName: string; username: string; message: string }) => {
+      if (!current()) return;
       useRoomStore.getState().noteMention(roomName);
-      // Keep an open room thread current — rooms have no per-message hub push,
-      // so a mention is the one chance to refresh without waiting for a poll.
-      if (roomName in useRoomStore.getState().messages) {
-        useRoomStore.getState().loadMessages(roomName).catch(() => {});
-      }
       notifyRoomMention(roomName, username, message);
     });
 
     // Messages that arrived while the app was closed only reach the tab badge
     // via a fetch — the hub replays nothing on connect.
-    useConversationStore.getState().loadConversations();
+    messaging.reconcile();
 
-    const startPromise = hub.start().catch((err: unknown) => {
+    const stopConnection = maintainServerConnection(hub, current, () => {
+      messaging.reconcile();
+      // Refresh even if SignalR still considers its suspended connection healthy.
+      void getApplicationState().then(applyState).catch(() => {});
+    }, (err) => {
       remoteLog('error', `[hub:application] start failed — ${err instanceof Error ? err.message : String(err)}`);
     });
-
-    const appStateSub = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active' && hub.state === HubConnectionState.Disconnected) {
-        hub.start().catch(() => {});
-      }
-    });
-
-    return () => {
-      appStateSub.remove();
-      startPromise.then(() => hub.stop().catch(() => {}));
-    };
+    return () => { messaging.stop(); stopConnection(); };
   }, []);
 };

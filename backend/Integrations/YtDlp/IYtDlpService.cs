@@ -59,6 +59,8 @@ public interface IYtDlpService : IHostedService
     Task<(string? YtDlpVersion, string? FfmpegVersion)> GetVersionsAsync(CancellationToken cancellationToken = default);
     Task<(string? Current, string? Latest, bool UpdateAvailable)> CheckForUpdateAsync(CancellationToken cancellationToken = default);
     Task<string> UpdateYtDlpAsync(CancellationToken cancellationToken = default);
+    Task<(string? Current, string? Latest)> GetJavaScriptRuntimeVersionAsync(bool check, CancellationToken cancellationToken = default);
+    Task<string> UpdateJavaScriptRuntimeAsync(CancellationToken cancellationToken = default);
     Task<(int Updated, int Failed, int Skipped)> BackfillDurationsAsync(CancellationToken cancellationToken = default);
     Task ReconcileJobAsync(Guid jobId);
 

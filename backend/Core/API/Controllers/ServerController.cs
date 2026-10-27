@@ -48,9 +48,6 @@ namespace resonance.Core.API
     using Microsoft.AspNetCore.Http;
     using Microsoft.AspNetCore.Mvc;
     using resonance.Configuration;
-    using SixLabors.ImageSharp;
-    using SixLabors.ImageSharp.Formats.Jpeg;
-    using SixLabors.ImageSharp.Processing;
     using Soulseek;
 
     /// <summary>
@@ -113,6 +110,11 @@ namespace resonance.Core.API
             {
                 return Forbid();
             }
+
+            StateMutator.SetValue(state => state with
+            {
+                Server = state.Server with { LastConnectionErrorCode = null },
+            });
 
             // if the watchdog is already enabled, we're already attempting to connect. the user might have changed something
             // or perhaps is just being impatient; either way, restart the retry loop so they can see results faster
@@ -248,10 +250,39 @@ namespace resonance.Core.API
         [AllowAnonymous]
         [ProducesResponseType(200)]
         [ProducesResponseType(404)]
-        public IActionResult GetPicture()
+        public IActionResult GetPicture([FromQuery] int? size)
         {
             var path = ManagedPicturePath;
-            return System.IO.File.Exists(path) ? PhysicalFile(path, "image/jpeg") : NotFound();
+            if (!System.IO.File.Exists(path))
+            {
+                return NotFound();
+            }
+
+            var info = new System.IO.FileInfo(path);
+            var pixels = resonance.Common.ArtworkResizer.Bucket(size);
+            var cache = HttpContext.RequestServices.GetService(typeof(Microsoft.Extensions.Caching.Memory.IMemoryCache)) as Microsoft.Extensions.Caching.Memory.IMemoryCache;
+            var key = $"profile-art:v2:{path}:{info.LastWriteTimeUtc.Ticks}:{info.Length}:{pixels}";
+            byte[] bytes;
+            if (cache?.TryGetValue(key, out object cached) == true && cached is byte[] stored)
+            {
+                bytes = stored;
+            }
+            else
+            {
+                bytes = resonance.Common.ArtworkResizer.ResizeToJpeg(System.IO.File.ReadAllBytes(path), pixels);
+                if (cache != null)
+                {
+                    using var entry = cache.CreateEntry(key);
+                    entry.Value = bytes;
+                    entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(1);
+                }
+            }
+
+            Response.Headers.CacheControl = "private, max-age=0, must-revalidate";
+            return new FileContentResult(bytes, "image/jpeg")
+            {
+                EntityTag = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))}\""),
+            };
         }
 
         /// <summary>
@@ -291,17 +322,11 @@ namespace resonance.Core.API
 
             try
             {
-                await using (var stream = file.OpenReadStream())
-                using (var image = await Image.LoadAsync(stream))
-                {
-                    image.Mutate(x => x.Resize(new ResizeOptions
-                    {
-                        Size = new Size(800, 800),
-                        Mode = ResizeMode.Max,
-                    }));
-
-                    await image.SaveAsJpegAsync(tempPath, new JpegEncoder { Quality = 85 });
-                }
+                await using var stream = file.OpenReadStream();
+                using var source = new System.IO.MemoryStream();
+                await stream.CopyToAsync(source, HttpContext.RequestAborted);
+                var jpeg = resonance.Common.ArtworkResizer.ResizeToJpeg(source.ToArray(), 800);
+                await System.IO.File.WriteAllBytesAsync(tempPath, jpeg, HttpContext.RequestAborted);
 
                 System.IO.File.Move(tempPath, path, overwrite: true);
             }
@@ -380,13 +405,17 @@ namespace resonance.Core.API
                     IsOpen = match.Groups["status"].Value.Equals("OPEN", StringComparison.OrdinalIgnoreCase),
                 });
             }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return StatusCode(StatusCodes.Status504GatewayTimeout, new { code = "PORT_CHECK_TIMEOUT", error = "The external port-check service timed out. Your port status is unknown; try again later." });
+            }
             catch (OperationCanceledException)
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (HttpRequestException)
             {
-                return StatusCode(StatusCodes.Status502BadGateway, new { error = $"Failed to reach the port test service: {ex.Message}" });
+                return StatusCode(StatusCodes.Status502BadGateway, new { code = "PORT_CHECK_UNAVAILABLE", error = "The external port-check service is unavailable. Your port status is unknown; try again later." });
             }
         }
 

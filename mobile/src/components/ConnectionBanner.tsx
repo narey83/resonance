@@ -31,6 +31,7 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useAppMode } from '../store/appModeStore';
 import { useTheme } from '../context/ThemeContext';
 import { useConnectionStore, ConnectionStatus } from '../services/connectionMonitor';
 import { Typography, Spacing, Radius } from '../theme';
@@ -47,6 +48,8 @@ type Config = {
 function useConfig(status: ConnectionStatus, latencyMs: number | null, lastError: string | null): Config {
   const { colors } = useTheme();
   switch (status) {
+    case 'maintenance':
+      return { icon: 'construct-outline', color: colors.warning, label: 'Server maintenance · Reconnecting automatically. Local music is available.' };
     case 'offline':
       return { icon: 'wifi-outline',         color: colors.danger,  label: 'No network connection' };
     case 'down':
@@ -63,7 +66,8 @@ export default function ConnectionBanner() {
   const insets = useSafeAreaInsets();
   const config  = useConfig(status, latencyMs, lastError);
 
-  const visible  = status !== 'connected';
+  const mode = useAppMode((s) => s.mode);
+  const visible  = mode === 'remote' && status !== 'connected';
   const slideY      = useRef(new Animated.Value(40)).current;
   const fadeAnim    = useRef(new Animated.Value(0)).current;
   const prevVisible = useRef(false);
@@ -110,6 +114,7 @@ const styles = StyleSheet.create({
     zIndex: 9999,
   },
   pill: {
+    maxWidth: '94%',
     alignItems: 'center',
     borderRadius: Radius.full,
     elevation: 8,
@@ -122,5 +127,5 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   icon:  { marginRight: Spacing.xs },
-  label: { color: '#fff', fontSize: Typography.sm, fontWeight: '600' },
+  label: { flexShrink: 1, color: '#fff', fontSize: Typography.sm, fontWeight: '600' },
 });

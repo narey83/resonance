@@ -1,0 +1,6 @@
+.log-summary { padding: 10px 16px; border-bottom: 1px solid var(--border); color: var(--text-secondary); flex-shrink: 0; }
+.log-summary button, .log-summary select { padding: 5px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); }
+.log-summary button { cursor: pointer; }
+.log-summary-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.log-summary p { font-size: 12px; margin: 8px 0; }
+.log-summary-chart { height: 170px; width: 100%; min-width: 0; font-size: 11px; }

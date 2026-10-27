@@ -95,17 +95,6 @@ export function PlayerMiniBar() {
 
   return (
     <View {...swipePan.panHandlers} style={styles.container}>
-      {/* Blurred artwork background. No recyclingKey (the thumbnail below keeps one): clearing
-          it on every track change flashed the bar's base colour between covers. Blurred at 18
-          the outgoing cover is unreadable anyway, so it holds and cross-dissolves instead. */}
-      {artUrl ? (
-        <Image blurRadius={18} cachePolicy="memory-disk" contentFit="cover" source={{ uri: artUrl, cacheKey: artCacheKey }} style={StyleSheet.absoluteFill} transition={{ duration: 320, effect: 'cross-dissolve' }} />
-      ) : (
-        <View style={[StyleSheet.absoluteFill, styles.fallbackBg]} />
-      )}
-      {/* Dark scrim for legibility */}
-      <View style={[StyleSheet.absoluteFill, styles.scrim]} />
-
       {/* Content row */}
       <Pressable onPress={expandPlayer} style={styles.row}>
         {/* Artwork thumbnail */}
@@ -161,12 +150,8 @@ export function PlayerMiniBar() {
 }
 
 const styles = StyleSheet.create({
-  // Opaque dark base: the bar is white-on-dark, and a transparent container let the
-  // screen behind it (near-white in the light palette) show through any frame where
-  // the blurred cover wasn't painted.
-  container:   { height: MINI_BAR_HEIGHT, overflow: 'hidden', backgroundColor: '#111' },
-  fallbackBg:  { backgroundColor: '#111' },
-  scrim:       { backgroundColor: 'rgba(0,0,0,0.52)' },
+  // A solid ink transport strip keeps playback controls legible in every palette.
+  container:   { height: MINI_BAR_HEIGHT, overflow: 'hidden', backgroundColor: '#262820' },
 
   row: {
     flexDirection: 'row',

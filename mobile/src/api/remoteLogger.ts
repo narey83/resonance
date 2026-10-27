@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { redactDiagnostics } from '../lib/redact';
+import { onSessionReset, sessionGuard } from '../lib/sessionScope';
 import type { HubConnection } from '@microsoft/signalr';
 import { apiClient } from './client';
 import { getLogSubContext } from './deviceLogContext';
@@ -78,7 +80,7 @@ function formatArgs(args: unknown[]): string {
 function enqueue(level: LogLevel, message: string) {
   if (!useAppSettings.getState().remoteLogging) return;
   if (queue.length >= MAX_QUEUE_SIZE) queue.shift();
-  queue.push({ level, message });
+  queue.push({ level, message: redactDiagnostics(message) });
   scheduleFlush();
 }
 
@@ -88,6 +90,7 @@ function scheduleFlush() {
 }
 
 async function flush() {
+  const current = sessionGuard();
   flushTimer = null;
   if (queue.length === 0) return;
   const entries = queue.splice(0, queue.length);
@@ -96,6 +99,7 @@ async function flush() {
   // and artwork fetch queued behind them in the native dispatcher. That is worst right after a
   // resume, when a backlog built up while the app was away flushes in one burst.
   for (const e of entries) {
+    if (!current()) return;
     try {
       await apiClient.post('/logs', {
         level: e.level,
@@ -159,3 +163,9 @@ export function disableRemoteLogging() {
   }
   queue = [];
 }
+
+onSessionReset(() => {
+  queue = [];
+  if (flushTimer) clearTimeout(flushTimer);
+  flushTimer = null;
+});

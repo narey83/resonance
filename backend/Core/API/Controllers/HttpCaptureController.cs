@@ -57,7 +57,7 @@ namespace resonance.Core.API
         /// </summary>
         /// <returns></returns>
         [HttpGet("har")]
-        [Authorize(Policy = AuthPolicy.Any)]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
         [Produces("application/json")]
         public IActionResult GetHar()
         {
@@ -119,7 +119,7 @@ namespace resonance.Core.API
         /// </summary>
         /// <returns></returns>
         [HttpDelete]
-        [Authorize(Policy = AuthPolicy.Any)]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
         public IActionResult Clear()
         {
             Program.HttpCaptureBuffer.Clear();

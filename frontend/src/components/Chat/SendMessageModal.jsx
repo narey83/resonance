@@ -77,7 +77,7 @@ const SendMessageModal = ({ initiateConversation, ...rest }) => {
       open={open}
       {...rest}
     >
-      <div className="smm-modal">
+      <div className="smm-modal dj-workspace">
         <div className="smm-header">
           <span className="smm-title">New Conversation</span>
           <button

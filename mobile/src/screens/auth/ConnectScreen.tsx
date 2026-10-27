@@ -40,8 +40,11 @@ import {
   View,
 } from 'react-native';
 import { ResonanceLogo } from '../../components/ResonanceLogo';
+import { enterLocalMode } from '../../services/appMode';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
+import RecentServers from '../../components/RecentServers';
+import { normalizeServerUrl } from '../../store/serverProfilesStore';
 import { checkInitialized } from '../../api/session';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/auth';
@@ -61,12 +64,6 @@ export default function ConnectScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const setServerUrl          = useAuthStore((s) => s.setServerUrl);
 
-  const normalise = (raw: string) => {
-    let s = raw.trim().replace(/\/+$/, '');
-    if (s && !s.startsWith('http')) s = `http://${s}`;
-    return s;
-  };
-
   const connectTo = async (serverUrl: string) => {
     setError('');
     setLoading(true);
@@ -82,9 +79,9 @@ export default function ConnectScreen({ navigation }: Props) {
   };
 
   const handleConnect = () => {
-    const serverUrl = normalise(url);
-    if (!serverUrl) { setError('Enter a server address'); return; }
-    connectTo(serverUrl);
+    if (loading) return;
+    try { void connectTo(normalizeServerUrl(url)); }
+    catch { setError('Enter a valid HTTP or HTTPS server address.'); }
   };
 
   return (
@@ -141,6 +138,8 @@ export default function ConnectScreen({ navigation }: Props) {
             <Ionicons color={colors.accent} name="qr-code-outline" size={17} />
             <Text style={s.scanBtnText}>Scan QR from Resonance</Text>
           </Pressable>
+          <Pressable accessibilityRole="button" disabled={loading} style={s.scanBtn} onPress={() => { void enterLocalMode().catch(() => setError('Could not open local music. Try again.')); }}><Text style={s.scanBtnText}>Use music on this device</Text></Pressable>
+          <RecentServers disabled={loading} onBusyChange={setLoading} onSelect={profile => connectTo(profile.url)} />
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

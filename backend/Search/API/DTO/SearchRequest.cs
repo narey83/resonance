@@ -91,7 +91,7 @@ namespace resonance.Search.API
         public string SearchText { get; set; }
 
         /// <summary>
-        ///     Gets or sets the search timeout value, in seconds, used to determine when the search is complete. (Default = 15).
+        ///     Gets or sets the search timeout value, in milliseconds, used to determine when the search is complete. (Default = 15000).
         /// </summary>
         /// <remarks>The timeout duration is from the time of the last response.</remarks>
         [Range(5, int.MaxValue)]

@@ -299,6 +299,7 @@ public class YtDlpController : ControllerBase
     }
 
     [HttpPost("update")]
+    [Authorize(Policy = AuthPolicy.JwtOnly, Roles = AuthRole.AdministratorOnly)]
     public async Task<IActionResult> Update(CancellationToken cancellationToken)
     {
         try

@@ -51,8 +51,8 @@ public class ConnectionStringDictionary
     public bool UsePostgres { get; }
     private Dictionary<Database, ConnectionString> Strings { get; } = [];
 
+    public ConnectionString this[Database database] => Strings[database];
+
     public System.Data.Common.DbConnection CreateConnection(Database database) => UsePostgres
         ? new Npgsql.NpgsqlConnection(this[database]) : new Microsoft.Data.Sqlite.SqliteConnection(this[database]);
-
-    public ConnectionString this[Database database] => Strings[database];
 }

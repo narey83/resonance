@@ -6,10 +6,30 @@ node_modules
 app/
 backend/logs/
 backend/data/
-backend/tools/
+backend/tools/*
+!backend/tools/yt-dlp-plugins/
 backend/wwwroot/
 backend/resonance.yml
 frontend/build/
 mobile/
 tests/
 docs/
+
+# Local runtime data, credentials, simulators and QA artifacts are not build inputs.
+.dev/
+.agents/
+.codex/
+.aws/
+**/__pycache__/
+
+# Server-local YouTube authentication cookies must never enter source or images.
+/backend/ytdlp-cookies.txt
+
+# Portable deployment inputs and generated Bridge distribution files.
+bootstrap.local.json
+resonance.local.json
+.resonance-state/
+**/*.credentials
+*.state.tar.gz*
+backend/bridge-releases/
+desktop/bridge/dist/

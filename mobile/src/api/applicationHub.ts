@@ -30,11 +30,12 @@
 import {
   HubConnectionBuilder,
   JsonHubProtocol,
-  LogLevel,
   RetryContext,
 } from '@microsoft/signalr';
+import { useAppMode } from '../store/appModeStore';
+import { createHubLogger, trackHubConnection } from '../lib/hubLifecycle';
 import { useAuthStore } from '../store/auth';
-import { getValidToken } from './client';
+import { createAccessTokenFactory } from './client';
 
 const infiniteRetryPolicy = {
   nextRetryDelayInMilliseconds: (context: RetryContext) => {
@@ -45,16 +46,17 @@ const infiniteRetryPolicy = {
 
 export const createApplicationHubConnection = () => {
   const { serverUrl } = useAuthStore.getState();
-  if (!serverUrl) return null;
+  if (useAppMode.getState().mode !== 'remote' || !serverUrl || !useAuthStore.getState().accessToken) return null;
 
-  return new HubConnectionBuilder()
+  const logger = createHubLogger('application');
+  return trackHubConnection(new HubConnectionBuilder()
     .withUrl(`${serverUrl}/hub/application`, {
-      accessTokenFactory: () => getValidToken(),
+      accessTokenFactory: createAccessTokenFactory(),
     })
     .withAutomaticReconnect(infiniteRetryPolicy)
     .withServerTimeout(120_000)
     .withKeepAliveInterval(15_000)
     .withHubProtocol(new JsonHubProtocol())
-    .configureLogging(LogLevel.Information)
-    .build();
+    .configureLogging(logger)
+    .build(), logger);
 };

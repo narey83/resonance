@@ -51,6 +51,8 @@ namespace resonance.Core.Http
             "Cookie",
             "Set-Cookie",
             "X-API-Key",
+            "X-Resonance-Link-Token",
+            "Proxy-Authorization",
         };
 
         private static long nextId;
@@ -75,7 +77,7 @@ namespace resonance.Core.Http
             var stopwatch = Stopwatch.StartNew();
 
             var request = context.Request;
-            var url = request.Path + request.QueryString;
+            var url = SensitiveData.RedactUrl(request.Path + request.QueryString);
             var fullUrl = $"{request.Scheme}://{request.Host}{request.PathBase}{url}";
             var method = request.Method;
             var requestHeaders = Snapshot(request.Headers);
@@ -113,7 +115,7 @@ namespace resonance.Core.Http
             return headers
                 .Select(h => new KeyValuePair<string, string>(
                     h.Key,
-                    RedactedHeaders.Contains(h.Key) ? "[redacted]" : h.Value.ToString()))
+                    RedactedHeaders.Contains(h.Key) ? "[redacted]" : SensitiveData.RedactUrl(h.Value.ToString())))
                 .ToList();
         }
     }

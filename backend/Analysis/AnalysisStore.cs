@@ -34,6 +34,7 @@ namespace resonance.Analysis
     using System.Data.Common;
     using System.IO;
     using System.Linq;
+    using System.Text.Json;
     using Npgsql;
     using resonance.Common;
     using Serilog;
@@ -66,11 +67,63 @@ namespace resonance.Analysis
             var size = new FileInfo(MusicPath.ToAbsolute(path)).Length;
             using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = $"UPDATE {Table} SET dj_summary = @json WHERE masked_filename = @path AND file_size = @size";
+            // Enhanced analysis can finish before the separate native analysis queue.
+            // Keep the native metric columns empty; their readiness checks still apply.
+            cmd.CommandText = $@"INSERT INTO {Table} (masked_filename, file_size, analysed_at, dj_summary)
+                VALUES (@path, @size, @at, @json)
+                ON CONFLICT (masked_filename) DO UPDATE SET dj_summary = excluded.dj_summary
+                WHERE {Table}.file_size = excluded.file_size";
+            AddParam(cmd, "@at", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
             AddParam(cmd, "@json", json);
             AddParam(cmd, "@path", Key(path));
             AddParam(cmd, "@size", size);
             cmd.ExecuteNonQuery();
+        }
+
+        public IReadOnlyList<(string Path, string AnalysisId)> ExportReferences()
+        {
+            var result = new List<(string, string)>();
+            using var connection = OpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT masked_filename, dj_summary FROM {Table} WHERE dj_summary IS NOT NULL ORDER BY masked_filename";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                var id = ExportReference(reader.GetString(1));
+                if (id != null)
+                {
+                    result.Add((reader.GetString(0), id));
+                }
+            }
+
+            return result;
+        }
+
+        public string ExportReferenceFor(string path)
+        {
+            var row = Read(path, "dj_summary");
+            return row is { Length: > 0 } && row[0] is string json ? ExportReference(json) : null;
+        }
+
+        private static string ExportReference(string json)
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(json);
+                var root = document.RootElement;
+                if (root.TryGetProperty("exportReady", out var ready) && ready.ValueKind == JsonValueKind.False)
+                {
+                    return null;
+                }
+
+                return root.TryGetProperty("complete", out var complete) && complete.ValueKind == JsonValueKind.True
+                    && root.TryGetProperty("analysisId", out var id) && id.ValueKind == JsonValueKind.String
+                    && Guid.TryParseExact(id.GetString(), "N", out _) ? id.GetString() : null;
+            }
+            catch (Exception exception) when (exception is JsonException or InvalidOperationException)
+            {
+                return null;
+            }
         }
 
         public WaveformData GetWaveform(string path)
@@ -302,8 +355,10 @@ namespace resonance.Analysis
                     AddParam(cmd, "@m", key);
                     cmd.ExecuteNonQuery();
                 }
+
                 return;
             }
+
             cmd.ExecuteNonQuery();
         }
 
@@ -394,6 +449,24 @@ namespace resonance.Analysis
                     lufs REAL, true_peak REAL, lra REAL, beat_offset_seconds REAL, beats BLOB,
                     downbeat_offset_seconds REAL, downbeat_confidence REAL, analysed_at INTEGER NOT NULL, detected_bpm INTEGER, detected_key TEXT, dj_summary TEXT)";
                 sqliteCommand.ExecuteNonQuery();
+                sqliteCommand.CommandText = "PRAGMA table_info(track_analysis)";
+                var hasDjSummary = false;
+                using (var columns = sqliteCommand.ExecuteReader())
+                {
+                    while (columns.Read())
+                    {
+                        hasDjSummary |= columns.GetString(1) == "dj_summary";
+                    }
+                }
+
+                if (!hasDjSummary)
+                {
+                    sqliteCommand.CommandText = "ALTER TABLE track_analysis ADD COLUMN dj_summary TEXT";
+                    sqliteCommand.ExecuteNonQuery();
+                }
+
+                sqliteCommand.CommandText = "CREATE INDEX IF NOT EXISTS IX_TrackAnalysis_ExportReady ON track_analysis(masked_filename) WHERE dj_summary IS NOT NULL";
+                sqliteCommand.ExecuteNonQuery();
                 sqliteCommand.CommandText = @"CREATE TABLE IF NOT EXISTS imported_track_analysis (
                     collection_sha256 TEXT NOT NULL, source_xml_sha256 TEXT NOT NULL,
                     library_path TEXT NOT NULL, source_kind TEXT NOT NULL CHECK(source_kind='rekordbox'),
@@ -404,6 +477,7 @@ namespace resonance.Analysis
                 sqliteCommand.ExecuteNonQuery();
                 return;
             }
+
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
                 CREATE SCHEMA IF NOT EXISTS analysis;

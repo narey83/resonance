@@ -87,7 +87,7 @@ export default function UserReportModal({
   const ul = detail?.Upload;
 
   return (
-    <Modal visible={username != null} animationType="slide" onRequestClose={onClose} transparent={false}>
+    <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']} visible={username != null} animationType="slide" onRequestClose={onClose} transparent={false}>
       <View style={[s.container, { backgroundColor: colors.bgPrimary }]}>
         <View style={[s.header, { paddingTop: insets.top + Spacing.lg }]}>
           <Text style={s.title} numberOfLines={1}>{username}</Text>

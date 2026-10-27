@@ -27,6 +27,9 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { NativeModules, Platform } from 'react-native';
+import { useAppMode } from '../store/appModeStore';
+import { onSessionReset, sessionGuard } from '../lib/sessionScope';
 import TrackPlayer, { MediaItemPlayable } from 'react-native-track-player';
 import { contentTypeFor } from '../lib/mimeTypes';
 import {
@@ -39,10 +42,12 @@ import {
   getYears,
   getArtworkUrl,
   getStreamUrl,
+  currentStreamQuality,
   getTrackTitle,
   type MusicTrack,
   type MusicAlbum,
 } from '../api/musicLibrary';
+import { ensureSigned, isSigned } from '../api/streamSignatures';
 import { ARTWORK_THUMB_SIZE, PLAYER_ART_SIZE } from './artworkCache';
 import { type PlayRecord } from '../api/libraryActivity';
 import * as mixtapes from '../api/mixtapes';
@@ -108,8 +113,12 @@ const TAB_LOCAL_GENRES = 'aa:local:genres';
 const TAB_LOCAL_YEARS = 'aa:local:years';
 const TAB_LOCAL_LOVED = 'aa:local:loved';
 const TAB_LOCAL_HISTORY = 'aa:local:history';
+const TAB_LOCAL_PLAYLISTS = 'aa:local:playlists';
+const PREFIX_LOCAL_PLAYLIST = 'aa:local:playlist:';
 const PREFIX_FOLDER = 'aa:folder:';
 const PREFIX_ARTIST = 'aa:artist:';
+const PREFIX_ARTIST_TRACKS = 'aa:artist-tracks:';
+const PREFIX_ALBUM_FOLDER = 'aa:album-folder:';
 const PREFIX_ALBUM = 'aa:album:';   // aa:album:<artist>|<album>, both URI-encoded
 const PREFIX_GENRE = 'aa:genre:';
 const PREFIX_YEAR = 'aa:year:';
@@ -129,16 +138,16 @@ const tracksByNode = new Map<string, MusicTrack[]>();
 // When the app UI is mounted, playback routes through PlayerContext to keep its
 // queue/now-playing in sync. When RNTP runs headless (app killed, car started
 // it), this stays null and we fall back to driving TrackPlayer directly.
-let autoPlayHandler: ((tracks: MusicTrack[], startIndex: number) => void) | null = null;
+let autoPlayHandler: ((tracks: MusicTrack[], startIndex: number) => void | Promise<void>) | null = null;
 export const registerAutoPlayHandler = (
-  fn: ((tracks: MusicTrack[], startIndex: number) => void) | null,
+  fn: ((tracks: MusicTrack[], startIndex: number) => void | Promise<void>) | null,
 ) => {
   autoPlayHandler = fn;
 };
 
 const isAuthed = () => {
   const { accessToken, serverUrl } = useAuthStore.getState();
-  return !!accessToken && !!serverUrl;
+  return useAppMode.getState().mode === 'remote' && !!accessToken && !!serverUrl;
 };
 
 // The car can open the browser before the session exists — it cold-starts the app itself, and on
@@ -240,8 +249,9 @@ const mixtapeTrackToTrack = (t: MixtapeTrack): MusicTrack => ({
   fileSize: null,
 });
 
-const albumNodeId = (a: MusicAlbum) =>
-  `${PREFIX_ALBUM}${encodeURIComponent(a.albumArtist ?? a.artist)}|${encodeURIComponent(a.album)}`;
+const albumNodeId = (a: MusicAlbum) => a.directory
+  ? `${PREFIX_ALBUM_FOLDER}${encodeURIComponent(a.directory)}|${encodeURIComponent(a.album)}`
+  : `${PREFIX_ALBUM}${encodeURIComponent(a.albumArtist ?? a.artist)}|${encodeURIComponent(a.album)}`;
 const localAlbumNodeId = (a: MusicAlbum) => `${PREFIX_LOCAL_ALBUM}${encodeURIComponent(a.album)}`;
 
 // A local PlayRecord carries no coverPath, and local artwork is rendered straight from
@@ -259,7 +269,8 @@ const recordTracks = (nodeId: string, tracks: MusicTrack[]) => {
 
 const push = async () => {
   try {
-    await TrackPlayer.setBrowseTree(tree as Record<string, Record<string, unknown>[]>);
+    if (Platform.OS === 'ios') await NativeModules.ResonanceCarPlay?.setBrowseTree(tree);
+    else await TrackPlayer.setBrowseTree(tree as Record<string, Record<string, unknown>[]>);
   } catch (e) {
     remoteLog('error', `[aa] setBrowseTree failed — ${String(e)}`);
   }
@@ -275,7 +286,7 @@ const push = async () => {
 const LIST_MAX = 300;
 const PREFIX_CHUNK = 'aa:chunk:';
 // aa:page:<offset>:<kind>:<key> — self-describing so a page still resolves after a restart.
-// kind: f=folder, g=genre, y=year, a=all tracks.
+// kind: f=folder, g=genre, y=year, r=artist, b=legacy album, c=folder album, a=all tracks.
 const PREFIX_PAGE = 'aa:page:';
 const chunkChildren = new Map<string, BrowseItem[]>();
 
@@ -287,7 +298,7 @@ const rangeLabel = (items: BrowseItem[]): string => {
 };
 
 const chunked = (nodeId: string, items: BrowseItem[]): BrowseItem[] => {
-  if (items.length <= LIST_MAX) return items;
+  if (Platform.OS === 'ios' || items.length <= LIST_MAX) return items;
   const groups: BrowseItem[] = [];
   for (let i = 0; i < items.length; i += LIST_MAX) {
     const slice = items.slice(i, i + LIST_MAX);
@@ -302,6 +313,15 @@ const pageQuery = (kind: string, key: string): Record<string, string | number> =
   if (kind === 'f') return { folder: decodeURIComponent(key), sort: 'track' };
   if (kind === 'g') return { genre: decodeURIComponent(key) };
   if (kind === 'y') return { year: Number(key) };
+  if (kind === 'r') return { artist: decodeURIComponent(key), sort: 'track' };
+  if (kind === 'c') {
+    const [folder, album] = key.split('|');
+    return { folder: decodeURIComponent(folder ?? ''), album: decodeURIComponent(album ?? ''), sort: 'track' };
+  }
+  if (kind === 'b') {
+    const [artist, album] = key.split('|');
+    return { artist: decodeURIComponent(artist ?? ''), album: decodeURIComponent(album ?? ''), sort: 'track' };
+  }
   return {};
 };
 
@@ -349,7 +369,7 @@ const loadNode = async (mediaId: string): Promise<void> => {
       browsable(TAB_FOLDERS, 'Folders'),
       browsable(TAB_GENRES, 'Genres'),
       browsable(TAB_YEARS, 'Years'),
-      browsable(TAB_MIXTAPES, 'Mixtapes'),
+      browsable(TAB_MIXTAPES, 'Playlists'),
       browsable(TAB_LOVED, 'Loved'),
     ];
   } else if (mediaId === TAB_ARTISTS) {
@@ -394,23 +414,19 @@ const loadNode = async (mediaId: string): Promise<void> => {
     if (albums.length === 0) {
       // An artist whose tracks carry no album tag has no albums to show — a dead end in the car.
       // Show the tracks themselves instead.
-      const res = await getTracks({ artist, limit: LIST_MAX });
-      tree[mediaId] = chunked(mediaId, res.tracks.map(playableItem));
-      recordTracks(mediaId, res.tracks);
+      await loadTracks(mediaId, 'r', encodeURIComponent(artist));
     } else {
-      tree[mediaId] = chunked(mediaId, albums.map((a) =>
-        browsable(albumNodeId(a), a.album, a.artist, a.coverPath ? (getArtworkUrl(a.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined),
-      ));
+      tree[mediaId] = chunked(mediaId, [
+        browsable(PREFIX_ARTIST_TRACKS + encodeURIComponent(artist), 'All tracks'),
+        ...albums.map((a) => browsable(albumNodeId(a), a.album, a.artist, a.coverPath ? (getArtworkUrl(a.coverPath, ARTWORK_THUMB_SIZE) ?? undefined) : undefined)),
+      ]);
     }
+  } else if (mediaId.startsWith(PREFIX_ARTIST_TRACKS)) {
+    await loadTracks(mediaId, 'r', mediaId.slice(PREFIX_ARTIST_TRACKS.length));
+  } else if (mediaId.startsWith(PREFIX_ALBUM_FOLDER)) {
+    await loadTracks(mediaId, 'c', mediaId.slice(PREFIX_ALBUM_FOLDER.length));
   } else if (mediaId.startsWith(PREFIX_ALBUM)) {
-    const [artistEnc, albumEnc] = mediaId.slice(PREFIX_ALBUM.length).split('|');
-    const res = await getTracks({
-      artist: decodeURIComponent(artistEnc ?? ''),
-      album: decodeURIComponent(albumEnc ?? ''),
-      limit: LIST_MAX,
-    });
-    tree[mediaId] = chunked(mediaId, res.tracks.map(playableItem));
-    recordTracks(mediaId, res.tracks);
+    await loadTracks(mediaId, 'b', mediaId.slice(PREFIX_ALBUM.length));
   } else if (mediaId.startsWith(PREFIX_GENRE)) {
     await loadTracks(mediaId, 'g', mediaId.slice(PREFIX_GENRE.length));
   } else if (mediaId.startsWith(PREFIX_YEAR)) {
@@ -432,7 +448,7 @@ const loadNode = async (mediaId: string): Promise<void> => {
     tree[mediaId] = chunked(mediaId, res.tracks.map(playableItem));
     recordTracks(mediaId, res.tracks);
   } else if (mediaId === TAB_LOCAL) {
-    // Same views as the phone's local Library tabs, minus Mixtapes (server-only).
+    // Device playlists remain independent of the server playlist branch.
     tree[mediaId] = [
       browsable(TAB_LOCAL_ARTISTS, 'Artists'),
       browsable(TAB_LOCAL_ALBUMS, 'Albums'),
@@ -442,7 +458,20 @@ const loadNode = async (mediaId: string): Promise<void> => {
       browsable(TAB_LOCAL_YEARS, 'Years'),
       browsable(TAB_LOCAL_LOVED, 'Loved'),
       browsable(TAB_LOCAL_HISTORY, 'History'),
+      browsable(TAB_LOCAL_PLAYLISTS, 'Playlists'),
     ];
+  } else if (mediaId === TAB_LOCAL_PLAYLISTS || mediaId.startsWith(PREFIX_LOCAL_PLAYLIST)) {
+    const { useLocalPlaylistStore } = await import('../store/localPlaylistStore');
+    await useLocalPlaylistStore.getState().load();
+    const playlists = useLocalPlaylistStore.getState().playlists;
+    if (mediaId === TAB_LOCAL_PLAYLISTS) {
+      tree[mediaId] = chunked(mediaId, playlists.map(p => browsable(PREFIX_LOCAL_PLAYLIST + encodeURIComponent(p.id), p.name, plural(p.tracks.length, 'track'))));
+    } else {
+      const id = decodeURIComponent(mediaId.slice(PREFIX_LOCAL_PLAYLIST.length));
+      const tracks = playlists.find(p => p.id === id)?.tracks ?? [];
+      tree[mediaId] = chunked(mediaId, tracks.map(localPlayableItem));
+      recordTracks(mediaId, tracks);
+    }
   } else if (mediaId === TAB_LOCAL_ARTISTS) {
     const artists = await getLocalArtists();
     tree[mediaId] = chunked(mediaId, artists.map((a) =>
@@ -527,19 +556,20 @@ const loadNode = async (mediaId: string): Promise<void> => {
 // Build the four root tabs and eagerly populate their first level so the car
 // menu isn't empty on connect. Deeper nodes load lazily via remote-browse.
 export const buildAndroidAutoTree = async (): Promise<void> => {
+  if (!useAppMode.getState().loaded) await useAppMode.getState().load();
   // The tabs are static, so publish them before doing anything that can block. The car asks for
   // the root the instant it connects and keeps whatever it gets: answer that first request with an
   // empty list — because we were still hydrating the session — and it shows "No items" until the
   // next connection, no matter what we notify afterwards.
-  tree[ROOT] = [
-    tab(TAB_SERVER, 'Music from Server'),
-    tab(TAB_LOCAL, 'Music on Device'),
-  ];
+  tree[ROOT] = [tab(TAB_LOCAL, 'Music on Device')];
+  if (isAuthed()) tree[ROOT].unshift(tab(TAB_SERVER, 'Music from Server'));
+  await loadNode(TAB_LOCAL);
   await push();
 
   const auth = useAuthStore.getState();
   if (!auth.isReady) await auth.hydrate();
   if (!isAuthed()) { buildWhenAuthed(); return; }
+  tree[ROOT] = [tab(TAB_SERVER, 'Music from Server'), tab(TAB_LOCAL, 'Music on Device')];
   const startedAt = Date.now();
   const results = await Promise.allSettled([
     loadNode(TAB_SERVER),
@@ -557,6 +587,8 @@ export const clearAndroidAutoTree = async (): Promise<void> => {
   for (const k of Object.keys(tree)) delete tree[k];
   trackByPath.clear();
   tracksByNode.clear();
+  chunkChildren.clear();
+  deferredBrowses.clear();
   await push();
 };
 
@@ -566,8 +598,8 @@ const reportBrowseFailed = async (mediaId: string, why: string): Promise<void> =
   remoteLog('warn', `[aa] browse ${mediaId} unresolved (${why}) — failing the car's request`);
   delete tree[mediaId]; // never leave an empty node behind: it would stop native asking us again
   try {
-    await (TrackPlayer as unknown as { browseFailed: (id: string) => Promise<string> })
-      .browseFailed(mediaId);
+    if (Platform.OS === 'ios') await NativeModules.ResonanceCarPlay?.browseFailed(mediaId);
+    else await (TrackPlayer as unknown as { browseFailed: (id: string) => Promise<string> }).browseFailed(mediaId);
   } catch (e) {
     remoteLog('error', `[aa] browseFailed(${mediaId}) errored — ${String(e)}`);
   }
@@ -596,7 +628,8 @@ export const handleAndroidAutoBrowse = async (mediaId: string): Promise<void> =>
 
   const auth = useAuthStore.getState();
   if (!auth.isReady) await auth.hydrate();
-  if (!isAuthed()) {
+  const localNode = mediaId.startsWith(TAB_LOCAL) || mediaId.includes(`:${TAB_LOCAL}`);
+  if (!isAuthed() && !localNode) {
     if (mediaId !== ROOT) {
       deferredBrowses.add(mediaId);
       // Fail the held request rather than making the car wait on a session that may be minutes
@@ -640,13 +673,16 @@ export const handleAndroidAutoBrowse = async (mediaId: string): Promise<void> =>
 };
 
 // Native emitted `remote-play-id` — the user tapped a track in the car.
-export const playAndroidAutoMediaId = async (mediaId: string): Promise<void> => {
+export const playAndroidAutoMediaId = async (mediaId: string, reportErrors = false): Promise<void> => {
   if (!mediaId) return;
   const auth = useAuthStore.getState();
   if (!auth.isReady) await auth.hydrate();
   // On-device files play straight off disk — only server paths need a session. Native no longer
   // hands the browse item to the player itself, so bailing here would mean silence, not a fallback.
-  if (!isLocalPath(mediaId) && !isAuthed()) return;
+  if (!isLocalPath(mediaId) && !isAuthed()) {
+    if (reportErrors) throw new Error('Connect to your music server on iPhone first.');
+    return;
+  }
 
   // Queue the siblings from whichever node this track was browsed in, if known.
   let queue: MusicTrack[] | undefined;
@@ -664,11 +700,19 @@ export const playAndroidAutoMediaId = async (mediaId: string): Promise<void> => 
 
   // Prefer the app's player so its queue/now-playing stay in sync.
   if (autoPlayHandler) {
-    autoPlayHandler(tracks, idx);
+    await autoPlayHandler(tracks, idx);
     return;
   }
-  // Headless fallback: drive TrackPlayer directly.
+  // Cached car menus can outlive the signed URLs from the original browse response.
+  // Sign before constructing the queue, just as the mounted phone player does.
+  const current = sessionGuard();
   try {
+    const remotePaths = tracks.filter((t) => !isLocalPath(t.path)).map((t) => t.path);
+    await ensureSigned(remotePaths);
+    if (!current()) return;
+    if (!isLocalPath(tracks[idx].path) && !isSigned(tracks[idx].path)) {
+      throw new Error('Could not authorize this track; reconnect to the server and retry.');
+    }
     const rntp = tracks.map((t) => ({
       url: isLocalPath(t.path) ? t.path : getStreamUrl(t.path),
       title: getTrackTitle(t),
@@ -678,7 +722,8 @@ export const playAndroidAutoMediaId = async (mediaId: string): Promise<void> => 
         ? (t.coverPath ?? undefined)
         : (t.hasArtwork ? (getArtworkUrl(t.path, PLAYER_ART_SIZE) ?? undefined) : undefined),
       duration: t.duration ?? undefined,
-      contentType: contentTypeFor(t.path),
+      contentType: isLocalPath(t.path) || currentStreamQuality() === 'original'
+        ? contentTypeFor(t.path) : 'audio/mpeg',
       _source: t,
     }));
     await TrackPlayer.setQueue(rntp);
@@ -686,6 +731,7 @@ export const playAndroidAutoMediaId = async (mediaId: string): Promise<void> => 
     await TrackPlayer.play();
   } catch (e) {
     remoteLog('error', `[aa] play ${mediaId} failed — ${String(e)}`);
+    if (reportErrors) throw e;
   }
 };
 
@@ -701,3 +747,10 @@ export const handleAndroidAutoLove = async (): Promise<void> => {
     remoteLog('error', `[aa] love failed — ${String(e)}`);
   }
 };
+
+onSessionReset((restoring) => {
+  if (restoring) return;
+  void clearAndroidAutoTree().catch(() => {});
+});
+
+export const hasCarBrowseNode = (mediaId: string): boolean => Object.prototype.hasOwnProperty.call(tree, mediaId);

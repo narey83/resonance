@@ -31,7 +31,7 @@ import { formatBitrate, formatBytes } from '../../lib/util';
 import React from 'react';
 
 const sumBytes = (directionData) =>
-  Object.values(directionData).reduce((s, v) => s + (v.totalBytes ?? 0), 0);
+  (directionData.Succeeded ?? directionData.succeeded)?.totalBytes ?? 0;
 
 const sumCount = (directionData) =>
   Object.values(directionData).reduce((s, v) => s + (v.count ?? 0), 0);
@@ -47,7 +47,7 @@ const failedOf = (directionData, succeeded) =>
 const successRateOf = (count, succeeded) =>
   count > 0 ? ((succeeded / count) * 100).toFixed(1) : null;
 
-const extractKpis = (summary) => {
+const extractKpis = (summary, direction) => {
   if (!summary) return null;
 
   const dl = summary.Download ?? summary.download ?? {};
@@ -55,27 +55,30 @@ const extractKpis = (summary) => {
 
   const dlBytes = sumBytes(dl);
   const ulBytes = sumBytes(ul);
-  const dlCount = sumCount(dl);
-  const ulCount = sumCount(ul);
+  const dlCount = succeededOf(dl);
+  const ulCount = succeededOf(ul);
 
   const dlSucceeded = succeededOf(dl);
   const ulSucceeded = succeededOf(ul);
   const dlFailed = failedOf(dl, dlSucceeded);
   const ulFailed = failedOf(ul, ulSucceeded);
-  const dlSuccessRate = successRateOf(dlCount, dlSucceeded);
-  const ulSuccessRate = successRateOf(ulCount, ulSucceeded);
+  const dlSuccessRate = successRateOf(sumCount(dl), dlSucceeded);
+  const ulSuccessRate = successRateOf(sumCount(ul), ulSucceeded);
 
   const dlSucc = dl.Succeeded ?? dl.succeeded;
   const ulSucc = ul.Succeeded ?? ul.succeeded;
-  const avgSpeed =
-    ((dlSucc?.averageSpeed ?? 0) + (ulSucc?.averageSpeed ?? 0)) / 2;
+  const selected = direction === 'download' ? dlSucc : ulSucc;
+  const avgSpeed = direction
+    ? selected?.averageSpeed ?? 0
+    : ((dlSucc?.averageSpeed ?? 0) + (ulSucc?.averageSpeed ?? 0)) / 2;
 
-  const distinctUsers = Math.max(
-    dlSucc?.distinctUsers ?? 0,
-    ulSucc?.distinctUsers ?? 0,
-  );
+  const distinctUsers = direction
+    ? selected?.distinctUsers ?? 0
+    : Math.max(dlSucc?.distinctUsers ?? 0, ulSucc?.distinctUsers ?? 0);
 
-  const avgWait = dlSucc?.averageWait ?? ulSucc?.averageWait ?? null;
+  const avgWait = direction
+    ? selected?.averageWait ?? null
+    : dlSucc?.averageWait ?? ulSucc?.averageWait ?? null;
 
   return {
     avgSpeed,
@@ -169,9 +172,16 @@ const KpiGroupCard = ({ primary, secondary }) => (
   </div>
 );
 
-const KpiCards = ({ downloads, loading, prevSummary, summary, uploads }) => {
-  const kpis = extractKpis(summary);
-  const prev = extractKpis(prevSummary);
+const KpiCards = ({
+  direction,
+  downloads,
+  loading,
+  prevSummary,
+  summary,
+  uploads,
+}) => {
+  const kpis = extractKpis(summary, direction);
+  const prev = extractKpis(prevSummary, direction);
 
   const activeDownloads = Array.isArray(downloads)
     ? downloads.filter((t) => t.state === 'InProgress')
@@ -190,48 +200,66 @@ const KpiCards = ({ downloads, loading, prevSummary, summary, uploads }) => {
 
   return (
     <div className="kpi-cards">
-      <KpiGroupCard
-        primary={{
-          delta: kpis && prev ? pctChange(kpis.dlBytes, prev.dlBytes) : null,
-          label: 'Downloaded',
-          loading,
-          sub:
-            liveDownSpeed > 0
-              ? `${formatBitrate(liveDownSpeed)} now`
-              : undefined,
-          value: kpis ? formatBytes(kpis.dlBytes) : '—',
-        }}
-        secondary={{
-          delta: kpis && prev ? pctChange(kpis.dlCount, prev.dlCount) : null,
-          label: 'Download Transfers',
-          loading,
-          sub:
-            kpis?.dlSuccessRate == null
-              ? undefined
-              : `${kpis.dlSuccessRate}% success · ${kpis.dlFailed.toLocaleString()} failed`,
-          value: kpis ? kpis.dlCount.toLocaleString() : '—',
-        }}
-      />
-      <KpiGroupCard
-        primary={{
-          delta: kpis && prev ? pctChange(kpis.ulBytes, prev.ulBytes) : null,
-          label: 'Uploaded',
-          loading,
-          sub:
-            liveUpSpeed > 0 ? `${formatBitrate(liveUpSpeed)} now` : undefined,
-          value: kpis ? formatBytes(kpis.ulBytes) : '—',
-        }}
-        secondary={{
-          delta: kpis && prev ? pctChange(kpis.ulCount, prev.ulCount) : null,
-          label: 'Upload Transfers',
-          loading,
-          sub:
-            kpis?.ulSuccessRate == null
-              ? undefined
-              : `${kpis.ulSuccessRate}% success · ${kpis.ulFailed.toLocaleString()} failed`,
-          value: kpis ? kpis.ulCount.toLocaleString() : '—',
-        }}
-      />
+      {direction !== 'upload' && (
+        <KpiGroupCard
+          primary={{
+            delta: kpis && prev ? pctChange(kpis.dlBytes, prev.dlBytes) : null,
+            label: 'Downloaded',
+            loading,
+            sub:
+              liveDownSpeed > 0
+                ? `${formatBitrate(liveDownSpeed)} now`
+                : undefined,
+            value: kpis ? formatBytes(kpis.dlBytes) : '—',
+          }}
+          secondary={{
+            delta: kpis && prev ? pctChange(kpis.dlCount, prev.dlCount) : null,
+            label: 'Successful downloads',
+            loading,
+            sub:
+              kpis?.dlSuccessRate == null
+                ? undefined
+                : `${kpis.dlSuccessRate}% success · ${kpis.dlFailed.toLocaleString()} failed`,
+            value: kpis ? kpis.dlCount.toLocaleString() : '—',
+          }}
+        />
+      )}
+      {direction !== 'download' && (
+        <KpiGroupCard
+          primary={{
+            delta: kpis && prev ? pctChange(kpis.ulBytes, prev.ulBytes) : null,
+            label: 'Uploaded',
+            loading,
+            sub:
+              liveUpSpeed > 0 ? `${formatBitrate(liveUpSpeed)} now` : undefined,
+            value: kpis ? formatBytes(kpis.ulBytes) : '—',
+          }}
+          secondary={{
+            delta: kpis && prev ? pctChange(kpis.ulCount, prev.ulCount) : null,
+            label: 'Successful uploads',
+            loading,
+            sub:
+              kpis?.ulSuccessRate == null
+                ? undefined
+                : `${kpis.ulSuccessRate}% success · ${kpis.ulFailed.toLocaleString()} failed`,
+            value: kpis ? kpis.ulCount.toLocaleString() : '—',
+          }}
+        />
+      )}
+      {direction && (
+        <KpiCard
+          label="Failed attempts"
+          loading={loading}
+          value={
+            kpis
+              ? (direction === 'download'
+                  ? kpis.dlFailed
+                  : kpis.ulFailed
+                ).toLocaleString()
+              : '—'
+          }
+        />
+      )}
       <KpiCard
         label="Peers"
         loading={loading}
@@ -242,11 +270,13 @@ const KpiCards = ({ downloads, loading, prevSummary, summary, uploads }) => {
         loading={loading}
         value={kpis ? formatBitrate(kpis.avgSpeed) : '—'}
       />
-      <KpiCard
-        label="Avg Queue Wait"
-        loading={loading}
-        value={kpis ? formatWait(kpis.avgWait) : '—'}
-      />
+      {!direction && (
+        <KpiCard
+          label="Avg Queue Wait"
+          loading={loading}
+          value={kpis ? formatWait(kpis.avgWait) : '—'}
+        />
+      )}
     </div>
   );
 };

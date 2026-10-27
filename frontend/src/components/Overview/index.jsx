@@ -48,6 +48,7 @@ import DistributedNetworkCard from './DistributedNetworkCard';
 import ErrorChart from './ErrorChart';
 import GeographyCard from './GeographyCard';
 import KpiCards from './KpiCards';
+import { loadOverviewReports, overviewTasks } from './overviewReports';
 import PeerRetentionCard from './PeerRetentionCard';
 import PersonalSummary from './PersonalSummary';
 import PopularDirectories from './PopularDirectories';
@@ -93,24 +94,6 @@ const REFRESH_OPTIONS = [
   { label: '15m', ms: 900_000 },
 ];
 
-const runWithConcurrency = async (tasks, limit) => {
-  const results = Array.from({ length: tasks.length });
-  let next = 0;
-
-  const worker = async () => {
-    while (next < tasks.length) {
-      const index = next;
-      next += 1;
-      results[index] = await tasks[index]();
-    }
-  };
-
-  await Promise.all(
-    Array.from({ length: Math.min(limit, tasks.length) }, worker),
-  );
-  return results;
-};
-
 const getHistogramInterval = (hours) => {
   if (hours <= 1) return 1;
   if (hours <= 6) return 5;
@@ -130,13 +113,35 @@ const flattenTransfers = (groups) => {
 };
 
 const AdminOverview = () => {
-  const [activeTab, setActiveTab] = useState(() =>
-    prefs.get('overview:tab', 'analytics'),
-  );
+  const [activeTab, setActiveTab] = useState(() => {
+    const saved = prefs.get('overview:tab', 'uploads');
+    return [
+      'uploads',
+      'downloads',
+      'community',
+      'resources',
+      'network',
+      'users',
+    ].includes(saved)
+      ? saved
+      : 'uploads';
+  });
   const [analyticsTab, setAnalyticsTab] = useState(() => {
     const saved = prefs.get('overview:analytics-tab', 'glance');
     return ANALYTICS_TABS.some((t) => t.id === saved) ? saved : 'glance';
   });
+  const direction =
+    activeTab === 'uploads'
+      ? 'upload'
+      : activeTab === 'downloads'
+        ? 'download'
+        : null;
+  const section =
+    direction === 'download' && analyticsTab === 'geography'
+      ? 'glance'
+      : analyticsTab;
+  const showCoverage = activeTab === 'community';
+  const showLive = Boolean(direction) && section === 'glance';
   const [downloads, setDownloads] = useState([]);
   const [uploads, setUploads] = useState([]);
   const [range, setRange] = useState(() => {
@@ -165,49 +170,43 @@ const AdminOverview = () => {
   const [social, setSocial] = useState(null);
   const [coverage, setCoverage] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
-  // Frosted-glass transition overlay — shown only on user-initiated range
-  // changes, not on background auto-refresh (which would flash it).
-  const [transitioning, setTransitioning] = useState(false);
+  const [reportError, setReportError] = useState(false);
   const [analyticsRefresh, setAnalyticsRefresh] = useState(0);
 
-  // Live transfers — 1s polling
+  // Only poll the selected direction, and never overlap live requests.
   useEffect(() => {
+    if (!showLive) return undefined;
     let cancelled = false;
-
-    const fetch = async () => {
-      // Nothing to update behind a hidden tab, and this dashboard is expensive
-      // enough to render that polling it in the background is pure waste.
-      if (document.hidden) return;
+    let timer;
+    const load = async () => {
       try {
-        const [d, u] = await Promise.all([
-          transfersAPI
-            .getAll({ activeOnly: true, direction: 'download' })
-            .catch(() => null),
-          transfersAPI
-            .getAll({ activeOnly: true, direction: 'upload' })
-            .catch(() => null),
-        ]);
-        if (cancelled) return;
-        // An idle server returns the same (usually empty) payload every
-        // second, and fresh array literals would re-render this whole
-        // dashboard for it.
-        setDownloads((previous) => keepIfEqual(previous, d ?? []));
-        setUploads((previous) => keepIfEqual(previous, u ?? []));
+        if (!document.hidden) {
+          const value = await transfersAPI.getAll({
+            activeOnly: true,
+            direction,
+          });
+          if (!cancelled) {
+            const setter = direction === 'download' ? setDownloads : setUploads;
+            setter((previous) => keepIfEqual(previous, value ?? []));
+          }
+        }
       } catch {
-        // silently ignore
+        // Retain the last live snapshot during a brief connection failure.
+      } finally {
+        if (!cancelled) timer = setTimeout(load, 1_000);
       }
     };
 
-    fetch();
-    const id = setInterval(fetch, 1_000);
+    load().catch(() => {});
     return () => {
       cancelled = true;
-      clearInterval(id);
+      clearTimeout(timer);
     };
-  }, []);
+  }, [direction, showLive]);
 
-  // File type counts — load once on mount
+  // Catalog queries are only needed on the upload overview.
   useEffect(() => {
+    if (!showCoverage) return undefined;
     let cancelled = false;
     const load = async () => {
       try {
@@ -222,20 +221,28 @@ const AdminOverview = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [showCoverage]);
 
   // Activity heatmap — fixed 90-day lookback. The day-of-week × hour-of-day
   // pattern only becomes meaningful over weeks, so it intentionally ignores
   // the selected range (which can be as short as 1h).
   useEffect(() => {
+    if (!direction || section !== 'activity') return undefined;
+    const controller = new AbortController();
     let cancelled = false;
+    setHeatmap([]);
     const load = async () => {
       const end = new Date().toISOString();
       const start = new Date(
         Date.now() - 90 * 24 * 60 * 60 * 1_000,
       ).toISOString();
       try {
-        const heat = await reportsAPI.getHeatmap({ end, start });
+        const heat = await reportsAPI.getHeatmap({
+          end,
+          start,
+          direction,
+          signal: controller.signal,
+        });
         if (!cancelled) setHeatmap(heat ?? []);
       } catch {
         // silently ignore
@@ -245,16 +252,21 @@ const AdminOverview = () => {
     load();
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [analyticsRefresh]);
+  }, [analyticsRefresh, direction, section]);
 
   // Catalog coverage — load on mount (not time-windowed). The server computes it in the
   // background and reports `pending` until the first count lands, so check back until then.
   useEffect(() => {
+    if (!showCoverage) return undefined;
+    const controller = new AbortController();
     let cancelled = false;
     let timer;
     const load = async () => {
-      const cov = await reportsAPI.getCoverage().catch(() => null);
+      const cov = await reportsAPI
+        .getCoverage({ signal: controller.signal })
+        .catch(() => null);
       if (cancelled) return;
       setCoverage(cov);
       if (cov?.pending) timer = setTimeout(load, 15_000);
@@ -263,146 +275,73 @@ const AdminOverview = () => {
     load();
     return () => {
       cancelled = true;
+      controller.abort();
       clearTimeout(timer);
     };
-  }, []);
+  }, [showCoverage]);
 
-  // Analytics — reload when range or refresh interval changes
+  // A range/view change aborts requests and stops the old queue. Render each
+  // completed panel immediately; unrelated reports never hold the page hostage.
   useEffect(() => {
-    let cancelled = false;
-    let refreshTimer;
+    if (!direction && activeTab !== 'community') return undefined;
+    const controller = new AbortController();
+    let timer;
     setAnalyticsLoading(true);
+    setReportError(false);
+    setSummary(null);
+    setPrevSummary(null);
+    setHistogram(null);
+    setLeaderboard({ download: [], upload: [] });
+    setDirectories([]);
+    setTopFiles([]);
+    setDlExceptions([]);
+    setUlExceptions([]);
+    setGeography(null);
+    setRetries([]);
+    setQueueWait(null);
+    setPeers(null);
+    setSocial(null);
     const end = new Date().toISOString();
-    const start = new Date(Date.now() - range * 60 * 60 * 1_000).toISOString();
-    const interval = getHistogramInterval(range);
-
-    // previous equal-length window, for KPI deltas
-    const prevEnd = start;
-    const prevStart = new Date(
-      Date.now() - 2 * range * 60 * 60 * 1_000,
-    ).toISOString();
-
-    const load = async () => {
-      try {
-        const [
-          sum,
-          hist,
-          ldDown,
-          ldUp,
-          directories_,
-          dlExc,
-          ulExc,
-          filesData,
-          prevSum,
-          geo,
-          retry,
-          queue,
-          peerData,
-          socialData,
-        ] = await runWithConcurrency(
-          [
-            () => reportsAPI.getSummary({ end, start }).catch(() => null),
-            () =>
-              reportsAPI
-                .getHistogram({
-                  end,
-                  interval,
-                  start,
-                })
-                .catch(() => null),
-            () =>
-              reportsAPI
-                .getLeaderboard({
-                  direction: 'download',
-                  end,
-                  limit: 10,
-                  sortBy: 'TotalBytes',
-                  start,
-                })
-                .catch(() => null),
-            () =>
-              reportsAPI
-                .getLeaderboard({
-                  direction: 'upload',
-                  end,
-                  limit: 10,
-                  sortBy: 'TotalBytes',
-                  start,
-                })
-                .catch(() => null),
-            () =>
-              reportsAPI
-                .getDirectories({ end, limit: 10, start })
-                .catch(() => null),
-            () =>
-              reportsAPI
-                .getExceptionsPareto({
-                  direction: 'download',
-                  end,
-                  start,
-                })
-                .catch(() => null),
-            () =>
-              reportsAPI
-                .getExceptionsPareto({ direction: 'upload', end, start })
-                .catch(() => null),
-            () =>
-              reportsAPI
-                .getTopFiles({ end, limit: 10, start })
-                .catch(() => null),
-            () =>
-              reportsAPI
-                .getSummary({ end: prevEnd, start: prevStart })
-                .catch(() => null),
-            () =>
-              reportsAPI
-                .getGeography({ end, limit: 8, start })
-                .catch(() => null),
-            () => reportsAPI.getRetryFunnel({ end, start }).catch(() => null),
-            () => reportsAPI.getQueueWait({ end, start }).catch(() => null),
-            () => reportsAPI.getPeerRetention({ end, start }).catch(() => null),
-            () =>
-              reportsAPI.getSocialActivity({ end, start }).catch(() => null),
-          ],
-          2,
+    const start = new Date(Date.now() - range * 3_600_000).toISOString();
+    const tasks = overviewTasks({
+      direction,
+      section,
+      start,
+      end,
+      interval: getHistogramInterval(range),
+    });
+    const setters = {
+      summary: setSummary,
+      prevSummary: setPrevSummary,
+      histogram: setHistogram,
+      leaderboard: (value) => setLeaderboard({ [direction]: value ?? [] }),
+      exceptions: direction === 'download' ? setDlExceptions : setUlExceptions,
+      directories: setDirectories,
+      topFiles: setTopFiles,
+      geography: setGeography,
+      retries: setRetries,
+      queueWait: setQueueWait,
+      peers: setPeers,
+      social: setSocial,
+    };
+    loadOverviewReports(tasks, {
+      signal: controller.signal,
+      onResult: (key, value) => setters[key](value),
+      onError: () => setReportError(true),
+    }).finally(() => {
+      if (controller.signal.aborted) return;
+      setAnalyticsLoading(false);
+      if (refreshMs > 0)
+        timer = setTimeout(
+          () => setAnalyticsRefresh((value) => value + 1),
+          refreshMs,
         );
-        if (cancelled) return;
-        setSummary(sum);
-        setHistogram(hist);
-        setLeaderboard({ download: ldDown ?? [], upload: ldUp ?? [] });
-        setDirectories(directories_ ?? []);
-        setDlExceptions(dlExc ?? []);
-        setUlExceptions(ulExc ?? []);
-        setTopFiles(filesData ?? []);
-        setPrevSummary(prevSum);
-        setGeography(geo);
-        setRetries(retry ?? []);
-        setQueueWait(queue);
-        setPeers(peerData);
-        setSocial(socialData);
-      } catch {
-        // silently ignore
-      } finally {
-        if (!cancelled) {
-          setAnalyticsLoading(false);
-          setTransitioning(false);
-          if (refreshMs > 0) {
-            refreshTimer = setTimeout(
-              () => setAnalyticsRefresh((c) => c + 1),
-              refreshMs,
-            );
-          }
-        }
-      }
-    };
-
-    load();
-
+    });
     return () => {
-      cancelled = true;
-      clearTimeout(refreshTimer);
+      controller.abort();
+      clearTimeout(timer);
     };
-  }, [analyticsRefresh, range, refreshMs]);
+  }, [activeTab, analyticsRefresh, direction, range, refreshMs, section]);
 
   const allDownloads = flattenTransfers(downloads);
   const allUploads = flattenTransfers(uploads);
@@ -413,16 +352,24 @@ const AdminOverview = () => {
   return (
     <div className="overview">
       <div className="overview-tabs">
-        <button
-          className={`overview-tab${activeTab === 'analytics' ? ' active' : ''}`}
-          onClick={() => {
-            prefs.set('overview:tab', 'analytics');
-            setActiveTab('analytics');
-          }}
-          type="button"
-        >
-          Analytics
-        </button>
+        {[
+          ['uploads', 'Uploads'],
+          ['downloads', 'Downloads'],
+          ['community', 'Sharing & community'],
+          ['resources', 'Resources'],
+        ].map(([id, label]) => (
+          <button
+            className={`overview-tab${activeTab === id ? ' active' : ''}`}
+            key={id}
+            onClick={() => {
+              prefs.set('overview:tab', id);
+              setActiveTab(id);
+            }}
+            type="button"
+          >
+            {label}
+          </button>
+        ))}
         <button
           className={`overview-tab${activeTab === 'network' ? ' active' : ''}`}
           onClick={() => {
@@ -450,12 +397,17 @@ const AdminOverview = () => {
           className={`overview-analytics${activeTab === 'users' ? ' overview-analytics--users' : ''}`}
         >
           {activeTab === 'users' && <UserReports />}
+          {activeTab === 'resources' && (
+            <section className="overview-section">
+              <SystemStatsCard />
+            </section>
+          )}
           {activeTab === 'network' && (
             <section className="overview-section">
               <DistributedNetworkCard />
             </section>
           )}
-          {activeTab === 'analytics' && (
+          {(direction || activeTab === 'community') && (
             <>
               <div className="overview-controls">
                 <div className="overview-controls-left">
@@ -467,7 +419,6 @@ const AdminOverview = () => {
                         onClick={() => {
                           if (range === r.hours) return;
                           prefs.set('overview:range-h', r.hours);
-                          setTransitioning(true);
                           setRange(r.hours);
                         }}
                         type="button"
@@ -501,77 +452,90 @@ const AdminOverview = () => {
               </div>
 
               <div className="overview-subtabs">
-                {ANALYTICS_TABS.map((t) => (
-                  <button
-                    className={`overview-subtab${analyticsTab === t.id ? ' active' : ''}`}
-                    key={t.id}
-                    onClick={() => {
-                      prefs.set('overview:analytics-tab', t.id);
-                      setAnalyticsTab(t.id);
-                    }}
-                    type="button"
-                  >
-                    {t.label}
-                  </button>
-                ))}
+                {direction &&
+                  ANALYTICS_TABS.filter(
+                    (t) => direction === 'upload' || t.id !== 'geography',
+                  ).map((t) => (
+                    <button
+                      className={`overview-subtab${section === t.id ? ' active' : ''}`}
+                      key={t.id}
+                      onClick={() => {
+                        prefs.set('overview:analytics-tab', t.id);
+                        setAnalyticsTab(t.id);
+                      }}
+                      type="button"
+                    >
+                      {direction === 'download' && t.id === 'top'
+                        ? 'Top sources'
+                        : t.label}
+                    </button>
+                  ))}
               </div>
 
+              {analyticsLoading && <p role="status">Updating reports…</p>}
+              {reportError && (
+                <p role="alert">
+                  Some reports could not load. Try refreshing this view.
+                </p>
+              )}
               <div
-                className={`overview-sections${transitioning ? ' transitioning' : ''}`}
+                aria-busy={analyticsLoading}
+                className="overview-sections"
               >
-                {transitioning && (
-                  <div
-                    aria-hidden="true"
-                    className="overview-glass-overlay"
-                  >
-                    <div className="overview-glass-spinner" />
-                  </div>
+                {activeTab === 'community' && (
+                  <section className="overview-section">
+                    <SocialPulse data={social} />
+                    <CoverageCard
+                      pending={coverage?.pending}
+                      totalFiles={totalSharedFiles}
+                      uploadedFiles={coverage?.uploadedFiles}
+                    />
+                    <RatioCard
+                      histogram={histogram}
+                      summary={summary}
+                    />
+                    <PeerRetentionCard data={peers} />
+                    <BlockedUsersCard />
+                  </section>
                 )}
-                {analyticsTab === 'glance' && (
+                {direction && section === 'glance' && (
                   <section className="overview-section">
                     <KpiCards
+                      direction={direction}
                       downloads={allDownloads}
                       loading={analyticsLoading && !summary}
                       prevSummary={prevSummary}
                       summary={summary}
                       uploads={allUploads}
                     />
-                    <SocialPulse data={social} />
-                    <div className="overview-row">
-                      <RatioCard
-                        histogram={histogram}
-                        summary={summary}
-                      />
-                      <CoverageCard
-                        pending={coverage?.pending}
-                        totalFiles={totalSharedFiles}
-                        uploadedFiles={coverage?.uploadedFiles}
-                      />
-                    </div>
-                    <SystemStatsCard />
                   </section>
                 )}
 
-                {analyticsTab === 'activity' && (
+                {direction && section === 'activity' && (
                   <section className="overview-section">
                     <ActivityChart
                       data={histogram}
+                      direction={direction}
                       intervalMinutes={getHistogramInterval(range)}
                       range={range}
                     />
                     <ActivityHeatmap data={heatmap} />
                     <ErrorChart
                       data={histogram}
+                      direction={direction}
                       intervalMinutes={getHistogramInterval(range)}
                     />
                   </section>
                 )}
 
-                {analyticsTab === 'reliability' && (
+                {direction && section === 'reliability' && (
                   <section className="overview-section">
                     <div className="overview-row">
-                      <RetryFunnel data={retries} />
-                      <QueueWaitCard stats={queueWait} />
+                      {direction === 'download' ? (
+                        <RetryFunnel data={retries} />
+                      ) : (
+                        <QueueWaitCard stats={queueWait} />
+                      )}
                     </div>
                     <TransferHealth
                       dlExceptions={dlExceptions}
@@ -581,24 +545,25 @@ const AdminOverview = () => {
                   </section>
                 )}
 
-                {analyticsTab === 'top' && (
+                {direction && section === 'top' && (
                   <section className="overview-section">
                     <div className="overview-row">
-                      <UserLeaderboard leaderboard={leaderboard} />
-                      <PopularDirectories directories={directories} />
-                      <TopFiles files={topFiles} />
+                      <UserLeaderboard
+                        direction={direction}
+                        leaderboard={leaderboard}
+                      />
+                      {direction === 'upload' && (
+                        <PopularDirectories directories={directories} />
+                      )}
+                      {direction === 'upload' && <TopFiles files={topFiles} />}
                     </div>
                   </section>
                 )}
 
-                {analyticsTab === 'geography' && (
+                {direction && section === 'geography' && (
                   <section className="overview-section">
                     <div className="overview-row">
                       <GeographyCard geography={geography} />
-                      <PeerRetentionCard data={peers} />
-                    </div>
-                    <div className="overview-row">
-                      <BlockedUsersCard />
                     </div>
                   </section>
                 )}

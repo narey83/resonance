@@ -36,6 +36,9 @@ import {
   StyleSheet,
 } from 'react-native';
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useWindowFold } from '../lib/adaptiveWindow';
+
 interface Props {
   visible:  boolean;
   onClose:  () => void;
@@ -55,8 +58,10 @@ interface Props {
  * Children are responsible for their own background / border-radius styling.
  */
 export default function BottomSheet({ visible, onClose, children }: Props) {
+  const insets = useSafeAreaInsets();
+  const fold = useWindowFold();
   return (
-    <Modal
+    <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']}
       animationType="slide"
       onRequestClose={onClose}
       transparent
@@ -64,7 +69,7 @@ export default function BottomSheet({ visible, onClose, children }: Props) {
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.kav}
+        style={[styles.kav, { paddingLeft: insets.left, paddingRight: insets.right }, fold && (fold.vertical ? { width: fold.x } : { height: fold.y, flex: 0 })]}
       >
         <Pressable style={styles.dismiss} onPress={onClose} />
         {children}

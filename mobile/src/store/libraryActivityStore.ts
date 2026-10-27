@@ -27,9 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { onSessionReset, sessionGuard, guardSessionCallback } from '../lib/sessionScope';
 import { useEffect } from 'react';
-import { AppState } from 'react-native';
-import { HubConnectionState } from '@microsoft/signalr';
 import { create } from 'zustand';
 import { evictArtwork } from '../services/artworkCache';
 import {
@@ -56,6 +55,7 @@ import {
   LIBRARY_ACTIVITY_LIBRARY_UPDATED,
   LIBRARY_ACTIVITY_SYNC_STATE,
 } from '../api/libraryActivityHub';
+import { maintainServerConnection } from '../lib/serverConnection';
 import { attachHubLogging, remoteLog } from '../api/remoteLogger';
 
 interface LibraryActivityState {
@@ -142,11 +142,14 @@ export const useLibraryActivityStore = create<LibraryActivityState>((set, get) =
   },
 
   toggleLove: async (path) => {
+    const current = sessionGuard();
     const isLoved = get().lovedPaths.has(path);
     if (isLoved) get().applyUnloved(path); else get().applyLoved(path);
     try {
       if (isLoved) await apiUnloveTrack(path); else await apiLoveTrack(path);
+      if (!current()) return;
     } catch {
+      if (!current()) return;
       if (isLoved) get().applyLoved(path); else get().applyUnloved(path);
     }
   },
@@ -178,35 +181,33 @@ export const useLibraryActivityHub = () => {
     // re-rendered the entire app shell (tabs, overlay, bubble, banner) on every hub event —
     // every play, love, sync-state tick and library-revision bump. The actions are static.
     const store = useLibraryActivityStore.getState();
+    const current = sessionGuard();
 
     const hub = createLibraryActivityHubConnection();
     if (!hub) return;
 
     attachHubLogging(hub, 'libraryActivity');
 
-    hub.on(LIBRARY_ACTIVITY_SNAPSHOT,        store.applySnapshot);
-    hub.on(LIBRARY_ACTIVITY_LOVED,           store.applyLoved);
-    hub.on(LIBRARY_ACTIVITY_UNLOVED,         store.applyUnloved);
-    hub.on(LIBRARY_ACTIVITY_ALL_UNLOVED,     store.applyAllUnloved);
-    hub.on(LIBRARY_ACTIVITY_PLAYED,          store.applyPlayed);
-    hub.on(LIBRARY_ACTIVITY_PLAY_DELETED,    store.applyPlayDeleted);
-    hub.on(LIBRARY_ACTIVITY_HISTORY_CLEARED, store.applyHistoryCleared);
-    hub.on(LIBRARY_ACTIVITY_LIBRARY_UPDATED, store.bumpLibraryRevision);
-    hub.on(LIBRARY_ACTIVITY_SYNC_STATE,      store.applySyncState);
+    hub.on(LIBRARY_ACTIVITY_SNAPSHOT, guardSessionCallback((snapshot: LibraryActivitySnapshot) => {
+      store.applySnapshot(snapshot);
+      // A new connection includes a fresh snapshot; reconcile library events missed offline.
+      store.bumpLibraryRevision();
+    }));
+    hub.on(LIBRARY_ACTIVITY_LOVED, guardSessionCallback(store.applyLoved));
+    hub.on(LIBRARY_ACTIVITY_UNLOVED, guardSessionCallback(store.applyUnloved));
+    hub.on(LIBRARY_ACTIVITY_ALL_UNLOVED, guardSessionCallback(store.applyAllUnloved));
+    hub.on(LIBRARY_ACTIVITY_PLAYED, guardSessionCallback(store.applyPlayed));
+    hub.on(LIBRARY_ACTIVITY_PLAY_DELETED, guardSessionCallback(store.applyPlayDeleted));
+    hub.on(LIBRARY_ACTIVITY_HISTORY_CLEARED, guardSessionCallback(store.applyHistoryCleared));
+    hub.on(LIBRARY_ACTIVITY_LIBRARY_UPDATED, guardSessionCallback(store.bumpLibraryRevision));
+    hub.on(LIBRARY_ACTIVITY_SYNC_STATE, guardSessionCallback(store.applySyncState));
 
-    const startPromise = hub.start().catch((err: unknown) => {
+    return maintainServerConnection(hub, current, store.bumpLibraryRevision, (err) => {
       remoteLog('error', `[hub:libraryActivity] start failed — ${err instanceof Error ? err.message : String(err)}`);
     });
-
-    const appStateSub = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active' && hub.state === HubConnectionState.Disconnected) {
-        hub.start().catch(() => {});
-      }
-    });
-
-    return () => {
-      appStateSub.remove();
-      startPromise.then(() => hub.stop().catch(() => {}));
-    };
   }, []);
 };
+
+onSessionReset(() => {
+  useLibraryActivityStore.setState(useLibraryActivityStore.getInitialState(), true);
+});

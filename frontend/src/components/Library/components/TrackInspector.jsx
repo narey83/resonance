@@ -17,6 +17,10 @@ const TrackInspector = ({
   const [notes, setNotes] = useState(
     () => prefs.get('library.trackNotes', {})[track.path] || '',
   );
+  const [preparation, setPreparation] = useState(null);
+  const [preparationError, setPreparationError] = useState('');
+  const [notesReady, setNotesReady] = useState(false);
+  const [savingNotes, setSavingNotes] = useState(false);
   const [saved, setSaved] = useState(false);
   const closeRef = useRef(null);
   useEffect(() => {
@@ -46,6 +50,64 @@ const TrackInspector = ({
       cancelled = true;
     };
   }, [track.path]);
+  useEffect(() => {
+    let cancelled = false;
+    setNotesReady(false);
+    setPreparation(null);
+    setPreparationError('');
+    setSaved(false);
+    setNotes(prefs.get('library.trackNotes', {})[track.path] || '');
+    api
+      .get('/musiclibrary/discovery/notes')
+      .then(({ data }) => {
+        if (cancelled) return;
+        const found = Array.isArray(data)
+          ? data.find((note) => note.path === track.path)
+          : null;
+        if (found) {
+          setPreparation(found);
+          setNotes(found.notes || '');
+        }
+
+        setNotesReady(true);
+      })
+      .catch(() => {
+        if (!cancelled)
+          setPreparationError(
+            'Could not load synced notes. Reopen this track to retry.',
+          );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [track.path]);
+  const savePreparation = async () => {
+    setSavingNotes(true);
+    setPreparationError('');
+    try {
+      const { data } = await api.put('/musiclibrary/discovery/notes', {
+        path: track.path,
+        role: '',
+        bookmarks: [],
+        revision: 0,
+        ...preparation,
+        notes,
+      });
+      setPreparation(data);
+      prefs.set('library.trackNotes', {
+        ...prefs.get('library.trackNotes', {}),
+        [track.path]: notes,
+      });
+      setSaved(true);
+    } catch {
+      setPreparationError(
+        'Could not save synced notes. If edited elsewhere, reopen this track to reconcile before saving. Your text is still here.',
+      );
+    } finally {
+      setSavingNotes(false);
+    }
+  };
+
   const summary = djSummary(track);
   const status = analysisStatus(track, false, reviewed);
   return (
@@ -114,7 +176,8 @@ const TrackInspector = ({
       <h4>Preparation notes</h4>
       <textarea
         aria-label="Track preparation notes"
-        maxLength={4_000}
+        disabled={!notesReady || savingNotes}
+        maxLength={10_000}
         onChange={(e) => {
           setNotes(e.target.value);
           setSaved(false);
@@ -125,18 +188,39 @@ const TrackInspector = ({
       />
       <button
         className="jb-btn"
-        onClick={() => {
-          prefs.set('library.trackNotes', {
-            ...prefs.get('library.trackNotes', {}),
-            [track.path]: notes,
-          });
-          setSaved(true);
-        }}
+        disabled={!notesReady || savingNotes}
+        onClick={savePreparation}
         type="button"
       >
         Save notes
       </button>
       {saved && <span role="status"> Notes saved</span>}
+      {preparationError && <p role="alert">{preparationError}</p>}
+      {preparation?.role && (
+        <p>
+          Set role:{' '}
+          {
+            { opener: 'Opener', peak: 'Peak time', closer: 'Closer' }[
+              preparation.role
+            ]
+          }
+        </p>
+      )}
+      {Boolean(preparation?.bookmarks?.length) && (
+        <>
+          <h4>Listening bookmarks</h4>
+          {preparation.bookmarks.map((cue) => (
+            <button
+              className="library-phrase-jump"
+              key={cue.id}
+              onClick={() => onSeek?.(cue.seconds)}
+              type="button"
+            >
+              {formatSeconds(cue.seconds)} · {cue.label}
+            </button>
+          ))}
+        </>
+      )}
       <h4>DJ phrases</h4>
       {error ? (
         <p role="status">Could not load analysis. Close and reopen to retry.</p>

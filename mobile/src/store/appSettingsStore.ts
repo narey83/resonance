@@ -30,6 +30,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
 import type { ThemeName } from '../theme';
+import { isAccentName, isThemeName, type AccentName } from '../lib/appearance';
 
 const STORE_KEY = 'app_settings_v1';
 
@@ -54,6 +55,7 @@ export type PlayerMode = 'bubble' | 'bar';
 
 interface AppSettingsStore {
   theme:             ThemeName;
+  accentColour:      AccentName;
   remoteLogging:     boolean;
   librarySyncDebug:  boolean;
   perfProbe:         boolean;
@@ -61,11 +63,13 @@ interface AppSettingsStore {
   artworkBackground: boolean;
   streamQuality:     StreamQuality;
   playerMode:        PlayerMode;
+  showTrackNumbers:  boolean;
   notifications:     NotificationPrefs;
   loaded:            boolean;
 
   load:                  () => Promise<void>;
   setTheme:              (theme: ThemeName) => Promise<void>;
+  setAccentColour:       (colour: AccentName) => Promise<void>;
   setRemoteLogging:      (enabled: boolean) => Promise<void>;
   setLibrarySyncDebug:   (enabled: boolean) => Promise<void>;
   setPerfProbe:          (enabled: boolean) => Promise<void>;
@@ -73,6 +77,7 @@ interface AppSettingsStore {
   setArtworkBackground:  (enabled: boolean) => Promise<void>;
   setStreamQuality:      (quality: StreamQuality) => Promise<void>;
   setPlayerMode:         (mode: PlayerMode) => Promise<void>;
+  setShowTrackNumbers:   (enabled: boolean) => Promise<void>;
   setNotification:       (key: keyof NotificationPrefs, enabled: boolean) => Promise<void>;
 }
 
@@ -90,6 +95,7 @@ const DEFAULT_NOTIFICATIONS: NotificationPrefs = {
 
 export const useAppSettings = create<AppSettingsStore>((set, get) => ({
   theme:             'system',
+  accentColour:      'default',
   remoteLogging:     false,
   librarySyncDebug:  false,
   perfProbe:         false,
@@ -97,6 +103,7 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
   artworkBackground: true,
   streamQuality:     'auto',
   playerMode:        'bar',
+  showTrackNumbers:  false,
   notifications:     DEFAULT_NOTIFICATIONS,
   loaded:            false,
 
@@ -105,7 +112,8 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
       const raw = await SecureStore.getItemAsync(STORE_KEY);
       const parsed = raw ? JSON.parse(raw) : {};
       set({
-        theme:             parsed.theme             ?? 'system',
+        theme:             isThemeName(parsed.theme) ? parsed.theme : 'system',
+        accentColour:      isAccentName(parsed.accentColour) ? parsed.accentColour : 'default',
         remoteLogging:     parsed.remoteLogging     ?? false,
         librarySyncDebug:  parsed.librarySyncDebug  ?? false,
         perfProbe:         parsed.perfProbe         ?? false,
@@ -113,6 +121,7 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
         artworkBackground: parsed.artworkBackground ?? true,
         streamQuality:     parsed.streamQuality     ?? 'auto',
         playerMode:        parsed.playerMode         ?? 'bar',
+        showTrackNumbers:  parsed.showTrackNumbers === true,
         notifications:     { ...DEFAULT_NOTIFICATIONS, ...(parsed.notifications ?? {}) },
         loaded:            true,
       });
@@ -123,6 +132,12 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
 
   setTheme: async (theme) => {
     set({ theme });
+    await persist(get());
+  },
+
+  setAccentColour: async (colour) => {
+    if (!isAccentName(colour)) return;
+    set({ accentColour: colour });
     await persist(get());
   },
 
@@ -161,6 +176,11 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
     await persist(get());
   },
 
+  setShowTrackNumbers: async (enabled) => {
+    set({ showTrackNumbers: enabled });
+    await persist(get());
+  },
+
   setNotification: async (key, enabled) => {
     const notifications = { ...get().notifications, [key]: enabled };
     set({ notifications });
@@ -168,12 +188,13 @@ export const useAppSettings = create<AppSettingsStore>((set, get) => ({
   },
 }));
 
-async function persist(state: Pick<AppSettingsStore, 'theme' | 'remoteLogging' | 'librarySyncDebug' | 'perfProbe' | 'backendLogs' | 'artworkBackground' | 'streamQuality' | 'playerMode' | 'notifications'>) {
+async function persist(state: Pick<AppSettingsStore, 'theme' | 'accentColour' | 'remoteLogging' | 'librarySyncDebug' | 'perfProbe' | 'backendLogs' | 'artworkBackground' | 'streamQuality' | 'playerMode' | 'showTrackNumbers' | 'notifications'>) {
   try {
     await SecureStore.setItemAsync(
       STORE_KEY,
       JSON.stringify({
         theme:             state.theme,
+        accentColour:      state.accentColour,
         remoteLogging:     state.remoteLogging,
         librarySyncDebug:  state.librarySyncDebug,
         perfProbe:         state.perfProbe,
@@ -181,6 +202,7 @@ async function persist(state: Pick<AppSettingsStore, 'theme' | 'remoteLogging' |
         artworkBackground: state.artworkBackground,
         streamQuality:     state.streamQuality,
         playerMode:        state.playerMode,
+        showTrackNumbers:  state.showTrackNumbers,
         notifications:     state.notifications,
       }),
     );

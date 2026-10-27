@@ -35,7 +35,7 @@ jest.mock('../../../lib/usePagedList', () => ({
   usePagedList: jest.fn(),
 }));
 jest.mock('./PlaylistTools', () => ({ paths }) => (
-  <span>Mixtape: {paths.join(' then ')}</span>
+  <span>Playlist: {paths.join(' then ')}</span>
 ));
 
 const a = {
@@ -271,7 +271,7 @@ describe('desktop mix preview workflow', () => {
     act(() => Simulate.click(button('Pause')));
     expect(player.pausePlayback).toHaveBeenCalledTimes(1);
   });
-  it('swaps direction explicitly and keeps mixtape paths in the comparison order', async () => {
+  it('swaps direction explicitly and keeps playlist paths in the comparison order', async () => {
     expect.hasAssertions();
     const { onPair } = await render();
     act(() => Simulate.click(button('Swap direction')));

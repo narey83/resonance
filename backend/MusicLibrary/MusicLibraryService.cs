@@ -142,7 +142,7 @@ namespace resonance.MusicLibrary
 
         private DateTime? syncDeferredSinceUtc;
 
-        public MusicLibraryService(OptionsAtStartup options, MusicRepository repository, EventBus eventBus, IHubContext<LibraryActivityHub> hub, ILibraryActivityService activity, resonance.Integrations.Fcm.IFcmPushService fcm, ArtworkStore artwork = null)
+        public MusicLibraryService(OptionsAtStartup options, MusicRepository repository, EventBus eventBus, IHubContext<LibraryActivityHub> hub, ILibraryActivityService activity, ArtworkStore artwork = null)
         {
             Artwork = artwork;
             Options = options;
@@ -150,7 +150,6 @@ namespace resonance.MusicLibrary
             Events = eventBus;
             Hub = hub;
             Activity = activity;
-            Fcm = fcm;
         }
 
         public event Action<IReadOnlyList<string>> NewTracksIndexed;
@@ -162,7 +161,6 @@ namespace resonance.MusicLibrary
         private EventBus Events { get; }
         private IHubContext<LibraryActivityHub> Hub { get; }
         private ILibraryActivityService Activity { get; }
-        private resonance.Integrations.Fcm.IFcmPushService Fcm { get; }
         private ArtworkStore Artwork { get; }
 
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Library);
@@ -458,23 +456,9 @@ namespace resonance.MusicLibrary
                 return false;
             }
 
-            string fullPath;
-            try
-            {
-                // Resolve "..", symlinks-as-text, etc. so a traversal can't escape a share root.
-                fullPath = Path.GetFullPath(path);
-            }
-            catch
-            {
-                return false;
-            }
-
             foreach (var dir in GetScanDirectories())
             {
-                var root = Path.GetFullPath(dir)
-                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                    + Path.DirectorySeparatorChar;
-                if (fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                if (resonance.Common.LibraryPathSecurity.Contains(dir, path))
                 {
                     return true;
                 }
@@ -880,7 +864,6 @@ namespace resonance.MusicLibrary
                 {
                     _ = Hub.BroadcastLibraryUpdatedAsync(added, updated, removed,
                         stale.Count <= 500 ? stale.AsReadOnly() : null);
-                    _ = Fcm.SendLibraryUpdatedAsync(added, updated, removed);
                 }
 
                 // Now that the library reflects the filesystem, repoint/prune loved tracks whose

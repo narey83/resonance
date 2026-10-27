@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { stopHubConnection } from '../../lib/hubLifecycle';
+
 import React, {
   useCallback,
   useEffect,
@@ -320,7 +322,7 @@ function ContextPicker({
         </Text>
       </Pressable>
 
-      <Modal animationType="slide" onRequestClose={() => setOpen(false)} transparent visible={open}>
+      <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']} animationType="slide" onRequestClose={() => setOpen(false)} transparent visible={open}>
         <View style={styles.sheetBackdrop}>
           <Pressable onPress={() => setOpen(false)} style={{ flex: 1 }} />
           <View style={styles.sheet}>
@@ -491,7 +493,7 @@ function LiveTab({ colors, styles }: { colors: ThemeColors; styles: ReturnType<t
 
     return () => {
       cancelled = true;
-      hub.stop().catch(() => {});
+      stopHubConnection(hub);
     };
   }, []);
 

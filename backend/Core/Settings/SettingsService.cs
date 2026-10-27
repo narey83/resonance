@@ -154,7 +154,11 @@ public class SettingsService
     private void EnsureSchema()
     {
         using var conn = CreateConnection();
-        if (UsePostgres) conn.Execute("CREATE SCHEMA IF NOT EXISTS settings");
+        if (UsePostgres)
+        {
+            conn.Execute("CREATE SCHEMA IF NOT EXISTS settings");
+        }
+
         conn.Execute($"CREATE TABLE IF NOT EXISTS {T} (\"Key\" TEXT PRIMARY KEY NOT NULL, \"Value\" TEXT NOT NULL)");
     }
 }

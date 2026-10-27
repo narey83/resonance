@@ -31,7 +31,8 @@ coverage.json
 /backend/scripts/
 /backend/tools/ffprobe
 /backend/tools/yt-dlp
-/backend/tools/yt-dlp-plugins/
+# The pinned yt-dlp plugin source is required by clean builds.
+/backend/tools/yt-dlp-plugins/**/__pycache__/
 /backend/tools/ffmpeg-release.txt
 
 # Local editor workspace files
@@ -58,6 +59,23 @@ __pycache__/
 /tools/**/obj/
 /tools/analysis-worker/local-config.json
 /tools/analysis-worker/models/
-/desktop/pioneer-link/dist/
-/desktop/pioneer-link/resonance-pioneer-link
-/desktop/pioneer-link/resonance-pioneer-link.exe
+/desktop/bridge/dist/
+/desktop/bridge/resonance-bridge
+/desktop/bridge/resonance-bridge.exe
+
+# Local development process state, logs and persistent data
+/.dev/
+
+# Server-local YouTube authentication cookies must never enter source or images.
+/backend/ytdlp-cookies.txt
+
+# Published helper installers and signed engine releases (never source or private keys).
+/backend/bridge-releases/
+
+# Portable stack private deployment inputs and state
+bootstrap.local.json
+resonance.local.json
+.resonance-state/
+*.state.tar.gz
+*.state.tar.gz.sha256
+*.credentials

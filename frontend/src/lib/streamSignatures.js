@@ -60,9 +60,13 @@ export const ensureSigned = async (paths) => {
   if (todo.length === 0) return;
 
   try {
-    const { data } = await api.post('/musiclibrary/sign', { paths: todo });
-    for (const [path, sig] of Object.entries(data || {})) {
-      if (sig && sig.sig) cache.set(path, sig);
+    for (let offset = 0; offset < todo.length; offset += 1_000) {
+      const { data } = await api.post('/musiclibrary/sign', {
+        paths: todo.slice(offset, offset + 1_000),
+      });
+      for (const [path, sig] of Object.entries(data || {})) {
+        if (sig && sig.sig) cache.set(path, sig);
+      }
     }
   } catch {
     /* leave unsigned; caller can retry on the next fetch */

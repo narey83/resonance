@@ -32,17 +32,21 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Alert,
   Text,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
-import { useAuthStore, getDeviceId } from '../../store/auth';
+import { useAuthStore } from '../../store/auth';
+import { useRemoteAccess } from '../../lib/remoteAccess';
+import { useAppMode } from '../../store/appModeStore';
+import { enterLocalMode } from '../../services/appMode';
 import { logout } from '../../api/session';
-import { unregisterPushToken } from '../../api/pushTokens';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { MoreStackParamList } from '../../navigation/MainTabs';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { MainTabParamList, MoreStackParamList } from '../../navigation/MainTabs';
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'More'>;
 
@@ -72,6 +76,8 @@ const MENU_SECTIONS: MenuSection[] = [
       // SERVER_SECTIONS in ServerScreen for what it fans out to.
       { label: 'Server',     icon: 'server-outline',  screen: 'Server',     subtitle: 'Status, logs, relay & restart', adminOnly: true },
       { label: 'Notifications', icon: 'notifications-outline', screen: 'Notifications', subtitle: 'Alerts & sounds' },
+      { label: 'Servers', icon: 'server-outline', screen: 'Servers', subtitle: 'Recent servers & biometric sign-in' },
+      { label: 'Studio', icon: 'options-outline', screen: 'Studio', subtitle: 'Mastering & creative audio rack' },
       { label: 'Settings',   icon: 'settings-outline', screen: 'Settings',   subtitle: 'App preferences' },
       { label: 'About',      icon: 'information-circle-outline', screen: 'About', subtitle: 'Version, developer & source code' },
     ],
@@ -79,6 +85,7 @@ const MENU_SECTIONS: MenuSection[] = [
 ];
 
 export default function MoreScreen({ navigation }: Props) {
+  const remote = useRemoteAccess();
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
@@ -88,20 +95,33 @@ export default function MoreScreen({ navigation }: Props) {
       MENU_SECTIONS
         .map((section) => ({
           ...section,
-          items: section.items.filter((item) => !item.adminOnly || isAdmin),
+          items: section.items.filter((item) => (!item.adminOnly || isAdmin) && (remote || item.screen === 'Settings' || item.screen === 'Studio' || item.screen === 'About')),
         }))
         .filter((section) => section.items.length > 0),
-    [isAdmin],
+    [isAdmin, remote],
   );
 
   const handleLogout = async () => {
-    try { const deviceId = await getDeviceId(); await unregisterPushToken(deviceId); } catch {}
     try { if (refreshToken) await logout(refreshToken); } catch {}
     await clearTokens();
   };
 
   return (
     <ScrollView contentContainerStyle={s.container} style={s.scroll}>
+      {remote && <View>
+        <Text style={s.sectionTitle}>COMMUNITY & DIGGING</Text>
+        <View style={s.group}>
+          {([{ target: 'BrowseTab', label: 'Browse shares', icon: 'folder-outline' }, { target: 'RoomsTab', label: 'Rooms', icon: 'chatbubbles-outline' }, { target: 'ChatTab', label: 'Private conversations', icon: 'chatbubble-outline' }] as const).map(item => (
+            <Pressable key={item.target} style={s.row} onPress={() => navigation.getParent<BottomTabNavigationProp<MainTabParamList>>()?.navigate(item.target)}>
+              <View style={s.iconWrap}><Ionicons color={colors.accent} name={item.icon} size={20} /></View>
+              <View style={s.rowText}><Text style={s.rowLabel}>{item.label}</Text></View>
+              <Ionicons color={colors.textDim} name="chevron-forward" size={16} />
+            </Pressable>
+          ))}
+        </View>
+      </View>
+      }
+      {!remote && <View style={s.group}><Pressable accessibilityRole="button" style={s.row} onPress={() => { void useAppMode.getState().select('remote').catch(() => Alert.alert('Could not connect', 'Please try again.')); }}><View style={s.iconWrap}><Ionicons color={colors.accent} name="server-outline" size={20} /></View><View style={s.rowText}><Text style={s.rowLabel}>Connect to server</Text><Text style={s.rowSub}>Add your remote library when you’re ready</Text></View><Ionicons color={colors.textMuted} name="arrow-forward" size={18} /></Pressable></View>}
       {sections.map((section) => (
         <View key={section.title}>
           <Text style={s.sectionTitle}>{section.title.toUpperCase()}</Text>
@@ -130,12 +150,16 @@ export default function MoreScreen({ navigation }: Props) {
         </View>
       ))}
 
-      <Pressable
+      {remote && <Pressable
+        onPress={() => { void enterLocalMode().catch(() => Alert.alert('Could not switch', 'Please try again.')); }}
+        style={s.logoutBtn}
+      ><Text style={s.logoutText}>Use only local music</Text></Pressable>}
+      {remote && <Pressable
         onPress={handleLogout}
         style={({ pressed }) => [s.logoutBtn, pressed && s.rowPressed]}
       >
         <Text style={s.logoutText}>Sign out</Text>
-      </Pressable>
+      </Pressable>}
     </ScrollView>
   );
 }

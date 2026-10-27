@@ -148,7 +148,7 @@ export default function UserActionSheet({
   );
 
   return (
-    <Modal visible={username !== null} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']} visible={username !== null} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={s.overlay} onPress={onClose} />
       <View style={s.container} pointerEvents="box-none">
         <View style={s.sheet}>

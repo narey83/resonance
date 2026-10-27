@@ -59,3 +59,14 @@
   padding: 4px 12px;
 }
 
+
+.browse-root .br-info-bar { margin:0 10px 8px; padding:12px; border:1px solid var(--border); border-radius:7px; font-size:12px; color:var(--text-secondary); background:var(--surface-input); }
+.browse-root .sr-sidebar-title { font-size:15px; }
+.browse-root .sr-sidebar-status { padding:12px; font-size:13px; }
+.browse-root .br-results .sr-folder-header { height:56px; min-height:56px; max-height:56px; flex-wrap:nowrap; padding:10px 16px; background:var(--bg-secondary, var(--nav-bg)); border-block:1px solid var(--border); }
+.br-results .sr-folder-name { font-size:14px; font-weight:600; }
+.br-results .sr-folder-meta { font-size:12px; flex-shrink:0; }
+.browse-root .br-results .sr-file-row { height:40px; min-height:40px; max-height:40px; }
+.br-results .sr-file-table-head { position:sticky; top:0; z-index:2; background:var(--bg-primary); }
+.br-results .sr-download-bar { padding:14px 20px; gap:12px; }
+.br-results .sr-download-bar-btn { padding:10px 18px; border-radius:6px; font-size:13px; }

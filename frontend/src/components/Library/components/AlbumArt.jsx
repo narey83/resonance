@@ -188,6 +188,7 @@ const AlbumArt = ({
         <img
           alt={name}
           crossOrigin="anonymous"
+          decoding="async"
           loading="lazy"
           onError={handleError}
           onLoad={handleLoad}

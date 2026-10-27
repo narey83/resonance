@@ -138,6 +138,8 @@ const SubscriptionsPane = ({ subscriptions }) => {
                 <img
                   alt=""
                   className="ytdlp-result-thumb ytdlp-result-thumb--round"
+                  decoding="async"
+                  loading="lazy"
                   src={sub.thumbnailUrl}
                 />
               ) : (

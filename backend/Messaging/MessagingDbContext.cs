@@ -49,6 +49,15 @@ namespace resonance.Messaging
         public DbSet<PrivateMessage> PrivateMessages { get; set; }
         public DbSet<RoomMessage> RoomMessages { get; set; }
 
+        /// <summary>Writes the keyless room log with provider-specific schema qualification.</summary>
+        public void InsertRoomMessage(RoomMessage message)
+        {
+            var table = Database.IsNpgsql() ? "messaging.\"RoomMessages\"" : "\"RoomMessages\"";
+            Database.ExecuteSqlRaw("INSERT INTO " + table +
+                " (\"Timestamp\", \"Username\", \"Message\", \"RoomName\", \"Direction\") VALUES ({0}, {1}, {2}, {3}, {4})",
+                message.Timestamp, message.Username, message.Message, message.RoomName, (int)message.Direction);
+        }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             if (Database.IsNpgsql())

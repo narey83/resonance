@@ -1,0 +1,106 @@
+name: resonance-local
+services:
+  backend:
+    entrypoint: ["python3", "/src/docker/scripts/with-helper.py", "backend", "/bin/sh", "/src/docker/scripts/backend-watch.sh"]
+    stop_grace_period: 120s
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+      args:
+        DEV_UID: ${LOCAL_UID:-1000}
+        DEV_GID: ${LOCAL_GID:-1000}
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    working_dir: /src
+    command:
+      - dotnet
+      - watch
+      - --project
+      - backend/resonance.csproj
+      - --non-interactive
+      - --no-hot-reload
+      - run
+      - --no-launch-profile
+      - --
+      - --app-dir
+      - /config
+      - --http-port
+      - "5030"
+      - --http-ip-address
+      - 0.0.0.0
+      - --no-https
+      - --downloads
+      - /config/downloads
+      - --incomplete
+      - /config/incomplete
+      - --content-path
+      - ../../../../frontend/build
+      - --ytdlp-executable
+      - yt-dlp
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      DOTNET_USE_POLLING_FILE_WATCHER: "1"
+      RESONANCE_APP_DIR: /config
+      RESONANCE_DATABASE_PROVIDER: Sqlite
+      RESONANCE_DATABASE_CONNECTION_STRING: Data Source=/config/data/resonance.db
+      RESONANCE_NO_CONNECT: ${RESONANCE_DOCKER_NO_CONNECT:-true}
+      NUGET_PACKAGES: /cache/nuget
+    ports:
+      - "127.0.0.1:${RESONANCE_DOCKER_API_PORT:-55451}:5030"
+      - "${RESONANCE_DOCKER_PEER_BIND:-127.0.0.1}:${RESONANCE_DOCKER_PEER_PORT:-50302}:50300"
+    volumes:
+      - ..:/src
+      - ${RESONANCE_DOCKER_APP_DIR:-../.dev/docker/app}:/config
+      - backend_obj:/src/backend/obj
+      - backend_bin:/src/backend/bin
+      - tests_obj:/src/tests/obj
+      - tests_bin:/src/tests/bin
+      - nuget:/cache/nuget
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:5030/api/v0/session/initialized"]
+      interval: 5s
+      timeout: 3s
+      start_period: 120s
+      retries: 36
+    restart: unless-stopped
+  web:
+    build:
+      context: ..
+      dockerfile: docker/frontend.dev.Dockerfile
+      args:
+        DEV_UID: ${LOCAL_UID:-1000}
+        DEV_GID: ${LOCAL_GID:-1000}
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    working_dir: /src/frontend
+    environment:
+      BROWSER: none
+      HOST: 0.0.0.0
+      REACT_APP_API_URL: /api/v0
+      REACT_APP_HUB_URL: /hub
+      RESONANCE_DEV_API_TARGET: http://backend:5030
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+      CI: "true"
+    ports:
+      - "127.0.0.1:${RESONANCE_DOCKER_WEB_PORT:-3001}:3000"
+    volumes:
+      - ../frontend:/src/frontend
+      - frontend_modules:/src/frontend/node_modules
+      - npm_cache:/cache/npm
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      start_period: 90s
+      retries: 24
+    restart: unless-stopped
+volumes:
+  backend_obj:
+  backend_bin:
+  tests_obj:
+  tests_bin:
+  frontend_modules:
+  nuget:
+  npm_cache:

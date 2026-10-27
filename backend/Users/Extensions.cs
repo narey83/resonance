@@ -71,14 +71,30 @@ namespace resonance.Users
         /// </summary>
         /// <param name="i">The UserInfo instance to convert.</param>
         /// <returns>The converted instance.</returns>
-        public static Info ToInfo(this UserInfo i) => new()
+        public static Info ToInfo(this UserInfo i)
         {
-            Description = i.Description,
-            HasFreeUploadSlot = i.HasFreeUploadSlot,
-            HasPicture = i.HasPicture,
-            Picture = i.Picture,
-            QueueLength = i.QueueLength,
-            UploadSlots = i.UploadSlots,
-        };
+            byte[] picture = null;
+            if (i.HasPicture && i.Picture?.Length > 0)
+            {
+                try
+                {
+                    picture = Common.ArtworkResizer.ResizeToJpeg(i.Picture, 384);
+                }
+                catch (System.Exception)
+                {
+                    // A malformed peer image must not break user information or send its original bytes.
+                }
+            }
+
+            return new Info
+            {
+                Description = i.Description,
+                HasFreeUploadSlot = i.HasFreeUploadSlot,
+                HasPicture = picture != null,
+                Picture = picture,
+                QueueLength = i.QueueLength,
+                UploadSlots = i.UploadSlots,
+            };
+        }
     }
 }

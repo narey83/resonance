@@ -30,16 +30,16 @@
 namespace resonance.Analysis
 {
     using System;
-    using Microsoft.Extensions.DependencyInjection;
-    using resonance.Analysis.Candidates;
     using System.Collections.Generic;
     using System.Linq;
     using System.Threading;
     using System.Threading.Channels;
     using System.Threading.Tasks;
     using Microsoft.AspNetCore.SignalR;
+    using Microsoft.Extensions.DependencyInjection;
     using Microsoft.Extensions.Hosting;
     using Microsoft.Extensions.Options;
+    using resonance.Analysis.Candidates;
     using resonance.Common;
     using resonance.Common.Ffmpeg;
     using resonance.MusicLibrary;
@@ -328,6 +328,44 @@ namespace resonance.Analysis
                 ? null
                 : ShareService.FindMaskedFilenames([MusicPath.ToRelative(path)]).FirstOrDefault();
 
+        /// <summary>Preserves measured results when optional tag writes are blocked by an active reader.</summary>
+        /// <param name="track">The shared track that was analysed.</param>
+        /// <param name="result">The metrics produced by the decoder.</param>
+        /// <param name="writeToTags">Whether detected BPM and key should also be written into the file.</param>
+        /// <returns>Whether the result contains any measured metrics.</returns>
+        internal bool PersistAnalysisResult(TrackAnalysisInfo track, AnalysisResult result, bool writeToTags)
+        {
+            var tagsSkipped = false;
+            if (writeToTags)
+            {
+                try
+                {
+                    Apply(track.MaskedFilename, result.Bpm, result.Key);
+                }
+                catch (System.IO.IOException ex) when (resonance.Common.FileSharingViolation.Is(ex))
+                {
+                    // Keep playback/uploads intact and retain a successful decode despite the optional write.
+                    tagsSkipped = true;
+                }
+            }
+
+            var produced = result.Bpm.HasValue || result.Key != null
+                || result.Waveform != null || result.Loudness != null;
+            if (produced)
+            {
+                // Save after a successful tag write so its new file size is used by the cache guard.
+                Store.Save(track.OriginalFilename, result);
+                if (tagsSkipped)
+                {
+                    Log.Information(
+                        "Saved analysis for '{File}'; file tags remain unchanged because the file is in use",
+                        track.Filename);
+                }
+            }
+
+            return produced;
+        }
+
         // ── Scan loop ─────────────────────────────────────────────────────────
         private void UpdateTags(string maskedFilename, Func<FileTags, FileTags> update)
         {
@@ -581,18 +619,7 @@ namespace resonance.Analysis
                                 continue;
                             }
 
-                            if (options.WriteToTags)
-                            {
-                                Apply(track.MaskedFilename, result.Bpm, result.Key);
-                            }
-
-                            if (result.Bpm.HasValue || result.Key != null || result.Waveform != null || result.Loudness != null)
-                            {
-                                Store.Save(path, result);
-                            }
-
-                            var produced = result.Bpm.HasValue || result.Key != null
-                                || result.Waveform != null || result.Loudness != null;
+                            var produced = PersistAnalysisResult(track, result, options.WriteToTags);
                             if (produced)
                             {
                                 // Re-index this one file before announcing anything. The tag write
@@ -678,7 +705,11 @@ namespace resonance.Analysis
                 { /* expected on cancel */
                 }
 
-                if (!ct.IsCancellationRequested) await RunEnhanced(tracks, ct, !request.SkipAnalysed || request.ResetAll);
+                if (!ct.IsCancellationRequested)
+                {
+                    await RunEnhanced(tracks, ct, !request.SkipAnalysed || request.ResetAll);
+                }
+
                 var cancelled = ct.IsCancellationRequested;
                 SetState(false, !cancelled, cancelled, total, analysed, skipped, failed,
                     cancelled ? CurrentState.Progress : 1.0);
@@ -722,7 +753,11 @@ namespace resonance.Analysis
         private async Task RunEnhanced(IReadOnlyList<TrackAnalysisInfo> tracks, CancellationToken ct, bool force)
         {
             var enhanced = Services?.GetService<CandidateAnalysisService>();
-            if (enhanced?.Enabled != true) return;
+            if (enhanced?.Enabled != true)
+            {
+                return;
+            }
+
             CurrentState = CurrentState with { Scanning = true, Completed = false, EnhancedTotal = tracks.Count, EnhancedCompleted = 0, EnhancedFailed = 0 };
             foreach (var track in tracks)
             {

@@ -69,13 +69,45 @@ namespace resonance.Core.API
         private IOptionsMonitor<resonance.Options> Options { get; }
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", resonance.Logs.Application);
 
+        /// <summary>Hourly counters for compacted logs; raw message detail has expired.</summary>
+        /// <returns>An HTTP response containing hourly log counts or a request/storage error.</returns>
+        [HttpGet("summaries")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
+        public async Task<IActionResult> Summaries([FromQuery] int days = 7)
+        {
+            if (days < 1 || days > 90)
+            {
+                return BadRequest("Days must be between 1 and 90");
+            }
+
+            if (!Program.DatabaseLoggingEnabled)
+            {
+                return Ok(Array.Empty<object>());
+            }
+
+            await using var db = await LogsDbContextFactory.CreateDbContextAsync(HttpContext.RequestAborted);
+            if (!db.Database.IsSqlite())
+            {
+                return StatusCode(501, "Log rollups are available with SQLite storage");
+            }
+
+            await LogRollupStore.EnsureSchemaAsync(db, HttpContext.RequestAborted);
+            var from = DateTime.UtcNow.AddDays(-days);
+            var rows = await db.Database.SqlQuery<HourlyLogSummary>($"""
+                SELECT "Hour", "Level", "SourceContext", "Count", "FirstSeen", "LastSeen"
+                FROM "LogHourlySummaries" WHERE "Hour" >= {from}
+                ORDER BY "Hour" DESC, "Level", "SourceContext" LIMIT 20000
+                """).ToListAsync(HttpContext.RequestAborted);
+            return Ok(rows);
+        }
+
         /// <summary>
         ///     Gets a paginated, filtered list of log entries, from PostgreSQL when
         ///     <c>Logger.Postgres</c> is enabled or the daily JSONL log files otherwise.
         /// </summary>
         /// <returns></returns>
         [HttpGet]
-        [Authorize(Policy = AuthPolicy.Any)]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
         public async Task<IActionResult> Get(
             [FromQuery] int offset = 0,
             [FromQuery] int limit = 100,
@@ -84,7 +116,8 @@ namespace resonance.Core.API
             [FromQuery] string search = null,
             [FromQuery] DateTime? from = null,
             [FromQuery] DateTime? to = null,
-            [FromQuery] long? afterId = null)
+            [FromQuery] long? afterId = null,
+            [FromQuery] long? beforeId = null)
         {
             if (offset < 0)
             {
@@ -115,7 +148,8 @@ namespace resonance.Core.API
                         to,
                         offset,
                         limit,
-                        HttpContext.RequestAborted);
+                        HttpContext.RequestAborted,
+                        beforeId);
                 }
                 else
                 {
@@ -146,7 +180,7 @@ namespace resonance.Core.API
         /// </summary>
         /// <returns></returns>
         [HttpGet("contexts")]
-        [Authorize(Policy = AuthPolicy.Any)]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
         public IActionResult GetContexts() => Ok(resonance.Logs.All);
 
         /// <summary>
@@ -154,7 +188,7 @@ namespace resonance.Core.API
         /// </summary>
         /// <returns></returns>
         [HttpGet("level")]
-        [Authorize(Policy = AuthPolicy.Any)]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
         public IActionResult GetLevel() => Ok(new
         {
             level = Program.LevelSwitch.MinimumLevel.ToString(),
@@ -166,7 +200,7 @@ namespace resonance.Core.API
         /// </summary>
         /// <returns></returns>
         [HttpPut("level")]
-        [Authorize(Policy = AuthPolicy.Any)]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
         public IActionResult PutLevel([FromBody] LogLevelRequest request)
         {
             if (request?.Level is not null)
@@ -206,7 +240,7 @@ namespace resonance.Core.API
         [Authorize(Policy = AuthPolicy.Any)]
         public IActionResult Post([FromBody] BrowserLogEntry entry)
         {
-            if (string.IsNullOrWhiteSpace(entry?.Message))
+            if (string.IsNullOrWhiteSpace(entry?.Message) || entry.Message.Length > 8192 || entry.Context?.Length > 128 || entry.SubContext?.Length > 256)
             {
                 return BadRequest();
             }
@@ -233,12 +267,22 @@ namespace resonance.Core.API
 
             switch (level)
             {
-                case "Error": remoteLog.Error("{RemoteMessage}", entry.Message); break;
-                case "Warning": remoteLog.Warning("{RemoteMessage}", entry.Message); break;
-                default: remoteLog.Information("{RemoteMessage}", entry.Message); break;
+                case "Error": remoteLog.Error("{RemoteMessage}", resonance.Core.Http.SensitiveData.RedactText(entry.Message)); break;
+                case "Warning": remoteLog.Warning("{RemoteMessage}", resonance.Core.Http.SensitiveData.RedactText(entry.Message)); break;
+                default: remoteLog.Information("{RemoteMessage}", resonance.Core.Http.SensitiveData.RedactText(entry.Message)); break;
             }
 
             return Ok();
+        }
+
+        public sealed class HourlyLogSummary
+        {
+            public DateTime Hour { get; set; }
+            public string Level { get; set; } = string.Empty;
+            public string SourceContext { get; set; } = string.Empty;
+            public long Count { get; set; }
+            public DateTime FirstSeen { get; set; }
+            public DateTime LastSeen { get; set; }
         }
     }
 

@@ -729,8 +729,8 @@ const SmartCratesView = (trackActions) => {
       <div className="workspace-footnote">
         <Layers3 size={17} />
         <span>
-          Smart crates are saved rules. Mixtapes keep the exact tracks and order
-          you choose.
+          Smart crates are saved rules. Playlists keep the exact tracks and
+          order you choose.
         </span>
       </div>
     </section>

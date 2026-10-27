@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { onSessionReset, sessionGuard } from '../lib/sessionScope';
+import { shallowEqual } from '../lib/shallowEqual';
 import { create } from 'zustand';
 import * as api from '../api/transfers';
 import type { Transfer, TransferDir } from '../api/transfers';
@@ -49,20 +51,11 @@ interface TransferStore {
 // comparators can short-circuit without re-rendering unchanged rows.
 function reconcile(prev: Transfer[], next: Transfer[]): Transfer[] {
   const prevById = new Map(prev.map(t => [t.id, t]));
-  let changed = prev.length !== next.length;
-  const result = next.map(n => {
-    const p = prevById.get(n.id);
-    if (
-      p &&
-      p.stateDescription === n.stateDescription &&
-      p.bytesTransferred  === n.bytesTransferred &&
-      p.averageSpeed      === n.averageSpeed &&
-      p.placeInQueue      === n.placeInQueue
-    ) return p;
-    changed = true;
-    return n;
+  const result = next.map((item) => {
+    const previous = prevById.get(item.id);
+    return previous && shallowEqual(previous, item) ? previous : item;
   });
-  return changed ? result : prev;
+  return result.length === prev.length && result.every((item, index) => item === prev[index]) ? prev : result;
 }
 
 // One poll per direction at a time. The screen polls every 2s, but a response that took longer than
@@ -84,22 +77,25 @@ export const useTransferStore = create<TransferStore>((set, get) => ({
   loadUploads: () => get().refresh('upload'),
 
   refresh: async (dir, force = false) => {
+    const current = sessionGuard();
     const pending = inFlight[dir];
     if (pending) {
       // A user action must reflect reality, so wait the outstanding poll out and then re-read
       // rather than returning stale data. A plain poll just yields to the one already running.
       if (!force) return;
       await pending.catch(() => {});
+      if (!current()) return;
     }
 
     const run = (async () => {
       try {
         const fresh = await api.getAll(dir);
+        if (!current()) return;
         const prev = get();
-        const current = dir === 'download' ? prev.downloads : prev.uploads;
-        const next = reconcile(current, fresh);
+        const previous = dir === 'download' ? prev.downloads : prev.uploads;
+        const next = reconcile(previous, fresh);
         const loaded = dir === 'download' ? prev.downloadsLoaded : prev.uploadsLoaded;
-        if (next === current && loaded) return;
+        if (next === previous && loaded) return;
         set(dir === 'download'
           ? { downloads: next, downloadsLoaded: true }
           : { uploads: next, uploadsLoaded: true });
@@ -117,18 +113,27 @@ export const useTransferStore = create<TransferStore>((set, get) => ({
   },
 
   cancel: async (dir, username, id, remove = false) => {
+    const current = sessionGuard();
     await api.cancelTransfer(dir, username, id, remove);
+    if (!current()) return;
     await get().refresh(dir, true);
   },
 
   clearCompleted: async (dir) => {
+    const current = sessionGuard();
     try {
       await api.clearCompleted(dir);
     } finally {
       // Refresh even when the request reported failure. The server keeps going after a client-side
       // abort, so the list on screen is stale either way — re-reading it is what tells the user
       // what actually happened.
-      await get().refresh(dir, true);
+      if (current()) await get().refresh(dir, true);
     }
   },
 }));
+
+onSessionReset(() => {
+  inFlight.download = null;
+  inFlight.upload = null;
+  useTransferStore.setState(useTransferStore.getInitialState(), true);
+});

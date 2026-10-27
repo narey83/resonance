@@ -86,6 +86,20 @@ namespace resonance.MusicLibrary.API
     [Authorize(Policy = AuthPolicy.FeatureLibrary)]
     public class MusicLibraryController : ControllerBase
     {
+        /// <summary>
+        ///     Transcodes a local audio file to a constant-bitrate MP3 with ffmpeg and streams it
+        ///     to the response. Used for the low-bandwidth streaming quality modes.
+        ///     <para>
+        ///     The output is made byte-range seekable: because the transcode is constant-bitrate,
+        ///     a byte offset maps linearly to a time offset (<c>time = offset / bytesPerSecond</c>),
+        ///     so we can declare a <c>Content-Length</c> estimated from the track duration, honour
+        ///     <c>Range</c> requests by seeking ffmpeg with <c>-ss</c>, and write exactly the
+        ///     requested number of bytes (truncating or zero-padding the tail to match). This lets
+        ///     ExoPlayer/AVPlayer scrub within a transcoded stream. If the duration is unknown we
+        ///     fall back to a non-seekable pipe.
+        ///     </para>
+        /// </summary>
+        private static readonly SemaphoreSlim TranscodeSlots = new(4, 4);
         public MusicLibraryController(
             IMusicLibraryService service,
             IAnalysisService analysis,
@@ -167,6 +181,7 @@ namespace resonance.MusicLibrary.API
         /// <summary>Triggers an immediate sync (fire-and-forget). Pass force=true to clear all indexed tracks and re-read every file from disk.</summary>
         /// <returns></returns>
         [HttpPost("sync")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(202)]
         public IActionResult TriggerSync([FromQuery] bool force = false)
@@ -187,6 +202,7 @@ namespace resonance.MusicLibrary.API
         /// <summary>Cancels the in-flight scan (if any). Use to abort an accidental full/forced rescan.</summary>
         /// <returns></returns>
         [HttpPost("sync/cancel")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(202)]
         public IActionResult CancelSync()
@@ -222,7 +238,7 @@ namespace resonance.MusicLibrary.API
             [FromQuery] double? bpmMin = null, [FromQuery] double? bpmMax = null,
             [FromQuery] string keys = null, [FromQuery] string energy = null, [FromQuery] string vocals = null)
         {
-            limit = Math.Max(1, limit);
+            limit = Math.Clamp(limit, 1, 10000);
             offset = Math.Max(0, offset);
             var result = Service.QueryTracks(search, artist, album, genre, year, folder, missingKey, missingBpm, missingTitle, missingArtist, missingArtwork, limit, offset, sort, descending, startsWith, key, analysis, new DjLibraryFilters(bpmMin, bpmMax, keys?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), energy, vocals));
             return Ok(result with { Tracks = result.Tracks.Select(SignTrack).ToList() });
@@ -234,8 +250,16 @@ namespace resonance.MusicLibrary.API
         [Authorize(Policy = AuthPolicy.Any)]
         public IActionResult Resolve([FromBody] string[] paths)
         {
-            if (paths == null || paths.Length > 200) return BadRequest("Up to 200 library paths are supported.");
-            if (paths.Length == 0) return Ok(Array.Empty<MusicTrack>());
+            if (paths == null || paths.Length > 200)
+            {
+                return BadRequest("Up to 200 library paths are supported.");
+            }
+
+            if (paths.Length == 0)
+            {
+                return Ok(Array.Empty<MusicTrack>());
+            }
+
             return Ok(Service.QueryTracks(null, null, null, null, null, null, false, false, false, false, false,
                 200, 0, dj: new DjLibraryFilters(Paths: paths)).Tracks.Select(SignTrack));
         }
@@ -390,6 +414,11 @@ namespace resonance.MusicLibrary.API
         [ProducesResponseType(typeof(System.Collections.Generic.Dictionary<string, SignedUrl>), 200)]
         public IActionResult SignUrls([FromBody] SignUrlsRequest request)
         {
+            if (request?.Paths?.Length > 1000)
+            {
+                return BadRequest("Up to 1000 paths can be signed per request.");
+            }
+
             var result = new System.Collections.Generic.Dictionary<string, SignedUrl>();
             if (request?.Paths == null)
             {
@@ -408,6 +437,18 @@ namespace resonance.MusicLibrary.API
             }
 
             return Ok(result);
+        }
+
+        /// <summary>
+        /// Renews playback priority for authenticated clients whose audio is already buffered.
+        /// </summary>
+        /// <returns>An empty successful response.</returns>
+        [HttpPost("playback/activity")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        public IActionResult PlaybackActivity()
+        {
+            Analysis.RecordPlaybackActivity();
+            return NoContent();
         }
 
         /// <summary>
@@ -459,7 +500,21 @@ namespace resonance.MusicLibrary.API
 
             if (kbps > 0 && FfmpegPath != null)
             {
-                await StreamTranscoded(file, kbps, HttpContext.RequestAborted);
+                if (!await TranscodeSlots.WaitAsync(0, HttpContext.RequestAborted))
+                {
+                    Response.Headers["Retry-After"] = "5";
+                    return StatusCode(StatusCodes.Status429TooManyRequests, "All audio transcoding slots are busy.");
+                }
+
+                try
+                {
+                    await StreamTranscoded(file, kbps, HttpContext.RequestAborted);
+                }
+                finally
+                {
+                    TranscodeSlots.Release();
+                }
+
                 return new EmptyResult();
             }
 
@@ -510,33 +565,34 @@ namespace resonance.MusicLibrary.API
             }
 
             path = file;
-            var cacheKey = size.HasValue ? $"artwork:{path}:{size}" : $"artwork:{path}";
-            if (Cache.TryGetValue(cacheKey, out ArtworkCacheEntry? cached) && cached != null)
-            {
-                return File(cached.Bytes, cached.Mime);
-            }
-
-            // Second chance from the persistent cache before doing the expensive thing. The memory
-            // cache is empty after every restart; this one isn't, so a cover is only ever decoded
-            // and resized once rather than once per restart.
-            var normalisedSize = size.HasValue && size.Value > 0 ? ArtworkResizer.Clamp(size.Value) : 0;
+            var normalisedSize = ArtworkResizer.Bucket(size);
             long fileSize;
-
+            long modified;
             try
             {
-                fileSize = new System.IO.FileInfo(path).Length;
+                var source = new System.IO.FileInfo(path);
+                fileSize = source.Length;
+                modified = source.LastWriteTimeUtc.Ticks;
             }
             catch
             {
                 return NotFound();
             }
 
-            var stored = Artwork.Get(path, normalisedSize, fileSize);
+            // Version the encoding policy as well as the source, so old high-quality cache
+            // entries cannot defeat bounded delivery after an upgrade.
+            var cacheKey = $"artwork:v2:{path}:{normalisedSize}:{fileSize}:{modified}";
+            if (Cache.TryGetValue(cacheKey, out ArtworkCacheEntry? cached) && cached != null)
+            {
+                return ArtworkResponse(cached.Bytes, cached.Mime);
+            }
+
+            var stored = Artwork.Get(path, normalisedSize, fileSize, modified);
 
             if (stored is not null)
             {
                 Cache.Set(cacheKey, new ArtworkCacheEntry(stored.Value.Bytes, stored.Value.Mime), TimeSpan.FromHours(4));
-                return File(stored.Value.Bytes, stored.Value.Mime);
+                return ArtworkResponse(stored.Value.Bytes, stored.Value.Mime);
             }
 
             try
@@ -558,23 +614,12 @@ namespace resonance.MusicLibrary.API
                     return NotFound();
                 }
 
-                byte[] bytes;
-                string mime;
-
-                if (size.HasValue && size.Value > 0)
-                {
-                    bytes = ArtworkResizer.ResizeToJpeg(rawBytes, size.Value);
-                    mime = "image/jpeg";
-                }
-                else
-                {
-                    bytes = rawBytes;
-                    mime = DetectImageMime(rawBytes)!;
-                }
+                var bytes = ArtworkResizer.ResizeToJpeg(rawBytes, normalisedSize);
+                const string mime = "image/jpeg";
 
                 Cache.Set(cacheKey, new ArtworkCacheEntry(bytes, mime), TimeSpan.FromHours(4));
-                Artwork.Set(path, normalisedSize, fileSize, bytes, mime);
-                return File(bytes, mime);
+                Artwork.Set(path, normalisedSize, fileSize, bytes, mime, modified);
+                return ArtworkResponse(bytes, mime);
             }
             catch
             {
@@ -585,6 +630,7 @@ namespace resonance.MusicLibrary.API
         /// <summary>Analyses one or more tracks: key, BPM, loudness and waveform together.</summary>
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         [HttpPost("tracks/analyze")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(202)]
         [ProducesResponseType(400)]
@@ -632,6 +678,7 @@ namespace resonance.MusicLibrary.API
         /// <summary>Analyses every track in a folder: key, BPM, loudness and waveform together.</summary>
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         [HttpPost("folders/analyze")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(202)]
         [ProducesResponseType(400)]
@@ -675,6 +722,7 @@ namespace resonance.MusicLibrary.API
         /// <summary>Renames a folder on disk and updates all DB records under it.</summary>
         /// <returns></returns>
         [HttpPatch("folders")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(204)]
         [ProducesResponseType(400)]
@@ -741,6 +789,7 @@ namespace resonance.MusicLibrary.API
         /// <summary>Renames a track file on disk and updates its DB record.</summary>
         /// <returns></returns>
         [HttpPatch("tracks")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(204)]
         [ProducesResponseType(400)]
@@ -806,6 +855,7 @@ namespace resonance.MusicLibrary.API
         /// <summary>Deletes a track file from disk and removes it from the library.</summary>
         /// <returns></returns>
         [HttpDelete("tracks")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(204)]
         [ProducesResponseType(400)]
@@ -858,6 +908,7 @@ namespace resonance.MusicLibrary.API
         /// <summary>Deletes a folder and all its contents from disk and removes them from the library.</summary>
         /// <returns></returns>
         [HttpDelete("folders")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(204)]
         [ProducesResponseType(400)]
@@ -913,6 +964,7 @@ namespace resonance.MusicLibrary.API
         /// </summary>
         /// <returns></returns>
         [HttpPost("tracks/delete-batch")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(200)]
         [ProducesResponseType(400)]
@@ -986,6 +1038,7 @@ namespace resonance.MusicLibrary.API
         /// <summary>Deletes a batch of tracks identified by their base64-encoded local paths.</summary>
         /// <returns></returns>
         [HttpPost("tracks/delete-batch-local")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(200)]
         [ProducesResponseType(400)]
@@ -1081,15 +1134,7 @@ namespace resonance.MusicLibrary.API
         /// </summary>
         private static string ResolveRealPath(string path)
         {
-            try
-            {
-                var target = new FileInfo(path).ResolveLinkTarget(returnFinalTarget: true);
-                return target?.FullName ?? path;
-            }
-            catch
-            {
-                return path;
-            }
+            return resonance.Common.LibraryPathSecurity.Resolve(path);
         }
 
         /// <summary>
@@ -1155,6 +1200,15 @@ namespace resonance.MusicLibrary.API
             }
 
             return null;
+        }
+
+        private IActionResult ArtworkResponse(byte[] bytes, string mime)
+        {
+            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+            return new FileContentResult(bytes, mime)
+            {
+                EntityTag = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{hash}\""),
+            };
         }
 
         private void InvalidateListCaches() =>
@@ -1300,19 +1354,6 @@ namespace resonance.MusicLibrary.API
             return f with { Exp = exp, Sig = sig };
         }
 
-        /// <summary>
-        ///     Transcodes a local audio file to a constant-bitrate MP3 with ffmpeg and streams it
-        ///     to the response. Used for the low-bandwidth streaming quality modes.
-        ///     <para>
-        ///     The output is made byte-range seekable: because the transcode is constant-bitrate,
-        ///     a byte offset maps linearly to a time offset (<c>time = offset / bytesPerSecond</c>),
-        ///     so we can declare a <c>Content-Length</c> estimated from the track duration, honour
-        ///     <c>Range</c> requests by seeking ffmpeg with <c>-ss</c>, and write exactly the
-        ///     requested number of bytes (truncating or zero-padding the tail to match). This lets
-        ///     ExoPlayer/AVPlayer scrub within a transcoded stream. If the duration is unknown we
-        ///     fall back to a non-seekable pipe.
-        ///     </para>
-        /// </summary>
         private async Task StreamTranscoded(string path, int kbps, CancellationToken cancellationToken)
         {
             var bitrate = $"{kbps}k";

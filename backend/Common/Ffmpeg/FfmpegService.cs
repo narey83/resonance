@@ -36,6 +36,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -140,29 +141,44 @@ public sealed class FfmpegService : IFfmpegService, IDisposable
     {
         Directory.CreateDirectory(managedDir);
 
-        var (tag, archiveUrl) = await FetchLatestReleaseAsync(cancellationToken);
+        var (tag, archiveUrl, sha256) = await FetchLatestReleaseAsync(cancellationToken);
         if (tag == null)
         {
             throw new InvalidOperationException("Could not determine the latest ffmpeg release.");
         }
 
-        Log.Information("Ffmpeg: updating to {Tag}", tag);
-        await DownloadAndExtractAsync(managedDir, archiveUrl, cancellationToken);
-
-        var ffmpegBin = Path.Combine(managedDir, FfmpegExe);
-        var ffprobeBin = Path.Combine(managedDir, FfprobeExe);
-        if (!File.Exists(ffmpegBin) || !File.Exists(ffprobeBin))
+        var staging = Path.Combine(managedDir, $".ffmpeg-update-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(staging);
+        try
         {
-            throw new InvalidOperationException("ffmpeg update failed: binaries not found after extraction.");
+            Log.Information("Ffmpeg: updating to {Tag}", tag);
+            await DownloadAndExtractAsync(staging, archiveUrl, sha256, cancellationToken);
+            var ffmpegBin = Path.Combine(staging, FfmpegExe);
+            var ffprobeBin = Path.Combine(staging, FfprobeExe);
+            if (!File.Exists(ffmpegBin) || !File.Exists(ffprobeBin))
+            {
+                throw new InvalidOperationException("FFmpeg archive is incomplete.");
+            }
+
+            MakeExecutable(ffmpegBin, ffprobeBin);
+            if (!await resonance.Common.ManagedToolInstaller.IsUsableAsync(ffmpegBin, "-version", cancellationToken)
+                || !await resonance.Common.ManagedToolInstaller.IsUsableAsync(ffprobeBin, "-version", cancellationToken))
+            {
+                throw new InvalidOperationException("Downloaded FFmpeg tools cannot run on this platform.");
+            }
+
+            File.Move(ffmpegBin, Path.Combine(managedDir, FfmpegExe), overwrite: true);
+            File.Move(ffprobeBin, Path.Combine(managedDir, FfprobeExe), overwrite: true);
+            await File.WriteAllTextAsync(ReleaseTagFile, tag, cancellationToken);
+            ffmpegPath = Path.Combine(managedDir, FfmpegExe);
+            ffprobePath = Path.Combine(managedDir, FfprobeExe);
+            Log.Information("Ffmpeg: updated to {Tag} at {Dir}", tag, managedDir);
+            return tag;
         }
-
-        MakeExecutable(ffmpegBin, ffprobeBin);
-        await File.WriteAllTextAsync(ReleaseTagFile, tag, cancellationToken);
-
-        ffmpegPath = ffmpegBin;
-        ffprobePath = ffprobeBin;
-        Log.Information("Ffmpeg: updated to {Tag} at {Dir}", tag, managedDir);
-        return tag;
+        finally
+        {
+            Directory.Delete(staging, recursive: true);
+        }
     }
 
     public void Dispose()
@@ -177,6 +193,21 @@ public sealed class FfmpegService : IFfmpegService, IDisposable
         cts.Cancel();
         cts.Dispose();
         gate.Dispose();
+    }
+
+    internal static async Task ExtractZipBinariesAsync(string archivePath, string toolsDir, string[] names, CancellationToken cancellationToken)
+    {
+        using var archive = System.IO.Compression.ZipFile.OpenRead(archivePath);
+
+        // Resolve every entry before changing the installed files.
+        var entries = names.Select(name => archive.Entries.SingleOrDefault(e => string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"FFmpeg archive is missing {name}.")).ToArray();
+        for (var i = 0; i < names.Length; i++)
+        {
+            await using var source = entries[i].Open();
+            await using var destination = File.Create(Path.Combine(toolsDir, names[i]));
+            await source.CopyToAsync(destination, cancellationToken);
+        }
     }
 
     private static string? ResolveConfigured(string configuredPath)
@@ -263,48 +294,44 @@ public sealed class FfmpegService : IFfmpegService, IDisposable
     // ── Resolution / provisioning ─────────────────────────────────────────────
     private async Task EnsureThenAutoUpdateLoopAsync(CancellationToken cancellationToken)
     {
-        try
-        {
-            await EnsureAsync(cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "Ffmpeg: initial provisioning failed: {Message}", ex.Message);
-        }
-
         while (!cancellationToken.IsCancellationRequested)
         {
-            var opts = options.CurrentValue.Ffmpeg;
             try
             {
-                await Task.Delay(TimeSpan.FromDays(Math.Max(1, opts.UpdateIntervalDays)), cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-
-            // Only auto-update the self-managed copy; never touch a system/PATH or explicitly-configured binary.
-            if (!options.CurrentValue.Ffmpeg.AutoUpdate || !IsUsingManagedCopy())
-            {
-                continue;
-            }
-
-            try
-            {
-                var (_, _, updateAvailable) = await CheckForUpdateAsync(cancellationToken);
-                if (updateAvailable)
+                resonance.Core.StartupProgress.Starting("ffmpeg", "FFmpeg", "Checking audio processing dependencies");
+                await EnsureAsync(cancellationToken);
+                resonance.Core.StartupProgress.Ready("ffmpeg", "FFmpeg and ffprobe are ready");
+                if (options.CurrentValue.Ffmpeg.AutoUpdate && IsUsingManagedCopy())
                 {
-                    await UpdateAsync(cancellationToken);
+                    var (_, _, available) = await CheckForUpdateAsync(cancellationToken);
+                    if (available)
+                    {
+                        await UpdateAsync(cancellationToken);
+                    }
                 }
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 return;
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, "Ffmpeg: background update check failed: {Message}", ex.Message);
+                if (ffmpegPath == null)
+                {
+                    resonance.Core.StartupProgress.Failed("ffmpeg", ex.Message);
+                }
+
+                Log.Warning(ex, "Ffmpeg: dependency setup/update failed; existing working copies are retained");
+            }
+
+            try
+            {
+                var delay = ffmpegPath == null ? TimeSpan.FromMinutes(1) : TimeSpan.FromDays(Math.Max(1, options.CurrentValue.Ffmpeg.UpdateIntervalDays));
+                await Task.Delay(delay, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
             }
         }
     }
@@ -346,7 +373,7 @@ public sealed class FfmpegService : IFfmpegService, IDisposable
             if (!string.IsNullOrWhiteSpace(configured))
             {
                 var resolved = ResolveConfigured(configured);
-                if (resolved != null && TryDir(Path.GetDirectoryName(resolved)!))
+                if (resolved != null && await TryDirAsync(Path.GetDirectoryName(resolved)!, cancellationToken))
                 {
                     Log.Information("Ffmpeg: using configured binary at {Path}", ffmpegPath);
                     return;
@@ -364,19 +391,41 @@ public sealed class FfmpegService : IFfmpegService, IDisposable
 
             foreach (var dir in candidateDirs)
             {
-                if (TryDir(dir))
+                if (await TryDirAsync(dir, cancellationToken))
                 {
                     Log.Information("Ffmpeg: found ffmpeg+ffprobe at {Dir}", dir);
                     return;
                 }
             }
 
+            // Container images ship verified tools. Seed the writable volume before PATH so
+            // automatic updates never need to modify /usr/bin or the read-only image layer.
+            await resonance.Common.ManagedToolInstaller.SeedAsync(FfmpegExe, managedDir, "-version", cancellationToken);
+            await resonance.Common.ManagedToolInstaller.SeedAsync(FfprobeExe, managedDir, "-version", cancellationToken);
+            if (await TryDirAsync(managedDir, cancellationToken))
+            {
+                return;
+            }
+
             // 4) system PATH (both required)
             var pathDir = await ResolveFromPathAsync(cancellationToken);
-            if (pathDir != null && TryDir(pathDir))
+            if (pathDir != null && await TryDirAsync(pathDir, cancellationToken))
             {
                 Log.Information("Ffmpeg: using ffmpeg+ffprobe from PATH at {Dir}", pathDir);
                 return;
+            }
+
+            // macOS GUI launches may omit Homebrew's standard bin directories from PATH.
+            if (OperatingSystem.IsMacOS())
+            {
+                foreach (var dir in new[] { "/opt/homebrew/bin", "/usr/local/bin" })
+                {
+                    if (await TryDirAsync(dir, cancellationToken))
+                    {
+                        Log.Information("Ffmpeg: using native macOS binaries at {Dir}", dir);
+                        return;
+                    }
+                }
             }
 
             // 5) download a static build into the managed dir
@@ -390,11 +439,13 @@ public sealed class FfmpegService : IFfmpegService, IDisposable
     }
 
     // Sets the cached paths if both binaries exist in dir; returns whether it succeeded.
-    private bool TryDir(string dir)
+    private async Task<bool> TryDirAsync(string dir, CancellationToken cancellationToken)
     {
         var ff = Path.Combine(dir, FfmpegExe);
         var fp = Path.Combine(dir, FfprobeExe);
-        if (File.Exists(ff) && File.Exists(fp))
+        if (File.Exists(ff) && File.Exists(fp)
+            && await resonance.Common.ManagedToolInstaller.IsUsableAsync(ff, "-version", cancellationToken)
+            && await resonance.Common.ManagedToolInstaller.IsUsableAsync(fp, "-version", cancellationToken))
         {
             ffmpegPath = ff;
             ffprobePath = fp;
@@ -405,8 +456,13 @@ public sealed class FfmpegService : IFfmpegService, IDisposable
     }
 
     // ── Download / extract ────────────────────────────────────────────────────
-    private async Task<(string? PublishedAt, string ArchiveUrl)> FetchLatestReleaseAsync(CancellationToken cancellationToken)
+    private async Task<(string? PublishedAt, string ArchiveUrl, string Sha256)> FetchLatestReleaseAsync(CancellationToken cancellationToken)
     {
+        if (OperatingSystem.IsMacOS())
+        {
+            throw new PlatformNotSupportedException("Install native macOS ffmpeg and ffprobe (brew install ffmpeg), or set ffmpeg.path. The managed download provider only supplies Windows and Linux builds.");
+        }
+
         string archiveName;
         if (IsWindows)
         {
@@ -429,15 +485,22 @@ public sealed class FfmpegService : IFfmpegService, IDisposable
             var release = await http.GetFromJsonAsync<JsonElement>(
                 "https://api.github.com/repos/yt-dlp/FFmpeg-Builds/releases/latest", cancellationToken);
             var publishedAt = release.GetProperty("published_at").GetString()?.Trim();
-            return (publishedAt, downloadUrl);
+            var asset = release.GetProperty("assets").EnumerateArray().Single(a => a.GetProperty("name").GetString() == archiveName);
+            var digest = asset.GetProperty("digest").GetString();
+            if (digest == null || !digest.StartsWith("sha256:", StringComparison.Ordinal) || digest.Length != 71)
+            {
+                throw new InvalidOperationException("FFmpeg release is missing a SHA-256 digest.");
+            }
+
+            return (publishedAt, downloadUrl, digest[7..]);
         }
         catch
         {
-            return (null, downloadUrl);
+            return (null, downloadUrl, string.Empty);
         }
     }
 
-    private async Task DownloadAndExtractAsync(string toolsDir, string archiveUrl, CancellationToken cancellationToken)
+    private async Task DownloadAndExtractAsync(string toolsDir, string archiveUrl, string sha256, CancellationToken cancellationToken)
     {
         var isZip = archiveUrl.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
         var archivePath = Path.Combine(toolsDir, isZip ? "ffmpeg-download.zip" : "ffmpeg-download.tar.xz");
@@ -453,6 +516,22 @@ public sealed class FfmpegService : IFfmpegService, IDisposable
                 await response.Content.CopyToAsync(fs, cancellationToken);
             }
 
+            await using (var input = File.OpenRead(archivePath))
+            {
+                var actual = Convert.ToHexString(await SHA256.HashDataAsync(input, cancellationToken));
+                if (!actual.Equals(sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("FFmpeg download failed SHA-256 verification.");
+                }
+            }
+
+            // Windows ships BSD tar, which does not accept GNU --wildcards. Read ZIPs directly.
+            if (isZip)
+            {
+                await ExtractZipBinariesAsync(archivePath, toolsDir, new[] { FfmpegExe, FfprobeExe }, cancellationToken);
+                return;
+            }
+
             // Extract just the two binaries, flattening the archive's */bin/ prefix.
             using var tar = new Process
             {
@@ -465,7 +544,12 @@ public sealed class FfmpegService : IFfmpegService, IDisposable
                 },
             };
             tar.Start();
+            var error = await tar.StandardError.ReadToEndAsync(cancellationToken);
             await tar.WaitForExitAsync(cancellationToken);
+            if (tar.ExitCode != 0)
+            {
+                throw new InvalidOperationException($"FFmpeg archive extraction failed (exit {tar.ExitCode}): {error.Trim()}");
+            }
         }
         finally
         {

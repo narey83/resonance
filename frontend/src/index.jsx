@@ -35,6 +35,7 @@
 
 import 'semantic-ui-less/semantic.less';
 import App from './components/App';
+import MaintenanceNotice from './components/MaintenanceNotice';
 import { postLog } from './lib/logs';
 import React from 'react';
 import ReactDOM from 'react-dom';
@@ -67,6 +68,7 @@ window.addEventListener('error', (event) => {
 
 ReactDOM.render(
   <Router>
+    <MaintenanceNotice />
     <App />
   </Router>,
   document.querySelector('#root'),

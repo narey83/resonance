@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { onSessionReset, sessionGuard } from '../lib/sessionScope';
+import { shallowEqual } from '../lib/shallowEqual';
 import { create } from 'zustand';
 import * as roomsAPI from '../api/rooms';
 import type { Room, RoomInfo, RoomMessage } from '../api/rooms';
@@ -44,30 +46,34 @@ function reconcileAvailable(prev: RoomInfo[], next: RoomInfo[]): RoomInfo[] {
   return result.length === prev.length && result.every((r, i) => r === prev[i]) ? prev : result;
 }
 
+const sameItems = <T extends object>(previous: T[], next: T[]): boolean =>
+  previous.length === next.length && previous.every((item, index) => shallowEqual(item, next[index]));
+
 function reconcileJoined(prev: Room[], next: Room[]): Room[] {
   const map = new Map(prev.map((r) => [r.name, r]));
   const result = next.map((r) => {
     const p = map.get(r.name);
-    if (p && p.users.length === r.users.length && p.messages.length === r.messages.length) return p;
+    if (p && p.isPrivate === r.isPrivate && p.owner === r.owner && p.operatorCount === r.operatorCount &&
+        p.operators.length === r.operators.length && p.operators.every((name, index) => name === r.operators[index]) &&
+        sameItems(p.users, r.users) && sameItems(p.messages, r.messages)) return p;
     return r;
   });
   return result.length === prev.length && result.every((r, i) => r === prev[i]) ? prev : result;
 }
 
+let listRequest = 0;
+const messageRequests = new Map<string, number>();
+
 interface RoomStore {
   joined: Room[];
   available: RoomInfo[];
   messages: Record<string, RoomMessage[]>;
-  // Unread count per room. The only live room signal the backend pushes is
-  // ROOM_MENTION (see Application.Client_RoomMessageReceived) — there is no
-  // per-message room hub — so this counts mentions, matching what actually
-  // raises a notification.
-  // ponytail: mentions only; count every room message once a room hub exists.
+  // Mention badges remain separate from ordinary room traffic.
   mentions: Record<string, number>;
   isLoadingJoined: boolean;
   isLoadingAvailable: boolean;
 
-  loadJoined: () => Promise<void>;
+  loadJoined: (quiet?: boolean) => Promise<void>;
   loadAvailable: () => Promise<void>;
   loadMessages: (roomName: string) => Promise<void>;
   join: (roomName: string) => Promise<void>;
@@ -88,41 +94,72 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
   isLoadingJoined: false,
   isLoadingAvailable: false,
 
-  loadJoined: async () => {
-    set({ isLoadingJoined: true });
+  loadJoined: async (quiet = false) => {
+    const session = sessionGuard();
+    const request = ++listRequest;
+    const current = () => session() && request === listRequest;
+    if (!quiet) set({ isLoadingJoined: true });
     try {
       const names  = await roomsAPI.getJoinedNames();
-      const fresh  = await Promise.all(names.map((name) => roomsAPI.getRoom(name)));
+      if (!current()) return;
+      const fresh  = await Promise.all(names.map((name) => {
+        const cached = quiet ? get().joined.find((room) => room.name === name) : undefined;
+        return cached ?? roomsAPI.getRoom(name);
+      }));
+      if (!current()) return;
       const joined = reconcileJoined(get().joined, fresh);
-      set({ joined, isLoadingJoined: false });
+      set((s) => ({ joined, isLoadingJoined: false,
+        messages: Object.fromEntries(joined.map((room) => [room.name, s.messages[room.name] ?? room.messages])),
+      }));
     } catch {
+      if (!current()) return;
       set({ isLoadingJoined: false });
     }
   },
 
   loadAvailable: async () => {
+    const current = sessionGuard();
     set({ isLoadingAvailable: true });
     try {
       const fresh     = await roomsAPI.getAvailable();
+      if (!current()) return;
       const available = reconcileAvailable(get().available, fresh);
       set({ available, isLoadingAvailable: false });
     } catch {
+      if (!current()) return;
       set({ isLoadingAvailable: false });
     }
   },
 
   loadMessages: async (roomName) => {
+    const session = sessionGuard();
+    const request = (messageRequests.get(roomName) ?? 0) + 1;
+    messageRequests.set(roomName, request);
+    const current = () => session() && messageRequests.get(roomName) === request;
     const messages = await roomsAPI.getMessages(roomName);
-    set((s) => ({ messages: { ...s.messages, [roomName]: messages } }));
+    if (!current()) return;
+    set((s) => {
+      const previous = s.messages[roomName];
+      if (previous && sameItems(previous, messages)) return s;
+      return {
+        messages: { ...s.messages, [roomName]: messages },
+        joined: s.joined.map((room) => room.name === roomName ? { ...room, messages } : room),
+      };
+    });
   },
 
   join: async (roomName) => {
+    const current = sessionGuard();
     await roomsAPI.join(roomName);
+    if (!current()) return;
     await get().loadJoined();
   },
 
   leave: async (roomName) => {
+    const current = sessionGuard();
     await roomsAPI.leave(roomName);
+    if (!current()) return;
+    messageRequests.set(roomName, (messageRequests.get(roomName) ?? 0) + 1);
     set((s) => ({
       joined: s.joined.filter((r) => r.name !== roomName),
       messages: Object.fromEntries(
@@ -135,7 +172,9 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
   },
 
   sendMessage: async (roomName, text) => {
+    const current = sessionGuard();
     await roomsAPI.sendMessage(roomName, text);
+    if (!current()) return;
     await get().loadMessages(roomName);
   },
 
@@ -145,3 +184,7 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
   clearMentions: (roomName) =>
     set((s) => (s.mentions[roomName] ? { mentions: { ...s.mentions, [roomName]: 0 } } : s)),
 }));
+
+onSessionReset(() => {
+  useRoomStore.setState(useRoomStore.getInitialState(), true);
+});

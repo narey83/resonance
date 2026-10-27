@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { getSessionGeneration, isCurrentSession } from '../../lib/sessionScope';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -97,6 +98,7 @@ export default function ScanScreen({ navigation }: Props) {
       setBusy(true);
       setError(null);
 
+      const started = getSessionGeneration();
       try {
         const serverUrl = payload.url!.replace(/\/+$/, '');
         const [deviceName, deviceId] = await Promise.all([getDeviceName(), getDeviceId()]);
@@ -104,8 +106,12 @@ export default function ScanScreen({ navigation }: Props) {
 
         // Order matters: the server address has to be stored before the tokens, because the app
         // treats "has token and has url" as signed in and will immediately start calling the API.
-        await setServerUrl(serverUrl);
-        await setTokens(tokens.token, tokens.refreshToken, tokens.sessionId ?? null);
+        if (!isCurrentSession(started)) return;
+        const savingServer = setServerUrl(serverUrl);
+        const generation = getSessionGeneration();
+        await savingServer;
+        if (!isCurrentSession(generation)) return;
+        await setTokens(tokens.token, tokens.refreshToken, tokens.sessionId ?? null, { generation });
       } catch (redeemError: unknown) {
         const status = (redeemError as { response?: { status?: number } })?.response?.status;
         setError(

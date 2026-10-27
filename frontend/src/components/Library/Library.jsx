@@ -86,6 +86,7 @@ import LibraryMenu from './components/LibraryMenu';
 import {
   MixPreviewButton,
   MixPreviewProvider,
+  MixPreviewScope,
 } from './components/MixCompatibilityPreview';
 import MixtapeDeleteDialog from './components/MixtapeDeleteDialog';
 import PlayHistoryView from './components/PlayHistoryView';
@@ -152,7 +153,7 @@ import React, {
 import { createPortal } from 'react-dom';
 // eslint-disable-next-line import/no-named-as-default
 import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
-import { useHistory, useLocation } from 'react-router-dom';
+import { Link, useHistory, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -187,7 +188,7 @@ const NAV_ITEMS = [
   { id: VIEWS.FOLDERS, label: 'Folders', icon: Folder },
   { id: VIEWS.GENRES, label: 'Genres', icon: Tag },
   { id: VIEWS.YEARS, label: 'Years', icon: Calendar },
-  { id: VIEWS.MIXTAPES, label: 'Mixtapes', icon: ListMusic },
+  { id: VIEWS.MIXTAPES, label: 'Playlists', icon: ListMusic },
   { id: VIEWS.LOVED, label: 'Loved', icon: Heart },
   { id: VIEWS.HISTORY, label: 'History', icon: Clock },
   { id: VIEWS.ISSUES, label: 'Issues', icon: Wrench },
@@ -418,7 +419,7 @@ const ContextMenu = ({
       )}
 
       <div className="jb-context-sep" />
-      <div className="jb-context-section">Add to mixtape</div>
+      <div className="jb-context-section">Add to playlist</div>
 
       {plList.map((pl) => (
         <button
@@ -448,7 +449,7 @@ const ContextMenu = ({
               if (key === 'Enter') commit();
               if (key === 'Escape') setCreating(false);
             }}
-            placeholder="Mixtape name"
+            placeholder="Playlist name"
             type="text"
             value={name}
           />
@@ -468,7 +469,7 @@ const ContextMenu = ({
           type="button"
         >
           <Plus size={13} />
-          New mixtape…
+          New playlist…
         </button>
       )}
 
@@ -632,7 +633,7 @@ const FolderContextMenu = ({
       </button>
 
       <div className="jb-context-sep" />
-      <div className="jb-context-section">Add to mixtape</div>
+      <div className="jb-context-section">Add to playlist</div>
       {playlists.map((pl) => (
         <button
           className="jb-context-item"
@@ -664,7 +665,7 @@ const FolderContextMenu = ({
 
               if (key === 'Escape') setCreatingMixtape(false);
             }}
-            placeholder="Mixtape name"
+            placeholder="Playlist name"
             type="text"
             value={newMixtapeName}
           />
@@ -687,7 +688,7 @@ const FolderContextMenu = ({
           type="button"
         >
           <Plus size={13} />
-          New mixtape…
+          New playlist…
         </button>
       )}
 
@@ -909,7 +910,7 @@ const AlbumContextMenu = ({
       )}
 
       <div className="jb-context-sep" />
-      <div className="jb-context-section">Add to mixtape</div>
+      <div className="jb-context-section">Add to playlist</div>
       {playlists.map((pl) => (
         <button
           className="jb-context-item"
@@ -941,7 +942,7 @@ const AlbumContextMenu = ({
 
               if (key === 'Escape') setCreatingMixtape(false);
             }}
-            placeholder="Mixtape name"
+            placeholder="Playlist name"
             type="text"
             value={newMixtapeName}
           />
@@ -964,7 +965,7 @@ const AlbumContextMenu = ({
           type="button"
         >
           <Plus size={13} />
-          New mixtape…
+          New playlist…
         </button>
       )}
 
@@ -1109,7 +1110,7 @@ const MixtapeCard = ({ mixtape, onDelete, onPlay, onRename, onSelect }) => (
       </div>
     </button>
     <LibraryMenu
-      label={`Mixtape actions for ${mixtape.name}`}
+      label={`Playlist actions for ${mixtape.name}`}
       summary={
         <MoreHorizontal
           aria-hidden="true"
@@ -1131,7 +1132,7 @@ const MixtapeCard = ({ mixtape, onDelete, onPlay, onRename, onSelect }) => (
         onClick={() => onDelete(mixtape)}
         type="button"
       >
-        <Trash2 size={14} /> Delete mixtape
+        <Trash2 size={14} /> Delete playlist
       </button>
     </LibraryMenu>
   </div>
@@ -1182,13 +1183,13 @@ const MixtapeListRow = ({ mixtape, onDelete, onPlay, onRename, onSelect }) => (
       <Pencil size={12} />
     </button>
     <button
-      aria-label={`Delete mixtape ${mixtape.name}`}
+      aria-label={`Delete playlist ${mixtape.name}`}
       className="jb-icon-btn"
       onClick={(e) => {
         e.stopPropagation();
         onDelete(mixtape);
       }}
-      title="Delete mixtape"
+      title="Delete playlist"
       type="button"
     >
       <Trash2 size={12} />
@@ -1219,7 +1220,7 @@ const cropImageToBlob = (imgElement, crop) =>
       OUTPUT_SIZE,
       OUTPUT_SIZE,
     );
-    canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.92);
+    canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.8);
   });
 
 const CropArtworkModal = ({ onCancel, onConfirm, src }) => {
@@ -1585,7 +1586,7 @@ const MixtapeDetail = ({ mixtape, onBack, onDelete, onUpdate }) => {
               onClick={() => onDelete(mixtape)}
               type="button"
             >
-              <Trash2 size={13} /> Delete mixtape
+              <Trash2 size={13} /> Delete playlist
             </button>
           </div>
         </div>
@@ -1790,12 +1791,12 @@ export const MixtapesView = ({
   const handleDeleted = async (id) => {
     setDeleteTarget(null);
     if (selectedId === id) setSelectedId(null);
-    toast.success('Mixtape deleted. Your music files are unchanged.');
+    toast.success('Playlist deleted. Your music files are unchanged.');
     try {
       await onUpdate();
     } catch {
       toast.error(
-        'Mixtape deleted, but the list could not refresh. Refresh the library to update it.',
+        'Playlist deleted, but the list could not refresh. Refresh the library to update it.',
       );
     }
   };
@@ -1867,8 +1868,8 @@ export const MixtapesView = ({
       {deleteDialog}
       {/* Header */}
       <div className="jb-section-header">
-        <span className="jb-section-title">Mixtapes</span>
-        <span className="jb-section-count">{playlists.length} mixtapes</span>
+        <span className="jb-section-title">Playlists</span>
+        <span className="jb-section-count">{playlists.length} playlists</span>
         <div
           className="jb-section-controls"
           style={{ marginLeft: 'auto' }}
@@ -1924,7 +1925,7 @@ export const MixtapesView = ({
               if (key === 'Enter') handleCreate();
               if (key === 'Escape') setCreating(false);
             }}
-            placeholder="Mixtape name…"
+            placeholder="Playlist name…"
             type="text"
             value={createName}
           />
@@ -1988,7 +1989,7 @@ export const MixtapesView = ({
             strokeWidth={1}
             style={{ opacity: 0.3 }}
           />
-          No mixtapes yet. Create one and right-click tracks to add them.
+          No playlists yet. Create one and right-click tracks to add them.
         </div>
       )}
 
@@ -2458,7 +2459,7 @@ const SearchView = ({
       )}
 
       {matchedMixtapes.length > 0 && (
-        <SearchSection label="Mixtapes">
+        <SearchSection label="Playlists">
           <div className="jb-search-chips-row">
             {matchedMixtapes.map((mixtape) => (
               <button
@@ -2622,7 +2623,7 @@ const HomeView = ({
           <span className="jb-home-stat-num">
             {mixtapes.length.toLocaleString()}
           </span>
-          <span className="jb-home-stat-label">mixtapes</span>
+          <span className="jb-home-stat-label">playlists</span>
         </button>
         {lovedCount > 0 && (
           <button
@@ -2738,7 +2739,7 @@ const HomeView = ({
       {mixtapes.length > 0 && (
         <HomeRow
           count={mixtapes.length}
-          label="Mixtapes"
+          label="Playlists"
           onMore={() => onNavigate(VIEWS.MIXTAPES)}
         >
           <div className="jb-home-album-row">
@@ -3039,16 +3040,9 @@ const LibraryContent = () => {
   const [loadingFolders, setLoadingFolders] = useState(false);
   const [loadingGenres, setLoadingGenres] = useState(false);
   const [loadingYears, setLoadingYears] = useState(false);
-  const [navStack, setNavStack] = useState(() => {
-    try {
-      const saved = sessionStorage.getItem('resonance-library-navstack');
-      if (saved) return JSON.parse(saved);
-    } catch {
-      /* ignore */
-    }
-
-    return [{ view: VIEWS.HOME, params: {} }];
-  });
+  // Every new library visit starts on Home. Explicit player/planner navigation below
+  // still opens the requested destination instead of restoring the last browsing session.
+  const [navStack, setNavStack] = useState([{ view: VIEWS.HOME, params: {} }]);
   const [playlists, setPlaylists] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState(() =>
@@ -3059,15 +3053,6 @@ const LibraryContent = () => {
   );
   const [syncing, setSyncing] = useState(false);
 
-  const savedScrollOffset = useMemo(() => {
-    try {
-      const pos = sessionStorage.getItem('resonance-library-scroll');
-      return pos != null ? Number(pos) : 0;
-    } catch {
-      return 0;
-    }
-  }, []);
-  const scrollRestoredRef = useRef(false);
   const isMountedRef = useRef(true);
   useEffect(() => {
     isMountedRef.current = true;
@@ -3143,75 +3128,6 @@ const LibraryContent = () => {
     setFolders([]);
     loadInitialData();
   }, [libraryRevision]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    try {
-      sessionStorage.setItem(
-        'resonance-library-navstack',
-        JSON.stringify(navStack),
-      );
-    } catch {
-      /* ignore */
-    }
-  }, [navStack]);
-
-  const getLibraryScrollElement = useCallback(() => {
-    const outer = viewScrollRef.current;
-    if (!outer) return null;
-    return outer.querySelector('.jb-track-table') || outer;
-  }, []);
-
-  useEffect(() => {
-    const onScroll = (e) => {
-      const element = e.target;
-      if (
-        element === viewScrollRef.current ||
-        element.classList?.contains('jb-track-table')
-      ) {
-        try {
-          sessionStorage.setItem(
-            'resonance-library-scroll',
-            String(element.scrollTop),
-          );
-        } catch {
-          /* ignore */
-        }
-      }
-    };
-
-    document.addEventListener('scroll', onScroll, {
-      passive: true,
-      capture: true,
-    });
-    return () =>
-      document.removeEventListener('scroll', onScroll, { capture: true });
-  }, []);
-
-  useEffect(() => {
-    if (scrollRestoredRef.current || !savedScrollOffset) return undefined;
-    let rafId;
-    const tryRestore = () => {
-      const element = getLibraryScrollElement();
-      if (!element) {
-        rafId = requestAnimationFrame(tryRestore);
-        return;
-      }
-
-      // Only retry while content hasn't loaded yet (no scrollable area).
-      // Once content exists, set once and stop — avoids fighting the user when
-      // savedScrollOffset exceeds the current view's max scroll height.
-      if (element.scrollHeight <= element.clientHeight) {
-        rafId = requestAnimationFrame(tryRestore);
-        return;
-      }
-
-      element.scrollTop = savedScrollOffset;
-      scrollRestoredRef.current = true;
-    };
-
-    rafId = requestAnimationFrame(tryRestore);
-    return () => cancelAnimationFrame(rafId);
-  }, [getLibraryScrollElement, savedScrollOffset]);
 
   useEffect(() => {
     const hub = createMixtapesHubConnection();
@@ -3412,6 +3328,11 @@ const LibraryContent = () => {
     VIEWS.FOLDERS,
     VIEWS.MIXTAPES,
   ].includes(activeView);
+
+  const mixPreviewAllowed =
+    activeView === VIEWS.PLANNER ||
+    (activeView === VIEWS.ALBUMS && Boolean(current.params?.selected)) ||
+    (activeView === VIEWS.MIXTAPES && Boolean(current.params?.selectedId));
 
   const tileListDisabled =
     (activeView === VIEWS.MIXTAPES && Boolean(current.params?.selectedId)) ||
@@ -3620,7 +3541,7 @@ const LibraryContent = () => {
       await reloadMixtapes();
     } catch (error) {
       if (error?.response?.status === 409)
-        toast.warn(`Already in "${playlist?.name ?? 'mixtape'}"`);
+        toast.warn(`Already in "${playlist?.name ?? 'playlist'}"`);
     }
   };
 
@@ -4174,44 +4095,134 @@ const LibraryContent = () => {
           </div>
         </div>
       )}
-      <div className="jb-nav-rail">
-        <nav
-          aria-label="Music navigation"
-          className="jb-nav"
-        >
-          <div className="jb-nav-scroll">
-            <div className="jb-nav-section">
-              <span>Library</span>
-            </div>
-            {NAV_ITEMS.map(({ icon: Icon, id, label }) => (
-              <button
-                aria-current={activeView === id ? 'page' : undefined}
-                className={`jb-nav-item hover-fx${activeView === id ? ' jb-nav-item--active' : ''}`}
-                key={id}
-                onClick={() => navTo(id)}
-                title={label}
-                type="button"
-              >
-                <Icon
-                  aria-hidden="true"
-                  size={15}
-                  strokeWidth={1.75}
-                />
-                <span className="jb-nav-label">{label}</span>
-              </button>
-            ))}
-          </div>
-        </nav>
-      </div>
 
       <div className="jb-content">
         <div
           className={`jb-topbar${activeView === VIEWS.TRACKS ? ' jb-topbar--collection' : ''}`}
         >
+          <h1 className="library-collection-title">Collection</h1>
           <div
             className="library-toolbar-heading"
             ref={setToolbarHeading}
           />
+          <nav
+            aria-label="Music navigation"
+            className="library-navigation"
+          >
+            <LibraryMenu
+              label="Browse collection"
+              summary={
+                [
+                  VIEWS.HOME,
+                  VIEWS.FOLDERS,
+                  VIEWS.TRACKS,
+                  VIEWS.ARTISTS,
+                  VIEWS.ALBUMS,
+                  VIEWS.GENRES,
+                  VIEWS.YEARS,
+                ].includes(activeView)
+                  ? NAV_ITEMS.find(({ id }) => id === activeView)?.label
+                  : 'Browse library'
+              }
+            >
+              {[
+                VIEWS.FOLDERS,
+                VIEWS.TRACKS,
+                VIEWS.ARTISTS,
+                VIEWS.ALBUMS,
+                VIEWS.GENRES,
+                VIEWS.YEARS,
+                VIEWS.HOME,
+              ].map((view) => {
+                const { icon: Icon, label } = NAV_ITEMS.find(
+                  ({ id }) => id === view,
+                );
+                return (
+                  <button
+                    aria-current={activeView === view ? 'page' : undefined}
+                    className="library-menu-action"
+                    data-close-menu="true"
+                    key={view}
+                    onClick={() => navTo(view)}
+                    type="button"
+                  >
+                    <Icon
+                      aria-hidden="true"
+                      size={15}
+                    />{' '}
+                    {label}
+                  </button>
+                );
+              })}
+            </LibraryMenu>
+            <div className="library-navigation-shortcuts">
+              {[VIEWS.MIXTAPES, VIEWS.LOVED, VIEWS.HISTORY].map((view) => {
+                const { label } = NAV_ITEMS.find(({ id }) => id === view);
+                return (
+                  <button
+                    aria-current={activeView === view ? 'page' : undefined}
+                    className="library-navigation-shortcut"
+                    key={view}
+                    onClick={() => navTo(view)}
+                    type="button"
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <LibraryMenu
+              label="Library tools"
+              summary="Library tools"
+            >
+              {[
+                VIEWS.CRATES,
+                VIEWS.PLANNER,
+                VIEWS.PREPARATION,
+                VIEWS.ISSUES,
+              ].map((view) => {
+                const { icon: Icon, label } = NAV_ITEMS.find(
+                  ({ id }) => id === view,
+                );
+                return (
+                  <button
+                    aria-current={activeView === view ? 'page' : undefined}
+                    className="library-menu-action"
+                    data-close-menu="true"
+                    key={view}
+                    onClick={() => navTo(view)}
+                    type="button"
+                  >
+                    <Icon
+                      aria-hidden="true"
+                      size={15}
+                    />{' '}
+                    {label}
+                  </button>
+                );
+              })}
+              <Link
+                className="library-menu-action"
+                to={`${urlBase}/trackanalysis`}
+              >
+                <AudioWaveform
+                  aria-hidden="true"
+                  size={15}
+                />{' '}
+                Analyse
+              </Link>
+              <Link
+                className="library-menu-action"
+                to={`${urlBase}/export`}
+              >
+                <Upload
+                  aria-hidden="true"
+                  size={15}
+                />{' '}
+                Export set
+              </Link>
+            </LibraryMenu>
+          </nav>
           <div
             className="jb-search-wrap"
             ref={searchRef}
@@ -4221,6 +4232,7 @@ const LibraryContent = () => {
               size={14}
             />
             <input
+              aria-label="Search library"
               className="jb-search"
               onChange={handleSearchChange}
               placeholder="Search library…"
@@ -4247,9 +4259,9 @@ const LibraryContent = () => {
             ref={setToolbarView}
           />
           <div className="jb-topbar-right">
-            <MixPreviewButton />
+            {mixPreviewAllowed && <MixPreviewButton />}
             <LibraryMenu
-              label="More library tools"
+              label="Collection options"
               summary={
                 <MoreHorizontal
                   aria-hidden="true"
@@ -4433,7 +4445,9 @@ const LibraryContent = () => {
             className="jb-view-scroll"
             ref={viewScrollRef}
           >
-            {renderView()}
+            <MixPreviewScope disabled={!mixPreviewAllowed}>
+              {renderView()}
+            </MixPreviewScope>
           </div>
           {showAlphaStrip && (
             <AlphaStrip

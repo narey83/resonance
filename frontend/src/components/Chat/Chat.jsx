@@ -51,11 +51,13 @@ import {
   formatTime,
   groupByDate,
 } from './chatUtils';
+import CommunityWorkspace from './CommunityWorkspace';
 import SendMessageModal from './SendMessageModal';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Globe,
   Languages,
+  MessageCircle,
   MessageSquare,
   Plus,
   Reply,
@@ -102,7 +104,8 @@ const ContextMenu = ({ friends, menu, onAddFriend, onBrowse }) => {
 
 // ── Conversation list item ──────────────────────────────────────────────────────
 
-const ConversationItem = ({
+// Unread indicators remain separate from the conversation's delete action.
+export const ConversationItem = ({
   active,
   conv,
   onContextMenu,
@@ -125,7 +128,20 @@ const ConversationItem = ({
     </div>
     <span className="sr-search-item-text">{conv.username}</span>
     {conv.unAcknowledgedMessageCount > 0 && (
-      <span className="chat-conv-badge">{conv.unAcknowledgedMessageCount}</span>
+      <span
+        aria-label={`${conv.unAcknowledgedMessageCount} new messages from ${conv.username}`}
+        className="chat-conv-badge"
+        role="img"
+        title={`${conv.unAcknowledgedMessageCount} new messages`}
+      >
+        <MessageCircle
+          aria-hidden="true"
+          size={13}
+        />
+        {conv.unAcknowledgedMessageCount > 99
+          ? '99+'
+          : conv.unAcknowledgedMessageCount}
+      </span>
     )}
     <button
       className="chat-conv-delete"
@@ -157,8 +173,9 @@ const baseLang = (code) => (code || '').toUpperCase().split('-')[0];
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-const Chat = ({ history, location }) => {
+const Chat = ({ history, location, onConversationRead }) => {
   const [active, setActive] = useState('');
+  const [conversationQuery, setConversationQuery] = useState('');
   const [conversations, setConversations] = useState({});
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -225,6 +242,7 @@ const Chat = ({ history, location }) => {
       if (activeConv) {
         if (activeConv.hasUnAcknowledgedMessages) {
           await chat.acknowledge({ username: currentActive });
+          onConversationRead?.();
         }
 
         const activeDetail = await chat.get({ username: currentActive });
@@ -260,7 +278,7 @@ const Chat = ({ history, location }) => {
       // Announcing the outage is the connection manager's job; the next poll recovers.
       console.debug('failed to fetch conversations', error);
     }
-  }, []);
+  }, [onConversationRead]);
 
   // ── Open / initiate conversation ─────────────────────────────────────────────
 
@@ -294,19 +312,35 @@ const Chat = ({ history, location }) => {
 
       setLoading(true);
       try {
-        const full = await chat.get({ username });
-        if (mountedRef.current) {
+        let full = await chat.get({ username });
+        if (
+          mountedRef.current &&
+          activeRef.current === username &&
+          full.hasUnAcknowledgedMessages
+        ) {
+          await chat.acknowledge({ username });
+          full = {
+            ...full,
+            hasUnAcknowledgedMessages: false,
+            unAcknowledgedMessageCount: 0,
+          };
+          onConversationRead?.();
+        }
+
+        if (mountedRef.current && activeRef.current === username) {
           setConversations((previous) => ({ ...previous, [username]: full }));
         }
+      } catch (error) {
+        console.debug('failed to open conversation', error);
       } finally {
-        if (mountedRef.current) {
+        if (mountedRef.current && activeRef.current === username) {
           setLoading(false);
           setTimeout(scrollToBottom, 50);
           inputRef.current?.focus();
         }
       }
     },
-    [scrollToBottom],
+    [onConversationRead, scrollToBottom],
   );
 
   // ── Mount ────────────────────────────────────────────────────────────────────
@@ -625,10 +659,14 @@ const Chat = ({ history, location }) => {
         ? new Date(conv.lastMessageTimestamp).getTime()
         : Date.now();
 
-    return Object.values(conversations).sort(
-      (a, b) => lastActivity(b) - lastActivity(a),
-    );
-  }, [conversations]);
+    return Object.values(conversations)
+      .filter((conversation) =>
+        conversation.username
+          .toLowerCase()
+          .includes(conversationQuery.trim().toLowerCase()),
+      )
+      .sort((a, b) => lastActivity(b) - lastActivity(a));
+  }, [conversationQuery, conversations]);
 
   const newConvList = sortedConvList.filter(
     (conv) => conv.unAcknowledgedMessageCount > 0,
@@ -675,407 +713,440 @@ const Chat = ({ history, location }) => {
 
   return (
     <>
-      <div
-        className="sr-root"
-        ref={rootRef}
+      <CommunityWorkspace
+        action={
+          <SendMessageModal
+            centered
+            initiateConversation={initiateConversation}
+            size="small"
+            trigger={
+              <button
+                className="sr-wizard-primary"
+                type="button"
+              >
+                <Plus size={16} /> New conversation
+              </button>
+            }
+          />
+        }
+        description="Your conversations, all in one place."
+        title="Messages"
       >
-        {/* ── Sidebar ── */}
         <div
-          className="sr-sidebar"
-          style={{ width: sidebarWidth, minWidth: sidebarWidth }}
+          className="sr-root community-root"
+          ref={rootRef}
         >
-          <div className="sr-sidebar-top">
-            <span className="chat-sidebar-title">
-              <MessageSquare
-                size={14}
-                strokeWidth={2}
+          {/* ── Sidebar ── */}
+          <div
+            className="sr-sidebar"
+            style={{ width: sidebarWidth, minWidth: sidebarWidth }}
+          >
+            <div className="sr-sidebar-top">
+              <span className="chat-sidebar-title">
+                <MessageSquare
+                  size={14}
+                  strokeWidth={2}
+                />
+                Inbox
+              </span>
+            </div>
+
+            <div className="community-list-search">
+              <label
+                className="sr-eyebrow"
+                htmlFor="conversation-filter"
+              >
+                FIND A CONVERSATION
+              </label>
+              <input
+                id="conversation-filter"
+                onChange={(event) => setConversationQuery(event.target.value)}
+                placeholder="Search conversations…"
+                type="search"
+                value={conversationQuery}
               />
-              Messages
-            </span>
-            <SendMessageModal
-              centered
-              initiateConversation={initiateConversation}
-              size="small"
-              trigger={
-                <button
-                  className="sr-create-btn hover-fx"
-                  title="New conversation"
-                  type="button"
-                >
-                  <Plus size={15} />
-                </button>
-              }
-            />
+            </div>
+            <div className="sr-search-list">
+              {sortedConvList.length === 0 ? (
+                <div className="sr-search-list-empty">
+                  {conversationQuery.trim()
+                    ? 'No matching conversations'
+                    : 'No conversations yet'}
+                </div>
+              ) : (
+                <>
+                  {newConvList.length > 0 && (
+                    <>
+                      <div className="chat-conv-section-label">New</div>
+                      {newConvList.map((conv) => (
+                        <ConversationItem
+                          active={active}
+                          conv={conv}
+                          key={conv.username}
+                          onContextMenu={openContextMenu}
+                          onDelete={deleteConversation}
+                          onSelect={selectConversation}
+                        />
+                      ))}
+                    </>
+                  )}
+                  {otherConvList.length > 0 && (
+                    <>
+                      {newConvList.length > 0 && (
+                        <div className="chat-conv-section-label">
+                          Conversations
+                        </div>
+                      )}
+                      {otherConvList.map((conv) => (
+                        <ConversationItem
+                          active={active}
+                          conv={conv}
+                          key={conv.username}
+                          onContextMenu={openContextMenu}
+                          onDelete={deleteConversation}
+                          onSelect={selectConversation}
+                        />
+                      ))}
+                    </>
+                  )}
+                </>
+              )}
+            </div>
           </div>
 
-          <div className="sr-search-list">
-            {sortedConvList.length === 0 ? (
-              <div className="sr-search-list-empty">No conversations yet</div>
-            ) : (
-              <>
-                {newConvList.length > 0 && (
-                  <>
-                    <div className="chat-conv-section-label">New</div>
-                    {newConvList.map((conv) => (
-                      <ConversationItem
-                        active={active}
-                        conv={conv}
-                        key={conv.username}
-                        onContextMenu={openContextMenu}
-                        onDelete={deleteConversation}
-                        onSelect={selectConversation}
-                      />
-                    ))}
-                  </>
-                )}
-                {otherConvList.length > 0 && (
-                  <>
-                    {newConvList.length > 0 && (
-                      <div className="chat-conv-section-label">
-                        Conversations
-                      </div>
+          {/* ── Resize divider ── */}
+          <div
+            aria-orientation="vertical"
+            className="sr-divider"
+            onMouseDown={onDividerMouseDown}
+            role="separator"
+          />
+
+          {/* ── Main panel ── */}
+          <div className="sr-main">
+            {active ? (
+              <div className="chat-main">
+                {/* Header */}
+                <div className="chat-header">
+                  <div
+                    className="chat-header-avatar"
+                    style={{ background: avatarColor(active) }}
+                  >
+                    {avatarInitial(active)}
+                  </div>
+                  <div className="chat-header-info">
+                    <UsernameLink
+                      active="chat"
+                      className="chat-header-name"
+                      username={active}
+                    />
+                    <span className="community-context">
+                      Private conversation
+                    </span>
+                  </div>
+                  <div className="sr-detail-header-actions">
+                    {translateStatus.enabled && (
+                      <button
+                        className={`sr-btn hover-fx chat-translate-toggle${autoTranslate ? ' chat-translate-toggle--on' : ''}`}
+                        onClick={toggleAutoTranslate}
+                        title={
+                          autoTranslate
+                            ? `Auto-translating incoming messages to ${translation.languageName(targetLang)}`
+                            : 'Auto-translate incoming messages'
+                        }
+                        type="button"
+                      >
+                        <Languages size={13} />{' '}
+                        {autoTranslate
+                          ? `Translating → ${targetLang}`
+                          : 'Translate'}
+                      </button>
                     )}
-                    {otherConvList.map((conv) => (
-                      <ConversationItem
-                        active={active}
-                        conv={conv}
-                        key={conv.username}
-                        onContextMenu={openContextMenu}
-                        onDelete={deleteConversation}
-                        onSelect={selectConversation}
-                      />
-                    ))}
-                  </>
-                )}
-              </>
-            )}
-          </div>
-        </div>
+                    <button
+                      className="sr-btn sr-btn--danger hover-fx"
+                      onClick={() => deleteConversation(active)}
+                      title="Delete conversation"
+                      type="button"
+                    >
+                      <X size={13} /> Delete
+                    </button>
+                  </div>
+                </div>
 
-        {/* ── Resize divider ── */}
-        <div
-          aria-orientation="vertical"
-          className="sr-divider"
-          onMouseDown={onDividerMouseDown}
-          role="separator"
-        />
-
-        {/* ── Main panel ── */}
-        <div className="sr-main">
-          {active ? (
-            <div className="chat-main">
-              {/* Header */}
-              <div className="chat-header">
+                {/* Messages */}
                 <div
-                  className="chat-header-avatar"
-                  style={{ background: avatarColor(active) }}
+                  className="chat-messages"
+                  ref={chatScrollRef}
                 >
-                  {avatarInitial(active)}
+                  {loading ? (
+                    <div className="chat-loading">
+                      <span className="chat-loading-dot" />
+                      <span className="chat-loading-dot" />
+                      <span className="chat-loading-dot" />
+                    </div>
+                  ) : messages.length === 0 ? (
+                    <div className="chat-empty-state">
+                      <div
+                        className="chat-empty-avatar"
+                        style={{ background: avatarColor(active) }}
+                      >
+                        {avatarInitial(active)}
+                      </div>
+                      <p>
+                        Start a conversation with <strong>{active}</strong>
+                      </p>
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        height: messageVirtualizer.getTotalSize(),
+                        position: 'relative',
+                      }}
+                    >
+                      {messageVirtualizer.getVirtualItems().map((vRow) => {
+                        const item = flatItems[vRow.index];
+                        const msgKey =
+                          item.type === 'msg'
+                            ? translation.messageKey(item.msg)
+                            : null;
+                        const tr = msgKey ? translations[msgKey] : null;
+                        const canTranslate =
+                          item.type === 'msg' &&
+                          !item.isSelf &&
+                          autoTranslate &&
+                          translateStatus.enabled;
+                        const translatedDiffers =
+                          Boolean(tr?.text) &&
+                          Boolean(tr?.detectedSourceLanguage) &&
+                          tr.detectedSourceLanguage
+                            .toUpperCase()
+                            .split('-')[0] !== targetLang.toUpperCase();
+                        const viewingOriginal = msgKey
+                          ? showOriginal.has(msgKey)
+                          : false;
+                        const showTranslated =
+                          canTranslate && translatedDiffers && !viewingOriginal;
+                        // Your own message shown in your language: the exact
+                        // original if we captured it at send time, otherwise a
+                        // back-translation of the sent (foreign) text.
+                        const captured =
+                          item.type === 'msg' && item.isSelf
+                            ? translation.recallOutgoing(item.msg.message)
+                            : null;
+                        const backTranslation =
+                          item.isSelf &&
+                          !captured &&
+                          Boolean(tr?.text) &&
+                          Boolean(tr?.detectedSourceLanguage) &&
+                          tr.detectedSourceLanguage
+                            .toUpperCase()
+                            .split('-')[0] !== targetLang.toUpperCase()
+                            ? tr
+                            : null;
+                        const selfForeign =
+                          (Boolean(captured) &&
+                            captured.original !== item.msg.message) ||
+                          Boolean(backTranslation);
+                        const selfExact = Boolean(captured);
+                        const selfInLang = captured
+                          ? captured.original
+                          : backTranslation?.text;
+                        const selfSourceLang = captured
+                          ? captured.lang
+                          : backTranslation?.detectedSourceLanguage;
+                        const showSelfInLang = selfForeign && viewingOriginal;
+                        const displayText =
+                          item.type === 'msg'
+                            ? item.isSelf
+                              ? showSelfInLang
+                                ? selfInLang
+                                : item.msg.message
+                              : showTranslated
+                                ? tr.text
+                                : item.msg.message
+                            : null;
+                        const previewUrl = findFirstUrl(displayText);
+                        return (
+                          <div
+                            data-index={vRow.index}
+                            key={vRow.key}
+                            ref={messageVirtualizer.measureElement}
+                            style={{
+                              position: 'absolute',
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              transform: `translateY(${vRow.start}px)`,
+                            }}
+                          >
+                            {item.type === 'date' ? (
+                              <div className="chat-date-sep">
+                                <span>{item.label}</span>
+                              </div>
+                            ) : (
+                              <div
+                                className={`chat-msg-row${item.isSelf ? ' chat-msg-row--self' : ''}`}
+                              >
+                                {!item.isSelf && (
+                                  <div
+                                    className={`chat-bubble-avatar${item.showAvatar ? '' : ' chat-bubble-avatar--ghost'}`}
+                                    onContextMenu={(e) =>
+                                      openContextMenu(
+                                        e,
+                                        item.msg.username || active,
+                                      )
+                                    }
+                                    style={{
+                                      background: avatarColor(
+                                        item.msg.username || active,
+                                      ),
+                                    }}
+                                    title="Right-click for options"
+                                  >
+                                    {avatarInitial(item.msg.username || active)}
+                                  </div>
+                                )}
+                                <div className="chat-bubble-col">
+                                  <div
+                                    className={`chat-bubble${item.isSelf ? ' chat-bubble--self' : ' chat-bubble--other'}`}
+                                  >
+                                    <Linkify text={displayText} />
+                                    {previewUrl && (
+                                      <LinkPreviewCard url={previewUrl} />
+                                    )}
+                                  </div>
+                                  {canTranslate && translatedDiffers && (
+                                    <button
+                                      className="chat-translate-note"
+                                      onClick={() => toggleShowOriginal(msgKey)}
+                                      type="button"
+                                    >
+                                      {showTranslated
+                                        ? `Translated from ${translation.languageName(tr.detectedSourceLanguage)} · Show original`
+                                        : 'Show translation'}
+                                    </button>
+                                  )}
+                                  {selfForeign && (
+                                    <button
+                                      className="chat-translate-note chat-translate-note--self"
+                                      onClick={() => toggleShowOriginal(msgKey)}
+                                      type="button"
+                                    >
+                                      {showSelfInLang
+                                        ? 'Show sent message'
+                                        : `Sent in ${translation.languageName(selfSourceLang)} · ${selfExact ? 'Show original' : `Show in ${translation.languageName(targetLang)}`}`}
+                                    </button>
+                                  )}
+                                  <span className="chat-bubble-time">
+                                    {formatTime(item.msg.timestamp)}
+                                  </span>
+                                </div>
+                                <div className="chat-msg-actions">
+                                  <button
+                                    className="chat-msg-action-btn hover-fx"
+                                    onClick={() => handleReply(item.msg)}
+                                    title="Reply"
+                                    type="button"
+                                  >
+                                    <Reply
+                                      size={13}
+                                      strokeWidth={2}
+                                    />
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-                <div className="chat-header-info">
-                  <UsernameLink
-                    active="chat"
-                    className="chat-header-name"
-                    username={active}
-                  />
-                </div>
-                <div className="sr-detail-header-actions">
+
+                {/* Input bar */}
+                <div className="chat-input-bar">
+                  <EmojiPickerButton onSelect={handleEmojiSelect} />
                   {translateStatus.enabled && (
                     <button
-                      className={`sr-btn hover-fx chat-translate-toggle${autoTranslate ? ' chat-translate-toggle--on' : ''}`}
-                      onClick={toggleAutoTranslate}
+                      className={`chat-reply-toggle hover-fx${replyTranslate ? ' chat-reply-toggle--on' : ''}`}
+                      onClick={toggleReplyTranslate}
                       title={
-                        autoTranslate
-                          ? `Auto-translating incoming messages to ${translation.languageName(targetLang)}`
-                          : 'Auto-translate incoming messages'
+                        replyTranslate
+                          ? "Reply translation on — your message is translated into the other person's language before sending"
+                          : 'Reply in their language'
                       }
                       type="button"
                     >
-                      <Languages size={13} />{' '}
-                      {autoTranslate
-                        ? `Translating → ${targetLang}`
-                        : 'Translate'}
+                      <Globe
+                        size={16}
+                        strokeWidth={2}
+                      />
                     </button>
                   )}
-                  <button
-                    className="sr-btn sr-btn--danger hover-fx"
-                    onClick={() => deleteConversation(active)}
-                    title="Delete conversation"
-                    type="button"
-                  >
-                    <X size={13} /> Delete
-                  </button>
-                </div>
-              </div>
-
-              {/* Messages */}
-              <div
-                className="chat-messages"
-                ref={chatScrollRef}
-              >
-                {loading ? (
-                  <div className="chat-loading">
-                    <span className="chat-loading-dot" />
-                    <span className="chat-loading-dot" />
-                    <span className="chat-loading-dot" />
-                  </div>
-                ) : messages.length === 0 ? (
-                  <div className="chat-empty-state">
-                    <div
-                      className="chat-empty-avatar"
-                      style={{ background: avatarColor(active) }}
-                    >
-                      {avatarInitial(active)}
-                    </div>
-                    <p>
-                      Start a conversation with <strong>{active}</strong>
-                    </p>
-                  </div>
-                ) : (
-                  <div
-                    style={{
-                      height: messageVirtualizer.getTotalSize(),
-                      position: 'relative',
+                  <input
+                    aria-label={`Message ${active}`}
+                    autoComplete="off"
+                    className="chat-input-field"
+                    data-lpignore="true"
+                    onChange={(e) => setMessage(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        sendReply();
+                      }
                     }}
-                  >
-                    {messageVirtualizer.getVirtualItems().map((vRow) => {
-                      const item = flatItems[vRow.index];
-                      const msgKey =
-                        item.type === 'msg'
-                          ? translation.messageKey(item.msg)
-                          : null;
-                      const tr = msgKey ? translations[msgKey] : null;
-                      const canTranslate =
-                        item.type === 'msg' &&
-                        !item.isSelf &&
-                        autoTranslate &&
-                        translateStatus.enabled;
-                      const translatedDiffers =
-                        Boolean(tr?.text) &&
-                        Boolean(tr?.detectedSourceLanguage) &&
-                        tr.detectedSourceLanguage
-                          .toUpperCase()
-                          .split('-')[0] !== targetLang.toUpperCase();
-                      const viewingOriginal = msgKey
-                        ? showOriginal.has(msgKey)
-                        : false;
-                      const showTranslated =
-                        canTranslate && translatedDiffers && !viewingOriginal;
-                      // Your own message shown in your language: the exact
-                      // original if we captured it at send time, otherwise a
-                      // back-translation of the sent (foreign) text.
-                      const captured =
-                        item.type === 'msg' && item.isSelf
-                          ? translation.recallOutgoing(item.msg.message)
-                          : null;
-                      const backTranslation =
-                        item.isSelf &&
-                        !captured &&
-                        Boolean(tr?.text) &&
-                        Boolean(tr?.detectedSourceLanguage) &&
-                        tr.detectedSourceLanguage
-                          .toUpperCase()
-                          .split('-')[0] !== targetLang.toUpperCase()
-                          ? tr
-                          : null;
-                      const selfForeign =
-                        (Boolean(captured) &&
-                          captured.original !== item.msg.message) ||
-                        Boolean(backTranslation);
-                      const selfExact = Boolean(captured);
-                      const selfInLang = captured
-                        ? captured.original
-                        : backTranslation?.text;
-                      const selfSourceLang = captured
-                        ? captured.lang
-                        : backTranslation?.detectedSourceLanguage;
-                      const showSelfInLang = selfForeign && viewingOriginal;
-                      const displayText =
-                        item.type === 'msg'
-                          ? item.isSelf
-                            ? showSelfInLang
-                              ? selfInLang
-                              : item.msg.message
-                            : showTranslated
-                              ? tr.text
-                              : item.msg.message
-                          : null;
-                      const previewUrl = findFirstUrl(displayText);
-                      return (
-                        <div
-                          data-index={vRow.index}
-                          key={vRow.key}
-                          ref={messageVirtualizer.measureElement}
-                          style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            transform: `translateY(${vRow.start}px)`,
-                          }}
-                        >
-                          {item.type === 'date' ? (
-                            <div className="chat-date-sep">
-                              <span>{item.label}</span>
-                            </div>
-                          ) : (
-                            <div
-                              className={`chat-msg-row${item.isSelf ? ' chat-msg-row--self' : ''}`}
-                            >
-                              {!item.isSelf && (
-                                <div
-                                  className={`chat-bubble-avatar${item.showAvatar ? '' : ' chat-bubble-avatar--ghost'}`}
-                                  onContextMenu={(e) =>
-                                    openContextMenu(
-                                      e,
-                                      item.msg.username || active,
-                                    )
-                                  }
-                                  style={{
-                                    background: avatarColor(
-                                      item.msg.username || active,
-                                    ),
-                                  }}
-                                  title="Right-click for options"
-                                >
-                                  {avatarInitial(item.msg.username || active)}
-                                </div>
-                              )}
-                              <div className="chat-bubble-col">
-                                <div
-                                  className={`chat-bubble${item.isSelf ? ' chat-bubble--self' : ' chat-bubble--other'}`}
-                                >
-                                  <Linkify text={displayText} />
-                                  {previewUrl && (
-                                    <LinkPreviewCard url={previewUrl} />
-                                  )}
-                                </div>
-                                {canTranslate && translatedDiffers && (
-                                  <button
-                                    className="chat-translate-note"
-                                    onClick={() => toggleShowOriginal(msgKey)}
-                                    type="button"
-                                  >
-                                    {showTranslated
-                                      ? `Translated from ${translation.languageName(tr.detectedSourceLanguage)} · Show original`
-                                      : 'Show translation'}
-                                  </button>
-                                )}
-                                {selfForeign && (
-                                  <button
-                                    className="chat-translate-note chat-translate-note--self"
-                                    onClick={() => toggleShowOriginal(msgKey)}
-                                    type="button"
-                                  >
-                                    {showSelfInLang
-                                      ? 'Show sent message'
-                                      : `Sent in ${translation.languageName(selfSourceLang)} · ${selfExact ? 'Show original' : `Show in ${translation.languageName(targetLang)}`}`}
-                                  </button>
-                                )}
-                                <span className="chat-bubble-time">
-                                  {formatTime(item.msg.timestamp)}
-                                </span>
-                              </div>
-                              <div className="chat-msg-actions">
-                                <button
-                                  className="chat-msg-action-btn hover-fx"
-                                  onClick={() => handleReply(item.msg)}
-                                  title="Reply"
-                                  type="button"
-                                >
-                                  <Reply
-                                    size={13}
-                                    strokeWidth={2}
-                                  />
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Input bar */}
-              <div className="chat-input-bar">
-                <EmojiPickerButton onSelect={handleEmojiSelect} />
-                {translateStatus.enabled && (
-                  <button
-                    className={`chat-reply-toggle hover-fx${replyTranslate ? ' chat-reply-toggle--on' : ''}`}
-                    onClick={toggleReplyTranslate}
-                    title={
+                    placeholder={
                       replyTranslate
-                        ? "Reply translation on — your message is translated into the other person's language before sending"
-                        : 'Reply in their language'
+                        ? `Reply to ${active} in their language…`
+                        : `Message ${active}…`
                     }
+                    ref={inputRef}
+                    type="text"
+                    value={message}
+                  />
+                  <button
+                    className="chat-send-btn hover-fx"
+                    disabled={!active || !message.trim()}
+                    onClick={sendReply}
+                    title="Send"
                     type="button"
                   >
-                    <Globe
+                    <Send
                       size={16}
                       strokeWidth={2}
                     />
+                    <span>Send</span>
                   </button>
-                )}
-                <input
-                  autoComplete="off"
-                  className="chat-input-field"
-                  data-lpignore="true"
-                  onChange={(e) => setMessage(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      sendReply();
-                    }
-                  }}
-                  placeholder={
-                    replyTranslate
-                      ? `Reply to ${active} in their language…`
-                      : `Message ${active}…`
-                  }
-                  ref={inputRef}
-                  type="text"
-                  value={message}
-                />
-                <button
-                  className="chat-send-btn hover-fx"
-                  disabled={!active || !message.trim()}
-                  onClick={sendReply}
-                  title="Send"
-                  type="button"
-                >
-                  <Send
-                    size={16}
-                    strokeWidth={2}
-                  />
-                </button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="sr-empty">
-              <MessageSquare
-                size={32}
-                strokeWidth={1.25}
-              />
-              <p>Select a conversation or start a new one</p>
-              <SendMessageModal
-                centered
-                initiateConversation={initiateConversation}
-                size="small"
-                trigger={
-                  <button
-                    className="chat-start-btn hover-fx"
-                    type="button"
-                  >
-                    New Conversation
-                  </button>
-                }
-              />
-            </div>
-          )}
+            ) : (
+              <div className="sr-empty">
+                <MessageSquare
+                  size={32}
+                  strokeWidth={1.25}
+                />
+                <h2>Your conversations start here</h2>
+                <p>
+                  Choose a person from the list, or start a new conversation.
+                </p>
+                <SendMessageModal
+                  centered
+                  initiateConversation={initiateConversation}
+                  size="small"
+                  trigger={
+                    <button
+                      className="chat-start-btn hover-fx"
+                      type="button"
+                    >
+                      New Conversation
+                    </button>
+                  }
+                />
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      </CommunityWorkspace>
 
       <ContextMenu
         friends={friends}

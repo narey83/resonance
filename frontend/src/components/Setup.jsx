@@ -29,9 +29,13 @@
 
 import { updateSoulseekCredentials } from '../lib/credentials';
 import { getYaml, updateYaml } from '../lib/options';
-import { connect, getApplicationState, getState } from '../lib/server';
+import { connect, getApplicationState } from '../lib/server';
 import * as session from '../lib/session';
 import { rescan as rescanShares } from '../lib/shares';
+import {
+  connectionTestError,
+  waitForConnection,
+} from '../lib/soulseekConnection';
 import FolderPicker from './Shared/FolderPicker';
 import { CheckCircle, Headphones, Loader as LoaderIcon } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
@@ -42,33 +46,6 @@ const STEP_SOULSEEK = 2;
 const STEP_DIRS = 3;
 
 const STEP_LABELS = ['Account', 'Soulseek', 'Directories'];
-
-const waitForConnection = () =>
-  new Promise((resolve, reject) => {
-    const deadline = Date.now() + 20_000;
-    const attempt = async () => {
-      try {
-        const state = await getState();
-        if (state.isConnected) {
-          resolve();
-        } else if (Date.now() > deadline) {
-          reject(
-            new Error(
-              'Connection timed out — check your credentials and try again.',
-            ),
-          );
-        } else {
-          setTimeout(attempt, 2_000);
-        }
-      } catch {
-        reject(
-          new Error('Could not reach the backend to check connection status.'),
-        );
-      }
-    };
-
-    setTimeout(attempt, 1_500);
-  });
 
 const StepIndicator = ({ current }) => (
   <div className="wizard-steps">
@@ -236,7 +213,7 @@ const StepSoulseek = ({ onDone }) => {
       await waitForConnection();
       setTested(true);
     } catch (caughtError) {
-      setTestError(caughtError.message ?? String(caughtError));
+      setTestError(connectionTestError(caughtError));
     } finally {
       setTesting(false);
     }

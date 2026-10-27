@@ -32,6 +32,7 @@ import {
   Alert,
   FlatList,
   Modal,
+  AppState,
   Platform,
   Pressable,
   StyleSheet,
@@ -42,7 +43,7 @@ import {
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useIsFocused, useFocusEffect } from '@react-navigation/native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useRoomStore } from '../../store/roomStore';
@@ -80,10 +81,12 @@ function formatDayLabel(iso: string): string {
 
 export default function RoomDetailScreen({ navigation, route }: Props) {
   const { roomName } = route.params;
+  const focused = useIsFocused();
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
   const { joined, messages, loadMessages, sendMessage, clearMentions, leave } = useRoomStore();
+  const mentionCount = useRoomStore((s) => s.mentions[roomName] ?? 0);
   const room = joined.find((r) => r.name === roomName);
   const thread = useMemo(() => messages[roomName] ?? [], [messages, roomName]);
 
@@ -193,10 +196,14 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      loadMessages(roomName);
+      void loadMessages(roomName).catch(() => {});
       clearMentions(roomName);
     }, [roomName, loadMessages, clearMentions])
   );
+
+  React.useEffect(() => {
+    if (focused && AppState.currentState === 'active' && mentionCount) clearMentions(roomName);
+  }, [focused, mentionCount, roomName, clearMentions]);
 
   React.useEffect(() => {
     loadTranslationStatus();
@@ -374,7 +381,7 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
         renderItem={renderMessage}
         contentContainerStyle={s.list}
         ListHeaderComponent={<Animated.View style={spacerAnimatedStyle} />}
-        onRefresh={() => loadMessages(roomName)}
+        onRefresh={() => { void loadMessages(roomName).catch(() => {}); }}
         refreshing={false}
         ListEmptyComponent={
           // VirtualizedList already counter-flips ListEmptyComponent when
@@ -428,7 +435,7 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
       </KeyboardStickyView>
 
       {/* User list modal */}
-      <Modal
+      <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']}
         animationType="slide"
         onRequestClose={() => setShowUsers(false)}
         transparent

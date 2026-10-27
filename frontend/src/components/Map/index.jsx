@@ -38,10 +38,10 @@ import './Map.css';
 import * as networkAPI from '../../lib/network';
 import * as optionsAPI from '../../lib/options';
 import * as prefs from '../../lib/prefs';
-import * as reportsAPI from '../../lib/reports';
 import * as transfersAPI from '../../lib/transfers';
 import { keepIfEqual } from '../../lib/util';
 import WorldMap from '../Overview/WorldMap';
+import { loadMapPeers, MAP_PEER_LIMIT } from './mapData';
 import { ExternalLink } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 
@@ -90,6 +90,8 @@ const MapPage = ({ popoutUrl }) => {
   const [pastPeers, setPastPeers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [resolving, setResolving] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [totalPeers, setTotalPeers] = useState(0);
 
   // Filters — applied client-side across both past and live-active peers.
   const [search, setSearch] = useState('');
@@ -125,6 +127,7 @@ const MapPage = ({ popoutUrl }) => {
   // Active transfers — 5s polling
   useEffect(() => {
     let cancelled = false;
+    let timer;
     const poll = async () => {
       try {
         const [d, u] = await Promise.all([
@@ -142,150 +145,50 @@ const MapPage = ({ popoutUrl }) => {
       } catch {
         /* ignore */
       }
+
+      if (!cancelled) timer = setTimeout(poll, 5_000);
     };
 
     poll();
-    const id = setInterval(poll, 5_000);
     return () => {
       cancelled = true;
-      clearInterval(id);
+      clearTimeout(timer);
     };
   }, []);
 
-  // Past connections
+  // Cancel old windows and reveal located peers before optional enrichment.
   useEffect(() => {
-    let cancelled = false;
-    const end = customRange ? customRange.end : new Date().toISOString();
-    const start = customRange
-      ? customRange.start
-      : new Date(Date.now() - range * 60 * 60 * 1_000).toISOString();
-
-    const PAGE_SIZE = 500;
-    const MAX_PEERS = 5_000;
-
-    const load = async () => {
-      try {
-        // The wider the range, the more distinct peers can match — page
-        // through the result set (sorted by LastSeen) instead of taking a
-        // single page, otherwise larger ranges just re-show the same most
-        // recent 500 peers and never surface older ones.
-        let items = [];
-        let offset = 0;
-        for (;;) {
-          const page = await reportsAPI.getUserList({
-            start,
-            end,
-            limit: PAGE_SIZE,
-            offset,
-            sortBy: 'LastSeen',
-          });
-          if (cancelled) return;
-          items = items.concat(page.items ?? []);
-          offset += PAGE_SIZE;
-          if (
-            (page.items ?? []).length < PAGE_SIZE ||
-            offset >= (page.total ?? 0) ||
-            items.length >= MAX_PEERS
-          ) {
-            break;
-          }
-        }
-
-        const users = (items ?? []).map((u) => ({
-          username: u.username ?? u.Username,
-          ip: u.ipAddress ?? u.IpAddress,
-          lat: u.lat ?? u.Lat,
-          lon: u.lon ?? u.Lon,
-          city: u.city ?? u.City,
-          country: u.country ?? u.Country,
-          isVpn: u.isVpn ?? u.IsVpn,
-          uploadCount: u.uploadCount ?? u.UploadCount ?? 0,
-          downloadCount: u.downloadCount ?? u.DownloadCount ?? 0,
-          uploadBytes: u.uploadBytes ?? u.UploadBytes ?? 0,
-          downloadBytes: u.downloadBytes ?? u.DownloadBytes ?? 0,
-          uploadAverageSpeed: u.uploadAverageSpeed ?? u.UploadAverageSpeed ?? 0,
-          downloadAverageSpeed:
-            u.downloadAverageSpeed ?? u.DownloadAverageSpeed ?? 0,
-          lastSeen: u.lastSeen ?? u.LastSeen,
-          browseCount: 0,
-          chatCount: 0,
-        }));
-
-        // Show users that already have coords stored
-        const ready = users.filter((u) => u.lat != null && u.lon != null);
-        if (!cancelled) {
-          setPastPeers(ready);
-          setLoading(false);
-        }
-
-        // Batch-resolve the rest via local GeoLite2 DB — one request, instant
-        const needsGeo = users.filter(
-          (u) => (u.lat == null || u.lon == null) && u.ip,
-        );
-        if (!cancelled && needsGeo.length > 0) {
-          if (!cancelled) setResolving(true);
-          const geoMap = await networkAPI.batchLookup(
-            needsGeo.map((u) => u.ip),
-          );
-          if (!cancelled) {
-            const resolved = needsGeo
-              .map((u) => {
-                const g = geoMap[u.ip];
-                if (!g?.lat || !g?.lon) return null;
-                return {
-                  ...u,
-                  lat: g.lat,
-                  lon: g.lon,
-                  city: g.city ?? u.city,
-                  country: g.country ?? u.country,
-                };
-              })
-              .filter(Boolean);
-            setPastPeers((previous) => [...previous, ...resolved]);
-            setResolving(false);
-          }
-        }
-
-        // Fetch browse + chat counts for all users in one request
-        const usernames = [
-          ...new Set(users.map((u) => u.username).filter(Boolean)),
-        ];
-        if (usernames.length > 0 && !cancelled) {
-          const eventCounts = await reportsAPI
-            .getUserEventCounts({ usernames, start })
-            .catch(() => ({}));
-          if (!cancelled) {
-            setPastPeers((previous) =>
-              previous.map((p) => {
-                const ec = eventCounts[p.username];
-                return ec
-                  ? {
-                      ...p,
-                      browseCount: ec.browseCount ?? 0,
-                      chatCount: ec.chatCount ?? 0,
-                    }
-                  : p;
-              }),
-            );
-          }
-        }
-      } catch {
-        /* ignore */
-      } finally {
-        if (!cancelled) {
+    const controller = new AbortController();
+    const end = customRange?.end ?? new Date().toISOString();
+    const start =
+      customRange?.start ??
+      new Date(Date.now() - range * 3_600_000).toISOString();
+    setPastPeers([]);
+    setTotalPeers(0);
+    setLoading(true);
+    setResolving(false);
+    setLoadError(false);
+    loadMapPeers({
+      start,
+      end,
+      signal: controller.signal,
+      onPeers: setPastPeers,
+      onTotal: setTotalPeers,
+      onReady: () => {
+        setLoading(false);
+        setResolving(true);
+      },
+    })
+      .catch(() => {
+        if (!controller.signal.aborted) setLoadError(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
           setLoading(false);
           setResolving(false);
         }
-      }
-    };
-
-    setPastPeers([]);
-    setLoading(true);
-    setResolving(false);
-    load();
-    return () => {
-      cancelled = true;
-    };
+      });
+    return () => controller.abort();
   }, [customRange, range]);
 
   // Client-side filters — search / direction / VPN-only — applied to the
@@ -355,6 +258,17 @@ const MapPage = ({ popoutUrl }) => {
             </button>
           </div>
           <span className="map-controls-count">
+            {loadError && (
+              <span role="alert">
+                Could not load peer history. Choose a range to retry.
+              </span>
+            )}
+            {!loading && totalPeers > MAP_PEER_LIMIT && (
+              <span>
+                Most recent {MAP_PEER_LIMIT.toLocaleString()} of{' '}
+                {totalPeers.toLocaleString()} peers ·{' '}
+              </span>
+            )}
             {loading && <span className="map-controls-loading">Loading…</span>}
             {resolving && (
               <span className="map-controls-loading">Resolving locations…</span>

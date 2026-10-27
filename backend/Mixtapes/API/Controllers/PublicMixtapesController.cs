@@ -73,7 +73,18 @@ namespace resonance.Mixtapes.API
             }
 
             var info = Service.GetArtworkInfo(m.Id, size);
-            return info == null ? NotFound() : PhysicalFile(info.Value.Path, info.Value.ContentType);
+            if (info == null)
+            {
+                return NotFound();
+            }
+
+            var file = new System.IO.FileInfo(info.Value.Path);
+            Response.Headers.CacheControl = "private, max-age=0, must-revalidate";
+            return new PhysicalFileResult(file.FullName, info.Value.ContentType)
+            {
+                LastModified = file.LastWriteTimeUtc,
+                EntityTag = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{file.LastWriteTimeUtc.Ticks:x}-{file.Length:x}\""),
+            };
         }
 
         [HttpGet("{token}/export.m3u")]
@@ -190,7 +201,7 @@ namespace resonance.Mixtapes.API
         {
             var invalid = Path.GetInvalidFileNameChars();
             var safe = string.Concat(name.Select(c => invalid.Contains(c) ? '_' : c)).Trim();
-            return string.IsNullOrEmpty(safe) ? "mixtape" : safe;
+            return string.IsNullOrEmpty(safe) ? "playlist" : safe;
         }
     }
 }

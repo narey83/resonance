@@ -53,6 +53,7 @@ import {
   FoldVertical,
   Lock,
   Play,
+  SlidersHorizontal,
   UnfoldVertical,
   X,
 } from 'lucide-react';
@@ -113,6 +114,7 @@ const FileRow = React.memo(
       <div className="sr-file-row">
         <div className="sr-file-check">
           <input
+            aria-label={`Select ${file.filename}`}
             checked={checked}
             className="sr-checkbox"
             disabled={disabled}
@@ -151,7 +153,9 @@ const FileRow = React.memo(
 
         <div className="sr-file-quality">{formatAttributes(file)}</div>
         <div className="sr-file-size">{formatBytes(file.size)}</div>
-        <div className="sr-file-length">{formatSeconds(file.length)}</div>
+        <div className="sr-file-length">
+          {file.length > 0 ? formatSeconds(file.length) : '—'}
+        </div>
         <div />
       </div>
     );
@@ -160,8 +164,8 @@ const FileRow = React.memo(
 
 // ── Folder header row ───────────────────────────────────────────────────────────
 
-const FOLDER_ROW_HEIGHT = 34;
-const FILE_ROW_HEIGHT = 37;
+const FOLDER_ROW_HEIGHT = 56;
+const FILE_ROW_HEIGHT = 40;
 
 const FolderHeaderRow = React.memo(
   ({
@@ -187,6 +191,7 @@ const FolderHeaderRow = React.memo(
     return (
       <div className="sr-folder-header">
         <input
+          aria-label={`Select files in ${group.label}`}
           checked={allSelected}
           className="sr-checkbox sr-folder-checkbox"
           disabled={disabled}
@@ -195,6 +200,8 @@ const FolderHeaderRow = React.memo(
           type="checkbox"
         />
         <button
+          aria-expanded={open}
+          aria-label={`${open ? 'Hide' : 'Show'} files in ${group.label}`}
           className="sr-folder-chevron"
           onClick={onToggleOpen}
           type="button"
@@ -205,6 +212,7 @@ const FolderHeaderRow = React.memo(
         <button
           className="sr-folder-name"
           onClick={onToggleOpen}
+          title={group.directory}
           type="button"
         >
           {group.locked ? (
@@ -233,7 +241,10 @@ const FolderHeaderRow = React.memo(
         )}
 
         <span className="sr-folder-meta">
-          {group.files.length} {group.files.length === 1 ? 'file' : 'files'}
+          {group.files.length} {group.files.length === 1 ? 'file' : 'files'} ·{' '}
+          {formatBytes(
+            group.files.reduce((sum, file) => sum + (file.size ?? 0), 0),
+          )}
         </span>
       </div>
     );
@@ -247,8 +258,10 @@ const BrowseResults = ({ disabled, files, username }) => {
   const [downloadedFolders, setDownloadedFolders] = useState(new Map());
   const [activeFilters, setActiveFilters] = useState(new Set());
   const [selectedExtensions, setSelectedExtensions] = useState([]);
-  // Folders start closed; expanding is opt-in per folder or via expand-all.
-  const [expandedFolders, setExpandedFolders] = useState(new Set());
+  const [refineOpen, setRefineOpen] = useState(false);
+  const [expandedFolders, setExpandedFolders] = useState(
+    () => new Set(files.map((file) => file._directory)),
+  );
   const [metaFilters, setMetaFilters] = useState({
     artist: '',
     folder: '',
@@ -471,7 +484,7 @@ const BrowseResults = ({ disabled, files, username }) => {
   };
 
   return (
-    <div className="sr-detail">
+    <div className="sr-detail br-results">
       <div className="sr-detail-header">
         <span className="sr-detail-header-icon">
           <FolderOpen
@@ -490,7 +503,60 @@ const BrowseResults = ({ disabled, files, username }) => {
         )}
       </div>
 
-      <div className="sr-filters">
+      <div className="sr-results-toolbar">
+        <button
+          aria-expanded={refineOpen}
+          className="sr-refine-toggle"
+          onClick={() => setRefineOpen((value) => !value)}
+          type="button"
+        >
+          <SlidersHorizontal size={14} /> Refine
+          {activeFilters.size +
+            selectedExtensions.length +
+            Object.values(metaFilters).filter(Boolean).length >
+          0
+            ? ` (${activeFilters.size + selectedExtensions.length + Object.values(metaFilters).filter(Boolean).length})`
+            : ''}
+        </button>
+        <button
+          className="sr-refine-toggle"
+          onClick={toggleAllFolders}
+          type="button"
+        >
+          {allCollapsed ? (
+            <UnfoldVertical size={14} />
+          ) : (
+            <FoldVertical size={14} />
+          )}
+          {allCollapsed ? 'Show files' : 'Hide files'}
+        </button>
+        <span className="sr-result-summary">
+          {filteredByMeta.length.toLocaleString()} shown ·{' '}
+          {files.length.toLocaleString()} shared ·{' '}
+          {folderGroups.length.toLocaleString()}{' '}
+          {folderGroups.length === 1 ? 'folder' : 'folders'}
+        </span>
+      </div>
+      <div
+        className="sr-filters"
+        hidden={!refineOpen}
+      >
+        <div className="sr-result-filter-heading">
+          <span>
+            Refine shared files · artist/title/year are inferred from file paths
+          </span>
+          <button
+            className="sr-filter-pill"
+            onClick={() => {
+              setActiveFilters(new Set());
+              setSelectedExtensions([]);
+              setMetaFilters({ artist: '', title: '', folder: '', year: '' });
+            }}
+            type="button"
+          >
+            Reset all filters
+          </button>
+        </div>
         <div className="sr-filter-row">
           <div className="sr-filter-pills">
             {STATIC_FILTERS.map((sf) => (
@@ -517,6 +583,7 @@ const BrowseResults = ({ disabled, files, username }) => {
 
           {availableFormats.length > 0 && (
             <Dropdown
+              aria-label="Filter by file formats"
               className="sr-ext-dropdown"
               clearable
               multiple
@@ -526,38 +593,11 @@ const BrowseResults = ({ disabled, files, username }) => {
                 text: fmt,
                 value: fmt,
               }))}
-              placeholder="Extension"
+              placeholder="File formats"
               search
               selection
               value={selectedExtensions}
             />
-          )}
-
-          {folderGroups.length > 0 && (
-            <button
-              className="sr-filter-adv-btn hover-fx"
-              onClick={toggleAllFolders}
-              title={
-                allCollapsed ? 'Expand all folders' : 'Collapse all folders'
-              }
-              type="button"
-            >
-              {allCollapsed ? (
-                <UnfoldVertical size={13} />
-              ) : (
-                <FoldVertical size={13} />
-              )}
-            </button>
-          )}
-
-          {folderGroups.length > 0 && (
-            <span className="sr-file-count">
-              {filteredByMeta.length}{' '}
-              {filteredByMeta.length === 1 ? 'file' : 'files'}
-              {' · '}
-              {folderGroups.length}{' '}
-              {folderGroups.length === 1 ? 'folder' : 'folders'}
-            </span>
           )}
         </div>
 
@@ -573,6 +613,7 @@ const BrowseResults = ({ disabled, files, username }) => {
               key={key}
             >
               <input
+                aria-label={`Filter shared files by ${placeholder.toLowerCase()}`}
                 className="sr-meta-filter-input"
                 onChange={(e) => {
                   const { value } = e.target;

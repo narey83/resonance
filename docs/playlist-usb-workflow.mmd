@@ -1,0 +1,32 @@
+flowchart TD
+  subgraph library["Resonance · Music / Library"]
+    A["Tracks, albums or folders"] --> B["Create / add to saved playlist"]
+    B --> C["Playlists · saved library collection"]
+    A --> D["Export to USB (Rekordbox) · selection action"]
+  end
+  subgraph planner["Resonance · Set Planner"]
+    E["Choose tracks and arrange set order"] --> F["Save as playlist · snapshot of set order"]
+    F --> C
+    E --> G["Export set · ordered tracks and set name"]
+  end
+  subgraph export["Resonance · Music → Export / Export set"]
+    H["Choose tracks · folders or individual tracks"] --> I["Player and playlist · export name + profile"]
+    I --> J["Review tracks, order and output"]
+    J --> K["Prepare export · server export worker"]
+    K --> L{"Job completed?"}
+    L -->|"No: resolve failure / retry"| J
+    L -->|Yes| M["Download and transfer · prepared ZIP"]
+  end
+  D --> I
+  G --> H
+  C -. "Design gap: explicit Export playlist action / preserve order" .-> H
+  subgraph desktop["Desktop · Pioneer Link helper"]
+    M --> N["Open in USB helper · download and open .resonance file"]
+    N --> O["Helper downloads and verifies export"]
+    O --> P["Select external FAT32 / exFAT drive and confirm destination"]
+    P --> Q["Write and verify USB files"]
+  end
+  M --> R["Manual alternative · extract ZIP and copy Contents + PIONEER to USB root"]
+  Q --> S["Operating system · safely eject USB"]
+  R --> S
+  S --> T["Pioneer player · hardware acceptance testing still pending"]

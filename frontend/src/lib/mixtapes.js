@@ -29,8 +29,22 @@
 
 import { apiBaseUrl } from '../config';
 import api from './api';
+import { seedSignatures, signedQuery } from './streamSignatures';
 
-export const getAll = () => api.get('/mixtapes').then((r) => r.data);
+const seedArtwork = (playlist) => {
+  if (playlist)
+    seedSignatures([
+      {
+        path: `playlist-artwork:${playlist.id}`,
+        sig: playlist.artworkSig,
+        exp: playlist.artworkExp,
+      },
+    ]);
+  return playlist;
+};
+
+export const getAll = () =>
+  api.get('/mixtapes').then((r) => r.data.map(seedArtwork));
 
 export const create = ({ name, description }) =>
   api.post('/mixtapes', { name, description }).then((r) => r.data);
@@ -71,14 +85,17 @@ export const unpublish = (id) =>
 // mixtape's updatedAt) busts the browser cache when the artwork is replaced.
 const artworkQuery = ({ size, version } = {}) => {
   const parameters = new URLSearchParams();
-  if (size) parameters.set('size', size);
+  parameters.set(
+    'size',
+    Number.isFinite(size) && size > 0 ? Math.min(2_048, Math.ceil(size)) : 192,
+  );
   if (version) parameters.set('v', version);
   const query = parameters.toString();
   return query ? `?${query}` : '';
 };
 
 export const artworkUrl = (id, options) =>
-  `${apiBaseUrl}/mixtapes/${encodeURIComponent(id)}/artwork${artworkQuery(options)}`;
+  `${apiBaseUrl}/mixtapes/${encodeURIComponent(id)}/artwork${artworkQuery(options)}${signedQuery(`playlist-artwork:${id}`)}`;
 
 export const uploadArtwork = (id, file) => {
   const form = new FormData();

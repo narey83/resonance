@@ -76,21 +76,25 @@ const LeaderboardTable = ({ entries }) => {
   );
 };
 
-const UserLeaderboard = ({ leaderboard }) => (
+// A directional view must never display the opposite peer list.
+const UserLeaderboard = ({ direction, leaderboard }) => (
   <>
-    <div className="section-card">
-      <div className="section-card-header">
-        <span className="section-card-title">Top Downloaders</span>
+    {direction !== 'upload' && (
+      <div className="section-card">
+        <div className="section-card-header">
+          <span className="section-card-title">Download sources</span>
+        </div>
+        <LeaderboardTable entries={leaderboard?.download ?? []} />
       </div>
-      <LeaderboardTable entries={leaderboard?.download ?? []} />
-    </div>
-
-    <div className="section-card">
-      <div className="section-card-header">
-        <span className="section-card-title">Top Uploaders</span>
+    )}
+    {direction !== 'download' && (
+      <div className="section-card">
+        <div className="section-card-header">
+          <span className="section-card-title">Upload recipients</span>
+        </div>
+        <LeaderboardTable entries={leaderboard?.upload ?? []} />
       </div>
-      <LeaderboardTable entries={leaderboard?.upload ?? []} />
-    </div>
+    )}
   </>
 );
 

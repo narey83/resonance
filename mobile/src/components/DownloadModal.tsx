@@ -62,7 +62,7 @@ export default function DownloadModal({
   const s = useMemo(() => makeStyles(colors), [colors]);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+    <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']} visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <Pressable style={s.overlay} onPress={onCancel} />
       {/* Bottom sheet with a text field: without this the keyboard covers the input and the
           confirm button outright. RN's own KeyboardAvoidingView is inert on Android. */}

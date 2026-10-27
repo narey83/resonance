@@ -40,6 +40,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
@@ -98,7 +99,8 @@ public class ReportsService
         DateTime? start = null,
         DateTime? end = null,
         TransferDirection? direction = null,
-        string username = null)
+        string username = null,
+        bool includeTimings = true)
     {
         var s = Utc(start ?? DateTime.MinValue);
         var e = Utc(end ?? DateTime.MaxValue);
@@ -108,7 +110,7 @@ public class ReportsService
             throw new ArgumentException("End time must be later than start time");
         }
 
-        var cacheKey = $"reports:summary:{WindowKey(s, e)}:{direction}:{username}";
+        var cacheKey = $"reports:summary:{WindowKey(s, e)}:{direction}:{username}:{includeTimings}";
         return GetOrCreateReport(cacheKey, s, e, () =>
         {
             var dict = new Dictionary<TransferDirection, Dictionary<TransferStates, TransferSummary>>()
@@ -145,10 +147,10 @@ public class ReportsService
                             SUM(GREATEST(""BytesTransferred"" - ""StartOffset"", 0)) AS TotalBytes,
                             COUNT(*) AS Count,
                             SUM(""AverageSpeed"") AS SpeedSum,
-                            SUM(EXTRACT(EPOCH FROM (""StartedAt"" - ""EnqueuedAt""))) AS WaitSum,
-                            COUNT(EXTRACT(EPOCH FROM (""StartedAt"" - ""EnqueuedAt""))) AS WaitCount,
-                            SUM(EXTRACT(EPOCH FROM (""EndedAt"" - ""StartedAt""))) AS DurationSum,
-                            COUNT(EXTRACT(EPOCH FROM (""EndedAt"" - ""StartedAt""))) AS DurationCount
+                            SUM(CASE WHEN @IncludeTimings THEN EXTRACT(EPOCH FROM (""StartedAt"" - ""EnqueuedAt"")) END) AS WaitSum,
+                            COUNT(CASE WHEN @IncludeTimings THEN EXTRACT(EPOCH FROM (""StartedAt"" - ""EnqueuedAt"")) END) AS WaitCount,
+                            SUM(CASE WHEN @IncludeTimings THEN EXTRACT(EPOCH FROM (""EndedAt"" - ""StartedAt"")) END) AS DurationSum,
+                            COUNT(CASE WHEN @IncludeTimings THEN EXTRACT(EPOCH FROM (""EndedAt"" - ""StartedAt"")) END) AS DurationCount
                         FROM transfers.""Transfers""
                         WHERE ""EndedAt"" IS NOT NULL
                             AND ""EndedAt"" BETWEEN @Start AND @End
@@ -166,12 +168,12 @@ public class ReportsService
                     SELECT
                         Direction,
                         StateDescription,
-                        SUM(Size) AS TotalBytes,
+                        SUM(MAX(BytesTransferred - StartOffset, 0)) AS TotalBytes,
                         COUNT(*) AS Count,
                         COUNT(DISTINCT Username) AS DistinctUsers,
                         AVG(AverageSpeed) AS AverageSpeed,
-                        AVG(strftime('%s', StartedAt) - strftime('%s', EnqueuedAt)) AS AverageWait,
-                        AVG(strftime('%s', EndedAt) - strftime('%s', StartedAt)) AS AverageDuration
+                        AVG(CASE WHEN @IncludeTimings THEN strftime('%s', StartedAt) - strftime('%s', EnqueuedAt) END) AS AverageWait,
+                        AVG(CASE WHEN @IncludeTimings THEN strftime('%s', EndedAt) - strftime('%s', StartedAt) END) AS AverageDuration
                     FROM Transfers
                     WHERE EndedAt IS NOT NULL
                         AND EndedAt BETWEEN @Start AND @End
@@ -179,6 +181,24 @@ public class ReportsService
                         {(direction is not null ? "AND Direction = @Direction" : string.Empty)}
                         {(username is not null ? "AND Username = @Username" : string.Empty)}
                     GROUP BY Direction, StateDescription
+                ";
+            }
+
+            if (!UsePostgres && !includeTimings)
+            {
+                sql = $@"
+                    SELECT Direction, State AS StateDescription,
+                        SUM(MAX(BytesTransferred - StartOffset, 0)) AS TotalBytes,
+                        COUNT(*) AS Count, COUNT(DISTINCT Username) AS DistinctUsers,
+                        AVG(AverageSpeed) AS AverageSpeed,
+                        0.0 AS AverageWait, 0.0 AS AverageDuration
+                    FROM Transfers
+                    WHERE EndedAt IS NOT NULL AND EndedAt BETWEEN @Start AND @End
+                        AND Direction IN ('Upload', 'Download')
+                        AND State IN ({stateList})
+                        {(direction is not null ? "AND Direction = @Direction" : string.Empty)}
+                        {(username is not null ? "AND Username = @Username" : string.Empty)}
+                    GROUP BY Direction, State
                 ";
             }
 
@@ -190,6 +210,7 @@ public class ReportsService
                 Username = username,
                 Start = s,
                 End = e,
+                IncludeTimings = includeTimings,
             };
 
             var results = connection.Query<TransferSummaryRow>(sql, param);
@@ -284,7 +305,7 @@ public class ReportsService
                         datetime(strftime('%s', EndedAt) / CAST(@Interval AS INTEGER) * CAST(@Interval AS INTEGER), 'unixepoch') AS Interval,
                         Direction,
                         StateDescription,
-                        SUM(Size) AS TotalBytes,
+                        SUM(MAX(BytesTransferred - StartOffset, 0)) AS TotalBytes,
                         COUNT(*) AS Count,
                         COUNT(DISTINCT Username) AS Users,
                         AVG(AverageSpeed) AS AverageSpeed,
@@ -401,7 +422,7 @@ public class ReportsService
                         Username,
                         Direction,
                         State,
-                        SUM(Size) AS TotalBytes,
+                        SUM(MAX(BytesTransferred - StartOffset, 0)) AS TotalBytes,
                         COUNT(*) AS Count,
                         AVG(AverageSpeed) AS AverageSpeed,
                         AVG(strftime('%s', StartedAt) - strftime('%s', EnqueuedAt)) AS AverageWait,
@@ -805,14 +826,15 @@ public class ReportsService
                         SELECT
                             SUBSTR(filename, LENGTH(RTRIM(filename, REPLACE(REPLACE(filename, '/', ''), '\', ''))) + 1) AS Filename,
                             Username,
-                            Size
+                            BytesTransferred,
+                            StartOffset
                         FROM transfers
                         WHERE Direction = 'Upload'
                         AND State = 48
                         AND EndedAt IS NOT NULL
                         AND EndedAt BETWEEN @Start AND @End
                     )
-                    SELECT Filename, COUNT(*) AS Count, COUNT(DISTINCT Username) AS DistinctUsers, SUM(Size) AS TotalBytes
+                    SELECT Filename, COUNT(*) AS Count, COUNT(DISTINCT Username) AS DistinctUsers, SUM(MAX(BytesTransferred - StartOffset, 0)) AS TotalBytes
                     FROM files
                     GROUP BY LOWER(Filename)
                     ORDER BY DistinctUsers DESC, Count DESC
@@ -836,7 +858,8 @@ public class ReportsService
         UserReportSortBy sortBy = UserReportSortBy.LastSeen,
         SortOrder sortOrder = SortOrder.DESC,
         int limit = 25,
-        int offset = 0)
+        int offset = 0,
+        bool liveWindow = false)
     {
         var s = Utc(start ?? DateTime.MinValue);
         var e = Utc(end ?? DateTime.MaxValue);
@@ -871,7 +894,9 @@ public class ReportsService
             _ => "LastSeen",
         };
 
+        var userWindow = liveWindow ? $"live:{s.Ticks}" : WindowKey(s, e);
         string sql;
+        UserAggregateSnapshot snapshot = null;
         if (UsePostgres)
         {
             // Resolve the matching usernames up front and aggregate only their rows. Filtering
@@ -938,23 +963,46 @@ public class ReportsService
                       OR n.City LIKE @Search ESCAPE '\')"
                 : string.Empty;
 
-            sql = $@"
-                WITH aggregated AS (
+            snapshot = GetOrCreateReport(
+                $"reports:users:aggregate:{userWindow}", s, e, () =>
+                {
+                    using var aggregateConnection = OpenConnection(Database.Transfers);
+                    var aggregates = aggregateConnection.Query<UserReportSummary>(@"
+                    WITH aggregated AS (
                     SELECT
                         Username,
                         SUM(CASE WHEN Direction = 'Upload' AND State = 48 THEN 1 ELSE 0 END) AS UploadCount,
                         SUM(CASE WHEN Direction = 'Download' AND State = 48 THEN 1 ELSE 0 END) AS DownloadCount,
-                        SUM(CASE WHEN Direction = 'Upload' AND State = 48 THEN Size ELSE 0 END) AS UploadBytes,
-                        SUM(CASE WHEN Direction = 'Download' AND State = 48 THEN Size ELSE 0 END) AS DownloadBytes,
+                        SUM(CASE WHEN Direction = 'Upload' AND State = 48 THEN MAX(BytesTransferred - StartOffset, 0) ELSE 0 END) AS UploadBytes,
+                        SUM(CASE WHEN Direction = 'Download' AND State = 48 THEN MAX(BytesTransferred - StartOffset, 0) ELSE 0 END) AS DownloadBytes,
                         SUM(CASE WHEN Direction = 'Upload' AND (State & ~48) != 0 THEN 1 ELSE 0 END) AS UploadErrorCount,
                         SUM(CASE WHEN Direction = 'Download' AND (State & ~48) != 0 THEN 1 ELSE 0 END) AS DownloadErrorCount,
                         AVG(CASE WHEN Direction = 'Upload' AND State = 48 THEN AverageSpeed ELSE NULL END) AS UploadAverageSpeed,
                         AVG(CASE WHEN Direction = 'Download' AND State = 48 THEN AverageSpeed ELSE NULL END) AS DownloadAverageSpeed,
                         MAX(EndedAt) AS LastSeen
-                    FROM Transfers
+                    FROM Transfers INDEXED BY IX_Transfers_Overview
                     WHERE EndedAt IS NOT NULL
                         AND EndedAt BETWEEN @Start AND @End
                     GROUP BY Username
+                )
+                        SELECT * FROM aggregated", new { Start = s, End = e }).ToList();
+                    return new UserAggregateSnapshot(Guid.NewGuid(), JsonSerializer.Serialize(aggregates));
+                }, ttlOverride: TimeSpan.FromMinutes(2));
+
+            sql = $@"
+                WITH aggregated AS (
+                    SELECT
+                        json_extract(value, '$.Username') AS Username,
+                        json_extract(value, '$.UploadCount') AS UploadCount,
+                        json_extract(value, '$.DownloadCount') AS DownloadCount,
+                        json_extract(value, '$.UploadBytes') AS UploadBytes,
+                        json_extract(value, '$.DownloadBytes') AS DownloadBytes,
+                        json_extract(value, '$.UploadErrorCount') AS UploadErrorCount,
+                        json_extract(value, '$.DownloadErrorCount') AS DownloadErrorCount,
+                        CAST(json_extract(value, '$.UploadAverageSpeed') AS REAL) AS UploadAverageSpeed,
+                        CAST(json_extract(value, '$.DownloadAverageSpeed') AS REAL) AS DownloadAverageSpeed,
+                        json_extract(value, '$.LastSeen') AS LastSeen
+                    FROM json_each(@UserSnapshot)
                 )
                 SELECT a.*, n.IpAddress, n.Country, n.City, n.IsVpn, n.Lat, n.Lon, COUNT(*) OVER() AS TotalCount
                 FROM aggregated a
@@ -966,7 +1014,7 @@ public class ReportsService
             ";
         }
 
-        var cacheKey = $"reports:users:{WindowKey(s, e)}:{search}:{sortBy}:{sortOrder}:{limit}:{offset}";
+        var cacheKey = $"reports:users:{userWindow}:{snapshot?.Version}:{search}:{sortBy}:{sortOrder}:{limit}:{offset}";
         return GetOrCreateReport(cacheKey, s, e, () =>
         {
             using var connection = OpenConnection(Database.Transfers);
@@ -978,6 +1026,7 @@ public class ReportsService
                 Search = search is not null ? "%" + EscapeLike(search) + "%" : null,
                 Limit = limit,
                 Offset = offset,
+                UserSnapshot = snapshot?.Json,
             };
 
             var rows = connection.Query<UserReportRow>(sql, param).ToList();
@@ -1162,12 +1211,18 @@ public class ReportsService
         search = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
         state = string.IsNullOrWhiteSpace(state) ? null : state.Trim();
 
+        var failedStates = string.Join(",", TransferStateCategories.Failed.Select(value => (int)value));
+        var failedOnly = string.Equals(state, "Failed", StringComparison.OrdinalIgnoreCase);
         string sql;
 
         if (UsePostgres)
         {
             var dirClause = direction is not null ? "AND \"Direction\" = @Direction" : string.Empty;
             var stateClause = state is not null ? "AND \"StateDescription\" ILIKE @State" : string.Empty;
+            if (failedOnly)
+            {
+                stateClause = $"AND t.\"State\" IN ({failedStates})";
+            }
 
             // Matched against the filename OR the peer, so one box serves "find that track" and
             // "what did I trade with this person". Only Username is trigram-indexed; the filename
@@ -1221,6 +1276,18 @@ public class ReportsService
         {
             var dirClause = direction is not null ? "AND Direction = @Direction" : string.Empty;
             var stateClause = state is not null ? "AND StateDescription LIKE @State" : string.Empty;
+            if (failedOnly)
+            {
+                stateClause = $"AND t.State IN ({failedStates})";
+            }
+
+            // Canonical success has its own date-ordered partial index. Keeping only the text
+            // predicate makes SQLite walk recent failures before it can find fifty successes.
+            if (string.Equals(state, nameof(TransferStates.Succeeded), StringComparison.OrdinalIgnoreCase))
+            {
+                stateClause += $" AND t.State = {(int)(TransferStates.Completed | TransferStates.Succeeded)}";
+            }
+
             var searchClause = search is not null
                 ? "AND (Filename LIKE @Search ESCAPE '\\' OR Username LIKE @Search ESCAPE '\\')"
                 : string.Empty;
@@ -1588,7 +1655,7 @@ public class ReportsService
                     SELECT
                         CAST(strftime('%w', EndedAt) AS INTEGER) AS Dow,
                         CAST(strftime('%H', EndedAt) AS INTEGER) AS Hour,
-                        SUM(Size) AS Bytes,
+                        SUM(MAX(BytesTransferred - StartOffset, 0)) AS Bytes,
                         COUNT(*) AS Count
                     FROM Transfers
                     WHERE State = 48
@@ -1944,22 +2011,22 @@ public class ReportsService
             else
             {
                 sql = @"
-                    WITH firsts AS (
-                        SELECT Username, MIN(EndedAt) AS FirstSeen
-                        FROM Transfers
-                        WHERE EndedAt IS NOT NULL
-                        GROUP BY Username
-                    ),
-                    active AS (
+                    WITH active AS (
                         SELECT DISTINCT Username
                         FROM Transfers
                         WHERE EndedAt IS NOT NULL AND EndedAt BETWEEN @Start AND @End
+                    ),
+                    flags AS MATERIALIZED (
+                        SELECT EXISTS (
+                            SELECT 1 FROM Transfers previous
+                            WHERE previous.Username = active.Username AND previous.EndedAt < @Start
+                        ) AS IsReturning
+                        FROM active
                     )
                     SELECT
-                        SUM(CASE WHEN f.FirstSeen >= @Start THEN 1 ELSE 0 END) AS NewPeers,
-                        SUM(CASE WHEN f.FirstSeen < @Start THEN 1 ELSE 0 END) AS ReturningPeers
-                    FROM active a
-                    JOIN firsts f ON f.Username = a.Username
+                        SUM(CASE WHEN IsReturning THEN 0 ELSE 1 END) AS NewPeers,
+                        SUM(CASE WHEN IsReturning THEN 1 ELSE 0 END) AS ReturningPeers
+                    FROM flags
                 ";
             }
 
@@ -2094,15 +2161,15 @@ public class ReportsService
         return TimeSpan.FromMinutes(2);
     }
 
-    // Identifies the requested window *relative to now*, quantized by the TTL, rather than by
-    // absolute wall-clock minutes. The dashboard always requests windows anchored at "now", so
+    // Identifies the duration in seconds and its end offset relative to now. Only the
+    // offset is quantized by the TTL; different durations must never share a key. The dashboard always requests windows anchored at "now", so
     // absolute keys changed on every visit and defeated the TTL entirely.
     private static string WindowKey(DateTime s, DateTime e)
     {
         var ttl = GetCacheTtl(s, e);
-        var range = (long)Math.Round((e - s).TotalSeconds / ttl.TotalSeconds);
+        var range = (long)Math.Round((e - s).TotalSeconds);
         var offset = (long)Math.Round((DateTime.UtcNow - e).TotalSeconds / ttl.TotalSeconds);
-        return $"{range}r{offset}";
+        return $"{range}s:{ttl.Ticks}:{offset}";
     }
 
     // Normalise DateTime values to UTC kind so Npgsql accepts them for timestamptz columns.
@@ -2178,9 +2245,9 @@ public class ReportsService
     // Serve-stale-while-revalidate: an entry past its TTL is returned immediately and refreshed on
     // a background thread, so requests only block on the database the very first time a window is
     // asked for (or after the entry has gone unused for several TTLs and been evicted).
-    private T GetOrCreateReport<T>(string cacheKey, DateTime start, DateTime end, Func<T> factory)
+    private T GetOrCreateReport<T>(string cacheKey, DateTime start, DateTime end, Func<T> factory, TimeSpan? ttlOverride = null)
     {
-        var ttl = GetCacheTtl(start, end);
+        var ttl = ttlOverride ?? GetCacheTtl(start, end);
 
         if (Cache.TryGetValue<StaleWhileRevalidateEntry>(cacheKey, out var cached))
         {
@@ -2253,6 +2320,7 @@ public class ReportsService
             sqlite.Open();
             return sqlite;
         }
+
         var connectionString = new NpgsqlConnectionStringBuilder(ConnectionStrings[database])
         {
             CommandTimeout = ReportCommandTimeoutSeconds,
@@ -2262,6 +2330,8 @@ public class ReportsService
         conn.Open();
         return conn;
     }
+
+    private sealed record UserAggregateSnapshot(Guid Version, string Json);
 
     private sealed record StaleWhileRevalidateEntry(object Value, DateTime FreshUntil);
 

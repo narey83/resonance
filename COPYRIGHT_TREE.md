@@ -809,3 +809,11 @@ Per-file copyright attribution for every source file in the project, generated f
   - app.config.js — John Narey
   - eslint.config.js — John Narey
   - index.ts — John Narey
+
+## Packaged dependency notices
+
+Artwork processing uses SkiaSharp under the MIT license. Its notice is retained in [third_party/skia-sharp/LICENSE.txt](third_party/skia-sharp/LICENSE.txt) and copied to `licenses/SkiaSharp.txt` in server builds and publishes.
+
+## Bundled runtime components
+
+The pinned bgutil yt-dlp provider plugin under `backend/tools/yt-dlp-plugins/` is vendored third-party code under GPL-3.0-only. Its upstream version, archive digest and provider-image digest are recorded in `SOURCE.txt`; the accompanying `LICENSE` is copied into builds and published output.

@@ -31,6 +31,7 @@ namespace resonance.Common
 {
     using System;
     using System.IO;
+    using System.Runtime.InteropServices;
 
     /// <summary>
     ///     Free disk space checks for download guards and monitoring.
@@ -47,6 +48,17 @@ namespace resonance.Common
         {
             try
             {
+                // DriveInfo uses statfs block size on Linux. VirtioFS may report a
+                // larger preferred I/O size there; statvfs exposes the actual unit
+                // for its block counts, which keeps download guards accurate.
+                if (OperatingSystem.IsLinux() && Environment.Is64BitProcess
+                    && StatVfs(path, out var stats) == 0 && stats.FragmentSize > 0)
+                {
+                    availableBytes = checked((long)(stats.AvailableBlocks * stats.FragmentSize));
+                    totalBytes = checked((long)(stats.Blocks * stats.FragmentSize));
+                    return true;
+                }
+
                 var drive = new DriveInfo(path);
                 availableBytes = drive.AvailableFreeSpace;
                 totalBytes = drive.TotalSize;
@@ -70,5 +82,22 @@ namespace resonance.Common
             => minimumMegabytes.HasValue
                 && TryGet(path, out var availableBytes, out _)
                 && availableBytes < minimumMegabytes.Value * 1024L * 1024L;
+
+        [DllImport("libc", EntryPoint = "statvfs", SetLastError = true)]
+        private static extern int StatVfs([MarshalAs(UnmanagedType.LPUTF8Str)] string path, out LinuxFileSystemStats stats);
+
+        // The first five statvfs fields are unsigned long on 64-bit Linux.
+        // Reserve the rest of the native structure without depending on its
+        // platform-specific trailing fields. This call is never used on macOS
+        // or 32-bit hosts.
+        [StructLayout(LayoutKind.Sequential, Size = 256)]
+        private struct LinuxFileSystemStats
+        {
+            public ulong BlockSize;
+            public ulong FragmentSize;
+            public ulong Blocks;
+            public ulong FreeBlocks;
+            public ulong AvailableBlocks;
+        }
     }
 }

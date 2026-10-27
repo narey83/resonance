@@ -27,26 +27,21 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { getSessionScope } from '../lib/sessionScope';
 import { File } from 'expo-file-system';
 import { Image as ExpoImage } from 'expo-image';
-import { Dimensions, PixelRatio } from 'react-native';
 import { recordMediaLoad } from '../store/networkLogStore';
 
-// Pixel size to request for the full-screen player artwork. The cover now spans the whole
-// screen width, so request it at the device's physical pixel width (capped) rather than a
-// fixed 512 — otherwise it's upscaled and looks soft. Bounded so the server transcode and
-// payload stay reasonable on very high-DPI screens.
-export const PLAYER_ART_SIZE = Math.min(
-  1280,
-  Math.round(Dimensions.get('window').width * PixelRatio.get()),
-);
+// A bounded 768px cover is sufficient for the handset player. A fixed size also
+// avoids separate downloads for every device width / density.
+export const PLAYER_ART_SIZE = 768;
 
 // Canonical thumbnail size for every small artwork cell (library/folder/album-grid rows, the
-// mini-bar, Android Auto icons, lock-screen metadata). The server resizes + caches per (path,
+// mini-bar and Android Auto browsing icons). The server resizes + caches per (path,
 // size) and expo-image caches per (path, size) cacheKey, so the more sizes we request the more
 // duplicate transcodes and downloads of the *same* cover we incur. Collapsing all small cells
-// onto one size — and the player/album-hero onto PLAYER_ART_SIZE — means a cover is fetched at
-// most twice total instead of once per screen. 192px covers list cells up to ~64pt at 3x.
+// onto one size, with a larger player rendition and 384px discovery tiles, avoids
+// another download for every screen. 192px covers list cells up to ~64pt at 3x.
 export const ARTWORK_THUMB_SIZE = 192;
 
 // Warm expo-image's cache for a single artwork URL under its stable cacheKey (path-derived,
@@ -73,7 +68,7 @@ function djb2(s: string): string {
 }
 
 export function getArtworkCacheKey(trackPath: string, size: number): string {
-  return `artwork_${djb2(trackPath)}_${size}`;
+  return `artwork_${djb2(getSessionScope() ?? 'local')}_${djb2(trackPath)}_${size}`;
 }
 
 // Every size a cover might be cached under. The two canonical sizes are what's actually written

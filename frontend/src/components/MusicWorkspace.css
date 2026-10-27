@@ -1,5 +1,19 @@
 /* Shared DJ workspace: neutral surfaces, clear data, restrained signal colour. */
 .dj-workspace { --accent: #087e8b; --accent-hover: #056774; --accent-rgb: 8,126,139; --bg-primary: #eef1f3; --bg-surface: #fff; --bg-elevated: #e5eaee; --border: #d7dfe4; --text-primary: #18252e; --text-secondary: #52636f; --text-muted: #677985; --nav-bg: #f8fafb; --nav-item-active-bg: #dceef0; --nav-item-active-color: var(--accent); font-variant-numeric: tabular-nums; }
+/* Resolve navigation aliases in the workspace, where its palette is defined.
+   Inheriting aliases from :root retains the root palette's resolved colours. */
+.dj-workspace {
+  --nav-border: var(--border);
+  --nav-brand-color: var(--text-primary);
+  --nav-label-color: var(--text-muted);
+  --nav-item-color: var(--text-muted);
+  --nav-item-hover-color: var(--text-primary);
+  --nav-item-hover-bg: var(--surface-hover);
+  --nav-icon-color: var(--text-muted);
+  --nav-icon-hover: var(--text-primary);
+  --nav-logo-color: var(--accent);
+}
+
 :root:is(.dark,.dim,.amoled) .dj-workspace { --bg-primary: #11171c; --bg-surface: #192229; --bg-elevated: #212e36; --border: #2d3b44; --text-primary: #e7eef2; --text-secondary: #b4c3cc; --text-muted: #91a4b0; --accent: #50d4d0; --accent-hover: #89e5df; --accent-rgb: 80,212,208; --nav-bg: #141c22; --nav-item-active-bg: #203c40; --surface-hover: #ffffff08; --surface-input: #192229; --player-bg: #151e25; --player-text: #e7eef2; --player-text-muted: #91a4b0; }
 .dj-workspace .app-nav { background: var(--nav-bg); backdrop-filter: none; }
 .dj-workspace .app-nav-label { font-size: 10px; letter-spacing: .14em; margin-top: var(--nav-section-gap); }
@@ -14,10 +28,7 @@
 .dj-workspace-actions a { display: flex; align-items: center; gap: 6px; min-height: 28px; border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; color: var(--text-primary); font-size: 11px; font-weight: 600; white-space: nowrap; background: var(--bg-primary); }
 .dj-workspace-actions a.dj-primary-action { background: var(--accent); color: var(--bg-surface); border-color: var(--accent); }
 .dj-workspace a:focus-visible, .dj-workspace button:focus-visible, .dj-workspace select:focus-visible, .dj-workspace input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.dj-workspace .jb-nav { background: var(--bg-surface); }
-.dj-workspace .jb-nav-section { font-size: 10px; letter-spacing: .12em; }
-.dj-workspace .jb-nav-item { border-radius: 6px; font-size: 12px; }
-.dj-workspace .jb-topbar { height: 44px; min-height: 44px; background: var(--bg-surface); border-bottom: 1px solid var(--border); }
+.dj-workspace .jb-topbar { height: auto; min-height: 56px; background: var(--bg-surface); border-bottom: 1px solid var(--border); }
 .dj-workspace .jb-search-wrap { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 7px; }
 .dj-workspace .jb-track-row { border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent); }
 .dj-workspace .jb-track-row--playing { background: color-mix(in srgb, var(--accent) 10%, var(--bg-surface)); box-shadow: inset 3px 0 var(--accent); }

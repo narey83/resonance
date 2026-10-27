@@ -30,6 +30,7 @@
 import React, { createContext, useContext, useMemo } from 'react';
 import { useColorScheme } from 'react-native';
 import { themes, ThemeName, PaletteName, ThemeColors } from '../theme';
+import { applyAccent, resolvePalette } from '../lib/appearance';
 import { useAppSettings } from '../store/appSettingsStore';
 
 interface ThemeContextValue {
@@ -47,14 +48,12 @@ const ThemeContext = createContext<ThemeContextValue>({
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const { theme } = useAppSettings();
+  const theme = useAppSettings(state => state.theme);
+  const accentColour = useAppSettings(state => state.accentColour);
   const systemScheme = useColorScheme(); // 'dark' | 'light' | null | undefined
 
-  const palette: PaletteName = theme === 'system'
-    ? (systemScheme === 'light' ? 'light' : 'dark')
-    : theme;
-
-  const colors = themes[palette];
+  const palette = resolvePalette(theme, systemScheme);
+  const colors = useMemo(() => applyAccent(themes[palette], palette, accentColour), [palette, accentColour]);
   const isDark  = palette !== 'light';
 
   const value = useMemo<ThemeContextValue>(

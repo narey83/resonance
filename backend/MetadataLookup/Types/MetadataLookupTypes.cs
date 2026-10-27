@@ -91,7 +91,9 @@ namespace resonance.MetadataLookup
         double Progress,
         int InFlight,
         int EtaSeconds,
-        IReadOnlyList<MetadataScanItem> Recent);
+        IReadOnlyList<MetadataScanItem> Recent,
+        bool Paused = false,
+        string? PauseReason = null);
 
     /// <summary>
     ///     Request body for a per-track lookup (returns candidates without writing).

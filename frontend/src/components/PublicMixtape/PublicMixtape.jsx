@@ -101,7 +101,7 @@ const PublicMixtape = ({ token }) => {
         setLoading(false);
       })
       .catch(() => {
-        setError('Mixtape not found or no longer available.');
+        setError('Playlist not found or no longer available.');
         setLoading(false);
       });
   }, [token]);

@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { onSessionReset } from '../lib/sessionScope';
 import { create } from 'zustand';
 
 // On-screen square the full player should morph out of / back into. Set by the
@@ -57,3 +58,7 @@ export const usePlayerUI = create<PlayerUIState>((set) => ({
   collapse: () => set({ expanded: false }),
   setHasTrack: (v) => set({ hasTrack: v }),
 }));
+
+onSessionReset(() => {
+  usePlayerUI.setState(usePlayerUI.getInitialState(), true);
+});

@@ -1,0 +1,68 @@
+name: ${STACK_NAME:-resonance-stack}
+services:
+  backend:
+    image: resonance-backend:portable
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    entrypoint: ["python3", "/opt/resonance-analysis/music-mount-guard.py"]
+    command: ["python3", "/opt/resonance/with-helper.py", "backend", "dotnet", "resonance.dll", "--http-port", "5030", "--http-ip-address", "0.0.0.0", "--no-https", "--downloads", "/downloads", "--incomplete", "/config/incomplete", "--content-path", "/app/wwwroot"]
+    environment:
+      HOME: /config/home
+      RESONANCE_APP_DIR: /config
+      RESONANCE_DATABASE_PROVIDER: Sqlite
+      RESONANCE_DATABASE_CONNECTION_STRING: Data Source=/config/data/resonance.db
+      RESONANCE_MUSIC_FILESYSTEM: ${MUSIC_FILESYSTEM:-cifs}
+      RESONANCE_CANDIDATE_PYTHON: /opt/resonance/venvs/beats/bin/python
+      RESONANCE_CANDIDATE_WORKER: /opt/resonance-analysis/worker/analyze_track.py
+      RESONANCE_CANDIDATE_CONFIG: /config/data/analysis-config.json
+      RESONANCE_CANDIDATE_OUTPUT_ROOT: /config/data/candidates
+      RESONANCE_CANDIDATE_TIMEOUT_SECONDS: "3600"
+      RESONANCE_USB_EXPORT_ROOT: /config/data/bridge-exports
+      RESONANCE_BRIDGE_RELEASE_ROOT: /config/bridge-releases
+    volumes:
+      - type: bind
+        source: ${STATE_DIR:?Run docker/bootstrap.py first}
+        target: /config
+        bind:
+          create_host_path: false
+      - type: volume
+        source: music
+        target: /downloads
+        volume:
+          nocopy: true
+    ports:
+      - "${PEER_BIND:-0.0.0.0}:${PEER_PORT:-50300}:50300"
+      - "${PEER_BIND:-0.0.0.0}:${PEER_PORT:-50300}:50300/udp"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:5030/api/v0/session/initialized"]
+      interval: 10s
+      timeout: 5s
+      start_period: 120s
+      retries: 36
+    restart: unless-stopped
+    stop_grace_period: 120s
+  web:
+    image: resonance-web:portable
+    environment:
+      BACKEND_URL: http://backend:5030
+    volumes:
+      - web_data:/data
+      - web_config:/config
+    ports:
+      - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/api/v0/session/initialized"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  music:
+    external: true
+    name: ${MUSIC_VOLUME_NAME:?Run docker/bootstrap.py first}
+  web_data:
+  web_config:

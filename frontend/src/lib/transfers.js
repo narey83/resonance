@@ -38,7 +38,9 @@ import api from './api';
 export const getAll = async ({ direction, activeOnly = false }) => {
   const qs = activeOnly ? '?activeOnly=true' : '';
   const response = (
-    await api.get(`/transfers/${encodeURIComponent(direction)}s${qs}`)
+    await api.get(`/transfers/${encodeURIComponent(direction)}s${qs}`, {
+      timeout: 10_000,
+    })
   ).data;
 
   if (!Array.isArray(response)) {

@@ -65,8 +65,12 @@ namespace resonance
 
                 var response = await http.GetFromJsonAsync<JsonDocument>(url);
 
-                // Tags are bare semantic versions ('0.1.0'), not 'v0.1.0': Version.Parse rejects the prefix.
-                return Version.Parse(response.RootElement.GetProperty("tag_name").GetString());
+                // Accept both bare semantic versions and the common v-prefixed release tags.
+                return Version.Parse(response.RootElement.GetProperty("tag_name").GetString().TrimStart('v', 'V'));
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                throw new GitHubException("No accessible release was found. The repository may have no releases, or a private repository may require an updates token.", ex);
             }
             catch (Exception ex)
             {

@@ -1,0 +1,2 @@
+# Compatibility override: maintenance is now owned by resonance-caddy.
+services: {}

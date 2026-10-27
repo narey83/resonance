@@ -190,6 +190,8 @@ public class PermissionService
         {
             Cache = null;
         }
+
+        HubSecurityConnections.AbortAll();
     }
 
     private void EnsureCache()

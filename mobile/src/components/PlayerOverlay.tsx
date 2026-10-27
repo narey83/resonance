@@ -1,3 +1,5 @@
+import { useLocalPlaylistStore } from '../store/localPlaylistStore';
+import { LocalPlaylistPicker } from './LocalPlaylists';
 // <copyright file="PlayerOverlay.tsx" company="John Narey">
 //    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
 //   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
@@ -28,7 +30,7 @@
 // </copyright>
 
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { CastButton } from 'react-native-google-cast';
+import { StudioRack } from '../screens/more/StudioScreen';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
@@ -38,20 +40,22 @@ import {
   ActivityIndicator,
   Animated,
   BackHandler,
-  Dimensions,
   Easing,
   FlatList,
   Modal,
   PanResponder,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlaybackPosition, usePlaybackStatus, usePlayer } from '../context/PlayerContext';
 import { useCast } from '../context/CastContext';
+import { useRemoteAccess } from '../lib/remoteAccess';
 import { useTheme } from '../context/ThemeContext';
 import { MusicTrack, getArtworkUrl, getTrackTitle } from '../api/musicLibrary';
 import { isSigned } from '../api/streamSignatures';
@@ -64,13 +68,11 @@ import { usePlayerUI } from '../store/playerUIStore';
 import { haptics } from '../lib/haptics';
 import { useLiveTrack } from '../hooks/useLiveTrack';
 import { useTrackAnalysisStatus } from '../store/analysisProgressStore';
+import { useWindowFold } from '../lib/adaptiveWindow';
 import { useTrackWaveform } from '../hooks/useTrackWaveform';
 import { WaveformBars } from './WaveformBars';
 import { Radius, Spacing, ThemeColors, Typography } from '../theme';
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-// Inset from the screen edges so the cover floats rather than going full-bleed.
-const ARTWORK_SIZE = Math.min(SCREEN_W - 48, Math.round(SCREEN_H * 0.5));
 // Fixed queue-row height so FlatList offsets are exact (via getItemLayout) and scrolling the
 // current track to a consistent position never has to estimate/correct — which is what caused
 // the "bounce". Rows must render at exactly this height regardless of whether they show an artist.
@@ -405,6 +407,9 @@ function MixtapePickerModal({ visible, onClose, onSelect }: {
 }) {
   const { colors } = useTheme();
   const s = useMemo(() => makeSheetStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
+  const fold = useWindowFold();
+  const { height } = useWindowDimensions();
   const { mixtapes, load, create } = useMixtapeStore();
   const [creating, setCreating] = useState(false);
   const [newName, setNewName]   = useState('');
@@ -421,19 +426,19 @@ function MixtapePickerModal({ visible, onClose, onSelect }: {
   };
 
   return (
-    <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
+    <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']} animationType="fade" onRequestClose={onClose} transparent visible={visible}>
       <Pressable onPress={onClose} style={s.overlay} />
-      <View style={s.container}>
-        <View style={s.sheet}>
+      <View style={[s.container, fold && (fold.vertical ? { width: fold.x } : { flex: 0, height: fold.y })]}>
+        <ScrollView keyboardShouldPersistTaps="handled" style={{ flexGrow: 0, flexShrink: 1, maxHeight: (fold && !fold.vertical ? fold.y : height) - insets.top }} contentContainerStyle={[s.sheet, { paddingLeft: 24 + insets.left, paddingRight: 24 + (fold?.vertical ? 0 : insets.right) }]} >
           <View style={s.handle} />
-          <Text style={s.title}>Add to Mixtape</Text>
+          <Text style={s.title}>Add to Playlist</Text>
           {creating ? (
             <View style={s.inlineCreate}>
               <TextInput
                 autoFocus
                 onChangeText={setNewName}
                 onSubmitEditing={handleCreate}
-                placeholder="Mixtape name…"
+                placeholder="Playlist name…"
                 placeholderTextColor={colors.textDim}
                 returnKeyType="done"
                 style={s.inlineInput}
@@ -449,10 +454,10 @@ function MixtapePickerModal({ visible, onClose, onSelect }: {
           ) : (
             <Pressable onPress={() => setCreating(true)} style={({ pressed }) => [s.row, pressed && s.rowPressed]}>
               <Ionicons color={colors.textPrimary} name="add-circle-outline" size={20} />
-              <Text style={s.rowText}>New Mixtape</Text>
+              <Text style={s.rowText}>New Playlist</Text>
             </Pressable>
           )}
-          {mixtapes.length === 0 && !creating && <Text style={s.empty}>No mixtapes yet</Text>}
+          {mixtapes.length === 0 && !creating && <Text style={s.empty}>No playlists yet</Text>}
           {mixtapes.map((pl) => (
             <Pressable key={pl.id} onPress={() => onSelect(pl.id)} style={({ pressed }) => [s.row, pressed && s.rowPressed]}>
               <Ionicons color={colors.textMuted} name="musical-notes" size={18} />
@@ -465,7 +470,7 @@ function MixtapePickerModal({ visible, onClose, onSelect }: {
           <Pressable onPress={onClose} style={s.cancel}>
             <Text style={s.cancelText}>Cancel</Text>
           </Pressable>
-        </View>
+        </ScrollView>
       </View>
     </Modal>
   );
@@ -474,9 +479,19 @@ function MixtapePickerModal({ visible, onClose, onSelect }: {
 // ── Main overlay ──────────────────────────────────────────────────────────────
 
 export default function PlayerOverlay() {
+  const remote = useRemoteAccess();
   const { expanded, collapse, morphFrom } = usePlayerUI();
   const { colors } = useTheme();
-  const s = useMemo(() => makeStyles(colors), [colors]);
+  const { width: SCREEN_W, height: SCREEN_H, fontScale } = useWindowDimensions();
+  const height = SCREEN_H;
+  const fold = useWindowFold();
+  const wide = fold ? fold.vertical : SCREEN_W >= 700 || (SCREEN_W > SCREEN_H && SCREEN_W >= 560);
+  const [panelWidth, setPanelWidth] = useState(SCREEN_W);
+  const [detailsHeight, setDetailsHeight] = useState(380);
+  const panelWidthRef = useRef(panelWidth);
+  panelWidthRef.current = panelWidth;
+  const compact = height < 740 || fontScale > 1.25;
+  const s = useMemo(() => makeStyles(colors, compact, wide), [colors, compact, wide]);
   const insets = useSafeAreaInsets();
 
   const { track, shuffle, queue, queueIndex, repeatMode, cycleRepeat, togglePlayPause, next, prev, seekTo, toggleShuffle, skipToIndex, stopPlayer } = usePlayer();
@@ -512,8 +527,13 @@ export default function PlayerOverlay() {
   const toggleLocalLove = useLocalLibraryActivityStore((st) => st.toggleLove);
   const trackIsLocal = track ? isLocalPath(track.path) : false;
   const isLoved = track ? (trackIsLocal ? localLovedPaths : lovedPaths).has(track.path) : false;
-  const inMixtape = track ? mixtapes.some((pl) => pl.tracks.some((t) => t.filePath === track.path)) : false;
+  const localPlaylists = useLocalPlaylistStore(st => st.playlists);
+  const inMixtape = trackIsLocal ? localPlaylists.some(p => p.tracks.some(t => t.path === track?.path)) : track ? mixtapes.some((pl) => pl.tracks.some((t) => t.filePath === track.path)) : false;
 
+  const [artworkSize, setArtworkSize] = useState(Math.min(SCREEN_W - 48, SCREEN_H * .5));
+  const [moreVisible, setMoreVisible] = useState(false);
+  const [studioVisible, setStudioVisible] = useState(false);
+  useEffect(() => { if (!expanded || !track) { setStudioVisible(false); setMoreVisible(false); } }, [expanded, track]);
   const [mixtapeModalVisible, setMixtapeModalVisible] = useState(false);
   const [artworkError, setArtworkError]               = useState(false);
   const [mounted, setMounted]                         = useState(false);
@@ -557,15 +577,9 @@ export default function PlayerOverlay() {
     artWrapRef.current?.measureInWindow((x, y, w) => { if (w > 0) setArtRect({ x, y, size: w }); });
   };
 
-  const queuePanelX = queueX.interpolate({ inputRange: [-SCREEN_W, 0], outputRange: [0, SCREEN_W] });
-  // Drive the Artwork/Queue toggle: the active tab is bright, the inactive one dim, and they
-  // cross-fade as the panels swipe (queueX: 0 = artwork, -SCREEN_W = queue).
-  const artTabOpacity   = queueX.interpolate({ inputRange: [-SCREEN_W, 0], outputRange: [0.45, 1] });
-  const queueTabOpacity = queueX.interpolate({ inputRange: [-SCREEN_W, 0], outputRange: [1, 0.45] });
-
-  // Animate to a panel from a tap on the toggle (mirrors the swipe gesture's end state).
+  const queuePanelX = queueX.interpolate({ inputRange: [-panelWidth, 0], outputRange: [0, panelWidth] });
   const goToPanel = (showQueue: boolean) => {
-    const target = showQueue ? -SCREEN_W : 0;
+    const target = showQueue ? -panelWidth : 0;
     if (queueBaseX.current === target) return;
     haptics.selection();
     queueBaseX.current = target;
@@ -573,6 +587,17 @@ export default function PlayerOverlay() {
     setQueueShowing(showQueue);
     Animated.spring(queueX, { toValue: target, useNativeDriver: true, tension: 220, friction: 26 }).start();
   };
+
+  useEffect(() => {
+    const target = queueShowingRef.current ? -panelWidth : 0;
+    queueX.stopAnimation();
+    queueX.setValue(target);
+    queueBaseX.current = target;
+    setArtRect(null);
+    const frame = requestAnimationFrame(measureArt);
+    return () => cancelAnimationFrame(frame);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelWidth, SCREEN_H]);
 
   // Artwork breathes with playback — full size while playing, shrinks slightly when paused.
   useEffect(() => {
@@ -589,16 +614,16 @@ export default function PlayerOverlay() {
         Math.abs(g.dx) > Math.abs(g.dy) * 1.5 &&
         (queueShowingRef.current ? g.dx > 0 : g.dx < 0),
       onPanResponderMove: (_, g) => {
-        queueX.setValue(Math.max(-SCREEN_W, Math.min(0, queueBaseX.current + g.dx)));
+        queueX.setValue(Math.max(-panelWidthRef.current, Math.min(0, queueBaseX.current + g.dx)));
       },
       onPanResponderRelease: (_, g) => {
-        const pos    = Math.max(-SCREEN_W, Math.min(0, queueBaseX.current + g.dx));
-        const toQueue = !queueShowingRef.current && (pos < -SCREEN_W * 0.3 || g.vx < -0.5);
-        const toArt   =  queueShowingRef.current && (pos > -SCREEN_W * 0.7 || g.vx >  0.5);
-        const target  = (toQueue || (queueShowingRef.current && !toArt)) ? -SCREEN_W : 0;
+        const pos    = Math.max(-panelWidthRef.current, Math.min(0, queueBaseX.current + g.dx));
+        const toQueue = !queueShowingRef.current && (pos < -panelWidthRef.current * 0.3 || g.vx < -0.5);
+        const toArt   =  queueShowingRef.current && (pos > -panelWidthRef.current * 0.7 || g.vx >  0.5);
+        const target  = (toQueue || (queueShowingRef.current && !toArt)) ? -panelWidthRef.current : 0;
         queueBaseX.current      = target;
-        queueShowingRef.current = target === -SCREEN_W;
-        setQueueShowing(target === -SCREEN_W);
+        queueShowingRef.current = target === -panelWidthRef.current;
+        setQueueShowing(target === -panelWidthRef.current);
         Animated.spring(queueX, { toValue: target, useNativeDriver: true, tension: 220, friction: 26 }).start();
       },
     })
@@ -674,7 +699,7 @@ export default function PlayerOverlay() {
     // yank them back to artwork on a track change (e.g. pressing next while viewing the queue).
     const mustShowQueue = !!track && !track.hasArtwork;
     if (!mustShowQueue && queueShowingRef.current) return;
-    const target = mustShowQueue ? -SCREEN_W : 0;
+    const target = mustShowQueue ? -panelWidth : 0;
     queueX.setValue(target);
     queueBaseX.current = target;
     queueShowingRef.current = mustShowQueue;
@@ -725,8 +750,7 @@ export default function PlayerOverlay() {
     }),
   ).current;
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadMixtapes(); }, []);
+  useEffect(() => { if (remote && !trackIsLocal) void loadMixtapes(); }, [remote, trackIsLocal, loadMixtapes]);
 
   if (!mounted) return null;
   // Nothing to show. The overlay normally unmounts from its collapse animation's completion
@@ -757,6 +781,7 @@ export default function PlayerOverlay() {
   const artist     = track?.artist ?? '';
   const album      = track?.album  ?? '';
   const folder     = track ? (track.directory.split('/').filter(Boolean).pop() ?? track.directory) : '';
+  const artworkStyle = [s.artwork, { width: artworkSize, height: artworkSize }];
   const tagTrack   = liveTrack ?? track;
 
   // ── Morph geometry ──
@@ -767,9 +792,9 @@ export default function PlayerOverlay() {
   const chromeOpacity = expandP.interpolate({ inputRange: [0, 0.5, 0.85, 1], outputRange: [0, 0, 1, 1] });
   const heroOpacity   = expandP.interpolate({ inputRange: [0, 0.82, 1], outputRange: [1, 1, 0] });
   const artTarget = artRect ?? {
-    x: (SCREEN_W - ARTWORK_SIZE) / 2,
-    y: Math.max(insets.top + 60, SCREEN_H * 0.42 - ARTWORK_SIZE / 2),
-    size: ARTWORK_SIZE,
+    x: (SCREEN_W - artworkSize) / 2,
+    y: Math.max(insets.top + 60, SCREEN_H * 0.42 - artworkSize / 2),
+    size: artworkSize,
   };
   // The hero is laid out statically at the artwork's resting rect, then moved +
   // scaled into the bubble at expandP=0. Transform-based (not width/height/left/
@@ -862,27 +887,31 @@ export default function PlayerOverlay() {
         {/* ── Main player ── */}
         {track && (
           <Animated.View style={[s.content, { opacity: chromeOpacity }]}>
-            {/* Dismiss handle */}
-            <View style={[s.handleBar, { paddingTop: insets.top + Spacing.xs }]}>
-              <Pressable hitSlop={16} onPress={collapse} style={s.handleInner}>
+            <View style={[s.handleBar, { paddingTop: insets.top + 4, paddingLeft: insets.left + 20, paddingRight: (fold?.vertical ? 0 : insets.right) + 20, width: fold?.vertical ? fold.x : undefined }]}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Minimise player" onPress={collapse} style={s.headerButton}>
                 <Animated.View style={{ transform: [{ translateY: chevronNudge }] }}>
-                  <Ionicons color="rgba(255,255,255,0.55)" name="chevron-down" size={24} />
+                  <Ionicons color="rgba(255,255,255,0.8)" name="chevron-down" size={24} />
                 </Animated.View>
               </Pressable>
-              {queue.length > 1 && (
-                <Text style={s.queueInfo}>{queueIndex + 1} of {queue.length}</Text>
-              )}
+              <View style={s.headerTitle}>
+                <Text style={s.headerEyebrow}>{queueShowing || !hasArt ? 'UP NEXT' : 'NOW PLAYING'}</Text>
+                {queue.length > 1 && <Text style={s.queueInfo}>{queueIndex + 1} / {queue.length}</Text>}
+              </View>
+              <Pressable accessibilityRole="button" accessibilityLabel={queueShowing ? 'Show artwork' : 'Show queue'} accessibilityState={{ selected: queueShowing }} disabled={!hasArt} onPress={() => goToPanel(!queueShowing)} style={[s.headerButton, !hasArt && { opacity: 0 }]}>
+                <Ionicons color={queueShowing ? colors.accent : 'rgba(255,255,255,.8)'} name={queueShowing ? 'disc-outline' : 'list-outline'} size={23} />
+              </Pressable>
             </View>
 
+            <View style={[s.playerBody, { paddingLeft: insets.left, paddingRight: insets.right }]}>
             {/* Artwork / Queue panels — swipe left to see queue, right to return */}
-            <View style={s.panelContainer} {...(hasArt ? artworkQueuePan.panHandlers : {})}>
+            <View onLayout={({ nativeEvent: { layout } }) => { setPanelWidth(layout.width); setArtworkSize(Math.max(1, Math.min(layout.width - 40, layout.height - 24, 420))); }} style={[s.panelContainer, fold && (fold.vertical ? { flex: 0, width: Math.max(0, fold.x - insets.left), marginRight: fold.width } : { flex: 0, height: Math.max(80, fold.y - insets.top - 52), marginBottom: fold.height })]} {...(hasArt ? artworkQueuePan.panHandlers : {})}>
               {/* Artwork panel — only when artwork is available */}
               {hasArt && (
                 <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ translateX: queueX }] }]}>
                   <View style={s.artworkWrap}>
                     {/* Non-transformed wrapper so measureInWindow yields the true
                         resting rect the bubble morphs into (scale-breathing is inside). */}
-                    <View ref={artWrapRef} onLayout={measureArt} style={{ width: ARTWORK_SIZE, height: ARTWORK_SIZE }}>
+                    <View ref={artWrapRef} onLayout={measureArt} style={{ width: artworkSize, height: artworkSize }}>
                       <Animated.View style={{ transform: [{ scale: artScale }] }}>
                         <FeatheredArt
                           cacheKey={artworkCacheKey}
@@ -892,7 +921,7 @@ export default function PlayerOverlay() {
                           }}
                           placeholderCacheKey={thumbCacheKey}
                           placeholderUri={thumbUrl}
-                          style={s.artwork}
+                          style={artworkStyle}
                           uri={artworkUrl!}
                         />
                       </Animated.View>
@@ -929,133 +958,59 @@ export default function PlayerOverlay() {
               </Animated.View>
             </View>
 
-            {/* Artwork / Queue toggle — tap or swipe to switch; only when artwork is present */}
-            {hasArt && (
-              <View style={s.segmentRow}>
-                <Pressable hitSlop={8} onPress={() => goToPanel(false)}>
-                  <Animated.View style={[s.segment, { opacity: artTabOpacity }]}>
-                    <Ionicons color="#fff" name="disc" size={14} />
-                    <Text style={s.segmentText}>Artwork</Text>
-                  </Animated.View>
-                </Pressable>
-                <Pressable hitSlop={8} onPress={() => goToPanel(true)}>
-                  <Animated.View style={[s.segment, { opacity: queueTabOpacity }]}>
-                    <Ionicons color="#fff" name="list" size={16} />
-                    <Text style={s.segmentText}>Queue</Text>
-                  </Animated.View>
-                </Pressable>
-              </View>
-            )}
-
-            {/* Info + controls */}
-            <View style={[s.bottom, { paddingBottom: Math.max(insets.bottom + Spacing.lg, Spacing.xxl) }]}>
-
-              {/* Title row — full width, on its own */}
+            <ScrollView onContentSizeChange={(_, h) => setDetailsHeight(h)} style={[s.detailsPane, { marginBottom: Math.max(insets.bottom, 24) }, !wide && !fold && { flexShrink: 0, height: Math.min(detailsHeight, SCREEN_H - insets.top - 188) }]} contentContainerStyle={[s.bottom, { paddingBottom: 24 }]} showsVerticalScrollIndicator={false}>
               <View style={s.titleRow}>
-                <MarqueeText style={s.title} text={title} />
-                {(artist || album) ? (
-                  <Text numberOfLines={1} style={s.artist}>{[artist, album].filter(Boolean).join(' · ')}</Text>
-                ) : null}
-                {folder ? (
-                  <View style={s.folderRow}>
-                    <Ionicons color="rgba(255,255,255,0.35)" name="folder-outline" size={11} style={{ marginRight: 3 }} />
-                    <Text numberOfLines={1} style={s.folder}>{folder}</Text>
-                  </View>
-                ) : null}
+                <View style={s.trackIdentity}>
+                  <MarqueeText style={s.title} text={title} />
+                  {artist ? <Text numberOfLines={1} style={s.artist}>{artist}</Text> : null}
+                  {album ? <Text numberOfLines={1} style={s.album}>{album}</Text> : null}
+                </View>
+                <Pressable accessibilityRole="button" accessibilityLabel={isLoved ? 'Remove from loved tracks' : 'Love track'} accessibilityState={{ selected: isLoved }} onPress={() => { haptics.light(); (trackIsLocal ? toggleLocalLove : toggleLove)(track.path); }} style={s.headerButton}>
+                  <Ionicons color={isLoved ? '#e05a7a' : 'rgba(255,255,255,.7)'} name={isLoved ? 'heart' : 'heart-outline'} size={26} />
+                </Pressable>
               </View>
 
-              {/* Tags — sit just under the title/artist */}
-              {tagTrack && (analysisStatus || tagTrack.key || tagTrack.bpm != null || tagTrack.lufs != null || tagTrack.genre || tagTrack.year != null) && (
-                <View style={s.tagRow}>
-                  {analysisStatus && (
-                    <View style={s.tag}>
-                      {analysisStatus === 'analysing'
-                        ? <ActivityIndicator color="rgba(255,255,255,0.8)" size="small" style={{ marginRight: 3, transform: [{ scale: 0.6 }] }} />
-                        : <Ionicons color="rgba(255,255,255,0.55)" name="time-outline" size={10} style={{ marginRight: 3 }} />}
-                      <Text style={s.tagText}>{analysisStatus === 'analysing' ? 'Analysing…' : 'Queued'}</Text>
-                    </View>
-                  )}
-                  {tagTrack.key && (
-                    <View style={s.tag}>
-                      <Ionicons color="rgba(255,255,255,0.55)" name="musical-note" size={10} style={{ marginRight: 3 }} />
-                      <Text style={s.tagText}>{tagTrack.key}</Text>
-                    </View>
-                  )}
-                  {tagTrack.bpm != null && <View style={s.tag}><Text style={s.tagText}>{Math.round(tagTrack.bpm)} BPM</Text></View>}
-                  {tagTrack.lufs != null && <View style={s.tag}><Text style={s.tagText}>{tagTrack.lufs.toFixed(1)} LUFS</Text></View>}
-                  {tagTrack.genre && <View style={s.tag}><Text style={s.tagText}>{tagTrack.genre}</Text></View>}
-                  {tagTrack.year != null && <View style={s.tag}><Text style={s.tagText}>{tagTrack.year}</Text></View>}
+              {tagTrack && (tagTrack.key || tagTrack.bpm != null || tagTrack.lufs != null) && (
+                <View style={s.metrics}>
+                  {tagTrack.key ? <View style={s.metric}><Text numberOfLines={1} style={s.metricValue}>{tagTrack.key}</Text><Text style={s.metricLabel}>KEY</Text></View> : null}
+                  {tagTrack.bpm != null ? <View style={s.metric}><Text style={s.metricValue}>{Math.round(tagTrack.bpm)}</Text><Text style={s.metricLabel}>BPM</Text></View> : null}
+                  {tagTrack.lufs != null ? <View style={s.metric}><Text style={s.metricValue}>{tagTrack.lufs.toFixed(1)}</Text><Text style={s.metricLabel}>LUFS</Text></View> : null}
                 </View>
               )}
+              {analysisStatus && <Text style={s.analysisNote}>{analysisStatus === 'analysing' ? 'Analysing track…' : 'Analysis queued'}</Text>}
 
-              {/* Action row — shuffle / repeat (left) · love / mixtape / cast (right) */}
-              <View style={s.actionRow}>
-                <View style={s.actionRowLeft}>
-                  <Pressable hitSlop={12} onPress={() => { haptics.selection(); toggleShuffle(); }} style={({ pressed }) => [s.iconBtn, pressed && { opacity: 0.5 }]}>
-                    <Ionicons color={shuffle ? '#fff' : 'rgba(255,255,255,0.4)'} name="shuffle" size={22} />
-                  </Pressable>
-                  <Pressable hitSlop={12} onPress={() => { haptics.selection(); cycleRepeat(); }} style={({ pressed }) => [s.iconBtn, pressed && { opacity: 0.5 }]}>
-                    <MaterialCommunityIcons
-                      color={repeatMode === 'off' ? 'rgba(255,255,255,0.4)' : colors.accent}
-                      name={repeatMode === 'track' ? 'repeat-once' : repeatMode === 'queue' ? 'repeat' : 'repeat-off'}
-                      size={22}
-                    />
-                  </Pressable>
-                </View>
-                <View style={s.actionRowRight}>
-                  <Pressable hitSlop={12} onPress={() => { haptics.light(); (trackIsLocal ? toggleLocalLove : toggleLove)(track.path); }} style={({ pressed }) => [s.iconBtn, pressed && { opacity: 0.5 }]}>
-                    <Ionicons color={isLoved ? '#e05a7a' : 'rgba(255,255,255,0.6)'} name={isLoved ? 'heart' : 'heart-outline'} size={24} />
-                  </Pressable>
-                  <Pressable hitSlop={12} onPress={() => setMixtapeModalVisible(true)} style={({ pressed }) => [s.iconBtn, pressed && { opacity: 0.5 }]}>
-                    <Ionicons color={inMixtape ? colors.accent : 'rgba(255,255,255,0.6)'} name={inMixtape ? 'radio' : 'radio-outline'} size={24} />
-                  </Pressable>
-                  <CastButton style={{ width: 24, height: 24, tintColor: isCasting ? colors.accent : 'rgba(255,255,255,0.6)' }} />
-                  {/* Close the player outright — stops playback, empties the queue and drops the
-                      notification. The shade can't do this (see stopPlayer). */}
-                  <Pressable
-                    hitSlop={12}
-                    onPress={() => { haptics.light(); collapse(); stopPlayer(); }}
-                    style={({ pressed }) => [s.iconBtn, pressed && { opacity: 0.5 }]}
-                  >
-                    <Ionicons color="rgba(255,255,255,0.6)" name="power" size={24} />
-                  </Pressable>
-                </View>
-              </View>
-
-              {/* Progress */}
               <ActiveProgressBar castDurationSec={castDurationSec} castPositionSec={castPositionSec} isGoogleCasting={isGoogleCasting} onSeek={activeSeek} trackPath={track?.path} />
 
-              {/* Transport controls */}
               <View style={s.controls}>
-                {/* Spacer to keep the play button centered (shuffle moved to the action row) */}
-                <View style={{ width: 22, height: 22 }} />
-
-                <Pressable
-                  disabled={!canSkip}
-                  hitSlop={12}
-                  onPress={() => { haptics.skip(); prev(); }}
-                  style={({ pressed }) => [{ opacity: !canSkip ? 0.3 : pressed ? 0.5 : 1 }]}
-                >
-                  <Ionicons color="#fff" name="play-skip-back" size={34} />
+                <Pressable accessibilityRole="button" accessibilityLabel={shuffle ? 'Turn shuffle off' : 'Turn shuffle on'} accessibilityState={{ selected: shuffle }} onPress={() => { haptics.selection(); toggleShuffle(); }} style={s.transportButton}>
+                  <Ionicons color={shuffle ? colors.accent : 'rgba(255,255,255,.5)'} name="shuffle" size={23} />
                 </Pressable>
-
-                <Pressable onPress={() => { haptics.light(); activeTogglePlay(); }} style={s.playBtn}>
-                  {isBuffering && !isGoogleCasting
-                    ? <ActivityIndicator color="#111" size="small" />
-                    : <Ionicons color="#111" name={activeIsPlaying ? 'pause' : 'play'} size={32} />}
+                <Pressable accessibilityRole="button" accessibilityLabel="Previous track" accessibilityState={{ disabled: !canSkip }} disabled={!canSkip} onPress={() => { haptics.skip(); prev(); }} style={[s.transportButton, !canSkip && { opacity: .3 }]}>
+                  <Ionicons color="#fff" name="play-skip-back" size={30} />
                 </Pressable>
-
-                <Pressable
-                  disabled={!canSkip}
-                  hitSlop={12}
-                  onPress={() => { haptics.skip(); next(); }}
-                  style={({ pressed }) => [{ opacity: !canSkip ? 0.3 : pressed ? 0.5 : 1 }]}
-                >
-                  <Ionicons color="#fff" name="play-skip-forward" size={34} />
+                <Pressable accessibilityRole="button" accessibilityLabel={activeIsPlaying ? 'Pause playback' : 'Play'} onPress={() => { haptics.light(); activeTogglePlay(); }} style={s.playBtn}>
+                  {isBuffering && !isGoogleCasting ? <ActivityIndicator color="#111" size="small" /> : <Ionicons color="#111" name={activeIsPlaying ? 'pause' : 'play'} size={32} />}
                 </Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel="Next track" accessibilityState={{ disabled: !canSkip }} disabled={!canSkip} onPress={() => { haptics.skip(); next(); }} style={[s.transportButton, !canSkip && { opacity: .3 }]}>
+                  <Ionicons color="#fff" name="play-skip-forward" size={30} />
+                </Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Repeat: ${repeatMode}. Change repeat mode`} accessibilityState={{ selected: repeatMode !== 'off' }} onPress={() => { haptics.selection(); cycleRepeat(); }} style={s.transportButton}>
+                  <MaterialCommunityIcons color={repeatMode === 'off' ? 'rgba(255,255,255,.5)' : colors.accent} name={repeatMode === 'track' ? 'repeat-once' : 'repeat'} size={23} />
+                </Pressable>
+              </View>
 
-                {/* Spacer to keep the play button centered (repeat moved to the action row) */}
-                <View style={{ width: 22, height: 22 }} />
+              <View style={s.tools}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Open Studio sound design" onPress={() => { haptics.selection(); setStudioVisible(true); }} style={({ pressed }) => [s.studioButton, pressed && { opacity: .6 }]}>
+                  <Ionicons name="options-outline" size={19} color={colors.accent} />
+                  <Text style={s.studioLabel}>Sound design</Text>
+                </Pressable>
+                {(trackIsLocal || remote) && <Pressable accessibilityRole="button" accessibilityLabel="Add to playlist" onPress={() => { haptics.selection(); setMixtapeModalVisible(true); }} style={s.playlistButton}>
+                  <Ionicons name="add-circle-outline" size={20} color={inMixtape ? colors.accent : 'rgba(255,255,255,.85)'} />
+                  <Text style={s.toolLabel}>Add to playlist</Text>
+                </Pressable>}
+                <Pressable accessibilityRole="button" accessibilityLabel="Track details and more actions" onPress={() => setMoreVisible(true)} style={s.headerButton}>
+                  <Ionicons color="rgba(255,255,255,.7)" name="ellipsis-horizontal" size={23} />
+                </Pressable>
               </View>
 
               {/* Casting banner */}
@@ -1068,6 +1023,7 @@ export default function PlayerOverlay() {
                   </Text>
                 </Pressable>
               )}
+            </ScrollView>
             </View>
           </Animated.View>
         )}
@@ -1106,11 +1062,40 @@ export default function PlayerOverlay() {
           </Animated.View>
         )}
 
-        <MixtapePickerModal
+        {moreVisible && track && <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']} transparent animationType="fade" visible onRequestClose={() => setMoreVisible(false)}>
+          <View style={[s.moreOverlay, { paddingLeft: insets.left, paddingRight: insets.right }, fold && (fold.vertical ? { width: fold.x } : { flex: 0, height: fold.y })]}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close track details" style={StyleSheet.absoluteFill} onPress={() => setMoreVisible(false)} />
+            <View accessibilityViewIsModal style={[s.moreSheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+              <View style={s.moreHeader}><Text style={s.moreTitle}>Track details</Text><Pressable accessibilityRole="button" accessibilityLabel="Close track details" onPress={() => setMoreVisible(false)} style={s.headerButton}><Ionicons name="close" size={23} color="#fff" /></Pressable></View>
+              <ScrollView style={{ maxHeight: SCREEN_H * .4 }}>
+                {[["Title", title], ["Artist", artist], ["Album", album], ["Genre", tagTrack?.genre], ["Year", tagTrack?.year], ["Folder", folder]].filter(([, value]) => value != null && value !== '').map(([label, value]) => <View key={String(label)} style={s.detailRow}><Text style={s.detailLabel}>{label}</Text><Text selectable style={s.detailValue}>{value}</Text></View>)}
+              </ScrollView>
+              {remote && <Pressable accessibilityRole="button" accessibilityLabel="Choose audio output" onPress={() => { setMoreVisible(false); setTimeout(showGoogleCastPicker, 250); }} style={s.moreAction}><Ionicons name="tv-outline" size={22} color={isCasting ? colors.accent : '#fff'} /><Text style={s.moreActionText}>Choose audio output</Text></Pressable>}
+              <Pressable accessibilityRole="button" accessibilityLabel="Stop playback" onPress={() => { setMoreVisible(false); haptics.light(); collapse(); stopPlayer(); }} style={s.moreAction}><Ionicons name="stop-circle-outline" size={22} color="#f18a86" /><Text style={[s.moreActionText, { color: '#f18a86' }]}>Stop playback</Text></Pressable>
+            </View>
+          </View>
+        </Modal>}
+
+        {studioVisible && <Modal supportedOrientations={['portrait', 'landscape-left', 'landscape-right']} animationType="slide" presentationStyle="fullScreen" visible onRequestClose={() => setStudioVisible(false)}>
+          <View style={{ flex: 1, backgroundColor: colors.bgPrimary, paddingTop: insets.top, paddingBottom: insets.bottom, paddingLeft: insets.left, paddingRight: insets.right, ...(fold ? (fold.vertical ? { width: fold.x } : { flex: 0, height: fold.y }) : {}) }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.borderStrong }}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Back to player" onPress={() => setStudioVisible(false)} style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="chevron-back" size={22} color={colors.textPrimary} /><Text style={{ color: colors.textPrimary }}>Player</Text>
+              </Pressable>
+              <Text numberOfLines={1} style={{ flex: 1, marginHorizontal: 16, color: colors.textMuted, fontSize: 12 }}>{title}</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel={activeIsPlaying ? 'Pause playback' : 'Resume playback'} onPress={activeTogglePlay} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name={activeIsPlaying ? 'pause' : 'play'} size={24} color={colors.accent} />
+              </Pressable>
+            </View>
+            <StudioRack embedded />
+          </View>
+        </Modal>}
+
+        {trackIsLocal ? (mixtapeModalVisible && track && <LocalPlaylistPicker tracks={[track]} onClose={() => setMixtapeModalVisible(false)} />) : <MixtapePickerModal
           onClose={() => setMixtapeModalVisible(false)}
           onSelect={(id) => { addTrack(id, track!.path); setMixtapeModalVisible(false); }}
           visible={mixtapeModalVisible}
-        />
+        />}
       </Animated.View>
     </>
   );
@@ -1118,7 +1103,7 @@ export default function PlayerOverlay() {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
-function makeStyles(c: ThemeColors) {
+function makeStyles(c: ThemeColors, compact: boolean, wide: boolean) {
   return StyleSheet.create({
     overlay: {
       position: 'absolute',
@@ -1144,75 +1129,43 @@ function makeStyles(c: ThemeColors) {
 
     content: { flex: 1 },
 
-    handleBar:  { alignItems: 'center', paddingTop: Spacing.sm },
-    handleInner:{ padding: Spacing.sm },
-
-    // Two-panel container: artwork on the left, queue on the right
-    panelContainer: {
-      flex: 1,
-      overflow: 'hidden',
-    },
-
-    // Artwork floats in the upper portion of the flex space
-    artworkWrap: {
-      flex: 1,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-
-    segmentRow:  { flexDirection: 'row', justifyContent: 'center', gap: Spacing.sm, paddingBottom: Spacing.sm },
-    segment: {
-      flexDirection: 'row', alignItems: 'center', gap: 5,
-      paddingHorizontal: Spacing.md, paddingVertical: 6,
-      borderRadius: Radius.full, backgroundColor: 'rgba(255,255,255,0.12)',
-    },
-    segmentText: { fontSize: Typography.xs, color: '#fff', fontWeight: '600', letterSpacing: 0.3 },
-    artwork: {
-      width: ARTWORK_SIZE,
-      height: ARTWORK_SIZE,
-      borderRadius: 0,
-    },
-    // Bottom section — info, progress, controls
-    bottom: { paddingHorizontal: Spacing.xl, paddingTop: Spacing.xs },
-
-    titleRow: { marginBottom: Spacing.md },
-    title:    { fontSize: 21, fontWeight: '700', color: '#fff', marginBottom: Spacing.xs, letterSpacing: -0.3 },
-    artist:   { fontSize: Typography.base, color: 'rgba(255,255,255,0.65)' },
-    folderRow:{ flexDirection: 'row', alignItems: 'center', marginTop: Spacing.xs },
-    folder:   { fontSize: Typography.xs, color: 'rgba(255,255,255,0.38)', flex: 1 },
-    actionRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
-    actionRowLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
-    actionRowRight:{ flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
-    iconBtn:  { padding: 4 },
-
-    controls: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: Spacing.xl,
-    },
-    playBtn: {
-      width: 72,
-      height: 72,
-      borderRadius: 36,
-      backgroundColor: '#fff',
-      justifyContent: 'center',
-      alignItems: 'center',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3,
-      shadowRadius: 8,
-      elevation: 8,
-    },
-
-    tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs, marginBottom: Spacing.md },
-    tag: {
-      flexDirection: 'row', alignItems: 'center',
-      backgroundColor: 'rgba(255,255,255,0.1)',
-      borderRadius: Radius.full,
-      paddingHorizontal: 10, paddingVertical: 4,
-    },
-    tagText: { fontSize: Typography.xs, color: 'rgba(255,255,255,0.6)', fontWeight: '500' },
+    handleBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 4 },
+    headerButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+    headerTitle: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
+    headerEyebrow: { color: 'rgba(255,255,255,.75)', fontSize: 10, fontWeight: '600', letterSpacing: 2 },
+    playerBody: { flex: 1, flexDirection: wide ? 'row' : 'column' },
+    detailsPane: { flexGrow: wide ? 1 : 0, flexShrink: 1, flexBasis: wide ? 0 : 'auto', minWidth: 0 },
+    panelContainer: { flex: wide ? 0 : 1, width: wide ? '50%' : undefined, minHeight: wide ? 80 : 120, overflow: 'hidden' },
+    artworkWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    artwork: { borderRadius: 2 },
+    bottom: { paddingHorizontal: 24, paddingTop: wide ? 16 : 8, flexGrow: wide ? 1 : 0, justifyContent: wide && !compact ? 'center' : 'flex-start' },
+    titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: compact ? 10 : 16 },
+    trackIdentity: { flex: 1, minWidth: 0 },
+    title: { fontSize: compact ? 21 : 23, fontWeight: '700', color: '#fff', marginBottom: 5, letterSpacing: -.5 },
+    artist: { fontSize: 15, color: 'rgba(255,255,255,.82)' },
+    album: { fontSize: 12, color: 'rgba(255,255,255,.5)', marginTop: 4 },
+    metrics: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,.16)', paddingVertical: compact ? 6 : 9, marginBottom: compact ? 8 : 14 },
+    metric: { flex: 1, alignItems: 'center', gap: 3, paddingHorizontal: 6 },
+    metricValue: { color: 'rgba(255,255,255,.85)', fontSize: 13, fontWeight: '500', fontVariant: ['tabular-nums'] },
+    metricLabel: { color: 'rgba(255,255,255,.42)', fontSize: 9, letterSpacing: 1.5 },
+    analysisNote: { color: 'rgba(255,255,255,.55)', fontSize: 11, marginBottom: 8 },
+    controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: compact ? 6 : 10, marginBottom: compact ? 12 : 20 },
+    transportButton: { width: 44, height: 48, alignItems: 'center', justifyContent: 'center' },
+    playBtn: { width: compact ? 64 : 70, height: compact ? 64 : 70, borderRadius: 35, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center' },
+    tools: { flexDirection: 'row', alignItems: 'center', gap: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,.16)', paddingTop: 10 },
+    studioButton: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 },
+    studioLabel: { color: 'rgba(255,255,255,.85)', fontSize: 13 },
+    playlistButton: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 7, minHeight: 44 },
+    toolLabel: { color: 'rgba(255,255,255,.85)', fontSize: 12 },
+    moreOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,.6)' },
+    moreSheet: { backgroundColor: '#1c1c21', paddingHorizontal: 24, paddingTop: 12, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
+    moreHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+    moreTitle: { color: '#fff', fontSize: 19, fontWeight: '600' },
+    detailRow: { flexDirection: 'row', gap: 16, paddingVertical: 9 },
+    detailLabel: { width: 56, color: 'rgba(255,255,255,.5)', fontSize: 12 },
+    detailValue: { flex: 1, color: 'rgba(255,255,255,.85)', fontSize: 13 },
+    moreAction: { flexDirection: 'row', gap: 12, alignItems: 'center', minHeight: 52, borderTopWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,.12)', marginTop: 8 },
+    moreActionText: { color: '#fff', fontSize: 14 },
 
     castBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.xs, marginBottom: Spacing.sm },
     castBannerText: { fontSize: Typography.xs, color: 'rgba(255,255,255,0.6)' },

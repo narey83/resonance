@@ -33,8 +33,8 @@ namespace resonance.Mixtapes
     using System.Collections.Generic;
     using System.Data;
     using System.Data.Common;
+    using Microsoft.Data.Sqlite;
     using Npgsql;
-using Microsoft.Data.Sqlite;
     using resonance.Common;
 
     public class MixtapeRepository
@@ -118,7 +118,12 @@ using Microsoft.Data.Sqlite;
             insert.CommandText = $@"INSERT INTO {M} (id,name,description,is_published,public_token,created_at,updated_at)
                 VALUES (@id,@name,@desc,@pub,@token,@created,@updated) ON CONFLICT(id) DO NOTHING";
             BindMixtape(insert, mixtape);
-            if (insert.ExecuteNonQuery() == 0) { transaction.Rollback(); return false; }
+            if (insert.ExecuteNonQuery() == 0)
+            {
+                transaction.Rollback();
+                return false;
+            }
+
             foreach (var track in tracks)
             {
                 using var cmd = conn.CreateCommand();
@@ -128,6 +133,7 @@ using Microsoft.Data.Sqlite;
                 BindTrack(cmd, track);
                 cmd.ExecuteNonQuery();
             }
+
             transaction.Commit();
             return true;
         }

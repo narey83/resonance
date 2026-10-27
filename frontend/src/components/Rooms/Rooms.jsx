@@ -46,6 +46,7 @@ import {
   findFirstUrl,
   groupByDate,
 } from '../Chat/chatUtils';
+import CommunityWorkspace from '../Chat/CommunityWorkspace';
 import EmojiPickerButton from '../Shared/EmojiPickerButton';
 import Linkify from '../Shared/Linkify';
 import LinkPreviewCard from '../Shared/LinkPreviewCard';
@@ -56,6 +57,7 @@ import {
   Hash,
   Languages,
   LogOut,
+  MessageCircle,
   Plus,
   Reply,
   Search as SearchIcon,
@@ -93,7 +95,15 @@ const formatTimestamp = (timestamp) =>
 
 // ── Sidebar room row ─────────────────────────────────────────────────────────
 
-const RoomListItem = ({ active, joined, joining, onSelect, room }) => (
+// Keep unread message counts separate from the room's user count.
+export const RoomListItem = ({
+  active,
+  joined,
+  joining,
+  onSelect,
+  room,
+  unreadCount = 0,
+}) => (
   <button
     className={`sr-search-item${active ? ' sr-search-item--active' : ''}`}
     disabled={joining}
@@ -111,6 +121,20 @@ const RoomListItem = ({ active, joined, joining, onSelect, room }) => (
       )}
     </span>
     <span className="sr-search-item-text">{room.name}</span>
+    {unreadCount > 0 && (
+      <span
+        aria-label={`${unreadCount} new messages in ${room.name}`}
+        className="room-unread-badge"
+        role="img"
+        title={`${unreadCount} new messages`}
+      >
+        <MessageCircle
+          aria-hidden="true"
+          size={13}
+        />
+        {unreadCount > 99 ? '99+' : unreadCount}
+      </span>
+    )}
     <span className="sr-search-item-count">
       {joining
         ? 'Joining…'
@@ -123,7 +147,7 @@ const RoomListItem = ({ active, joined, joining, onSelect, room }) => (
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-const Rooms = ({ history }) => {
+const Rooms = ({ history, onRoomRead, unreadCounts = {} }) => {
   const [joinedNames, setJoinedNames] = useState([]);
   const [availableRooms, setAvailableRooms] = useState([]);
   const [active, setActive] = useState('');
@@ -197,16 +221,18 @@ const Rooms = ({ history }) => {
 
       if (mountedRef.current && activeRef.current === roomName) {
         setRoom({ messages: messages || [], users: users || [] });
+        onRoomRead?.(roomName);
       }
     } catch {
       // best-effort poll; next tick recovers
     }
-  }, []);
+  }, [onRoomRead]);
 
   // ── Select / join / leave ───────────────────────────────────────────────
 
   const selectRoom = useCallback(
     async (roomName) => {
+      onRoomRead?.(null);
       setActive(roomName);
       activeRef.current = roomName;
       sessionStorage.setItem(activeRoomKey, roomName);
@@ -229,7 +255,7 @@ const Rooms = ({ history }) => {
         }
       }
     },
-    [fetchActiveRoom],
+    [fetchActiveRoom, onRoomRead],
   );
 
   const handleSelect = useCallback(
@@ -310,6 +336,7 @@ const Rooms = ({ history }) => {
 
     return () => {
       mountedRef.current = false;
+      onRoomRead?.(null);
       window.clearInterval(joinedInterval);
       window.clearInterval(availableInterval);
       window.clearInterval(messagesInterval);
@@ -623,392 +650,417 @@ const Rooms = ({ history }) => {
 
   return (
     <>
-      <div
-        className="sr-root rooms-root"
-        ref={rootRef}
+      <CommunityWorkspace
+        description="Find your people. Talk music, share discoveries."
+        title="Chatrooms"
       >
-        {/* ── Sidebar ── */}
         <div
-          className="sr-sidebar"
-          style={{ width: sidebarWidth, minWidth: sidebarWidth }}
+          className="sr-root rooms-root community-root"
+          ref={rootRef}
         >
-          <div className="sr-sidebar-top">
-            <span className="chat-sidebar-title">
-              <Hash
-                size={14}
-                strokeWidth={2}
-              />
-              Rooms
-            </span>
-          </div>
-          <div className="room-search-wrap">
-            <div className="sr-input-wrap">
-              <SearchIcon
-                className="sr-input-icon"
-                size={13}
-              />
-              <input
-                className="sr-input"
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search rooms…"
-                type="text"
-                value={search}
-              />
+          {/* ── Sidebar ── */}
+          <div
+            className="sr-sidebar"
+            style={{ width: sidebarWidth, minWidth: sidebarWidth }}
+          >
+            <div className="sr-sidebar-top">
+              <span className="chat-sidebar-title">
+                <Hash
+                  size={14}
+                  strokeWidth={2}
+                />
+                Rooms
+              </span>
+            </div>
+            <div className="room-search-wrap">
+              <div className="sr-input-wrap">
+                <SearchIcon
+                  className="sr-input-icon"
+                  size={13}
+                />
+                <input
+                  aria-label="Search rooms"
+                  className="sr-input"
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search rooms…"
+                  type="text"
+                  value={search}
+                />
+              </div>
+            </div>
+
+            <div className="room-tabs">
+              <button
+                aria-pressed={roomsTab === 'joined'}
+                className={`room-tab${roomsTab === 'joined' ? ' active' : ''}`}
+                onClick={() => {
+                  prefs.set('resonance-rooms-tab', 'joined');
+                  setRoomsTab('joined');
+                }}
+                type="button"
+              >
+                Joined
+              </button>
+              <button
+                aria-pressed={roomsTab === 'browse'}
+                className={`room-tab${roomsTab === 'browse' ? ' active' : ''}`}
+                onClick={() => {
+                  prefs.set('resonance-rooms-tab', 'browse');
+                  setRoomsTab('browse');
+                }}
+                type="button"
+              >
+                Browse
+              </button>
+            </div>
+
+            <div className="sr-search-list">
+              {roomsTab === 'joined' &&
+                joinedFiltered.map((r) => (
+                  <RoomListItem
+                    active={active === r.name}
+                    joined
+                    key={r.name}
+                    onSelect={handleSelect}
+                    room={r}
+                    unreadCount={unreadCounts[r.name] ?? 0}
+                  />
+                ))}
+              {roomsTab === 'browse' &&
+                browseFiltered.map((r) => (
+                  <RoomListItem
+                    active={false}
+                    joined={false}
+                    joining={joiningRoom === r.name}
+                    key={r.name}
+                    onSelect={handleSelect}
+                    room={r}
+                    unreadCount={unreadCounts[r.name] ?? 0}
+                  />
+                ))}
+              {noMatches && query.length === 0 && (
+                <div className="sr-search-list-empty">
+                  {roomsTab === 'joined'
+                    ? "You haven't joined any rooms — try Browse"
+                    : 'No rooms available'}
+                </div>
+              )}
+              {noMatches && query.length > 0 && !exactExists && (
+                <button
+                  className="sr-search-item room-join-custom"
+                  disabled={joiningRoom === search.trim()}
+                  onClick={() => handleSelect(search.trim())}
+                  type="button"
+                >
+                  <span className="sr-search-item-icon">
+                    <Plus
+                      size={13}
+                      strokeWidth={2}
+                    />
+                  </span>
+                  <span className="sr-search-item-text">
+                    Join &ldquo;{search.trim()}&rdquo;
+                  </span>
+                </button>
+              )}
             </div>
           </div>
 
-          <div className="room-tabs">
-            <button
-              className={`room-tab${roomsTab === 'joined' ? ' active' : ''}`}
-              onClick={() => {
-                prefs.set('resonance-rooms-tab', 'joined');
-                setRoomsTab('joined');
-              }}
-              type="button"
-            >
-              Joined
-            </button>
-            <button
-              className={`room-tab${roomsTab === 'browse' ? ' active' : ''}`}
-              onClick={() => {
-                prefs.set('resonance-rooms-tab', 'browse');
-                setRoomsTab('browse');
-              }}
-              type="button"
-            >
-              Browse
-            </button>
-          </div>
+          {/* ── Resize divider ── */}
+          <div
+            aria-orientation="vertical"
+            className="sr-divider"
+            onMouseDown={onDividerMouseDown}
+            role="separator"
+          />
 
-          <div className="sr-search-list">
-            {roomsTab === 'joined' &&
-              joinedFiltered.map((r) => (
-                <RoomListItem
-                  active={active === r.name}
-                  joined
-                  key={r.name}
-                  onSelect={handleSelect}
-                  room={r}
-                />
-              ))}
-            {roomsTab === 'browse' &&
-              browseFiltered.map((r) => (
-                <RoomListItem
-                  active={false}
-                  joined={false}
-                  joining={joiningRoom === r.name}
-                  key={r.name}
-                  onSelect={handleSelect}
-                  room={r}
-                />
-              ))}
-            {noMatches && query.length === 0 && (
-              <div className="sr-search-list-empty">
-                {roomsTab === 'joined'
-                  ? "You haven't joined any rooms — try Browse"
-                  : 'No rooms available'}
-              </div>
-            )}
-            {noMatches && query.length > 0 && !exactExists && (
-              <button
-                className="sr-search-item room-join-custom"
-                disabled={joiningRoom === search.trim()}
-                onClick={() => handleSelect(search.trim())}
-                type="button"
-              >
-                <span className="sr-search-item-icon">
-                  <Plus
-                    size={13}
-                    strokeWidth={2}
-                  />
-                </span>
-                <span className="sr-search-item-text">
-                  Join &ldquo;{search.trim()}&rdquo;
-                </span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* ── Resize divider ── */}
-        <div
-          aria-orientation="vertical"
-          className="sr-divider"
-          onMouseDown={onDividerMouseDown}
-          role="separator"
-        />
-
-        {/* ── Main panel ── */}
-        <div className="sr-main">
-          {active ? (
-            <div className="chat-main">
-              <div className="chat-header">
-                <div className="chat-header-avatar room-header-avatar">
-                  <Hash size={16} />
-                </div>
-                <div className="chat-header-info">
-                  <span className="chat-header-name">{active}</span>
-                </div>
-                <div className="sr-detail-header-actions">
-                  {translateStatus.enabled && (
+          {/* ── Main panel ── */}
+          <div className="sr-main">
+            {active ? (
+              <div className="chat-main">
+                <div className="chat-header">
+                  <div className="chat-header-avatar room-header-avatar">
+                    <Hash size={16} />
+                  </div>
+                  <div className="chat-header-info">
+                    <span className="chat-header-name">{active}</span>
+                    <span className="community-context">
+                      Room conversation · {room.users.length} members
+                    </span>
+                  </div>
+                  <div className="sr-detail-header-actions">
+                    {translateStatus.enabled && (
+                      <button
+                        className={`sr-btn hover-fx chat-translate-toggle${autoTranslate ? ' chat-translate-toggle--on' : ''}`}
+                        onClick={toggleAutoTranslate}
+                        title={
+                          autoTranslate
+                            ? `Auto-translating to ${translation.languageName(targetLang)}`
+                            : 'Auto-translate messages'
+                        }
+                        type="button"
+                      >
+                        <Languages size={13} />{' '}
+                        {autoTranslate
+                          ? `Translating → ${targetLang}`
+                          : 'Translate'}
+                      </button>
+                    )}
                     <button
-                      className={`sr-btn hover-fx chat-translate-toggle${autoTranslate ? ' chat-translate-toggle--on' : ''}`}
-                      onClick={toggleAutoTranslate}
+                      aria-expanded={showUsers}
+                      className={`sr-btn hover-fx${showUsers ? ' chat-translate-toggle--on' : ''}`}
+                      onClick={() => setShowUsers((v) => !v)}
                       title={
-                        autoTranslate
-                          ? `Auto-translating to ${translation.languageName(targetLang)}`
-                          : 'Auto-translate messages'
+                        showUsers ? 'Hide member list' : 'Show member list'
                       }
                       type="button"
                     >
-                      <Languages size={13} />{' '}
-                      {autoTranslate
-                        ? `Translating → ${targetLang}`
-                        : 'Translate'}
+                      <Users size={13} /> Members · {room.users.length}
                     </button>
-                  )}
-                  <button
-                    className={`sr-btn hover-fx${showUsers ? ' chat-translate-toggle--on' : ''}`}
-                    onClick={() => setShowUsers((v) => !v)}
-                    title={showUsers ? 'Hide member list' : 'Show member list'}
-                    type="button"
-                  >
-                    <Users size={13} /> {room.users.length}
-                  </button>
-                  <button
-                    className="sr-btn sr-btn--danger hover-fx"
-                    onClick={() => leaveRoom(active)}
-                    title="Leave room"
-                    type="button"
-                  >
-                    <LogOut size={13} /> Leave
-                  </button>
+                    <button
+                      className="sr-btn sr-btn--danger hover-fx"
+                      onClick={() => leaveRoom(active)}
+                      title="Leave room"
+                      type="button"
+                    >
+                      <LogOut size={13} /> Leave
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              <div
-                className="chat-messages room-messages"
-                ref={messagesRef}
-              >
-                {loading ? (
-                  <div className="chat-loading">
-                    <span className="chat-loading-dot" />
-                    <span className="chat-loading-dot" />
-                    <span className="chat-loading-dot" />
-                  </div>
-                ) : flatItems.length === 0 ? (
-                  <div className="chat-empty-state">
-                    <div className="chat-empty-avatar room-header-avatar">
-                      <Hash size={22} />
+                <div
+                  className="chat-messages room-messages"
+                  ref={messagesRef}
+                >
+                  {loading ? (
+                    <div className="chat-loading">
+                      <span className="chat-loading-dot" />
+                      <span className="chat-loading-dot" />
+                      <span className="chat-loading-dot" />
                     </div>
-                    <p>
-                      No messages yet in <strong>{active}</strong>
-                    </p>
-                  </div>
-                ) : (
-                  flatItems.map((item) => {
-                    if (item.type === 'date') {
+                  ) : flatItems.length === 0 ? (
+                    <div className="chat-empty-state">
+                      <div className="chat-empty-avatar room-header-avatar">
+                        <Hash size={22} />
+                      </div>
+                      <p>
+                        No messages yet in <strong>{active}</strong>
+                      </p>
+                    </div>
+                  ) : (
+                    flatItems.map((item) => {
+                      if (item.type === 'date') {
+                        return (
+                          <div
+                            className="chat-date-sep"
+                            key={`date-${item.label}`}
+                          >
+                            <span>{item.label}</span>
+                          </div>
+                        );
+                      }
+
+                      const m = item.msg;
+                      const key = roomMessageKey(m);
+                      const tr = translations[key];
+                      const canTranslate =
+                        translateStatus.enabled && autoTranslate && !m.self;
+                      const translatedDiffers =
+                        Boolean(tr?.text) &&
+                        Boolean(tr?.detectedSourceLanguage) &&
+                        baseLang(tr.detectedSourceLanguage) !==
+                          targetLang.toUpperCase();
+                      const viewingOriginal = showOriginal.has(key);
+                      const showTranslated =
+                        canTranslate && translatedDiffers && !viewingOriginal;
+
+                      const captured = m.self
+                        ? translation.recallOutgoing(m.message)
+                        : null;
+                      const backTranslation =
+                        m.self &&
+                        !captured &&
+                        Boolean(tr?.text) &&
+                        Boolean(tr?.detectedSourceLanguage) &&
+                        baseLang(tr.detectedSourceLanguage) !==
+                          targetLang.toUpperCase()
+                          ? tr
+                          : null;
+                      const selfForeign =
+                        (Boolean(captured) &&
+                          captured.original !== m.message) ||
+                        Boolean(backTranslation);
+                      const selfExact = Boolean(captured);
+                      const selfInLang = captured
+                        ? captured.original
+                        : backTranslation?.text;
+                      const selfSourceLang = captured
+                        ? captured.lang
+                        : backTranslation?.detectedSourceLanguage;
+                      const showSelfInLang = selfForeign && viewingOriginal;
+                      const displayText = m.self
+                        ? showSelfInLang
+                          ? selfInLang
+                          : m.message
+                        : showTranslated
+                          ? tr.text
+                          : m.message;
+                      const previewUrl = findFirstUrl(displayText);
+
                       return (
                         <div
-                          className="chat-date-sep"
-                          key={`date-${item.label}`}
+                          className={`chat-msg-row${m.self ? ' chat-msg-row--self' : ''}`}
+                          key={key}
+                          onContextMenu={(e) => openContextMenu(e, m)}
                         >
-                          <span>{item.label}</span>
-                        </div>
-                      );
-                    }
-
-                    const m = item.msg;
-                    const key = roomMessageKey(m);
-                    const tr = translations[key];
-                    const canTranslate =
-                      translateStatus.enabled && autoTranslate && !m.self;
-                    const translatedDiffers =
-                      Boolean(tr?.text) &&
-                      Boolean(tr?.detectedSourceLanguage) &&
-                      baseLang(tr.detectedSourceLanguage) !==
-                        targetLang.toUpperCase();
-                    const viewingOriginal = showOriginal.has(key);
-                    const showTranslated =
-                      canTranslate && translatedDiffers && !viewingOriginal;
-
-                    const captured = m.self
-                      ? translation.recallOutgoing(m.message)
-                      : null;
-                    const backTranslation =
-                      m.self &&
-                      !captured &&
-                      Boolean(tr?.text) &&
-                      Boolean(tr?.detectedSourceLanguage) &&
-                      baseLang(tr.detectedSourceLanguage) !==
-                        targetLang.toUpperCase()
-                        ? tr
-                        : null;
-                    const selfForeign =
-                      (Boolean(captured) && captured.original !== m.message) ||
-                      Boolean(backTranslation);
-                    const selfExact = Boolean(captured);
-                    const selfInLang = captured
-                      ? captured.original
-                      : backTranslation?.text;
-                    const selfSourceLang = captured
-                      ? captured.lang
-                      : backTranslation?.detectedSourceLanguage;
-                    const showSelfInLang = selfForeign && viewingOriginal;
-                    const displayText = m.self
-                      ? showSelfInLang
-                        ? selfInLang
-                        : m.message
-                      : showTranslated
-                        ? tr.text
-                        : m.message;
-                    const previewUrl = findFirstUrl(displayText);
-
-                    return (
-                      <div
-                        className={`chat-msg-row${m.self ? ' chat-msg-row--self' : ''}`}
-                        key={key}
-                        onContextMenu={(e) => openContextMenu(e, m)}
-                      >
-                        {!m.self && (
-                          <div
-                            className={`chat-bubble-avatar${item.showHeader ? ' chat-bubble-avatar--top' : ' chat-bubble-avatar--ghost'}`}
-                            style={{ background: avatarColor(m.username) }}
-                          >
-                            {avatarInitial(m.username)}
-                          </div>
-                        )}
-                        <div className="chat-bubble-col">
-                          {!m.self && item.showHeader && (
-                            <div className="room-msg-header">
-                              <UsernameLink username={m.username} />
+                          {!m.self && (
+                            <div
+                              className={`chat-bubble-avatar${item.showHeader ? ' chat-bubble-avatar--top' : ' chat-bubble-avatar--ghost'}`}
+                              style={{ background: avatarColor(m.username) }}
+                            >
+                              {avatarInitial(m.username)}
                             </div>
                           )}
-                          <div
-                            className={`chat-bubble${m.self ? ' chat-bubble--self' : ' chat-bubble--other'}`}
-                          >
-                            <Linkify text={displayText} />
-                            {previewUrl && <LinkPreviewCard url={previewUrl} />}
+                          <div className="chat-bubble-col">
+                            {!m.self && item.showHeader && (
+                              <div className="room-msg-header">
+                                <UsernameLink username={m.username} />
+                              </div>
+                            )}
+                            <div
+                              className={`chat-bubble${m.self ? ' chat-bubble--self' : ' chat-bubble--other'}`}
+                            >
+                              <Linkify text={displayText} />
+                              {previewUrl && (
+                                <LinkPreviewCard url={previewUrl} />
+                              )}
+                            </div>
+                            {canTranslate && translatedDiffers && (
+                              <button
+                                className="chat-translate-note"
+                                onClick={() => toggleShowOriginal(key)}
+                                type="button"
+                              >
+                                {showTranslated
+                                  ? `Translated from ${translation.languageName(tr.detectedSourceLanguage)} · Show original`
+                                  : 'Show translation'}
+                              </button>
+                            )}
+                            {selfForeign && (
+                              <button
+                                className="chat-translate-note chat-translate-note--self"
+                                onClick={() => toggleShowOriginal(key)}
+                                type="button"
+                              >
+                                {showSelfInLang
+                                  ? 'Show sent message'
+                                  : `Sent in ${translation.languageName(selfSourceLang)} · ${selfExact ? 'Show original' : `Show in ${translation.languageName(targetLang)}`}`}
+                              </button>
+                            )}
+                            <span className="chat-bubble-time">
+                              {formatTimestamp(m.timestamp)}
+                            </span>
                           </div>
-                          {canTranslate && translatedDiffers && (
+                          <div className="chat-msg-actions">
                             <button
-                              className="chat-translate-note"
-                              onClick={() => toggleShowOriginal(key)}
+                              className="chat-msg-action-btn hover-fx"
+                              onClick={() => handleReply(m)}
+                              title="Reply"
                               type="button"
                             >
-                              {showTranslated
-                                ? `Translated from ${translation.languageName(tr.detectedSourceLanguage)} · Show original`
-                                : 'Show translation'}
+                              <Reply
+                                size={13}
+                                strokeWidth={2}
+                              />
                             </button>
-                          )}
-                          {selfForeign && (
-                            <button
-                              className="chat-translate-note chat-translate-note--self"
-                              onClick={() => toggleShowOriginal(key)}
-                              type="button"
-                            >
-                              {showSelfInLang
-                                ? 'Show sent message'
-                                : `Sent in ${translation.languageName(selfSourceLang)} · ${selfExact ? 'Show original' : `Show in ${translation.languageName(targetLang)}`}`}
-                            </button>
-                          )}
-                          <span className="chat-bubble-time">
-                            {formatTimestamp(m.timestamp)}
-                          </span>
+                          </div>
                         </div>
-                        <div className="chat-msg-actions">
-                          <button
-                            className="chat-msg-action-btn hover-fx"
-                            onClick={() => handleReply(m)}
-                            title="Reply"
-                            type="button"
-                          >
-                            <Reply
-                              size={13}
-                              strokeWidth={2}
-                            />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+                      );
+                    })
+                  )}
+                </div>
 
-              <div className="chat-input-bar">
-                <EmojiPickerButton onSelect={handleEmojiSelect} />
-                {translateStatus.enabled && (
-                  <button
-                    className={`chat-reply-toggle hover-fx${replyTranslate ? ' chat-reply-toggle--on' : ''}`}
-                    onClick={toggleReplyTranslate}
-                    title={
+                <div className="chat-input-bar">
+                  <EmojiPickerButton onSelect={handleEmojiSelect} />
+                  {translateStatus.enabled && (
+                    <button
+                      className={`chat-reply-toggle hover-fx${replyTranslate ? ' chat-reply-toggle--on' : ''}`}
+                      onClick={toggleReplyTranslate}
+                      title={
+                        replyTranslate
+                          ? "Reply translation on — your message is translated into the other person's language before sending"
+                          : 'Reply in their language'
+                      }
+                      type="button"
+                    >
+                      <Globe
+                        size={16}
+                        strokeWidth={2}
+                      />
+                    </button>
+                  )}
+                  <input
+                    aria-label={`Message room ${active}`}
+                    autoComplete="off"
+                    className="chat-input-field"
+                    data-lpignore="true"
+                    onChange={(e) => setMessage(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        sendMessage();
+                      }
+                    }}
+                    placeholder={
                       replyTranslate
-                        ? "Reply translation on — your message is translated into the other person's language before sending"
-                        : 'Reply in their language'
+                        ? `Reply in ${active}'s language…`
+                        : `Message #${active}…`
                     }
+                    ref={inputRef}
+                    type="text"
+                    value={message}
+                  />
+                  <button
+                    className="chat-send-btn hover-fx"
+                    disabled={!message.trim()}
+                    onClick={sendMessage}
+                    title="Send"
                     type="button"
                   >
-                    <Globe
+                    <Send
                       size={16}
                       strokeWidth={2}
                     />
+                    <span>Send</span>
                   </button>
-                )}
-                <input
-                  autoComplete="off"
-                  className="chat-input-field"
-                  data-lpignore="true"
-                  onChange={(e) => setMessage(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      sendMessage();
-                    }
-                  }}
-                  placeholder={
-                    replyTranslate
-                      ? `Reply in ${active}'s language…`
-                      : `Message #${active}…`
-                  }
-                  ref={inputRef}
-                  type="text"
-                  value={message}
-                />
-                <button
-                  className="chat-send-btn hover-fx"
-                  disabled={!message.trim()}
-                  onClick={sendMessage}
-                  title="Send"
-                  type="button"
-                >
-                  <Send
-                    size={16}
-                    strokeWidth={2}
-                  />
-                </button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="sr-empty">
-              <Hash
-                size={32}
-                strokeWidth={1.25}
-              />
-              <p>Search for a room or pick one on the left to join it</p>
+            ) : (
+              <div className="sr-empty">
+                <Hash
+                  size={32}
+                  strokeWidth={1.25}
+                />
+                <h2>A room for every kind of listener</h2>
+                <p>
+                  Browse the room list to find a conversation, or return to a
+                  room you’ve joined.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* ── Member list ── */}
+          {active && showUsers && (
+            <div className="room-users-panel">
+              <div className="room-users-panel-header">
+                Members — {room.users.length}
+              </div>
+              <RoomUserList users={room.users} />
             </div>
           )}
         </div>
-
-        {/* ── Member list ── */}
-        {active && showUsers && (
-          <div className="room-users-panel">
-            <div className="room-users-panel-header">
-              Members — {room.users.length}
-            </div>
-            <RoomUserList users={room.users} />
-          </div>
-        )}
-      </div>
+      </CommunityWorkspace>
 
       {contextMenu && (
         <div

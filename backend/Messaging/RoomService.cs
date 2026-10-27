@@ -42,7 +42,9 @@ namespace resonance.Messaging
     using System.Linq;
     using System.Text.Json;
     using System.Threading.Tasks;
+    using Microsoft.AspNetCore.SignalR;
     using Microsoft.EntityFrameworkCore;
+    using resonance.Core.API;
     using resonance.Events;
     using resonance.Users;
     using resonance.Users.Blocking;
@@ -105,7 +107,8 @@ namespace resonance.Messaging
             IUserService userService,
             EventBus eventBus,
             BlockedUsersService blockedUsersService,
-            IDbContextFactory<MessagingDbContext> contextFactory)
+            IDbContextFactory<MessagingDbContext> contextFactory,
+            IHubContext<ApplicationHub> applicationHub)
         {
             Client = soulseekClient;
 
@@ -118,6 +121,7 @@ namespace resonance.Messaging
             EventBus = eventBus;
             Blocked = blockedUsersService;
             ContextFactory = contextFactory;
+            ApplicationHub = applicationHub;
 
             Client.LoggedIn += Client_LoggedIn;
 
@@ -132,6 +136,7 @@ namespace resonance.Messaging
         private IOptionsMonitor<Options> OptionsMonitor { get; }
         private IRoomTracker RoomTracker { get; set; }
         private IUserService Users { get; set; }
+        private IHubContext<ApplicationHub> ApplicationHub { get; }
         private EventBus EventBus { get; }
         private BlockedUsersService Blocked { get; }
         private IDbContextFactory<MessagingDbContext> ContextFactory { get; }
@@ -317,12 +322,10 @@ namespace resonance.Messaging
             {
                 // RoomMessage is mapped with HasNoKey() (no natural key exists), so it can't be
                 // tracked/added through the change tracker; insert it directly instead.
-                context.Database.ExecuteSqlInterpolated(
-                    $"""
-                    INSERT INTO messaging."RoomMessages" ("Timestamp", "Username", "Message", "RoomName", "Direction")
-                    VALUES ({message.Timestamp}, {message.Username}, {message.Message}, {message.RoomName}, {(int)message.Direction})
-                    """);
+                context.InsertRoomMessage(message);
             }
+
+            _ = ApplicationHub.BroadcastRoomMessageAsync(args.RoomName);
 
             EventBus.Raise<RoomMessageReceivedEvent>(new RoomMessageReceivedEvent
             {

@@ -233,6 +233,7 @@ namespace resonance.Core.API
             try
             {
                 Users.UpdateRole(username, role);
+                Sessions.RevokeAll(username);
                 return NoContent();
             }
             catch (NotFoundException)

@@ -1,4 +1,5 @@
 import './UsbExportPanel.css';
+import { urlBase } from '../../config';
 import api from '../../lib/api';
 import ExportTrackPicker from './ExportTrackPicker';
 import React, { useEffect, useState } from 'react';
@@ -170,17 +171,17 @@ const UsbExportPanel = ({
     downloadFile(
       `/analysis/usb-export/${job.jobId}/transfer`,
       'resonance-export.resonance',
-      'Could not prepare the USB helper handoff.',
+      'Could not prepare the Resonance Bridge handoff.',
       true,
     );
   const downloadHelper = (platform) =>
     downloadFile(
       `/analysis/pioneer-link/helper?platform=${platform}`,
       {
-        macos: 'resonance-pioneer-link-macos.pkg',
-        windows: 'resonance-pioneer-link-windows-setup.exe',
-        linux: 'resonance-pioneer-link-linux-amd64.deb',
-        source: 'resonance-pioneer-link-source.zip',
+        macos: 'resonance-bridge-macos.pkg',
+        windows: 'resonance-bridge-windows-setup.exe',
+        linux: 'resonance-bridge-linux-amd64.deb',
+        source: 'resonance-bridge-source.zip',
       }[platform],
       'Helper download is unavailable. Please retry or ask the server administrator to configure the archive.',
     );
@@ -357,7 +358,7 @@ const UsbExportPanel = ({
                 onClick={openHelper}
                 type="button"
               >
-                Open in USB helper
+                Open in Resonance Bridge
               </button>{' '}
               <a
                 href="http://127.0.0.1:55460/"
@@ -421,10 +422,15 @@ const UsbExportPanel = ({
       )}
       {(!wizard || step === 3) && (
         <>
-          <h4>Native USB helper</h4>
+          <h4>Resonance Bridge</h4>
           <p>
-            Open in USB helper downloads a small .resonance action file. Open
-            that file with the updated Resonance desktop helper; it downloads
+            <a href={`${urlBase}/apps/bridge`}>
+              All installers and Bridge setup
+            </a>
+          </p>
+          <p>
+            Open in Resonance Bridge downloads a small .resonance action file.
+            Open that file with the updated Resonance Bridge app; it downloads
             this export and lets you choose a USB drive. Confirm the destination
             in the helper to begin writing. The same installed helper now
             handles USB Export and Network Link.
@@ -435,7 +441,7 @@ const UsbExportPanel = ({
               onClick={() => downloadHelper('macos')}
               type="button"
             >
-              Download updated Mac helper installer
+              Download Resonance Bridge for Mac
             </button>{' '}
             {['windows', 'linux'].map((platform) => (
               <button
@@ -445,8 +451,8 @@ const UsbExportPanel = ({
                 type="button"
               >
                 {platform === 'windows'
-                  ? 'Download Windows helper installer'
-                  : 'Download Debian / Ubuntu helper installer'}
+                  ? 'Download Resonance Bridge for Windows'
+                  : 'Download Resonance Bridge for Debian / Ubuntu'}
               </button>
             ))}{' '}
             <button
@@ -464,9 +470,9 @@ const UsbExportPanel = ({
         Extract the ZIP, then copy its Contents and PIONEER folders to the root
         of a player-compatible USB drive. Keep these folders together. Use an
         empty test drive and safely eject it before testing on hardware. The
-        Windows, macOS or Linux native USB helper writes the prepared export to
-        your drive. The browser prepares and downloads the ZIP; it cannot write
-        directly to USB devices.
+        Resonance Bridge for Windows, macOS or Linux writes the prepared export
+        to your drive. The browser prepares and downloads the ZIP; it cannot
+        write directly to USB devices.
       </p>
     </section>
   );

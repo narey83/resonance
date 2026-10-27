@@ -64,7 +64,7 @@ const MixtapeDeleteDialog = ({ mixtape, onCancel, onDeleted }) => {
     if (!alive.current) return;
     pending.current = false;
     setBusy(false);
-    setError('Could not delete this mixtape. Please try again.');
+    setError('Could not delete this playlist. Please try again.');
   };
 
   const handleDelete = async () => {
@@ -87,13 +87,13 @@ const MixtapeDeleteDialog = ({ mixtape, onCancel, onDeleted }) => {
       <div
         aria-busy={busy}
         aria-describedby="mixtape-delete-description"
-        aria-label="Delete mixtape"
+        aria-label="Delete playlist"
         aria-modal="true"
         className="jb-mixtape-delete-dialog"
         ref={dialogRef}
         role="alertdialog"
       >
-        <h2>Delete mixtape?</h2>
+        <h2>Delete playlist?</h2>
         <p id="mixtape-delete-description">
           This will remove <strong>{mixtape.name}</strong> and its{' '}
           {mixtape.tracks?.length || 0} track
@@ -125,7 +125,7 @@ const MixtapeDeleteDialog = ({ mixtape, onCancel, onDeleted }) => {
             onClick={handleDelete}
             type="button"
           >
-            <Trash2 size={14} /> {busy ? 'Deleting…' : 'Delete mixtape'}
+            <Trash2 size={14} /> {busy ? 'Deleting…' : 'Delete playlist'}
           </button>
         </div>
       </div>

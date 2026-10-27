@@ -40,6 +40,7 @@ namespace resonance
         public const string Connection = "Connection";
         public const string Blacklist = "Blacklist";
         public const string Browse = "Browse";
+        public const string Bridge = "Bridge";
         public const string Search = "Search";
         public const string Relay = "Relay";
         public const string Cast = "Cast";
@@ -132,7 +133,6 @@ namespace resonance
             public const string Scripts = "Integrations / Scripts";
             public const string FTP = "Integrations / FTP";
             public const string Pushbullet = "Integrations / Pushbullet";
-            public const string Fcm = "Integrations / FCM";
             public const string YtDlp = "Integrations / yt-dlp";
         }
     }

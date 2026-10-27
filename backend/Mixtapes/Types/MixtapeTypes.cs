@@ -40,7 +40,11 @@ namespace resonance.Mixtapes
         long CreatedAt,
         long UpdatedAt,
         bool HasArtwork = false,
-        IReadOnlyList<MixtapeTrack>? Tracks = null);
+        IReadOnlyList<MixtapeTrack>? Tracks = null)
+    {
+        public string? ArtworkSig { get; init; }
+        public long ArtworkExp { get; init; }
+    }
 
     public record MixtapeTrack(
         string Id,

@@ -58,6 +58,16 @@ import { createPortal } from 'react-dom';
 
 const MixPreviewContext = createContext(null);
 export const useMixPreview = () => useContext(MixPreviewContext);
+
+export const MixPreviewScope = ({ children, disabled }) => {
+  const preview = useMixPreview();
+  return (
+    <MixPreviewContext.Provider value={disabled ? null : preview}>
+      {children}
+    </MixPreviewContext.Provider>
+  );
+};
+
 const titleOf = (track) =>
   track?.title || track?.filename?.split('/').pop() || 'Choose a track';
 const percent = (value) => `${value > 0 ? '+' : ''}${value.toFixed(1)}%`;

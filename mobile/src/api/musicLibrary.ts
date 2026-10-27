@@ -65,6 +65,9 @@ export interface MusicAlbum extends Signed {
 }
 
 export interface MusicTrack extends Signed {
+  /** Original server identity is retained while playback uses downloaded bytes. */
+  offlineUri?: string;
+  djSummary?: string | null;
   path: string;
   filename: string;
   directory: string;
@@ -198,7 +201,8 @@ export const getArtworkUrl = (path: string | null, size?: number): string | null
   if (!path) return null;
   const { serverUrl } = useAuthStore.getState();
   if (!serverUrl) return null;
-  const sizeParam = size ? `&size=${size}` : '';
+  const pixels = Number.isFinite(size) && size! > 0 ? Math.min(2048, Math.ceil(size!)) : 192;
+  const sizeParam = `&size=${pixels}`;
   return `${serverUrl}/api/v0/musiclibrary/artwork?path=${encodeURIComponent(path)}${sizeParam}${signedQuery(path)}`;
 };
 

@@ -97,3 +97,6 @@ export const sendMessage = async ({ roomName, message }) => {
     JSON.stringify(message),
   );
 };
+
+export const getMessageCounts = async () =>
+  (await api.get('/rooms/joined/message-counts')).data;

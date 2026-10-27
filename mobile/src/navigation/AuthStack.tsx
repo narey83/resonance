@@ -29,7 +29,8 @@
 
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { screenOptions } from '../theme';
+import { makeScreenOptions } from '../theme';
+import { useTheme } from '../context/ThemeContext';
 import { useAuthStore } from '../store/auth';
 import ConnectScreen from '../screens/auth/ConnectScreen';
 import LoginScreen   from '../screens/auth/LoginScreen';
@@ -44,11 +45,12 @@ export type AuthStackParamList = {
 const Stack = createNativeStackNavigator<AuthStackParamList>();
 
 export default function AuthStack() {
+  const { colors } = useTheme();
   const serverUrl = useAuthStore((s) => s.serverUrl);
   return (
     <Stack.Navigator
       initialRouteName={serverUrl ? 'Login' : 'Connect'}
-      screenOptions={{ ...screenOptions, headerShown: false }}
+      screenOptions={{ ...makeScreenOptions(colors), headerShown: false }}
     >
       <Stack.Screen name="Connect" component={ConnectScreen} />
       <Stack.Screen name="Login"   component={LoginScreen} />

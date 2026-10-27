@@ -27,10 +27,10 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { onSessionReset, sessionGuard } from '../lib/sessionScope';
 import { useEffect } from 'react';
-import { AppState } from 'react-native';
-import { HubConnectionState } from '@microsoft/signalr';
 import { create } from 'zustand';
+import { maintainServerConnection } from '../lib/serverConnection';
 import * as mixtapesAPI from '../api/mixtapes';
 import type { Mixtape } from '../api/mixtapes';
 import { createMixtapesHubConnection, MIXTAPES_UPDATED } from '../api/mixtapesHub';
@@ -58,58 +58,79 @@ export const useMixtapeStore = create<MixtapeStore>((set, get) => ({
   error: null,
 
   load: async () => {
+    const current = sessionGuard();
     set({ isLoading: true, error: null });
     try {
       const mixtapes = await mixtapesAPI.getAll();
+      if (!current()) return;
       set({ mixtapes, isLoading: false });
     } catch (e: unknown) {
+      if (!current()) return;
       set({ isLoading: false, error: (e as Error)?.message ?? 'Failed to load' });
     }
   },
 
   create: async (name, description) => {
+    const current = sessionGuard();
     const mixtape = await mixtapesAPI.create(name, description);
+    if (!current()) throw new Error('Session changed');
     set((s) => ({ mixtapes: [mixtape, ...s.mixtapes] }));
     return mixtape;
   },
 
   rename: async (id, name, description) => {
+    const current = sessionGuard();
     await mixtapesAPI.update(id, name, description);
+    if (!current()) return;
     await get().load();
   },
 
   remove: async (id) => {
+    const current = sessionGuard();
     await mixtapesAPI.remove(id);
+    if (!current()) return;
     set((s) => ({ mixtapes: s.mixtapes.filter((m) => m.id !== id) }));
   },
 
   addTrack: async (id, filePath) => {
+    const current = sessionGuard();
     await mixtapesAPI.addTrack(id, filePath);
+    if (!current()) return;
     await get().load();
   },
 
   removeTrack: async (id, trackId) => {
+    const current = sessionGuard();
     await mixtapesAPI.removeTrack(id, trackId);
+    if (!current()) return;
     await get().load();
   },
 
   clearTracks: async (id) => {
+    const current = sessionGuard();
     await mixtapesAPI.clearTracks(id);
+    if (!current()) return;
     await get().load();
   },
 
   reorderTracks: async (id, trackIds) => {
+    const current = sessionGuard();
     await mixtapesAPI.reorderTracks(id, trackIds);
+    if (!current()) return;
     await get().load();
   },
 
   publish: async (id) => {
+    const current = sessionGuard();
     await mixtapesAPI.publish(id);
+    if (!current()) return;
     await get().load();
   },
 
   unpublish: async (id) => {
+    const current = sessionGuard();
     await mixtapesAPI.unpublish(id);
+    if (!current()) return;
     await get().load();
   },
 }));
@@ -119,27 +140,21 @@ export const useMixtapesHub = () => {
   const load = useMixtapeStore((s) => s.load);
 
   useEffect(() => {
+    const current = sessionGuard();
     const hub = createMixtapesHubConnection();
     if (!hub) return;
 
     attachHubLogging(hub, 'mixtapes');
 
-    hub.on(MIXTAPES_UPDATED, () => { load(); });
+    hub.on(MIXTAPES_UPDATED, () => { if (current()) void load(); });
     // Reload after reconnect to catch any events missed while disconnected
-    hub.onreconnected(() => { load(); });
-    const startPromise = hub.start().catch((err: unknown) => {
-      remoteLog('error', `[hub:mixtapes] start failed — ${err instanceof Error ? err.message : String(err)}`);
+    hub.onreconnected(() => { if (current()) void load(); });
+    return maintainServerConnection(hub, current, () => { void load(); }, (err) => {
+      remoteLog('error', `[hub:playlists] start failed — ${err instanceof Error ? err.message : String(err)}`);
     });
-
-    const appStateSub = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active' && hub.state === HubConnectionState.Disconnected) {
-        hub.start().catch(() => {});
-      }
-    });
-
-    return () => {
-      appStateSub.remove();
-      startPromise.then(() => hub.stop().catch(() => {}));
-    };
   }, [load]);
 };
+
+onSessionReset(() => {
+  useMixtapeStore.setState(useMixtapeStore.getInitialState(), true);
+});

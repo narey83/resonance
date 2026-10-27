@@ -129,6 +129,8 @@ namespace resonance
 
     public record ServerState
     {
+        public string LastConnectionErrorCode { get; init; }
+
         public string Address { get; init; }
 
         [JsonConverter(typeof(IPEndPointConverter))]

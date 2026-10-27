@@ -210,7 +210,12 @@ export const deleteTrackBatchLocal = async (paths) =>
 export const getArtworkUrl = (path, size = null) => {
   if (!path) return null;
 
-  const sizeParameter = size ? `&size=${size}` : '';
+  const pixels =
+    Number.isFinite(size) && size > 0 ? Math.min(2_048, Math.ceil(size)) : 192;
+  const sizeParameter = `&size=${pixels}`;
 
   return `${apiBaseUrl}/musiclibrary/artwork?path=${encodeURIComponent(path)}${sizeParameter}${signedQuery(path)}`;
 };
+
+export const recordPlaybackActivity = () =>
+  api.post('/musiclibrary/playback/activity', null, { timeout: 5_000 });

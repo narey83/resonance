@@ -843,7 +843,7 @@ namespace resonance
             ///     Gets the docker container names to monitor for CPU/memory.
             /// </summary>
             [Description("docker container names to monitor for cpu/memory (empty = disabled)")]
-            public string[] Containers { get; init; } = new[] { "resonance-backend", "resonance-frontend", "resonance-caddy", "postgres-db" };
+            public string[] Containers { get; init; } = new[] { "resonance-backend", "resonance-frontend" };
         }
 
         /// <summary>
@@ -1849,7 +1849,9 @@ namespace resonance
             public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
             {
                 if (Storage != null && !new[] { "database", "disk", "both" }.Contains(Storage.ToLowerInvariant()))
+                {
                     yield return new ValidationResult("Logging storage must be Database, Disk, or Both.");
+                }
             }
         }
 
@@ -1880,7 +1882,16 @@ namespace resonance
             ///     Gets the time to retain logs, in days.
             /// </summary>
             [Range(1, maximum: int.MaxValue)]
-            public int Logs { get; init; } = 30;
+            public int Logs { get; init; } = 3;
+
+            [Range(1, maximum: 365)]
+            public int WarningLogs { get; init; } = 14;
+
+            [Range(1, maximum: 365)]
+            public int ErrorLogs { get; init; } = 30;
+
+            [Range(1, maximum: 365)]
+            public int LogSummaries { get; init; } = 90;
 
             /// <summary>
             ///     Transfer retention options.
@@ -2148,9 +2159,19 @@ namespace resonance
             public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
             {
                 string error = null;
-                try { _ = RuntimeDatabase.Resolve(this, Program.AppDirectory ?? AppContext.BaseDirectory); }
-                catch (ArgumentException ex) { error = ex.Message; }
-                if (error != null) yield return new ValidationResult(error);
+                try
+                {
+                    _ = RuntimeDatabase.Resolve(this, Program.AppDirectory ?? AppContext.BaseDirectory);
+                }
+                catch (ArgumentException ex)
+                {
+                    error = ex.Message;
+                }
+
+                if (error != null)
+                {
+                    yield return new ValidationResult(error);
+                }
             }
         }
 
@@ -2476,6 +2497,12 @@ namespace resonance
         /// </summary>
         public class WebOptions : IValidatableObject
         {
+            /// <summary>Additional trusted browser origins. Same-origin web and native clients need no entry.</summary>
+            [EnvironmentVariable("CORS_ORIGINS")]
+            [Description("trusted cross-origin web clients")]
+            [RequiresRestart]
+            public string[] CorsOrigins { get; init; } = Array.Empty<string>();
+
             /// <summary>
             ///     Gets a value indicating whether HTTP should be disabled.
             /// </summary>
@@ -2947,12 +2974,6 @@ namespace resonance
             /// </summary>
             [Validate]
             public PushbulletOptions Pushbullet { get; init; } = new PushbulletOptions();
-
-            /// <summary>
-            ///     Gets Firebase Cloud Messaging options.
-            /// </summary>
-            [Validate]
-            public FcmOptions Fcm { get; init; } = new FcmOptions();
 
             /// <summary>
             ///     Gets yt-dlp options.
@@ -3516,70 +3537,6 @@ namespace resonance
                     if (Enabled && string.IsNullOrWhiteSpace(AccessToken))
                     {
                         results.Add(new ValidationResult($"The Enabled field is true, but no AccessToken has been specified."));
-                    }
-
-                    return results;
-                }
-            }
-
-            /// <summary>
-            ///     Firebase Cloud Messaging integration options. Used to push a wake-and-sync message to
-            ///     the mobile app when the music library changes, even while it's backgrounded or killed.
-            /// </summary>
-            public class FcmOptions : IValidatableObject
-            {
-                /// <summary>
-                ///     Gets a value indicating whether the FCM integration is enabled.
-                /// </summary>
-                [Argument(default, "fcm")]
-                [EnvironmentVariable("FCM")]
-                [Description("enable Firebase Cloud Messaging push notifications")]
-                public bool Enabled { get; init; } = false;
-
-                /// <summary>
-                ///     Gets the Firebase project id.
-                /// </summary>
-                [Argument(default, "fcm-project-id")]
-                [EnvironmentVariable("FCM_PROJECT_ID")]
-                [Description("Firebase project id")]
-                public string ProjectId { get; init; }
-
-                /// <summary>
-                ///     Gets the path to a service account credentials JSON file. Takes precedence over
-                ///     <see cref="CredentialsJson"/> when both are set.
-                /// </summary>
-                [Argument(default, "fcm-credentials-file")]
-                [EnvironmentVariable("FCM_CREDENTIALS_FILE")]
-                [Description("path to a Firebase service account credentials JSON file")]
-                public string CredentialsFile { get; init; }
-
-                /// <summary>
-                ///     Gets the service account credentials as a raw JSON blob, for deployments where
-                ///     mounting a credentials file isn't convenient.
-                /// </summary>
-                [Argument(default, "fcm-credentials-json")]
-                [EnvironmentVariable("FCM_CREDENTIALS_JSON")]
-                [Description("Firebase service account credentials, as a raw JSON blob")]
-                [Secret]
-                public string CredentialsJson { get; init; }
-
-                /// <summary>
-                ///     Extended validation.
-                /// </summary>
-                /// <param name="validationContext"></param>
-                /// <returns></returns>
-                public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
-                {
-                    var results = new List<ValidationResult>();
-
-                    if (Enabled && string.IsNullOrWhiteSpace(ProjectId))
-                    {
-                        results.Add(new ValidationResult("The Enabled field is true, but no ProjectId has been specified."));
-                    }
-
-                    if (Enabled && string.IsNullOrWhiteSpace(CredentialsFile) && string.IsNullOrWhiteSpace(CredentialsJson))
-                    {
-                        results.Add(new ValidationResult("The Enabled field is true, but neither CredentialsFile nor CredentialsJson has been specified."));
                     }
 
                     return results;

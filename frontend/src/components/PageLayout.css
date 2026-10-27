@@ -1,6 +1,8 @@
 /* Shared page rhythm. Split-pane tools keep their full-width working canvas. */
 .app-main {
   --page-gutter: 24px;
+  --workspace-header-height: 44px;
+  --workspace-title-size: 16px;
   --page-spacing: 20px;
   --page-form-width: 1400px;
   min-width: 0;
@@ -41,3 +43,60 @@
 
 .app-content .export-page > .usb-export-panel { margin-top: 0; padding: var(--page-spacing); }
 .app-content :is(.converter-source, .converter-settings, .network-link-card) { padding: var(--page-spacing); }
+
+/* Page titles use the same compact rhythm as the music workspace. */
+.app-main :is(.dj-workspace-header, .sr-workspace-header) {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  min-height: var(--workspace-header-height);
+  padding: 6px var(--page-gutter);
+  gap: 12px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+.app-main :is(.dj-workspace-header, .sr-workspace-header) h1 {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--workspace-title-size);
+  font-weight: 650;
+  line-height: 20px;
+  letter-spacing: -.015em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.app-main .sr-workspace-header > div:first-child { flex: 1; min-width: 0; }
+.app-main .sr-workspace-header .sr-eyebrow,
+.app-main .community-heading p { display: none; }
+.app-main .sr-workspace-header button {
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.app-main .community-root .chat-header {
+  min-height: var(--workspace-header-height);
+  padding: 6px var(--page-gutter);
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--bg-surface);
+}
+.app-main .community-root .chat-header-info { flex-direction: row; align-items: center; gap: 12px; min-width: 0; }
+.app-main .community-root :is(.chat-header-name, .chat-header-name .ulink-name) { font-size: var(--workspace-title-size); line-height: 20px; font-weight: 650; }
+.app-main .community-root .chat-header-avatar { width: 28px; height: 28px; border-radius: 6px; font-size: 14px; }
+.app-main .community-context { margin: 0; font-size: 11px; line-height: 16px; }
+.app-main .community-root .chat-header .sr-btn { min-height: 28px; padding: 4px 10px; font-size: 11px; }
+.app-main .library-workspace > .workspace-heading { margin-bottom: 12px; gap: 12px; align-items: center; }
+.app-main .library-workspace > .workspace-heading h2 { font-size: var(--workspace-title-size); line-height: 20px; margin: 0; letter-spacing: -.015em; }
+.app-main .library-workspace > .workspace-heading .workspace-eyebrow { display: none; }
+.app-main .library-workspace > .workspace-heading p { margin: 4px 0 0; font-size: 12px; line-height: 1.5; }
+.app-main .network-link-banner { padding: 12px; margin-bottom: 12px; }
+.app-main .network-link-banner strong { font-size: var(--workspace-title-size); }
+@media (max-width: 760px) {
+  .app-main .community-context { display: none; }
+  .app-main .community-root .sr-detail-header-actions { flex-wrap: wrap; }
+}

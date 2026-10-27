@@ -54,6 +54,7 @@ public class YtDlpDbContext : DbContext
             resonance.SqliteSchema.Initialize(this);
             return;
         }
+
         // SubscriptionId was added after first release; EnsureCreated won't alter an existing table.
         await Database.ExecuteSqlRawAsync(
             "ALTER TABLE ytdlp.\"Jobs\" ADD COLUMN IF NOT EXISTS \"SubscriptionId\" uuid", cancellationToken);
@@ -61,7 +62,6 @@ public class YtDlpDbContext : DbContext
             "ALTER TABLE ytdlp.\"Tracks\" ADD COLUMN IF NOT EXISTS \"ReportedDurationSeconds\" integer", cancellationToken);
         await Database.ExecuteSqlRawAsync(
             "ALTER TABLE ytdlp.\"Events\" ADD COLUMN IF NOT EXISTS \"TrackTitle\" text", cancellationToken);
-
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

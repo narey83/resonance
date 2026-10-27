@@ -1,3 +1,32 @@
+// <copyright file="WorkspaceController.cs" company="John Narey">
+//    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
+//   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
+//   ┍━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━ ━  ━┉   ┉     ┉
+//   │ Copyright (c) 2026 John Narey.
+//   │ Part of Resonance, a Soulseek client based on slskd.
+//   │
+//   │ This program is free software: you can redistribute it and/or modify
+//   │ it under the terms of the GNU Affero General Public License as published
+//   │ by the Free Software Foundation, version 3.
+//   │
+//   │ This program is distributed in the hope that it will be useful,
+//   │ but WITHOUT ANY WARRANTY; without even the implied warranty of
+//   │ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//   │ GNU Affero General Public License for more details.
+//   │
+//   │ You should have received a copy of the GNU Affero General Public License
+//   │ along with this program.  If not, see https://www.gnu.org/licenses/.
+//   │
+//   │ This program is distributed with Additional Terms pursuant to Section 7
+//   │ of the AGPLv3.  See the LICENSE file in the root directory of this
+//   │ project for the complete terms and conditions.
+//   │
+//   ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ╌ ╌╌╌╌ ╌
+//   │ SPDX-FileCopyrightText: John Narey
+//   │ SPDX-License-Identifier: AGPL-3.0-only
+//   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
+// </copyright>
+
 namespace resonance.MusicLibrary.API;
 
 using System;
@@ -12,21 +41,14 @@ using resonance.Common;
 using resonance.MetadataLookup;
 using resonance.MusicLibrary.Workspace;
 
-[ApiController, ApiVersion("0"), Route("api/v{version:apiVersion}/musiclibrary")]
+[ApiController]
+[ApiVersion("0")]
+[Route("api/v{version:apiVersion}/musiclibrary")]
 [Authorize(Policy = AuthPolicy.FeatureLibrary)]
 public class WorkspaceController(WorkspaceStore store, MusicRepository repository, PreparationService preparation,
     StreamUrlSigner signer, IMetadataLookupService enrichment, CandidateAnalysisOptions enhanced) : ControllerBase
 {
-    private string Username => User.FindFirstValue(ClaimTypes.Name) ?? "";
-    private static SmartCrateRules ClientRules(SmartCrateRules rules) => rules with { Folder=rules.Folder==null ? null : MusicPath.ToAbsolute(rules.Folder) };
-    private MusicTrack Sign(MusicTrack track)
-    {
-        var (exp, sig) = signer.Sign(track.Path);
-        return track with { Exp = exp, Sig = sig };
-    }
-    private MusicLibraryQueryResult Query(SmartCrateRules rules, int limit = 1, int offset = 0, string search = null, string sort = "title", bool descending = false)
-        => repository.Query(search, null, null, rules.Genre, null, rules.Folder, false, false, false, false, false,
-            Math.Clamp(limit, 1, 500), Math.Max(0, offset), sort, descending, analysis: rules.Analysis, dj: rules.Filters(Username, DateTimeOffset.UtcNow));
+    private string Username => User.FindFirstValue(ClaimTypes.Name) ?? string.Empty;
 
     [HttpGet("crates")]
     public IActionResult Crates() => Ok(new
@@ -39,38 +61,42 @@ public class WorkspaceController(WorkspaceStore store, MusicRepository repositor
             Rules=ClientRules(crate.Rules),
             crate.Revision,
             crate.Starter,
-            trackCount = Query(crate.Rules).Total
-        })
+            trackCount = Query(crate.Rules).Total,
+        }),
     });
     [HttpGet("crates/{id}/tracks")]
     public IActionResult CrateTracks(string id, [FromQuery] int limit = 100, [FromQuery] int offset = 0,
         [FromQuery] string search = null, [FromQuery] string sort = "title", [FromQuery] bool descending = false)
     {
         var crate = store.FindCrate(Username, id);
-        if (crate == null) return NotFound();
+        if (crate == null)
+        {
+            return NotFound();
+        }
+
         var page = Query(crate.Rules, limit, offset, search, sort, descending);
         return Ok(page with { Tracks = page.Tracks.Select(Sign).ToArray() });
     }
+
     [HttpPost("crates/preview")]
     public IActionResult Preview([FromBody] SmartCrateRules rules)
     {
-        try { var page = Query((rules ?? new()).Validated(), 5); return Ok(page with { Tracks = page.Tracks.Select(Sign).ToArray() }); }
-        catch (ArgumentException exception) { return BadRequest(new { message = exception.Message }); }
+        try
+        {
+            var page = Query((rules ?? new()).Validated(), 5);
+            return Ok(page with { Tracks = page.Tracks.Select(Sign).ToArray() });
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(new { message = exception.Message });
+        }
     }
+
     [HttpPost("crates")]
     public IActionResult Create([FromBody] SaveCrateRequest request) => Save(null, request);
     [HttpPut("crates/{id}")]
     public IActionResult Update(string id, [FromBody] SaveCrateRequest request) => Save(id, request);
-    private IActionResult Save(string id, SaveCrateRequest request)
-    {
-        try
-        {
-            var crate=store.SaveCrate(Username, id, request ?? throw new ArgumentException("Crate details are required."));
-            return Ok(crate with { Rules=ClientRules(crate.Rules) });
-        }
-        catch (ArgumentException exception) { return BadRequest(new { message = exception.Message }); }
-        catch (InvalidOperationException exception) { return Conflict(new { message = exception.Message }); }
-    }
+
     [HttpDelete("crates/{id}")]
     public IActionResult Delete(string id, [FromQuery] long revision) => store.DeleteCrate(Username, id, revision)
         ? NoContent() : Conflict(new { message = "This crate changed. Refresh before deleting it." });
@@ -91,14 +117,16 @@ public class WorkspaceController(WorkspaceStore store, MusicRepository repositor
                 item.State,
                 item.Attempts,
                 item.NextAttemptAt,
-                item.Detail
-            })
+                item.Detail,
+            }),
         });
     }
+
     [HttpGet("preparation/status")]
     public IActionResult Status()
     {
-        var counts = store.Counts(); var metadata = enrichment.State;
+        var counts = store.Counts();
+        var metadata = enrichment.State;
         return Ok(new
         {
             counts,
@@ -108,18 +136,63 @@ public class WorkspaceController(WorkspaceStore store, MusicRepository repositor
             enhancedEnabled = enhanced.Enabled,
             waitingReason = preparation.WaitingReason,
             preparation.LastCheckedAt,
-            enrichment = new { metadata.Enabled, metadata.Scanning, metadata.Completed, metadata.Total, metadata.Written, metadata.Skipped, metadata.Failed, metadata.Progress }
+            enrichment = new { metadata.Enabled, metadata.Scanning, metadata.Completed, metadata.Total, metadata.Written, metadata.Skipped, metadata.Failed, metadata.Progress },
         });
     }
-    public record RetryRequest(string Path);
+
     [HttpPost("preparation/retry")]
     public IActionResult Retry([FromBody] RetryRequest request)
     {
-        try { preparation.Retry(request?.Path ?? ""); return Accepted(); }
-        catch (ArgumentException exception) { return BadRequest(new { message = exception.Message }); }
-        catch (InvalidOperationException exception) { return Conflict(new { message = exception.Message }); }
+        try
+        {
+            preparation.Retry(request?.Path ?? string.Empty);
+            return Accepted();
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(new { message = exception.Message });
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Conflict(new { message = exception.Message });
+        }
     }
-    public record PauseRequest(bool Paused);
+
     [HttpPost("preparation/pause")]
-    public IActionResult Pause([FromBody] PauseRequest request) { store.Paused = request.Paused; return NoContent(); }
+    public IActionResult Pause([FromBody] PauseRequest request)
+    {
+        store.Paused = request.Paused;
+        return NoContent();
+    }
+
+    private static SmartCrateRules ClientRules(SmartCrateRules rules) => rules with { Folder = rules.Folder == null ? null : MusicPath.ToAbsolute(rules.Folder) };
+    private MusicTrack Sign(MusicTrack track)
+    {
+        var (exp, sig) = signer.Sign(track.Path);
+        return track with { Exp = exp, Sig = sig };
+    }
+
+    private MusicLibraryQueryResult Query(SmartCrateRules rules, int limit = 1, int offset = 0, string search = null, string sort = "title", bool descending = false)
+        => repository.Query(search, null, null, rules.Genre, null, rules.Folder, false, false, false, false, false,
+            Math.Clamp(limit, 1, 500), Math.Max(0, offset), sort, descending, analysis: rules.Analysis, dj: rules.Filters(Username, DateTimeOffset.UtcNow));
+    private IActionResult Save(string id, SaveCrateRequest request)
+    {
+        try
+        {
+            var crate = store.SaveCrate(Username, id, request ?? throw new ArgumentException("Crate details are required."));
+            return Ok(crate with { Rules = ClientRules(crate.Rules) });
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(new { message = exception.Message });
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Conflict(new { message = exception.Message });
+        }
+    }
+
+    public record RetryRequest(string Path);
+
+    public record PauseRequest(bool Paused);
 }

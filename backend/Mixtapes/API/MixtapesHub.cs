@@ -44,7 +44,7 @@ namespace resonance.Mixtapes.API
             => hub.Clients.All.SendAsync(MixtapesHubMethods.Updated);
     }
 
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.FeatureLibrary)]
     public class MixtapesHub : Hub
     {
     }

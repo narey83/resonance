@@ -112,7 +112,7 @@ namespace resonance.Search.API
     /// <summary>
     ///     The search SignalR hub.
     /// </summary>
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.FeatureSearch)]
     public class SearchHub : Hub
     {
         public SearchHub(

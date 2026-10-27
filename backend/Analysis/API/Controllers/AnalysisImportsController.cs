@@ -46,7 +46,7 @@ namespace resonance.Analysis.API
     [ApiVersion("0")]
     [Produces("application/json")]
     [Route("api/v{version:apiVersion}/analysis/imports")]
-    [Authorize(Policy = AuthPolicy.Any)]
+    [Authorize(Policy = AuthPolicy.FeatureLibrary)]
     public class AnalysisImportsController : ControllerBase
     {
         public AnalysisImportsController(IAnalysisService analysis, IImportedAnalysisStore store)
@@ -59,11 +59,13 @@ namespace resonance.Analysis.API
         private IImportedAnalysisStore Store { get; }
 
         [HttpPost("preview")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [RequestSizeLimit(16 * 1024 * 1024)]
         public async Task<IActionResult> Preview([FromBody] ImportAnalysisRequest request, CancellationToken ct)
             => await Import(request, false, ct);
 
         [HttpPost]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [RequestSizeLimit(16 * 1024 * 1024)]
         public async Task<IActionResult> Commit([FromBody] ImportAnalysisRequest request, CancellationToken ct)
             => await Import(request, true, ct);
