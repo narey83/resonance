@@ -108,6 +108,10 @@ describe('Apps & integrations', () => {
         .getAttribute('src'),
     ).toContain('/assets/store-badges/google-play.png');
     expect(mobile.querySelector('a, button')).toBeNull();
+    expect(container.querySelector('details.bridge-setup').open).toBe(false);
+    expect(
+      container.querySelectorAll('details.bridge-install-details'),
+    ).toHaveLength(3);
   });
   it('uses the authenticated blob API and Bridge filename for the installer', async () => {
     expect.hasAssertions();

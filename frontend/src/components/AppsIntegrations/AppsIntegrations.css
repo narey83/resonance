@@ -49,3 +49,29 @@
 .mobile-store-badge img { display: block; width: auto; max-width: 100%; object-fit: contain; }
 .mobile-store-badge .app-store-badge { height: 48px; }
 .mobile-store-badge .google-play-badge { height: 72px; }
+
+/* Keep installers and mobile apps together on desktop, with help on demand. */
+.bridge-page-heading { margin-bottom: 16px; }
+.bridge-intro { margin-bottom: 16px; }
+.bridge-platforms { gap: 14px; margin-bottom: 14px; }
+.bridge-platform { padding: 16px; }
+.bridge-platform-detail { min-height: 32px; margin: 8px 0; }
+.bridge-recommendation { min-height: 22px; }
+.bridge-install-details { margin-top: 12px; color: var(--text-secondary); font-size: 12px; }
+.bridge-page summary { cursor: pointer; }
+.bridge-page summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.bridge-setup { padding: 14px 18px; }
+.bridge-setup > summary { font-size: 14px; font-weight: 600; }
+.mobile-apps { margin-top: 18px; }
+.mobile-apps > p { margin: 4px 0 12px; font-size: 12px; }
+.mobile-app-platforms { gap: 14px; }
+.mobile-app-platforms > .bridge-platform { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; align-items: center; }
+.mobile-app-platforms .bridge-platform-heading { grid-column: 1; }
+.mobile-app-platforms h3 { font-size: 16px; }
+.mobile-app-platforms .mobile-store-badge { grid-column: 2; grid-row: 1 / 4; margin: 0; padding: 12px; }
+.mobile-app-platforms .mobile-app-status { grid-column: 1; justify-self: start; margin: 8px 0 0; }
+.mobile-app-platforms > section > p:last-child { grid-column: 1; font-size: 11px; margin: 6px 0 0; }
+.bridge-source { padding-top: 12px; }
+@media (max-width: 1000px) and (min-width: 761px) { .bridge-platforms { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .mobile-app-platforms { grid-template-columns: 1fr; } .bridge-platforms { grid-template-columns: 1fr; } }
+@media (max-width: 400px) { .mobile-app-platforms > .bridge-platform { display: block; } .mobile-app-platforms .mobile-store-badge { margin-top: 8px; padding-left: 0; } }

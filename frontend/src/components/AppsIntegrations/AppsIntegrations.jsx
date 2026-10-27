@@ -192,28 +192,28 @@ const AppsIntegrations = () => {
                   Not available on this instance
                 </p>
               )}
-              <p>{instruction}</p>
-              {id === 'macos' && (
-                <p className="bridge-platform-note">
-                  Requires an Apple silicon Mac. Intel Macs are not included in
-                  this build.
-                </p>
-              )}
-              {id === 'linux' && (
-                <p className="bridge-platform-note">
-                  The tray needs a StatusNotifier/AppIndicator host. GNOME may
-                  need its AppIndicator extension.
-                </p>
-              )}
+              <details className="bridge-install-details">
+                <summary>Installation details</summary>
+                <p>{instruction}</p>
+                {id === 'macos' && (
+                  <p className="bridge-platform-note">
+                    Requires an Apple silicon Mac. Intel Macs are not included
+                    in this build.
+                  </p>
+                )}
+                {id === 'linux' && (
+                  <p className="bridge-platform-note">
+                    The tray needs a StatusNotifier/AppIndicator host. GNOME may
+                    need its AppIndicator extension.
+                  </p>
+                )}
+              </details>
             </section>
           ),
         )}
       </div>
-      <section
-        aria-labelledby="bridge-setup"
-        className="bridge-setup"
-      >
-        <h2 id="bridge-setup">Get connected</h2>
+      <details className="bridge-setup">
+        <summary id="bridge-setup">Get connected · setup &amp; updates</summary>
         <ol>
           <li>
             <strong>Install and open Bridge.</strong> Use the installer for your
@@ -255,7 +255,7 @@ const AppsIntegrations = () => {
             />
           </Link>
         </div>
-      </section>
+      </details>
       <section
         aria-labelledby="mobile-apps-title"
         className="mobile-apps"
