@@ -1174,3 +1174,7 @@ select {
 .resonance-mark-wave {
   filter: drop-shadow(0 0 2px currentColor);
 }
+
+.appearance-card + .support-card {
+  margin-top: 20px;
+}

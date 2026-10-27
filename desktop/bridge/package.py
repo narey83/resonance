@@ -5,7 +5,7 @@ import os, subprocess, tempfile, shutil, zipfile, plistlib, hashlib, json, base6
 root=Path(__file__).resolve().parent
 output=Path(os.environ.get('RESONANCE_HELPER_OUTPUT',root/'dist'));output.mkdir(parents=True,exist_ok=True)
 go=os.environ.get('GO','go')
-version='0.3.3'
+version='0.3.4'
 public_key=os.environ.get('RESONANCE_HELPER_UPDATE_PUBLIC_KEY','')
 if public_key and len(base64.b64decode(public_key,validate=True))!=32:
  raise ValueError('RESONANCE_HELPER_UPDATE_PUBLIC_KEY must be a base64 Ed25519 public key')
@@ -23,6 +23,13 @@ def archive(folder,path):
    if p.is_file(): z.write(p,p.relative_to(folder))
 def source(dest):
  shutil.copytree(root,dest,ignore=shutil.ignore_patterns('dist','__pycache__','*.pyc','.DS_Store','*.zip','*.key','*.pem','resonance-bridge','resonance-bridge.exe','resonance-pioneer-link','resonance-pioneer-link.exe'))
+ # Preserve the canonical inputs needed to regenerate the embedded UI palettes.
+ theme_sources=root.parents[1]/'frontend/src/components'
+ if not theme_sources.exists():theme_sources=root/'theme-sources'
+ for name in ['App.css','MusicWorkspace.css','Shared/ResonanceMark.jsx']:
+  target=dest/'theme-sources'/name;target.parent.mkdir(parents=True,exist_ok=True)
+  shutil.copy2(theme_sources/name,target)
+
 with tempfile.TemporaryDirectory() as tmp:
  tmp=Path(tmp)
  src=tmp/'source';src.mkdir();source(src/'resonance-bridge');archive(src,output/'resonance-bridge-source.zip')

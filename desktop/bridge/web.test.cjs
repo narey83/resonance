@@ -6,6 +6,15 @@ const path = require("node:path");
 const { JSDOM } = require("jsdom");
 const html = fs.readFileSync(path.join(__dirname, "ui.html"), "utf8");
 const script = fs.readFileSync(path.join(__dirname, "bridge.js"), "utf8");
+const webSource = (name) => {
+  const checkout = path.join(__dirname, "../../frontend/src/components", name);
+  return fs.readFileSync(
+    fs.existsSync(checkout)
+      ? checkout
+      : path.join(__dirname, "theme-sources", name),
+    "utf8",
+  );
+};
 const pairing = {
   schemaVersion: 1,
   serverUrl: "https://music.example.test/resonance/api/v0/bridge/sync",
@@ -282,17 +291,46 @@ test("Bridge uses the Resonance ring and wave mark and app favicon", async (t) =
   const { document: d } = launch(t, "/settings");
   await until(() => d.querySelector("#version").textContent === "Bridge 0.3.2");
   assert.ok(d.querySelector(".brand-mark .resonance-mark-ring"));
-  const canonical = fs.readFileSync(
-    path.join(
-      __dirname,
-      "../../frontend/src/components/Shared/ResonanceMark.jsx",
-    ),
-    "utf8",
-  );
+  const canonical = webSource("Shared/ResonanceMark.jsx");
   const wave = d.querySelector(".resonance-mark-wave").getAttribute("d");
   assert.ok(canonical.includes(wave), "Bridge mark diverged from Resonance");
   assert.equal(
     d.querySelector('link[rel="icon"]').getAttribute("href"),
     "/assets/favicon.svg",
   );
+});
+
+test("Daylight and AMOLED use the web workspace palette overrides", () => {
+  const workspace = webSource("MusicWorkspace.css");
+  const themes = fs.readFileSync(path.join(__dirname, "themes.css"), "utf8");
+  const properties = (body) =>
+    Object.fromEntries(
+      [...body.matchAll(/--([a-z-]+):\s*([^;]+);/g)].map((match) => [
+        match[1],
+        match[2],
+      ]),
+    );
+  for (const [theme, selector] of [
+    ["light", ".dj-workspace"],
+    ["amoled", ":root:is(.dark,.dim,.amoled) .dj-workspace"],
+  ]) {
+    const source = properties(
+      workspace.slice(workspace.indexOf(selector + " {")).split("}")[0],
+    );
+    const actual = properties(
+      themes.slice(themes.indexOf(`[data-theme="${theme}"]`)).split("}")[0],
+    );
+    for (const token of [
+      "bg-primary",
+      "bg-surface",
+      "accent",
+      "text-primary",
+      "border",
+    ])
+      assert.equal(
+        actual[token],
+        source[token],
+        `${theme} ${token} differs from Resonance`,
+      );
+  }
 });
