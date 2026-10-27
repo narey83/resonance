@@ -2,6 +2,7 @@
 """Build a Linux Docker stack using a privately configured, managed SMB volume."""
 
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -33,6 +34,12 @@ def validate_source(value):
     if "\0" in value or not re.fullmatch(r"//[^/\s,]+/[^\r\n,]+", value):
         raise ValueError("SMB source must be //server/share, without mount options")
     return value.rstrip("/")
+
+
+def trusted_proxies(values):
+    if not isinstance(values, list) or not values:
+        raise ValueError("trustedProxies must be a nonempty list of proxy IPs/CIDRs")
+    return " ".join(str(ipaddress.ip_network(value, strict=False)) for value in values)
 
 
 def environment_text(values):
@@ -129,6 +136,9 @@ def main():
         "MUSIC_VOLUME_NAME": name + "_pending",
         "MUSIC_FILESYSTEM": "cifs",
         "HTTP_BIND": config.get("httpBind", "127.0.0.1"),
+        "TRUSTED_PROXY_CIDRS": trusted_proxies(
+            config.get("trustedProxies", ["127.0.0.1/32"])
+        ),
         "HTTP_PORT": int(config.get("httpPort", 8080)),
         "PEER_PORT": int(config.get("peerPort", 50300)),
     }

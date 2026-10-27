@@ -1,3 +1,11 @@
+{
+	servers {
+		trusted_proxies static {$TRUSTED_PROXY_CIDRS:127.0.0.1/32}
+		trusted_proxies_strict
+		client_ip_headers X-Forwarded-For
+	}
+}
+
 :80 {
 	encode gzip
 	route {

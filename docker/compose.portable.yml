@@ -44,6 +44,7 @@ services:
     image: resonance-web:portable
     environment:
       BACKEND_URL: http://backend:5030
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-127.0.0.1/32}
     volumes:
       - web_data:/data
       - web_config:/config

@@ -41,6 +41,12 @@ over that network. Use your HTTPS reverse proxy for Internet access. Soulseek's
 peer port defaults to 50300. Configure the first account in the web UI and supply
 your Soulseek settings there. No account or SMB passwords belong in GitHub.
 
+When an existing HTTPS proxy forwards to this HTTP listener, add its exact IP/CIDR
+to the private JSON trustedProxies list. This preserves the original HTTPS scheme
+and client address for login throttling, pairing URLs and WebSocket origin checks.
+Only loopback is trusted by default; direct LAN clients cannot supply trusted
+forwarded headers.
+
 Docker persists the CIFS volume and remounts it when the stack starts after reboot.
 Its `unless-stopped` containers resume with the Docker daemon. Backend startup
 refuses to index if `/downloads` is not actually CIFS/SMB, and refuses network

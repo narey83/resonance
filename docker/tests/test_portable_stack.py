@@ -49,6 +49,12 @@ class PortableStackTests(unittest.TestCase):
         self.assertEqual(guard.filesystem("/a b/music/song.mp3", mounts), "cifs")
         self.assertEqual(guard.filesystem("/a bc", mounts), "overlay")
 
+    def test_proxy_trust_is_explicit_and_validates_networks(self):
+        self.assertEqual(bootstrap.trusted_proxies(["192.0.2.1"]), "192.0.2.1/32")
+        for value in ([], "private_ranges", ["192.0.2.1; bad"], ["invalid"]):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                bootstrap.trusted_proxies(value)
+
     def test_source_and_environment_injection_rejected(self):
         for source in (
             "/local",
