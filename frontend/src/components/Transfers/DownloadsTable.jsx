@@ -41,6 +41,7 @@ import {
   getFileName,
 } from '../../lib/util';
 import { UsernameLink } from '../Shared';
+import PeerUploadSlots from './PeerUploadSlots';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Ban,
@@ -660,6 +661,7 @@ const UserGroup = ({
               />
             </span>
           </div>
+          <PeerUploadSlots username={user.username} />
           {netInfo && (
             <div className="dl-user-net">
               <span className="dl-user-net-ip">{netInfo.ip}</span>

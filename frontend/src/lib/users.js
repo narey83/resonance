@@ -35,8 +35,11 @@
 
 import api from './api';
 
-export const getInfo = ({ username }) => {
-  return api.get(`/users/${encodeURIComponent(username)}/info`);
+export const getInfo = ({ username, signal, timeout } = {}) => {
+  return api.get(`/users/${encodeURIComponent(username)}/info`, {
+    signal,
+    timeout,
+  });
 };
 
 export const getStatus = ({ username }) => {

@@ -1,3 +1,17 @@
+> **Agent access restriction:** Do not connect to or operate on the old server
+> (`resonance-dev`, `192.168.0.254`), including read-only diagnostics or the helpers
+> below, unless the user explicitly requests access to that server. This applies
+> to all agents. Use `lan-server` (`192.168.0.80`) for current-system work.
+
+> Historical workflow — superseded 27 October 2026. The active system is
+> `192.168.0.80` (`dev-laptop.local`, SSH alias `lan-server`), with checkout
+> `/home/narey/projects/resonance`. It runs the portable `resonance-stack` deployment;
+> see [PORTABLE_STACK.md](PORTABLE_STACK.md) and [AGENTS.md](../AGENTS.md).
+> Persistent state is `/home/narey/.local/share/resonance-stack` (`/config` in the backend).
+> `resonance-dev` / `192.168.0.254` is the old system and music-share host.
+> Its stopped Resonance containers are expected. The commands and paths below
+> describe that old deployment and must not be used for current-system diagnosis.
+
 # Development on ubuntu-server from the Mac
 
 The authoritative source checkout is `/mnt/data/projects/resonance` on `192.168.0.254`. `/home/narey/projects/resonance` points to the same checkout. Edit it using Visual Studio Code's **Remote SSH: Connect to Host → resonance-dev**, then open that folder. The Mac has Microsoft's Remote SSH extension and a dedicated SSH alias/key configured.
