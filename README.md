@@ -204,6 +204,10 @@ Real-time browser and mobile updates travel over SignalR. SQLite or PostgreSQL s
 
 ## Development
 
+For this workspace, GitHub (`narey83/resonance`, `main`) is the source of truth and development takes place in the Mac checkout at `/Users/narey/Projects/resonance`. Preserve local edits before syncing, then commit and push verified work. The former development-server checkout and VS Code Remote SSH workflow are no longer used. See [the agent build guide](.agents/BUILD_AND_DEPLOY.md) for local verification requirements.
+
+Git synchronization does not deploy a running application. The existing server uses native processes; historical Docker deployment instructions apply only to installations that explicitly use that setup. Before using `bin/dev`, check that private `.dev/config.json` selects a local runtime: historical `remote` and `server` modes invoke remote helpers.
+
 Manage the local backend, web UI and mobile Metro server from the repository root:
 
 ```bash

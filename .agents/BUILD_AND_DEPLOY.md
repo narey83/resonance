@@ -2,81 +2,37 @@
 
 Use this page to orient yourself before changing, building or deploying Resonance. `AGENTS.md` remains authoritative for safety and host restrictions.
 
-## Current architecture
+## Current workflow — updated 29 October 2026
 
-- Authoritative checkout: `/home/narey/projects/resonance` on `dev-laptop.local` (`192.168.0.80`, SSH alias `lan-server`).
-- Live Compose project: `resonance-stack`.
-- Runtime containers: `resonance-backend` and `resonance-frontend`.
-- `resonance-frontend` contains the compiled web UI, Caddy and maintenance coordination. There is no active standalone `resonance-caddy` container.
-- Active Compose layers: `docker/compose.portable.yml`, `docker/compose.host-network.yml` and `docker/compose.tls.yml`.
-- Persistent state: `/home/narey/.local/share/resonance-stack`, mounted as `/config` in the backend.
-- Live SQLite data is under that state directory's `data/`. Checkout data and migration snapshots are not live data.
-- Music is mounted at `/downloads` through the application's existing SMB configuration.
-- Mobile is an Expo SDK 57 React Native app with native modules. Expo Go is not a valid test target.
+- GitHub (`narey83/resonance`, `main`) is the source of truth.
+- Work only in `/Users/narey/Projects/resonance` on the Mac.
+- Fetch, preserve local edits, then fast-forward or reconcile with GitHub. Never overwrite unique local work merely to obtain a clean tree.
+- Do not use the checkout on `192.168.0.80` / `dev-laptop.local` / `lan-server`, remote development helpers, VS Code Remote SSH or mobile source mirroring unless the user explicitly resumes that workflow.
+- The reported server runtime is native. Docker/Compose guides remain available for other installations and historical context; they are not the active development or deployment workflow.
+- Preserve application state, databases, credentials, dependencies and native projects. Never print secrets or signed URLs.
+- The old `resonance-dev` / `192.168.0.254` host remains off limits unless the user explicitly requests access. Existing SMB consumption does not authorize administration.
+- Mobile is an Expo SDK 57 React Native app with native modules. Expo Go is not a valid test target. Do not edit mirrored mobile files while a mirror is running.
 
-## Hard boundaries
+## Local verification and human testing
 
-- Never access or administer `resonance-dev` / `192.168.0.254` unless the user explicitly asks. Its SMB service being consumed by the current app does not authorize host access.
-- Never use `bin/dev-remote` for the current system. `.dev/config.json` and `docker/REMOTE_DEVELOPMENT.md` describe the historical workflow.
-- Preserve uncommitted work, application state, databases, credentials, dependencies and native projects.
-- Never print private configuration, credentials, tokens or signed URLs.
-- Do not edit mirrored mobile files while a mirror is running.
+A Git push publishes source; it does not deploy a running service. Do not access a server or change its runtime as part of a Git synchronization request. For implementation changes, build affected targets on the Mac and make the local result available for testing, or report a concrete blocker.
 
-## Definition of done
-
-A source edit is not complete merely because files changed or static checks passed. Build every affected target and make it available for human testing:
-
-| Changed area | Required human-test result |
+| Changed area | Required local verification |
 | --- | --- |
-| `frontend/` only | Production web image rebuilt, live `resonance-frontend` replaced, health checked, and served bundle verified. |
-| Backend/server code | Portable backend image rebuilt and live stack updated; API/container health verified. Rebuild the frontend too when the contract or UI changed. |
-| `mobile/` TypeScript/styles | Current JS served through Metro to an installed compatible development client, or a new native development build installed when Metro is not the chosen test path. |
-| Mobile native dependencies, plugins, permissions or config | New Android/iOS native development build installed; Metro alone is insufficient. |
-| Shared API behavior | Server deployed first, then every affected web/mobile client built against it. |
+| Documentation or Git synchronization only | Review the diff, check referenced paths and Git state. Runtime builds and deployment are not required. |
+| `frontend/` | Relevant tests and lint, production build, then headless interaction and visual checks at desktop and narrow/mobile sizes against the locally served build. Use authenticated state for protected routes. |
+| Backend/server code | Relevant .NET tests and build; exercise changed behavior against the local backend. Include client checks when the API contract changes. |
+| Bridge | Relevant Go/UI tests and build; make the affected native application available for local testing. |
+| `mobile/` TypeScript/styles | Relevant mobile lint/tests and current JS served through Metro to a compatible installed development client, or a new native development build. |
+| Mobile native dependencies, plugins, permissions or config | Build and install the affected Android/iOS development client; Metro alone is insufficient. |
 
-If a platform cannot be built from the current host, say exactly which target remains unavailable and why. Do not describe that target as implemented or ready for testing.
+Inspect the private `.dev/config.json` runtime selector before running `bin/dev`: historical remote/server modes invoke remote helpers. Use local commands only. The README documents local development ports and commands. Do not expose private configuration in diagnostic output.
 
-## Web build and deployment
+If a required tool, browser authentication, platform or local runtime is unavailable, report exactly which check or human-test target remains blocked. Never substitute a successful build or HTTP status for browser verification.
 
-Read `docker/PORTABLE_STACK.md`, then use the supported updater from the authoritative checkout:
+## Deployment
 
-```sh
-python3 docker/update-frontend.py --quick
-```
-
-Use the full updater periodically or when the Caddy build/runtime changed:
-
-```sh
-python3 docker/update-frontend.py
-```
-
-The updater builds production assets, validates Caddy, replaces only the frontend, health-checks it and rolls back on failure. Inspect the private updater log named in its failure output; do not expose secrets from unrelated private configuration.
-
-After success, verify runtime state:
-
-```sh
-docker inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}} {{.Image}}' resonance-frontend
-```
-
-Confirm a distinctive non-secret string or new asset fingerprint exists under `/srv` in the live container. A browser hard refresh may be needed after a new hashed bundle is deployed.
-
-## Backend and portable-stack deployment
-
-Read `docker/PORTABLE_STACK.md`. Use `docker/bootstrap.py` with the existing private configuration so required environment values, mounts, models and health checks are retained. Do not assemble an ad-hoc `docker compose` command without that generated environment.
-
-For a normal stack rebuild/update:
-
-```sh
-python3 docker/bootstrap.py
-```
-
-For inspection without changing runtime state:
-
-```sh
-python3 docker/bootstrap.py --plan
-```
-
-After deployment, verify `resonance-backend` and any rebuilt frontend are running and healthy. Exercise the changed API behavior without printing credentials or response secrets.
+Deployment is separate from Git synchronization and needs an explicit request identifying the target. Use the approved native runtime workflow for that target, preserve private state, and verify the served artifact and changed behavior. Do not use the former development-server checkout or historical Compose updater by default.
 
 ## Mobile human-test flow
 
@@ -105,6 +61,6 @@ Run the documented mobile lint/tests before handoff. Native configuration change
 1. Read `git status --short` and preserve unrelated work.
 2. Identify affected targets: web, backend, Android, iOS, or a combination.
 3. Implement and run focused checks.
-4. Build and deploy/install every affected human-test target.
-5. Verify the live artifact, container/app health, and changed behavior.
+4. Build and serve/install every affected local human-test target; deploy remotely only when explicitly requested.
+5. Verify the local artifact, application health, and changed behavior.
 6. Report exactly what is ready, what was verified, and any platform still blocked.
