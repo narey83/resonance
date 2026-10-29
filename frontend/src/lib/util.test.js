@@ -64,7 +64,7 @@ describe('isRecentlyIndexed', () => {
   const epochTicks = 621_355_968_000_000_000n;
   const ticksAt = (milliseconds) =>
     (epochTicks + BigInt(milliseconds) * 10_000n).toString();
-  const now = Date.UTC(2026, 9, 28, 12);
+  const now = Date.UTC(2_026, 9, 28, 12);
 
   it('marks library items indexed within the last seven days as new', () => {
     expect(utils.isRecentlyIndexed(ticksAt(now - 6 * 86_400_000), now)).toBe(

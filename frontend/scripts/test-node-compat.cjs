@@ -29,7 +29,7 @@ test('ESM resolution preserves missing-file, real-file and directory behaviour',
     };
     assert.equal(
       resolver.defaultResolve('./present.mjs', context).url,
-      pathToFileURL(path.join(root, 'present.mjs')).href,
+      pathToFileURL(fs.realpathSync(path.join(root, 'present.mjs'))).href,
     );
     assert.throws(
       () => resolver.defaultResolve('resonance-nonexistent-package', context),

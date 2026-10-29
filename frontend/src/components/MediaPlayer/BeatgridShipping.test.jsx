@@ -28,9 +28,15 @@ const sizes = [
 ];
 
 describe.each(['docked', 'popout'])('%s beatgrid shipping matrix', (mode) => {
-  it.each(fixtures.map((f) => [f.track.title, f]))(
-    '%s keeps beat/bar positions locked',
-    async (title, fixture) => {
+  // Give each display size its own timeout and cleanup boundary while retaining
+  // every track, zoom, playback position and seek assertion in the matrix.
+  it.each(
+    fixtures.flatMap((fixture) =>
+      sizes.map((size) => ({ title: fixture.track.title, fixture, size })),
+    ),
+  )(
+    '$title at $size.width x $size.height / DPR $size.dpr keeps beat/bar positions locked',
+    async ({ fixture, size, title }) => {
       expect.hasAssertions();
       expect(fixture.track.title).toBe(title);
       const iframe = document.createElement('iframe');
@@ -83,7 +89,6 @@ describe.each(['docked', 'popout'])('%s beatgrid shipping matrix', (mode) => {
           'translate',
         ].map((k) => [k, jest.fn()]),
       );
-      let size = sizes[0];
       const render = async (zoom) => {
         await act(async () => {
           ReactDOM.render(
@@ -115,122 +120,120 @@ describe.each(['docked', 'popout'])('%s beatgrid shipping matrix', (mode) => {
       };
 
       try {
-        for (size of sizes) {
-          Object.defineProperty(win, 'devicePixelRatio', {
-            configurable: true,
-            value: size.dpr,
-          });
-          for (const zoom of WAVEFORM_ZOOMS) {
-            const canvas = await render(zoom);
-            const positions = [
-              0,
-              duration * 0.1,
-              duration * 0.5,
-              duration * 0.9,
-              duration - 0.001,
-            ];
-            // Consecutive video frames plus forward and backward seeks.
-            positions.push(
-              ...Array.from({ length: 12 }, (_, i) => duration * 0.4 + i / 60),
-              duration * 0.2,
+        Object.defineProperty(win, 'devicePixelRatio', {
+          configurable: true,
+          value: size.dpr,
+        });
+        for (const zoom of WAVEFORM_ZOOMS) {
+          const canvas = await render(zoom);
+          const positions = [
+            0,
+            duration * 0.1,
+            duration * 0.5,
+            duration * 0.9,
+            duration - 0.001,
+          ];
+          // Consecutive video frames plus forward and backward seeks.
+          positions.push(
+            ...Array.from({ length: 12 }, (_, i) => duration * 0.4 + i / 60),
+            duration * 0.2,
+          );
+          let frames = 0;
+          for (clock of positions) {
+            for (const mock of Object.values(ctx)) mock?.mockClear?.();
+            act(() => frame());
+            const offset = ctx.translate.mock.calls[0][0];
+            const grid = ctx.moveTo.mock.calls
+              .slice(0, -1)
+              .map((call) => call[0]);
+            const caps = ctx.fillRect.mock.calls.filter(
+              (call) =>
+                call[2] === 8 * Math.max(1, Math.round(size.dpr)) &&
+                call[3] === 5 * Math.max(1, Math.round(size.dpr)),
             );
-            let frames = 0;
-            for (clock of positions) {
-              for (const mock of Object.values(ctx)) mock?.mockClear?.();
-              act(() => frame());
-              const offset = ctx.translate.mock.calls[0][0];
-              const grid = ctx.moveTo.mock.calls
-                .slice(0, -1)
-                .map((call) => call[0]);
-              const caps = ctx.fillRect.mock.calls.filter(
-                (call) =>
-                  call[2] === 8 * Math.max(1, Math.round(size.dpr)) &&
-                  call[3] === 5 * Math.max(1, Math.round(size.dpr)),
-              );
-              const pixelWidth = Math.round(size.width * size.dpr);
-              const dprScale = Math.max(1, Math.round(size.dpr));
-              const barWidth = Math.max(
-                dprScale,
-                Math.ceil(
-                  pixelWidth /
-                    Math.max(1, Math.floor(fixture.waveform.peakCount / zoom)) /
-                    dprScale,
-                ) * dprScale,
-              );
-              const slots = Math.max(1, Math.floor(pixelWidth / barWidth));
-              const span = duration / zoom;
-              const start = Math.max(
-                0,
-                Math.min(duration - span, clock - span / 2),
-              );
-              const scale = (slots * barWidth) / span;
-              const step = beatGridSeconds(
-                waveformBeatBpm(data.beats),
-                scale,
-                8 * Math.max(1, Math.round(size.dpr)),
-              );
-              // At detailed zoom every bar marker must sit on an actual rendered beat.
-              if (
-                step &&
-                Math.round(step / (60 / waveformBeatBpm(data.beats))) === 1
-              ) {
-                for (const cap of caps) {
-                  const x = cap[0] + 3 * Math.max(1, Math.round(size.dpr));
-                  expect(
-                    Math.min(...grid.map((g) => Math.abs(g - x))),
-                  ).toBeLessThan(0.000_001);
-                }
-              }
-
-              // Sparse overview lines must count from the downbeat, not an arbitrary first beat.
-              const stride = Math.round(
-                step / (60 / waveformBeatBpm(data.beats)),
-              );
-              const reference = stride >= 4 ? data.downbeats : data.beats;
-              // All beat lines must resolve to saved timestamps, never an average-BPM sequence.
-              for (const x of grid) {
-                const time = start + (x + offset) / scale;
+            const pixelWidth = Math.round(size.width * size.dpr);
+            const dprScale = Math.max(1, Math.round(size.dpr));
+            const barWidth = Math.max(
+              dprScale,
+              Math.ceil(
+                pixelWidth /
+                  Math.max(1, Math.floor(fixture.waveform.peakCount / zoom)) /
+                  dprScale,
+              ) * dprScale,
+            );
+            const slots = Math.max(1, Math.floor(pixelWidth / barWidth));
+            const span = duration / zoom;
+            const start = Math.max(
+              0,
+              Math.min(duration - span, clock - span / 2),
+            );
+            const scale = (slots * barWidth) / span;
+            const step = beatGridSeconds(
+              waveformBeatBpm(data.beats),
+              scale,
+              8 * Math.max(1, Math.round(size.dpr)),
+            );
+            // At detailed zoom every bar marker must sit on an actual rendered beat.
+            if (
+              step &&
+              Math.round(step / (60 / waveformBeatBpm(data.beats))) === 1
+            ) {
+              for (const cap of caps) {
+                const x = cap[0] + 3 * Math.max(1, Math.round(size.dpr));
                 expect(
-                  Math.min(...reference.map((t) => Math.abs(t - time))),
+                  Math.min(...grid.map((g) => Math.abs(g - x))),
                 ).toBeLessThan(0.000_001);
               }
-
-              expect(canvas.width).toBe(pixelWidth);
-              frames++;
             }
 
-            // Seek clicks use the same visible timeline as the grid.
-            const seekStart = Math.max(
-              0,
-              Math.min(duration - duration / zoom, clock - duration / zoom / 2),
+            // Sparse overview lines must count from the downbeat, not an arbitrary first beat.
+            const stride = Math.round(
+              step / (60 / waveformBeatBpm(data.beats)),
             );
-            canvas.getBoundingClientRect = () => ({
-              left: 0,
-              width: size.width,
-            });
-            Object.defineProperty(canvas, 'setPointerCapture', {
-              configurable: true,
-              value: jest.fn(),
-            });
-            act(() =>
-              Simulate.pointerDown(canvas, {
-                clientX: size.width / 2,
-                pointerId: 1,
-              }),
-            );
-            expect(seek.mock.calls.at(-1)[0]).toBeCloseTo(
-              seekStart + duration / zoom / 2,
-              9,
-            );
-            report.push({
-              track: fixture.track.title,
-              mode,
-              zoom,
-              ...size,
-              frames,
-              gridAligned: true,
-            });
+            const reference = stride >= 4 ? data.downbeats : data.beats;
+            // All beat lines must resolve to saved timestamps, never an average-BPM sequence.
+            for (const x of grid) {
+              const time = start + (x + offset) / scale;
+              expect(
+                Math.min(...reference.map((t) => Math.abs(t - time))),
+              ).toBeLessThan(0.000_001);
+            }
+
+            expect(canvas.width).toBe(pixelWidth);
+            frames++;
           }
+
+          // Seek clicks use the same visible timeline as the grid.
+          const seekStart = Math.max(
+            0,
+            Math.min(duration - duration / zoom, clock - duration / zoom / 2),
+          );
+          canvas.getBoundingClientRect = () => ({
+            left: 0,
+            width: size.width,
+          });
+          Object.defineProperty(canvas, 'setPointerCapture', {
+            configurable: true,
+            value: jest.fn(),
+          });
+          act(() =>
+            Simulate.pointerDown(canvas, {
+              clientX: size.width / 2,
+              pointerId: 1,
+            }),
+          );
+          expect(seek.mock.calls.at(-1)[0]).toBeCloseTo(
+            seekStart + duration / zoom / 2,
+            9,
+          );
+          report.push({
+            track: fixture.track.title,
+            mode,
+            zoom,
+            ...size,
+            frames,
+            gridAligned: true,
+          });
         }
       } finally {
         act(() => {

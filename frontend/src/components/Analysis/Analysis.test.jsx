@@ -166,9 +166,7 @@ describe('analysis folder loading', () => {
     const mode = container.querySelector('.ka-panel select');
     expect(mode.value).toBe('basic');
     await act(async () => {
-      container
-        .querySelector('.ka-panel .ka-btn--primary')
-        .click();
+      container.querySelector('.ka-panel .ka-btn--primary').click();
     });
     expect(analysisApi.startScan).toHaveBeenLastCalledWith(
       expect.objectContaining({ enhanced: false }),
@@ -181,9 +179,7 @@ describe('analysis folder loading', () => {
       enhancedMode.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await act(async () => {
-      container
-        .querySelector('.ka-panel .ka-btn--primary')
-        .click();
+      container.querySelector('.ka-panel .ka-btn--primary').click();
     });
     expect(analysisApi.startScan).toHaveBeenLastCalledWith(
       expect.objectContaining({ enhanced: true }),
