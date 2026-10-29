@@ -185,4 +185,46 @@ describe('Smart crate workflow', () => {
     expect(field(container, 'Crate name').value).toBe('Fresh arrivals copy');
     expect(field(container, 'Added within days').value).toBe('30');
   });
+  it('filters automatic collections and retains analysed-only exclusive rules when copied', async () => {
+    expect.hasAssertions();
+    getCrates.mockResolvedValue([
+      {
+        id: 'auto-bpm',
+        name: '120–<130 BPM',
+        starter: true,
+        collection: 'BPM',
+        rules: {
+          bpmMin: 120,
+          bpmMax: 130,
+          bpmMaxExclusive: true,
+          analysedOnly: true,
+        },
+        trackCount: 2,
+      },
+      {
+        id: 'auto-genre',
+        name: 'Techno',
+        starter: true,
+        collection: 'Genre',
+        rules: { genre: 'Techno', analysedOnly: true },
+        trackCount: 3,
+      },
+    ]);
+    await act(async () => {
+      ReactDOM.render(<SmartCratesView />, container);
+    });
+    await act(async () =>
+      Simulate.click(
+        [...container.querySelectorAll('button')].find(
+          (item) => item.textContent === 'BPM',
+        ),
+      ),
+    );
+    expect(container.textContent).toContain('120–<130 BPM');
+    expect(container.textContent).not.toContain('Techno');
+    await act(async () => Simulate.click(button(container, 'Make a copy')));
+    expect(previewCrate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ bpmMaxExclusive: true, analysedOnly: true }),
+    );
+  });
 });

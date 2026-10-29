@@ -30,16 +30,16 @@
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
 
-export type LibraryTab = 'Artists' | 'Albums' | 'Tracks' | 'Folders' | 'Genres' | 'Years' | 'Playlists' | 'Loved' | 'History';
+export type LibraryTab = 'Artists' | 'Albums' | 'Tracks' | 'Folders' | 'Genres' | 'Years' | 'Playlists' | 'Loved' | 'History' | 'Crates';
 
-export const ALL_TABS: LibraryTab[] = ['Folders', 'Artists', 'Albums', 'Tracks', 'Genres', 'Years', 'Playlists', 'Loved', 'History'];
-const DEFAULT_TABS: LibraryTab[] = ['Folders', 'Artists', 'Albums', 'Tracks', 'Genres', 'Years', 'Playlists', 'Loved', 'History'];
+export const ALL_TABS: LibraryTab[] = ['Folders', 'Artists', 'Albums', 'Tracks', 'Crates', 'Genres', 'Years', 'Playlists', 'Loved', 'History'];
+const DEFAULT_TABS: LibraryTab[] = ['Folders', 'Artists', 'Albums', 'Tracks', 'Crates', 'Genres', 'Years', 'Playlists', 'Loved', 'History'];
 // Both sources expose playlists, backed by independent stores.
-export const LOCAL_TABS: LibraryTab[] = [...ALL_TABS];
-const LOCAL_DEFAULT_TABS: LibraryTab[] = [...DEFAULT_TABS];
+export const LOCAL_TABS: LibraryTab[] = ALL_TABS.filter(tab => tab !== 'Crates');
+const LOCAL_DEFAULT_TABS: LibraryTab[] = DEFAULT_TABS.filter(tab => tab !== 'Crates');
 const STORE_KEY = 'library_settings_v1';
 // Bumped when a new tab is introduced so settings saved before it existed pick it up
-const SETTINGS_VERSION = 3;
+const SETTINGS_VERSION = 4;
 
 type TabSource = 'server' | 'local';
 
@@ -90,7 +90,7 @@ export const useLibrarySettings = create<LibrarySettingsStore>((set, get) => ({
           : parsed.visibleTabs;
         // Pre-split settings had one shared list; seed both sources from it once
         set({
-          visibleTabsServer: sanitizeTabs(parsed.visibleTabsServer ?? legacy, ALL_TABS, DEFAULT_TABS),
+          visibleTabsServer: sanitizeTabs((parsed.version ?? 1) < 4 ? [...(parsed.visibleTabsServer ?? legacy ?? DEFAULT_TABS), 'Crates'] : parsed.visibleTabsServer ?? legacy, ALL_TABS, DEFAULT_TABS),
           visibleTabsLocal: sanitizeTabs((parsed.version ?? 1) < 3 ? [...(parsed.visibleTabsLocal ?? legacy ?? LOCAL_DEFAULT_TABS), 'Playlists'] : parsed.visibleTabsLocal ?? legacy, LOCAL_TABS, LOCAL_DEFAULT_TABS),
           includeLocalLibrary: parsed.includeLocalLibrary ?? false,
           // Merging local and server library views is retired — force off even if a device

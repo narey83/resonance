@@ -42,17 +42,20 @@ namespace resonance.Analysis.Candidates
     using System.Text.Json;
     using System.Threading;
     using System.Threading.Tasks;
+    using Microsoft.AspNetCore.SignalR;
     using resonance.Analysis.Imports;
     using resonance.Common;
+    using resonance.MusicLibrary.API;
     using Serilog;
 
     public record CandidateJob(string JobId, string Status, string LibraryPath, string AudioSha256, long AudioBytes, DateTimeOffset CreatedAt, double? RequestedSeconds, string SourceKind = "independent-candidate");
 
     public class CandidateAnalysisService
     {
-        public CandidateAnalysisService(CandidateAnalysisOptions options, IAnalysisService analysis, AnalysisStore store)
+        public CandidateAnalysisService(CandidateAnalysisOptions options, IAnalysisService analysis, AnalysisStore store, IHubContext<LibraryActivityHub> hub = null)
         {
             Options = options;
+            Hub = hub;
             Analysis = analysis;
             Store = store;
             Resources = options.ResolveResources(
@@ -73,6 +76,8 @@ namespace resonance.Analysis.Candidates
             && Path.IsPathFullyQualified(Options.OutputRoot) && Directory.Exists(Options.OutputRoot);
 
         public CandidateResourcePlan Resources { get; }
+
+        private IHubContext<LibraryActivityHub> Hub { get; }
 
         private AnalysisStore Store { get; }
 
@@ -108,10 +113,10 @@ namespace resonance.Analysis.Candidates
             try
             {
                 var job = await Run(source, request.Seconds, request.Features, ct);
-                if (job.Status == "completed" && job.RequestedSeconds == null)
+                if (job.Status.StartsWith("completed", StringComparison.Ordinal) && job.RequestedSeconds == null)
                 {
                     var saved = await Read(job.JobId, ct);
-                    if (saved.ContentCurrent && saved.Analysis.HasValue && HasEnhanced(saved.Analysis.Value))
+                    if (saved.ContentCurrent && saved.Analysis.HasValue)
                     {
                         CacheDjSummary(path: source, analysis: saved.Analysis.Value, analysisId: job.JobId);
                     }
@@ -334,37 +339,18 @@ namespace resonance.Analysis.Candidates
 
         internal void CacheDjSummary(string path, JsonElement analysis, string analysisId)
         {
-            var features = analysis.GetProperty("features");
-            var scores = features.GetProperty("genre").GetProperty("result").GetProperty("scores").EnumerateArray();
-            var genre = scores.OrderByDescending(score => score.GetProperty("cosine").GetDouble()).FirstOrDefault();
-            double? energy = null;
-            if (features.TryGetProperty("energy", out var feature) && feature.TryGetProperty("result", out var result)
-                && result.TryGetProperty("rms", out var rms) && rms.GetArrayLength() > 0)
+            var summary = CrateAnalysisSummary.Create(analysis, analysisId);
+            if (summary == null)
             {
-                energy = rms.EnumerateArray().Average(value => value.GetDouble());
+                return;
             }
 
-            var voice = features.GetProperty("vocalPresence").GetProperty("result");
-            var vocals = voice.GetProperty("segments").GetArrayLength() > 0;
-            if (voice.TryGetProperty("processedVoice", out var speech) && speech.TryGetProperty("sustainedSegments", out var spans))
-            {
-                vocals |= spans.GetArrayLength() > 0;
-            }
-
-            var arrangement = features.GetProperty("semanticPhrases").GetProperty("result");
-            var automatic = arrangement.TryGetProperty("djStructure", out var dj) && dj.TryGetProperty("automatic", out var auto) && auto.ValueKind == JsonValueKind.True;
-            var neutralPhrases = automatic ? dj.GetProperty("segments").EnumerateArray().Count(segment => segment.GetProperty("label").GetString() == "Transition") : 0;
-            var summary = JsonSerializer.Serialize(new
-            {
-                complete = true, exportReady = ExportAnalysisContract.Ready(analysis), experimental = true, analysisId,
-                genre = genre.ValueKind == JsonValueKind.Object ? genre.GetProperty("label").GetString() : null,
-                energy, energySemantics = "Mean PCM RMS; loudness-based energy proxy", vocals,
-                automaticArrangement = automatic, neutralPhraseCount = neutralPhrases,
-                reviewReason = automatic ? null : "Independent predictions; audition beatgrid and phrase labels",
-            });
             lock (SummaryGate)
             {
-                Store.SaveDjSummary(path, summary);
+                if (Store.SaveDjSummary(path, summary))
+                {
+                    _ = Hub?.BroadcastLibraryUpdatedAsync(0, 1, 0);
+                }
             }
         }
 

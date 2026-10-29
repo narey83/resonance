@@ -525,6 +525,7 @@ const SmartCratesView = (trackActions) => {
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
   const [selectedId, setSelectedId] = useState(null);
+  const [collection, setCollection] = useState('All');
   const [editor, setEditor] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const refresh = useCallback(() => setRevision((n) => n + 1), []);
@@ -646,85 +647,129 @@ const SmartCratesView = (trackActions) => {
         </div>
       )}
       {loading && <p role="status">Loading your crates…</p>}
-      <div className="smart-crate-grid">
-        {crates.map((crate) => (
-          <article
-            className="smart-crate-card"
-            key={crate.id}
+      <div
+        aria-label="Crate collections"
+        className="crate-editor-actions"
+      >
+        {['All', 'Genre', 'Key', 'BPM', 'Saved'].map((group) => (
+          <button
+            aria-pressed={collection === group}
+            className={`jb-btn${collection === group ? ' jb-btn--primary' : ''}`}
+            key={group}
+            onClick={() => setCollection(group)}
+            type="button"
           >
-            <button
-              aria-label={`Open ${crate.name}`}
-              className="smart-crate-open"
-              onClick={() => setSelectedId(crate.id)}
-              type="button"
+            {group}
+          </button>
+        ))}
+      </div>
+      {!loading &&
+        !error &&
+        !crates.some(
+          (crate) =>
+            collection === 'All' ||
+            (collection === 'Saved'
+              ? !crate.collection
+              : crate.collection === collection),
+        ) && (
+          <p role="status">
+            No matching collections yet. Analyse tracks to populate Genre, Key
+            and BPM.
+          </p>
+        )}
+      <div className="smart-crate-grid">
+        {crates
+          .filter(
+            (crate) =>
+              collection === 'All' ||
+              (collection === 'Saved'
+                ? !crate.collection
+                : crate.collection === collection),
+          )
+          .map((crate) => (
+            <article
+              className="smart-crate-card"
+              key={crate.id}
             >
-              <div className="smart-crate-top">
-                <span className="smart-crate-icon">
-                  <Layers3 size={22} />
-                </span>
-                <span>{crate.trackCount ?? '—'} tracks</span>
-                <ArrowUpRight size={17} />
-              </div>
-              <h3>{crate.name}</h3>
-              <p>{crate.description || 'A collection shaped by your rules.'}</p>
-              <div className="workspace-rule-chips">
-                {crateRuleLabels(crate.rules)
-                  .slice(0, 3)
-                  .map((label) => (
-                    <span key={label}>{label}</span>
-                  ))}
-              </div>
-            </button>
-            <footer>
-              <span>
-                {crate.starter ? 'Starter crate' : 'Your smart crate'}
-              </span>
               <button
-                aria-label={`${crate.starter ? 'Duplicate' : 'Edit'} ${crate.name}`}
-                onClick={() =>
-                  setEditor(
-                    crate.starter
-                      ? { ...crate, id: null, name: `${crate.name} copy` }
-                      : crate,
-                  )
-                }
+                aria-label={`Open ${crate.name}`}
+                className="smart-crate-open"
+                onClick={() => setSelectedId(crate.id)}
                 type="button"
               >
-                {crate.starter ? <Copy size={14} /> : <Pencil size={14} />}
-                {crate.starter ? 'Make a copy' : 'Edit'}
+                <div className="smart-crate-top">
+                  <span className="smart-crate-icon">
+                    <Layers3 size={22} />
+                  </span>
+                  <span>{crate.trackCount ?? '—'} tracks</span>
+                  <ArrowUpRight size={17} />
+                </div>
+                <h3>{crate.name}</h3>
+                <p>
+                  {crate.description || 'A collection shaped by your rules.'}
+                </p>
+                <div className="workspace-rule-chips">
+                  {crateRuleLabels(crate.rules)
+                    .slice(0, 3)
+                    .map((label) => (
+                      <span key={label}>{label}</span>
+                    ))}
+                </div>
               </button>
-              {!crate.starter && (
+              <footer>
+                <span>
+                  {crate.collection
+                    ? `Automatic ${crate.collection} collection`
+                    : crate.starter
+                      ? 'Starter crate'
+                      : 'Your smart crate'}
+                </span>
                 <button
-                  aria-label={`Delete ${crate.name}`}
-                  onClick={() => setDeleting(crate.id)}
+                  aria-label={`${crate.starter ? 'Duplicate' : 'Edit'} ${crate.name}`}
+                  onClick={() =>
+                    setEditor(
+                      crate.starter
+                        ? { ...crate, id: null, name: `${crate.name} copy` }
+                        : crate,
+                    )
+                  }
                   type="button"
                 >
-                  <Trash2 size={14} />
+                  {crate.starter ? <Copy size={14} /> : <Pencil size={14} />}
+                  {crate.starter ? 'Make a copy' : 'Edit'}
                 </button>
+                {!crate.starter && (
+                  <button
+                    aria-label={`Delete ${crate.name}`}
+                    onClick={() => setDeleting(crate.id)}
+                    type="button"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </footer>
+              {deleting === crate.id && (
+                <div className="crate-delete-confirm">
+                  <p>Delete this crate? Its tracks stay in your library.</p>
+                  <button
+                    className="jb-btn"
+                    onClick={() => remove(crate)}
+                    type="button"
+                  >
+                    Delete crate
+                  </button>
+                  <button
+                    aria-label="Cancel deletion"
+                    className="jb-btn"
+                    onClick={() => setDeleting(null)}
+                    type="button"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
               )}
-            </footer>
-            {deleting === crate.id && (
-              <div className="crate-delete-confirm">
-                <p>Delete this crate? Its tracks stay in your library.</p>
-                <button
-                  className="jb-btn"
-                  onClick={() => remove(crate)}
-                  type="button"
-                >
-                  Delete crate
-                </button>
-                <button
-                  aria-label="Cancel deletion"
-                  className="jb-btn"
-                  onClick={() => setDeleting(null)}
-                  type="button"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            )}
-          </article>
-        ))}
+            </article>
+          ))}
       </div>
       <div className="workspace-footnote">
         <Layers3 size={17} />

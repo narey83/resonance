@@ -1,3 +1,4 @@
+import SmartCratesTab from './SmartCratesTab';
 import NewLibraryBadge from '../../components/NewLibraryBadge';
 import { isRecentlyIndexed } from '../../lib/recentLibraryItems';
 import { LocalPlaylists, LocalPlaylistPicker } from '../../components/LocalPlaylists';
@@ -3108,6 +3109,7 @@ function LibraryHome({ navigation }: HomeProps) {
       {tab === 'Artists'   && <ArtistsTab />}
       {tab === 'Albums'    && <AlbumsTab />}
       {tab === 'Tracks'    && <TracksTab />}
+      {tab === 'Crates'    && <SmartCratesTab />}
       {tab === 'Loved'     && <LovedTab />}
       {tab === 'History'   && <HistoryTab />}
       {tab === 'Folders'   && <FoldersTab />}

@@ -251,6 +251,58 @@ public class WorkspaceTests : IDisposable
         Assert.ThrowsAny<DbException>(()=>mixtapes.InsertSnapshot(mixtape with {Id=brokenId},[brokenTrack,brokenTrack]));
         Assert.Null(mixtapes.GetById(brokenId));Assert.Empty(mixtapes.GetTracks(brokenId));
     }
+    [Fact] public void AutomaticCollectionsAppearAfterBasicResultsWithoutEnhancedAnalysis()
+    {
+        Add();
+        Assert.Empty(repository.AutomaticCrates());
+        Complete("nested/a.mp3", false);
+        var crates = repository.AutomaticCrates();
+        Assert.Equal(new[] { "BPM", "Genre", "Key" }, crates.Select(crate => crate.Collection).Order().ToArray());
+        Assert.All(crates, crate => Assert.Equal(1, Query(crate.Rules).Total));
+        Assert.All(crates, crate => Assert.Equal(1, crate.TrackCount));
+        var injected = new WorkspaceStore(new(new Dictionary<Database,ConnectionString> { [Database.Music]=connection },postgres), repository);
+        Assert.Equal(3, injected.ListCrates("alice").Count(crate => crate.Collection != null));
+    }
+
+    [Fact] public void EnhancedOnlyFactsPopulateCollectionsAndNeverInventVocals()
+    {
+        var track = Add() with { Bpm = null, Key = null!, Genre = null! };
+        repository.Upsert(track);
+        using var db = Db();
+        db.Execute($"INSERT INTO {CacheTable} (masked_filename,file_size,analysed_at,dj_summary) VALUES (@path,100,@now,@summary)",
+            new { path="nested/a.mp3", now=Now, summary="{\"complete\":false,\"genre\":\"Techno\",\"key\":\"Am\",\"bpm\":130.1}" });
+        var crates = repository.AutomaticCrates();
+        Assert.Equal(3, crates.Count);
+        Assert.All(crates, crate => Assert.Equal(crate.TrackCount, Query(crate.Rules).Total));
+        Assert.Equal(0, Query(new(Vocals:"no")).Total);
+        Assert.Equal(1, Query(new(Keys:["am"])).Total);
+    }
+
+    [Fact] public void TempoCollectionsHaveExclusiveUpperBoundsAndExcludeChangedFiles()
+    {
+        Add("nested/a.mp3",129); Complete("nested/a.mp3",false);
+        Add("nested/b.mp3",130); Complete("nested/b.mp3",false);
+        var tempo = repository.AutomaticCrates().Where(crate => crate.Collection == "BPM").ToArray();
+        Assert.Equal(2, tempo.Length);
+        Assert.All(tempo, crate => Assert.Equal(1, Query(crate.Rules).Total));
+        var first = tempo.Single(crate => crate.Rules.BpmMin == 120);
+        Assert.True(first.Rules.BpmMaxExclusive);
+        repository.Upsert(Add("nested/a.mp3",129) with { FileSize = 101 });
+        Assert.DoesNotContain(repository.AutomaticCrates(), crate => crate.Id == first.Id);
+    }
+
+    [Fact] public void ReanalysisUpdatesMembershipWithoutSavingCratesAgain()
+    {
+        var track = Add() with { Bpm = null, Key = null! };
+        repository.Upsert(track); Complete("nested/a.mp3",false);
+        using var db = Db();
+        db.Execute($"UPDATE {CacheTable} SET detected_bpm=128,detected_key='Am' WHERE masked_filename='nested/a.mp3'");
+        var old = repository.AutomaticCrates().Single(crate => crate.Collection == "BPM");
+        db.Execute($"UPDATE {CacheTable} SET detected_bpm=142,detected_key='C' WHERE masked_filename='nested/a.mp3'");
+        Assert.Equal(0, Query(old.Rules).Total);
+        Assert.Contains(repository.AutomaticCrates(), crate => crate.Collection == "BPM" && crate.Rules.BpmMin == 140);
+    }
+
     public void Dispose() { SqliteConnection.ClearAllPools();Directory.Delete(root,true);MusicPath.Configure(previousRoot); }
     private class FakeAnalysis : IAnalysisService
     {

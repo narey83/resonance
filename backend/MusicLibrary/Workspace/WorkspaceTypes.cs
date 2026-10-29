@@ -39,7 +39,7 @@ public record SmartCrateRules(
     double? BpmMin = null, double? BpmMax = null, string[] Keys = null,
     string Genre = null, string Energy = null, string Vocals = null,
     int? AddedWithinDays = null, int? NotPlayedWithinDays = null,
-    bool NeverPlayed = false, bool LovedOnly = false, string Analysis = null, string Folder = null)
+    bool NeverPlayed = false, bool LovedOnly = false, string Analysis = null, string Folder = null, bool AnalysedOnly = false, bool BpmMaxExclusive = false)
 {
     public SmartCrateRules Validated()
     {
@@ -81,10 +81,10 @@ public record SmartCrateRules(
         BpmMin, BpmMax, Keys, Energy, Vocals,
         AddedAfter: AddedWithinDays.HasValue ? now.AddDays(-AddedWithinDays.Value).ToUnixTimeMilliseconds() : null,
         NotPlayedSince: NotPlayedWithinDays.HasValue ? now.AddDays(-NotPlayedWithinDays.Value).ToUnixTimeMilliseconds() : null,
-        NeverPlayed: NeverPlayed, LovedOnly: LovedOnly, Username: username);
+        NeverPlayed: NeverPlayed, LovedOnly: LovedOnly, Username: username, AnalysedOnly: AnalysedOnly, BpmMaxExclusive: BpmMaxExclusive);
 }
 
-public record SmartCrate(string Id, string Name, string Description, SmartCrateRules Rules, long Revision, bool Starter = false);
+public record SmartCrate(string Id, string Name, string Description, SmartCrateRules Rules, long Revision, bool Starter = false, string Collection = null, int? TrackCount = null);
 public record SaveCrateRequest(string Name, string Description, SmartCrateRules Rules, long Revision = 0)
 {
     public SaveCrateRequest Validated()

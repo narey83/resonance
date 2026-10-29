@@ -111,7 +111,7 @@ namespace resonance.MusicLibrary
     }
 
     public record DjLibraryFilters(double? BpmMin = null, double? BpmMax = null, string[] Keys = null, string Energy = null, string Vocals = null, string[] Paths = null,
-        long? AddedAfter = null, long? NotPlayedSince = null, bool NeverPlayed = false, bool LovedOnly = false, string Username = null);
+        long? AddedAfter = null, long? NotPlayedSince = null, bool NeverPlayed = false, bool LovedOnly = false, string Username = null, bool AnalysedOnly = false, bool BpmMaxExclusive = false);
 
     public record MusicGenre(string Genre, int TrackCount, double? TotalDuration);
     public record MusicKey(string Key, int TrackCount);

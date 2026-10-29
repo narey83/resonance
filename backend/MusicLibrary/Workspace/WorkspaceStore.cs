@@ -46,10 +46,12 @@ public partial class WorkspaceStore
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly ConnectionStringDictionary connections;
     private readonly bool postgres;
+    private readonly MusicRepository repository;
 
-    public WorkspaceStore(ConnectionStringDictionary connections)
+    public WorkspaceStore(ConnectionStringDictionary connections, MusicRepository repository = null)
     {
         this.connections = connections;
+        this.repository = repository;
         postgres = connections.UsePostgres;
         using var db = Open();
         if (postgres)
@@ -99,7 +101,7 @@ public partial class WorkspaceStore
     public IReadOnlyList<SmartCrate> ListCrates(string username)
     {
         using var db = Open();
-        return Starters.Concat(db.Query<CrateRow>($"SELECT id AS Id, name AS Name, description AS Description, rules AS Rules, revision AS Revision FROM {Crates} WHERE username=@username ORDER BY LOWER(name), id", new { username }).Select(Crate)).ToArray();
+        return (repository?.AutomaticCrates() ?? Array.Empty<SmartCrate>()).Concat(Starters).Concat(db.Query<CrateRow>($"SELECT id AS Id, name AS Name, description AS Description, rules AS Rules, revision AS Revision FROM {Crates} WHERE username=@username ORDER BY LOWER(name), id", new { username }).Select(Crate)).ToArray();
     }
 
     public SmartCrate FindCrate(string username, string id) => ListCrates(username).FirstOrDefault(row => row.Id == id);

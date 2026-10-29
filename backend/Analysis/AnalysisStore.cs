@@ -35,6 +35,7 @@ namespace resonance.Analysis
     using System.IO;
     using System.Linq;
     using System.Text.Json;
+    using System.Text.Json.Nodes;
     using Npgsql;
     using resonance.Common;
     using Serilog;
@@ -62,23 +63,45 @@ namespace resonance.Analysis
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Analysis);
 
         // Compact, content-guarded DJ metadata for paged collection queries.
-        public void SaveDjSummary(string path, string json)
+        public bool SaveDjSummary(string path, string json)
         {
             var size = new FileInfo(MusicPath.ToAbsolute(path)).Length;
             using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
+
+            // A failed optional feature must not erase its last successful fact for the same file.
+            using (var previous = conn.CreateCommand())
+            {
+                previous.CommandText = $"SELECT dj_summary FROM {Table} WHERE masked_filename=@path AND file_size=@size";
+                AddParam(previous, "@path", Key(path));
+                AddParam(previous, "@size", size);
+                if (previous.ExecuteScalar() is string priorJson)
+                {
+                    var prior = JsonNode.Parse(priorJson);
+                    var next = JsonNode.Parse(json);
+                    foreach (var fact in new[] { "bpm", "key", "genre", "energy", "vocals" })
+                    {
+                        if (next[fact] == null && prior[fact] != null)
+                        {
+                            next[fact] = prior[fact].DeepClone();
+                        }
+                    }
+
+                    json = next.ToJsonString();
+                }
+            }
 
             // Enhanced analysis can finish before the separate native analysis queue.
             // Keep the native metric columns empty; their readiness checks still apply.
             cmd.CommandText = $@"INSERT INTO {Table} (masked_filename, file_size, analysed_at, dj_summary)
                 VALUES (@path, @size, @at, @json)
                 ON CONFLICT (masked_filename) DO UPDATE SET dj_summary = excluded.dj_summary
-                WHERE {Table}.file_size = excluded.file_size";
+                WHERE {Table}.file_size = excluded.file_size AND {Table}.dj_summary IS DISTINCT FROM excluded.dj_summary";
             AddParam(cmd, "@at", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
             AddParam(cmd, "@json", json);
             AddParam(cmd, "@path", Key(path));
             AddParam(cmd, "@size", size);
-            cmd.ExecuteNonQuery();
+            return cmd.ExecuteNonQuery() > 0;
         }
 
         public IReadOnlyList<(string Path, string AnalysisId)> ExportReferences()
@@ -220,23 +243,24 @@ namespace resonance.Analysis
                 VALUES (@m, @s, @n, @op, @lp, @mp, @hp, @wd, @sr, @wv, @lufs, @tp, @lra, @bo, @bts, @dbo, @dbc, @bpm, @key, @t)
                 ON CONFLICT(masked_filename) DO UPDATE SET
                     file_size            = EXCLUDED.file_size,
-                    num_bars             = COALESCE(EXCLUDED.num_bars,             {Table}.num_bars),
-                    overall_peaks        = COALESCE(EXCLUDED.overall_peaks,        {Table}.overall_peaks),
-                    low_peaks            = COALESCE(EXCLUDED.low_peaks,            {Table}.low_peaks),
-                    mid_peaks            = COALESCE(EXCLUDED.mid_peaks,            {Table}.mid_peaks),
-                    high_peaks           = COALESCE(EXCLUDED.high_peaks,           {Table}.high_peaks),
-                    waveform_duration_seconds = COALESCE(EXCLUDED.waveform_duration_seconds, {Table}.waveform_duration_seconds),
-                    sample_rate          = COALESCE(EXCLUDED.sample_rate,          {Table}.sample_rate),
-                    waveform_version     = COALESCE(EXCLUDED.waveform_version,     {Table}.waveform_version),
-                    lufs                 = COALESCE(EXCLUDED.lufs,                 {Table}.lufs),
-                    true_peak            = COALESCE(EXCLUDED.true_peak,            {Table}.true_peak),
-                    lra                  = COALESCE(EXCLUDED.lra,                  {Table}.lra),
-                    beat_offset_seconds  = COALESCE(EXCLUDED.beat_offset_seconds,  {Table}.beat_offset_seconds),
-                    beats                = COALESCE(EXCLUDED.beats,                {Table}.beats),
-                    downbeat_offset_seconds = COALESCE(EXCLUDED.downbeat_offset_seconds, {Table}.downbeat_offset_seconds),
-                    downbeat_confidence  = COALESCE(EXCLUDED.downbeat_confidence,  {Table}.downbeat_confidence),
-                    detected_bpm         = COALESCE(EXCLUDED.detected_bpm, {Table}.detected_bpm),
-                    detected_key         = COALESCE(EXCLUDED.detected_key, {Table}.detected_key),
+                    num_bars             = COALESCE(EXCLUDED.num_bars, CASE WHEN {Table}.file_size = EXCLUDED.file_size THEN {Table}.num_bars END),
+                    overall_peaks        = COALESCE(EXCLUDED.overall_peaks, CASE WHEN {Table}.file_size = EXCLUDED.file_size THEN {Table}.overall_peaks END),
+                    low_peaks            = COALESCE(EXCLUDED.low_peaks, CASE WHEN {Table}.file_size = EXCLUDED.file_size THEN {Table}.low_peaks END),
+                    mid_peaks            = COALESCE(EXCLUDED.mid_peaks, CASE WHEN {Table}.file_size = EXCLUDED.file_size THEN {Table}.mid_peaks END),
+                    high_peaks           = COALESCE(EXCLUDED.high_peaks, CASE WHEN {Table}.file_size = EXCLUDED.file_size THEN {Table}.high_peaks END),
+                    waveform_duration_seconds = COALESCE(EXCLUDED.waveform_duration_seconds, CASE WHEN {Table}.file_size = EXCLUDED.file_size THEN {Table}.waveform_duration_seconds END),
+                    sample_rate          = COALESCE(EXCLUDED.sample_rate, CASE WHEN {Table}.file_size = EXCLUDED.file_size THEN {Table}.sample_rate END),
+                    waveform_version     = COALESCE(EXCLUDED.waveform_version, CASE WHEN {Table}.file_size = EXCLUDED.file_size THEN {Table}.waveform_version END),
+                    lufs                 = COALESCE(EXCLUDED.lufs, CASE WHEN {Table}.file_size = EXCLUDED.file_size THEN {Table}.lufs END),
+                    true_peak            = COALESCE(EXCLUDED.true_peak, CASE WHEN {Table}.file_size = EXCLUDED.file_size THEN {Table}.true_peak END),
+                    lra                  = COALESCE(EXCLUDED.lra, CASE WHEN {Table}.file_size = EXCLUDED.file_size THEN {Table}.lra END),
+                    beat_offset_seconds  = COALESCE(EXCLUDED.beat_offset_seconds, CASE WHEN {Table}.file_size = EXCLUDED.file_size THEN {Table}.beat_offset_seconds END),
+                    beats                = COALESCE(EXCLUDED.beats, CASE WHEN {Table}.file_size = EXCLUDED.file_size THEN {Table}.beats END),
+                    downbeat_offset_seconds = COALESCE(EXCLUDED.downbeat_offset_seconds, CASE WHEN {Table}.file_size = EXCLUDED.file_size THEN {Table}.downbeat_offset_seconds END),
+                    downbeat_confidence  = COALESCE(EXCLUDED.downbeat_confidence, CASE WHEN {Table}.file_size = EXCLUDED.file_size THEN {Table}.downbeat_confidence END),
+                    detected_bpm         = COALESCE(EXCLUDED.detected_bpm, CASE WHEN {Table}.file_size = EXCLUDED.file_size THEN {Table}.detected_bpm END),
+                    detected_key         = COALESCE(EXCLUDED.detected_key, CASE WHEN {Table}.file_size = EXCLUDED.file_size THEN {Table}.detected_key END),
+                    dj_summary           = CASE WHEN {Table}.file_size = EXCLUDED.file_size THEN {Table}.dj_summary END,
                     analysed_at          = EXCLUDED.analysed_at";
 
             var w = result.Waveform;

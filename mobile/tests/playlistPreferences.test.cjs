@@ -14,7 +14,7 @@ test('old Mixtapes tab settings migrate to Playlists without duplicates and enab
   }) });
   const store = loadStore('src/store/librarySettingsStore.ts', storage).useLibrarySettings;
   await store.getState().load();
-  assert.deepEqual(store.getState().visibleTabsServer, ['Folders', 'Playlists', 'Loved']);
+  assert.deepEqual(store.getState().visibleTabsServer, ['Folders', 'Crates', 'Playlists', 'Loved']);
   assert.deepEqual(store.getState().visibleTabsLocal, ['Folders', 'Playlists', 'Loved']);
   await store.getState().setVisibleTabs(['Folders', 'Playlists'], 'server');
   const restored = loadStore('src/store/librarySettingsStore.ts', storage).useLibrarySettings;
@@ -28,7 +28,7 @@ test('renaming preserves a deliberately hidden playlists tab', async () => {
   }) });
   const store = loadStore('src/store/librarySettingsStore.ts', storage).useLibrarySettings;
   await store.getState().load();
-  assert.deepEqual(store.getState().visibleTabsServer, ['Folders', 'Loved']);
+  assert.deepEqual(store.getState().visibleTabsServer, ['Folders', 'Crates', 'Loved']);
 });
 
 test('saved playlist tile sizes migrate while newer preferences take precedence', async () => {
@@ -44,5 +44,13 @@ test('saved playlist tile sizes migrate while newer preferences take precedence'
 test('version 3 preserves a deliberately hidden device playlists tab', async () => {
   const store = loadStore('src/store/librarySettingsStore.ts', secureStorage({ library_settings_v1: JSON.stringify({ version: 3, visibleTabsLocal: ['Folders', 'Loved'] }) })).useLibrarySettings;
   await store.getState().load();
+  assert.deepEqual(store.getState().visibleTabsLocal, ['Folders', 'Loved']);
+});
+
+ test('version 4 respects hidden server crates and never exposes them for device files', async () => {
+  const storage = secureStorage({ library_settings_v1: JSON.stringify({ version: 4, visibleTabsServer: ['Folders', 'Loved'], visibleTabsLocal: ['Folders', 'Crates', 'Loved'] }) });
+  const store = loadStore('src/store/librarySettingsStore.ts', storage).useLibrarySettings;
+  await store.getState().load();
+  assert.deepEqual(store.getState().visibleTabsServer, ['Folders', 'Loved']);
   assert.deepEqual(store.getState().visibleTabsLocal, ['Folders', 'Loved']);
 });

@@ -44,7 +44,9 @@ export const workspaceError = (error) =>
 export const crateRuleLabels = (rules = {}) => {
   const labels = [];
   if (rules.bpmMin || rules.bpmMax)
-    labels.push(`${rules.bpmMin || '20'}–${rules.bpmMax || '400'} BPM`);
+    labels.push(
+      `${rules.bpmMin || '20'}–${rules.bpmMaxExclusive ? '<' : ''}${rules.bpmMax || '400'} BPM`,
+    );
   if (rules.keys?.length) labels.push(`Keys: ${rules.keys.join(', ')}`);
   if (rules.genre) labels.push(rules.genre);
   if (rules.vocals)
@@ -65,12 +67,15 @@ export const crateRuleLabels = (rules = {}) => {
         incomplete: 'Basic analysis incomplete',
       }[rules.analysis],
     );
+  if (rules.analysedOnly) labels.push('Saved analysis available');
   if (rules.folder)
     labels.push(`Folder: ${rules.folder.split(/[/\\]/).filter(Boolean).pop()}`);
   return labels.length ? labels : ['All tracks'];
 };
 
 export const formRules = (form) => ({
+  analysedOnly: Boolean(form.analysedOnly),
+  bpmMaxExclusive: Boolean(form.bpmMaxExclusive),
   bpmMin: form.bpmMin === '' ? null : Number(form.bpmMin),
   bpmMax: form.bpmMax === '' ? null : Number(form.bpmMax),
   keys: form.key

@@ -61,7 +61,8 @@ public class WorkspaceController(WorkspaceStore store, MusicRepository repositor
             Rules=ClientRules(crate.Rules),
             crate.Revision,
             crate.Starter,
-            trackCount = Query(crate.Rules).Total,
+            crate.Collection,
+            trackCount = crate.TrackCount ?? Query(crate.Rules).Total,
         }),
     });
     [HttpGet("crates/{id}/tracks")]

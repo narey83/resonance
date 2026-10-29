@@ -113,6 +113,63 @@ public class BridgeExportReadinessTests
     }
 
     [Fact]
+    public void PartialReanalysisPreservesSuccessfulFactsButCannotGrantExportReadiness()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "crate-facts-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var path = Path.Combine(directory, "track.mp3");
+            File.WriteAllBytes(path, new byte[10]);
+            var connectionString = "Data Source=" + Path.Combine(directory, "analysis.db") + ";Pooling=False";
+            var store = new AnalysisStore(connectionString, usePostgres: false);
+            Assert.True(store.SaveDjSummary(path, """{"genre":"Techno","key":"Am","bpm":128,"vocals":false,"exportReady":true,"analysisId":"first"}"""));
+            var partial = """{"genre":null,"key":"C","bpm":null,"vocals":null,"complete":false,"exportReady":false,"analysisId":"second"}""";
+            Assert.True(store.SaveDjSummary(path, partial));
+            Assert.False(store.SaveDjSummary(path, partial));
+            using var db = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
+            db.Open();
+            using var command = db.CreateCommand();
+            command.CommandText = "SELECT dj_summary FROM track_analysis";
+            using var summary = JsonDocument.Parse((string)command.ExecuteScalar()!);
+            Assert.Equal("Techno", summary.RootElement.GetProperty("genre").GetString());
+            Assert.Equal("C", summary.RootElement.GetProperty("key").GetString());
+            Assert.Equal(128, summary.RootElement.GetProperty("bpm").GetInt32());
+            Assert.False(summary.RootElement.GetProperty("vocals").GetBoolean());
+            Assert.Null(store.ExportReferenceFor(path));
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Fact]
+    public void BasicAnalysisOfReplacementAudioCannotReviveOldCrateFacts()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "crate-replaced-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var path = Path.Combine(directory, "track.mp3");
+            File.WriteAllBytes(path, new byte[10]);
+            var connectionString = "Data Source=" + Path.Combine(directory, "analysis.db") + ";Pooling=False";
+            var store = new AnalysisStore(connectionString, usePostgres: false);
+            store.Save(path, new AnalysisResult(Bpm:128, Key:"Am"));
+            store.SaveDjSummary(path, """{"genre":"Techno","exportReady":true,"analysisId":"old"}""");
+            File.WriteAllBytes(path, new byte[11]);
+            store.Save(path, new AnalysisResult(Bpm:140));
+            using var db = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
+            db.Open();
+            using var command = db.CreateCommand();
+            command.CommandText = "SELECT detected_bpm, detected_key, dj_summary FROM track_analysis";
+            using var reader = command.ExecuteReader();
+            Assert.True(reader.Read());
+            Assert.Equal(140, reader.GetInt32(0));
+            Assert.True(reader.IsDBNull(1));
+            Assert.True(reader.IsDBNull(2));
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Fact]
     public void ExportReferencesSkipIncompleteAndMalformedSummaries()
     {
         var directory = Path.Combine(Path.GetTempPath(), "bridge-readiness-" + Guid.NewGuid().ToString("N"));

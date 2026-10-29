@@ -38,7 +38,8 @@ namespace resonance.MusicLibrary
     using Npgsql;
     using resonance.Common;
 
-    public class MusicRepository
+    /// <summary>Queries and indexes the music library.</summary>
+    public partial class MusicRepository
     {
         // The A-Z rail buckets a row by the first character of its trimmed value, uppercased;
         // anything outside A-Z falls under '#'. Spelled out as an IN list rather than
@@ -64,8 +65,8 @@ namespace resonance.MusicLibrary
         private string TA => UsePostgres ? "analysis.track_analysis" : "track_analysis";
 
         // Preserve explicit tags; expose no-tag-write analysis in normal library rows.
-        private string CachedBpm => $"COALESCE(NULLIF({T}.bpm, 0), (SELECT c.detected_bpm FROM {TA} c WHERE {CacheMatch("c")}))";
-        private string CachedKey => $"COALESCE(NULLIF({T}.key_sig, ''), (SELECT c.detected_key FROM {TA} c WHERE {CacheMatch("c")}))";
+        private string CachedBpm => $"COALESCE(NULLIF({T}.bpm, 0), (SELECT c.detected_bpm FROM {TA} c WHERE {CacheMatch("c")}), CAST(ROUND(CAST({SummaryFact("bpm")} AS DOUBLE PRECISION)) AS INTEGER))";
+        private string CachedKey => $"COALESCE(NULLIF({T}.key_sig, ''), (SELECT c.detected_key FROM {TA} c WHERE {CacheMatch("c")}), {SummaryFact("key")})";
 
         // Case-insensitive LIKE operator
         private string Like => UsePostgres ? "ILIKE" : "LIKE";
@@ -448,7 +449,7 @@ namespace resonance.MusicLibrary
 
             if (hasGenre)
             {
-                conditions.Add(UsePostgres ? $"({IEq("genre")} @genre OR LOWER((SELECT c.dj_summary::jsonb->>'genre' FROM {TA} c WHERE {CacheMatch("c")})) = LOWER(@genre))" : $"({IEq("genre")} @genre OR LOWER((SELECT json_extract(c.dj_summary,'$.genre') FROM {TA} c WHERE {CacheMatch("c")})) = LOWER(@genre))");
+                conditions.Add(UsePostgres ? $"(LOWER(TRIM(genre)) = LOWER(TRIM(@genre)) OR LOWER(TRIM((SELECT c.dj_summary::jsonb->>'genre' FROM {TA} c WHERE {CacheMatch("c")}))) = LOWER(TRIM(@genre)))" : $"(LOWER(TRIM(genre)) = LOWER(TRIM(@genre)) OR LOWER(TRIM((SELECT json_extract(c.dj_summary,'$.genre') FROM {TA} c WHERE {CacheMatch("c")}))) = LOWER(TRIM(@genre)))");
             }
 
             if (hasYear)
@@ -491,6 +492,11 @@ namespace resonance.MusicLibrary
                 conditions.Add($"{IEq(CachedKey)} @key");
             }
 
+            if (dj?.AnalysedOnly == true)
+            {
+                conditions.Add(CrateAnalysisExists);
+            }
+
             var summary = $"(SELECT c.dj_summary FROM {TA} c WHERE {CacheMatch("c")})";
             if (dj?.AddedAfter.HasValue == true)
             {
@@ -522,12 +528,12 @@ namespace resonance.MusicLibrary
 
             if (dj?.BpmMax is double max)
             {
-                conditions.Add($"{CachedBpm} <= @bpmMax");
+                conditions.Add($"{CachedBpm} {(dj.BpmMaxExclusive ? "<" : "<=")} @bpmMax");
             }
 
             if (dj?.Keys?.Length > 0)
             {
-                conditions.Add($"{CachedKey} IN (" + string.Join(",", dj.Keys.Select((_, index) => "@compatibleKey" + index)) + ")");
+                conditions.Add($"LOWER({CachedKey}) IN (" + string.Join(",", dj.Keys.Select((_, index) => "@compatibleKey" + index)) + ")");
             }
 
             if (dj?.Vocals is "yes" or "no")
@@ -668,7 +674,7 @@ namespace resonance.MusicLibrary
                 {
                     for (var index = 0; index < dj.Keys.Length; index++)
                     {
-                        AddParam(command, "@compatibleKey" + index, dj.Keys[index]);
+                        AddParam(command, "@compatibleKey" + index, dj.Keys[index].ToLowerInvariant());
                     }
                 }
 
