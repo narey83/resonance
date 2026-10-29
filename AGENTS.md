@@ -2,7 +2,7 @@
 
 ## Source of truth and development — updated 29 October 2026
 
-GitHub (`narey83/resonance`, `main`) is the source of truth. The working checkout is `/Users/narey/Projects/resonance` on the Mac. Fetch and reconcile local work before pulling; preserve uncommitted changes. Commit and push completed, verified changes to GitHub when requested.
+The Mac checkout at `/Users/narey/Projects/resonance` is the source of truth. Develop, build and verify changes there, then commit and push them to GitHub (`narey83/resonance`, `main`) for publication and distribution. Preserve local work; do not overwrite or reset it to match GitHub. Fetching for comparison is safe, but reconcile incoming changes deliberately rather than treating the remote as authoritative.
 
 Use only the Mac checkout for development, builds and checks. Do not connect to, inspect, edit or sync the development-server checkout on `192.168.0.80` (`dev-laptop.local`, `lan-server`) unless the user explicitly requests server access again. Do not use VS Code Remote SSH, `bin/dev-server`, `bin/dev-remote`, or source-mirroring helpers for this workflow.
 

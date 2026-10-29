@@ -4,9 +4,9 @@ Use this page to orient yourself before changing, building or deploying Resonanc
 
 ## Current workflow — updated 29 October 2026
 
-- GitHub (`narey83/resonance`, `main`) is the source of truth.
-- Work only in `/Users/narey/Projects/resonance` on the Mac.
-- Fetch, preserve local edits, then fast-forward or reconcile with GitHub. Never overwrite unique local work merely to obtain a clean tree.
+- The Mac checkout at `/Users/narey/Projects/resonance` is the source of truth.
+- Develop, build and verify changes on the Mac, then commit and push to GitHub (`narey83/resonance`, `main`) for publication and distribution.
+- Preserve local edits and commits. Fetch for comparison when needed, and deliberately reconcile incoming changes; never overwrite or reset Mac work to match GitHub or merely obtain a clean tree.
 - Do not use the checkout on `192.168.0.80` / `dev-laptop.local` / `lan-server`, remote development helpers, VS Code Remote SSH or mobile source mirroring unless the user explicitly resumes that workflow.
 - The reported server runtime is native. Docker/Compose guides remain available for other installations and historical context; they are not the active development or deployment workflow.
 - Preserve application state, databases, credentials, dependencies and native projects. Never print secrets or signed URLs.
