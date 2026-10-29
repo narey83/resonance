@@ -190,7 +190,9 @@ jobs:
     name: Mobile app (iOS simulator)
     if: needs.mobile-changes.outputs.changed == 'true'
     needs: [mobile, mobile-changes]
-    runs-on: macos-26
+    # The arm64 pool repeatedly failed to acquire a runner before any step ran.
+    # Keep macOS 26 / Xcode 26.4 while using the separate Intel runner pool.
+    runs-on: macos-26-intel
     timeout-minutes: 60
     defaults:
       run:
