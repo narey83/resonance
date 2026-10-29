@@ -481,6 +481,8 @@ namespace resonance.Core.API
         private static string Archive(string platform) => Environment.GetEnvironmentVariable($"RESONANCE_PIONEER_HELPER_{platform.ToUpperInvariant()}_ARCHIVE")
             ?? PublishedBridgeFile($"resonance-bridge-{platform}.zip");
 
+        private static string PairingId(string hash) => hash[..12].ToLowerInvariant();
+
         private bool Paired() => TryPairing(out _);
         private bool TryPairing(out string hash)
         {
@@ -522,7 +524,6 @@ namespace resonance.Core.API
                 DateTimeOffset.UtcNow);
         }
 
-        private static string PairingId(string hash) => hash[..12].ToLowerInvariant();
         private record Pairing(DateTimeOffset Expires);
         private record PairingView(string Id, DateTimeOffset Expires, bool Connected, BridgePresence Presence);
         private record BridgePresence(string Name, string Version, string Platform, string Architecture, string Address, string ObservedAddress, long LatencyMs, DateTimeOffset LastSeen);
