@@ -35,7 +35,10 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
+  background: var(--bg-surface);
+  color: var(--text-primary);
   font-size: 13px;
 }
 
@@ -863,7 +866,7 @@
 /* ── Per-row waveform viewer ──────────────────────────────────────────────── */
 
 .ka-rowwave {
-  background: #0e0f13;
+  background: var(--wave-bg, var(--bg-primary));
   border-bottom: 1px solid var(--border);
   padding: 8px 16px 10px;
 }
@@ -903,4 +906,109 @@
 
 .ka-rowwave-scroll canvas {
   display: block;
+}
+
+/* Match the library headings, surfaces and compact controls. */
+.ka-view-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ka-view-heading > svg { color: var(--accent); flex-shrink: 0; }
+.ka-view-heading h2 { margin: 0; font-size: 18px; font-weight: 650; color: var(--text-primary); }
+.ka-view-heading p { margin: 4px 0 0; font-size: 12px; color: var(--text-muted); }
+.ka-load-error { display: flex; align-items: center; gap: 8px; padding: 10px 22px; color: var(--text-primary); flex-shrink: 0; }
+.ka-folder-header { background: var(--bg-primary); min-height: 40px; }
+.ka-folder-header:focus-within .ka-folder-scan-btn { opacity: 1; }
+.ka-track-list { min-height: 0; }
+.ka-pagination { background: var(--bg-surface); }
+@media (max-width: 900px) {
+  .ka-stats-bar { flex-wrap: wrap; gap: 12px; }
+  .ka-toolbar { flex-wrap: wrap; }
+  .ka-stat-bar-wrap { display: none; }
+  .ka-view-heading { padding: 12px 16px; }
+  .ka-folder-scan-btn { opacity: 1; }
+}
+
+/* Collection layout: the same metric cards and inset browser as the library. */
+.ka-root { background: var(--bg-primary); }
+.ka-overview {
+  margin: var(--page-spacing) var(--page-gutter) 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.ka-view-heading { padding: 18px 20px; border-bottom: 1px solid var(--border); }
+.ka-view-heading h2 { font-size: 22px; letter-spacing: -.025em; }
+.ka-view-heading > svg { width: 24px; height: 24px; }
+.ka-enhanced-status { margin: 0; padding: 12px 20px 0; color: var(--text-muted); font-size: 12px; }
+.dj-workspace .ka-stats-bar, .ka-stats-bar {
+  background: transparent;
+  border: 0;
+  padding: 16px 20px 20px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ka-stat {
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 108px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+}
+.dj-workspace .ka-stat-value { font-size: 24px; line-height: 1; color: var(--text-primary); }
+.ka-stat-label { font-size: 10px; letter-spacing: .08em; }
+.ka-stat--unkeyed { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.ka-stat--unkeyed .ka-stat-value { color: var(--accent); }
+.ka-stat-bar-wrap { display: none; }
+.dj-workspace .ka-toolbar, .ka-toolbar {
+  margin: 0 var(--page-gutter);
+  padding: 14px 16px;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px 10px 0 0;
+  background: var(--bg-surface);
+}
+.ka-browser-title { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 650; color: var(--text-primary); }
+.ka-browser-title svg { color: var(--accent); }
+.ka-search-wrap { max-width: 360px; }
+.ka-search { min-height: 34px; background: var(--bg-primary); }
+.ka-btn { min-height: 32px; border-radius: 6px; padding: 6px 12px; }
+.ka-filter-group { gap: 3px; border: 0; border-radius: 7px; padding: 3px; background: var(--bg-primary); }
+.ka-filter-btn { border: 0; border-radius: 5px; padding: 6px 12px; background: transparent; }
+.ka-filter-btn.active { background: var(--bg-elevated); color: var(--accent); box-shadow: inset 0 0 0 1px var(--border); }
+.ka-select { min-height: 32px; }
+.ka-header-row { margin: 0 var(--page-gutter); border-inline: 1px solid var(--border); padding-block: 10px; background: var(--bg-surface); }
+.ka-root:not(.ka-root--expanded) .ka-header-row { grid-template-columns: 32px 1fr; }
+.ka-root:not(.ka-root--expanded) .ka-col-key,
+.ka-root:not(.ka-root--expanded) .ka-col-bpm,
+.ka-root:not(.ka-root--expanded) .ka-col-cache,
+.ka-root:not(.ka-root--expanded) .ka-col-info,
+.ka-root:not(.ka-root--expanded) .ka-col-actions { display: none; }
+.ka-root:not(.ka-root--expanded) .ka-header-row::after { content: 'Folder · expand to view tracks'; align-self: center; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.ka-track-list { margin: 0 var(--page-gutter); border-inline: 1px solid var(--border); background: var(--bg-surface); }
+.ka-folder-header { min-height: 58px; background: var(--bg-surface); padding-inline: 16px; position: relative; }
+.ka-folder-expand { gap: 12px; padding-block: 10px; }
+.ka-folder-icon { box-sizing: content-box; width: 18px; height: 18px; padding: 9px; border: 1px solid var(--border); border-radius: 7px; color: var(--accent); background: var(--bg-elevated); }
+.ka-folder-name { font-size: 13px; font-weight: 600; }
+.ka-folder-badge { color: var(--text-muted); background: transparent; font-size: 12px; font-weight: 400; border-radius: 0; padding: 0 12px; }
+.ka-folder-scan-btn { opacity: 1; margin-left: 8px; }
+.ka-pagination { margin: 0 var(--page-gutter) var(--page-spacing); min-height: 40px; border: 1px solid var(--border); border-radius: 0 0 10px 10px; }
+.ka-load-error { margin: 0 var(--page-gutter); background: var(--bg-surface); border-inline: 1px solid var(--border); }
+@media (max-width: 900px) {
+  .ka-overview { margin: 12px; }
+  .ka-view-heading { padding: 14px 16px; }
+  .dj-workspace .ka-stats-bar { padding: 12px; gap: 6px; }
+  .ka-stat { min-width: 88px; padding: 10px 12px; }
+  .dj-workspace .ka-toolbar, .ka-header-row, .ka-track-list, .ka-load-error { margin-inline: 12px; }
+  .ka-pagination { margin: 0 12px 12px; }
+  .ka-count { width: 100%; margin: 0; }
+  .ka-search-wrap { max-width: none; }
 }

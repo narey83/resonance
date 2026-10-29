@@ -68,7 +68,9 @@ public class BridgeExportReadinessTests
         changed[0] = changed[0] with { AnalysisId = "new-analysis" };
         Assert.NotEqual(plan[0].Descriptor.Id, BridgeLibraryBatchService.Plan(changed)[0].Descriptor.Id);
         var otherBucket = tracks.Append(tracks[0] with { SourceKey = new string('b', 64) });
-        Assert.Equal(plan.Select(batch => batch.Descriptor.Id), BridgeLibraryBatchService.Plan(otherBucket).Take(plan.Length).Select(batch => batch.Descriptor.Id));
+        var extended = BridgeLibraryBatchService.Plan(otherBucket);
+        Assert.Equal(plan.Take(plan.Length - 1).Select(batch => batch.Descriptor.Id), extended.Take(plan.Length - 1).Select(batch => batch.Descriptor.Id));
+        Assert.NotEqual(plan[^1].Descriptor.Id, extended[^1].Descriptor.Id);
         Assert.Empty(BridgeLibraryBatchService.Plan(Array.Empty<BridgeLibraryBatchService.VerifiedTrack>()));
     }
 

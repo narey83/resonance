@@ -257,12 +257,14 @@ namespace resonance.Analysis
     ///     ever see paths; making each of them resolve names first would be a round-trip per row.
     ///     Merged with <see cref="OnlyFilenames"/> when both are given.
     /// </param>
+    /// <param name="Enhanced">Also run the independent vocal, phrase, downbeat and genre models.</param>
     public record AnalysisScanRequest(
         AnalysisMetrics Metrics = AnalysisMetrics.All,
         bool SkipAnalysed = true,
         bool ResetAll = false,
         string[] OnlyFilenames = null,
-        string[] OnlyPaths = null);
+        string[] OnlyPaths = null,
+        bool Enhanced = false);
 
     /// <summary>API response shape for waveform data.</summary>
     /// <param name="NumBars">How many bars each peaks array holds.</param>

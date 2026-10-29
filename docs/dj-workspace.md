@@ -133,6 +133,14 @@ export RESONANCE_CANDIDATE_OUTPUT_ROOT=/var/lib/resonance/candidates
 export RESONANCE_CANDIDATE_TIMEOUT_SECONDS=660
 ```
 
+Enhanced jobs automatically divide the processors available to the backend container
+between concurrent tracks, bounded by a 5 GiB per-job memory estimate. The allocation
+uses the container-aware .NET processor and memory limits, then passes each job's share
+to PyTorch, OpenMP, MKL, OpenBLAS and NumExpr. Most installations should leave it in
+automatic mode. Operators with measured hardware-specific requirements can override it
+with `RESONANCE_CANDIDATE_WORKERS`, `RESONANCE_CANDIDATE_THREADS_PER_WORKER` and
+`RESONANCE_CANDIDATE_MEMORY_PER_WORKER_MB`; zero workers/threads means automatic.
+
 The analysis queue then uses the configured worker. Basic analysis still uses its
 own ffmpeg/Essentia settings; enhanced setup does not replace those settings. See
 [automatic preparation](auto-analysis.md). Rekordbox import is an optional migration
@@ -164,7 +172,7 @@ It runs on the players' local network; the main Resonance server may be elsewher
 USB export writes both classic and OneLibrary database formats when the dual profile
 is selected. File-format readback and isolated-folder transfer checks have passed.
 Physical USB/player acceptance remains outstanding, including OPUS-QUAD and legacy
-models. Do not interpret source availability as a guarantee for every Pioneer device.
+models. Do not interpret source availability as a guarantee for every DJ device.
 Helper binaries/installers also require native platform validation and signing before
 general distribution. The helper refuses overwriting existing exports and never
 formats drives.

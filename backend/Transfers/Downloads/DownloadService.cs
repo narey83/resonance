@@ -54,6 +54,7 @@ namespace resonance.Transfers.Downloads
     using resonance.Files;
     using resonance.Integrations.FTP;
     using resonance.Relay;
+    using resonance.Users;
     using Serilog;
 
     /// <summary>
@@ -199,6 +200,7 @@ namespace resonance.Transfers.Downloads
             IFTPService ftpClient,
             EventBus eventBus,
             ITransferErrorNotificationService errorNotifications,
+            IUserService userService,
             ConnectionStringDictionary connectionStrings)
         {
             Client = soulseekClient;
@@ -209,6 +211,7 @@ namespace resonance.Transfers.Downloads
             Relay = relayService;
             EventBus = eventBus;
             ErrorNotifications = errorNotifications;
+            Users = userService;
             NetworkInfoStore = new TransferNetworkInfoStore(connectionStrings);
 
             Clock.EveryMinute += (_, _) => Task.Run(() => CleanupEnqueueSemaphoresAsync());
@@ -244,6 +247,7 @@ namespace resonance.Transfers.Downloads
         private IOptionsMonitor<Options> OptionsMonitor { get; }
         private EventBus EventBus { get; }
         private ITransferErrorNotificationService ErrorNotifications { get; }
+        private IUserService Users { get; }
 
         /// <summary>
         ///     Allow only one enqueue operation for a given user at a time. Entries are added on the fly if they
@@ -353,32 +357,7 @@ namespace resonance.Transfers.Downloads
                 throw new InsufficientDiskSpaceException($"Download rejected: free disk space is below the configured minimum of {minimumFreeMegabytes} MB");
             }
 
-            IPEndPoint endpoint;
-
             Log.Information("Requested enqueue of {Count} files from user {Username}", fileList.Count, username);
-
-            // get the user's ip and port. this will throw if they are offline.
-            try
-            {
-                endpoint = await Client.GetUserEndPointAsync(username, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Failed to enqueue {Count} files from {Username}: {Message}", fileList.Count, username, ex.Message);
-                throw;
-            }
-
-            // prime the cache for this user, to 1) make sure we can connect, and 2) avoid needing to race for it in the loop
-            try
-            {
-                Log.Debug("Priming message connection to {Username}", username);
-                await Client.ConnectToUserAsync(username, invalidateCache: false, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Failed to connect to {Username}: {Message}", username, ex.Message);
-                throw;
-            }
 
             List<Transfer> enqueued = [];
             List<string> failed = [];
@@ -471,6 +450,18 @@ namespace resonance.Transfers.Downloads
 
                 var maxTimeToWaitForEnqueueRequestAck = TimeSpan.FromMinutes(3);
                 var enqueueSemaphore = new SemaphoreSlim(initialCount: concurrentEnqueueRequests, maxCount: concurrentEnqueueRequests);
+                var peerReady = new Lazy<Task>(async () =>
+                {
+                    var endpoint = await Client.GetUserEndPointAsync(username, cancellationToken);
+
+                    if (Users.IsBlacklisted(username, endpoint.Address))
+                    {
+                        throw new UserOfflineException($"User {username} appears to be offline");
+                    }
+
+                    Log.Debug("Priming message connection to {Username}", username);
+                    await Client.ConnectToUserAsync(username, invalidateCache: false, cancellationToken);
+                });
 
                 /*
                     iterate over each of the files in the request.  each file must be dispositioned as one of the following:
@@ -597,6 +588,10 @@ namespace resonance.Transfers.Downloads
                             try
                             {
                                 Log.Debug("Acquired download enqueue semaphore for {Filename} from {Username}", transfer.Filename, transfer.Username);
+
+                                // The local transfer row is already visible. Peer discovery and connection can be slow,
+                                // so perform them here instead of delaying registration of the whole folder.
+                                await peerReady.Value;
 
                                 List<string> transitions = [];
                                 TransferStates state = TransferStates.None;

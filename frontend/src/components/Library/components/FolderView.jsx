@@ -32,13 +32,17 @@ import { alphaKey } from '../../../lib/alphaBucket';
 import { artworkUrl as mixtapeArtworkUrl } from '../../../lib/mixtapes';
 import * as prefs from '../../../lib/prefs';
 import { usePagedTracks } from '../../../lib/usePagedList';
-import { formatIndexedAt, trackCountLabel } from '../../../lib/util';
+import {
+  formatIndexedAt,
+  isRecentlyIndexed,
+  trackCountLabel,
+} from '../../../lib/util';
 import AlbumArt from './AlbumArt';
 import LibraryDetailHeader from './LibraryDetailHeader';
 import LibraryViewHeader from './LibraryViewHeader';
 import TrackTable from './TrackTable';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Play } from 'lucide-react';
+import { Play, Sparkles } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 const ROW_HEIGHT = 56;
@@ -77,6 +81,18 @@ const FolderCard = ({
           minWidth: 'unset',
         }}
       />
+      {isRecentlyIndexed(folder.indexedAt) && (
+        <span
+          className="jb-new-item-badge"
+          title="Added in the last 7 days"
+        >
+          <Sparkles
+            aria-hidden="true"
+            size={12}
+          />
+          <span>New</span>
+        </span>
+      )}
       <div
         className="jb-folder-card-play"
         onClick={(e) => {
@@ -137,7 +153,16 @@ const FolderRow = ({
       src={mixtapeArtSrc}
     />
     <div className="jb-folder-row-info">
-      <span className="jb-folder-row-name">{folder.name}</span>
+      <span className="jb-folder-row-name">
+        {folder.name}
+        {isRecentlyIndexed(folder.indexedAt) && (
+          <Sparkles
+            aria-label="Added in the last 7 days"
+            className="jb-new-item-icon"
+            size={13}
+          />
+        )}
+      </span>
       <span className="jb-folder-row-meta">{folder.trackCount} tracks</span>
     </div>
     {folder.indexedAt ? (
@@ -184,7 +209,6 @@ const FolderView = ({
   viewMode = 'tile',
 }) => {
   const [selected, setSelected] = useState(null);
-  const [folderFilter, setFolderFilter] = useState('');
   const [listLetter, setListLetter] = useState(null);
 
   const {
@@ -241,7 +265,7 @@ const FolderView = ({
   // Two lists share this view and the rail: the folder list itself (sorted here, in memory)
   // and the selected folder's paged tracks. Whichever is on screen decides.
   const foldersAreDefault =
-    sortBy === 'name' && sortDir === 'asc' && !folderFilter && !listLetter;
+    sortBy === 'name' && sortDir === 'asc' && !listLetter;
   const alphaApplies = selected ? trackAlphaApplies : foldersAreDefault;
   useEffect(() => {
     onAlphaEnabled?.(alphaApplies);
@@ -250,7 +274,6 @@ const FolderView = ({
   const resetFolders = () => {
     setSortBy('name');
     setSortDir('asc');
-    setFolderFilter('');
     setListLetter(null);
     prefs.set('resonance-folders-sort-by', 'name');
     prefs.set('resonance-folders-sort-dir', 'asc');
@@ -263,13 +286,8 @@ const FolderView = ({
   }, [folders, initialFolder]);
 
   const sorted = useMemo(() => {
-    const q = folderFilter.toLowerCase();
     const copy = folders.filter(
-      (f) =>
-        (!q ||
-          f.name.toLowerCase().includes(q) ||
-          f.path.toLowerCase().includes(q)) &&
-        (!listLetter || alphaKey(f.name) === listLetter),
+      (f) => !listLetter || alphaKey(f.name) === listLetter,
     );
     copy.sort((a, b) => {
       const cmp =
@@ -279,7 +297,7 @@ const FolderView = ({
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return copy;
-  }, [folderFilter, folders, listLetter, sortBy, sortDir]);
+  }, [folders, listLetter, sortBy, sortDir]);
 
   const virtualizer = useVirtualizer({
     count: sorted.length,
@@ -357,11 +375,6 @@ const FolderView = ({
   return (
     <>
       <LibraryViewHeader
-        filter={{
-          onChange: setFolderFilter,
-          placeholder: 'Filter folder…',
-          value: folderFilter,
-        }}
         isDefault={foldersAreDefault}
         letter={listLetter}
         onClearLetter={() => setListLetter(null)}

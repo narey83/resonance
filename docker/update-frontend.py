@@ -11,14 +11,14 @@ from pathlib import Path
 from bootstrap import ROOT, compose_command
 
 
-def build_commands(config):
+def build_commands(config, quick=False):
     commands = []
     runtime = (
         config.get("tlsImage", "resonance-caddy:portable")
         if config.get("tlsEnabled")
         else "caddy:2"
     )
-    if config.get("tlsEnabled"):
+    if config.get("tlsEnabled") and not quick:
         commands.append(
             [
                 "docker",
@@ -33,11 +33,11 @@ def build_commands(config):
             ]
         )
     web = ["docker", "build", "-f", "docker/web.Dockerfile"]
-    if not config.get("tlsEnabled"):
+    if not config.get("tlsEnabled") and not quick:
         web.append("--pull")
+    if not quick:
+        web += ["--no-cache-filter", "runtime"]
     web += [
-        "--no-cache-filter",
-        "runtime",
         "--build-arg",
         "CADDYFILE=docker/caddy/Caddyfile.portable",
         "--build-arg",
@@ -50,7 +50,7 @@ def build_commands(config):
     return commands
 
 
-def update(config, environment, run):
+def update(config, environment, run, quick=False):
     backup = "resonance-web:rollback-" + datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     activate = compose_command(
         environment,
@@ -61,7 +61,7 @@ def update(config, environment, run):
     run(["docker", "image", "tag", "resonance-web:portable", backup])
     activation_attempted = False
     try:
-        for command in build_commands(config):
+        for command in build_commands(config, quick=quick):
             run(command)
         run(
             [
@@ -113,11 +113,16 @@ def main():
         default=Path.home() / ".config/resonance-stack/config.json",
     )
     parser.add_argument("--plan", action="store_true")
+    parser.add_argument(
+        "--quick",
+        action="store_true",
+        help="reuse the installed Caddy runtime and Docker cache for UI review builds",
+    )
     args = parser.parse_args()
     config = json.loads(args.config.read_text())
     environment = Path(config["stateDir"]).expanduser() / "compose.env"
     if args.plan:
-        print(json.dumps(build_commands(config), indent=2))
+        print(json.dumps(build_commands(config, quick=args.quick), indent=2))
         print(
             "Validate Caddy; replace only the frontend; restore its previous image if activation fails."
         )
@@ -149,7 +154,7 @@ def main():
                 )
 
             try:
-                backup = update(config, environment, run)
+                backup = update(config, environment, run, quick=args.quick)
             except (subprocess.CalledProcessError, OSError):
                 raise SystemExit(
                     "Frontend update failed; inspect the private log: " + str(log)

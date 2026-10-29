@@ -21,6 +21,15 @@ func pairingTestConnection(t *testing.T) connection {
 	t.Cleanup(server.Close)
 	return connection{SchemaVersion: 1, ServerURL: server.URL + "/api/v0/bridge/sync", Token: strings.Repeat("b", 64), Expires: time.Now().Add(time.Hour)}
 }
+
+func TestLegacyPairingURLIsSavedWithNeutralBridgeRoute(t *testing.T) {
+	c := pairingTestConnection(t)
+	c.ServerURL = strings.TrimSuffix(c.ServerURL, "/bridge/sync") + "/analysis/pioneer-link/sync"
+	canonical := canonicalBridgeConnection(c)
+	if strings.Contains(canonical.ServerURL, "pioneer") || !strings.HasSuffix(canonical.ServerURL, "/bridge/sync") {
+		t.Fatalf("legacy route was not canonicalized: %q", canonical.ServerURL)
+	}
+}
 func TestPairingSurvivesCacheRemovalAndFreshHelper(t *testing.T) {
 	root := t.TempDir()
 	config := filepath.Join(root, "settings")

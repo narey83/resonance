@@ -43,6 +43,19 @@ public class BridgeUpdateTests : IDisposable
     }
 
     [Fact]
+    public void A_Single_Bridge_Pairing_Can_Be_Revoked_By_Its_Public_Id()
+    {
+        var controller = Controller(DateTimeOffset.UtcNow.AddHours(1));
+        var hash = inserted.Last();
+        var id = hash[..12].ToLowerInvariant();
+
+        var result = Assert.IsType<OkObjectResult>(controller.RevokeConnection(id));
+
+        Assert.DoesNotContain(hash, pairings.Keys.Cast<string>());
+        Assert.Contains("\"revoked\":true", JsonSerializer.Serialize(result.Value));
+    }
+
+    [Fact]
     public void Valid_Pairing_Can_Download_Only_Current_Published_Release()
     {
         var hash = new string('b', 64);

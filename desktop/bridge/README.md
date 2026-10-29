@@ -3,7 +3,7 @@
 Updated **27 October 2026**. One desktop helper handles **USB Export** and **Network
 Link**, using `.resonance` action files and the same local dashboard. Behaviour,
 platform support and compatibility can change. This is development software;
-physical Pioneer player acceptance is still pending.
+physical DJ-player acceptance is still pending.
 
 Install and launch the helper before visiting its [dashboard](http://127.0.0.1:55460/).
 That address is served by the running helper, not the main Resonance web server.
@@ -35,7 +35,7 @@ Manual ZIP transfer remains available: extract it, then place its `Contents` and
 USB writes have been tested in isolated local folders. Physical drive and player
 validation, including OPUS-QUAD and legacy models, remains required. The dual profile
 contains classic and OneLibrary databases; that does not establish support for every
-USB-enabled Pioneer product.
+compatible USB-enabled DJ product.
 
 ## Network Link
 
@@ -54,21 +54,21 @@ Sharing stays OFF after every launch, even when the saved pairing reconnects.
 Use a Resonance address reachable from the Bridge computer (localhost only works
 on that same computer). Pairing credentials grant scoped read-only access for
 30 days. Keep the file private. Revoke Bridge pairings in Resonance to stop future
-access. Expired or rejected pairings must be renewed in Settings. Downloaded
-music remains a local copy. Use HTTPS outside a private network; do not forward
+access. Expired or rejected pairings must be renewed in Settings. Track audio is
+never downloaded into Bridge storage. Use HTTPS outside a private network; do not forward
 player-facing NFS ports.
 
-Updates preserve player track IDs and old audio paths during an active session.
-Unchanged audio is reused. Removed/replaced tracks and old analysis generations
-are retained until the helper exits so connected players can finish using them.
-The source's full prepared bundle is downloaded on a revision change in this
-initial implementation, rather than a per-track delta. Current preparation limits
-are 10,000 indexed tracks and 50 GiB per downloaded bundle. A failed update keeps
+Updates preserve player track IDs during an active session. Metadata and analysis
+arrive in small deterministic batches; audio is fetched only when a player reads
+it and is never cached to disk. Current preparation limits are 10,000 indexed
+tracks. A failed update keeps
 the last working library. The helper can also import offline bundles manually;
 those do not update automatically. Stop sharing before changing an offline copy.
 
-The helper serves a private, hash-verified copy of the prepared audio, classic
-Pioneer database and analysis. It does not reanalyse music or write source tags.
+The helper stores only a private, hash-verified device catalog and analysis.
+Audio remains in Resonance and is streamed on demand through authenticated range
+requests; Bridge does not persist track audio. It does not reanalyse music or
+write source tags.
 Only devices on the selected adapter's subnet can query music. Discovery receives
 broadcasts on wildcard sockets with source/subnet checks; file serving binds to
 the selected IPv4 address. Use a trusted private DJ network, preferably Ethernet.
@@ -101,8 +101,8 @@ not audio output synchronization or mixer control.
 
 ## Compatibility
 
-Hardware validation is pending, including OPUS-QUAD. Support is not guaranteed
-for every USB-enabled Pioneer product; a model must support the relevant network
+Hardware validation is pending. Support is not guaranteed for every USB-enabled
+DJ product; a model must support the relevant network
 LINK EXPORT protocol. The server uses the classic half of Resonance's dual export.
 The OneLibrary half is preserved in the bundle but is not queried by this engine.
 Waveforms/beat grids reflect available prepared analysis. Test browse, load, seek,
@@ -266,18 +266,16 @@ readiness and connection count without credentials or track paths. Useful suppor
 information is Bridge version/OS, UTC failure time, the local report and the
 corresponding server Bridge events. Never request a user's `.resonance` file.
 
-Network Link protocol 2 advertises only saved, completed, full-track analysis whose
+Network Link protocol 3 advertises only saved, completed, full-track analysis whose
 source content still matches. Beats/downbeats, BPM, key, waveform bands and the
 required enhanced features must all be available. Basic indexing and partial or
 failed analysis do not qualify. Export preparation rechecks eligibility and hashes
 before invoking the worker. No background analysis of the entire indexed library
 is started by connecting Bridge.
 
-The server plans deterministic hash buckets, divided into at most 100 tracks and
-approximately 2 GiB of compatible audio per batch. An individual longer track may
-occupy its own batch. The 50 GiB archive safety limit still applies per batch;
-collections can grow beyond that size across batches. The player protocol allows
-65,535 track IDs. Staging has a 20 GiB budget; downloaded batches are acknowledged
+The server plans deterministic hash buckets, divided into at most 100 tracks per
+metadata batch. The player protocol allows 65,535 track IDs. Staging has a 20 GiB
+budget; downloaded batches are acknowledged
 only after a durable local checkpoint, then released on the server. Downloads
 hold a lease so cleanup cannot remove an in-flight archive. Expired staging is
 reclaimed after two hours. Failed batches retry after five minutes.
@@ -286,9 +284,8 @@ The local collection is scoped to its Resonance server URL and persists across
 Bridge restarts. Immutable batch files and stable source identities preserve the
 working collection during updates. The prepared analysis cache keeps at most 512
 resident results, loading others from disk. Sharing remains off after startup.
-Old immutable generations remain on disk to preserve player handles; automatic
-local garbage collection is not implemented yet. Allow space for compatible WAV
-copies and replacement generations. Disk-full failures preserve the last committed
+Old immutable metadata generations remain on disk to preserve player handles;
+they contain no track audio. Disk-full failures preserve the last committed
 collection and are included in the support report.
 
 ### Pairing after restart

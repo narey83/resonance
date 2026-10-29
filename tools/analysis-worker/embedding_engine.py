@@ -11,6 +11,7 @@ os.environ.setdefault('TOKENIZERS_PARALLELISM','false')
 from pathlib import Path
 import hashlib,json
 import numpy as np
+from runtime_resources import analysis_threads
 
 def file_sha256(path):
  h=hashlib.sha256()
@@ -25,9 +26,10 @@ def feature_tensor(value):
  raise TypeError('UnexpectedCLAPfeatureoutput')
 
 class EmbeddingEngine:
- def __init__(self,snapshot,threads=2):
+ def __init__(self,snapshot,threads=None):
   import torch,importlib.metadata
   from transformers import ClapModel,ClapProcessor
+  threads=threads or analysis_threads()
   self.snapshot=Path(snapshot).resolve(strict=True)
   # Caller supplieslocalfiles: local_files_onlypreventsmodel/tokenizerdownloads.
   torch.set_num_threads(threads)

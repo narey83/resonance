@@ -38,7 +38,6 @@ import {
   renameDirectory,
   writeTags,
 } from '../../lib/tags';
-import PageInfo from '../Shared/PageInfo';
 import {
   AlertCircle,
   CheckCircle,
@@ -1003,43 +1002,6 @@ const TagEditor = () => {
           Library selection · {files.length} tracks
         </div>
       )}
-      <PageInfo storageKey="tageditor">
-        <p>
-          Edit track metadata and write it back to the file on disk. Select a
-          track from the left panel to load it into the editor.
-        </p>
-        <ul>
-          <li>
-            <strong>Save</strong> — writes the current form values to the file
-            and moves to the next track.
-          </li>
-          <li>
-            <strong>Skip</strong> — moves to the next track without saving any
-            changes.
-          </li>
-          <li>
-            <strong>Auto-fill</strong> — guesses title and artist from the
-            filename when the existing tags are blank.
-          </li>
-          <li>
-            <strong>Click a folder name</strong> — opens an album-level editor
-            that applies blanket changes to all files in the folder.
-          </li>
-          <li>
-            <strong>Rename folder</strong> — use the pencil icon on a folder
-            header to rename the filesystem directory. Disabled while uploads
-            are active.
-          </li>
-        </ul>
-        <p>
-          Switch between <strong>Untagged</strong> (files with no metadata at
-          all), <strong>Incomplete</strong> (tagged files missing a title or
-          artist) and <strong>Tagged</strong> (all files) using the toggle at
-          the top of the list. Running <strong>Tag Sanitization</strong> first
-          is recommended to ensure the tags you edit are written cleanly as
-          ID3v2.3.
-        </p>
-      </PageInfo>
       <div className="te-root">
         <div
           className="te-sidebar"

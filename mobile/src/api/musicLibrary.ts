@@ -58,6 +58,7 @@ export interface MusicAlbum extends Signed {
   totalDuration: number | null;
   coverPath: string | null;
   hasArtwork: boolean;
+  indexedAt?: number | null;
   // Source directory of the grouped album. Used to scope the track fetch by folder rather
   // than artist — essential for Various-Artists albums where `artist` is the literal
   // "Various Artists" and matches no individual track. Mirrors the web album track params.
@@ -87,6 +88,7 @@ export interface MusicTrack extends Signed {
   /** Integrated loudness (LUFS) from analysis; null until the track has been analysed. */
   lufs?: number | null;
   fileSize: number | null;
+  indexedAt?: number | null;
 }
 
 export interface MusicGenre {
@@ -106,6 +108,7 @@ export interface MusicFolder extends Signed {
   trackCount: number;
   coverPath: string | null;
   hasArtwork: boolean;
+  indexedAt?: number | null;
 }
 
 export interface TracksResult {
@@ -276,12 +279,16 @@ const ALL_METRICS = 'Bpm, Key, Waveform, Loudness';
  * a 409 while another analysis is running. An empty list is refused here rather than sent -- the
  * server reads a missing selection as "the whole library".
  */
-export const analyseTracks = async (paths: string[], { reset = false } = {}): Promise<void> => {
+export const analyseTracks = async (
+  paths: string[],
+  { reset = false, enhanced = false } = {},
+): Promise<void> => {
   if (paths.length === 0) throw new Error('No tracks to analyse.');
   await apiClient.post('/analysis/scan', {
     metrics: ALL_METRICS,
     skipAnalysed: !reset,
     resetAll: reset,
+    enhanced,
     onlyPaths: paths,
   });
 };

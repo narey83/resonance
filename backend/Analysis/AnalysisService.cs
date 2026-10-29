@@ -75,6 +75,7 @@ namespace resonance.Analysis
         // Ticks (DateTime.UtcNow.Ticks), not a DateTime — a plain field can't be updated
         // atomically from the stream endpoint's request threads while a background analysis
         // task reads it, so this goes through Interlocked instead of a lock.
+        private readonly object enhancedStateLock = new();
         private long lastPlaybackActivityTicks;
         private long lastAnalysisBroadcastTicks;
 
@@ -554,7 +555,11 @@ namespace resonance.Analysis
 
                 if (total == 0)
                 {
-                    await RunEnhanced(tracks, ct, !request.SkipAnalysed || request.ResetAll);
+                    if (request.Enhanced)
+                    {
+                        await RunEnhanced(tracks, ct, !request.SkipAnalysed || request.ResetAll);
+                    }
+
                     SetState(false, true, false, 0, 0, 0, 0, 1.0);
                     return;
                 }
@@ -705,7 +710,7 @@ namespace resonance.Analysis
                 { /* expected on cancel */
                 }
 
-                if (!ct.IsCancellationRequested)
+                if (!ct.IsCancellationRequested && request.Enhanced)
                 {
                     await RunEnhanced(tracks, ct, !request.SkipAnalysed || request.ResetAll);
                 }
@@ -758,24 +763,45 @@ namespace resonance.Analysis
                 return;
             }
 
-            CurrentState = CurrentState with { Scanning = true, Completed = false, EnhancedTotal = tracks.Count, EnhancedCompleted = 0, EnhancedFailed = 0 };
-            foreach (var track in tracks)
+            lock (enhancedStateLock)
             {
-                ct.ThrowIfCancellationRequested();
-                CurrentState = CurrentState with { EnhancedPath = track.OriginalFilename };
-                try
-                {
-                    await enhanced.EnsureEnhanced(MusicPath.ToAbsolute(track.OriginalFilename), ct, force);
-                    CurrentState = CurrentState with { EnhancedCompleted = CurrentState.EnhancedCompleted + 1 };
-                }
-                catch (Exception exception) when (exception is not OperationCanceledException)
-                {
-                    CurrentState = CurrentState with { EnhancedFailed = CurrentState.EnhancedFailed + 1 };
-                    Log.Warning("Enhanced analysis failed for {Path}: {Error}", track.OriginalFilename, exception.Message);
-                }
+                CurrentState = CurrentState with { Scanning = true, Completed = false, EnhancedTotal = tracks.Count, EnhancedCompleted = 0, EnhancedFailed = 0 };
             }
 
-            CurrentState = CurrentState with { EnhancedPath = null };
+            await Parallel.ForEachAsync(
+                tracks,
+                new ParallelOptions { MaxDegreeOfParallelism = enhanced.Resources.ParallelJobs, CancellationToken = ct },
+                async (track, token) =>
+                {
+                    lock (enhancedStateLock)
+                    {
+                        CurrentState = CurrentState with { EnhancedPath = track.OriginalFilename };
+                    }
+
+                    try
+                    {
+                        await enhanced.EnsureEnhanced(MusicPath.ToAbsolute(track.OriginalFilename), token, force);
+                        lock (enhancedStateLock)
+                        {
+                            CurrentState = CurrentState with { EnhancedCompleted = CurrentState.EnhancedCompleted + 1 };
+                        }
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    {
+                        lock (enhancedStateLock)
+                        {
+                            CurrentState = CurrentState with { EnhancedFailed = CurrentState.EnhancedFailed + 1 };
+                        }
+
+                        Log.Warning("Enhanced analysis failed for {Path}: {Error}", track.OriginalFilename, exception.Message);
+                    }
+                });
+
+            lock (enhancedStateLock)
+            {
+                CurrentState = CurrentState with { EnhancedPath = null };
+            }
+
             _ = Hub?.BroadcastLibraryUpdatedAsync(0, tracks.Count, 0);
         }
 

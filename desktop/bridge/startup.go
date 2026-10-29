@@ -45,11 +45,11 @@ func startupEntry(goos, executable, home, config string) (string, []byte, error)
 		if app == "" {
 			return "", nil, errors.New("launch the installed macOS app to enable sign-in startup")
 		}
-		path := filepath.Join(home, "Library", "LaunchAgents", "app.resonance.pioneer-link.plist")
-		body := `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>app.resonance.pioneer-link</string><key>ProgramArguments</key><array><string>/usr/bin/open</string><string>-g</string><string>` + escapeXML(app) + `</string><string>--args</string><string>--no-open</string></array><key>RunAtLoad</key><true/></dict></plist>`
+		path := filepath.Join(home, "Library", "LaunchAgents", "app.resonance.bridge.plist")
+		body := `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>app.resonance.bridge</string><key>ProgramArguments</key><array><string>/usr/bin/open</string><string>-g</string><string>` + escapeXML(app) + `</string><string>--args</string><string>--no-open</string></array><key>RunAtLoad</key><true/></dict></plist>`
 		return path, []byte(body), nil
 	case "linux":
-		path := filepath.Join(config, "autostart", "resonance-pioneer-link.desktop")
+		path := filepath.Join(config, "autostart", "resonance-bridge.desktop")
 		return path, []byte("[Desktop Entry]\nType=Application\nName=Resonance Bridge\nExec=" + linuxExec(executable) + " --no-open\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"), nil
 	case "windows":
 		return windowsStartupEntry(executable)
@@ -92,6 +92,15 @@ func configureStartup(cache string, enabled bool) error {
 		}
 	} else if e = os.Remove(path); e != nil && !os.IsNotExist(e) {
 		return e
+	}
+	legacy := ""
+	if runtime.GOOS == "darwin" {
+		legacy = filepath.Join(home, "Library", "LaunchAgents", "app.resonance.pioneer-link.plist")
+	} else if runtime.GOOS == "linux" {
+		legacy = filepath.Join(config, "autostart", "resonance-pioneer-link.desktop")
+	}
+	if legacy != "" {
+		_ = os.Remove(legacy)
 	}
 	return writePrivateJSON(filepath.Join(cache, "startup.json"), startupSettings{enabled})
 }

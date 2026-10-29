@@ -48,7 +48,7 @@ namespace resonance.Analysis.UsbExport
     public record UsbExportJob(string JobId, string Status, int Total, int Prepared, string Profile, string PlaylistName, string Error = null, bool DownloadAvailable = false);
 
     // Stages an export for download. This service deliberately has no device or destination API.
-    public class UsbExportService
+    public sealed class UsbExportService : IDisposable
     {
         private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
         private readonly IAnalysisService analysis;
@@ -80,15 +80,21 @@ namespace resonance.Analysis.UsbExport
                 throw new ArgumentException("Select between 1 and 10000 distinct indexed library tracks.");
             }
 
-            if (request.Profile != "dual" && request.Profile != "legacy")
+            if (request.Profile != "dual" && request.Profile != "legacy" && request.Profile != "network")
             {
-                throw new ArgumentException("Profile must be dual or legacy.");
+                throw new ArgumentException("Profile must be dual, legacy or network.");
             }
 
             if (string.IsNullOrWhiteSpace(request.PlaylistName) || request.PlaylistName.Length > 100 || request.PlaylistName.Any(char.IsControl))
             {
                 throw new ArgumentException("Playlist name must contain 1–100 visible characters.");
             }
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
         }
 
         public object Library() => new { enabled = Enabled, experimental = true, helperPlatforms = new[] { "macos", "windows", "linux", "source" }.Where(platform => File.Exists(Environment.GetEnvironmentVariable($"RESONANCE_PIONEER_HELPER_{platform.ToUpperInvariant()}_{(platform == "source" ? "ARCHIVE" : "INSTALLER")}"))).ToArray(), tracks = analysis.GetAllTracks().Select(t => new { path = LibraryPath(t.OriginalFilename), title = t.Title ?? t.Filename, artist = t.Artist, album = t.Album, bpm = t.Bpm, key = t.Key }).ToArray() };
@@ -272,6 +278,14 @@ namespace resonance.Analysis.UsbExport
             return Path.GetFullPath(path);
         }
 
+        private void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                gate.Dispose();
+            }
+        }
+
         private bool HelperAvailable(string platform)
         {
             try
@@ -311,14 +325,19 @@ namespace resonance.Analysis.UsbExport
                         throw new InvalidOperationException($"Full enhanced analysis is required for {track.Title ?? track.Filename}. Run Track Analysis first.");
                     }
 
-                    await using var source = File.OpenRead(path);
-                    var hash = Convert.ToHexString(await SHA256.HashDataAsync(source, ct)).ToLowerInvariant();
-                    if (!hash.Equals(enhanced.Value.Job.AudioSha256, StringComparison.OrdinalIgnoreCase))
+                    var sourceInfo = new FileInfo(path);
+                    var hash = enhanced.Value.Job.AudioSha256.ToLowerInvariant();
+                    if (job.Profile != "network")
                     {
-                        throw new IOException("Source changed since enhanced analysis. Reanalyse before exporting.");
+                        await using var source = File.OpenRead(path);
+                        hash = Convert.ToHexString(await SHA256.HashDataAsync(source, ct)).ToLowerInvariant();
+                        if (!hash.Equals(enhanced.Value.Job.AudioSha256, StringComparison.OrdinalIgnoreCase))
+                        {
+                            throw new IOException("Source changed since enhanced analysis. Reanalyse before exporting.");
+                        }
                     }
 
-                    manifestTracks.Add(new { id = i + 1, sourceKey = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(MusicPath.ToRelative(path)))).ToLowerInvariant(), sourcePath = path, sourceSha256 = hash, title = track.Title ?? Path.GetFileNameWithoutExtension(path), artist = track.Artist ?? string.Empty, album = track.Album ?? string.Empty, genre = string.Empty, bpm = track.Bpm, key = track.Key, analysis = enhanced.Value.Analysis });
+                    manifestTracks.Add(new { id = i + 1, sourceKey = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(MusicPath.ToRelative(path)))).ToLowerInvariant(), sourcePath = path, sourceSha256 = hash, sourceBytes = sourceInfo.Length, title = track.Title ?? Path.GetFileNameWithoutExtension(path), artist = track.Artist ?? string.Empty, album = track.Album ?? string.Empty, genre = string.Empty, bpm = track.Bpm, key = track.Key, analysis = enhanced.Value.Analysis });
                     jobs[job.JobId] = job = job with { Prepared = i + 1 };
                 }
 
@@ -357,7 +376,7 @@ namespace resonance.Analysis.UsbExport
                     throw new IOException("Export worker failed. " + diagnostics[..Math.Min(diagnostics.Length, 1500)]);
                 }
 
-                if (!Directory.Exists(Path.Combine(destination, "PIONEER")) || !Directory.Exists(Path.Combine(destination, "Contents")))
+                if (!Directory.Exists(Path.Combine(destination, "PIONEER")) || (job.Profile != "network" && !Directory.Exists(Path.Combine(destination, "Contents"))))
                 {
                     throw new IOException("Worker did not produce PIONEER and Contents folders.");
                 }

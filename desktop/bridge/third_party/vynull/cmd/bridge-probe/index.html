@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Resonance Bridge Probe</title>
+<style>
+:root{color-scheme:dark;--bg:#0a0b10;--panel:#13151d;--line:#292c38;--text:#f5f6fb;--muted:#9da3b5;--accent:#9b87f5;--good:#48d597;--bad:#ff6b7a}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 20% 0,#20203a 0,transparent 38%),var(--bg);color:var(--text);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,sans-serif;min-height:100vh}
+main{width:min(1000px,calc(100% - 32px));margin:64px auto}.eyebrow{color:var(--accent);font-weight:700;letter-spacing:.13em;text-transform:uppercase;font-size:12px}
+h1{font-size:clamp(32px,6vw,58px);line-height:1.02;margin:12px 0 14px;letter-spacing:-.04em}h2{font-size:20px;margin:26px 0 12px}p{color:var(--muted);max-width:720px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:22px;margin-top:28px;box-shadow:0 24px 80px #0007}.controls{display:flex;gap:12px}
+.controls input{flex:1;background:#0d0f15;border:1px solid var(--line);border-radius:12px;padding:13px 15px;color:var(--text);font:inherit;outline:none}.controls input:focus{border-color:var(--accent)}
+button{border:0;border-radius:12px;padding:13px 20px;background:var(--accent);color:#0b0716;font-weight:800;cursor:pointer}button:disabled{opacity:.55;cursor:wait}
+.summary{display:none;align-items:center;justify-content:space-between;margin:22px 0 10px;padding-top:20px;border-top:1px solid var(--line)}.summary.show{display:flex}.status{font-size:20px;font-weight:750}
+.good .icon,.status.good{color:var(--good)}.bad .icon,.status.bad{color:var(--bad)}.meta{color:var(--muted);font-variant-numeric:tabular-nums}.results{display:grid;gap:10px;margin-top:14px}
+.row{display:grid;grid-template-columns:32px minmax(150px,.65fr) 1fr auto;gap:12px;align-items:center;border:1px solid var(--line);background:#0d0f15;border-radius:13px;padding:13px 15px}
+.icon{width:24px;height:24px;display:grid;place-items:center;border-radius:50%;font-weight:800}.row.good .icon{background:#123629}.row.bad .icon{background:#401a23}.stage{font-weight:700}.detail,.duration{color:var(--muted)}.duration{font-variant-numeric:tabular-nums;font-size:13px}
+.delivery{display:none;margin-top:28px}.delivery.show{display:block}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.card{border:1px solid var(--line);background:#0d0f15;border-radius:13px;padding:14px}.card strong,.card span{display:block}.card .standard{color:var(--accent);font-size:12px;font-weight:800;letter-spacing:.04em;margin:2px 0 8px}.card .description{color:var(--muted);font-size:13px}.card .coverage{color:var(--good);font-size:13px;margin-top:8px}
+.note{font-size:13px;margin:18px 2px 0}.spinner{display:inline-block;width:14px;height:14px;border:2px solid #302952;border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin-right:8px;vertical-align:-2px}@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:650px){main{margin:32px auto}.controls{flex-direction:column}.row{grid-template-columns:28px 1fr auto}.detail{grid-column:2/4}.panel{padding:16px}}
+</style>
+</head>
+<body><main>
+<div class="eyebrow">Internal network diagnostics</div>
+<h1>Bridge connectivity probe</h1>
+<p>Test the player-facing path from the development system to Resonance Bridge and inspect the metadata, waveform and analysis payloads exposed with each track.</p>
+<section class="panel">
+<form class="controls" id="form"><input id="target" value="192.168.0.178" inputmode="decimal" aria-label="Bridge IPv4 address" autocomplete="off"><button id="run" type="submit">Run connectivity test</button></form>
+<div class="summary" id="summary"><div class="status" id="status"></div><div class="meta" id="meta"></div></div>
+<div class="results" id="results"></div>
+<section class="delivery" id="delivery"></section>
+<p class="note">Read-only checks. Analysis files are inspected in memory; track audio is limited to one 4 KiB streamed range and is never stored.</p>
+</section>
+</main>
+<script>
+const form=document.querySelector('#form'),button=document.querySelector('#run'),results=document.querySelector('#results'),summary=document.querySelector('#summary'),statusEl=document.querySelector('#status'),meta=document.querySelector('#meta'),delivery=document.querySelector('#delivery');
+form.addEventListener('submit',async event=>{
+  event.preventDefault();button.disabled=true;button.innerHTML='<span class="spinner"></span>Testing';results.innerHTML='';delivery.classList.remove('show');summary.classList.remove('show');
+  try{
+    const response=await fetch('/api/probe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target:document.querySelector('#target').value.trim()})});
+    if(!response.ok)throw new Error(await response.text());
+    const report=await response.json();
+    results.innerHTML=report.results.map(r=>`<div class="row ${r.ok?'good':'bad'}"><div class="icon">${r.ok?'✓':'!'}</div><div class="stage">${escapeHTML(r.stage)}</div><div class="detail">${escapeHTML(r.detail)}</div><div class="duration">${r.durationMs} ms</div></div>`).join('');
+    statusEl.textContent=report.ok?'All player-facing paths reachable':'Connectivity check failed';statusEl.className='status '+(report.ok?'good':'bad');meta.textContent=`${report.target} · ${(report.durationMs/1000).toFixed(2)} s`;summary.classList.add('show');renderDelivery(report.delivery);
+  }catch(error){statusEl.textContent='Probe request failed';statusEl.className='status bad';meta.textContent=error.message;summary.classList.add('show')}
+  finally{button.disabled=false;button.textContent='Run connectivity test'}
+});
+function renderDelivery(data){
+  if(!data||!data.tracks)return;
+  const group=(title,items)=>items?.length?`<h2>${title}</h2><div class="cards">${items.map(item=>`<div class="card"><strong>${escapeHTML(item.name)}</strong><span class="standard">${escapeHTML(item.standard)}</span><span class="description">${escapeHTML(item.detail)}</span><span class="coverage">${item.coverage} of ${data.tracks} tracks</span></div>`).join('')}</div>`:'';
+  delivery.innerHTML=group('Player waveform & analysis payloads',data.analysis)+group('Catalogue metadata',data.metadata)+group('Streamed audio formats',data.audioFormats);delivery.classList.add('show');
+}
+function escapeHTML(value){const node=document.createElement('span');node.textContent=String(value);return node.innerHTML}
+</script>
+</body>
+</html>

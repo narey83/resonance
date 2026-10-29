@@ -12,9 +12,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 )
+
+var lastBridgeSyncLatencyMS atomic.Int64
 
 type connection struct {
 	SchemaVersion int       `json:"schemaVersion"`
@@ -46,6 +50,15 @@ func validateConnection(c connection) error {
 	}
 	return nil
 }
+func canonicalBridgeConnection(c connection) connection {
+	for _, legacy := range []string{"/analysis/pioneer-link/sync", "/helper/sync"} {
+		if strings.HasSuffix(c.ServerURL, legacy) {
+			c.ServerURL = strings.TrimSuffix(c.ServerURL, legacy) + "/bridge/sync"
+			break
+		}
+	}
+	return c
+}
 func (h *helper) disconnect() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -70,6 +83,7 @@ func (h *helper) connect(c connection) error {
 	if isUSB(c) {
 		return errors.New("This is a USB export file. Choose a Bridge pairing file in Settings instead.")
 	}
+	c = canonicalBridgeConnection(c)
 	if e := validateConnection(c); e != nil {
 		return e
 	}
@@ -150,6 +164,16 @@ func fetchSync(ctx context.Context, client *http.Client, c connection, suffix st
 		return nil, e
 	}
 	req.Header.Set("X-Resonance-Link-Token", c.Token)
+	req.Header.Set("X-Resonance-Bridge-Version", helperVersion)
+	req.Header.Set("X-Resonance-Bridge-Platform", runtime.GOOS)
+	req.Header.Set("X-Resonance-Bridge-Architecture", runtime.GOARCH)
+	req.Header.Set("X-Resonance-Bridge-Latency-Ms", fmt.Sprint(lastBridgeSyncLatencyMS.Load()))
+	if name, err := os.Hostname(); err == nil {
+		req.Header.Set("X-Resonance-Bridge-Name", name)
+	}
+	if address := outboundAddress(c.ServerURL); address != "" {
+		req.Header.Set("X-Resonance-Bridge-Address", address)
+	}
 	response, e := client.Do(req)
 	if e != nil {
 		return nil, e
@@ -182,6 +206,30 @@ func fetchSync(ctx context.Context, client *http.Client, c connection, suffix st
 	}
 	return response, nil
 }
+
+func outboundAddress(serverURL string) string {
+	u, err := url.Parse(serverURL)
+	if err != nil {
+		return ""
+	}
+	port := u.Port()
+	if port == "" {
+		if u.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	conn, err := net.DialTimeout("udp", net.JoinHostPort(u.Hostname(), port), time.Second)
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	if local, ok := conn.LocalAddr().(*net.UDPAddr); ok {
+		return local.IP.String()
+	}
+	return ""
+}
 func (h *helper) syncOnce(ctx context.Context, client *http.Client, s *synchronization) error {
 	h.mu.Lock()
 	if h.Updating {
@@ -193,7 +241,9 @@ func (h *helper) syncOnce(ctx context.Context, client *http.Client, s *synchroni
 	defer func() { h.mu.Lock(); h.SyncActive--; h.mu.Unlock() }()
 	poll, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	started := time.Now()
 	response, e := fetchSync(poll, client, s.Connection, "")
+	lastBridgeSyncLatencyMS.Store(time.Since(started).Milliseconds())
 	if e != nil {
 		return e
 	}
@@ -203,7 +253,7 @@ func (h *helper) syncOnce(ctx context.Context, client *http.Client, s *synchroni
 	if e != nil {
 		return e
 	}
-	if status.Protocol == 2 {
+	if status.Protocol == 2 || status.Protocol == 3 {
 		return h.syncBatches(ctx, client, s, status)
 	}
 	if status.Job == nil {

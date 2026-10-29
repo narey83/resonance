@@ -60,17 +60,15 @@ import {
   getIssueTracks,
   getLibraryStats,
   getRecentlyAdded,
-  getSyncState,
   getTrackPage,
   getYears,
   renameFolder,
   renameTrack,
-  triggerSync,
 } from '../../lib/musicLibrary';
 import * as prefs from '../../lib/prefs';
 import { create as createSearch, stripRemixInfo } from '../../lib/searches';
 import { usePagedList, usePagedTracks } from '../../lib/usePagedList';
-import { formatSeconds } from '../../lib/util';
+import { formatSeconds, isRecentlyIndexed } from '../../lib/util';
 import UsbExportPanel from '../TrackAnalysis/UsbExportPanel';
 import AlbumArt from './components/AlbumArt';
 import AlbumDetail from './components/AlbumDetail';
@@ -127,12 +125,12 @@ import {
   Pencil,
   Play,
   Plus,
-  RefreshCw,
   Route,
   Save,
   Search,
   Share2,
   Shuffle,
+  Sparkles,
   Tag,
   Trash2,
   Upload,
@@ -169,6 +167,7 @@ const VIEWS = {
   GENRES: 'genres',
   YEARS: 'years',
   FOLDERS: 'folders',
+  RECENT: 'recent',
   MIXTAPES: 'mixtapes',
   SEARCH: 'search',
   ISSUES: 'issues',
@@ -186,6 +185,7 @@ const NAV_ITEMS = [
   { id: VIEWS.PLANNER, label: 'Set Planner', icon: Route },
   { id: VIEWS.PREPARATION, label: 'Preparation', icon: AudioWaveform },
   { id: VIEWS.FOLDERS, label: 'Folders', icon: Folder },
+  { id: VIEWS.RECENT, label: 'Recently Added', icon: Sparkles },
   { id: VIEWS.GENRES, label: 'Genres', icon: Tag },
   { id: VIEWS.YEARS, label: 'Years', icon: Calendar },
   { id: VIEWS.MIXTAPES, label: 'Playlists', icon: ListMusic },
@@ -2533,6 +2533,96 @@ const HomeRow = ({ children, count, label, onMore }) => (
   </div>
 );
 
+const RecentlyAddedView = ({ albums, onAlbum, onContextMenu, onPlay }) => (
+  <div className="jb-recent-view">
+    <div className="jb-recent-heading">
+      <Sparkles
+        aria-hidden="true"
+        size={18}
+      />
+      <div>
+        <h2>Recently Added</h2>
+        <p>The latest albums added to your collection.</p>
+      </div>
+    </div>
+    {albums.length > 0 ? (
+      <div className="jb-recent-grid">
+        {albums.map((album) => (
+          <button
+            className="jb-home-album-card"
+            key={albumKey(album)}
+            onClick={() => onAlbum(album)}
+            onContextMenu={
+              onContextMenu ? (event) => onContextMenu(event, album) : undefined
+            }
+            type="button"
+          >
+            <div className="jb-home-album-art">
+              <AlbumArt
+                hasArtwork={album.hasArtwork}
+                name={album.album || album.artist}
+                path={album.coverPath}
+                radius={0}
+                size={160}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  minWidth: 'unset',
+                }}
+              />
+              {isRecentlyIndexed(album.indexedAt) && (
+                <span
+                  className="jb-new-item-badge"
+                  title="Added in the last 7 days"
+                >
+                  <Sparkles
+                    aria-hidden="true"
+                    size={12}
+                  />
+                  <span>New</span>
+                </span>
+              )}
+              <div
+                className="jb-folder-card-play"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onPlay(album);
+                }}
+                role="button"
+                tabIndex={0}
+                title="Play"
+              >
+                <Play
+                  fill="currentColor"
+                  size={14}
+                />
+              </div>
+            </div>
+            <div className="jb-home-album-body">
+              <div
+                className="jb-home-album-name"
+                title={album.album || '(Unknown Album)'}
+              >
+                {album.album || '(Unknown Album)'}
+              </div>
+              <div
+                className="jb-home-album-artist"
+                title={album.albumArtist || album.artist}
+              >
+                {album.albumArtist || album.artist}
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+    ) : (
+      <div className="jb-state">No recently added albums.</div>
+    )}
+  </div>
+);
+
 const ISSUE_TYPES = [
   {
     id: 'missingKey',
@@ -2665,7 +2755,7 @@ const HomeView = ({
           onMore={() => onNavigate(VIEWS.ALBUMS)}
         >
           <div className="jb-home-album-row">
-            {recentlyAdded.map((album) => (
+            {recentlyAdded.slice(0, 16).map((album) => (
               <button
                 className="jb-home-album-card"
                 key={albumKey(album)}
@@ -2990,14 +3080,7 @@ const LibraryContent = () => {
   const history = useHistory();
   const setPlanner = useSetPlanner();
   const location = useLocation();
-  const {
-    addToQueueNext,
-    enqueueTrack,
-    playQueue,
-    queuePanelOpen,
-    toggleQueuePanel,
-    track: currentTrack,
-  } = usePlayer();
+  const { addToQueueNext, enqueueTrack, playQueue } = usePlayer();
   const libraryActivity = useLibraryActivity();
   const lovedPaths = libraryActivity?.lovedPaths ?? new Set();
   const libraryRevision = libraryActivity?.libraryRevision ?? 0;
@@ -3051,7 +3134,6 @@ const LibraryContent = () => {
   const [tileSize, setTileSize] = useState(() =>
     Number(prefs.get('resonance-library-tilesize', 160)),
   );
-  const [syncing, setSyncing] = useState(false);
 
   const isMountedRef = useRef(true);
   useEffect(() => {
@@ -3092,7 +3174,7 @@ const LibraryContent = () => {
         apply(getArtistPage({ limit: 1 }), (p) => setArtistCount(p.total)),
         apply(getAlbumPage({ limit: 1 }), (p) => setAlbumCount(p.total)),
         apply(getGenres(), setGenres),
-        apply(getRecentlyAdded(16), setRecentlyAdded),
+        apply(getRecentlyAdded(48), setRecentlyAdded),
         apply(getLibraryStats(), setLibraryStats).catch(() => {}),
       ]);
     } catch {
@@ -3229,11 +3311,6 @@ const LibraryContent = () => {
 
   // ── Navigation helpers ───────────────────────────────────────────────────
 
-  const navigate = useCallback((view, parameters = {}) => {
-    setNavStack((stack) => [...stack, { view, params: parameters }]);
-    setSearchQuery('');
-  }, []);
-
   const goBack = useCallback(() => {
     setNavStack((stack) => (stack.length > 1 ? stack.slice(0, -1) : stack));
   }, []);
@@ -3347,31 +3424,6 @@ const LibraryContent = () => {
     activeView === VIEWS.GENRES ||
     (activeView === VIEWS.ALBUMS && !current.params?.selected) ||
     (activeView === VIEWS.FOLDERS && viewMode === 'list');
-
-  const handleRefresh = useCallback(async () => {
-    if (syncing) return;
-    setSyncing(true);
-    try {
-      await triggerSync();
-
-      for (let index = 0; index < 120; index++) {
-        await new Promise((resolve) => {
-          setTimeout(resolve, 1_500);
-        });
-        const state = await getSyncState();
-        if (!state.running) break;
-      }
-
-      setGenres([]);
-      setYears([]);
-      setFolders([]);
-      await loadInitialData();
-    } catch {
-      // ignore
-    } finally {
-      setSyncing(false);
-    }
-  }, [loadInitialData, syncing]);
 
   // ── Context menu ─────────────────────────────────────────────────────────
 
@@ -3878,6 +3930,15 @@ const LibraryContent = () => {
             totalTracks={libraryStats?.total ?? cachedCounts.total ?? 0}
           />
         );
+      case VIEWS.RECENT:
+        return (
+          <RecentlyAddedView
+            albums={recentlyAdded}
+            onAlbum={(album) => navTo(VIEWS.ALBUMS, { selected: album })}
+            onContextMenu={openAlbumContextMenu}
+            onPlay={(album) => playQuery(albumTrackParams(album))}
+          />
+        );
 
       case VIEWS.ALBUMS: {
         const selectedAlbum = current.params?.selected ?? null;
@@ -4114,6 +4175,7 @@ const LibraryContent = () => {
               summary={
                 [
                   VIEWS.HOME,
+                  VIEWS.RECENT,
                   VIEWS.FOLDERS,
                   VIEWS.TRACKS,
                   VIEWS.ARTISTS,
@@ -4127,6 +4189,7 @@ const LibraryContent = () => {
             >
               {[
                 VIEWS.FOLDERS,
+                VIEWS.RECENT,
                 VIEWS.TRACKS,
                 VIEWS.ARTISTS,
                 VIEWS.ALBUMS,
@@ -4260,66 +4323,6 @@ const LibraryContent = () => {
           />
           <div className="jb-topbar-right">
             {mixPreviewAllowed && <MixPreviewButton />}
-            <LibraryMenu
-              label="Collection options"
-              summary={
-                <MoreHorizontal
-                  aria-hidden="true"
-                  size={17}
-                />
-              }
-            >
-              <button
-                className="library-menu-action"
-                data-close-menu="true"
-                disabled={!currentTrack?.key}
-                onClick={() =>
-                  currentTrack
-                    ? handleAutoMix(currentTrack)
-                    : navigate(VIEWS.SEARCH)
-                }
-                title={
-                  currentTrack?.key
-                    ? `Auto Mix from ${currentTrack.key}`
-                    : 'Auto Mix (play a keyed track first)'
-                }
-                type="button"
-              >
-                <Wand2 size={15} /> Auto Mix
-                {currentTrack?.key ? ` from ${currentTrack.key}` : ''}
-              </button>
-
-              <button
-                aria-pressed={queuePanelOpen}
-                className="library-menu-action"
-                data-close-menu="true"
-                onClick={toggleQueuePanel}
-                title="Toggle queue"
-                type="button"
-              >
-                <ListMusic size={15} />{' '}
-                {queuePanelOpen ? 'Hide queue' : 'Show queue'}
-              </button>
-
-              <button
-                className="library-menu-action"
-                data-close-menu="true"
-                disabled={syncing}
-                onClick={handleRefresh}
-                title="Refresh library"
-                type="button"
-              >
-                <RefreshCw
-                  className={syncing ? 'jb-spin' : ''}
-                  size={15}
-                />
-                {syncing ? 'Refreshing library…' : 'Refresh library'}
-              </button>
-              <p className="library-menu-help">
-                Click a track to inspect it. Double-click to play.
-              </p>
-            </LibraryMenu>
-
             {hasTileList && (
               <div className="jb-btn-group">
                 <button

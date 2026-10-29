@@ -40,6 +40,7 @@ import {
   formatAttributes,
   formatIndexedAt,
   formatSeconds,
+  isRecentlyIndexed,
 } from '../../../lib/util';
 import WaveformPreview from '../../Shared/WaveformPreview';
 import LibraryMenu from './LibraryMenu';
@@ -58,6 +59,7 @@ import {
   Loader2,
   Play,
   Save,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
@@ -1183,6 +1185,13 @@ const TrackTable = ({
                         type="button"
                       >
                         {track.title || track.filename}
+                        {isRecentlyIndexed(track.indexedAt) && (
+                          <Sparkles
+                            aria-label="Added in the last 7 days"
+                            className="jb-new-item-icon"
+                            size={13}
+                          />
+                        )}
                       </button>
                     </div>
                     <div

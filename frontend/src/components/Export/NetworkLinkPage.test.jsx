@@ -65,9 +65,7 @@ describe('Bridge setup and revoke', () => {
       },
     });
     await render();
-    expect(container.textContent).toContain(
-      '250 fully analysed tracks ready out of',
-    );
+    expect(container.textContent).toContain('250fully analysed tracks');
     expect(container.textContent).toContain('59389 indexed tracks');
     expect(container.textContent).toContain('Save diagnostic report');
     expect(container.textContent).toContain('3 resumable batches');
@@ -80,6 +78,40 @@ describe('Bridge setup and revoke', () => {
       'library-preparation worker is not configured',
     );
     expect(api.post).not.toHaveBeenCalled();
+  });
+  it('shows the identity and address of an online Bridge', async () => {
+    expect.hasAssertions();
+    api.get.mockResolvedValue({
+      data: {
+        enabled: true,
+        pairedBridgeCount: 1,
+        connectedBridges: [
+          {
+            pairingId: 'abc123def456',
+            name: 'Studio-Mac',
+            version: '0.3.6',
+            platform: 'darwin',
+            architecture: 'arm64',
+            address: '192.168.0.178',
+            latencyMs: 24,
+            lastSeen: '2026-10-29T00:00:00Z',
+          },
+        ],
+      },
+    });
+    await render();
+    expect(container.textContent).toContain('Studio-Mac');
+    expect(container.textContent).toContain('192.168.0.178');
+    expect(container.textContent).toContain('0.3.6');
+    expect(container.textContent).toContain('macOS · arm64');
+    expect(container.textContent).toContain('24 ms');
+    expect(container.textContent).toContain('1 online');
+    await act(async () => {
+      Simulate.click(
+        container.querySelector('[aria-label="Delete pairing for Studio-Mac"]'),
+      );
+    });
+    expect(api.delete).toHaveBeenCalledWith('/bridge/connections/abc123def456');
   });
   it('creates an attached file download and shows setup instructions beside the controls', async () => {
     expect.hasAssertions();

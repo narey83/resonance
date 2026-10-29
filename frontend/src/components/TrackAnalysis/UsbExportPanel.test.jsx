@@ -231,7 +231,7 @@ describe('USB export selection and failures', () => {
       Simulate.click(button('Download Resonance Bridge for Mac'));
     });
     expect(api.get).toHaveBeenLastCalledWith(
-      '/analysis/pioneer-link/helper?platform=macos',
+      '/bridge/helper?platform=macos',
       { responseType: 'blob' },
     );
     expect(click).toHaveBeenCalledWith();

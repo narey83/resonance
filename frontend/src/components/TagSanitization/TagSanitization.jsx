@@ -30,7 +30,6 @@
 import './TagSanitization.css';
 import { runNow as runEnrichment } from '../../lib/metadataLookup';
 import * as api from '../../lib/tagSanitization';
-import PageInfo from '../Shared/PageInfo';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 
@@ -168,60 +167,6 @@ const TagSanitization = () => {
 
   return (
     <div className="ts-root">
-      <PageInfo storageKey="tagsanitization">
-        <p>
-          Consolidates all ID3 tag versions on each MP3/WAV/AIFF file into a
-          single clean <strong>ID3v2.3</strong> tag — the industry standard for
-          maximum compatibility across DJ software, hardware, and media players.
-        </p>
-        <p>
-          <strong>About ID3v1 vs ID3v2</strong>
-        </p>
-        <p>
-          MP3 files can contain two completely separate tag systems.{' '}
-          <strong>ID3v2</strong> (at the start of the file) is the modern format
-          used by virtually all software — it holds your artist name, track
-          title, album, artwork, key, and more. <strong>ID3v1</strong> is a tiny
-          128-byte legacy block appended to the end of the file, originally from
-          the 1990s. Most rippers and editors have written both for years,
-          meaning the same artist/title data is duplicated in two places.
-        </p>
-        <p>
-          When this scan removes the ID3v1 block,{' '}
-          <strong>no metadata is lost</strong> — everything that was in it is
-          already in ID3v2, which is what every modern application reads. It is
-          purely removing the redundant copy.
-        </p>
-        <p>What else gets fixed:</p>
-        <ul>
-          <li>
-            <strong>Version upgrade/downgrade</strong> — files tagged with the
-            older ID3v2.2 format or the newer ID3v2.4 are rewritten as ID3v2.3.
-          </li>
-          <li>
-            <strong>Missing field promotion</strong> — if ID3v2 is missing a
-            field that ID3v1 has (rare, but possible on very old files), the
-            value is copied across before v1 is removed.
-          </li>
-          <li>
-            <strong>Key frame consolidation</strong> — key data written by some
-            software into <code>TXXX:KEY</code> or comment frames is moved into
-            the standard <code>TKEY</code> frame and normalised to musical
-            notation.
-          </li>
-        </ul>
-        <p>
-          Enable <strong>Dry Run</strong> to see exactly what would change on
-          each file before anything is written.
-        </p>
-        <p>
-          <strong>Clean &amp; enrich</strong> runs a sanitize and then
-          automatically kicks off the online metadata lookup, filling in any
-          missing album/year/genre once the tags are clean — a one-click way to
-          tidy and complete the whole library.
-        </p>
-      </PageInfo>
-
       {/* Stats bar */}
       <div className="ts-stats-bar">
         <div className="ts-stat">

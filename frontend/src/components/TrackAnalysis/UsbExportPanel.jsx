@@ -176,7 +176,7 @@ const UsbExportPanel = ({
     );
   const downloadHelper = (platform) =>
     downloadFile(
-      `/analysis/pioneer-link/helper?platform=${platform}`,
+      `/bridge/helper?platform=${platform}`,
       {
         macos: 'resonance-bridge-macos.pkg',
         windows: 'resonance-bridge-windows-setup.exe',
@@ -228,15 +228,15 @@ const UsbExportPanel = ({
               'Ready to export',
               'Your USB export',
             ][step]
-          : 'Export for Pioneer DJ players'}
+          : 'Export for compatible DJ players'}
       </h3>
       <details className="usb-export-notes">
         <summary>
           Experimental export · compatibility and included features
         </summary>
         <p>
-          Experimental Rekordbox-format export. Hardware verification is
-          pending; compatibility depends on the player and firmware.
+          Experimental device-library export. Hardware verification is pending;
+          compatibility depends on the player and firmware.
         </p>
         <p>
           Audio is exported as stereo 16-bit 44.1 kHz WAV for broad player
@@ -467,9 +467,9 @@ const UsbExportPanel = ({
       )}
       {error && <p role="alert">{error}</p>}
       <p>
-        Extract the ZIP, then copy its Contents and PIONEER folders to the root
-        of a player-compatible USB drive. Keep these folders together. Use an
-        empty test drive and safely eject it before testing on hardware. The
+        Extract the ZIP, then copy its generated device-library folders to the
+        root of a player-compatible USB drive. Keep these folders together. Use
+        an empty test drive and safely eject it before testing on hardware. The
         Resonance Bridge for Windows, macOS or Linux writes the prepared export
         to your drive. The browser prepares and downloads the ZIP; it cannot
         write directly to USB devices.

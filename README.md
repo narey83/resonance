@@ -63,13 +63,13 @@ Resonance is a modified version of [slskd](https://github.com/slskd/slskd). It i
 - Use the Expo/React Native companion app for search, transfers, playback, library browsing, chat, and administration.
 - Create, edit, delete and publish mixtapes, with token-protected public playback and `.m3u` or `.zip` downloads.
 
-### Prepare Pioneer exports
+### Prepare DJ hardware exports
 
 - Start a USB export from the library or the Export wizard, including tracks selected through folders.
 - Prepare classic and OneLibrary databases, playlists, waveforms and beatgrids using the optional export worker.
 - Use one desktop helper for USB transfer and Network Link. Network Link serves the prepared whole library and checks for updates automatically.
 
-These Pioneer features are **experimental**. Physical player acceptance, including OPUS-QUAD, is still pending; network support depends on the player's LINK EXPORT capabilities. Installer signing and native Windows/Linux validation also remain outstanding. See the [Resonance Bridge guide](desktop/bridge/README.md) before testing.
+These DJ hardware features are **experimental**. Physical player acceptance is still pending; network support depends on the player's LINK EXPORT capabilities. Installer signing and native Windows/Linux validation also remain outstanding. See the [Resonance Bridge guide](desktop/bridge/README.md) before testing.
 
 ### Take the library mobile
 
@@ -77,7 +77,7 @@ These Pioneer features are **experimental**. Physical player acceptance, includi
 - Open a full-screen player with artwork, waveform seeking, queue controls and available BPM, key, LUFS and genre information.
 - Search Soulseek, manage server transfers, browse shares, use rooms/chat and access administration according to your role.
 - Choose Light, Dark, AMOLED, Midnight or system appearance, and Automatic, Original or Data saver streaming quality.
-- Android also implements a local audio library, Android Auto, an optional player overlay over other apps and copying local tracks to a chosen folder or USB storage. These have different platform requirements from iOS and from the desktop Pioneer export.
+- Android also implements a local audio library, Android Auto, an optional player overlay over other apps and copying local tracks to a chosen folder or USB storage. These have different platform requirements from iOS and from the desktop DJ hardware export.
 
 See the [mobile feature guide and platform comparison](mobile/README.md). The apps are in active development: features and design can change, with more features being added.
 
@@ -115,7 +115,7 @@ Captured **21 October 2026** from the isolated 15-track test library, with enhan
 | **Mix compatibility** — compare tempo, key and suggested handover regions | **Preparation** — automatic analysis progress, status and retry controls |
 | <a href="docs/screenshots/smart-crates.png"><img src="docs/screenshots/smart-crates.png" alt="Smart crates with saved rules and live collection counts" width="460"></a> | <a href="docs/screenshots/converter.png"><img src="docs/screenshots/converter.png" alt="Daylight audio converter with source selection and conversion settings" width="460"></a> |
 | **Smart crates** — collections that follow saved library rules | **Audio converter** — source selection, format settings and conversion jobs |
-| <a href="docs/screenshots/export.png"><img src="docs/screenshots/export.png" alt="Pioneer USB export wizard with folder-aware track selection" width="460"></a> | <a href="docs/screenshots/network-link.png"><img src="docs/screenshots/network-link.png" alt="Pioneer Network Link page with whole-library preparation and shared helper setup" width="460"></a> |
+| <a href="docs/screenshots/export.png"><img src="docs/screenshots/export.png" alt="DJ hardware USB export wizard with folder-aware track selection" width="460"></a> | <a href="docs/screenshots/network-link.png"><img src="docs/screenshots/network-link.png" alt="DJ hardware Network Link page with whole-library preparation and shared helper setup" width="460"></a> |
 | **USB Export** — select folders and tracks, then prepare a player export | **Network Link** — prepare the whole library for the shared desktop helper |
 
 </details>
@@ -194,7 +194,7 @@ Basic analysis currently allows BPM/key tag writes by default. Set `analysis.wri
 | `mobile/` | Expo, React Native | Native companion experience for Android and iOS |
 | `desktop/bridge/` | Go, native launcher and installer tooling | Resonance Bridge desktop app, USB transfer and device integration |
 | `tools/analysis-worker/` | Python, separately installed engines/models | Optional independent enhanced analysis |
-| `tools/usb-export/` | Python | Experimental Pioneer database and analysis writers |
+| `tools/usb-export/` | Python | Experimental DJ hardware database and analysis writers |
 | `tools/DatabaseMigration/` | .NET | Explicit PostgreSQL-to-SQLite migration and validation |
 | `extension/` | WebExtensions | Optional browser bridge for synchronising YouTube cookies |
 | `tests/` | xUnit | Backend unit and integration coverage |

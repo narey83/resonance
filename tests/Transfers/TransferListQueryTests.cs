@@ -162,7 +162,7 @@ public class TransferListQueryTests
         return connection;
     }
 
-    private static TransfersDbContext Context(SqliteConnection connection, List<string> sql = null)
+    private static TransfersDbContext Context(SqliteConnection connection, List<string>? sql = null)
     {
         var builder = new DbContextOptionsBuilder<TransfersDbContext>().UseSqlite(connection);
 

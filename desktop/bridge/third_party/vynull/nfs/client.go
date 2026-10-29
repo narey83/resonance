@@ -499,6 +499,39 @@ func (c *Client) ReadFile(export, path string) ([]byte, error) {
 	return buf, nil
 }
 
+// ReadRange mounts export and reads at most count bytes from path at offset.
+// It is intended for connectivity checks and callers that must not download a
+// complete media file merely to verify that the read path is operational.
+func (c *Client) ReadRange(export, path string, offset, count uint32) ([]byte, error) {
+	root, err := c.mount(export)
+	if err != nil {
+		return nil, err
+	}
+	fh := root
+	var at fattr
+	for _, part := range strings.Split(strings.Trim(path, "/"), "/") {
+		if part == "" {
+			continue
+		}
+		if fh, at, err = c.lookup(fh, part); err != nil {
+			return nil, err
+		}
+	}
+	if at.Type == nfTypeDir {
+		return nil, fmt.Errorf("%s is a directory", path)
+	}
+	if offset >= at.Size || count == 0 {
+		return []byte{}, nil
+	}
+	if count > maxReadSize {
+		count = maxReadSize
+	}
+	if remaining := at.Size - offset; count > remaining {
+		count = remaining
+	}
+	return c.read(fh, offset, count)
+}
+
 // FetchExportPDB downloads the rekordbox export.pdb, trying the server's
 // advertised export list first and then common CDJ roots. It returns the bytes
 // and the export they came from.

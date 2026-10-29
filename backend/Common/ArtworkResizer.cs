@@ -149,7 +149,7 @@ namespace resonance.Common
                 _ => SKMatrix.Identity,
             };
             canvas.SetMatrix(matrix);
-            canvas.DrawBitmap(bitmap, 0, 0);
+            canvas.DrawBitmap(bitmap, 0, 0, new SKSamplingOptions(SKFilterMode.Nearest));
             return output;
         }
 

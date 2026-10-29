@@ -35,6 +35,7 @@ namespace resonance.Analysis.Candidates
     using System.Diagnostics;
     using System.Globalization;
     using System.IO;
+    using System.IO.Compression;
     using System.Linq;
     using System.Security.Cryptography;
     using System.Text;
@@ -43,6 +44,7 @@ namespace resonance.Analysis.Candidates
     using System.Threading.Tasks;
     using resonance.Analysis.Imports;
     using resonance.Common;
+    using Serilog;
 
     public record CandidateJob(string JobId, string Status, string LibraryPath, string AudioSha256, long AudioBytes, DateTimeOffset CreatedAt, double? RequestedSeconds, string SourceKind = "independent-candidate");
 
@@ -53,6 +55,16 @@ namespace resonance.Analysis.Candidates
             Options = options;
             Analysis = analysis;
             Store = store;
+            Resources = options.ResolveResources(
+                Environment.ProcessorCount,
+                GC.GetGCMemoryInfo().TotalAvailableMemoryBytes);
+            WorkerGate = new(Resources.ParallelJobs, Resources.ParallelJobs);
+            Log.Information(
+                "Enhanced analysis resources: {Jobs} parallel jobs, {Threads} threads per job, {Processors} available processors, {MemoryGiB:F1} GiB memory budget",
+                Resources.ParallelJobs,
+                Resources.ThreadsPerJob,
+                Resources.ProcessorCount,
+                Resources.AvailableMemoryBytes / (double)(1L << 30));
         }
 
         public bool Enabled => Options.Enabled;
@@ -60,14 +72,20 @@ namespace resonance.Analysis.Candidates
         public bool StorageAvailable => !string.IsNullOrWhiteSpace(Options.OutputRoot)
             && Path.IsPathFullyQualified(Options.OutputRoot) && Directory.Exists(Options.OutputRoot);
 
+        public CandidateResourcePlan Resources { get; }
+
         private AnalysisStore Store { get; }
 
         private CandidateAnalysisOptions Options { get; }
 
         private IAnalysisService Analysis { get; }
 
-        // Candidate jobs use a separate queue and store; they never join the native auto-scan queue.
-        private SemaphoreSlim WorkerGate { get; } = new(1, 1);
+        // Candidate jobs use a separate bounded pool and store; they never join the native
+        // auto-scan queue. The pool is sized from the container's effective CPU and memory.
+        private SemaphoreSlim WorkerGate { get; }
+        private object SummaryGate { get; } = new();
+
+        private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", "Music / Enhanced Analysis");
 
         public async Task<CandidateJob> Analyze(CandidateAnalysisRequest request, CancellationToken ct)
         {
@@ -156,14 +174,26 @@ namespace resonance.Analysis.Candidates
                 }
 
                 var source = ImportedAnalysisContract.RequireLibraryPath(MusicPath.Root, path);
-                await WorkerGate.WaitAsync(ct);
-                try
+                var baseResult = Path.Combine(JobDirectory(existing.Value.Job.JobId), "result", "analysis.json");
+                var baseStems = Path.Combine(JobDirectory(existing.Value.Job.JobId), "result", "stems");
+                if (Directory.Exists(baseStems))
                 {
-                    generated = await Run(source, null, null, ct, Path.Combine(JobDirectory(existing.Value.Job.JobId), "result", "analysis.json"), true);
+                    await WorkerGate.WaitAsync(ct);
+                    try
+                    {
+                        generated = await Run(source, null, null, ct, baseResult, true);
+                    }
+                    finally
+                    {
+                        WorkerGate.Release();
+                    }
                 }
-                finally
+                else
                 {
-                    WorkerGate.Release();
+                    // Bulk preparation removes heavyweight intermediate stems after a complete
+                    // result is committed. A future model revision can still refresh the track by
+                    // running a new full candidate rather than failing on a missing cache.
+                    generated = await Analyze(new CandidateAnalysisRequest(path), ct);
                 }
             }
             else
@@ -178,6 +208,7 @@ namespace resonance.Analysis.Candidates
             }
 
             CacheDjSummary(path, result.Analysis.Value, generated.JobId);
+            PruneBulkArtifacts(JobDirectory(generated.JobId), generated.JobId, Log);
         }
 
         public async Task<IReadOnlyList<CandidateJob>> List(string path, CancellationToken ct)
@@ -323,14 +354,61 @@ namespace resonance.Analysis.Candidates
             var arrangement = features.GetProperty("semanticPhrases").GetProperty("result");
             var automatic = arrangement.TryGetProperty("djStructure", out var dj) && dj.TryGetProperty("automatic", out var auto) && auto.ValueKind == JsonValueKind.True;
             var neutralPhrases = automatic ? dj.GetProperty("segments").EnumerateArray().Count(segment => segment.GetProperty("label").GetString() == "Transition") : 0;
-            Store.SaveDjSummary(path, JsonSerializer.Serialize(new
+            var summary = JsonSerializer.Serialize(new
             {
                 complete = true, exportReady = ExportAnalysisContract.Ready(analysis), experimental = true, analysisId,
                 genre = genre.ValueKind == JsonValueKind.Object ? genre.GetProperty("label").GetString() : null,
                 energy, energySemantics = "Mean PCM RMS; loudness-based energy proxy", vocals,
                 automaticArrangement = automatic, neutralPhraseCount = neutralPhrases,
                 reviewReason = automatic ? null : "Independent predictions; audition beatgrid and phrase labels",
-            }));
+            });
+            lock (SummaryGate)
+            {
+                Store.SaveDjSummary(path, summary);
+            }
+        }
+
+        private static void PruneBulkArtifacts(string jobDirectory, string jobId, ILogger log)
+        {
+            var resultDirectory = Path.Combine(jobDirectory, "result");
+            try
+            {
+                foreach (var path in Directory.EnumerateFileSystemEntries(resultDirectory))
+                {
+                    if (Path.GetFileName(path) == "analysis.json")
+                    {
+                        continue;
+                    }
+
+                    if (Directory.Exists(path))
+                    {
+                        Directory.Delete(path, true);
+                    }
+                    else
+                    {
+                        File.Delete(path);
+                    }
+                }
+
+                var analysis = Path.Combine(resultDirectory, "analysis.json");
+                var compressed = analysis + ".gz";
+                var temporary = compressed + ".tmp";
+                using (var input = new FileStream(analysis, FileMode.Open, FileAccess.Read, FileShare.Read))
+                using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                using (var gzip = new GZipStream(output, CompressionLevel.SmallestSize))
+                {
+                    input.CopyTo(gzip);
+                }
+
+                File.Move(temporary, compressed, true);
+                File.Delete(analysis);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // Retention is safe but expensive. Never turn a valid completed analysis into a
+                // failure solely because temporary evidence could not be reclaimed.
+                log.Warning("Could not prune intermediate artifacts for enhanced job {JobId}: {Error}", jobId, exception.Message);
+            }
         }
 
         private static async Task<(string Sha256, long Bytes)> Hash(string path, CancellationToken ct)
@@ -492,6 +570,14 @@ namespace resonance.Analysis.Candidates
                 RedirectStandardError = true,
                 CreateNoWindow = true,
             };
+            var threads = Resources.ThreadsPerJob.ToString(CultureInfo.InvariantCulture);
+            start.Environment["RESONANCE_ANALYSIS_THREADS"] = threads;
+            start.Environment["OMP_NUM_THREADS"] = threads;
+            start.Environment["MKL_NUM_THREADS"] = threads;
+            start.Environment["OPENBLAS_NUM_THREADS"] = threads;
+            start.Environment["NUMEXPR_NUM_THREADS"] = threads;
+            start.Environment["OMP_DYNAMIC"] = "FALSE";
+            start.Environment["MKL_DYNAMIC"] = "FALSE";
             start.ArgumentList.Add(Options.WorkerScript);
             start.ArgumentList.Add(input);
             start.ArgumentList.Add("--config");
@@ -613,13 +699,36 @@ namespace resonance.Analysis.Candidates
 
         private async Task<JsonElement> ReadResult(string path, CandidateJob job, CancellationToken ct)
         {
+            string json;
             var file = new FileInfo(path);
-            if (!file.Exists || file.Length > Options.MaxResultBytes)
+            if (file.Exists)
             {
-                throw new IOException("Candidate result is missing or exceeds the configured size limit.");
+                if (file.Length > Options.MaxResultBytes)
+                {
+                    throw new IOException("Candidate result is missing or exceeds the configured size limit.");
+                }
+
+                json = await File.ReadAllTextAsync(path, ct);
+            }
+            else
+            {
+                file = new FileInfo(path + ".gz");
+                if (!file.Exists || file.Length > Options.MaxResultBytes)
+                {
+                    throw new IOException("Candidate result is missing or exceeds the configured size limit.");
+                }
+
+                await using var input = file.OpenRead();
+                await using var gzip = new GZipStream(input, CompressionMode.Decompress);
+                using var reader = new StreamReader(gzip, Encoding.UTF8);
+                json = await reader.ReadToEndAsync(ct);
+                if (Encoding.UTF8.GetByteCount(json) > Options.MaxResultBytes)
+                {
+                    throw new IOException("Candidate result is missing or exceeds the configured size limit.");
+                }
             }
 
-            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(path, ct), new JsonDocumentOptions { MaxDepth = 64 });
+            using var document = JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 64 });
             var root = document.RootElement;
             var audio = root.GetProperty("audioIdentity");
             if (root.GetProperty("schemaVersion").GetInt32() != 1

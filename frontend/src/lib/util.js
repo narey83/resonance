@@ -111,11 +111,25 @@ export const formatDate = (date) => {
 };
 
 const CSHARP_EPOCH_TICKS = 621_355_968_000_000_000n;
+const NEW_LIBRARY_ITEM_AGE_MS = 7 * 86_400_000;
+
+export const indexedAtToDate = (ticks) => {
+  if (!ticks) return null;
+  const ms = Number((BigInt(ticks) - CSHARP_EPOCH_TICKS) / 10_000n);
+  const date = new Date(ms);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+export const isRecentlyIndexed = (ticks, now = Date.now()) => {
+  const date = indexedAtToDate(ticks);
+  if (!date) return false;
+  const age = now - date.getTime();
+  return age >= 0 && age < NEW_LIBRARY_ITEM_AGE_MS;
+};
 
 export const formatIndexedAt = (ticks) => {
-  if (!ticks) return '';
-  const ms = Number((BigInt(ticks) - CSHARP_EPOCH_TICKS) / 10_000n);
-  const d = new Date(ms);
+  const d = indexedAtToDate(ticks);
+  if (!d) return '';
   const now = new Date();
   const startOfToday = new Date(
     now.getFullYear(),

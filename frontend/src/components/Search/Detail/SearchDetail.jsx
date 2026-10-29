@@ -884,14 +884,38 @@ const SearchDetail = ({
     }
 
     const settled = await Promise.allSettled(
-      [...byUsername.entries()].map(([username, files]) =>
-        transfers.download({ files, username, destinationFolder: destination }),
-      ),
+      [...byUsername.entries()].map(async ([username, files]) => {
+        const request = { files, username, destinationFolder: destination };
+
+        try {
+          return await transfers.download(request);
+        } catch (downloadError) {
+          const conflict = downloadError?.response?.data;
+          if (
+            downloadError?.response?.status !== 409 ||
+            conflict?.code !== 'DuplicateAlbumOrFolder'
+          ) {
+            throw downloadError;
+          }
+
+          const proceed = window.confirm(
+            `${conflict.message}\n\nDownload it again anyway?`,
+          );
+          if (!proceed) return { cancelled: true };
+
+          return transfers.download({ ...request, allowDuplicate: true });
+        }
+      }),
     );
 
     let failed = 0;
+    let cancelled = 0;
 
     for (const result of settled) {
+      if (result.status === 'fulfilled' && result.value?.cancelled) {
+        cancelled += 1;
+      }
+
       if (result.status === 'rejected') {
         failed += 1;
         const downloadError = result.reason;
@@ -903,7 +927,9 @@ const SearchDetail = ({
       }
     }
 
-    if (failed === 0) {
+    if (cancelled > 0) {
+      toast.info('Duplicate download cancelled');
+    } else if (failed === 0) {
       const count = filesToDownload.length;
       toast.success(
         `Queued ${count} ${count === 1 ? 'file' : 'files'}${destination ? ` → ${destination}` : ''}`,

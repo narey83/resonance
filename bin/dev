@@ -16,7 +16,7 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNTIME = ROOT / '.dev'
-SERVICES = ('backend', 'web', 'mobile')
+SERVICES = ('backend', 'web', 'caddy', 'probe', 'mobile')
 SCRIPT = str(Path(__file__).resolve())
 
 
@@ -62,11 +62,23 @@ def specifications(config):
                     'command': [dotnet or 'dotnet', 'watch', '--project', 'backend/resonance.csproj', '--non-interactive', '--no-hot-reload', 'run', '--no-launch-profile', '--',
                                 '--app-dir', str(app_dir), '--http-port', str(backend_port),
                                 '--http-ip-address', config.get('bindAddress', '127.0.0.1'), '--no-https', '--content-path', '../../../../frontend/build'],
-                    'env': {'ASPNETCORE_ENVIRONMENT': 'Development', 'DOTNET_USE_POLLING_FILE_WATCHER': '1'}},
+                    'env': {'ASPNETCORE_ENVIRONMENT': 'Development', 'DOTNET_USE_POLLING_FILE_WATCHER': '1',
+                            'RESONANCE_CANDIDATE_OUTPUT_ROOT': str(app_dir / 'data' / 'candidates'),
+                            'RESONANCE_USB_EXPORT_ROOT': str(app_dir / 'data' / 'bridge-exports'),
+                            'RESONANCE_BRIDGE_RELEASE_ROOT': str(app_dir / 'bridge-releases'),
+                            'RESONANCE_USB_EXPORT_PYTHON': str(ROOT / '.dev' / 'usb-export-venv' / 'bin' / 'python'),
+                            'RESONANCE_USB_EXPORT_WORKER': str(ROOT / 'tools' / 'usb-export' / 'usb_export.py'),
+                            'RESONANCE_USB_EXPORT_FFMPEG': str(app_dir / 'data' / 'bin' / 'ffmpeg')}},
         'web': {'port': web_port, 'path': '/', 'cwd': str(ROOT / 'frontend'),
                 'command': [npm or 'npm', 'start'], 'env': {'BROWSER': 'none', 'HOST': config.get('bindAddress', '127.0.0.1'), 'PORT': str(web_port),
                 'REACT_APP_API_URL': '/api/v0', 'REACT_APP_HUB_URL': '/hub',
                 'RESONANCE_DEV_API_TARGET': f'http://127.0.0.1:{backend_port}'}},
+        'caddy': {'port': 8443, 'path': None, 'cwd': str(ROOT),
+                  'command': [str(ROOT / 'bin' / 'dev-caddy')], 'env': {}},
+        'probe': {'port': 55470, 'path': '/', 'cwd': str(ROOT),
+                  'command': [str(ROOT / 'bin' / 'bridge-probe'), '-listen',
+                              f"{config.get('bindAddress', '127.0.0.1')}:55470"],
+                  'env': {}},
         'mobile': {'port': metro_port, 'path': '/status', 'cwd': str(ROOT / 'mobile'),
                    'command': [npm or 'npm', 'exec', '--', 'expo', 'start', '--dev-client', '--port', str(metro_port)],
                    'env': {'EXPO_NO_TELEMETRY': '1'}},
@@ -74,6 +86,8 @@ def specifications(config):
 
 
 def ready(spec):
+    if spec['path'] is None:
+        return port_busy(spec['port'])
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{spec['port']}{spec['path']}", timeout=2) as response:
             return response.status == 200

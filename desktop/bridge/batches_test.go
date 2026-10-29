@@ -27,9 +27,6 @@ func testPreparedBatch(t *testing.T, cache, key, title string) *bundle {
 			t.Fatal(e)
 		}
 	}
-	if e = os.WriteFile(filepath.Join(root, "Contents", "track.wav"), []byte("prepared-audio"), 0600); e != nil {
-		t.Fatal(e)
-	}
 	data := make([]byte, 30)
 	copy(data, "PMAI")
 	binary.BigEndian.PutUint32(data[4:8], 12)
@@ -47,13 +44,17 @@ func testPreparedBatch(t *testing.T, cache, key, title string) *bundle {
 	db.ReindexTracks()
 	store := analysis.NewStore()
 	store.Set(1, &analysis.Result{Imported: true, BPM: 120, Beats: []float64{0, 500}, WavePreview: []byte{1, 2}})
-	return &bundle{Root: root, Tracks: 1, Keys: map[uint32]string{1: key}, DB: db, Analysis: store}
+	source, digest := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	if len(key) == 129 {
+		source, digest = key[:64], key[65:]
+	}
+	return &bundle{Root: root, Tracks: 1, Keys: map[uint32]string{1: key}, DB: db, Analysis: store, Remote: map[string]remoteFile{filepath.Join(root, "Contents", "track.wav"): {SourceKey: source, SHA256: digest, Bytes: 14}}}
 }
 func TestBatchMergeResumesWithStableIdentities(t *testing.T) {
 	cache := t.TempDir()
 	root := batchRoot(cache, "https://resonance.test/api/v0/bridge/sync")
 	h := &helper{Cache: cache}
-	c := &batchCheckpoint{Schema: 1, DB: &pdb.Database{}, Keys: map[uint32]string{}, Applied: map[string][]uint32{}, Pending: map[string]string{}}
+	c := &batchCheckpoint{Schema: 2, DB: &pdb.Database{}, Keys: map[uint32]string{}, Streams: map[uint32]remoteFile{}, Applied: map[string][]uint32{}, Pending: map[string]string{}}
 	k1 := strings.Repeat("a", 64) + ":" + strings.Repeat("b", 64)
 	k2 := strings.Repeat("c", 64) + ":" + strings.Repeat("d", 64)
 	b1 := strings.Repeat("1", 64)
@@ -89,15 +90,18 @@ func TestBatchMergeResumesWithStableIdentities(t *testing.T) {
 	if len(resumed.DB.Tracks) != 1 || resumed.DB.Tracks[0].Title != "Second" {
 		t.Fatal("obsolete batch still browsable")
 	}
-	if _, e = os.Stat(restored.Library.Track(first).FilePath); e != nil {
-		t.Fatal("existing player file removed", e)
+	if _, e = os.Stat(restored.Library.Track(first).FilePath); !os.IsNotExist(e) {
+		t.Fatal("streamed audio was stored on disk")
+	}
+	if _, ok := restored.Remote[restored.Library.Track(first).FilePath]; !ok {
+		t.Fatal("stream descriptor was not retained")
 	}
 }
 func TestBatchRejectsMissingIdentityWithoutPublishing(t *testing.T) {
 	cache := t.TempDir()
 	root := batchRoot(cache, "https://server.test")
 	h := &helper{Cache: cache}
-	c := &batchCheckpoint{Schema: 1, DB: &pdb.Database{}, Keys: map[uint32]string{}, Applied: map[string][]uint32{}, Pending: map[string]string{}}
+	c := &batchCheckpoint{Schema: 2, DB: &pdb.Database{}, Keys: map[uint32]string{}, Streams: map[uint32]remoteFile{}, Applied: map[string][]uint32{}, Pending: map[string]string{}}
 	if e := h.mergeBatch(root, c, testPreparedBatch(t, cache, "legacy-hash:1", "Bad"), strings.Repeat("a", 64), strings.Repeat("b", 32)); e == nil {
 		t.Fatal("missing source identity accepted")
 	}
@@ -116,6 +120,31 @@ func TestBatchWaitingAnalysisIsConnectedAndDoesNotDownload(t *testing.T) {
 	}
 	if s.Status != status.Message || s.Error != "" {
 		t.Fatal(s.Status, s.Error)
+	}
+}
+
+func TestStreamingUpgradePurgesLegacyAudioCollections(t *testing.T) {
+	cache := t.TempDir()
+	legacy := filepath.Join(cache, "collections", "legacy")
+	current := filepath.Join(cache, "collections", "current")
+	for _, item := range []struct {
+		root   string
+		schema int
+	}{{legacy, 1}, {current, 2}} {
+		if err := os.MkdirAll(filepath.Join(item.root, "Contents"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		data, _ := json.Marshal(map[string]int{"Schema": item.schema})
+		if err := os.WriteFile(filepath.Join(item.root, "collection.json"), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	purgeLegacyAudio(cache)
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Fatal("legacy audio collection was retained")
+	}
+	if _, err := os.Stat(current); err != nil {
+		t.Fatal("stream-only collection was removed", err)
 	}
 }
 func TestBatchAcknowledgmentUsesPostAndCredentialHeader(t *testing.T) {

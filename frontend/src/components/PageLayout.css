@@ -4,19 +4,90 @@
   --workspace-header-height: 44px;
   --workspace-title-size: 16px;
   --page-spacing: 20px;
-  --page-form-width: 1400px;
+  --page-form-width: none;
   min-width: 0;
 }
-.app-content { min-width: 0; min-height: 0; }
-.app-content > * { box-sizing: border-box; min-width: 0; }
-.app-content > :is(.view, .system, .export-page, .network-link-page, .converter-page) {
+.app-content {
+  min-width: 0;
+  min-height: 0;
+}
+.app-content > * {
+  box-sizing: border-box;
+  min-width: 0;
+}
+.app-content
+  > :is(
+    .view,
+    .system,
+    .overview,
+    .sr-root,
+    .map-page--embedded,
+    .jb-root,
+    .ta-root,
+    .export-page,
+    .network-link-page,
+    .tag-manager,
+    .dupes-shell,
+    .converter-page
+  ) {
   padding: var(--page-spacing) var(--page-gutter);
   width: 100%;
 }
-.app-content > .view > .transfer-history { padding: 0; }
+
+/* Full-height destinations still get the same inset page edge. Their existing
+   panes remain responsible for scrolling inside this framed workspace. */
+.app-content > :is(.overview, .sr-root, .map-page--embedded) {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-surface);
+}
+
+/* Every route under Music uses the same responsive outer rhythm. Individual
+   tools can subdivide their inset surface, but they do not redefine gutters. */
+.app-content
+  > :is(
+    .jb-root,
+    .ta-root,
+    .export-page,
+    .network-link-page,
+    .tag-manager,
+    .dupes-shell,
+    .converter-page
+  ) {
+  box-sizing: border-box;
+}
+
+.app-content > .jb-root > .jb-content,
+.app-content > .ta-root > :is(.ta-tabs, .ta-panel) {
+  background: var(--bg-surface);
+}
+
+.app-content > .jb-root > .jb-content {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.app-content > .ta-root > .ta-tabs {
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+}
+
+.app-content > .ta-root > .ta-panel {
+  border: 1px solid var(--border);
+  border-radius: 0 0 12px 12px;
+  overflow: hidden;
+}
+.app-content > .view > .transfer-history {
+  padding: 0;
+}
 .app-content .export-page > :is(header, section),
-.app-content .converter-page > :is(.converter-layout, .converter-job, .converter-alert),
-.app-content .network-link-page > :is(.network-link-banner, .network-link-layout) {
+.app-content
+  .converter-page
+  > :is(.converter-layout, .converter-job, .converter-alert),
+.app-content
+  .network-link-page
+  > :is(.network-link-banner, .network-link-layout) {
   width: 100%;
   max-width: var(--page-form-width);
   margin-left: auto;
@@ -27,22 +98,49 @@
   padding-left: var(--page-gutter);
   padding-right: var(--page-gutter);
 }
-.app-content .dupes-content { padding: var(--page-spacing) var(--page-gutter); }
-.app-content .dupes-toolbar-row { padding-left: var(--page-gutter); padding-right: var(--page-gutter); }
-.app-content .sr-sidebar-top { padding: 12px 16px; }
-.app-content :is(.converter-source, .converter-settings, .network-link-card, .usb-export-panel) {
+.app-content .dupes-content {
+  padding: var(--page-spacing) var(--page-gutter);
+}
+.app-content .dupes-toolbar-row {
+  padding-left: var(--page-gutter);
+  padding-right: var(--page-gutter);
+}
+.app-content .sr-sidebar-top {
+  padding: 12px 16px;
+}
+.app-content
+  :is(
+    .converter-source,
+    .converter-settings,
+    .network-link-card,
+    .usb-export-panel
+  ) {
   border-radius: 8px;
 }
 @media (max-width: 760px) {
-  .app-main { --page-gutter: 16px; --page-spacing: 16px; }
+  .app-main {
+    --page-gutter: 16px;
+    --page-spacing: 16px;
+  }
 }
 @media (max-width: 480px) {
-  .app-main { --page-gutter: 12px; --page-spacing: 12px; }
+  .app-main {
+    --page-gutter: 12px;
+    --page-spacing: 12px;
+  }
 }
-.app-main > .dj-workspace-header { padding-left: var(--page-gutter); padding-right: var(--page-gutter); }
+.app-main > .dj-workspace-header {
+  padding-left: var(--page-gutter);
+  padding-right: var(--page-gutter);
+}
 
-.app-content .export-page > .usb-export-panel { margin-top: 0; padding: var(--page-spacing); }
-.app-content :is(.converter-source, .converter-settings, .network-link-card) { padding: var(--page-spacing); }
+.app-content .export-page > .usb-export-panel {
+  margin-top: 0;
+  padding: var(--page-spacing);
+}
+.app-content :is(.converter-source, .converter-settings, .network-link-card) {
+  padding: var(--page-spacing);
+}
 
 /* Page titles use the same compact rhythm as the music workspace. */
 .app-main :is(.dj-workspace-header, .sr-workspace-header) {
@@ -63,14 +161,19 @@
   font-size: var(--workspace-title-size);
   font-weight: 650;
   line-height: 20px;
-  letter-spacing: -.015em;
+  letter-spacing: -0.015em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.app-main .sr-workspace-header > div:first-child { flex: 1; min-width: 0; }
+.app-main .sr-workspace-header > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
 .app-main .sr-workspace-header .sr-eyebrow,
-.app-main .community-heading p { display: none; }
+.app-main .community-heading p {
+  display: none;
+}
 .app-main .sr-workspace-header button {
   min-height: 28px;
   padding: 4px 10px;
@@ -85,18 +188,66 @@
   flex-wrap: wrap;
   background: var(--bg-surface);
 }
-.app-main .community-root .chat-header-info { flex-direction: row; align-items: center; gap: 12px; min-width: 0; }
-.app-main .community-root :is(.chat-header-name, .chat-header-name .ulink-name) { font-size: var(--workspace-title-size); line-height: 20px; font-weight: 650; }
-.app-main .community-root .chat-header-avatar { width: 28px; height: 28px; border-radius: 6px; font-size: 14px; }
-.app-main .community-context { margin: 0; font-size: 11px; line-height: 16px; }
-.app-main .community-root .chat-header .sr-btn { min-height: 28px; padding: 4px 10px; font-size: 11px; }
-.app-main .library-workspace > .workspace-heading { margin-bottom: 12px; gap: 12px; align-items: center; }
-.app-main .library-workspace > .workspace-heading h2 { font-size: var(--workspace-title-size); line-height: 20px; margin: 0; letter-spacing: -.015em; }
-.app-main .library-workspace > .workspace-heading .workspace-eyebrow { display: none; }
-.app-main .library-workspace > .workspace-heading p { margin: 4px 0 0; font-size: 12px; line-height: 1.5; }
-.app-main .network-link-banner { padding: 12px; margin-bottom: 12px; }
-.app-main .network-link-banner strong { font-size: var(--workspace-title-size); }
+.app-main .community-root .chat-header-info {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.app-main
+  .community-root
+  :is(.chat-header-name, .chat-header-name .ulink-name) {
+  font-size: var(--workspace-title-size);
+  line-height: 20px;
+  font-weight: 650;
+}
+.app-main .community-root .chat-header-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+.app-main .community-context {
+  margin: 0;
+  font-size: 11px;
+  line-height: 16px;
+}
+.app-main .community-root .chat-header .sr-btn {
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 11px;
+}
+.app-main .library-workspace > .workspace-heading {
+  margin-bottom: 12px;
+  gap: 12px;
+  align-items: center;
+}
+.app-main .library-workspace > .workspace-heading h2 {
+  font-size: var(--workspace-title-size);
+  line-height: 20px;
+  margin: 0;
+  letter-spacing: -0.015em;
+}
+.app-main .library-workspace > .workspace-heading .workspace-eyebrow {
+  display: none;
+}
+.app-main .library-workspace > .workspace-heading p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.app-main .network-link-banner {
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.app-main .network-link-banner strong {
+  font-size: var(--workspace-title-size);
+}
 @media (max-width: 760px) {
-  .app-main .community-context { display: none; }
-  .app-main .community-root .sr-detail-header-actions { flex-wrap: wrap; }
+  .app-main .community-context {
+    display: none;
+  }
+  .app-main .community-root .sr-detail-header-actions {
+    flex-wrap: wrap;
+  }
 }

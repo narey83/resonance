@@ -11,7 +11,7 @@ public class PlaylistArtworkTests
     public void PrivateArtworkRejectsUnsignedExpiredAndCrossPlaylistCapabilities()
     {
         var signer = new StreamUrlSigner("test-only-secret", 60000);
-        var controller = new MixtapesController(null, signer);
+        var controller = new MixtapesController(null!, signer);
         Assert.IsType<UnauthorizedResult>(controller.GetArtwork("a", 192));
         var (exp, sig) = signer.Sign("playlist-artwork:a");
         Assert.IsType<UnauthorizedResult>(controller.GetArtwork("b", 192, exp, sig));

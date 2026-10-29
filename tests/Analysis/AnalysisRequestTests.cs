@@ -13,6 +13,7 @@ public class AnalysisRequestTests
         Assert.Equal(AnalysisMetrics.All, request.Metrics);
         Assert.True(request.SkipAnalysed);
         Assert.False(request.ResetAll);
+        Assert.False(request.Enhanced);
     }
 
     [Fact]

@@ -134,7 +134,7 @@ func supervise(cache, address string, args []string) int {
 						}
 						err = json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&status)
 						response.Body.Close()
-						if err == nil && status.Application == "resonance-pioneer-link" && status.Version == version {
+						if err == nil && (status.Application == "resonance-bridge" || status.Application == "resonance-pioneer-link") && status.Version == version {
 							healthy = true
 							if updated {
 								_ = copyRelease(cache, "current-release.json", "last-good-release.json")

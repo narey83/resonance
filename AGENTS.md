@@ -6,6 +6,10 @@ The active Resonance system is `192.168.0.80` (`dev-laptop.local`), reached from
 
 The live deployment is the portable stack, Compose project `resonance-stack`, with `resonance-backend` and `resonance-frontend`. The frontend includes Caddy; there is no separate active `resonance-caddy` container. The active Compose files are `docker/compose.portable.yml`, `docker/compose.host-network.yml` and `docker/compose.tls.yml`. See `docker/PORTABLE_STACK.md` for the current workflow. Source changes require the appropriate image rebuild/deployment; this is not the old bind-mounted development stack.
 
+Before changing or shipping code, read [`.agents/BUILD_AND_DEPLOY.md`](.agents/BUILD_AND_DEPLOY.md). A code task is not complete until each affected human-test target has been built and made available, or a concrete platform blocker has been reported.
+
+For every web UI change, use a headless browser after deployment to exercise the changed interaction and visually inspect the live result at desktop and narrow/mobile viewport sizes. Unit tests, production builds and HTTP status checks do not replace this browser QA. Use an authenticated browser state when the route requires sign-in; if browser tooling or authentication is unavailable, report that as a concrete verification blocker instead of claiming the UI is visually verified.
+
 Persistent application state is local to the new host at `/home/narey/.local/share/resonance-stack`, mounted as `/config` in the backend. SQLite is live under that state directory's `data/`; do not mistake the checkout's `backend/data` or an old conversion snapshot for the active database. Music is mounted over SMB at `/downloads`. Preserve native projects, credentials, dependencies, application state and database backups. Never print private configuration or credentials during diagnostics.
 
 ## Old server — off limits to agents

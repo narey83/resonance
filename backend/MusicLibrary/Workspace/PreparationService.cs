@@ -238,7 +238,7 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
 
         try
         {
-            await analysis.StartScanAsync(new(OnlyPaths: [track.Path], SkipAnalysed: true));
+            await analysis.StartScanAsync(new(OnlyPaths: [track.Path], SkipAnalysed: true, Enhanced: enhanced.Enabled));
         }
         catch (InvalidOperationException)
         {

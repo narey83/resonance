@@ -30,14 +30,27 @@
 */
 
 .tag-manager {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  padding: var(--page-spacing) var(--page-gutter);
+}
+
+.tag-manager-window {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .tag-manager-tabs {
-  background: var(--bg-elevated);
+  background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
   display: flex;
   flex-shrink: 0;

@@ -73,6 +73,7 @@ public class RetrySynchronizationTests
             ftpClient: null!,
             eventBus: null!,
             errorNotifications: null!,
+            userService: null!,
             connectionStrings: new ConnectionStringDictionary(new Dictionary<Database, ConnectionString>
             {
                 [Database.Transfers] = "Data Source=:memory:",

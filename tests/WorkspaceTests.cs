@@ -19,17 +19,17 @@ public class WorkspaceTests : IDisposable
     private readonly WorkspaceStore store;
     private readonly MusicRepository repository;
     private readonly FakeAnalysis analysis = new();
-    private PreparationService Service => new(store,repository,null,analysis,new(null,null,null,null));
+    private PreparationService Service => new(store,repository,null!,analysis,new(null!,null!,null!,null!));
     private static long Now => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     public WorkspaceTests()
     {
         Directory.CreateDirectory(root); MusicPath.Configure(root);
-        connection = Environment.GetEnvironmentVariable("RESONANCE_WORKSPACE_TEST_POSTGRES");
-        postgres = !string.IsNullOrEmpty(connection);
-        connection ??= $"Data Source={Path.Combine(root,"test.db")}";
+        var postgresConnection = Environment.GetEnvironmentVariable("RESONANCE_WORKSPACE_TEST_POSTGRES");
+        postgres = !string.IsNullOrEmpty(postgresConnection);
+        connection = postgresConnection ?? $"Data Source={Path.Combine(root,"test.db")}";
         if (postgres)
         {
-            if (!new Npgsql.NpgsqlConnectionStringBuilder(connection).Database.StartsWith("resonance_workspace_test")) throw new Exception("Only a dedicated workspace test database is allowed.");
+            if (!new Npgsql.NpgsqlConnectionStringBuilder(connection).Database!.StartsWith("resonance_workspace_test")) throw new Exception("Only a dedicated workspace test database is allowed.");
             using var clean=Db();clean.Execute("DROP SCHEMA IF EXISTS music CASCADE; DROP SCHEMA IF EXISTS analysis CASCADE; DROP SCHEMA IF EXISTS library_activity CASCADE");
         }
         repository = new(connection,postgres); repository.Initialize(); _ = new AnalysisStore(connection,postgres);
@@ -41,10 +41,10 @@ public class WorkspaceTests : IDisposable
     private DbConnection Db() { DbConnection db = postgres ? new Npgsql.NpgsqlConnection(connection) : new SqliteConnection(connection); db.Open(); return db; }
     private MusicTrack Add(string path="nested/a.mp3", int bpm=128, long? added=null)
     {
-        var track=new MusicTrack(path,Path.GetFileName(path),Path.GetDirectoryName(path),"mp3",100,1,added??Now,120,"Track "+path,"Artist",null,"Album",2026,1,1,"Trance",bpm,"Am",null,false,"ID3",320,44100,16);
+        var track=new MusicTrack(path,Path.GetFileName(path),Path.GetDirectoryName(path) ?? string.Empty,"mp3",100,1,added??Now,120,"Track "+path,"Artist",null!,"Album",2026,1,1,"Trance",bpm,"Am",null!,false,"ID3",320,44100,16);
         repository.Upsert(track);return track;
     }
-    private MusicLibraryQueryResult Query(SmartCrateRules rules,string user="alice",int limit=100,int offset=0) => repository.Query(null,null,null,rules.Genre,null,rules.Folder,false,false,false,false,false,limit,offset,"title",analysis:rules.Analysis,dj:rules.Filters(user,DateTimeOffset.UtcNow));
+    private MusicLibraryQueryResult Query(SmartCrateRules rules,string user="alice",int limit=100,int offset=0) => repository.Query(null!,null!,null!,rules.Genre,null!,rules.Folder,false,false,false,false,false,limit,offset,"title",analysis:rules.Analysis,dj:rules.Filters(user,DateTimeOffset.UtcNow));
     private void Complete(string path, bool enhanced=true)
     {
         using var db=Db();
@@ -76,7 +76,7 @@ public class WorkspaceTests : IDisposable
     }
     [Fact] public void CratesPersistPerAccountAndDetectConflictingEdits()
     {
-        var crate=store.SaveCrate("alice",null,new("My set","",new(BpmMin:125,BpmMax:130)));
+        var crate=store.SaveCrate("alice",null!,new("My set","",new(BpmMin:125,BpmMax:130)));
         Assert.DoesNotContain(store.ListCrates("bob"),row=>row.Id==crate.Id);
         var reloaded=new WorkspaceStore(new(new Dictionary<Database,ConnectionString>{[Database.Music]=connection},postgres));
         Assert.Equal(125,reloaded.FindCrate("alice",crate.Id).Rules.BpmMin);
@@ -120,11 +120,11 @@ public class WorkspaceTests : IDisposable
     [Fact] public void SavedFolderRulesRemainRelativeWhenTheLibraryMoves()
     {
         Add("nested/deep/a.mp3");
-        var crate=store.SaveCrate("alice",null,new("Nested","",new(Folder:Path.Combine(root,"nested"))));
+        var crate=store.SaveCrate("alice",null!,new("Nested","",new(Folder:Path.Combine(root,"nested"))));
         Assert.Equal("nested",store.FindCrate("alice",crate.Id).Rules.Folder);
         MusicPath.Configure(Path.Combine(root,"moved"));
         Assert.Equal(1,Query(crate.Rules).Total);
-        Assert.Throws<ArgumentException>(()=>store.SaveCrate("alice",null,new("Outside","",new(Folder:"../outside"))));
+        Assert.Throws<ArgumentException>(()=>store.SaveCrate("alice",null!,new("Outside","",new(Folder:"../outside"))));
     }
     [Fact] public async Task BusyAndPlaybackDoNotConsumeOrDropQueuedTracks()
     {
@@ -173,8 +173,8 @@ public class WorkspaceTests : IDisposable
     [Fact] public void RestartRecoveryAndCombinedFiltersAgreeWithCounts()
     {
         Add();store.Put(new("nested/a.mp3",100,1,"running",1,0,"",Now));store.RecoverInterrupted();
-        Assert.Equal("queued",store.Find("nested/a.mp3").State);Assert.Equal(1,store.Page("waiting",null,50,0).Total);
-        Complete("nested/a.mp3");Service.Reconcile();Assert.Equal(1,store.Page("analysed",null,50,0).Total);
+        Assert.Equal("queued",store.Find("nested/a.mp3").State);Assert.Equal(1,store.Page("waiting",null!,50,0).Total);
+        Complete("nested/a.mp3");Service.Reconcile();Assert.Equal(1,store.Page("analysed",null!,50,0).Total);
         repository.DeletePaths(["nested/a.mp3"]);Service.Reconcile();Assert.Empty(store.Counts());
     }
     [Fact] public async Task ExistingAnalysisAndChangedFilesAreHandledWithoutResettingResults()
@@ -189,7 +189,7 @@ public class WorkspaceTests : IDisposable
     {
         var a=Add("nested/a.mp3");var b=Add("nested/b.mp3",138);
         var request=new SetPlanRequest("My set",[new(a.Path),new(b.Path,Note:"Swap bass after arrival")],InitialMasterBpm:140,Bars:16,Notes:"Late room");
-        var saved=store.SaveSet("alice",null,request);
+        var saved=store.SaveSet("alice",null!,request);
         Assert.Equal(new[]{"nested/a.mp3","nested/b.mp3"},saved.Items.Select(item=>item.Path));
         Assert.Null(store.FindSet("bob",saved.Id));Assert.Empty(store.ListSets("bob"));
         var reloaded=new WorkspaceStore(new(new Dictionary<Database,ConnectionString>{[Database.Music]=connection},postgres));
@@ -209,7 +209,7 @@ public class WorkspaceTests : IDisposable
     [Fact] public void LegacySetCheckpointsAreRetiredWithoutChangingOrderNotesOrRevision()
     {
         var request=new SetPlanRequest("Legacy set",[new("a.mp3"),new("b.mp3",Note:"Bass swap")],InitialMasterBpm:138);
-        var saved=store.SaveSet("alice",null,request);
+        var saved=store.SaveSet("alice",null!,request);
         var legacy=request with {Items=[new("a.mp3"),new("b.mp3",145,"Bass swap")]};
         using var db=Db();
         var table=postgres ? "music.set_plans" : "set_plans";
@@ -256,12 +256,12 @@ public class WorkspaceTests : IDisposable
     {
         public AnalysisScanState ScanState {get;set;}=new(false,false,false,0,0,0,0,0);
         public bool PlaybackActive {get;set;}
-        public int Starts;public bool Reject;public bool Cancelled;public Action OnStart;
+        public int Starts;public bool Reject;public bool Cancelled;public Action? OnStart;
         public Task StartScanAsync(AnalysisScanRequest request) { if(Reject)throw new InvalidOperationException();Starts++;Assert.True(request.SkipAnalysed);Assert.False(request.ResetAll);OnStart?.Invoke();ScanState=new(false,!Cancelled,Cancelled,1,1,0,0,1);return Task.CompletedTask; }
         public void RecordPlaybackActivity(){} public IEnumerable<TrackAnalysisInfo> GetAllTracks()=>[];public bool CancelScan()=>false;
         public Task<WaveformData> GetWaveformAsync(string path,CancellationToken ct,bool cachedOnly=false)=>throw new NotImplementedException();
         public BeatAnalysis GetBeatInfo(string path)=>throw new NotImplementedException();
         public Task<LoudnessData> GetLoudnessAsync(string path,CancellationToken ct)=>throw new NotImplementedException();
-        public void SetBpm(string path,uint bpm){}public void SetKey(string path,string key){}public void ClearBpm(string path){}public void ClearKey(string path){}public string ResolveMaskedFilename(string path)=>null;
+        public void SetBpm(string path,uint bpm){}public void SetKey(string path,string key){}public void ClearBpm(string path){}public void ClearKey(string path){}public string ResolveMaskedFilename(string path)=>null!;
     }
 }

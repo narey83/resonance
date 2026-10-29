@@ -32,16 +32,29 @@ type exportManifest struct {
 	TrackCount    int               `json:"trackCount"`
 	PlaylistName  string            `json:"playlistName"`
 	Files         []fileSpec        `json:"files"`
+	Streams       []streamSpec      `json:"streams"`
+}
+type streamSpec struct {
+	Path      string `json:"path"`
+	SourceKey string `json:"sourceKey"`
+	SHA256    string `json:"sha256"`
+	Bytes     int64  `json:"bytes"`
+}
+type remoteFile struct {
+	SourceKey string `json:"sourceKey"`
+	SHA256    string `json:"sha256"`
+	Bytes     int64  `json:"bytes"`
 }
 type bundle struct {
-	Persistent bool              `json:"-"`
-	Keys       map[uint32]string `json:"-"`
-	Root       string            `json:"-"`
-	Name       string            `json:"name"`
-	Tracks     int               `json:"tracks"`
-	DB         *pdb.Database     `json:"-"`
-	Library    *library.Library  `json:"-"`
-	Analysis   *analysis.Store   `json:"-"`
+	Persistent bool                  `json:"-"`
+	Keys       map[uint32]string     `json:"-"`
+	Root       string                `json:"-"`
+	Name       string                `json:"name"`
+	Tracks     int                   `json:"tracks"`
+	DB         *pdb.Database         `json:"-"`
+	Library    *library.Library      `json:"-"`
+	Analysis   *analysis.Store       `json:"-"`
+	Remote     map[string]remoteFile `json:"-"`
 }
 
 func safeName(name string) (string, error) {
@@ -126,6 +139,24 @@ func importBundle(archive, cache string) (*bundle, error) {
 	if m.SchemaVersion != 1 || m.TrackCount < 1 || m.TrackCount > 65535 || m.PlaylistName == "" {
 		return nil, errors.New("unsupported export manifest")
 	}
+	streams := map[string]remoteFile{}
+	if m.Profile == "network" {
+		if len(m.Streams) != m.TrackCount {
+			return nil, errors.New("network manifest must describe every streamed track")
+		}
+		for _, s := range m.Streams {
+			n, pathErr := safeName(s.Path)
+			if pathErr != nil || !strings.HasPrefix(n, "Contents/") || !validDigest(s.SourceKey) || !validDigest(s.SHA256) || s.Bytes < 1 {
+				return nil, errors.New("invalid network stream manifest")
+			}
+			if _, exists := streams[n]; exists {
+				return nil, errors.New("duplicate network stream path")
+			}
+			streams[n] = remoteFile{SourceKey: s.SourceKey, SHA256: s.SHA256, Bytes: s.Bytes}
+		}
+	} else if len(m.Streams) != 0 {
+		return nil, errors.New("USB bundle cannot contain network streams")
+	}
 	expected := map[string]fileSpec{}
 	for _, s := range m.Files {
 		n, e := safeName(s.Path)
@@ -146,7 +177,7 @@ func importBundle(archive, cache string) (*bundle, error) {
 		return nil, errors.New("manifest must cover every bundle file")
 	}
 	if entries["PIONEER/rekordbox/export.pdb"] == nil {
-		return nil, errors.New("prepare a dual or legacy export; classic Pioneer database is required for Network Link")
+		return nil, errors.New("prepare a compatible export; the classic device database is required for Network Link")
 	}
 	root, e := os.MkdirTemp(cache, "library-")
 	if e != nil {
@@ -184,6 +215,11 @@ func importBundle(archive, cache string) (*bundle, error) {
 			return nil, fmt.Errorf("checksum mismatch: %s", n)
 		}
 	}
+	for n := range streams {
+		if e = os.MkdirAll(filepath.Dir(filepath.Join(root, filepath.FromSlash(n))), 0700); e != nil {
+			return nil, e
+		}
+	}
 	b, e := loadBundle(root, m)
 	if e != nil {
 		return nil, e
@@ -192,16 +228,23 @@ func importBundle(archive, cache string) (*bundle, error) {
 	return b, nil
 }
 func loadBundle(root string, m exportManifest) (*bundle, error) {
+	streams := map[string]remoteFile{}
+	for _, stream := range m.Streams {
+		streams[stream.Path] = remoteFile{SourceKey: stream.SourceKey, SHA256: stream.SHA256, Bytes: stream.Bytes}
+	}
 	db, e := pdb.Open(filepath.Join(root, "PIONEER", "rekordbox", "export.pdb"))
 	if e != nil {
 		return nil, e
 	}
 	if len(db.Tracks) != m.TrackCount {
-		return nil, errors.New("Pioneer database track count differs from manifest")
+		return nil, errors.New("device database track count differs from manifest")
 	}
 	hashes := map[string]string{}
 	for _, f := range m.Files {
 		hashes[f.Path] = f.SHA256
+	}
+	for path, stream := range streams {
+		hashes[path] = stream.SHA256
 	}
 	keys := map[uint32]string{}
 	occurrences := map[string]int{}
@@ -223,12 +266,23 @@ func loadBundle(root string, m exportManifest) (*bundle, error) {
 	store := analysis.NewStore()
 	store.SetKeep(func(uint32) bool { return true })
 	for _, t := range lib.Tracks() {
-		if e := requireUnder(root, t.FilePath); e != nil {
-			return nil, e
-		}
-		info, e := os.Stat(t.FilePath)
-		if e != nil || !info.Mode().IsRegular() {
-			return nil, errors.New("audio file missing")
+		stream, remote := streams[strings.TrimPrefix(db.TrackByID(t.ID).FilePath, "/")]
+		if !remote {
+			if e := requireUnder(root, t.FilePath); e != nil {
+				return nil, e
+			}
+			info, statErr := os.Stat(t.FilePath)
+			if statErr != nil || !info.Mode().IsRegular() {
+				return nil, errors.New("audio file missing")
+			}
+		} else {
+			relative, relErr := filepath.Rel(root, filepath.Clean(t.FilePath))
+			if relErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+				return nil, errors.New("streamed audio path escapes its bundle")
+			}
+			if stream.Bytes != int64(db.TrackByID(t.ID).FileSize) {
+				return nil, errors.New("streamed audio size differs from the device database")
+			}
 		}
 		p := db.TrackByID(t.ID)
 		dat := filepath.Join(root, filepath.FromSlash(p.AnalyzePath))
@@ -247,5 +301,9 @@ func loadBundle(root string, m exportManifest) (*bundle, error) {
 		}
 		store.Set(t.ID, result)
 	}
-	return &bundle{Keys: keys, Root: root, Name: m.PlaylistName, Tracks: len(db.Tracks), DB: db, Library: lib, Analysis: store}, nil
+	remote := map[string]remoteFile{}
+	for path, stream := range streams {
+		remote[filepath.Join(root, filepath.FromSlash(path))] = stream
+	}
+	return &bundle{Keys: keys, Root: root, Name: m.PlaylistName, Tracks: len(db.Tracks), DB: db, Library: lib, Analysis: store, Remote: remote}, nil
 }

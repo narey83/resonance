@@ -30,7 +30,6 @@
 import './Duplicates.css';
 import { deleteTrackBatch } from '../../lib/musicLibrary';
 import { browseAll, getTags } from '../../lib/shares';
-import PageInfo from '../Shared/PageInfo';
 import { Copy, RefreshCw, Search, Trash2, X } from 'lucide-react';
 import React, {
   useCallback,
@@ -621,383 +620,212 @@ const Duplicates = () => {
 
   return (
     <div className="dupes-shell">
-      <PageInfo storageKey="duplicates">
-        <p>
-          Finds audio files in your library that share the same filename and
-          groups them together, so you can review and remove the copies you
-          don't need.
-        </p>
-        <ul>
-          <li>
-            Use <strong>Similar folder</strong> mode to broaden the search to
-            files in folders with similar names — useful when the same album has
-            been ripped more than once into slightly different folder paths.
-          </li>
-          <li>
-            Within each group, keep the highest-quality version (shown in the
-            quality column) and delete the rest.
-          </li>
-          <li>
-            Queued files are <strong>permanently deleted from disk</strong> when
-            you click Delete.
-          </li>
-        </ul>
-        <p>
-          Refresh the list after making changes to see updated duplicate groups.
-        </p>
-      </PageInfo>
-
-      {/* ── Toolbar ── */}
-      <div className="dupes-toolbar">
-        <div className="dupes-toolbar-row">
-          <div className="dupes-toolbar-left">
-            <span className="dupes-toolbar-title">Duplicate Files</span>
-            {!loading && allFiles.length > 0 && (
-              <span className="dupes-count">
-                {groups.length} {groups.length === 1 ? 'group' : 'groups'}
-                {isSimilarFolderMode
-                  ? ` · ${totalFiles} folders`
-                  : isFolderMode
-                    ? ` · ${totalFiles} duplicated tracks`
-                    : ` · ${totalFiles} files`}
-              </span>
-            )}
-          </div>
-          <div className="dupes-toolbar-right">
-            <select
-              className="opt-select"
-              onChange={handleModeChange}
-              value={mode}
-            >
-              <option value="track">Match by track identity</option>
-              <option value="filename">Match by filename</option>
-              <option value="folders">Similar folder names</option>
-              <option value="folder">By folder</option>
-            </select>
-            <button
-              className="dupes-refresh-btn hover-fx"
-              disabled={loading}
-              onClick={() => {
-                loadingRef.current = false;
-                void load();
-              }}
-              title="Refresh"
-              type="button"
-            >
-              <RefreshCw size={14} />
-            </button>
-          </div>
-        </div>
-
-        {/* ── Search row ── */}
-        <div
-          className="dupes-search-row"
-          ref={searchWrapRef}
-        >
-          {activeFilter ? (
-            <div className="dupes-filter-chip">
-              <Search size={12} />
-              <span>{activeFilterLabel}</span>
+      <div className="dupes-window">
+        {/* ── Toolbar ── */}
+        <div className="dupes-toolbar">
+          <div className="dupes-toolbar-row">
+            <div className="dupes-toolbar-left">
+              <span className="dupes-toolbar-title">Duplicate Files</span>
+              {!loading && allFiles.length > 0 && (
+                <span className="dupes-count">
+                  {groups.length} {groups.length === 1 ? 'group' : 'groups'}
+                  {isSimilarFolderMode
+                    ? ` · ${totalFiles} folders`
+                    : isFolderMode
+                      ? ` · ${totalFiles} duplicated tracks`
+                      : ` · ${totalFiles} files`}
+                </span>
+              )}
+            </div>
+            <div className="dupes-toolbar-right">
+              <select
+                className="opt-select"
+                onChange={handleModeChange}
+                value={mode}
+              >
+                <option value="track">Match by track identity</option>
+                <option value="filename">Match by filename</option>
+                <option value="folders">Similar folder names</option>
+                <option value="folder">By folder</option>
+              </select>
               <button
-                className="dupes-filter-clear hover-fx"
-                onClick={clearFilter}
+                className="dupes-refresh-btn hover-fx"
+                disabled={loading}
+                onClick={() => {
+                  loadingRef.current = false;
+                  void load();
+                }}
+                title="Refresh"
                 type="button"
               >
-                <X size={12} />
+                <RefreshCw size={14} />
               </button>
             </div>
-          ) : (
-            <div className="dupes-search-input-wrap">
-              <Search
-                className="dupes-search-icon"
-                size={13}
-              />
-              <input
-                className="dupes-search-input"
-                onChange={({ target }) => {
-                  setSearchQuery(target.value);
-                  setShowSuggestions(true);
-                }}
-                onFocus={() => searchQuery && setShowSuggestions(true)}
-                placeholder="Filter duplicates…"
-                type="text"
-                value={searchQuery}
-              />
-              {searchQuery && (
+          </div>
+
+          {/* ── Search row ── */}
+          <div
+            className="dupes-search-row"
+            ref={searchWrapRef}
+          >
+            {activeFilter ? (
+              <div className="dupes-filter-chip">
+                <Search size={12} />
+                <span>{activeFilterLabel}</span>
                 <button
-                  className="dupes-search-clear hover-fx"
-                  onClick={() => {
-                    setSearchQuery('');
-                    setShowSuggestions(false);
-                  }}
+                  className="dupes-filter-clear hover-fx"
+                  onClick={clearFilter}
                   type="button"
                 >
                   <X size={12} />
                 </button>
-              )}
-            </div>
-          )}
+              </div>
+            ) : (
+              <div className="dupes-search-input-wrap">
+                <Search
+                  className="dupes-search-icon"
+                  size={13}
+                />
+                <input
+                  className="dupes-search-input"
+                  onChange={({ target }) => {
+                    setSearchQuery(target.value);
+                    setShowSuggestions(true);
+                  }}
+                  onFocus={() => searchQuery && setShowSuggestions(true)}
+                  placeholder="Filter duplicates…"
+                  type="text"
+                  value={searchQuery}
+                />
+                {searchQuery && (
+                  <button
+                    className="dupes-search-clear hover-fx"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setShowSuggestions(false);
+                    }}
+                    type="button"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+            )}
 
-          {/* Suggestions dropdown */}
-          {showSuggestions && suggestions.length > 0 && (
-            <div className="dupes-suggestions">
-              {suggestions.map((g) => (
-                <button
-                  className="dupes-suggestion-item"
-                  key={g.key}
-                  onClick={() => selectSuggestion(g)}
-                  type="button"
-                >
-                  <span className="dupes-suggestion-label">{g.label}</span>
-                  <span className="dupes-suggestion-meta">
-                    {isFolderMode
-                      ? `${g.items?.length ?? 0} tracks`
-                      : isSimilarFolderMode
-                        ? `${Math.round((g.nameSimilarity ?? 0) * 100)}% similar`
-                        : `${g.files?.length ?? 0} copies`}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── Content ── */}
-      <div className="dupes-content">
-        {loading && <div className="dupes-empty">Scanning…</div>}
-        {!loading && error && <div className="dupes-empty">{error}</div>}
-        {!loading && !error && allFiles.length === 0 && (
-          <div className="dupes-empty">
-            No audio files found. Make sure shares are configured and scanned.
+            {/* Suggestions dropdown */}
+            {showSuggestions && suggestions.length > 0 && (
+              <div className="dupes-suggestions">
+                {suggestions.map((g) => (
+                  <button
+                    className="dupes-suggestion-item"
+                    key={g.key}
+                    onClick={() => selectSuggestion(g)}
+                    type="button"
+                  >
+                    <span className="dupes-suggestion-label">{g.label}</span>
+                    <span className="dupes-suggestion-meta">
+                      {isFolderMode
+                        ? `${g.items?.length ?? 0} tracks`
+                        : isSimilarFolderMode
+                          ? `${Math.round((g.nameSimilarity ?? 0) * 100)}% similar`
+                          : `${g.files?.length ?? 0} copies`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-        {!loading &&
-          !error &&
-          displayGroups.length === 0 &&
-          allFiles.length > 0 && (
+        </div>
+
+        {/* ── Content ── */}
+        <div className="dupes-content">
+          {loading && <div className="dupes-empty">Scanning…</div>}
+          {!loading && error && <div className="dupes-empty">{error}</div>}
+          {!loading && !error && allFiles.length === 0 && (
             <div className="dupes-empty">
-              {activeFilter
-                ? 'No results for this filter.'
-                : isSimilarFolderMode
-                  ? `No similar folders found across ${allFiles.length.toLocaleString()} files`
-                  : isFolderMode
-                    ? `No folders with multiple duplicate tracks found in ${allFiles.length.toLocaleString()} files`
-                    : mode === 'track'
-                      ? `No duplicates found in ${allFiles.length.toLocaleString()} files — try "Match by filename" to catch format variations`
-                      : `No duplicates found in ${allFiles.length.toLocaleString()} files`}
+              No audio files found. Make sure shares are configured and scanned.
             </div>
           )}
-
-        {!loading && !error && displayGroups.length > 0 && (
-          <Pager
-            onPage={setPage}
-            page={page}
-            totalPages={totalPages}
-          />
-        )}
-
-        {/* ── Track / filename mode ── */}
-        {!loading &&
-          !error &&
-          !isSimilarFolderMode &&
-          !isFolderMode &&
-          pageGroups.map((group) => (
-            <div
-              className="dupes-group"
-              key={group.key}
-            >
-              <div className="dupes-group-header">
-                <div className="dupes-section-header">
-                  <span>{group.label}</span>
-                  <div className="dupes-group-header-right">
-                    <span className="dupes-group-count">
-                      {group.files.length} copies
-                    </span>
-                    <button
-                      className="dupes-action-btn"
-                      onClick={() => keepBest(group)}
-                      title="Queue all lower-quality copies for deletion"
-                      type="button"
-                    >
-                      Keep best
-                    </button>
-                  </div>
-                </div>
+          {!loading &&
+            !error &&
+            displayGroups.length === 0 &&
+            allFiles.length > 0 && (
+              <div className="dupes-empty">
+                {activeFilter
+                  ? 'No results for this filter.'
+                  : isSimilarFolderMode
+                    ? `No similar folders found across ${allFiles.length.toLocaleString()} files`
+                    : isFolderMode
+                      ? `No folders with multiple duplicate tracks found in ${allFiles.length.toLocaleString()} files`
+                      : mode === 'track'
+                        ? `No duplicates found in ${allFiles.length.toLocaleString()} files — try "Match by filename" to catch format variations`
+                        : `No duplicates found in ${allFiles.length.toLocaleString()} files`}
               </div>
-              <div className="dupes-group-body">
-                {group.files.map((f) => (
-                  <div
-                    className={`dupes-file-row${deletionQueue.has(f.fullPath) ? ' dupes-file-row--queued' : ''}`}
-                    key={f.fullPath}
-                  >
-                    <span
-                      className="dupes-file-path"
-                      title={f.fullPath}
-                    >
-                      {f.fullPath}
-                    </span>
-                    <div className="dupes-file-meta">
-                      {f.isBest && (
-                        <span className="dupes-best-badge">BEST</span>
-                      )}
-                      <span className="dupes-file-quality">
-                        {formatQuality(f)}
-                      </span>
-                      <span className="dupes-file-size">
-                        {formatBytes(f.size)}
+            )}
+
+          {!loading && !error && displayGroups.length > 0 && (
+            <Pager
+              onPage={setPage}
+              page={page}
+              totalPages={totalPages}
+            />
+          )}
+
+          {/* ── Track / filename mode ── */}
+          {!loading &&
+            !error &&
+            !isSimilarFolderMode &&
+            !isFolderMode &&
+            pageGroups.map((group) => (
+              <div
+                className="dupes-group"
+                key={group.key}
+              >
+                <div className="dupes-group-header">
+                  <div className="dupes-section-header">
+                    <span>{group.label}</span>
+                    <div className="dupes-group-header-right">
+                      <span className="dupes-group-count">
+                        {group.files.length} copies
                       </span>
                       <button
-                        className={`dupes-queue-btn${deletionQueue.has(f.fullPath) ? ' dupes-queue-btn--active' : ''}`}
-                        onClick={() => toggleQueued(f.fullPath)}
-                        title={
-                          deletionQueue.has(f.fullPath)
-                            ? 'Remove from deletion queue'
-                            : 'Queue for deletion'
-                        }
+                        className="dupes-action-btn"
+                        onClick={() => keepBest(group)}
+                        title="Queue all lower-quality copies for deletion"
                         type="button"
                       >
-                        <Trash2 size={13} />
-                      </button>
-                      <button
-                        className="dupes-copy-btn"
-                        onClick={() => copyPath(f.fullPath)}
-                        title="Copy path"
-                        type="button"
-                      >
-                        <Copy size={13} />
+                        Keep best
                       </button>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          ))}
-
-        {/* ── Similar folders mode ── */}
-        {!loading &&
-          !error &&
-          isSimilarFolderMode &&
-          pageGroups.map((group) => (
-            <div
-              className="dupes-group"
-              key={group.key}
-            >
-              <div className="dupes-group-header">
-                <div className="dupes-section-header">
-                  <span>{group.label}</span>
-                  <span className="dupes-group-count">
-                    {Math.round(group.nameSimilarity * 100)}% similar
-                    {group.sharedFileCount > 0 &&
-                      ` · ${group.sharedFileCount} shared files`}
-                  </span>
                 </div>
-              </div>
-              <div className="dupes-group-body">
-                {group.dirs.map((d) => (
-                  <div
-                    className="dupes-folder-row"
-                    key={d.path}
-                  >
-                    <span
-                      className="dupes-folder-path"
-                      title={d.path}
-                    >
-                      {d.path}
-                    </span>
-                    <div className="dupes-file-meta">
-                      <span className="dupes-file-quality">
-                        {d.fileCount} {d.fileCount === 1 ? 'file' : 'files'}
-                      </span>
-                      <button
-                        className="dupes-action-btn dupes-action-btn--danger"
-                        onClick={() => queueFolder(d.path)}
-                        title="Queue entire folder for deletion"
-                        type="button"
-                      >
-                        Queue folder
-                      </button>
-                      <button
-                        className="dupes-copy-btn"
-                        onClick={() => copyPath(d.path)}
-                        title="Copy path"
-                        type="button"
-                      >
-                        <Copy size={13} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-
-        {/* ── By folder mode ── */}
-        {!loading &&
-          !error &&
-          isFolderMode &&
-          pageGroups.map((group) => (
-            <div
-              className="dupes-group"
-              key={group.key}
-            >
-              <div className="dupes-group-header">
-                <div className="dupes-section-header">
-                  <div className="dupes-folder-header-left">
-                    <span className="dupes-folder-name">{group.label}</span>
-                    <span
-                      className="dupes-folder-dir"
-                      title={group.dirName}
-                    >
-                      {group.dirName}
-                    </span>
-                  </div>
-                  <div className="dupes-group-header-right">
-                    <span className="dupes-group-count">
-                      {group.items.length} duplicated{' '}
-                      {group.items.length === 1 ? 'track' : 'tracks'}
-                    </span>
-                    <button
-                      className="dupes-action-btn dupes-action-btn--danger"
-                      onClick={() => queueFolder(group.dirName)}
-                      title="Queue this entire folder for deletion"
-                      type="button"
-                    >
-                      Queue folder
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div className="dupes-group-body">
-                {group.items.map(({ file, peers }) => (
-                  <div
-                    className="dupes-folder-item"
-                    key={file.fullPath}
-                  >
+                <div className="dupes-group-body">
+                  {group.files.map((f) => (
                     <div
-                      className={`dupes-file-row dupes-file-row--primary${deletionQueue.has(file.fullPath) ? ' dupes-file-row--queued' : ''}`}
+                      className={`dupes-file-row${deletionQueue.has(f.fullPath) ? ' dupes-file-row--queued' : ''}`}
+                      key={f.fullPath}
                     >
                       <span
                         className="dupes-file-path"
-                        title={file.fullPath}
+                        title={f.fullPath}
                       >
-                        {file.filename}
+                        {f.fullPath}
                       </span>
                       <div className="dupes-file-meta">
-                        {file.isBest && (
+                        {f.isBest && (
                           <span className="dupes-best-badge">BEST</span>
                         )}
                         <span className="dupes-file-quality">
-                          {formatQuality(file)}
+                          {formatQuality(f)}
                         </span>
                         <span className="dupes-file-size">
-                          {formatBytes(file.size)}
+                          {formatBytes(f.size)}
                         </span>
                         <button
-                          className={`dupes-queue-btn${deletionQueue.has(file.fullPath) ? ' dupes-queue-btn--active' : ''}`}
-                          onClick={() => toggleQueued(file.fullPath)}
+                          className={`dupes-queue-btn${deletionQueue.has(f.fullPath) ? ' dupes-queue-btn--active' : ''}`}
+                          onClick={() => toggleQueued(f.fullPath)}
                           title={
-                            deletionQueue.has(file.fullPath)
+                            deletionQueue.has(f.fullPath)
                               ? 'Remove from deletion queue'
                               : 'Queue for deletion'
                           }
@@ -1007,7 +835,7 @@ const Duplicates = () => {
                         </button>
                         <button
                           className="dupes-copy-btn"
-                          onClick={() => copyPath(file.fullPath)}
+                          onClick={() => copyPath(f.fullPath)}
                           title="Copy path"
                           type="button"
                         >
@@ -1015,41 +843,135 @@ const Duplicates = () => {
                         </button>
                       </div>
                     </div>
-                    {peers.map((peer) => (
-                      <div
-                        className={`dupes-file-row dupes-file-row--peer${deletionQueue.has(peer.fullPath) ? ' dupes-file-row--queued' : ''}`}
-                        key={peer.fullPath}
+                  ))}
+                </div>
+              </div>
+            ))}
+
+          {/* ── Similar folders mode ── */}
+          {!loading &&
+            !error &&
+            isSimilarFolderMode &&
+            pageGroups.map((group) => (
+              <div
+                className="dupes-group"
+                key={group.key}
+              >
+                <div className="dupes-group-header">
+                  <div className="dupes-section-header">
+                    <span>{group.label}</span>
+                    <span className="dupes-group-count">
+                      {Math.round(group.nameSimilarity * 100)}% similar
+                      {group.sharedFileCount > 0 &&
+                        ` · ${group.sharedFileCount} shared files`}
+                    </span>
+                  </div>
+                </div>
+                <div className="dupes-group-body">
+                  {group.dirs.map((d) => (
+                    <div
+                      className="dupes-folder-row"
+                      key={d.path}
+                    >
+                      <span
+                        className="dupes-folder-path"
+                        title={d.path}
                       >
-                        <span className="dupes-peer-arrow">↳</span>
+                        {d.path}
+                      </span>
+                      <div className="dupes-file-meta">
+                        <span className="dupes-file-quality">
+                          {d.fileCount} {d.fileCount === 1 ? 'file' : 'files'}
+                        </span>
+                        <button
+                          className="dupes-action-btn dupes-action-btn--danger"
+                          onClick={() => queueFolder(d.path)}
+                          title="Queue entire folder for deletion"
+                          type="button"
+                        >
+                          Queue folder
+                        </button>
+                        <button
+                          className="dupes-copy-btn"
+                          onClick={() => copyPath(d.path)}
+                          title="Copy path"
+                          type="button"
+                        >
+                          <Copy size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+          {/* ── By folder mode ── */}
+          {!loading &&
+            !error &&
+            isFolderMode &&
+            pageGroups.map((group) => (
+              <div
+                className="dupes-group"
+                key={group.key}
+              >
+                <div className="dupes-group-header">
+                  <div className="dupes-section-header">
+                    <div className="dupes-folder-header-left">
+                      <span className="dupes-folder-name">{group.label}</span>
+                      <span
+                        className="dupes-folder-dir"
+                        title={group.dirName}
+                      >
+                        {group.dirName}
+                      </span>
+                    </div>
+                    <div className="dupes-group-header-right">
+                      <span className="dupes-group-count">
+                        {group.items.length} duplicated{' '}
+                        {group.items.length === 1 ? 'track' : 'tracks'}
+                      </span>
+                      <button
+                        className="dupes-action-btn dupes-action-btn--danger"
+                        onClick={() => queueFolder(group.dirName)}
+                        title="Queue this entire folder for deletion"
+                        type="button"
+                      >
+                        Queue folder
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="dupes-group-body">
+                  {group.items.map(({ file, peers }) => (
+                    <div
+                      className="dupes-folder-item"
+                      key={file.fullPath}
+                    >
+                      <div
+                        className={`dupes-file-row dupes-file-row--primary${deletionQueue.has(file.fullPath) ? ' dupes-file-row--queued' : ''}`}
+                      >
                         <span
                           className="dupes-file-path"
-                          title={peer.fullPath}
+                          title={file.fullPath}
                         >
-                          {peer.fullPath}
+                          {file.filename}
                         </span>
                         <div className="dupes-file-meta">
-                          {peer.isBest && (
+                          {file.isBest && (
                             <span className="dupes-best-badge">BEST</span>
                           )}
                           <span className="dupes-file-quality">
-                            {formatQuality(peer)}
+                            {formatQuality(file)}
                           </span>
                           <span className="dupes-file-size">
-                            {formatBytes(peer.size)}
+                            {formatBytes(file.size)}
                           </span>
                           <button
-                            className="dupes-action-btn dupes-action-btn--sm dupes-action-btn--danger"
-                            onClick={() => queueFolder(peer.dirName)}
-                            title="Queue this peer folder for deletion"
-                            type="button"
-                          >
-                            Queue folder
-                          </button>
-                          <button
-                            className={`dupes-queue-btn${deletionQueue.has(peer.fullPath) ? ' dupes-queue-btn--active' : ''}`}
-                            onClick={() => toggleQueued(peer.fullPath)}
+                            className={`dupes-queue-btn${deletionQueue.has(file.fullPath) ? ' dupes-queue-btn--active' : ''}`}
+                            onClick={() => toggleQueued(file.fullPath)}
                             title={
-                              deletionQueue.has(peer.fullPath)
+                              deletionQueue.has(file.fullPath)
                                 ? 'Remove from deletion queue'
                                 : 'Queue for deletion'
                             }
@@ -1059,7 +981,7 @@ const Duplicates = () => {
                           </button>
                           <button
                             className="dupes-copy-btn"
-                            onClick={() => copyPath(peer.fullPath)}
+                            onClick={() => copyPath(file.fullPath)}
                             title="Copy path"
                             type="button"
                           >
@@ -1067,20 +989,73 @@ const Duplicates = () => {
                           </button>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                ))}
+                      {peers.map((peer) => (
+                        <div
+                          className={`dupes-file-row dupes-file-row--peer${deletionQueue.has(peer.fullPath) ? ' dupes-file-row--queued' : ''}`}
+                          key={peer.fullPath}
+                        >
+                          <span className="dupes-peer-arrow">↳</span>
+                          <span
+                            className="dupes-file-path"
+                            title={peer.fullPath}
+                          >
+                            {peer.fullPath}
+                          </span>
+                          <div className="dupes-file-meta">
+                            {peer.isBest && (
+                              <span className="dupes-best-badge">BEST</span>
+                            )}
+                            <span className="dupes-file-quality">
+                              {formatQuality(peer)}
+                            </span>
+                            <span className="dupes-file-size">
+                              {formatBytes(peer.size)}
+                            </span>
+                            <button
+                              className="dupes-action-btn dupes-action-btn--sm dupes-action-btn--danger"
+                              onClick={() => queueFolder(peer.dirName)}
+                              title="Queue this peer folder for deletion"
+                              type="button"
+                            >
+                              Queue folder
+                            </button>
+                            <button
+                              className={`dupes-queue-btn${deletionQueue.has(peer.fullPath) ? ' dupes-queue-btn--active' : ''}`}
+                              onClick={() => toggleQueued(peer.fullPath)}
+                              title={
+                                deletionQueue.has(peer.fullPath)
+                                  ? 'Remove from deletion queue'
+                                  : 'Queue for deletion'
+                              }
+                              type="button"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                            <button
+                              className="dupes-copy-btn"
+                              onClick={() => copyPath(peer.fullPath)}
+                              title="Copy path"
+                              type="button"
+                            >
+                              <Copy size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
 
-        {!loading && !error && displayGroups.length > 0 && (
-          <Pager
-            onPage={setPage}
-            page={page}
-            totalPages={totalPages}
-          />
-        )}
+          {!loading && !error && displayGroups.length > 0 && (
+            <Pager
+              onPage={setPage}
+              page={page}
+              totalPages={totalPages}
+            />
+          )}
+        </div>
       </div>
 
       {/* ── Deletion queue panel ── */}

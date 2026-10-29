@@ -99,6 +99,7 @@ namespace resonance.Messaging
         /// <param name="eventBus"></param>
         /// <param name="blockedUsersService"></param>
         /// <param name="contextFactory"></param>
+        /// <param name="applicationHub"></param>
         public RoomService(
             ISoulseekClient soulseekClient,
             IOptionsMonitor<Options> optionsMonitor,

@@ -53,6 +53,7 @@ namespace resonance.Core.API
     public partial class BridgeController : ControllerBase
     {
         private static readonly ConcurrentDictionary<string, Pairing> Pairings = LoadPairings();
+        private static readonly ConcurrentDictionary<string, BridgePresence> BridgePresences = new();
 
         private static readonly object SyncGate = new();
         private static readonly string[] Platforms = { "macos", "windows", "linux", "source" };
@@ -77,6 +78,35 @@ namespace resonance.Core.API
         public IActionResult Status()
         {
             var readiness = batches?.Status;
+            var now = DateTimeOffset.UtcNow;
+            var pairings = Pairings
+                .Where(item => item.Value.Expires > now)
+                .Select(item =>
+                {
+                    BridgePresences.TryGetValue(item.Key, out var presence);
+                    var connected = presence != null && now - presence.LastSeen < TimeSpan.FromMinutes(1);
+                    return new PairingView(PairingId(item.Key), item.Value.Expires, connected, presence);
+                })
+                .OrderByDescending(item => item.Connected)
+                .ThenByDescending(item => item.Presence?.LastSeen)
+                .ToArray();
+            var bridges = pairings
+                .Where(item => item.Connected)
+                .Select(item => new
+                {
+                    pairingId = item.Id,
+                    expires = item.Expires,
+                    item.Presence.Name,
+                    item.Presence.Version,
+                    item.Presence.Platform,
+                    item.Presence.Architecture,
+                    item.Presence.Address,
+                    item.Presence.ObservedAddress,
+                    item.Presence.LastSeen,
+                    item.Presence.LatencyMs,
+                })
+                .OrderByDescending(item => item.LastSeen)
+                .ToArray();
             return Ok(new
             {
                 enabled = exports.Enabled,
@@ -88,6 +118,9 @@ namespace resonance.Core.API
                 experimental = true,
                 hardwareValidated = false,
                 helperPlatforms = Platforms.Where(p => System.IO.File.Exists(Archive(p))).ToArray(),
+                pairedBridgeCount = pairings.Length,
+                bridgePairings = pairings.Select(item => new { id = item.Id, expires = item.Expires, connected = item.Connected }).ToArray(),
+                connectedBridges = bridges,
             });
         }
 
@@ -144,7 +177,7 @@ namespace resonance.Core.API
                 BridgeLog.Information("Bridge connection created; {ActiveConnections} active connection(s)", Pairings.Count);
             }
 
-            var config = new { schemaVersion = 1, serverUrl = $"{Request.Scheme}://{Request.Host}{Request.PathBase}/api/v0/analysis/pioneer-link/sync", token, expires };
+            var config = new { schemaVersion = 1, serverUrl = $"{Request.Scheme}://{Request.Host}{Request.PathBase}/api/v0/bridge/sync", token, expires };
             return File(JsonSerializer.SerializeToUtf8Bytes(config, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }), "application/vnd.resonance.handoff+json", "resonance-bridge-pairing.resonance");
         }
 
@@ -166,20 +199,58 @@ namespace resonance.Core.API
 
                 var count = Pairings.Count;
                 Pairings.Clear();
+                BridgePresences.Clear();
                 BridgeLog.Information("Bridge connections revoked; {RevokedConnections} connection(s) removed", count);
             }
 
             return Ok(new { revoked = true });
         }
 
+        [HttpDelete("connections/{id}")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
+        public IActionResult RevokeConnection(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id) || id.Length != 12 || id.Any(character => !Uri.IsHexDigit(character)))
+            {
+                return NotFound();
+            }
+
+            lock (SyncGate)
+            {
+                var hash = Pairings.Keys.SingleOrDefault(key => string.Equals(PairingId(key), id, StringComparison.OrdinalIgnoreCase));
+                if (hash == null)
+                {
+                    return NotFound();
+                }
+
+                var next = Pairings.Where(item => item.Key != hash).ToDictionary(item => item.Key, item => item.Value);
+                try
+                {
+                    SavePairings(next);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    BridgeLog.Error(exception, "Bridge connection revocation could not be saved");
+                    return StatusCode(503, "Bridge could not revoke the connection. Check the server data directory permissions and try again.");
+                }
+
+                Pairings.TryRemove(hash, out _);
+                BridgePresences.TryRemove(hash, out _);
+            }
+
+            return Ok(new { revoked = true, id });
+        }
+
         [AllowAnonymous]
         [HttpGet("sync")]
         public IActionResult Sync([FromQuery] string batch = null)
         {
-            if (!Paired())
+            if (!TryPairing(out var pairingHash))
             {
                 return Unauthorized();
             }
+
+            RecordPresence(pairingHash);
 
             if (batches != null)
             {
@@ -297,6 +368,23 @@ namespace resonance.Core.API
                 ? Ok(new { acknowledged = true }) : Conflict("Batch staging is still in use. Retry acknowledgement shortly.");
         }
 
+        [AllowAnonymous]
+        [HttpGet("sync/audio/{sourceKey}")]
+        public IActionResult StreamAudio(string sourceKey)
+        {
+            if (!Paired())
+            {
+                return Unauthorized();
+            }
+
+            if (batches == null || !batches.TryGetStream(sourceKey, out var path))
+            {
+                return NotFound("Track is no longer export-ready. Refresh the Bridge library.");
+            }
+
+            return PhysicalFile(path, "application/octet-stream", enableRangeProcessing: true);
+        }
+
         [HttpGet("download")]
         [HttpGet("helper")]
         public IActionResult Download([FromQuery] string platform, [FromQuery] string format = "installer")
@@ -391,8 +479,50 @@ namespace resonance.Core.API
         private static string Archive(string platform) => Environment.GetEnvironmentVariable($"RESONANCE_PIONEER_HELPER_{platform.ToUpperInvariant()}_ARCHIVE")
             ?? PublishedBridgeFile($"resonance-bridge-{platform}.zip");
 
-        private bool Paired() => Request.Headers.TryGetValue("X-Resonance-Link-Token", out var value)
-            && value.Count == 1 && value.ToString().Length == 64 && Pairings.TryGetValue(TokenHash(value.ToString()), out var pairing) && pairing.Expires > DateTimeOffset.UtcNow;
+        private bool Paired() => TryPairing(out _);
+        private bool TryPairing(out string hash)
+        {
+            hash = null;
+            if (!Request.Headers.TryGetValue("X-Resonance-Link-Token", out var value) || value.Count != 1 || value.ToString().Length != 64)
+            {
+                return false;
+            }
+
+            hash = TokenHash(value.ToString());
+            return Pairings.TryGetValue(hash, out var pairing) && pairing.Expires > DateTimeOffset.UtcNow;
+        }
+
+        private void RecordPresence(string hash)
+        {
+            static string Header(Microsoft.AspNetCore.Http.IHeaderDictionary headers, string name, int maximum = 80)
+            {
+                var value = headers[name].ToString().Trim();
+                return value.Length <= maximum ? value : value[..maximum];
+            }
+
+            var reportedAddress = Header(Request.Headers, "X-Resonance-Bridge-Address", 64);
+            if (!System.Net.IPAddress.TryParse(reportedAddress, out _))
+            {
+                reportedAddress = null;
+            }
+
+            var observedAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+            _ = long.TryParse(Header(Request.Headers, "X-Resonance-Bridge-Latency-Ms", 12), out var latencyMs);
+            latencyMs = Math.Clamp(latencyMs, 0, 30000);
+            BridgePresences[hash] = new BridgePresence(
+                Header(Request.Headers, "X-Resonance-Bridge-Name"),
+                Header(Request.Headers, "X-Resonance-Bridge-Version", 32),
+                Header(Request.Headers, "X-Resonance-Bridge-Platform", 24),
+                Header(Request.Headers, "X-Resonance-Bridge-Architecture", 24),
+                reportedAddress,
+                observedAddress,
+                latencyMs,
+                DateTimeOffset.UtcNow);
+        }
+
+        private static string PairingId(string hash) => hash[..12].ToLowerInvariant();
         private record Pairing(DateTimeOffset Expires);
+        private record PairingView(string Id, DateTimeOffset Expires, bool Connected, BridgePresence Presence);
+        private record BridgePresence(string Name, string Version, string Platform, string Architecture, string Address, string ObservedAddress, long LatencyMs, DateTimeOffset LastSeen);
     }
 }

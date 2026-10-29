@@ -1,6 +1,7 @@
 """Offline singing-voice inference and temporal detection; explicit local weights."""
 from pathlib import Path
 import math,json,hashlib,argparse,subprocess,importlib.util
+from runtime_resources import configure_torch
 
 def detect_scores(scores,duration,on=.9,off=.54,min_seconds=2,gap_seconds=1):
  if not all(isinstance(v,(int,float)) and not isinstance(v,bool) and math.isfinite(v) for v in [duration,on,off,min_seconds,gap_seconds]) or not duration>0 or not 0<=off<=on<=1 or not 0<min_seconds<=30 or not 0<=gap_seconds<=10:raise ValueError('Invalid temporal detection settings')
@@ -45,5 +46,5 @@ def main():
  import numpy as np,torch
  p=argparse.ArgumentParser();p.add_argument('audio');p.add_argument('--checkpoint',required=True);p.add_argument('--ffmpeg',required=True);p.add_argument('--output',required=True);p.add_argument('--seconds',type=float);p.add_argument('--on',type=float,default=.9);p.add_argument('--off',type=float,default=.54);a=p.parse_args();dest=Path(a.output)
  if dest.exists():p.error('Choose a new output file')
- torch.set_num_threads(2);model,identity=load_model(a.checkpoint);cmd=[a.ffmpeg,'-v','error','-i',a.audio]+(['-t',str(a.seconds)] if a.seconds else [])+['-ar','22050','-ac','1','-f','f32le','-'];audio=np.frombuffer(subprocess.check_output(cmd),dtype='<f4').copy();frames=predict(model,audio);duration=len(audio)/22050;scores=[float(np.mean(frames[math.ceil(i*70):min(len(frames),math.ceil(min(i+1,duration)*70))])) for i in range(math.ceil(duration))];result=detect_scores(scores,duration,a.on,a.off);result.update(identity=identity,frameRate=70,frameScores=frames.tolist(),frameSemantics='Centered1024sample STFT,315sample hop,114frame context; retained frame scores uncalibrated',scriptSha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest());dest.write_text(json.dumps(result,allow_nan=False))
+ threads=configure_torch(torch);model,identity=load_model(a.checkpoint);cmd=[a.ffmpeg,'-v','error','-i',a.audio]+(['-t',str(a.seconds)] if a.seconds else [])+['-ar','22050','-ac','1','-f','f32le','-'];audio=np.frombuffer(subprocess.check_output(cmd),dtype='<f4').copy();frames=predict(model,audio);duration=len(audio)/22050;scores=[float(np.mean(frames[math.ceil(i*70):min(len(frames),math.ceil(min(i+1,duration)*70))])) for i in range(math.ceil(duration))];result=detect_scores(scores,duration,a.on,a.off);result.update(identity=identity,threads=threads,frameRate=70,frameScores=frames.tolist(),frameSemantics='Centered1024sample STFT,315sample hop,114frame context; retained frame scores uncalibrated',scriptSha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest());dest.write_text(json.dumps(result,allow_nan=False))
 if __name__=='__main__':main()

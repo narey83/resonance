@@ -5,7 +5,7 @@ import os, subprocess, tempfile, shutil, zipfile, plistlib, hashlib, json, base6
 root=Path(__file__).resolve().parent
 output=Path(os.environ.get('RESONANCE_HELPER_OUTPUT',root/'dist'));output.mkdir(parents=True,exist_ok=True)
 go=os.environ.get('GO','go')
-version='0.3.4'
+version='0.3.7'
 public_key=os.environ.get('RESONANCE_HELPER_UPDATE_PUBLIC_KEY','')
 if public_key and len(base64.b64decode(public_key,validate=True))!=32:
  raise ValueError('RESONANCE_HELPER_UPDATE_PUBLIC_KEY must be a base64 Ed25519 public key')
@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory() as tmp:
   if goos=='darwin':
    app=stage/'Resonance Bridge.app'/'Contents';(app/'MacOS').mkdir(parents=True)
    target=app/'MacOS'/'resonance-bridge'
-   (app/'Info.plist').write_bytes(plistlib.dumps({'CFBundleName':'Resonance Bridge','CFBundleIdentifier':'app.resonance.pioneer-link','CFBundleExecutable':target.name,'CFBundleVersion':version,'CFBundlePackageType':'APPL','LSMinimumSystemVersion':'12.0'}))
+   (app/'Info.plist').write_bytes(plistlib.dumps({'CFBundleName':'Resonance Bridge','CFBundleIdentifier':'app.resonance.bridge','CFBundleExecutable':target.name,'CFBundleVersion':version,'CFBundlePackageType':'APPL','LSMinimumSystemVersion':'12.0'}))
   prebuilt=os.environ.get('RESONANCE_HELPER_PREBUILT_DIR')
   if prebuilt:
    info=json.loads((Path(prebuilt)/'build-info.json').read_text())

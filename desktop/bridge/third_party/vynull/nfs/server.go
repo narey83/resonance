@@ -100,6 +100,7 @@ type Server struct {
 	handles    *fileHandleMap
 	Transcode  bool   // if true, transcode FLAC/WAV/AIFF to MP3
 	IP         net.IP // server's IP for EXPORT response
+	Remote     RemoteReader
 
 	// LinkedFn, if set, gates MOUNT EXPORT replies on the device's
 	// link-state. rekordbox starts returning an empty export
@@ -115,6 +116,14 @@ type Server struct {
 	// rekordbox source uses Pioneer's unprivileged 50111 instead. When false we
 	// don't even attempt to bind 111 (no spurious permission error/warning).
 	CDJMode bool
+}
+
+// RemoteReader supplies virtual regular files without storing their contents
+// beneath exportRoot. Bridge uses it to translate NFS reads into authenticated
+// HTTP range requests to Resonance.
+type RemoteReader interface {
+	Stat(path string) (size int64, modified time.Time, ok bool)
+	ReadAt(path string, offset, count uint32) ([]byte, error)
 }
 
 // NewServer creates an NFS server exporting the given directory.
@@ -399,6 +408,14 @@ func (s *Server) nfsGetAttr(hdr *rpcHeader) []byte {
 
 	info, err := os.Stat(path)
 	if err != nil {
+		if s.Remote != nil {
+			if size, modified, remote := s.Remote.Stat(path); remote {
+				w := buildRPCReply(hdr.XID)
+				w.putU32(nfsOK)
+				putRemoteFAttr(w, path, size, modified)
+				return w.bytes()
+			}
+		}
 		w := buildRPCReply(hdr.XID)
 		w.putU32(nfsNoEnt)
 		return w.bytes()
@@ -467,6 +484,16 @@ func (s *Server) nfsLookup(hdr *rpcHeader) []byte {
 	dlog.Debugf("nfs: LOOKUP %q in %q -> %q", name, dirPath, childPath)
 	info, err := os.Stat(childPath)
 	if err != nil {
+		if s.Remote != nil {
+			if size, modified, remote := s.Remote.Stat(childPath); remote {
+				childFH := s.handles.GetOrCreate(childPath)
+				w := buildRPCReply(hdr.XID)
+				w.putU32(nfsOK)
+				w.putFH(childFH)
+				putRemoteFAttr(w, childPath, size, modified)
+				return w.bytes()
+			}
+		}
 		dlog.Debugf("nfs: LOOKUP %q: %v", childPath, err)
 		w := buildRPCReply(hdr.XID)
 		w.putU32(nfsNoEnt)
@@ -513,6 +540,22 @@ func (s *Server) nfsRead(hdr *rpcHeader) []byte {
 
 	if count > maxReadSize {
 		count = maxReadSize
+	}
+	if s.Remote != nil {
+		if size, modified, remote := s.Remote.Stat(path); remote {
+			data, readErr := s.Remote.ReadAt(path, offset, count)
+			if readErr != nil {
+				log.Printf("nfs: remote READ %s offset=%d count=%d error=%v", filepath.Base(path), offset, count, readErr)
+				w := buildRPCReply(hdr.XID)
+				w.putU32(nfsIO)
+				return w.bytes()
+			}
+			w := buildRPCReply(hdr.XID)
+			w.putU32(nfsOK)
+			putRemoteFAttr(w, path, size, modified)
+			w.putBytes(data)
+			return w.bytes()
+		}
 	}
 
 	// For non-MP3 formats, serve transcoded MP3 data instead (unless disabled).
@@ -707,6 +750,26 @@ func putFAttr(w *xdrWriter, info os.FileInfo, path string, noTranscode bool) {
 	w.putU32(0) // ctime usec
 }
 
+func putRemoteFAttr(w *xdrWriter, path string, size int64, modified time.Time) {
+	w.putU32(nfTypeReg)
+	w.putU32(0x8000)
+	w.putU32(1)
+	w.putU32(0)
+	w.putU32(0)
+	w.putU32(uint32(size))
+	w.putU32(512)
+	w.putU32(1)
+	w.putU32((uint32(size) + 511) / 512)
+	w.putU32(2)
+	h := sha256.Sum256([]byte(path))
+	w.putU32(be32(h[:4]))
+	mtime := uint32(modified.Unix())
+	for i := 0; i < 3; i++ {
+		w.putU32(mtime)
+		w.putU32(0)
+	}
+}
+
 func readFull(conn net.Conn, buf []byte) (int, error) {
 	total := 0
 	for total < len(buf) {
@@ -755,7 +818,13 @@ func (s *Server) safePath(path string) bool {
 	}
 	real, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		return false
+		if s.Remote == nil {
+			return false
+		}
+		if _, _, ok := s.Remote.Stat(path); !ok {
+			return false
+		}
+		real = filepath.Clean(path)
 	}
 	rel, err := filepath.Rel(root, real)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)

@@ -22,7 +22,7 @@ const MusicWorkspaceHeader = ({ page }) => (
       <h1>{pages[page] ?? pages.library}</h1>
     </div>
     <div className="dj-workspace-actions">
-      {page !== 'trackanalysis' && (
+      {page !== 'trackanalysis' && page !== 'networklink' && (
         <Link to={`${urlBase}/trackanalysis`}>
           <AudioWaveform size={16} /> Analyse
         </Link>

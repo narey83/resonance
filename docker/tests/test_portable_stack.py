@@ -93,6 +93,15 @@ class PortableStackTests(unittest.TestCase):
             any("docker/analysis-worker.Dockerfile" in cmd for cmd in commands)
         )
 
+    def test_quick_frontend_update_reuses_proxy_and_build_cache(self):
+        commands = updater.build_commands(
+            {"tlsEnabled": True, "tlsImage": "proxy:fixture"}, quick=True
+        )
+        self.assertEqual(len(commands), 1)
+        self.assertNotIn("--pull", commands[0])
+        self.assertNotIn("--no-cache-filter", commands[0])
+        self.assertIn("CADDY_RUNTIME_IMAGE=proxy:fixture", commands[0])
+
     def test_frontend_validation_failure_restores_image_without_activation(self):
         calls = []
 

@@ -222,7 +222,7 @@ func TestStartupPreferencePersists(t *testing.T) {
 }
 func TestLinuxStartupEscaping(t *testing.T) {
 	path, data, e := startupEntry("linux", "/opt/Resonance Bridge/%f\"$`engine", "/home/test", "/home/test/.config")
-	if e != nil || path != "/home/test/.config/autostart/resonance-pioneer-link.desktop" {
+	if e != nil || path != "/home/test/.config/autostart/resonance-bridge.desktop" {
 		t.Fatal(path, e)
 	}
 	if !strings.Contains(string(data), "%%f") || !strings.Contains(string(data), " --no-open\n") {
@@ -265,7 +265,7 @@ func TestLinuxStartupRegistrationCanBeDisabled(t *testing.T) {
 	if err := configureStartup(cache, true); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(config, "autostart", "resonance-pioneer-link.desktop")
+	path := filepath.Join(config, "autostart", "resonance-bridge.desktop")
 	data, err := os.ReadFile(path)
 	if err != nil || !strings.Contains(string(data), " --no-open") {
 		t.Fatal(string(data), err)

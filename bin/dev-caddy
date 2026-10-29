@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
+source_config="$config_home/resonance-stack/https/Caddyfile"
+token=$(/usr/bin/awk '$1 == "dns" && $2 == "duckdns" { print $3; exit }' "$source_config")
+if [ -z "$token" ]; then
+  echo "DuckDNS token is unavailable in the protected portable-stack configuration." >&2
+  exit 1
+fi
+export DUCKDNS_API_TOKEN=$token
+unset token
+exec "$root/.dev/caddy" run --config "$root/.dev/Caddyfile" --adapter caddyfile

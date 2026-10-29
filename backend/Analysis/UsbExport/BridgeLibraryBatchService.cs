@@ -62,7 +62,7 @@ namespace resonance.Analysis.UsbExport
         private readonly Dictionary<string, int> leases = new(StringComparer.Ordinal);
         private readonly Dictionary<string, VerifiedTrack> verified = new(StringComparer.Ordinal);
         private readonly Dictionary<string, BatchInput> inputs = new(StringComparer.Ordinal);
-        private BridgeLibraryView view = new(2, string.Empty, 0, 0, "checking-analysis", "Checking export-ready full-track analysis.", Array.Empty<BridgeBatch>());
+        private BridgeLibraryView view = new(3, string.Empty, 0, 0, "checking-analysis", "Checking export-ready full-track analysis.", Array.Empty<BridgeBatch>());
         private DateTimeOffset refreshAt = DateTimeOffset.MinValue;
 
         public BridgeLibraryBatchService(IAnalysisService analysis, CandidateAnalysisService candidates, UsbExportService exports)
@@ -70,7 +70,7 @@ namespace resonance.Analysis.UsbExport
             this.analysis = analysis;
             this.candidates = candidates;
             this.exports = exports;
-            stateFile = Path.Combine(Program.DataDirectory ?? Path.Combine(Program.AppDirectory ?? AppContext.BaseDirectory, "data"), "bridge-network-batches.json");
+            stateFile = Path.Combine(Program.DataDirectory ?? Path.Combine(Program.AppDirectory ?? AppContext.BaseDirectory, "data"), "bridge-network-stream-batches.json");
             try
             {
                 if (File.Exists(stateFile) && new FileInfo(stateFile).Length <= 32 << 20)
@@ -165,7 +165,7 @@ namespace resonance.Analysis.UsbExport
 
                 try
                 {
-                    var job = exports.Start(new UsbExportRequest(input.Paths, "Resonance Library", "legacy"));
+                    var job = exports.Start(new UsbExportRequest(input.Paths, "Resonance Library", "network"));
                     jobs[batch] = new(job.JobId, DateTimeOffset.UtcNow, job.Status);
                     Save();
                     Log.Information("Bridge batch {BatchId} queued with {Tracks} fully analysed tracks", batch[..12], input.Paths.Length);
@@ -257,42 +257,60 @@ namespace resonance.Analysis.UsbExport
             }
         }
 
+        public bool TryGetStream(string sourceKey, out string path)
+        {
+            lock (gate)
+            {
+                path = null;
+                if (!Digest(sourceKey))
+                {
+                    return false;
+                }
+
+                var track = verified.Values.FirstOrDefault(item => item.SourceKey == sourceKey);
+                if (track == null || !File.Exists(track.Path) || new FileInfo(track.Path).Length != track.Bytes)
+                {
+                    return false;
+                }
+
+                path = track.Path;
+                return true;
+            }
+        }
+
         internal static BatchInput[] Plan(IEnumerable<VerifiedTrack> tracks)
         {
             var batches = new List<BatchInput>();
-
-            // Stable hash buckets keep a new track from reshuffling the whole collection.
-            foreach (var bucket in tracks.GroupBy(track => track.SourceKey[..2]).OrderBy(group => group.Key, StringComparer.Ordinal))
+            var current = new List<VerifiedTrack>();
+            long bytes = 0;
+            void Flush()
             {
-                var current = new List<VerifiedTrack>();
-                long bytes = 0;
-                void Flush()
+                if (current.Count == 0)
                 {
-                    if (current.Count == 0)
-                    {
-                        return;
-                    }
-
-                    var id = Hash(string.Join("|", current.Select(track => track.SourceKey + ":" + track.SourceSha256 + ":" + track.AnalysisId)));
-                    batches.Add(new(new(id, current.Count, bytes), current.Select(track => track.Path).ToArray()));
-                    current.Clear();
-                    bytes = 0;
+                    return;
                 }
 
-                foreach (var track in bucket.OrderBy(track => track.SourceKey, StringComparer.Ordinal))
-                {
-                    if (current.Count > 0 && (current.Count >= BatchTrackLimit || bytes + track.EstimatedBytes > BatchByteLimit))
-                    {
-                        Flush();
-                    }
-
-                    current.Add(track);
-                    bytes += track.EstimatedBytes;
-                }
-
-                Flush();
+                var id = Hash(string.Join("|", current.Select(track => track.SourceKey + ":" + track.SourceSha256 + ":" + track.AnalysisId)));
+                batches.Add(new(new(id, current.Count, bytes), current.Select(track => track.Path).ToArray()));
+                current.Clear();
+                bytes = 0;
             }
 
+            // Network batches contain metadata only. Pack a deterministic sequence up to
+            // the player/export limits instead of creating a mostly empty hash bucket for
+            // every sparse library entry.
+            foreach (var track in tracks.OrderBy(track => track.SourceKey, StringComparer.Ordinal))
+            {
+                if (current.Count > 0 && (current.Count >= BatchTrackLimit || bytes + track.EstimatedBytes > BatchByteLimit))
+                {
+                    Flush();
+                }
+
+                current.Add(track);
+                bytes += track.EstimatedBytes;
+            }
+
+            Flush();
             return batches.ToArray();
         }
 
@@ -331,12 +349,7 @@ namespace resonance.Analysis.UsbExport
                         continue;
                     }
 
-                    var duration = result.Analysis.Value.GetProperty("durationSeconds").GetDouble();
-                    var estimate = checked((long)Math.Ceiling(duration * 44100 * 4) + (1 << 20));
-                    if (estimate > uint.MaxValue)
-                    {
-                        continue;
-                    }
+                    var estimate = 1L << 20; // Catalog and analysis only; audio is streamed on demand.
 
                     var key = Hash(job.LibraryPath);
                     var entry = new VerifiedTrack(path, key, job.JobId, job.AudioSha256, file.Length, file.LastWriteTimeUtc.Ticks, estimate);
@@ -373,7 +386,7 @@ namespace resonance.Analysis.UsbExport
                     inputs[batch.Descriptor.Id] = batch;
                 }
 
-                view = new(2, revision, indexed.Count, ready.Count, status, message, planned.Select(batch => batch.Descriptor).ToArray());
+                view = new(3, revision, indexed.Count, ready.Count, status, message, planned.Select(batch => batch.Descriptor).ToArray());
                 PruneExpired();
             }
 

@@ -1092,12 +1092,23 @@ namespace resonance
             services.AddSingleton(sp => new resonance.MusicLibrary.ArtworkStore(connectionStringDictionary[Database.Music], usePostgres));
             services.AddSingleton<resonance.Analysis.AnalysisService>();
             services.AddSingleton<resonance.Analysis.IAnalysisService>(sp => sp.GetRequiredService<resonance.Analysis.AnalysisService>());
+            var candidateTimeout = int.TryParse(Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_TIMEOUT_SECONDS"), out var configuredCandidateTimeout)
+                ? configuredCandidateTimeout : 660;
+            var candidateWorkers = int.TryParse(Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_WORKERS"), out var configuredCandidateWorkers)
+                ? configuredCandidateWorkers : 0;
+            var candidateThreads = int.TryParse(Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_THREADS_PER_WORKER"), out var configuredCandidateThreads)
+                ? configuredCandidateThreads : 0;
+            var candidateMemory = int.TryParse(Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_MEMORY_PER_WORKER_MB"), out var configuredCandidateMemory) && configuredCandidateMemory > 0
+                ? configuredCandidateMemory * 1024L * 1024L : 5L * 1024 * 1024 * 1024;
             services.AddSingleton(new resonance.Analysis.Candidates.CandidateAnalysisOptions(
                 Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_PYTHON"),
                 Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_WORKER"),
                 Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_CONFIG"),
                 Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_OUTPUT_ROOT") ?? Path.Combine(DataDirectory, "candidates"),
-                int.TryParse(Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_TIMEOUT_SECONDS"), out var candidateTimeout) ? candidateTimeout : 660));
+                TimeoutSeconds: candidateTimeout,
+                MaxParallelJobs: candidateWorkers,
+                ThreadsPerJob: candidateThreads,
+                MemoryPerJobBytes: candidateMemory));
             services.AddSingleton<resonance.Analysis.Candidates.CandidateAnalysisService>();
             services.AddHostedService<resonance.Analysis.Candidates.CandidateLibraryIndexService>();
             services.AddSingleton<resonance.Analysis.UsbExport.UsbExportService>();

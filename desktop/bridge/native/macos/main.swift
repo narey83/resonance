@@ -79,7 +79,7 @@ final class LinkApplication: NSObject, NSApplicationDelegate {
         var request = URLRequest(url: dashboard.appendingPathComponent("api/status")); request.timeoutInterval = 0.5
         URLSession.shared.dataTask(with: request) { body, response, _ in
             DispatchQueue.main.async {
-                if let body = body, let status = try? JSONSerialization.jsonObject(with:body) as? [String:Any], status["application"] as? String == "resonance-pioneer-link" { completion(); return }
+                if let body = body, let status = try? JSONSerialization.jsonObject(with:body) as? [String:Any], ["resonance-bridge", "resonance-pioneer-link"].contains(status["application"] as? String ?? "") { completion(); return }
                 if self.engine == nil {
                     let process = Process()
                     process.executableURL = Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("resonance-bridge-engine")

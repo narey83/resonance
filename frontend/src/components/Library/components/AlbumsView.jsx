@@ -30,11 +30,11 @@
 import useDebounce from '../../../hooks/useDebounce';
 import { albumKey, getAlbumPage } from '../../../lib/musicLibrary';
 import { usePagedList } from '../../../lib/usePagedList';
-import { formatIndexedAt } from '../../../lib/util';
+import { formatIndexedAt, isRecentlyIndexed } from '../../../lib/util';
 import AlbumArt from './AlbumArt';
 import LibraryViewHeader from './LibraryViewHeader';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Play, Shuffle } from 'lucide-react';
+import { Play, Shuffle, Sparkles } from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
@@ -383,6 +383,13 @@ const AlbumRow = ({ album, onAlbum, onContextMenu, onPlay, onShuffle }) => {
         title={album.album}
       >
         {album.album || '(Untitled)'}
+        {isRecentlyIndexed(album.indexedAt) && (
+          <Sparkles
+            aria-label="Added in the last 7 days"
+            className="jb-new-item-icon"
+            size={13}
+          />
+        )}
       </span>
       <span className="jb-album-row-year">{album.year ?? '–'}</span>
       <span className="jb-album-row-tracks">{album.trackCount ?? '–'}</span>
@@ -464,6 +471,18 @@ const AlbumCard = ({
             minWidth: 'unset',
           }}
         />
+        {isRecentlyIndexed(album.indexedAt) && (
+          <span
+            className="jb-new-item-badge"
+            title="Added in the last 7 days"
+          >
+            <Sparkles
+              aria-hidden="true"
+              size={12}
+            />
+            <span>New</span>
+          </span>
+        )}
         {/* div, not button: this sits inside the card's own <button>, and nesting buttons
             is invalid HTML. Mirrors FolderCard's play control. */}
         <div

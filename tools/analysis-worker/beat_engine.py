@@ -12,12 +12,14 @@ import json
 from pathlib import Path
 import subprocess
 import numpy as np
+from runtime_resources import analysis_threads
 
 class BeatEngine:
-    def __init__(self, checkpoint: str | Path, threads: int = 2):
+    def __init__(self, checkpoint: str | Path, threads: int | None = None):
         import torch
         from beat_this.inference import Audio2Frames
         from beat_this.model.postprocessor import Postprocessor
+        threads = threads or analysis_threads()
         self.checkpoint = Path(checkpoint).resolve(strict=True)
         self.sha256 = hashlib.sha256(self.checkpoint.read_bytes()).hexdigest()
         torch.set_num_threads(threads)

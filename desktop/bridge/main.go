@@ -132,7 +132,7 @@ func (h *helper) snapshot() any {
 	if h.USB != nil {
 		usbStatus = h.USB.Status
 	}
-	return map[string]any{"paired": h.pairedLocked(), "usbStatus": usbStatus, "name": "Resonance Bridge", "version": helperVersion, "application": "resonance-pioneer-link", "sync": syncView, "running": running, "bundle": h.Library, "adapter": a, "devices": peers, "error": h.Error, "experimental": true, "hardwareValidated": false}
+	return map[string]any{"paired": h.pairedLocked(), "usbStatus": usbStatus, "name": "Resonance Bridge", "version": helperVersion, "application": "resonance-bridge", "sync": syncView, "running": running, "bundle": h.Library, "adapter": a, "devices": peers, "error": h.Error, "experimental": true, "hardwareValidated": false}
 }
 func (h *helper) stop() error {
 	h.mu.Lock()
@@ -200,6 +200,10 @@ func (h *helper) start(interfaceName, ipText string) (result error) {
 		return errors.New("helper update is restarting")
 	}
 	b := h.Library
+	var streamConnection connection
+	if h.Sync != nil {
+		streamConnection = h.Sync.Connection
+	}
 	already := h.Session != nil
 	h.mu.Unlock()
 	if b == nil {
@@ -239,6 +243,9 @@ func (h *helper) start(interfaceName, ipText string) (result error) {
 	dev := &device.VirtualDevice{Name: "Resonance", DeviceNumber: 17, DeviceType: proto.DeviceRekordbox, MediaSlot: proto.SlotRekordbox, IP: ip, MAC: mac, Broadcast: net.ParseIP(a.Broadcast), TrackCount: uint16(b.Tracks), BindHost: discoveryHost, AllowPeer: allow, Peers: device.NewPeerTracker(ip, proto.DeviceRekordbox), Ready: make(chan struct{})}
 	db := &dbserver.Server{Library: b.Library, PDB: b.DB, ExportRoot: b.Root, DeviceNumber: 17, Analysis: b.Analysis, Folders: pdb.BuildFolderLookup(b.DB.Tracks), Playlists: preparedPlaylists(b.DB.PlaylistTree), BindHost: a.IP, AllowPeer: allow, Ready: make(chan struct{}), LinkedFn: dev.Linked}
 	fs := nfs.NewServer(b.Root)
+	if len(b.Remote) > 0 {
+		fs.Remote = newResonanceStreamReader(streamConnection, b.Remote)
+	}
 	fs.IP = ip
 	fs.BindHost = a.IP
 	fs.AllowPeer = allow
@@ -504,8 +511,15 @@ func main() {
 		if e != nil {
 			log.Fatal(e)
 		}
-		*cache = filepath.Join(root, "Resonance", "PioneerLink")
+		*cache = filepath.Join(root, "Resonance", "Bridge")
+		legacy := filepath.Join(root, "Resonance", "PioneerLink")
+		if _, currentErr := os.Stat(*cache); errors.Is(currentErr, os.ErrNotExist) {
+			_ = os.Rename(legacy, *cache)
+		} else if _, legacyErr := os.Stat(legacy); legacyErr == nil {
+			_ = os.RemoveAll(legacy)
+		}
 	}
+	purgeLegacyAudio(*cache)
 	if e := os.MkdirAll(*cache, 0700); e != nil {
 		log.Fatal(e)
 	}
@@ -552,7 +566,7 @@ func main() {
 			}
 			json.NewDecoder(io.LimitReader(response.Body, 65536)).Decode(&status)
 			response.Body.Close()
-			if status.Application == "resonance-pioneer-link" {
+			if status.Application == "resonance-bridge" || status.Application == "resonance-pioneer-link" {
 				if document != nil {
 					data, _ := json.Marshal(document)
 					endpoint := "/api/handoff"

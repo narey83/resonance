@@ -130,6 +130,42 @@ describe('release-first results', () => {
       files: [{ filename, size: 1_000 }],
     });
   });
+  it('requires explicit confirmation before overriding the duplicate guard', async () => {
+    expect.hasAssertions();
+    const duplicate = {
+      response: {
+        status: 409,
+        data: {
+          code: 'DuplicateAlbumOrFolder',
+          message: 'This album is already in the music library.',
+        },
+      },
+    };
+    transfers.download
+      .mockRejectedValueOnce(duplicate)
+      .mockResolvedValueOnce({});
+    jest.spyOn(window, 'confirm').mockReturnValueOnce(true);
+
+    await click('Download files');
+    await act(async () => {
+      Simulate.click(
+        [...container.querySelectorAll('button')].find(
+          (button) => button.textContent === 'Confirm destination',
+        ),
+      );
+    });
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining('already in the music library'),
+    );
+    expect(transfers.download).toHaveBeenLastCalledWith({
+      username: 'alice',
+      destinationFolder: 'chosen-folder',
+      files: [{ filename, size: 1_000 }],
+      allowDuplicate: true,
+    });
+    window.confirm.mockRestore();
+  });
   it('offers the compact file view and renders unknown durations without a false zero', async () => {
     expect.hasAssertions();
     await click('Compact files');

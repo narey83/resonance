@@ -43,8 +43,8 @@ import * as musicLibraryApi from '../../lib/musicLibrary';
 import { useKeyFormat } from '../../lib/useKeyFormat';
 import { usePagedList } from '../../lib/usePagedList';
 import KeyFormatToggle from '../Shared/KeyFormatToggle';
-import PageInfo from '../Shared/PageInfo';
 import RowWaveform from './RowWaveform';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   AlertCircle,
   AudioWaveform,
@@ -74,8 +74,8 @@ import React, {
 } from 'react';
 import { toast } from 'react-toastify';
 
-// One window of the library per request, the same size every other paged list here uses.
-const PAGE_SIZE = 200;
+// Fill the folder view in bounded batches.
+const PAGE_SIZE = 10_000;
 
 // A library row carries everything this page shows, but names it the way the library does.
 // Rows are identified by path from here on: the paged query has no masked filenames, and one
@@ -101,6 +101,7 @@ const toRow = (t) => ({
 const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
   const [skipTagged, setSkipTagged] = useState(true);
   const [resetAll, setResetAll] = useState(false);
+  const [enhanced, setEnhanced] = useState(false);
 
   return (
     <div className="ka-panel">
@@ -118,12 +119,27 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
       <div className="ka-panel-body">
         <div className="ka-field">
           <span className="ka-field-hint">
-            Every track is analysed for key, BPM, loudness and waveform in a
-            single decode. When enhanced analysis is configured, the same scan
-            also generates vocals, phrases, downbeats and genre; this stage can
-            take longer.
+            Basic analysis measures key, BPM, loudness and waveform in one
+            decode. Enhanced analysis adds vocal, phrase, downbeat and genre
+            models after the basic pass.
           </span>
         </div>
+
+        <label className="ka-field">
+          <span className="ka-field-label">Analysis mode</span>
+          <select
+            className="ka-select"
+            onChange={(event) => setEnhanced(event.target.value === 'enhanced')}
+            value={enhanced ? 'enhanced' : 'basic'}
+          >
+            <option value="basic">Basic only — fast</option>
+            <option value="enhanced">Basic + enhanced predictions</option>
+          </select>
+          <span className="ka-field-hint">
+            Enhanced analysis is CPU- and memory-intensive. Existing enhanced
+            results are preserved unless reset is selected.
+          </span>
+        </label>
 
         {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
         <label className="ka-toggle-row">
@@ -178,12 +194,17 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
               metrics: METRICS.join(', '),
               skipAnalysed: skipTagged,
               resetAll,
+              enhanced,
             })
           }
           type="button"
         >
           <ScanLine size={13} />
-          {selectedCount > 0 ? `Scan ${selectedCount} selected` : 'Start Scan'}
+          {selectedCount > 0
+            ? `Scan ${selectedCount} selected`
+            : enhanced
+              ? 'Start Enhanced Scan'
+              : 'Start Basic Scan'}
         </button>
       </div>
     </div>
@@ -508,22 +529,14 @@ const TrackRow = ({
 const FolderGroup = ({
   collapsed,
   dir,
-  fmtKey,
-  focusKey,
   globalScanning,
   inFlight,
   name,
-  onClearBpm,
-  onClearKey,
-  onScan,
   onScanFolder,
   onSelectFolder,
-  onSetBpm,
-  onSetKey,
   onToggle,
-  onToggleSelect,
-  recentlyUpdated,
   selected,
+  selectionReady,
   tracks,
 }) => {
   const trackIds = tracks.map((t) => t.path);
@@ -542,7 +555,7 @@ const FolderGroup = ({
           <input
             checked={allSelected}
             className="ka-checkbox"
-            disabled={globalScanning}
+            disabled={globalScanning || !selectionReady}
             onChange={() => onSelectFolder(trackIds, allSelected)}
             ref={(element) => {
               if (element)
@@ -567,7 +580,9 @@ const FolderGroup = ({
             size={13}
           />
           <span className="ka-folder-name">{name}</span>
-          <span className="ka-folder-badge">{tracks.length}</span>
+          <span className="ka-folder-badge">
+            {tracks.length.toLocaleString()} tracks
+          </span>
         </button>
         <button
           className="ka-icon-btn ka-folder-scan-btn"
@@ -592,25 +607,6 @@ const FolderGroup = ({
           )}
         </button>
       </div>
-      {!collapsed &&
-        tracks.map((t) => (
-          <TrackRow
-            fmtKey={fmtKey}
-            focusKey={focusKey}
-            globalScanning={globalScanning}
-            key={t.path}
-            onClearBpm={onClearBpm}
-            onClearKey={onClearKey}
-            onScan={onScan}
-            onSetBpm={onSetBpm}
-            onSetKey={onSetKey}
-            onToggleSelect={onToggleSelect}
-            recentlyUpdated={recentlyUpdated}
-            scanning={inFlight.has(t.path)}
-            selected={selected.has(t.path)}
-            track={t}
-          />
-        ))}
     </div>
   );
 };
@@ -644,6 +640,10 @@ const Analysis = () => {
   // from anywhere else refreshes the window too.
   const [refreshNonce, setRefreshNonce] = useState(0);
   const libraryRevision = useLibraryActivity()?.libraryRevision ?? 0;
+  // Tag writes during a scan can broadcast every second. Keep the complete folder
+  // listing in place, then refresh its values when the scan finishes.
+  const idleRevisionRef = useRef(libraryRevision);
+  if (!scanState?.scanning) idleRevisionRef.current = libraryRevision;
 
   const pollRef = useRef(null);
   const wasScanningRef = useRef(false);
@@ -678,6 +678,7 @@ const Analysis = () => {
   );
 
   const {
+    error,
     items,
     loadMore,
     loading,
@@ -685,8 +686,19 @@ const Analysis = () => {
     total: matching,
   } = usePagedList(musicLibraryApi.getTrackPage, query, {
     pageSize: PAGE_SIZE,
-    refreshToken: libraryRevision + refreshNonce,
+    refreshToken: idleRevisionRef.current + refreshNonce,
   });
+
+  // Fill the folder view sequentially; stop on errors or an empty page.
+  const autoLoadRef = useRef(null);
+  useEffect(() => {
+    if (loading) autoLoadRef.current = null;
+    const cursor = JSON.stringify([query, items.length]);
+    if (loading || loadingMore || error || items.length >= matching) return;
+    if (autoLoadRef.current === cursor) return;
+    autoLoadRef.current = cursor;
+    loadMore();
+  }, [error, items.length, loadMore, loading, loadingMore, matching, query]);
 
   const tracks = useMemo(
     () =>
@@ -740,6 +752,7 @@ const Analysis = () => {
 
   // Explicit "show me what the server has" — drops the optimistic overrides with it.
   const hardRefresh = useCallback(() => {
+    autoLoadRef.current = null;
     setEdits(new Map());
     refresh();
   }, [refresh]);
@@ -958,6 +971,25 @@ const Analysis = () => {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [tracks]);
 
+  const listRef = useRef(null);
+  const visibleRows = useMemo(
+    () =>
+      groups.flatMap((group) => [
+        { key: `folder:${group.dir}`, group },
+        ...(expandedFolders.has(group.dir)
+          ? group.tracks.map((track) => ({ key: `track:${track.path}`, track }))
+          : []),
+      ]),
+    [expandedFolders, groups],
+  );
+  const virtualizer = useVirtualizer({
+    count: visibleRows.length,
+    getScrollElement: () => listRef.current,
+    getItemKey: (index) => visibleRows[index].key,
+    estimateSize: (index) => (visibleRows[index].group ? 59 : 44),
+    overscan: 12,
+  });
+
   const toggleSelect = useCallback((path) => {
     setSelected((previous) => {
       const next = new Set(previous);
@@ -1009,13 +1041,23 @@ const Analysis = () => {
       return;
     }
 
-    let paths = [];
+    const paths = [];
     try {
-      const { tracks: folderTracks } = await musicLibraryApi.getTracks({
-        folder: folderPath,
-        limit: 10_000,
-      });
-      paths = (folderTracks ?? []).map((t) => t.path);
+      let total = 1;
+      while (paths.length < total) {
+        const page = await musicLibraryApi.getTrackPage({
+          folder: folderPath,
+          limit: PAGE_SIZE,
+          offset: paths.length,
+        });
+        if (!mountedRef.current) return;
+        if (page.items.length === 0 && paths.length < page.total) {
+          throw new Error('Folder listing ended before all tracks were loaded');
+        }
+
+        paths.push(...page.items.map((track) => track.path));
+        total = page.total;
+      }
     } catch {
       toast.error('Could not list that folder.');
       return;
@@ -1089,152 +1131,133 @@ const Analysis = () => {
       : 0;
 
   return (
-    <div className="ka-root">
-      <PageInfo storageKey="analysis">
-        <p>
-          Detects and stores every per-track audio metric in one place. A track
-          is decoded <strong>once</strong> and all four measurements are taken
-          from that single pass, so scanning for everything costs barely more
-          than scanning for one thing:
-        </p>
-        <ul>
-          <li>
-            <strong>Key</strong> and <strong>BPM</strong> — detected with
-            Essentia and written back to the file's tags, so they travel with
-            the file.
-          </li>
-          <li>
-            <strong>Waveform</strong> — per-band peak data backing the player's
-            seek bar and the waveform inspector.
-          </li>
-          <li>
-            <strong>Loudness</strong> — EBU R128 integrated loudness, true peak
-            and loudness range.
-          </li>
-        </ul>
-        <p>
-          Keys are displayed as <strong>Camelot codes</strong> (e.g.{' '}
-          <code>8A</code> = A minor, <code>8B</code> = C major). Tracks with the
-          same number, or one step apart on the wheel, mix harmonically without
-          clashing. Click a key badge to highlight all compatible tracks in the
-          list.
-        </p>
-      </PageInfo>
-      {scanState?.enhancedTotal > 0 && (
-        <p
-          role="status"
-          style={{ padding: '0.5rem 1rem' }}
-        >
-          Enhanced analysis: {scanState.enhancedCompleted} /{' '}
-          {scanState.enhancedTotal} ready · {scanState.enhancedFailed || 0}{' '}
-          failed{scanState.enhancedPath ? ` · ${scanState.enhancedPath}` : ''}.
-          Vocal and phrase predictions appear on the player waveform.
-        </p>
-      )}
-      {/* ── Stats bar ── */}
-      <div className="ka-stats-bar">
-        <div className="ka-stat">
-          <span className="ka-stat-value">{coverage.total}</span>
-          <span className="ka-stat-label">Tracks</span>
-        </div>
-        <div className="ka-stat ka-stat--keyed">
-          <span className="ka-stat-value">{coverage.keyed}</span>
-          <span className="ka-stat-label">Key</span>
-        </div>
-        <div className="ka-stat ka-stat--keyed">
-          <span className="ka-stat-value">{coverage.bpmed}</span>
-          <span className="ka-stat-label">BPM</span>
-        </div>
-        <div className="ka-stat ka-stat--keyed">
-          <span className="ka-stat-value">{coverage.waveformed}</span>
-          <span className="ka-stat-label">Waveform</span>
-        </div>
-        <div className="ka-stat ka-stat--keyed">
-          <span className="ka-stat-value">{coverage.loudness}</span>
-          <span className="ka-stat-label">Loudness</span>
-        </div>
-        <div className="ka-stat ka-stat--unkeyed">
-          <span className="ka-stat-value">
-            {coverage.total - coverage.complete}
-          </span>
-          <span className="ka-stat-label">Incomplete</span>
-        </div>
-        <div className="ka-stat-bar-wrap">
-          <div className="ka-stat-bar">
-            <div
-              className="ka-stat-bar-fill"
-              style={{ width: `${pct}%` }}
-            />
+    <div
+      className={`ka-root${expandedFolders.size > 0 ? ' ka-root--expanded' : ''}`}
+    >
+      <section className="ka-overview">
+        <div className="ka-view-heading">
+          <AudioWaveform size={18} />
+          <div>
+            <h2>Library analysis</h2>
+            <p>Key, tempo, waveform and loudness, organised by folder.</p>
           </div>
         </div>
-
-        {/* inline scan progress */}
-        {scanning && scanState.total > 0 && (
-          <div className="ka-progress-bar-wrap">
-            <div className="ka-progress-bar">
+        {scanState?.enhancedTotal > 0 && (
+          <p
+            className="ka-enhanced-status"
+            role="status"
+          >
+            Enhanced analysis: {scanState.enhancedCompleted} /{' '}
+            {scanState.enhancedTotal} ready · {scanState.enhancedFailed || 0}{' '}
+            failed{scanState.enhancedPath ? ` · ${scanState.enhancedPath}` : ''}
+            . Vocal and phrase predictions appear on the player waveform.
+          </p>
+        )}
+        {/* ── Stats bar ── */}
+        <div className="ka-stats-bar">
+          <div className="ka-stat">
+            <span className="ka-stat-value">{coverage.total}</span>
+            <span className="ka-stat-label">Tracks</span>
+          </div>
+          <div className="ka-stat ka-stat--keyed">
+            <span className="ka-stat-value">{coverage.keyed}</span>
+            <span className="ka-stat-label">Key</span>
+          </div>
+          <div className="ka-stat ka-stat--keyed">
+            <span className="ka-stat-value">{coverage.bpmed}</span>
+            <span className="ka-stat-label">BPM</span>
+          </div>
+          <div className="ka-stat ka-stat--keyed">
+            <span className="ka-stat-value">{coverage.waveformed}</span>
+            <span className="ka-stat-label">Waveform</span>
+          </div>
+          <div className="ka-stat ka-stat--keyed">
+            <span className="ka-stat-value">{coverage.loudness}</span>
+            <span className="ka-stat-label">Loudness</span>
+          </div>
+          <div className="ka-stat ka-stat--unkeyed">
+            <span className="ka-stat-value">
+              {coverage.total - coverage.complete}
+            </span>
+            <span className="ka-stat-label">Incomplete</span>
+          </div>
+          <div className="ka-stat-bar-wrap">
+            <div className="ka-stat-bar">
               <div
-                className="ka-progress-fill"
-                style={{ width: `${(scanState.progress * 100).toFixed(1)}%` }}
+                className="ka-stat-bar-fill"
+                style={{ width: `${pct}%` }}
               />
             </div>
-            <div className="ka-progress-stats">
-              <span className="ka-progress-chip ka-progress-chip--queued">
-                Queued:{' '}
-                {Math.max(
-                  0,
-                  scanState.total - processed - (scanState.inFlight ?? 0),
-                )}
-              </span>
-              <span className="ka-progress-chip ka-progress-chip--active">
-                Scanning: {scanState.inFlight ?? 0}
-              </span>
-              <span className="ka-progress-chip ka-progress-chip--done">
-                Done: {processed}
-              </span>
-              {scanState.failed > 0 && (
-                <span className="ka-progress-chip ka-progress-chip--failed">
-                  Failed: {scanState.failed}
-                </span>
-              )}
-            </div>
           </div>
-        )}
-        {scanning && (
+
+          {/* inline scan progress */}
+          {scanning && scanState.total > 0 && (
+            <div className="ka-progress-bar-wrap">
+              <div className="ka-progress-bar">
+                <div
+                  className="ka-progress-fill"
+                  style={{ width: `${(scanState.progress * 100).toFixed(1)}%` }}
+                />
+              </div>
+              <div className="ka-progress-stats">
+                <span className="ka-progress-chip ka-progress-chip--queued">
+                  Queued:{' '}
+                  {Math.max(
+                    0,
+                    scanState.total - processed - (scanState.inFlight ?? 0),
+                  )}
+                </span>
+                <span className="ka-progress-chip ka-progress-chip--active">
+                  Scanning: {scanState.inFlight ?? 0}
+                </span>
+                <span className="ka-progress-chip ka-progress-chip--done">
+                  Done: {processed}
+                </span>
+                {scanState.failed > 0 && (
+                  <span className="ka-progress-chip ka-progress-chip--failed">
+                    Failed: {scanState.failed}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+          {scanning && (
+            <button
+              className="ka-btn ka-btn--scanning hover-fx"
+              onClick={handleCancelScan}
+              type="button"
+            >
+              <Loader2
+                className="ka-spin-icon"
+                size={13}
+              />{' '}
+              Scanning… Cancel
+            </button>
+          )}
+
+          <div className="ka-spacer" />
+          <KeyFormatToggle
+            format={format}
+            onChange={setFormat}
+          />
           <button
-            className="ka-btn ka-btn--scanning hover-fx"
-            onClick={handleCancelScan}
+            className="ka-btn hover-fx"
+            onClick={hardRefresh}
+            title="Refresh"
             type="button"
           >
-            <Loader2
-              className="ka-spin-icon"
-              size={13}
-            />{' '}
-            Scanning… Cancel
+            <RefreshCw size={13} />
           </button>
-        )}
-
-        <div className="ka-spacer" />
-        <KeyFormatToggle
-          format={format}
-          onChange={setFormat}
-        />
-        <button
-          className="ka-btn hover-fx"
-          onClick={hardRefresh}
-          title="Refresh"
-          type="button"
-        >
-          <RefreshCw size={13} />
-        </button>
-        <button
-          className={`ka-btn hover-fx${showSettings ? ' ka-btn--active' : ''}`}
-          disabled={scanning}
-          onClick={() => setShowSettings((v) => !v)}
-          type="button"
-        >
-          <Settings2 size={13} /> Scan
-        </button>
-      </div>
+          <button
+            className={`ka-btn hover-fx${showSettings ? ' ka-btn--active' : ''}`}
+            disabled={scanning}
+            onClick={() => setShowSettings((v) => !v)}
+            type="button"
+          >
+            <Settings2 size={13} /> Scan
+          </button>
+        </div>
+      </section>
 
       {showSettings && (
         <ScanSettings
@@ -1247,6 +1270,9 @@ const Analysis = () => {
 
       {/* ── Toolbar ── */}
       <div className="ka-toolbar">
+        <span className="ka-browser-title">
+          <Folder size={16} /> Folders
+        </span>
         <div className="ka-search-wrap">
           <Search
             className="ka-search-icon"
@@ -1344,7 +1370,7 @@ const Analysis = () => {
               tracks.length > 0 && tracks.every((t) => selected.has(t.path))
             }
             className="ka-checkbox"
-            disabled={scanning}
+            disabled={scanning || tracks.length < matching}
             onChange={toggleSelectAll}
             ref={(element) => {
               if (element)
@@ -1400,8 +1426,26 @@ const Analysis = () => {
         <div className="ka-col-actions" />
       </div>
 
+      {error && (
+        <div
+          className="ka-load-error"
+          role="alert"
+        >
+          <AlertCircle size={14} /> Could not load all tracks.
+          <button
+            className="ka-btn"
+            onClick={hardRefresh}
+            type="button"
+          >
+            Retry
+          </button>
+        </div>
+      )}
       {/* ── Track list ── */}
-      <div className="ka-track-list">
+      <div
+        className="ka-track-list"
+        ref={listRef}
+      >
         {tracks.length === 0 ? (
           <div className="ka-state-center">
             <Music
@@ -1415,38 +1459,68 @@ const Analysis = () => {
             </span>
           </div>
         ) : (
-          groups.map((g) => (
-            <FolderGroup
-              collapsed={!expandedFolders.has(g.dir)}
-              dir={g.dir}
-              fmtKey={fmtKey}
-              focusKey={focusKey}
-              globalScanning={scanning}
-              inFlight={inFlight}
-              key={g.dir}
-              name={g.name}
-              onClearBpm={handleClearBpm}
-              onClearKey={handleClearKey}
-              onScan={handleScanTrack}
-              onScanFolder={handleScanFolder}
-              onSelectFolder={handleSelectFolder}
-              onSetBpm={handleSetBpm}
-              onSetKey={handleSetKey}
-              onToggle={toggleFolder}
-              onToggleSelect={toggleSelect}
-              recentlyUpdated={recentlyUpdated}
-              selected={selected}
-              tracks={g.tracks}
-            />
-          ))
+          <div
+            style={{ height: virtualizer.getTotalSize(), position: 'relative' }}
+          >
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const { group: g, track } = visibleRows[virtualRow.index];
+              return (
+                <div
+                  data-index={virtualRow.index}
+                  key={virtualRow.key}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  {g ? (
+                    <FolderGroup
+                      collapsed={!expandedFolders.has(g.dir)}
+                      dir={g.dir}
+                      globalScanning={scanning}
+                      inFlight={inFlight}
+                      name={g.name}
+                      onScanFolder={handleScanFolder}
+                      onSelectFolder={handleSelectFolder}
+                      onToggle={toggleFolder}
+                      selected={selected}
+                      selectionReady={tracks.length === matching}
+                      tracks={g.tracks}
+                    />
+                  ) : (
+                    <TrackRow
+                      fmtKey={fmtKey}
+                      focusKey={focusKey}
+                      globalScanning={scanning}
+                      onClearBpm={handleClearBpm}
+                      onClearKey={handleClearKey}
+                      onScan={handleScanTrack}
+                      onSetBpm={handleSetBpm}
+                      onSetKey={handleSetKey}
+                      onToggleSelect={toggleSelect}
+                      recentlyUpdated={recentlyUpdated}
+                      scanning={inFlight.has(track.path)}
+                      selected={selected.has(track.path)}
+                      track={track}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 
-      {/* ── Paging ── one 200-row window at a time, appended on demand ── */}
+      {/* Automatic loading progress and manual batch retry. */}
       {tracks.length > 0 && (
         <div className="ka-pagination">
           <span className="ka-page-info">
-            Showing {tracks.length} of {matching}
+            {tracks.length < matching ? 'Loading' : 'Loaded'} {tracks.length} of{' '}
+            {matching} tracks
           </span>
           {tracks.length < matching && (
             <button

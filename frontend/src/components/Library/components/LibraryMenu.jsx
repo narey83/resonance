@@ -37,14 +37,11 @@ const LibraryMenu = ({ children, label, summary, wide = false }) => {
         Number.parseFloat(win.getComputedStyle(doc.documentElement).zoom) || 1;
       const viewportWidth = win.innerWidth / scale;
       const viewportHeight = win.innerHeight / scale;
-      const width = Math.min(wide ? 440 : 270, viewportWidth - 24);
+      const width = Math.min(wide ? 440 : 240, viewportWidth - 24);
       const top = bounds.bottom / scale + 7;
       const left = Math.max(
         12,
-        Math.min(
-          wide ? bounds.left / scale : bounds.right / scale - width,
-          viewportWidth - width - 12,
-        ),
+        Math.min(bounds.left / scale, viewportWidth - width - 12),
       );
       setPosition({
         left,

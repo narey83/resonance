@@ -27,5 +27,5 @@ RUN /opt/resonance/venvs/beats/bin/pip install --disable-pip-version-check --no-
  && /opt/resonance/venvs/beats/bin/pip freeze --all > /opt/resonance/installed-analysis-requirements.txt
 COPY tools/analysis-worker/ /opt/resonance-analysis/worker/
 COPY docker/scripts/music-mount-guard.py /opt/resonance-analysis/music-mount-guard.py
-ENV HF_HUB_OFFLINE=1 HF_HUB_DISABLE_TELEMETRY=1 OMP_NUM_THREADS=2 MKL_NUM_THREADS=2
+ENV HF_HUB_OFFLINE=1 HF_HUB_DISABLE_TELEMETRY=1
 USER 1000:1000

@@ -89,7 +89,9 @@ namespace resonance.Transfers.API
             MusicLibrary = musicLibraryService;
         }
 
-        private static SemaphoreSlim DownloadRequestLimiter { get; } = new SemaphoreSlim(2, 2);
+        // Keep the duplicate check and transfer registration atomic across peers. Without this,
+        // two simultaneous requests for the same folder from different users can both pass the guard.
+        private static SemaphoreSlim DownloadRequestLimiter { get; } = new SemaphoreSlim(1, 1);
         private ITransferService Transfers { get; }
         private IUserService Users { get; }
         private IOptionsSnapshot<Options> OptionsSnapshot { get; }
@@ -362,6 +364,7 @@ namespace resonance.Transfers.API
         /// </summary>
         /// <param name="username">The username of the download source.</param>
         /// <param name="requests">The list of download requests.</param>
+        /// <param name="allowDuplicate">Whether to override the duplicate album/folder guard.</param>
         /// <returns></returns>
         /// <response code="201">The download was successfully enqueued.</response>
         /// <response code="403">The download was rejected.</response>
@@ -369,9 +372,13 @@ namespace resonance.Transfers.API
         [HttpPost("downloads/{username}")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(201)]
+        [ProducesResponseType(409)]
         [ProducesResponseType(typeof(string), 403)]
         [ProducesResponseType(typeof(string), 500)]
-        public async Task<IActionResult> EnqueueAsync([FromRoute, UrlEncoded, Required] string username, [FromBody] IEnumerable<QueueDownloadRequest> requests)
+        public async Task<IActionResult> EnqueueAsync(
+            [FromRoute, UrlEncoded, Required] string username,
+            [FromBody] IEnumerable<QueueDownloadRequest> requests,
+            [FromQuery] bool allowDuplicate = false)
         {
             if (Program.IsRelayAgent)
             {
@@ -393,6 +400,8 @@ namespace resonance.Transfers.API
                 return BadRequest("One or more records in the request are null");
             }
 
+            var requestList = requests.ToList();
+
             if (!await DownloadRequestLimiter.WaitAsync(30_000))
             {
                 return StatusCode(429, "Request timed out waiting to be processed. Try again.");
@@ -400,40 +409,47 @@ namespace resonance.Transfers.API
 
             try
             {
+                if (!allowDuplicate)
+                {
+                    var duplicate = FindPossibleDuplicate(requestList);
+
+                    if (duplicate is not null)
+                    {
+                        Log.Warning(
+                            "Refused a possible duplicate download of {Count} file(s) from {Username}: {Message}",
+                            requestList.Count, username, duplicate.Message);
+                        return Conflict(new
+                        {
+                            Code = "DuplicateAlbumOrFolder",
+                            duplicate.Message,
+                            duplicate.ExistingAlbum,
+                        });
+                    }
+                }
+
                 if (Blocked.IsBlocked(username, resonance.Users.Blocking.BlockedUserScope.Transfers))
                 {
                     return StatusCode(403, "User is blocked; unblock them to download");
                 }
 
-                var endpoint = await Users.GetIPEndPointAsync(username);
-
-                if (Users.IsBlacklisted(username, endpoint.Address))
+                if (Users.IsBlacklisted(username))
                 {
                     throw new UserOfflineException($"User {username} appears to be offline");
                 }
 
-                var destinationFolder = requests.FirstOrDefault()?.DestinationFolder;
-                var possibleDuplicate = FindPossibleDuplicateAlbum(requests);
+                var destinationFolder = requestList[0].DestinationFolder;
+                var (enqueued, failed) = await Transfers.Downloads.EnqueueAsync(username, requestList.Select(r => (r.Filename, r.Size)), destinationFolder);
 
-                if (possibleDuplicate is not null)
-                {
-                    Log.Warning(
-                        "Downloading {Count} file(s) from {Username} whose remote folder name resembles an album already in the library: {Artist} - {Album}",
-                        requests.Count(), username, possibleDuplicate.Artist, possibleDuplicate.Album);
-                }
-
-                var (enqueued, failed) = await Transfers.Downloads.EnqueueAsync(username, requests.Select(r => (r.Filename, r.Size)), destinationFolder);
-
-                return StatusCode(201, new { Enqueued = enqueued, Failed = failed, PossibleDuplicateOfAlbum = possibleDuplicate });
+                return StatusCode(201, new { Enqueued = enqueued, Failed = failed });
             }
             catch (InsufficientDiskSpaceException ex)
             {
-                Log.Warning("Refused to enqueue {Count} files for {Username}: {Message}", requests.Count(), username, ex.Message);
+                Log.Warning("Refused to enqueue {Count} files for {Username}: {Message}", requestList.Count, username, ex.Message);
                 return StatusCode(507, ex.Message);
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "Failed to enqueue {Count} files for {Username}: {Message}", requests.Count(), username, ex.Message);
+                Log.Error(ex, "Failed to enqueue {Count} files for {Username}: {Message}", requestList.Count, username, ex.Message);
                 return StatusCode(500, ex.Message);
             }
             finally
@@ -804,30 +820,73 @@ namespace resonance.Transfers.API
         }
 
         /// <summary>
-        ///     Checks whether the remote folder these files are coming from resembles an album already present in
-        ///     the library, so the caller can warn the user before they end up with a second copy.
+        ///     Checks whether the remote folder resembles an album already present in the library, or a folder that
+        ///     has already completed or is currently being downloaded.
         /// </summary>
         /// <remarks>
-        ///     This is a heuristic, not an exact match (remote folder naming isn't standardized), so it only warns;
-        ///     it never blocks the download.
+        ///     Album matching is a heuristic because remote folder naming isn't standardized. The caller can explicitly
+        ///     override a match after warning the user.
         /// </remarks>
-        private resonance.MusicLibrary.MusicAlbum FindPossibleDuplicateAlbum(IEnumerable<QueueDownloadRequest> requests)
+        private PossibleDuplicateDownload FindPossibleDuplicate(IReadOnlyCollection<QueueDownloadRequest> requests)
         {
-            var folderName = requests.FirstOrDefault()?.Filename?.ParentFolderName().ToFuzzyMatchKey();
+            var requestedFiles = requests
+                .Where(request => !string.IsNullOrWhiteSpace(request.Filename))
+                .Select(request => new
+                {
+                    Folder = request.Filename.ParentFolderName(),
+                    FolderKey = request.Filename.ParentFolderName().ToFuzzyMatchKey(),
+                    FileKey = request.Filename.Split('/', '\\').Last().ToFuzzyMatchKey(),
+                })
+                .Where(file => !string.IsNullOrEmpty(file.FolderKey))
+                .ToList();
 
-            if (string.IsNullOrEmpty(folderName))
+            if (requestedFiles.Count == 0)
             {
                 return null;
             }
 
-            return MusicLibrary.GetAlbums().FirstOrDefault(album =>
-            {
-                var artistKey = album.Artist.ToFuzzyMatchKey();
-                var albumKey = album.Album.ToFuzzyMatchKey();
+            var libraryAlbums = MusicLibrary.GetAlbums();
 
-                return !string.IsNullOrEmpty(albumKey) && folderName.Contains(albumKey)
-                    && !string.IsNullOrEmpty(artistKey) && folderName.Contains(artistKey);
-            });
+            foreach (var requestedFile in requestedFiles)
+            {
+                var album = libraryAlbums.FirstOrDefault(album =>
+                {
+                    var artistKey = album.Artist.ToFuzzyMatchKey();
+                    var albumKey = album.Album.ToFuzzyMatchKey();
+
+                    return !string.IsNullOrEmpty(albumKey) && requestedFile.FolderKey.Contains(albumKey)
+                        && !string.IsNullOrEmpty(artistKey) && requestedFile.FolderKey.Contains(artistKey);
+                });
+
+                if (album is not null)
+                {
+                    return new PossibleDuplicateDownload(
+                        $"This looks like {album.Artist} - {album.Album}, which is already in the music library.",
+                        album);
+                }
+            }
+
+            var priorTransfer = Transfers.Downloads.List(t =>
+                    t.Direction == TransferDirection.Download
+                    && (t.State == (TransferStates.Completed | TransferStates.Succeeded)
+                        || !TransferStateCategories.Completed.Contains(t.State)),
+                    includeRemoved: true)
+                .FirstOrDefault(transfer =>
+                {
+                    var priorFolderKey = transfer.Filename.ParentFolderName().ToFuzzyMatchKey();
+                    var priorFileKey = transfer.Filename.Split('/', '\\').Last().ToFuzzyMatchKey();
+                    return requestedFiles.Any(file => file.FolderKey == priorFolderKey && file.FileKey == priorFileKey);
+                });
+
+            return priorTransfer is null
+                ? null
+                : new PossibleDuplicateDownload(
+                    $"The folder '{priorTransfer.Filename.ParentFolderName()}' is already downloaded or in progress.",
+                    null);
         }
+
+        private sealed record PossibleDuplicateDownload(
+            string Message,
+            resonance.MusicLibrary.MusicAlbum? ExistingAlbum);
     }
 }

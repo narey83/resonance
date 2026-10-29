@@ -52,7 +52,7 @@ namespace resonance.Common
                 // larger preferred I/O size there; statvfs exposes the actual unit
                 // for its block counts, which keeps download guards accurate.
                 if (OperatingSystem.IsLinux() && Environment.Is64BitProcess
-                    && StatVfs(path, out var stats) == 0 && stats.FragmentSize > 0)
+                    && NativeMethods.StatVfs(path, out var stats) == 0 && stats.FragmentSize > 0)
                 {
                     availableBytes = checked((long)(stats.AvailableBlocks * stats.FragmentSize));
                     totalBytes = checked((long)(stats.Blocks * stats.FragmentSize));
@@ -83,9 +83,6 @@ namespace resonance.Common
                 && TryGet(path, out var availableBytes, out _)
                 && availableBytes < minimumMegabytes.Value * 1024L * 1024L;
 
-        [DllImport("libc", EntryPoint = "statvfs", SetLastError = true)]
-        private static extern int StatVfs([MarshalAs(UnmanagedType.LPUTF8Str)] string path, out LinuxFileSystemStats stats);
-
         // The first five statvfs fields are unsigned long on 64-bit Linux.
         // Reserve the rest of the native structure without depending on its
         // platform-specific trailing fields. This call is never used on macOS
@@ -98,6 +95,12 @@ namespace resonance.Common
             public ulong Blocks;
             public ulong FreeBlocks;
             public ulong AvailableBlocks;
+        }
+
+        private static class NativeMethods
+        {
+            [DllImport("libc", EntryPoint = "statvfs", SetLastError = true)]
+            internal static extern int StatVfs([MarshalAs(UnmanagedType.LPUTF8Str)] string path, out LinuxFileSystemStats stats);
         }
     }
 }

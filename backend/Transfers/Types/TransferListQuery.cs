@@ -81,15 +81,18 @@ internal static class TransferListQuery
             return;
         }
 
-        context.Database.ExecuteSqlRaw($"CREATE INDEX IF NOT EXISTS \"{SqliteRecoveryIndex}\" ON \"Transfers\" (\"Direction\") WHERE {RecoveryPredicateSql}");
-        context.Database.ExecuteSqlRaw($"CREATE INDEX IF NOT EXISTS \"{SqliteListIndex}\" ON \"Transfers\" (\"Direction\", \"Removed\", ({CompletedFlagSql}), COALESCE(\"EndedAt\", \"RequestedAt\") DESC)");
+        var recoveryIndexSql = $"CREATE INDEX IF NOT EXISTS \"{SqliteRecoveryIndex}\" ON \"Transfers\" (\"Direction\") WHERE {RecoveryPredicateSql}";
+        var listIndexSql = $"CREATE INDEX IF NOT EXISTS \"{SqliteListIndex}\" ON \"Transfers\" (\"Direction\", \"Removed\", ({CompletedFlagSql}), COALESCE(\"EndedAt\", \"RequestedAt\") DESC)";
+        context.Database.ExecuteSqlRaw(recoveryIndexSql);
+        context.Database.ExecuteSqlRaw(listIndexSql);
     }
 
     internal static List<Transfer> ListForRecovery(TransfersDbContext context, TransferDirection direction)
     {
         if (context.Database.IsSqlite())
         {
-            return context.Transfers.FromSqlRaw($"SELECT * FROM \"Transfers\" WHERE \"Direction\"=@direction AND ({RecoveryPredicateSql})",
+            var recoverySql = $"SELECT * FROM \"Transfers\" WHERE \"Direction\"=@direction AND ({RecoveryPredicateSql})";
+            return context.Transfers.FromSqlRaw(recoverySql,
                 new SqliteParameter("@direction", direction.ToString())).AsNoTracking().ToList();
         }
 

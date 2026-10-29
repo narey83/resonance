@@ -242,7 +242,6 @@ namespace resonance.Messaging.API
         /// <summary>
         ///     Gets the current list of messages for the specified room.
         /// </summary>
-        /// <param name="roomName"></param>
         /// <returns></returns>
         /// <response code="200">The request completed successfully.</response>
         /// <response code="404">The specified roomName could not be found.</response>

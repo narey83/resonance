@@ -122,6 +122,8 @@ const Stack = createNativeStackNavigator<LibraryStackParamList>();
 type LibraryNav = NativeStackNavigationProp<LibraryStackParamList>;
 
 const TRACKS_PER_PAGE = 50;
+const CSHARP_EPOCH_TICKS = 621_355_968_000_000_000;
+const NEW_LIBRARY_ITEM_AGE_MS = 7 * 86_400_000;
 
 // Fetches that feed the player are bounded to what the queue will actually keep. Folders here
 // run to tens of thousands of tracks (HATE is ~25k), and asking for one in a single response
@@ -164,6 +166,26 @@ const formatDuration = (seconds: number | null): string => {
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
+
+const isRecentlyIndexed = (ticks?: number | null): boolean => {
+  if (!ticks) return false;
+  const indexedAt = (ticks - CSHARP_EPOCH_TICKS) / 10_000;
+  const age = Date.now() - indexedAt;
+  return age >= 0 && age < NEW_LIBRARY_ITEM_AGE_MS;
+};
+
+function NewItemIcon({ labelled = true }: { labelled?: boolean }) {
+  const { c } = useLibStyles();
+  return (
+    <View
+      accessibilityLabel={labelled ? 'Added in the last 7 days' : undefined}
+      accessible={labelled}
+      style={labelled ? { marginLeft: 6 } : undefined}
+    >
+      <Ionicons name="sparkles" size={14} color={c.accent} />
+    </View>
+  );
+}
 
 // ── useKeyboardHeight ─────────────────────────────────────────────────────────
 
@@ -1676,12 +1698,20 @@ function AlbumsTab() {
         : navigation.push('Album', { album: item })}
       onLongPress={item._local ? undefined : () => setActionAlbum(item)}
       artwork={(size, thumbSize) => (
-        <ArtworkBox
-          path={item.coverPath}
-          size={size}
-          thumbSize={thumbSize}
-          source={showBadge ? (item._local ? 'local' : 'server') : undefined}
-        />
+        <View style={{ position: 'relative' }}>
+          <ArtworkBox
+            path={item.coverPath}
+            size={size}
+            thumbSize={thumbSize}
+            source={showBadge ? (item._local ? 'local' : 'server') : undefined}
+          />
+          {isRecentlyIndexed(item.indexedAt) && (
+            <View style={s.newArtworkBadge}>
+              <NewItemIcon labelled={false} />
+              <Text style={s.newArtworkText}>NEW</Text>
+            </View>
+          )}
+        </View>
       )}
     />
   ) : (
@@ -1698,7 +1728,10 @@ function AlbumsTab() {
         source={showBadge ? (item._local ? 'local' : 'server') : undefined}
       />
       <View style={s.rowInfo}>
-        <Text style={s.rowTitle} numberOfLines={1}>{item.album || '(Untitled)'}</Text>
+        <View style={s.newTitleRow}>
+          <Text style={[s.rowTitle, s.newTitleText]} numberOfLines={1}>{item.album || '(Untitled)'}</Text>
+          {isRecentlyIndexed(item.indexedAt) && <NewItemIcon />}
+        </View>
         <Text style={s.rowMeta} numberOfLines={1}>
           {[item.artist, item.year?.toString()].filter(Boolean).join(' · ')}
           {item._local && !showBadge && (
@@ -1950,7 +1983,10 @@ function TracksTab() {
           source={showBadge ? (local ? 'local' : 'server') : undefined}
         />
         <View style={s.rowInfo}>
-          <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
+          <View style={s.newTitleRow}>
+            <Text style={[s.rowTitle, s.newTitleText]} numberOfLines={1}>{getTrackTitle(item)}</Text>
+            {isRecentlyIndexed(item.indexedAt) && <NewItemIcon />}
+          </View>
           <RowArtistAlbum
             artist={item.artist}
             album={item.album}
@@ -2465,14 +2501,22 @@ function FoldersTab() {
           })}
           onLongPress={item._local ? undefined : () => setActionFolder(item)}
           artwork={(size, thumbSize) => (
-            <ArtworkBox
-              path={item.hasArtwork ? item.coverPath : null}
-              size={size}
-              thumbSize={thumbSize}
-              mixtape={mixtape}
-              source={showBadge ? (item._local ? 'local' : 'server') : undefined}
-              placeholderIcon="folder"
-            />
+            <View style={{ position: 'relative' }}>
+              <ArtworkBox
+                path={item.hasArtwork ? item.coverPath : null}
+                size={size}
+                thumbSize={thumbSize}
+                mixtape={mixtape}
+                source={showBadge ? (item._local ? 'local' : 'server') : undefined}
+                placeholderIcon="folder"
+              />
+              {isRecentlyIndexed(item.indexedAt) && (
+                <View style={s.newArtworkBadge}>
+                  <NewItemIcon labelled={false} />
+                  <Text style={s.newArtworkText}>NEW</Text>
+                </View>
+              )}
+            </View>
           )}
         />
       );
@@ -2493,7 +2537,10 @@ function FoldersTab() {
           source={showBadge ? (item._local ? 'local' : 'server') : undefined}
         />
         <View style={s.rowInfo}>
-          <Text style={s.rowTitle} numberOfLines={1}>{item.name}</Text>
+          <View style={s.newTitleRow}>
+            <Text style={[s.rowTitle, s.newTitleText]} numberOfLines={1}>{item.name}</Text>
+            {isRecentlyIndexed(item.indexedAt) && <NewItemIcon />}
+          </View>
           <Text style={s.rowMeta} numberOfLines={1}>
             {item.trackCount} track{item.trackCount !== 1 ? 's' : ''}
           </Text>
@@ -4598,6 +4645,23 @@ function makeLibStyles(c: ThemeColors) {
     rowInfo:    { flex: 1, minWidth: 0 },
     rowTitle:   { fontSize: Typography.base, color: c.textPrimary, fontWeight: '500' },
     rowMeta:    { fontSize: Typography.sm, color: c.textMuted, marginTop: 2 },
+    newTitleRow: { flexDirection: 'row', alignItems: 'center' },
+    newTitleText: { flexShrink: 1 },
+    newArtworkBadge: {
+      position: 'absolute',
+      top: 6,
+      left: 6,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      paddingHorizontal: 6,
+      height: 22,
+      borderRadius: 11,
+      borderWidth: 1,
+      borderColor: c.accent,
+      backgroundColor: c.bgPrimary,
+    },
+    newArtworkText: { color: c.accent, fontSize: 9, fontWeight: '800', letterSpacing: 0.4 },
 
     // Artwork
     artwork:            { backgroundColor: c.bgElevated },

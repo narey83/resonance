@@ -46,9 +46,31 @@ type batchCheckpoint struct {
 	Schema   int
 	DB       *pdb.Database
 	Keys     map[uint32]string
+	Streams  map[uint32]remoteFile
 	Applied  map[string][]uint32
 	Pending  map[string]string
 	Revision string
+}
+
+func purgeLegacyAudio(cache string) {
+	for _, pattern := range []string{"library-*", "batch-*.zip"} {
+		matches, _ := filepath.Glob(filepath.Join(cache, pattern))
+		for _, path := range matches {
+			_ = os.RemoveAll(path)
+		}
+	}
+	collections, _ := filepath.Glob(filepath.Join(cache, "collections", "*"))
+	for _, root := range collections {
+		data, err := os.ReadFile(filepath.Join(root, "collection.json"))
+		if err != nil {
+			_ = os.RemoveAll(root)
+			continue
+		}
+		var header struct{ Schema int }
+		if json.Unmarshal(data, &header) != nil || header.Schema != 2 {
+			_ = os.RemoveAll(root)
+		}
+	}
 }
 
 func validDigest(s string) bool {
@@ -69,7 +91,7 @@ func readCheckpoint(root string) (*batchCheckpoint, error) {
 	if e = json.NewDecoder(io.LimitReader(f, 64<<20)).Decode(&c); e != nil {
 		return nil, e
 	}
-	if c.Schema != 1 || c.DB == nil || len(c.DB.Tracks) > 65535 || c.Applied == nil || c.Pending == nil || c.Keys == nil {
+	if c.Schema != 2 || c.DB == nil || len(c.DB.Tracks) > 65535 || c.Applied == nil || c.Pending == nil || c.Keys == nil || c.Streams == nil {
 		return nil, errors.New("invalid saved collection")
 	}
 	seen := map[uint32]bool{}
@@ -78,7 +100,10 @@ func readCheckpoint(root string) (*batchCheckpoint, error) {
 			return nil, errors.New("invalid saved track identity")
 		}
 		seen[t.ID] = true
-		for _, p := range []string{t.FilePath, t.AnalyzePath} {
+		if stream, ok := c.Streams[t.ID]; !ok || stream.Bytes < 1 || !validDigest(stream.SourceKey) || !validDigest(stream.SHA256) {
+			return nil, errors.New("invalid saved stream identity")
+		}
+		for _, p := range []string{t.AnalyzePath} {
 			if e = requireUnder(root, filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(p, "/")))); e != nil {
 				return nil, e
 			}
@@ -123,7 +148,11 @@ func preparedStore(root string, db *pdb.Database) *analysis.Store {
 }
 func savedBundle(root string, c *batchCheckpoint) *bundle {
 	c.DB.ReindexTracks()
-	return &bundle{Persistent: true, Root: root, Name: "Resonance Library", Tracks: len(c.DB.Tracks), Keys: c.Keys, DB: c.DB, Library: library.FromPDB(c.DB.Tracks, root), Analysis: preparedStore(root, c.DB)}
+	remote := map[string]remoteFile{}
+	for _, t := range c.DB.Tracks {
+		remote[filepath.Join(root, filepath.FromSlash(t.FilePath))] = c.Streams[t.ID]
+	}
+	return &bundle{Persistent: true, Root: root, Name: "Resonance Library", Tracks: len(c.DB.Tracks), Keys: c.Keys, DB: c.DB, Library: library.FromPDB(c.DB.Tracks, root), Analysis: preparedStore(root, c.DB), Remote: remote}
 }
 func (h *helper) syncBatches(ctx context.Context, client *http.Client, s *synchronization, status syncManifest) error {
 	if status.Status == "checking-analysis" && status.Revision == "" {
@@ -136,13 +165,21 @@ func (h *helper) syncBatches(ctx context.Context, client *http.Client, s *synchr
 	root := batchRoot(h.Cache, s.Connection.ServerURL)
 	h.operation.Lock()
 	c, e := readCheckpoint(root)
+	if e == nil && c.Schema != 2 {
+		e = errors.New("legacy collection")
+	}
 	if errors.Is(e, os.ErrNotExist) {
-		c = &batchCheckpoint{Schema: 1, DB: &pdb.Database{}, Keys: map[uint32]string{}, Applied: map[string][]uint32{}, Pending: map[string]string{}}
+		c = &batchCheckpoint{Schema: 2, DB: &pdb.Database{}, Keys: map[uint32]string{}, Streams: map[uint32]remoteFile{}, Applied: map[string][]uint32{}, Pending: map[string]string{}}
 		e = nil
 	}
 	if e != nil {
-		h.operation.Unlock()
-		return fmt.Errorf("cannot resume saved collection: %w", e)
+		// Older collections contain complete audio copies. Streaming-only
+		// Bridge intentionally discards that legacy cache before rebuilding.
+		if removeErr := os.RemoveAll(root); removeErr != nil {
+			h.operation.Unlock()
+			return fmt.Errorf("cannot remove legacy audio cache: %w", removeErr)
+		}
+		c = &batchCheckpoint{Schema: 2, DB: &pdb.Database{}, Keys: map[uint32]string{}, Streams: map[uint32]remoteFile{}, Applied: map[string][]uint32{}, Pending: map[string]string{}}
 	}
 	h.mu.Lock()
 	current := h.Sync == s
@@ -318,10 +355,20 @@ func (h *helper) mergeBatch(root string, c *batchCheckpoint, next *bundle, batch
 		return e
 	}
 	os.Remove(generation)
-	if e = os.Rename(next.Root, generation); e != nil {
+	oldRoot := next.Root
+	if e = os.Rename(oldRoot, generation); e != nil {
 		return e
 	}
 	next.Root = generation
+	remapped := map[string]remoteFile{}
+	for path, stream := range next.Remote {
+		relative, relErr := filepath.Rel(oldRoot, path)
+		if relErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return errors.New("batch stream path escapes its generation")
+		}
+		remapped[filepath.Join(generation, relative)] = stream
+	}
+	next.Remote = remapped
 	next.Persistent = true
 	committed := false
 	defer func() {
@@ -330,10 +377,12 @@ func (h *helper) mergeBatch(root string, c *batchCheckpoint, next *bundle, batch
 		}
 	}()
 	keys := map[uint32]string{}
+	streams := map[uint32]remoteFile{}
 	stable := map[string]uint32{}
 	var max uint32
 	for id, key := range c.Keys {
 		keys[id] = key
+		streams[id] = c.Streams[id]
 		stable[key] = id
 		if id > max {
 			max = id
@@ -367,6 +416,10 @@ func (h *helper) mergeBatch(root string, c *batchCheckpoint, next *bundle, batch
 		clone.FilePath = filepath.ToSlash(filepath.Join(prefix, strings.TrimPrefix(t.FilePath, "/")))
 		clone.AnalyzePath = filepath.ToSlash(filepath.Join(prefix, strings.TrimPrefix(t.AnalyzePath, "/")))
 		clone.ArtworkID = 0
+		remote, ok := next.Remote[filepath.Join(next.Root, filepath.FromSlash(t.FilePath))]
+		if !ok {
+			return errors.New("batch is missing its remote audio descriptor")
+		}
 		result := next.Analysis.Get(t.ID)
 		if result == nil {
 			return errors.New("verified prepared analysis is missing")
@@ -387,6 +440,7 @@ func (h *helper) mergeBatch(root string, c *batchCheckpoint, next *bundle, batch
 			return errors.New("prepared analysis cache could not be saved")
 		}
 		keys[id] = key
+		streams[id] = remote
 		byID[id] = &clone
 		applied = append(applied, id)
 	}
@@ -396,6 +450,7 @@ func (h *helper) mergeBatch(root string, c *batchCheckpoint, next *bundle, batch
 	sort.Slice(tracks, func(i, j int) bool { return tracks[i].ID < tracks[j].ID })
 	nextState := *c
 	nextState.Keys = keys
+	nextState.Streams = streams
 	nextState.Applied = cloneBatchMap(c.Applied)
 	nextState.Applied[batch] = applied
 	nextState.Pending = map[string]string{}
@@ -425,6 +480,7 @@ func (h *helper) reconcileBatches(root string, c *batchCheckpoint, wanted map[st
 	next := *c
 	next.Applied = map[string][]uint32{}
 	next.Keys = c.Keys
+	next.Streams = map[uint32]remoteFile{}
 	for batch, ids := range c.Applied {
 		if wanted[batch] {
 			next.Applied[batch] = ids
@@ -439,6 +495,7 @@ func (h *helper) reconcileBatches(root string, c *batchCheckpoint, wanted map[st
 			clone := *t
 			tracks = append(tracks, &clone)
 			next.Keys[t.ID] = c.Keys[t.ID]
+			next.Streams[t.ID] = c.Streams[t.ID]
 		}
 	}
 	next.Revision = revision

@@ -32,6 +32,7 @@ describe('Music workspace header', () => {
   it('preserves analysis navigation and the return to collection', () => {
     expect(renderHeader('library').textContent).toContain('Analyse');
     expect(renderHeader('trackanalysis').querySelector('a')).toBeNull();
+    expect(renderHeader('networklink').textContent).not.toContain('Analyse');
     expect(renderHeader('export').textContent).toContain('Back to collection');
   });
 });

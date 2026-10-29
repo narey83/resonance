@@ -1,4 +1,4 @@
-.export-page { padding: 24px; color: var(--text-primary); background: var(--bg-primary); height: 100%; overflow: auto; }
+.export-page { color: var(--text-primary); background: var(--bg-primary); height: 100%; overflow: auto; }
 .export-page > header, .export-page > section { max-width: 1100px; margin: 0 auto; }
 .export-page h1 { font-size: 26px; margin: 0 0 8px; }
 .export-page > section { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; margin-top: 24px; }
@@ -12,4 +12,4 @@
 .export-page th, .export-page td { padding: 10px; text-align: left; border-bottom: 1px solid var(--border); }
 .export-wizard-actions { display: flex; gap: 12px; margin: 24px 0; }
 .export-review { padding: 16px; background: var(--bg-primary); border-radius: 8px; margin: 20px 0; }
-@media (max-width: 600px) { .export-page { padding: 12px; } .export-steps li { flex: 1 1 40%; } }
+@media (max-width: 600px) { .export-steps li { flex: 1 1 40%; } }

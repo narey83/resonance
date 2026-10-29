@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+module="$root/desktop/bridge/third_party/vynull"
+export GOCACHE="${GOCACHE:-$root/.dev/go-cache}"
+cd "$module"
+exec go run ./cmd/bridge-probe "$@"

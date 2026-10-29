@@ -5,9 +5,11 @@ NumPy spectrogram implementation has not been numerically matched to madmom.
 """
 from pathlib import Path
 import argparse,hashlib,json,os,subprocess,sys,types,time,traceback
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 os.environ['HF_HUB_OFFLINE']='1'
 os.environ['TRANSFORMERS_OFFLINE']='1'
 import numpy as np
+from runtime_resources import configure_torch
 LABELS=['start','end','intro','outro','break','bridge','inst','solo','verse','chorus']
 STEMS=['bass','drums','other','vocals']
 
@@ -88,7 +90,7 @@ def main():
         if len({s.shape for s in specs})!=1:raise ValueError('Stemshape mismatch')
         spec=np.stack(specs);report.update(input_shape=list(spec.shape),stem_sha256=hashes,checkpoint_sha256=digest(a.checkpoint))
         import torch
-        torch.set_num_threads(2);model,cfg=load_author_model(a.source_root,a.checkpoint)
+        configure_torch(torch);model,cfg=load_author_model(a.source_root,a.checkpoint)
         with torch.inference_mode():output=model(torch.from_numpy(spec).unsqueeze(0))
         if not torch.isfinite(output.logits_function).all():raise ValueError('Nonfinitemodeloutput')
         report.update(status='success',segments=functional_segments(output,cfg),torch_version=torch.__version__,model_config=dict(cfg),source_files_sha256={str(f.relative_to(a.source_root)):digest(f) for f in (Path(a.source_root)/'src/allin1').rglob('*.py')})

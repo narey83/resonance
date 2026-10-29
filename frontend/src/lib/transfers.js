@@ -51,12 +51,23 @@ export const getAll = async ({ direction, activeOnly = false }) => {
   return response;
 };
 
-export const download = ({ username, files = [], destinationFolder = '' }) => {
+export const download = ({
+  username,
+  files = [],
+  destinationFolder = '',
+  allowDuplicate = false,
+}) => {
   const body = files.map((f) => ({
     ...f,
     destinationFolder: destinationFolder || undefined,
   }));
-  return api.post(`/transfers/downloads/${encodeURIComponent(username)}`, body);
+  return api.post(
+    `/transfers/downloads/${encodeURIComponent(username)}`,
+    body,
+    {
+      params: allowDuplicate ? { allowDuplicate: true } : undefined,
+    },
+  );
 };
 
 export const cancel = ({ direction, username, id, remove = false }) => {

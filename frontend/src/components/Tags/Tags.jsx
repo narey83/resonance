@@ -38,33 +38,35 @@ const Tags = () => {
 
   return (
     <div className="tag-manager">
-      <div className="tag-manager-tabs">
-        <button
-          className={`tag-manager-tab hover-fx${tab === 'editor' ? ' tag-manager-tab--active' : ''}`}
-          onClick={() => setTab('editor')}
-          type="button"
-        >
-          Editor
-        </button>
-        <button
-          className={`tag-manager-tab hover-fx${tab === 'sanitize' ? ' tag-manager-tab--active' : ''}`}
-          onClick={() => setTab('sanitize')}
-          type="button"
-        >
-          Sanitize
-        </button>
-        <button
-          className={`tag-manager-tab hover-fx${tab === 'lookup' ? ' tag-manager-tab--active' : ''}`}
-          onClick={() => setTab('lookup')}
-          type="button"
-        >
-          Online lookup
-        </button>
-      </div>
-      <div className="tag-manager-content">
-        {tab === 'editor' && <TagEditor />}
-        {tab === 'sanitize' && <TagSanitization />}
-        {tab === 'lookup' && <MetadataLookup />}
+      <div className="tag-manager-window">
+        <div className="tag-manager-tabs">
+          <button
+            className={`tag-manager-tab hover-fx${tab === 'editor' ? ' tag-manager-tab--active' : ''}`}
+            onClick={() => setTab('editor')}
+            type="button"
+          >
+            Editor
+          </button>
+          <button
+            className={`tag-manager-tab hover-fx${tab === 'sanitize' ? ' tag-manager-tab--active' : ''}`}
+            onClick={() => setTab('sanitize')}
+            type="button"
+          >
+            Sanitize
+          </button>
+          <button
+            className={`tag-manager-tab hover-fx${tab === 'lookup' ? ' tag-manager-tab--active' : ''}`}
+            onClick={() => setTab('lookup')}
+            type="button"
+          >
+            Online lookup
+          </button>
+        </div>
+        <div className="tag-manager-content">
+          {tab === 'editor' && <TagEditor />}
+          {tab === 'sanitize' && <TagSanitization />}
+          {tab === 'lookup' && <MetadataLookup />}
+        </div>
       </div>
     </div>
   );

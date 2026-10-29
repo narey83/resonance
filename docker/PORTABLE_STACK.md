@@ -125,9 +125,12 @@ python3 -m unittest discover -s docker/tests -p test_portable_stack.py -v
 python3 -m unittest discover -s docker/scripts -p test_install_analysis_models.py -v
 ```
 
-The larger host has no inherited 1.5-CPU development-container ceiling. The tested
-inference thread limits and single-track queue remain unchanged; concurrency
-tuning is separate from this migration. For Linux LAN discovery, explicitly set
+The larger host has no inherited 1.5-CPU development-container ceiling. Enhanced
+analysis automatically sizes its concurrent job pool and per-job inference threads
+from the CPU and memory available to the container. Optional `ANALYSIS_WORKERS`,
+`ANALYSIS_THREADS_PER_WORKER` and `ANALYSIS_MEMORY_PER_WORKER_MB` Compose environment
+overrides are available for hardware-specific tuning; their default is automatic CPU
+allocation with a 5 GiB per-worker memory estimate. For Linux LAN discovery, explicitly set
 hostNetworking and dlnaEnabled to true, and lanAddress to the host LAN IP in
 the private JSON. This adds the host-network override for the backend: its
 authenticated API on 5030, DLNA on 8200 and peer port 50300 listen on the host.
@@ -195,6 +198,16 @@ fails. The backend and analysis images are not rebuilt; application data, privat
 configuration and certificate volumes are retained. Update output is stored in a
 private log beside the bootstrap configuration. Updates run when this command is
 invoked.
+
+For quick UI review changes, reuse the installed Caddy runtime and Docker build
+cache while retaining the same validation, health check and rollback:
+
+~~~sh
+python3 docker/update-frontend.py --quick
+~~~
+
+Use the full updater periodically, and whenever the Caddy image or proxy runtime
+has changed.
 
 ### Collect startup warnings and errors
 
