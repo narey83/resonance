@@ -241,7 +241,7 @@ func (h *helper) start(interfaceName, ipText string) (result error) {
 	errs := make(chan error, 8)
 	var wg sync.WaitGroup
 	dev := &device.VirtualDevice{Name: "Resonance", DeviceNumber: 17, DeviceType: proto.DeviceRekordbox, MediaSlot: proto.SlotRekordbox, IP: ip, MAC: mac, Broadcast: net.ParseIP(a.Broadcast), TrackCount: uint16(b.Tracks), BindHost: discoveryHost, AllowPeer: allow, Peers: device.NewPeerTracker(ip, proto.DeviceRekordbox), Ready: make(chan struct{})}
-	db := &dbserver.Server{Library: b.Library, PDB: b.DB, ExportRoot: b.Root, DeviceNumber: 17, Analysis: b.Analysis, Folders: pdb.BuildFolderLookup(b.DB.Tracks), Playlists: preparedPlaylists(b.DB.PlaylistTree), BindHost: a.IP, AllowPeer: allow, Ready: make(chan struct{}), LinkedFn: dev.Linked}
+	db := &dbserver.Server{Library: b.Library, PDB: b.DB, ExportRoot: b.Root, DeviceNumber: 17, Analysis: b.Analysis, PreparedAnalysisOnly: true, Folders: pdb.BuildFolderLookup(b.DB.Tracks), Playlists: preparedPlaylists(b.DB.PlaylistTree), BindHost: a.IP, AllowPeer: allow, Ready: make(chan struct{}), LinkedFn: dev.Linked}
 	fs := nfs.NewServer(b.Root)
 	if len(b.Remote) > 0 {
 		fs.Remote = newResonanceStreamReader(streamConnection, b.Remote)

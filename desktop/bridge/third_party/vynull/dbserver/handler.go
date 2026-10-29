@@ -24,16 +24,17 @@ type Handler struct {
 	// argument 7 of hierarchy track rows (see markContextType).
 	ctxTrackType uint32
 
-	lib          *library.Library
-	pdb          *pdb.Database
-	deviceNumber uint8
-	exportRoot   string
-	analysis     *analysis.Store
-	folders      *pdb.FolderLookup
-	playlists    PlaylistSource
-	menu         MenuSource
-	cues         *CueStore
-	settings     *device.CDJSettings
+	lib                  *library.Library
+	pdb                  *pdb.Database
+	deviceNumber         uint8
+	exportRoot           string
+	analysis             *analysis.Store
+	preparedAnalysisOnly bool
+	folders              *pdb.FolderLookup
+	playlists            PlaylistSource
+	menu                 MenuSource
+	cues                 *CueStore
+	settings             *device.CDJSettings
 
 	// Pending items keyed by transaction ID.
 	// The CDJ sends a query (which sets pending items), then a render
@@ -94,6 +95,11 @@ func (h *Handler) lazyAnalyze(trackID uint32) *analysis.Result {
 	if r := h.analysis.TryImport(trackID, filePath); r != nil {
 		h.storeAnalysisResult(trackID, r)
 		return analysis.ApplyOverrides(r)
+	}
+
+	// Bridge serves server-prepared metadata; missing analysis must never decode audio locally.
+	if h.preparedAnalysisOnly {
+		return nil
 	}
 
 	// Start background analysis (deduplicated globally via the Store).

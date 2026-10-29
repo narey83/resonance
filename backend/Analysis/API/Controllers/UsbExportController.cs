@@ -31,6 +31,7 @@ namespace resonance.Analysis.API
 {
     using System;
     using System.IO;
+    using System.Security.Claims;
     using System.Security.Cryptography;
     using System.Text;
     using System.Text.Json;
@@ -50,13 +51,74 @@ namespace resonance.Analysis.API
         public UsbExportController(UsbExportService exports) => this.exports = exports;
         [HttpGet]
         public IActionResult Library() => Ok(exports.Library());
+        [HttpPost("library")]
+        public IActionResult LibrarySelection([FromBody] string[] paths)
+        {
+            try
+            {
+                return Ok(exports.Library(paths));
+            }
+            catch (ArgumentException exception)
+            {
+                return BadRequest(exception.Message);
+            }
+        }
+
+        [HttpGet("sources")]
+        public IActionResult Sources() => Ok(exports.Sources(User.FindFirstValue(ClaimTypes.Name) ?? string.Empty));
+
+        [HttpPost("resolve")]
+        public IActionResult Resolve([FromBody] UsbExportSourceRequest request)
+        {
+            try
+            {
+                return Ok(exports.ResolveSource(request, User.FindFirstValue(ClaimTypes.Name) ?? string.Empty));
+            }
+            catch (FileNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (ArgumentException exception)
+            {
+                return BadRequest(exception.Message);
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Conflict(exception.Message);
+            }
+        }
+
+        [HttpGet("history")]
+        public IActionResult History() => Ok(exports.History());
+
+        [HttpGet("{id}/inspection")]
+        public IActionResult Inspect(string id)
+        {
+            try
+            {
+                return Ok(exports.Inspect(id));
+            }
+            catch (FileNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Conflict(exception.Message);
+            }
+            catch (Exception exception) when (exception is IOException or JsonException)
+            {
+                return StatusCode(503, "Export database inspection is temporarily unavailable.");
+            }
+        }
+
         [HttpPost]
         [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         public IActionResult Start([FromBody] UsbExportRequest request)
         {
             try
             {
-                return Accepted(exports.Start(request));
+                return Accepted(exports.Start(request, User.FindFirstValue(ClaimTypes.Name) ?? string.Empty));
             }
             catch (ArgumentException exception)
             {

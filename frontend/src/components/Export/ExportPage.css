@@ -1,15 +1,69 @@
-.export-page { color: var(--text-primary); background: var(--bg-primary); height: 100%; overflow: auto; }
-.export-page > header, .export-page > section { max-width: 1100px; margin: 0 auto; }
-.export-page h1 { font-size: 26px; margin: 0 0 8px; }
-.export-page > section { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; margin-top: 24px; }
+.export-page {
+  --page-form-width: 1120px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  height: 100%;
+  overflow: auto;
+  min-width: 0;
+}
+.export-page > :is(header, section) { width: 100%; max-width: var(--page-form-width); margin: 20px auto 0; box-sizing: border-box; }
+.export-page > section { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; }
+.export-page > section:first-child { margin-top: 0; }
+.export-source, .export-source-context { padding: 28px; }
+.export-source h2 { font-size: 24px; line-height: 1.25; margin: 0 0 8px; }
+.export-source-context h2 { font-size: 19px; margin: 0 0 8px; overflow-wrap: anywhere; }
+.export-source-intro { color: var(--text-secondary); margin: 0; }
+.export-page :is(button, input, select) { font: inherit; color: var(--text-primary); }
+.export-page :is(button, select, input:not([type="radio"]):not([type="checkbox"])) { padding: 10px 12px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg-primary); }
+.export-page :is(input, select) { min-width: 0; max-width: 100%; }
+.export-page input:is([type="radio"], [type="checkbox"]) { accent-color: var(--accent); }
+.export-page button { cursor: pointer; }
+.export-page button:disabled { cursor: default; opacity: .55; }
+.export-page :is(button, input, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.export-source-options { border: 0; margin: 24px 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.export-source-options legend { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.export-source-card { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr) 18px; align-items: start; gap: 12px; padding: 20px; border: 1px solid var(--border); border-radius: 9px; cursor: pointer; min-height: 112px; }
+.export-source-card:hover { border-color: var(--accent); }
+.export-source-card.is-selected { border-color: var(--accent); background: rgba(var(--accent-rgb, 18, 128, 139), .06); box-shadow: inset 0 0 0 1px var(--accent); }
+.export-source-card:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; }
+.export-source-card > input { grid-column: 3; grid-row: 1; width: 16px; height: 16px; margin: 3px 0 0; }
+.export-source-icon { grid-column: 1; grid-row: 1; margin-top: 2px; color: var(--text-secondary); }
+.export-source-card.is-selected .export-source-icon { color: var(--accent); }
+.export-source-card > span { grid-column: 2; grid-row: 1; min-width: 0; }
+.export-source-card strong { display: block; font-size: 15px; line-height: 1.4; }
+.export-source-card small { display: block; margin-top: 6px; color: var(--text-secondary); line-height: 1.5; }
+.export-source-form { border-top: 1px solid var(--border); padding-top: 22px; }
+.export-source-form > label { display: flex; flex-direction: column; gap: 8px; font-size: 13px; font-weight: 600; }
+.export-source-form :is(select, input) { width: 100%; min-height: 44px; font-size: 14px; font-weight: 400; }
+.export-source-form > p { margin: 14px 0 0; }
+.export-source-form > p:first-child { margin: 0 0 16px; color: var(--text-secondary); }
+.export-page button.export-primary-action { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 18px; border-color: var(--accent); background: var(--accent); color: var(--on-accent, #fff); font-weight: 600; }
+.export-page button.export-primary-action:disabled { background: var(--bg-primary); border-color: var(--border); color: var(--text-secondary); opacity: 1; }
+.export-source-library { padding-top: 16px; }
+.export-source-library a { font-size: 13px; }
+.export-page > .export-saved { padding: 0; }
+.export-saved .usb-export-inspector { margin: 0; padding: 0; border: 0; border-radius: inherit; }
+.export-saved .usb-export-inspector > summary { padding: 20px 28px; font-size: 14px; }
+.export-saved .usb-export-inspector[open] > summary { border-bottom: 1px solid var(--border); }
+.export-saved .usb-export-inspector-body { padding: 20px 28px 28px; }
+.export-saved .usb-export-inspector-body > p:first-child { margin-top: 0; color: var(--text-secondary); }
+.export-source-context p { margin: 8px 0 0; color: var(--text-secondary); }
 .export-steps { display: flex; flex-wrap: wrap; gap: 12px; list-style: none; padding: 0; margin: 0 0 28px; }
 .export-steps li { padding: 10px 14px; border-radius: 8px; color: var(--text-secondary); background: var(--bg-primary); }
 .export-steps li[aria-current="step"] { color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 600; }
-.export-page button, .export-page input, .export-page select { padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); }
-.export-page input[type="checkbox"] { accent-color: var(--accent); }
-.export-page button { cursor: pointer; }
-.export-page button:disabled { opacity: .5; cursor: default; }
-.export-page th, .export-page td { padding: 10px; text-align: left; border-bottom: 1px solid var(--border); }
-.export-wizard-actions { display: flex; gap: 12px; margin: 24px 0; }
+.export-wizard-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 24px 0; }
 .export-review { padding: 16px; background: var(--bg-primary); border-radius: 8px; margin: 20px 0; }
-@media (max-width: 600px) { .export-steps li { flex: 1 1 40%; } }
+.export-page th, .export-page td { padding: 10px; text-align: left; border-bottom: 1px solid var(--border); }
+.export-page .usb-export-database-scroll td:nth-child(2) { min-width: 160px; }
+.export-page .usb-export-database-scroll td:nth-child(3) { min-width: 130px; }
+.export-page .usb-export-database-scroll td:nth-child(4) { min-width: 180px; }
+@media (max-width: 600px) {
+  .export-source-options { grid-template-columns: 1fr; gap: 10px; margin: 20px 0; }
+  .export-source, .export-source-context { padding: 20px; }
+  .export-source h2 { font-size: 21px; }
+  .export-source-card { min-height: 0; padding: 16px; gap: 10px; }
+  .export-page button.export-primary-action { width: 100%; }
+  .export-saved .usb-export-inspector > summary { padding: 20px; }
+  .export-saved .usb-export-inspector-body { padding: 16px 20px 20px; }
+  .export-steps li { flex: 1 1 40%; }
+}

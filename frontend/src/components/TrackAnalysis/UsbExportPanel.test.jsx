@@ -27,15 +27,19 @@ describe('USB export selection and failures', () => {
         ],
       },
     });
-    api.post.mockResolvedValue({
-      data: {
-        jobId: 'job',
-        status: 'completed',
-        total: 2,
-        prepared: 2,
-        downloadAvailable: true,
-      },
-    });
+    api.post.mockImplementation((url) =>
+      url === '/analysis/usb-export/library'
+        ? api.get('/analysis/usb-export')
+        : Promise.resolve({
+            data: {
+              jobId: 'job',
+              status: 'completed',
+              total: 2,
+              prepared: 2,
+              downloadAvailable: true,
+            },
+          }),
+    );
   });
   afterEach(() => {
     act(() => {
@@ -43,6 +47,217 @@ describe('USB export selection and failures', () => {
     });
     container.remove();
     jest.clearAllMocks();
+  });
+  it('uses the selected source folder as the exported playlist name', async () => {
+    expect.hasAssertions();
+    await act(async () => {
+      ReactDOM.render(<UsbExportPanel />, container);
+    });
+    act(() => {
+      Simulate.click(button('Select all'));
+    });
+    act(() => {
+      Simulate.change(
+        container.querySelector('[aria-label="Playlist name source"]'),
+        { target: { value: 'folder' } },
+      );
+    });
+    expect(container.querySelector('input[maxlength]').value).toBe('library');
+    await act(async () => {
+      Simulate.click(button('Prepare USB export'));
+    });
+    expect(api.post).toHaveBeenCalledWith('/analysis/usb-export', {
+      paths: ['/library/one.mp3', '/library/two.flac'],
+      playlistName: 'library',
+      profile: 'dual',
+    });
+  });
+  it('offers an album name across folders only when all selected tracks share it', async () => {
+    expect.hasAssertions();
+    api.get.mockResolvedValue({
+      data: {
+        enabled: true,
+        tracks: [
+          {
+            path: '/music/disc-one/one.mp3',
+            title: 'One',
+            album: 'A shared album',
+          },
+          {
+            path: '/music/disc-two/two.mp3',
+            title: 'Two',
+            album: 'A shared album',
+          },
+        ],
+      },
+    });
+    await act(async () => {
+      ReactDOM.render(<UsbExportPanel />, container);
+    });
+    act(() => {
+      Simulate.click(button('Select all'));
+    });
+    expect(container.querySelector('option[value="folder"]').disabled).toBe(
+      true,
+    );
+    expect(container.querySelector('option[value="album"]').disabled).toBe(
+      false,
+    );
+    act(() => {
+      Simulate.change(
+        container.querySelector('[aria-label="Playlist name source"]'),
+        { target: { value: 'album' } },
+      );
+    });
+    expect(container.querySelector('input[maxlength]').value).toBe(
+      'A shared album',
+    );
+    await act(async () => {
+      Simulate.click(button('Prepare USB export'));
+    });
+    expect(api.post.mock.calls[0][1].playlistName).toBe('A shared album');
+  });
+  it('does not treat identical folder basenames in separate locations as one source', async () => {
+    expect.hasAssertions();
+    api.get.mockResolvedValue({
+      data: {
+        enabled: true,
+        tracks: [
+          { path: '/first/Album/one.mp3', title: 'One', album: 'First album' },
+          {
+            path: '/second/Album/two.mp3',
+            title: 'Two',
+            album: 'Second album',
+          },
+        ],
+      },
+    });
+    await act(async () => {
+      ReactDOM.render(<UsbExportPanel />, container);
+    });
+    act(() => {
+      Simulate.click(button('Select all'));
+    });
+    expect(container.querySelector('option[value="folder"]').disabled).toBe(
+      true,
+    );
+    expect(container.querySelector('option[value="album"]').disabled).toBe(
+      true,
+    );
+    expect(container.querySelector('input[maxlength]').value).toBe('Resonance');
+  });
+  it('restores the custom name when the selection no longer has one source folder', async () => {
+    expect.hasAssertions();
+    api.get.mockResolvedValue({
+      data: {
+        enabled: true,
+        tracks: [
+          { path: '/first/one.mp3', title: 'One' },
+          { path: '/second/two.mp3', title: 'Two' },
+        ],
+      },
+    });
+    await act(async () => {
+      ReactDOM.render(
+        <UsbExportPanel initialPlaylistName="My set" />,
+        container,
+      );
+    });
+    act(() => {
+      Simulate.change(container.querySelector('[aria-label="Export One"]'), {
+        target: { checked: true },
+      });
+    });
+    act(() => {
+      Simulate.change(
+        container.querySelector('[aria-label="Playlist name source"]'),
+        { target: { value: 'folder' } },
+      );
+    });
+    expect(container.querySelector('input[maxlength]').value).toBe('first');
+    act(() => {
+      Simulate.click(button('Select all'));
+    });
+    expect(
+      container.querySelector('[aria-label="Playlist name source"]').value,
+    ).toBe('custom');
+    expect(container.querySelector('input[maxlength]').value).toBe('My set');
+  });
+  it('switches to a custom name when a suggested name is edited', async () => {
+    expect.hasAssertions();
+    await act(async () => {
+      ReactDOM.render(<UsbExportPanel />, container);
+    });
+    act(() => {
+      Simulate.click(button('Select all'));
+    });
+    act(() => {
+      Simulate.change(
+        container.querySelector('[aria-label="Playlist name source"]'),
+        { target: { value: 'folder' } },
+      );
+    });
+    act(() => {
+      Simulate.change(container.querySelector('input[maxlength]'), {
+        target: { value: 'My edited album' },
+      });
+    });
+    expect(
+      container.querySelector('[aria-label="Playlist name source"]').value,
+    ).toBe('custom');
+    expect(container.querySelector('input[maxlength]').value).toBe(
+      'My edited album',
+    );
+  });
+  it('shortens long source names without splitting a Unicode character and explains the limit', async () => {
+    expect.hasAssertions();
+    const folder = 'a'.repeat(99) + '😀 album';
+    api.get.mockResolvedValue({
+      data: {
+        enabled: true,
+        tracks: [{ path: `/music/${folder}/one.mp3`, title: 'One' }],
+      },
+    });
+    await act(async () => {
+      ReactDOM.render(<UsbExportPanel />, container);
+    });
+    act(() => {
+      Simulate.click(button('Select all'));
+    });
+    act(() => {
+      Simulate.change(
+        container.querySelector('[aria-label="Playlist name source"]'),
+        { target: { value: 'folder' } },
+      );
+    });
+    expect(container.querySelector('input[maxlength]').value).toBe(
+      'a'.repeat(99),
+    );
+    expect(container.textContent).toContain(
+      'shortened to fit the 100-character playlist limit',
+    );
+  });
+  it('recognises Windows folder separators without changing canonical track paths', async () => {
+    expect.hasAssertions();
+    api.get.mockResolvedValue({
+      data: {
+        enabled: true,
+        tracks: [{ path: 'C:\\Music\\Album\\one.mp3', title: 'One' }],
+      },
+    });
+    await act(async () => {
+      ReactDOM.render(<UsbExportPanel />, container);
+    });
+    act(() => {
+      Simulate.click(button('Select all'));
+    });
+    act(() => {
+      Simulate.change(
+        container.querySelector('[aria-label="Playlist name source"]'),
+        { target: { value: 'folder' } },
+      );
+    });
+    expect(container.querySelector('input[maxlength]').value).toBe('Album');
   });
   it('guides selection, player settings, review and export without losing choices', async () => {
     expect.hasAssertions();
@@ -230,10 +445,9 @@ describe('USB export selection and failures', () => {
     await act(async () => {
       Simulate.click(button('Download Resonance Bridge for Mac'));
     });
-    expect(api.get).toHaveBeenLastCalledWith(
-      '/bridge/helper?platform=macos',
-      { responseType: 'blob' },
-    );
+    expect(api.get).toHaveBeenLastCalledWith('/bridge/helper?platform=macos', {
+      responseType: 'blob',
+    });
     expect(click).toHaveBeenCalledWith();
     expect(container.textContent).toContain('same installed helper now');
     click.mockRestore();
@@ -259,5 +473,65 @@ describe('USB export selection and failures', () => {
       'Requested helper archive is not available on this instance.',
     );
     expect(button('Download Resonance Bridge for Mac').disabled).toBe(true);
+  });
+  it('shows an honest loading state until the track catalogue arrives', async () => {
+    expect.hasAssertions();
+    let complete;
+    api.get.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    await act(async () => {
+      ReactDOM.render(<UsbExportPanel />, container);
+    });
+    expect(container.textContent).toContain('Loading export tracks');
+    expect(container.textContent).not.toContain('worker is not configured');
+    await act(async () => {
+      complete({ data: { enabled: true, tracks: [] } });
+    });
+    expect(container.textContent).not.toContain('Loading export tracks');
+  });
+  it('fetches only the selected source tracks and submits its reviewed snapshot', async () => {
+    expect.hasAssertions();
+    api.post
+      .mockResolvedValueOnce({
+        data: {
+          enabled: true,
+          tracks: [
+            { path: '/library/two.flac', title: 'Two' },
+            { path: '/library/one.mp3', title: 'One' },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: { jobId: 'job', status: 'completed', total: 2, prepared: 2 },
+      });
+    const paths = ['/library/two.flac', '/library/one.mp3'];
+    await act(async () => {
+      ReactDOM.render(
+        <UsbExportPanel
+          initialPaths={paths}
+          selectionId="reviewed"
+        />,
+        container,
+      );
+    });
+    expect(api.get).not.toHaveBeenCalled();
+    expect(api.post).toHaveBeenCalledWith(
+      '/analysis/usb-export/library',
+      paths,
+    );
+    expect(button('Clear selection').disabled).toBe(true);
+    await act(async () => {
+      Simulate.click(button('Prepare USB export'));
+    });
+    expect(api.post).toHaveBeenLastCalledWith('/analysis/usb-export', {
+      selectionId: 'reviewed',
+      paths,
+      playlistName: 'Resonance',
+      profile: 'dual',
+    });
   });
 });

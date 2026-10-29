@@ -3361,6 +3361,9 @@ const LibraryContent = () => {
         { view: VIEWS.FOLDERS, params: { initialFolder: nav.folder } },
       ]);
       setSearchQuery('');
+    } else if (nav.type === 'playlist') {
+      setNavStack([{ view: VIEWS.MIXTAPES, params: { selectedId: nav.id } }]);
+      setSearchQuery('');
     } else if (nav.type === 'artist' && nav.artist) {
       setNavStack([{ view: VIEWS.ARTISTS, params: { selected: nav.artist } }]);
       setSearchQuery('');

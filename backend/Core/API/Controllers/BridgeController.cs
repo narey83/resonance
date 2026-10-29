@@ -110,7 +110,9 @@ namespace resonance.Core.API
             return Ok(new
             {
                 enabled = exports.Enabled,
-                trackCount = exports.NetworkLibraryTrackCount,
+
+                // Use the background snapshot so presence never waits for a full metadata scan.
+                trackCount = readiness?.IndexedTracks ?? exports.NetworkLibraryTrackCount,
                 readyTrackCount = readiness?.ReadyTracks ?? 0,
                 readinessStatus = readiness?.Status,
                 readinessMessage = readiness?.Message,

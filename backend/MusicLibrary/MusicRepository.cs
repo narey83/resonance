@@ -374,6 +374,45 @@ namespace resonance.MusicLibrary
             return result;
         }
 
+        public IReadOnlyList<MusicExportTrack> GetExportTracks(IReadOnlyList<string> paths = null)
+        {
+            using var connection = OpenConnection();
+            using var command = connection.CreateCommand();
+            var where = string.Empty;
+            if (paths != null)
+            {
+                if (paths.Count == 0)
+                {
+                    return Array.Empty<MusicExportTrack>();
+                }
+
+                if (paths.Count > 10000)
+                {
+                    throw new ArgumentException("Select at most 10000 tracks.", nameof(paths));
+                }
+
+                var parameters = paths.Select((path, index) => "@path" + index).ToArray();
+                where = " WHERE path IN (" + string.Join(",", parameters) + ")";
+                for (var index = 0; index < paths.Count; index++)
+                {
+                    AddParam(command, parameters[index], MusicPath.ToRelative(paths[index]));
+                }
+            }
+
+            // Export selection needs indexed labels, not waveform blobs or full tag JSON.
+            command.CommandText = $"SELECT path, COALESCE(NULLIF(title, ''), filename), artist, album, {CachedBpm}, {CachedKey} FROM {T}{where} ORDER BY path";
+            using var reader = command.ExecuteReader();
+            var tracks = new List<MusicExportTrack>();
+            while (reader.Read())
+            {
+                tracks.Add(new MusicExportTrack(reader.GetString(0), reader.GetString(1),
+                    reader.IsDBNull(2) ? null : reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3),
+                    reader.IsDBNull(4) ? null : reader.GetDouble(4), reader.IsDBNull(5) ? null : reader.GetString(5)));
+            }
+
+            return tracks;
+        }
+
         public MusicLibraryQueryResult Query(
             string search, string artist, string album,
             string genre, int? year, string folder,

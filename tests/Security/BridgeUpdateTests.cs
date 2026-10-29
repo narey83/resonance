@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using global::resonance.Analysis.UsbExport;
 using global::resonance.Core.API;
 
 [CollectionDefinition("Helper update configuration", DisableParallelization = true)]
@@ -29,6 +30,27 @@ public class BridgeUpdateTests : IDisposable
         Directory.CreateDirectory(root);
         Environment.SetEnvironmentVariable("RESONANCE_HELPER_RELEASE_ROOT", root);
         pairings = (IDictionary)typeof(BridgeController).GetField("Pairings", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(59400)]
+    public void Status_Uses_The_Background_Snapshot_Without_Loading_Track_Metadata(int indexedTracks)
+    {
+        // A null analysis service makes any attempt to enumerate tracks fail.
+        using var exports = new UsbExportService(null!, null!);
+        using var batches = new BridgeLibraryBatchService(null!, null!, exports);
+        var snapshot = new BridgeLibraryView(3, "revision", indexedTracks, 15,
+            "ready", "Tracks ready", Array.Empty<BridgeBatch>());
+        typeof(BridgeLibraryBatchService).GetField("view", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(batches, snapshot);
+
+        var result = Assert.IsType<OkObjectResult>(new BridgeController(exports, batches).Status());
+        var status = JsonSerializer.SerializeToElement(result.Value);
+
+        Assert.Equal(indexedTracks, status.GetProperty("trackCount").GetInt32());
+        Assert.Equal(15, status.GetProperty("readyTrackCount").GetInt32());
+        Assert.True(status.TryGetProperty("connectedBridges", out _));
     }
 
     [Fact]

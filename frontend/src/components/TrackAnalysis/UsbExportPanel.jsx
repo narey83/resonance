@@ -2,7 +2,8 @@ import './UsbExportPanel.css';
 import { urlBase } from '../../config';
 import api from '../../lib/api';
 import ExportTrackPicker from './ExportTrackPicker';
-import React, { useEffect, useState } from 'react';
+import UsbExportInspector from './UsbExportInspector';
+import React, { useEffect, useMemo, useState } from 'react';
 
 const message = (error) =>
   typeof error?.response?.data === 'string'
@@ -10,31 +11,83 @@ const message = (error) =>
     : error?.message || 'Export failed.';
 const active = (job) =>
   job && !['completed', 'failed', 'cancelled'].includes(job.status);
+const shortenPlaylistName = (name) => {
+  const shortened = name.slice(0, 100);
+  const last = shortened.codePointAt(shortened.length - 1);
+  return last >= 0xd8_00 && last <= 0xdb_ff
+    ? shortened.slice(0, -1)
+    : shortened;
+};
+
 const UsbExportPanel = ({
   initialPaths = null,
   initialPlaylistName = 'Resonance',
+  onJobChange = null,
+  selectionId = null,
+  showInspector = true,
   wizard = false,
 }) => {
   const [step, setStep] = useState(0);
   const [tracks, setTracks] = useState([]);
   const [enabled, setEnabled] = useState(false);
+  const [libraryLoading, setLibraryLoading] = useState(true);
+  const [libraryLoaded, setLibraryLoaded] = useState(false);
   const [helperPlatforms, setHelperPlatforms] = useState([]);
   const [selected, setSelected] = useState([]);
   const [playlistName, setPlaylistName] = useState(initialPlaylistName);
+  const [playlistNameSource, setPlaylistNameSource] = useState('custom');
   const [profile, setProfile] = useState('dual');
   const [job, setJob] = useState(null);
+  useEffect(() => {
+    onJobChange?.(job);
+  }, [job, onJobChange]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const playlistNames = useMemo(() => {
+    if (!selected.length) return { folder: '', album: '' };
+    const paths = new Set(selected);
+    const selection = tracks.filter((track) => paths.has(track.path));
+    if (!selection.length) return { folder: '', album: '' };
+    const directories = selection.map((track) => {
+      const path = track.path.replaceAll('\\', '/');
+      const slash = path.lastIndexOf('/');
+      return slash < 0 ? '' : path.slice(0, slash);
+    });
+    const folder =
+      directories[0] && directories.every((path) => path === directories[0])
+        ? directories[0].split('/').at(-1)
+        : '';
+    const albums = selection.map((track) => track.album?.trim() || '');
+    const album =
+      albums[0] && albums.every((name) => name === albums[0]) ? albums[0] : '';
+    return { folder, album };
+  }, [selected, tracks]);
+  const automaticPlaylistName =
+    playlistNameSource === 'custom'
+      ? ''
+      : playlistNames[playlistNameSource] || '';
+  const exportPlaylistName = automaticPlaylistName
+    ? shortenPlaylistName(automaticPlaylistName)
+    : playlistName;
+  useEffect(() => {
+    if (playlistNameSource !== 'custom' && !playlistNames[playlistNameSource])
+      setPlaylistNameSource('custom');
+  }, [playlistNameSource, playlistNames]);
   useEffect(() => {
     let cancelled = false;
-    api
-      .get('/analysis/usb-export')
+    setLibraryLoading(true);
+    const request = initialPaths?.length
+      ? api.post('/analysis/usb-export/library', initialPaths)
+      : api.get('/analysis/usb-export');
+    request
       .then(({ data }) => {
         if (!cancelled) {
           const available = data.tracks || [];
+          setLibraryLoaded(true);
+          const byPath = new Map(available.map((track) => [track.path, track]));
           if (initialPaths) {
             const matches = initialPaths.map((path) => {
-              const exact = available.find((track) => track.path === path);
+              const exact = byPath.get(path);
               if (exact) return exact;
               if (!path || path.startsWith('/')) return null;
               const candidates = available.filter((track) =>
@@ -63,6 +116,9 @@ const UsbExportPanel = ({
       })
       .catch((error_) => {
         if (!cancelled) setError(message(error_));
+      })
+      .finally(() => {
+        if (!cancelled) setLibraryLoading(false);
       });
     return () => {
       cancelled = true;
@@ -82,6 +138,7 @@ const UsbExportPanel = ({
           setJob(data);
           setStep(3);
           setPlaylistName(data.playlistName);
+          setPlaylistNameSource('custom');
           setProfile(data.profile);
         }
       })
@@ -116,8 +173,9 @@ const UsbExportPanel = ({
     setError('');
     try {
       const { data } = await api.post('/analysis/usb-export', {
+        ...(selectionId ? { selectionId } : {}),
         paths: selected,
-        playlistName,
+        playlistName: exportPlaylistName,
         profile,
       });
       setJob(data);
@@ -194,7 +252,7 @@ const UsbExportPanel = ({
     }
   };
 
-  const locked = busy || active(job);
+  const locked = busy || libraryLoading || active(job);
   return (
     <section
       aria-label="USB export"
@@ -248,45 +306,83 @@ const UsbExportPanel = ({
           vocal/phrase export are not included in this version.
         </p>
       </details>
-      {!enabled && <p>USB export worker is not configured on this instance.</p>}
+      {libraryLoading && <p role="status">Loading export tracks…</p>}
+      {libraryLoaded && !enabled && (
+        <p>USB export worker is not configured on this instance.</p>
+      )}
       {(!wizard || step === 1) && (
         <>
-          <label>
-            Playlist name{' '}
-            <input
-              disabled={locked}
-              maxLength={100}
-              onChange={(event) => setPlaylistName(event.target.value)}
-              value={playlistName}
-            />
-          </label>{' '}
-          <label>
-            Player profile{' '}
-            <select
-              disabled={locked}
-              onChange={(event) => setProfile(event.target.value)}
-              value={profile}
-            >
-              <option value="dual">
-                OPUS-QUAD + legacy players (dual database)
-              </option>
-              <option value="legacy">Legacy players</option>
-            </select>
-          </label>
+          <div className="usb-export-settings">
+            <label>
+              Player profile
+              <select
+                aria-label="Player profile"
+                disabled={locked}
+                onChange={(event) => setProfile(event.target.value)}
+                value={profile}
+              >
+                <option value="dual">
+                  OPUS-QUAD + legacy players (dual database)
+                </option>
+                <option value="legacy">Legacy players</option>
+              </select>
+            </label>
+            <label>
+              Playlist name source
+              <select
+                aria-label="Playlist name source"
+                disabled={locked}
+                onChange={(event) => setPlaylistNameSource(event.target.value)}
+                value={playlistNameSource}
+              >
+                <option value="custom">Custom name</option>
+                <option
+                  disabled={!playlistNames.folder}
+                  value="folder"
+                >
+                  Source folder name
+                </option>
+                <option
+                  disabled={!playlistNames.album}
+                  value="album"
+                >
+                  Album name
+                </option>
+              </select>
+            </label>
+            <label>
+              Playlist name
+              <input
+                disabled={locked}
+                maxLength={100}
+                onChange={(event) => {
+                  setPlaylistNameSource('custom');
+                  setPlaylistName(event.target.value);
+                }}
+                value={exportPlaylistName}
+              />
+            </label>
+          </div>
+          {automaticPlaylistName.length > exportPlaylistName.length && (
+            <p className="usb-export-name-hint">
+              The selected name has been shortened to fit the 100-character
+              playlist limit. You can edit it above.
+            </p>
+          )}
         </>
       )}
       {(!wizard || step === 0) && (
         <>
           <p>
             <button
-              disabled={locked || !tracks.length}
+              disabled={locked || Boolean(selectionId) || !tracks.length}
               onClick={() => setSelected(tracks.map((track) => track.path))}
               type="button"
             >
               Select all
             </button>{' '}
             <button
-              disabled={locked}
+              disabled={locked || Boolean(selectionId)}
               onClick={() => setSelected([])}
               type="button"
             >
@@ -295,7 +391,7 @@ const UsbExportPanel = ({
             {selected.length} of {tracks.length} tracks selected
           </p>
           <ExportTrackPicker
-            disabled={locked}
+            disabled={locked || Boolean(selectionId)}
             onChange={setSelected}
             selected={selected}
             tracks={tracks}
@@ -310,7 +406,7 @@ const UsbExportPanel = ({
             {(step === 3 && job ? job.total : selected.length) === 1
               ? 'track'
               : 'tracks'}{' '}
-            · Playlist: {playlistName} ·{' '}
+            · Playlist: {exportPlaylistName} ·{' '}
             {profile === 'dual'
               ? 'OPUS-QUAD + legacy players'
               : 'Legacy players'}
@@ -328,7 +424,10 @@ const UsbExportPanel = ({
         <p>
           <button
             disabled={
-              !enabled || locked || !selected.length || !playlistName.trim()
+              !enabled ||
+              locked ||
+              !selected.length ||
+              !exportPlaylistName.trim()
             }
             onClick={start}
             type="button"
@@ -397,7 +496,7 @@ const UsbExportPanel = ({
                 locked ||
                 !enabled ||
                 !selected.length ||
-                (step === 1 && !playlistName.trim())
+                (step === 1 && !exportPlaylistName.trim())
               }
               onClick={() => setStep(step + 1)}
               type="button"
@@ -465,6 +564,7 @@ const UsbExportPanel = ({
           </p>
         </>
       )}
+      {showInspector && <UsbExportInspector latestJob={job} />}
       {error && <p role="alert">{error}</p>}
       <p>
         Extract the ZIP, then copy its generated device-library folders to the

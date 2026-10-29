@@ -69,6 +69,8 @@ namespace resonance.MusicLibrary
         /// <returns></returns>
         MusicTrack GetTrack(string path);
 
+        IReadOnlyList<MusicExportTrack> GetExportTracks(IReadOnlyList<string> paths = null);
+
         /// <summary>
         ///     Re-reads one file's tags and fingerprint into the index immediately, so a change
         ///     made to that file (an analysis writing BPM and key) is visible without waiting for

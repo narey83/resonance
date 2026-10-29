@@ -43,16 +43,20 @@ namespace resonance.Analysis.UsbExport
     using resonance.Analysis.Candidates;
     using resonance.Analysis.Imports;
     using resonance.Common;
+    using resonance.MusicLibrary;
 
-    public record UsbExportRequest(string[] Paths, string PlaylistName = "Resonance", string Profile = "dual");
+    public record UsbExportRequest(string[] Paths, string PlaylistName = "Resonance", string Profile = "dual", string SelectionId = null);
     public record UsbExportJob(string JobId, string Status, int Total, int Prepared, string Profile, string PlaylistName, string Error = null, bool DownloadAvailable = false);
 
     // Stages an export for download. This service deliberately has no device or destination API.
-    public sealed class UsbExportService : IDisposable
+
+    /// <summary>Prepares server-side exports and retains their validation records.</summary>
+    public sealed partial class UsbExportService : IDisposable
     {
         private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
         private readonly IAnalysisService analysis;
         private readonly CandidateAnalysisService candidates;
+        private readonly IMusicLibraryService library;
         private readonly ConcurrentDictionary<string, UsbExportJob> jobs = new();
         private readonly ConcurrentDictionary<string, CancellationTokenSource> cancellations = new();
         private readonly SemaphoreSlim gate = new(1, 1);
@@ -61,10 +65,13 @@ namespace resonance.Analysis.UsbExport
         private readonly string worker = Environment.GetEnvironmentVariable("RESONANCE_USB_EXPORT_WORKER");
         private readonly string ffmpeg = Environment.GetEnvironmentVariable("RESONANCE_USB_EXPORT_FFMPEG");
 
-        public UsbExportService(IAnalysisService analysis, CandidateAnalysisService candidates)
+        public UsbExportService(IAnalysisService analysis, CandidateAnalysisService candidates, IMusicLibraryService library = null, resonance.Mixtapes.IMixtapeService playlists = null, resonance.MusicLibrary.Workspace.WorkspaceStore workspace = null)
         {
             this.analysis = analysis;
             this.candidates = candidates;
+            this.library = library;
+            this.playlists = playlists;
+            this.workspace = workspace;
         }
 
         public bool Enabled => !string.IsNullOrWhiteSpace(root) && Path.IsPathRooted(root)
@@ -97,7 +104,19 @@ namespace resonance.Analysis.UsbExport
             GC.SuppressFinalize(this);
         }
 
-        public object Library() => new { enabled = Enabled, experimental = true, helperPlatforms = new[] { "macos", "windows", "linux", "source" }.Where(platform => File.Exists(Environment.GetEnvironmentVariable($"RESONANCE_PIONEER_HELPER_{platform.ToUpperInvariant()}_{(platform == "source" ? "ARCHIVE" : "INSTALLER")}"))).ToArray(), tracks = analysis.GetAllTracks().Select(t => new { path = LibraryPath(t.OriginalFilename), title = t.Title ?? t.Filename, artist = t.Artist, album = t.Album, bpm = t.Bpm, key = t.Key }).ToArray() };
+        public object Library(string[] paths = null)
+        {
+            if (paths != null && (paths.Length == 0 || paths.Length > 10000 || paths.Any(string.IsNullOrWhiteSpace)))
+            {
+                throw new ArgumentException("Select between 1 and 10000 indexed library tracks.");
+            }
+
+            var scoped = paths?.Select(path => ImportedAnalysisContract.RequireLibraryPath(MusicPath.Root, LibraryPath(path))).Distinct(StringComparer.Ordinal).ToArray();
+            var tracks = library != null
+                ? library.GetExportTracks(scoped).Select(track => new { path = LibraryPath(track.Path), title = track.Title, artist = track.Artist, album = track.Album, bpm = track.Bpm, key = track.Key }).Cast<object>().ToArray()
+                : analysis.GetAllTracks().Where(track => scoped == null || scoped.Contains(LibraryPath(track.OriginalFilename), StringComparer.Ordinal)).Select(track => new { path = LibraryPath(track.OriginalFilename), title = track.Title ?? track.Filename, artist = track.Artist, album = track.Album, bpm = track.Bpm, key = track.Key }).Cast<object>().ToArray();
+            return new { enabled = Enabled, experimental = true, helperPlatforms = new[] { "macos", "windows", "linux", "source" }.Where(platform => File.Exists(Environment.GetEnvironmentVariable($"RESONANCE_PIONEER_HELPER_{platform.ToUpperInvariant()}_{(platform == "source" ? "ARCHIVE" : "INSTALLER")}"))).ToArray(), tracks };
+        }
 
         public string NetworkLibraryRevision()
         {
@@ -133,9 +152,10 @@ namespace resonance.Analysis.UsbExport
             return path;
         }
 
-        public UsbExportJob Start(UsbExportRequest request)
+        public UsbExportJob Start(UsbExportRequest request, string username = "")
         {
             Validate(request);
+            var source = ValidateSelection(request, username);
             if (!Enabled)
             {
                 throw new InvalidOperationException("USB export worker is not configured.");
@@ -160,6 +180,11 @@ namespace resonance.Analysis.UsbExport
             var id = Guid.NewGuid().ToString("N");
             var job = new UsbExportJob(id, "queued", tracks.Length, 0, request.Profile, request.PlaylistName.Trim());
             jobs[id] = job;
+            if (source != null)
+            {
+                jobSources[id] = source;
+            }
+
             var cancellation = new CancellationTokenSource(TimeSpan.FromHours(6));
             cancellations[id] = cancellation;
             _ = Task.Run(() => Run(job, tracks, cancellation.Token));
@@ -188,6 +213,61 @@ namespace resonance.Analysis.UsbExport
             var manifest = doc.RootElement;
             var total = manifest.GetProperty("trackCount").GetInt32();
             return new UsbExportJob(id, "completed", total, total, manifest.GetProperty("profile").GetString(), manifest.GetProperty("playlistName").GetString(), DownloadAvailable: true);
+        }
+
+        public UsbExportJob[] History()
+        {
+            var saved = jobs.Values.ToDictionary(job => job.JobId, StringComparer.Ordinal);
+            if (Directory.Exists(root))
+            {
+                foreach (var directory in new DirectoryInfo(root).EnumerateDirectories()
+                    .Where(directory => Guid.TryParseExact(directory.Name, "N", out _) && !directory.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                    .OrderByDescending(directory => directory.LastWriteTimeUtc).Take(50))
+                {
+                    if (saved.ContainsKey(directory.Name))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        saved[directory.Name] = Read(directory.Name);
+                    }
+                    catch (Exception exception) when (exception is IOException or JsonException or InvalidOperationException or KeyNotFoundException)
+                    {
+                        // An incomplete or damaged export must not hide other saved exports.
+                    }
+                }
+            }
+
+            return saved.Values.OrderBy(job => job.Status == "completed").Take(50).ToArray();
+        }
+
+        public JsonElement Inspect(string id)
+        {
+            if (!Guid.TryParseExact(id, "N", out _))
+            {
+                throw new FileNotFoundException("Unknown export job.");
+            }
+
+            if (!Read(id).DownloadAvailable)
+            {
+                throw new InvalidOperationException("Database inspection is available after the export completes.");
+            }
+
+            var path = Path.Combine(root, id, "inspection.json");
+            if (!File.Exists(path))
+            {
+                throw new InvalidOperationException("This export has no saved database inspection report.");
+            }
+
+            if (new FileInfo(path).Length > 32 * 1024 * 1024)
+            {
+                throw new InvalidDataException("Export inspection report exceeds its size limit.");
+            }
+
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            return document.RootElement.Clone();
         }
 
         public bool Cancel(string id)
@@ -342,7 +422,7 @@ namespace resonance.Analysis.UsbExport
                 }
 
                 var manifest = Path.Combine(directory, "manifest.json");
-                await File.WriteAllTextAsync(manifest, JsonSerializer.Serialize(new { schemaVersion = 1, profile = job.Profile, playlistName = job.PlaylistName, tracks = manifestTracks }, JsonOptions), ct);
+                await File.WriteAllTextAsync(manifest, JsonSerializer.Serialize(new { schemaVersion = 1, profile = job.Profile, playlistName = job.PlaylistName, source = jobSources.GetValueOrDefault(job.JobId), tracks = manifestTracks }, JsonOptions), ct);
                 var destination = Path.Combine(directory, "export");
                 var start = new ProcessStartInfo(python) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
                 foreach (var argument in new[] { worker, "--manifest", manifest, "--destination", destination, "--profile", job.Profile, "--ffmpeg", ffmpeg })

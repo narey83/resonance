@@ -64,6 +64,8 @@ namespace resonance.MusicLibrary
         public long Exp { get; init; }
     }
 
+    public record MusicExportTrack(string Path, string Title, string Artist, string Album, double? Bpm, string Key);
+
     public record MusicTrack(
         string Path,
         string Filename,

@@ -214,6 +214,8 @@ namespace resonance.MusicLibrary
         public MusicLibraryQueryResult QueryTracks(string search, string artist, string album, string genre, int? year, string folder, bool missingKey, bool missingBpm, bool missingTitle, bool missingArtist, bool missingArtwork, int limit, int offset, string sort = null, bool descending = false, string startsWith = null, string key = null, string analysis = null, DjLibraryFilters dj = null)
             => Repository.Query(search, artist, album, genre, year, folder, missingKey, missingBpm, missingTitle, missingArtist, missingArtwork, limit, offset, sort, descending, startsWith, key, analysis, dj);
 
+        public System.Collections.Generic.IReadOnlyList<MusicExportTrack> GetExportTracks(System.Collections.Generic.IReadOnlyList<string> paths = null) => Repository.GetExportTracks(paths);
+
         public System.Collections.Generic.IReadOnlyList<MusicGenre> GetGenres() => Repository.GetGenres();
 
         public System.Collections.Generic.IReadOnlyList<MusicKey> GetKeys() => Repository.GetKeys();

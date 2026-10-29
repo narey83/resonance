@@ -117,13 +117,15 @@ type Server struct {
 	PDB          *pdb.Database
 	DeviceNumber uint8
 	ExportRoot   string
-	Analysis     *analysis.Store
-	Folders      *pdb.FolderLookup
-	Playlists    PlaylistSource // optional; if nil, PLAYLIST menu falls back to filesystem folders
-	Menu         MenuSource     // optional; if nil, root menu falls back to a built-in default list
-	Cues         *CueStore
-	Settings     *device.CDJSettings
-	ReplayDir    string // if set, serve raw response packets from this directory
+	// PreparedAnalysisOnly prevents audio decoding when prepared metadata is missing.
+	PreparedAnalysisOnly bool
+	Analysis             *analysis.Store
+	Folders              *pdb.FolderLookup
+	Playlists            PlaylistSource // optional; if nil, PLAYLIST menu falls back to filesystem folders
+	Menu                 MenuSource     // optional; if nil, root menu falls back to a built-in default list
+	Cues                 *CueStore
+	Settings             *device.CDJSettings
+	ReplayDir            string // if set, serve raw response packets from this directory
 
 	// OnPeerTeardown, if set, is invoked when a CDJ sends us a 0x0100
 	// Teardown message — main.go wires this to PeerTracker.RemoveByIP so
@@ -427,16 +429,17 @@ func (s *Server) handleSession(ctx context.Context, conn net.Conn) {
 
 	s.catalogMu.RLock()
 	handler := &Handler{
-		lib:          s.Library,
-		pdb:          s.PDB,
-		deviceNumber: s.DeviceNumber,
-		exportRoot:   s.ExportRoot,
-		analysis:     s.Analysis,
-		folders:      s.Folders,
-		playlists:    s.Playlists,
-		menu:         s.Menu,
-		cues:         s.Cues,
-		settings:     s.Settings,
+		lib:                  s.Library,
+		pdb:                  s.PDB,
+		deviceNumber:         s.DeviceNumber,
+		exportRoot:           s.ExportRoot,
+		analysis:             s.Analysis,
+		preparedAnalysisOnly: s.PreparedAnalysisOnly,
+		folders:              s.Folders,
+		playlists:            s.Playlists,
+		menu:                 s.Menu,
+		cues:                 s.Cues,
+		settings:             s.Settings,
 	}
 
 	s.catalogMu.RUnlock()

@@ -1,5 +1,5 @@
 import { ChevronRight, Folder, Search } from 'lucide-react';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const directoryParts = (path) =>
   path.replaceAll('\\', '/').split('/').slice(0, -1).filter(Boolean);
@@ -22,13 +22,16 @@ export const exportFolderTree = (tracks) => {
     tracks: [],
     paths: [],
   };
+  const children = new WeakMap();
   // Every track belongs to exactly one leaf; ancestor paths include descendants.
   for (const track of tracks) {
     let node = root;
     node.paths.push(track.path);
     const parts = directoryParts(track.path).slice(common);
     for (const part of parts) {
-      let child = node.folders.find((folder) => folder.name === part);
+      if (!children.has(node)) children.set(node, new Map());
+      const index = children.get(node);
+      let child = index.get(part);
       if (!child) {
         child = {
           name: part,
@@ -38,6 +41,7 @@ export const exportFolderTree = (tracks) => {
           paths: [],
         };
         node.folders.push(child);
+        index.set(part, child);
       }
 
       node = child;
@@ -59,18 +63,20 @@ export const exportFolderTree = (tracks) => {
 
 const FolderSelection = ({
   disabled,
+  initiallyExpanded,
   kind = 'folder',
   node,
   onChange,
   searching,
   selected,
 }) => {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(initiallyExpanded);
+  const [visibleCount, setVisibleCount] = useState(100);
   useEffect(() => {
-    if (searching) setExpanded(true);
-  }, [searching]);
+    if (searching && node.paths.length <= 200) setExpanded(true);
+  }, [searching, node.paths.length]);
   const checkbox = useRef(null);
-  const count = node.paths.filter((path) => selected.includes(path)).length;
+  const count = node.paths.filter((path) => selected.has(path)).length;
   useEffect(() => {
     if (checkbox.current)
       checkbox.current.indeterminate = count > 0 && count < node.paths.length;
@@ -115,9 +121,10 @@ const FolderSelection = ({
       </div>
       {expanded && (
         <div className="usb-picker-folder-contents">
-          {node.folders.map((folder) => (
+          {node.folders.slice(0, visibleCount).map((folder) => (
             <FolderSelection
               disabled={disabled}
+              initiallyExpanded={initiallyExpanded}
               key={folder.path}
               kind={kind}
               node={folder}
@@ -126,34 +133,44 @@ const FolderSelection = ({
               selected={selected}
             />
           ))}
-          {node.tracks.map((track) => (
-            <label
-              className="usb-picker-track"
-              key={track.path}
+          {node.tracks
+            .slice(0, Math.max(0, visibleCount - node.folders.length))
+            .map((track) => (
+              <label
+                className="usb-picker-track"
+                key={track.path}
+              >
+                <input
+                  aria-label={`Export ${track.title}`}
+                  checked={selected.has(track.path)}
+                  disabled={disabled}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    onChange((current) =>
+                      checked
+                        ? [...new Set([...current, track.path])]
+                        : current.filter((path) => path !== track.path),
+                    );
+                  }}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>{track.title}</strong>
+                  <small>{track.artist || 'Unknown artist'}</small>
+                </span>
+                <small className="usb-picker-extension">
+                  {track.path.split('.').at(-1).toUpperCase()}
+                </small>
+              </label>
+            ))}
+          {node.folders.length + node.tracks.length > visibleCount && (
+            <button
+              onClick={() => setVisibleCount(visibleCount + 100)}
+              type="button"
             >
-              <input
-                aria-label={`Export ${track.title}`}
-                checked={selected.includes(track.path)}
-                disabled={disabled}
-                onChange={(event) => {
-                  const checked = event.target.checked;
-                  onChange((current) =>
-                    checked
-                      ? [...new Set([...current, track.path])]
-                      : current.filter((path) => path !== track.path),
-                  );
-                }}
-                type="checkbox"
-              />
-              <span>
-                <strong>{track.title}</strong>
-                <small>{track.artist || 'Unknown artist'}</small>
-              </span>
-              <small className="usb-picker-extension">
-                {track.path.split('.').at(-1).toUpperCase()}
-              </small>
-            </label>
-          ))}
+              Show more in {node.name}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -163,54 +180,72 @@ const FolderSelection = ({
 const ExportTrackPicker = ({ disabled, onChange, selected, tracks }) => {
   const [search, setSearch] = useState('');
   const [view, setView] = useState('folder');
+  const [visibleRoots, setVisibleRoots] = useState(100);
+  const selectedPaths = useMemo(() => new Set(selected), [selected]);
   const query = search.trim().toLowerCase();
-  const visible = query
-    ? tracks.filter((track) =>
-        `${track.title} ${track.artist || ''} ${track.album || ''} ${track.path}`
-          .toLowerCase()
-          .includes(query),
-      )
-    : tracks;
-  // Keep the same root and hierarchy when searching by pruning the original tree.
-  const prune = (node, paths) => {
-    if (!node) return null;
-    return {
+  const roots = useMemo(() => {
+    if (view === 'folder') {
+      const root = exportFolderTree(tracks);
+      if (!root) return [];
+      // Start at the music folders, without the common Downloads/library wrapper.
+      if (!root.folders.length) return [root];
+      const looseTracks = root.tracks.length
+        ? [
+            {
+              ...root,
+              name: 'Tracks in library root',
+              folders: [],
+              paths: root.tracks.map((track) => track.path),
+            },
+          ]
+        : [];
+      return [...root.folders, ...looseTracks];
+    }
+
+    const groups = new Map();
+    for (const track of tracks) {
+      const name =
+        view === 'tracks'
+          ? 'All tracks'
+          : view === 'artist'
+            ? track.artist || 'Unknown artist'
+            : `${track.album || 'Unknown album'} · ${track.albumArtist || track.artist || 'Unknown artist'}`;
+      if (!groups.has(name))
+        groups.set(name, {
+          name,
+          path: name,
+          folders: [],
+          tracks: [],
+          paths: [],
+        });
+      groups.get(name).tracks.push(track);
+      groups.get(name).paths.push(track.path);
+    }
+
+    return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [tracks, view]);
+  const trees = useMemo(() => {
+    if (!query) return roots;
+    const paths = new Set(
+      tracks
+        .filter((track) =>
+          `${track.title} ${track.artist || ''} ${track.album || ''} ${track.path}`
+            .toLowerCase()
+            .includes(query),
+        )
+        .map((track) => track.path),
+    );
+    const prune = (node) => ({
       ...node,
       paths: node.paths.filter((path) => paths.has(path)),
       tracks: node.tracks.filter((track) => paths.has(track.path)),
-      folders: node.folders
-        .map((folder) => prune(folder, paths))
-        .filter((folder) => folder.paths.length),
-    };
-  };
-
-  const groups = new Map();
-  for (const track of tracks) {
-    const name =
-      view === 'tracks'
-        ? 'All tracks'
-        : view === 'artist'
-          ? track.artist || 'Unknown artist'
-          : `${track.album || 'Unknown album'} · ${track.albumArtist || track.artist || 'Unknown artist'}`;
-    if (!groups.has(name))
-      groups.set(name, {
-        name,
-        path: name,
-        folders: [],
-        tracks: [],
-        paths: [],
-      });
-    groups.get(name).tracks.push(track);
-    groups.get(name).paths.push(track.path);
-  }
-
-  const roots =
-    view === 'folder'
-      ? [exportFolderTree(tracks)].filter(Boolean)
-      : [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
-  const trees = roots
-    .map((root) => prune(root, new Set(visible.map((track) => track.path))))
-    .filter((tree) => tree.paths.length);
+      folders: node.folders.map(prune).filter((folder) => folder.paths.length),
+    });
+    return roots.map(prune).filter((tree) => tree.paths.length);
+  }, [query, roots, tracks]);
+  useEffect(() => {
+    setVisibleRoots(100);
+  }, [query, tracks, view]);
   return (
     <div className="usb-track-picker">
       <label className="usb-picker-search">
@@ -244,16 +279,22 @@ const ExportTrackPicker = ({ disabled, onChange, selected, tracks }) => {
           ? 'While searching, folder selection applies to matching tracks only.'
           : 'Expand a group to choose individual tracks.'}
       </p>
+      {trees.length > visibleRoots && (
+        <p>
+          Showing {visibleRoots} of {trees.length} folders or groups.
+        </p>
+      )}
       {trees.length ? (
-        trees.map((tree) => (
+        trees.slice(0, visibleRoots).map((tree) => (
           <FolderSelection
             disabled={disabled}
+            initiallyExpanded={tracks.length <= 200}
             key={`${view}:${tree.path}`}
             kind={view === 'tracks' ? 'group' : view}
             node={tree}
             onChange={onChange}
             searching={Boolean(query)}
-            selected={selected}
+            selected={selectedPaths}
           />
         ))
       ) : (
@@ -262,6 +303,14 @@ const ExportTrackPicker = ({ disabled, onChange, selected, tracks }) => {
             ? 'No matching folders or tracks.'
             : 'No tracks available for export.'}
         </p>
+      )}
+      {trees.length > visibleRoots && (
+        <button
+          onClick={() => setVisibleRoots(visibleRoots + 100)}
+          type="button"
+        >
+          Show more folders or groups
+        </button>
       )}
     </div>
   );
