@@ -73,6 +73,7 @@ const PROCESSORS = [
 // regardless of whether the modal happens to be open.
 const AudioProcessing = ({
   audioRef,
+  children,
   launcherTarget = null,
   modalTarget = null,
   targetLufs,
@@ -287,6 +288,7 @@ const AudioProcessing = ({
                 ref={setDetailNode}
               />
             </fieldset>
+            {open && children}
           </div>
         </div>,
         modalHost,

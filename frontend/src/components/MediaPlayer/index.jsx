@@ -883,45 +883,35 @@ const MediaPlayer = () => {
   };
 
   const waveformToolbar = (
-    <>
-      <WaveformToolbar
-        enabled={seekerEnabled}
-        grid={showBeatGrid}
-        height={seekerHeight}
-        onGrid={(value) => {
-          setShowBeatGrid(value);
-          prefs.set('mediaPlayer.beatGrid', value);
-        }}
-        onHeight={(value) => {
-          setSeekerHeight(value);
-          prefs.set('mediaPlayer.seekerHeight', value);
-        }}
-        onPhrases={(value) => {
-          setPhraseMode(value);
-          prefs.set('mediaPlayer.phrases', value);
-        }}
-        onToggle={toggleSeekerEnabled}
-        onVocals={(value) => {
-          setShowVocals(value);
-          prefs.set('mediaPlayer.vocals', value);
-        }}
-        onZoom={(value) => {
-          setSeekerZoom(value);
-          prefs.set('mediaPlayer.seekerZoom', value);
-        }}
-        phrases={phraseMode}
-        vocals={showVocals}
-        zoom={seekerZoom}
-      />
-      {seekerEnabled && (
-        <PlaybackSyncMonitor
-          audioRef={audioRef}
-          compensated={syncCompensated}
-          onCompensated={setSyncCompensated}
-          remote={googleCast.connected}
-        />
-      )}
-    </>
+    <WaveformToolbar
+      enabled={seekerEnabled}
+      grid={showBeatGrid}
+      height={seekerHeight}
+      onGrid={(value) => {
+        setShowBeatGrid(value);
+        prefs.set('mediaPlayer.beatGrid', value);
+      }}
+      onHeight={(value) => {
+        setSeekerHeight(value);
+        prefs.set('mediaPlayer.seekerHeight', value);
+      }}
+      onPhrases={(value) => {
+        setPhraseMode(value);
+        prefs.set('mediaPlayer.phrases', value);
+      }}
+      onToggle={toggleSeekerEnabled}
+      onVocals={(value) => {
+        setShowVocals(value);
+        prefs.set('mediaPlayer.vocals', value);
+      }}
+      onZoom={(value) => {
+        setSeekerZoom(value);
+        prefs.set('mediaPlayer.seekerZoom', value);
+      }}
+      phrases={phraseMode}
+      vocals={showVocals}
+      zoom={seekerZoom}
+    />
   );
 
   const handleSeekKey = (event) => {
@@ -1827,7 +1817,14 @@ const MediaPlayer = () => {
               launcherTarget={processingLauncherTarget}
               modalTarget={popout.container}
               targetLufs={trackLoudness?.integratedLufs ?? null}
-            />
+            >
+              <PlaybackSyncMonitor
+                audioRef={audioRef}
+                compensated={syncCompensated}
+                onCompensated={setSyncCompensated}
+                remote={googleCast.connected}
+              />
+            </AudioProcessing>
           )}
 
           <button
