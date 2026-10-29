@@ -244,3 +244,6 @@ export const getMediaAudioGraph = (audioElement) => {
   audioElement[GRAPH_PROPERTY] = graph;
   return graph;
 };
+
+export const peekMediaAudioGraph = (audioElement) =>
+  audioElement?.[GRAPH_PROPERTY] ?? null;

@@ -45,7 +45,9 @@ import {
 } from '../../lib/ambientColour';
 import * as castApi from '../../lib/cast';
 import { getLocalStreamUrl } from '../../lib/files';
+import { peekMediaAudioGraph } from '../../lib/mediaAudioGraph';
 import { getArtworkUrl, recordPlaybackActivity } from '../../lib/musicLibrary';
+import { readPlaybackSync } from '../../lib/playbackSync';
 import {
   applyAuditionTempo,
   ORIGINAL_AUDITION_TEMPO,
@@ -57,6 +59,7 @@ import { formatAttributes, formatSeconds, getFileName } from '../../lib/util';
 import AlbumArt from '../Library/components/AlbumArt';
 import AudioProcessing from './AudioProcessing';
 import LoudnessMeter from './LoudnessMeter';
+import PlaybackSyncMonitor from './PlaybackSyncMonitor';
 import usePlayerPopout from './usePlayerPopout';
 import WaveformResizeHandle from './WaveformResizeHandle';
 import WaveformSeekBar from './WaveformSeekBar';
@@ -458,10 +461,18 @@ const MediaPlayer = () => {
   // Reads the live position directly from refs (not React state) so the
   // waveform's animation-frame redraw loop always sees the freshest value
   // instead of whatever currentTime last happened to re-render with.
+  const [syncCompensated, setSyncCompensated] = useState(false);
+  const syncCompensatedRef = useRef(false);
+  syncCompensatedRef.current = syncCompensated;
   const getCurrentTime = useCallback(() => {
     return googleCastRef.current?.connected
       ? googleCastRef.current.castCurrentTime
-      : audioRef.current?.currentTime ?? 0;
+      : syncCompensatedRef.current
+        ? readPlaybackSync(
+            audioRef.current,
+            peekMediaAudioGraph(audioRef.current)?.context,
+          ).audibleTime
+        : audioRef.current?.currentTime ?? 0;
   }, []);
 
   // play() returns a promise that REJECTS if anything pauses the element, sets
@@ -872,35 +883,45 @@ const MediaPlayer = () => {
   };
 
   const waveformToolbar = (
-    <WaveformToolbar
-      enabled={seekerEnabled}
-      grid={showBeatGrid}
-      height={seekerHeight}
-      onGrid={(value) => {
-        setShowBeatGrid(value);
-        prefs.set('mediaPlayer.beatGrid', value);
-      }}
-      onHeight={(value) => {
-        setSeekerHeight(value);
-        prefs.set('mediaPlayer.seekerHeight', value);
-      }}
-      onPhrases={(value) => {
-        setPhraseMode(value);
-        prefs.set('mediaPlayer.phrases', value);
-      }}
-      onToggle={toggleSeekerEnabled}
-      onVocals={(value) => {
-        setShowVocals(value);
-        prefs.set('mediaPlayer.vocals', value);
-      }}
-      onZoom={(value) => {
-        setSeekerZoom(value);
-        prefs.set('mediaPlayer.seekerZoom', value);
-      }}
-      phrases={phraseMode}
-      vocals={showVocals}
-      zoom={seekerZoom}
-    />
+    <>
+      <WaveformToolbar
+        enabled={seekerEnabled}
+        grid={showBeatGrid}
+        height={seekerHeight}
+        onGrid={(value) => {
+          setShowBeatGrid(value);
+          prefs.set('mediaPlayer.beatGrid', value);
+        }}
+        onHeight={(value) => {
+          setSeekerHeight(value);
+          prefs.set('mediaPlayer.seekerHeight', value);
+        }}
+        onPhrases={(value) => {
+          setPhraseMode(value);
+          prefs.set('mediaPlayer.phrases', value);
+        }}
+        onToggle={toggleSeekerEnabled}
+        onVocals={(value) => {
+          setShowVocals(value);
+          prefs.set('mediaPlayer.vocals', value);
+        }}
+        onZoom={(value) => {
+          setSeekerZoom(value);
+          prefs.set('mediaPlayer.seekerZoom', value);
+        }}
+        phrases={phraseMode}
+        vocals={showVocals}
+        zoom={seekerZoom}
+      />
+      {seekerEnabled && (
+        <PlaybackSyncMonitor
+          audioRef={audioRef}
+          compensated={syncCompensated}
+          onCompensated={setSyncCompensated}
+          remote={googleCast.connected}
+        />
+      )}
+    </>
   );
 
   const handleSeekKey = (event) => {
