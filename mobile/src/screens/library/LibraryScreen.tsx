@@ -30,6 +30,8 @@ import { LocalPlaylists, LocalPlaylistPicker } from '../../components/LocalPlayl
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, makeScreenOptions, Radius, Spacing, ThemeColors, Typography } from '../../theme';
+
 import React, {
   useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
@@ -61,7 +63,6 @@ import type {
 } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 
-import { makeScreenOptions, Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import { requestAnalysis } from '../../services/trackAnalysis';
 import AnalysisBadge from '../../components/AnalysisBadge';
 import { useTheme } from '../../context/ThemeContext';
@@ -1495,7 +1496,6 @@ function useServerCachedList<T>(
     if (memHit !== undefined) apply(memHit, 'mem', Date.now() - t0);
     else readListCache<T[]>(cacheKey).then((d) => { if (d) apply(d, 'disk', Date.now() - t0); }).catch(() => {});
     return () => { cancelled = true; };
-     
   }, [cacheKey, enabled, cacheVersion]);
 
   const list = data ?? [];
@@ -4581,6 +4581,7 @@ function makeLibStyles(c: ThemeColors) {
       color: c.textPrimary,
       fontSize: Typography.base,
       padding: 0,
+      ...Editorial.control,
     },
 
     // Sort bar
@@ -4591,6 +4592,7 @@ function makeLibStyles(c: ThemeColors) {
       height: 36,
       alignItems: 'center',
       justifyContent: 'center',
+      ...Editorial.control,
     },
     sortRow: {
       flexDirection: 'row',
@@ -4628,7 +4630,7 @@ function makeLibStyles(c: ThemeColors) {
       borderBottomColor: 'transparent',
     },
     tabBtnActive:  { borderBottomColor: c.accent },
-    tabText:       { fontFamily: Typography.mono, fontSize: 11, color: c.textMuted, fontWeight: '500' },
+    tabText: { fontSize: 11, color: c.textMuted, fontWeight: '500', ...Editorial.label },
     tabTextActive: { color: c.accent },
 
     // List rows
@@ -4725,7 +4727,7 @@ function makeLibStyles(c: ThemeColors) {
       paddingBottom: Spacing.lg,
     },
     albumArt:    { width: 200, height: 200, borderRadius: Radius.lg, marginBottom: Spacing.lg },
-    albumTitle:  { fontFamily: Typography.display, fontSize: 27, fontWeight: '700', color: c.textPrimary, textAlign: 'center' },
+    albumTitle: { fontSize: 27, color: c.textPrimary, textAlign: 'center', ...Editorial.heading },
     albumArtist: { fontSize: Typography.base, color: c.textMuted, marginTop: Spacing.xs, textAlign: 'center' },
     albumMeta:   { fontSize: Typography.sm, color: c.textMuted, marginTop: 2 },
     albumActions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg },
@@ -4791,10 +4793,10 @@ function makeLibStyles(c: ThemeColors) {
     },
     sheetTitle: {
       fontSize: Typography.md,
-      fontWeight: '600',
       color: c.textPrimary,
       paddingHorizontal: Spacing.lg,
       marginBottom: 2,
+      ...Editorial.heading,
     },
     sheetMeta: {
       fontSize: Typography.sm,

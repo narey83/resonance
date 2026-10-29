@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
+
 import { getSessionGeneration, isCurrentSession } from '../../lib/sessionScope';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
@@ -44,7 +46,6 @@ import type { AuthStackParamList } from '../../navigation/AuthStack';
 import { redeemPairingCode } from '../../api/session';
 import { getDeviceId, getDeviceName, useAuthStore } from '../../store/auth';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Scan'>;
 
@@ -218,10 +219,10 @@ function makeStyles(c: ThemeColors) {
     busyText: { color: '#fff', fontSize: Typography.base },
     button: {
       backgroundColor: c.accent,
-      borderRadius: Radius.sm,
       marginTop: Spacing.lg,
       paddingHorizontal: Spacing.xl,
       paddingVertical: Spacing.md,
+      ...Editorial.control,
     },
     buttonText: { color: '#fff', fontSize: Typography.base, fontWeight: '600' },
     centre: {
@@ -270,8 +271,8 @@ function makeStyles(c: ThemeColors) {
     title: {
       color: c.textPrimary,
       fontSize: Typography.lg,
-      fontWeight: '600',
       marginTop: Spacing.md,
+      ...Editorial.heading,
     },
   });
 }

@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, Typography } from '../theme';
+
 import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
@@ -39,7 +41,6 @@ import {
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useTheme } from '../context/ThemeContext';
-import { Radius, Spacing, Typography } from '../theme';
 import type { ThemeColors } from '../theme';
 
 export type DownloadTarget = 'server' | 'device';
@@ -138,18 +139,18 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.borderStrong,
     alignSelf: 'center', marginBottom: Spacing.sm,
   },
-  title:      { fontSize: Typography.lg, fontWeight: '700', color: c.textPrimary },
+  title: { fontSize: Typography.lg, color: c.textPrimary, ...Editorial.heading },
   subtitle:   { fontSize: Typography.sm, color: c.textMuted, marginBottom: Spacing.xs },
   fieldLabel: { fontSize: Typography.xs, color: c.textMuted, fontWeight: '600', marginTop: Spacing.xs },
   input: {
     backgroundColor: c.bgElevated,
-    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: c.border,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     fontSize: Typography.base,
     color: c.textPrimary,
+    ...Editorial.control,
   },
   segmentRow:          { flexDirection: 'row', gap: Spacing.xs, marginTop: Spacing.xs },
   segment:             { flex: 1, paddingVertical: Spacing.sm - 2, borderRadius: Radius.md, alignItems: 'center', borderWidth: 1 },
@@ -161,7 +162,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   buttons:   { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
   btn: {
     flex: 1, paddingVertical: Spacing.sm,
-    borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center', minHeight: 40,
+     alignItems: 'center', justifyContent: 'center', minHeight: 40,
+    ...Editorial.control,
   },
   cancelBtn: { backgroundColor: c.bgElevated },
   btnText:   { fontSize: Typography.base, fontWeight: '600' },

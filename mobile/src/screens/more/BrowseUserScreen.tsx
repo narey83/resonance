@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, Typography } from '../../theme';
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -45,7 +47,6 @@ import * as browseApi from '../../api/browse';
 import type { DirectoryFile } from '../../api/users';
 import { useAuthStore } from '../../store/auth';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, Typography } from '../../theme';
 import type { ThemeColors } from '../../theme';
 import DownloadModal, { DownloadTarget } from '../../components/DownloadModal';
 import UserActionSheet from '../../components/UserActionSheet';
@@ -700,6 +701,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     paddingVertical: Spacing.sm - 2,
     fontSize: Typography.sm,
     color: c.textPrimary,
+    ...Editorial.control,
   },
   pillRow: {
     flexDirection: 'row',
@@ -709,12 +711,12 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   pill: {
     paddingHorizontal: Spacing.sm + 2,
     paddingVertical: 4,
-    borderRadius: Radius.full,
     borderWidth: 1,
+    ...Editorial.control,
   },
   pillActive:   { backgroundColor: c.accent, borderColor: c.accent },
   pillInactive: { backgroundColor: 'transparent', borderColor: c.border },
-  pillText:     { fontSize: Typography.xs, fontWeight: '600' },
+  pillText: { fontSize: Typography.xs, fontWeight: '600', ...Editorial.label },
   countText:    { flex: 1, textAlign: 'right', fontSize: Typography.xs, color: c.textDim },
 
   center: {

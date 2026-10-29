@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
+
 import React, { useMemo, useState } from 'react';
 import {
   Alert,
@@ -38,7 +40,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import { useNetworkLog, NetworkLogEntry, NetworkLogKind } from '../../store/networkLogStore';
 import { useConnectionStore } from '../../services/connectionMonitor';
 import {
@@ -362,10 +363,10 @@ function makeStyles(c: ThemeColors) {
       justifyContent: 'center',
       gap: Spacing.xs,
       paddingVertical: Spacing.sm,
-      borderRadius: Radius.sm,
       borderWidth: 1,
       borderColor: c.borderStrong,
       backgroundColor: c.bgSurface,
+      ...Editorial.control,
     },
     btnPressed:  { backgroundColor: c.bgElevated },
     btnDisabled: { opacity: 0.4 },

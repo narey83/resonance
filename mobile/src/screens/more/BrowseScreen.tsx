@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, Typography } from '../../theme';
+
 import { stopHubConnection } from '../../lib/hubLifecycle';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -45,7 +47,6 @@ import type { HubConnection } from '@microsoft/signalr';
 import * as browseApi from '../../api/browse';
 import { BROWSE_HISTORY, createBrowseHubConnection } from '../../api/browseHub';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, Typography } from '../../theme';
 import type { ThemeColors } from '../../theme';
 import type { BrowseStackParamList } from '../../navigation/MainTabs';
 import UserActionSheet from '../../components/UserActionSheet';
@@ -208,6 +209,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     paddingVertical: Spacing.sm + 2,
     fontSize: Typography.base,
     color: c.textPrimary,
+    ...Editorial.control,
   },
   goBtn: {
     backgroundColor: c.accent,
@@ -223,10 +225,9 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: Typography.xs,
     fontWeight: '600',
     color: c.textDim,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.xs,
+    ...Editorial.label,
   },
 
   row: {

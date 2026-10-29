@@ -27,9 +27,10 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Spacing, Typography, ThemeColors } from '../../theme';
+
 import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 import { TransferDirection, TransferSummary } from '../../api/analytics';
 import { Card, EmptyState, fmtBytes, fmtNum, fmtSpeed } from './shared';
 
@@ -92,15 +93,15 @@ function makeStyles(c: ThemeColors) {
       flexDirection: 'row',
       marginHorizontal: Spacing.xs,
       marginBottom: Spacing.sm,
-      borderRadius: Radius.full,
       borderWidth: 1,
       borderColor: c.border,
       backgroundColor: c.bgElevated,
       overflow: 'hidden',
       padding: 2,
+      ...Editorial.control,
     },
-    segPill:  { flex: 1, paddingVertical: Spacing.sm, alignItems: 'center', borderRadius: Radius.full },
-    segLabel: { fontSize: Typography.sm, fontWeight: '600' },
+    segPill: { flex: 1, paddingVertical: Spacing.sm, alignItems: 'center', ...Editorial.control },
+    segLabel: { fontSize: Typography.sm, fontWeight: '600', ...Editorial.label },
     row: {
       flexDirection: 'row',
       alignItems: 'center',

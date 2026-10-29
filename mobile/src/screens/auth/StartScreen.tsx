@@ -1,9 +1,9 @@
+import { Editorial, Typography } from '../../theme';
 import React, { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
-import { Typography } from '../../theme';
 import { useAppMode } from '../../store/appModeStore';
 import { enterLocalMode } from '../../services/appMode';
 
@@ -28,4 +28,4 @@ export default function StartScreen() {
     {modeError && <Text style={{ color: colors.danger }}>Your choice could not be saved. Try again.</Text>}
   </View></SafeAreaView>;
 }
-const s = StyleSheet.create({ screen: { flex: 1 }, content: { flex: 1, justifyContent: 'center', padding: 24, gap: 18 }, wordmark: { fontFamily: Typography.display, fontSize: 44, letterSpacing: -1.3 }, rule: { height: 2 }, title: { fontFamily: Typography.display, fontSize: 32, marginTop: 20 }, copy: { fontSize: 13, lineHeight: 20 }, option: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, padding: 18, gap: 14, minHeight: 96 }, optionText: { flex: 1, gap: 6 }, optionTitle: { fontSize: 16, fontWeight: '600' } });
+const s = StyleSheet.create({ screen: { flex: 1 }, content: { flex: 1, justifyContent: 'center', padding: 24, gap: 18 }, wordmark: { fontFamily: Typography.display, fontSize: 44, letterSpacing: -1.3 }, rule: { height: 2 }, title: { fontSize: 32, marginTop: 20, ...Editorial.heading }, copy: { fontSize: 13, lineHeight: 20 }, option: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, padding: 18, gap: 14, minHeight: 96 }, optionText: { flex: 1, gap: 6 }, optionTitle: { fontSize: 16, fontWeight: '600' } });

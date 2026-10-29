@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
+
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   FlatList,
@@ -42,7 +44,6 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useConversationStore } from '../../store/conversationStore';
 import type { Conversation } from '../../api/chat';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import type { ChatStackParamList } from '../../navigation/MainTabs';
 import BottomSheet from '../../components/BottomSheet';
 import UserAvatar from '../../components/UserAvatar';
@@ -296,7 +297,7 @@ function makeStyles(c: ThemeColors) {
       padding: Spacing.xl,
       gap: Spacing.md,
     },
-    sheetTitle: { fontSize: Typography.md, fontWeight: '600', color: c.textPrimary },
+    sheetTitle: { fontSize: Typography.md, color: c.textPrimary, ...Editorial.heading },
     sheetInput: {
       backgroundColor: c.bgElevated,
       borderRadius: Radius.md,

@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
+
 import { stopHubConnection } from '../../lib/hubLifecycle';
 
 import React, {
@@ -50,7 +52,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import type { HubConnection } from '@microsoft/signalr';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import { createLogsHubConnection } from '../../api/logsHub';
 import {
   getLogContexts,
@@ -880,7 +881,7 @@ function makeStyles(c: ThemeColors) {
       backgroundColor: c.bgSurface,
     },
     tabActive:      { borderColor: c.accent, backgroundColor: c.bgElevated },
-    tabText:        { fontSize: Typography.sm, fontWeight: '600', color: c.textMuted },
+    tabText: { fontSize: Typography.sm, fontWeight: '600', color: c.textMuted, ...Editorial.label },
     tabTextActive:  { color: c.textPrimary },
 
     disableBtn: {
@@ -916,8 +917,8 @@ function makeStyles(c: ThemeColors) {
       gap: 4,
       paddingVertical: 4,
       paddingHorizontal: Spacing.sm,
-      borderRadius: Radius.sm,
       borderWidth: 1,
+      ...Editorial.control,
     },
     chipOff:        { borderColor: c.border, backgroundColor: 'transparent', opacity: 0.5 },
     chipSuppressed: { borderStyle: 'dashed', opacity: 0.4 },
@@ -959,7 +960,7 @@ function makeStyles(c: ThemeColors) {
       gap: Spacing.md,
     },
     sheetHead:  { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-    sheetTitle: { flex: 1, fontSize: Typography.base, fontWeight: '700', color: c.textPrimary },
+    sheetTitle: { flex: 1, fontSize: Typography.base, color: c.textPrimary, ...Editorial.heading },
     sheetClear: { fontSize: Typography.sm, fontWeight: '600', color: c.accent },
     sheetSearch: {
       fontSize: Typography.sm,
@@ -1025,10 +1026,10 @@ function makeStyles(c: ThemeColors) {
       gap: Spacing.xs,
       paddingVertical: Spacing.sm,
       paddingHorizontal: Spacing.md,
-      borderRadius: Radius.sm,
       borderWidth: 1,
       borderColor: c.borderStrong,
       backgroundColor: c.bgSurface,
+      ...Editorial.control,
     },
     btnPressed: { backgroundColor: c.bgElevated },
     btnText:    { fontSize: Typography.sm, fontWeight: '600', color: c.textPrimary },

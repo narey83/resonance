@@ -27,13 +27,14 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, Typography, ThemeColors } from '../../theme';
+
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import * as Application from 'expo-application';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 import { useDeferredFocusEffect } from '../../hooks/useDeferredEffect';
 import { getApplicationState } from '../../api/application';
 import { downloadAndInstallUpdate } from '../../services/appUpdate';
@@ -180,10 +181,10 @@ function makeStyles(c: ThemeColors) {
     heroSub:   { fontSize: Typography.sm, color: c.textMuted },
     group: {
       backgroundColor: c.bgSurface,
-      borderRadius: Radius.lg,
       borderWidth: 1,
       borderColor: c.border,
       overflow: 'hidden',
+      ...Editorial.panel,
     },
     row: {
       flexDirection: 'row',
@@ -208,7 +209,7 @@ function makeStyles(c: ThemeColors) {
     updateTitle: { fontSize: Typography.base, fontWeight: '600', color: c.textPrimary },
     rowSub:     { fontSize: Typography.xs, color: c.textMuted },
     rowPressed: { backgroundColor: c.bgElevated },
-    rowLabel:   { fontSize: Typography.base, color: c.textPrimary },
+    rowLabel: { fontSize: Typography.base, color: c.textPrimary, ...Editorial.heading },
     rowValue:   { flex: 1, fontSize: Typography.base, color: c.textMuted, textAlign: 'right' },
     rowLink:    { color: c.accent },
     footer: {

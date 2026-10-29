@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, Typography, ThemeColors } from '../../theme';
+
 // FlatList already virtualizes rows, so unlike the web version (which needs
 // @tanstack/react-virtual for its plain HTML table) no extra dependency is
 // needed here for large user lists.
@@ -34,7 +36,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 import { getUserList, UserReportSummary } from '../../api/analytics';
 import { SkeletonRows } from '../Skeleton';
 import { EmptyState, fmtBytes, fmtDate } from './shared';
@@ -154,7 +155,7 @@ function makeStyles(c: ThemeColors) {
       paddingHorizontal: Spacing.md,
       paddingVertical: Spacing.sm,
     },
-    searchInput: { flex: 1, fontSize: Typography.base, color: c.textPrimary, padding: 0 },
+    searchInput: { flex: 1, fontSize: Typography.base, color: c.textPrimary, padding: 0, ...Editorial.control },
     row: {
       flexDirection: 'row',
       alignItems: 'center',

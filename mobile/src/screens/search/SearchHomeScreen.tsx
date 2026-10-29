@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Spacing, Typography } from '../../theme';
+
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -44,7 +46,6 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, Typography } from '../../theme';
 import type { ThemeColors } from '../../theme';
 import * as searchApi from '../../api/searches';
 import type { Search } from '../../api/searches';
@@ -277,30 +278,30 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   input: {
     flex: 1,
     backgroundColor: c.bgElevated,
-    borderRadius: Radius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     fontSize: Typography.base,
     color: c.textPrimary,
     borderWidth: 1,
     borderColor: c.border,
+    ...Editorial.control,
   },
   searchBtn: {
     backgroundColor: c.accent,
-    borderRadius: Radius.md,
     width: 40,
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Editorial.control,
   },
   searchBtnOff: { opacity: 0.4 },
 
   empty:      { alignItems: 'center', gap: Spacing.sm, paddingVertical: 60 },
   emptyTitle: {
     fontSize: Typography.lg,
-    fontWeight: '600',
     color: c.textPrimary,
     marginTop: Spacing.sm,
+    ...Editorial.heading,
   },
   emptySub: {
     fontSize: Typography.sm,

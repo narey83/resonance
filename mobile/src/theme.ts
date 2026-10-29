@@ -132,11 +132,21 @@ export const Radius = {
   full: 999,
 };
 
+// Shared editorial language established by Discover. Sizes and colours remain
+// local to each control so dense lists, messages and accessibility layouts retain
+// their existing hierarchy and contrast.
+export const Editorial = {
+  heading: { fontFamily: Typography.display, fontWeight: '700' as const, letterSpacing: -0.4 },
+  label: { fontFamily: Typography.mono, letterSpacing: 0.8, textTransform: 'uppercase' as const },
+  control: { borderRadius: Radius.sm },
+  panel: { borderRadius: Radius.sm, shadowOpacity: 0, elevation: 0 },
+};
+
 // Factory for navigation screen options — pass current theme colors for dynamic theming.
 export const makeScreenOptions = (c: ThemeColors) => ({
   headerStyle:         { backgroundColor: c.header },
   headerTintColor:     c.textPrimary,
-  headerTitleStyle:    { fontFamily: Typography.display, fontSize: Typography.xl, fontWeight: '700' as const },
+  headerTitleStyle:    { fontFamily: Typography.display, fontSize: 30, letterSpacing: -0.6, fontWeight: '700' as const },
   headerShadowVisible: false,
   contentStyle:        { backgroundColor: c.bgPrimary },
 });

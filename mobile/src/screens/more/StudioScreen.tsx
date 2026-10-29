@@ -1,3 +1,4 @@
+import { Editorial, Typography } from '../../theme';
 import React, { useEffect, useState } from 'react';
 import { Alert, AppState, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
@@ -6,7 +7,6 @@ import { useCast } from '../../context/CastContext';
 import { STUDIO_MODULES, STUDIO_PRESETS } from '../../lib/studio';
 import { studio, StudioMeters } from '../../native/studio';
 import { useStudio } from '../../store/studioStore';
-import { Typography } from '../../theme';
 
 const db = (value: number) => value > 0 ? `${(20 * Math.log10(value)).toFixed(1)} dBFS` : '−∞ dBFS';
 const meterPercent = (value: number) => value > 0 ? Math.max(0, Math.min(100, (20 * Math.log10(value) + 60) / 60 * 100)) : 0;
@@ -106,4 +106,4 @@ export function StudioRack({ embedded = false }: { embedded?: boolean }) {
 }
 export default function StudioScreen() { return <StudioRack />; }
 
-const s = StyleSheet.create({ screen: { padding: 20, gap: 16, paddingBottom: 110 }, kicker: { fontFamily: Typography.mono, fontSize: 10, letterSpacing: 1 }, title: { fontFamily: Typography.display, fontSize: 36 }, copy: { fontSize: 14, lineHeight: 21 }, small: { fontSize: 11, lineHeight: 17 }, label: { fontSize: 14, fontWeight: '600' }, row: { flexDirection: 'row', alignItems: 'center', gap: 12 }, grow: { flex: 1 }, panel: { borderWidth: 1, padding: 16, gap: 14 }, action: { borderWidth: 1, padding: 13, alignItems: 'center', justifyContent: 'center', minHeight: 48 }, step: { borderWidth: 1, width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }, chip: { borderWidth: 1, paddingVertical: 10, paddingHorizontal: 12 }, wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, meterStatus: { fontSize: 12, lineHeight: 20 }, readout: { fontVariant: ['tabular-nums'], fontFamily: Typography.mono, fontSize: 15, paddingVertical: 6 }, meter: { height: 5, overflow: 'hidden' }, notice: { padding: 14, borderWidth: 1, fontSize: 13, lineHeight: 20 }, input: { borderBottomWidth: 1, paddingVertical: 12, fontSize: 14 } });
+const s = StyleSheet.create({ screen: { padding: 20, gap: 16, paddingBottom: 110 }, kicker: { fontSize: 10, ...Editorial.label }, title: { fontSize: 36, ...Editorial.heading }, copy: { fontSize: 14, lineHeight: 21 }, small: { fontSize: 11, lineHeight: 17 }, label: { fontSize: 14, fontWeight: '600' }, row: { flexDirection: 'row', alignItems: 'center', gap: 12 }, grow: { flex: 1 }, panel: { borderWidth: 1, padding: 16, gap: 14, ...Editorial.panel }, action: { borderWidth: 1, padding: 13, alignItems: 'center', justifyContent: 'center', minHeight: 48 }, step: { borderWidth: 1, width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }, chip: { borderWidth: 1, paddingVertical: 10, paddingHorizontal: 12, ...Editorial.control }, wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, meterStatus: { fontSize: 12, lineHeight: 20 }, readout: { fontVariant: ['tabular-nums'], fontFamily: Typography.mono, fontSize: 15, paddingVertical: 6 }, meter: { height: 5, overflow: 'hidden' }, notice: { padding: 14, borderWidth: 1, fontSize: 13, lineHeight: 20 }, input: { borderBottomWidth: 1, paddingVertical: 12, fontSize: 14, ...Editorial.control } });

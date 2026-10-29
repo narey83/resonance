@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, Typography } from '../theme';
+
 import React, { useMemo, useState } from 'react';
 import {
   FlatList,
@@ -40,7 +42,6 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Ionicons } from '@expo/vector-icons';
 import BottomSheet from './BottomSheet';
 import { useTheme } from '../context/ThemeContext';
-import { Radius, Spacing, Typography } from '../theme';
 import type { ThemeColors } from '../theme';
 
 interface Props {
@@ -163,7 +164,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.sm,
   },
-  title: { fontSize: Typography.md, fontWeight: '700', color: c.textPrimary },
+  title: { fontSize: Typography.md, color: c.textPrimary, ...Editorial.heading },
   search: {
     backgroundColor: c.bgPrimary,
     borderRadius: Radius.sm,

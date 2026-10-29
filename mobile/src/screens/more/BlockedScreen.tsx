@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, Typography } from '../../theme';
+
 import React, { useMemo, useState } from 'react';
 import {
   Alert,
@@ -40,7 +42,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, Typography } from '../../theme';
 import type { ThemeColors } from '../../theme';
 import { useBlockedUsersStore } from '../../store/blockedUsersStore';
 import { getKnownLocations, setBlockedUserOptions } from '../../api/blockedUsers';
@@ -332,16 +333,15 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
 
   sectionTitle: {
     fontSize: Typography.xs,
-    fontWeight: '700',
     color: c.textMuted,
-    letterSpacing: 0.5,
     marginTop: Spacing.lg,
     marginBottom: Spacing.sm,
+    ...Editorial.heading,
   },
   group: {
     backgroundColor: c.bgElevated,
-    borderRadius: Radius.md,
     overflow: 'hidden',
+    ...Editorial.panel,
   },
 
   row: {
@@ -372,13 +372,13 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   input: {
     flex: 2,
     backgroundColor: c.bgPrimary,
-    borderRadius: Radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: c.border,
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.sm,
     color: c.textPrimary,
     fontSize: Typography.sm,
+    ...Editorial.control,
   },
   select: {
     flexDirection: 'row',

@@ -27,11 +27,12 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Spacing, Typography } from '../theme';
+
 import React, { useEffect, useMemo, useState } from 'react';
 import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import { Radius, Spacing, Typography } from '../theme';
 import type { ThemeColors } from '../theme';
 import { getLinkPreview } from '../api/linkPreview';
 import type { LinkPreview } from '../api/linkPreview';
@@ -99,17 +100,17 @@ function makeStyles(c: ThemeColors) {
       flexDirection: 'row',
       marginTop: Spacing.xs,
       maxWidth: 260,
-      borderRadius: Radius.md,
       borderWidth: 1,
       borderColor: c.border,
       backgroundColor: c.bgElevated,
       overflow: 'hidden',
+      ...Editorial.panel,
     },
     image: { width: 64, height: 64, backgroundColor: c.bgSurface },
     body: { flex: 1, minWidth: 0, justifyContent: 'center', gap: 2, padding: Spacing.sm },
     siteRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     site: { fontSize: Typography.xs - 1, color: c.textMuted, textTransform: 'uppercase' },
-    title: { fontSize: Typography.sm, fontWeight: '600', color: c.textPrimary },
+    title: { fontSize: Typography.sm, color: c.textPrimary, ...Editorial.heading },
     desc: { fontSize: Typography.xs, color: c.textMuted },
   });
 }

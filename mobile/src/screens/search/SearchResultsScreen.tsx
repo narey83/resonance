@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, Typography } from '../../theme';
+
 import { stopHubConnection } from '../../lib/hubLifecycle';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -48,7 +50,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, Typography } from '../../theme';
 import type { ThemeColors } from '../../theme';
 import * as searchApi from '../../api/searches';
 import { useAuthStore } from '../../store/auth';
@@ -471,7 +472,7 @@ function Pill({
   );
 }
 const pillStyles = StyleSheet.create({
-  pill:  { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.full, borderWidth: 1 },
+  pill: { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderWidth: 1, ...Editorial.control },
   label: { fontSize: Typography.xs },
 });
 
@@ -959,18 +960,18 @@ const makeModalStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.borderStrong,
     alignSelf: 'center', marginBottom: Spacing.sm,
   },
-  title:    { fontSize: Typography.lg, fontWeight: '700', color: c.textPrimary },
+  title: { fontSize: Typography.lg, color: c.textPrimary, ...Editorial.heading },
   subtitle: { fontSize: Typography.sm, color: c.textMuted, marginBottom: Spacing.xs },
   label:    { fontSize: Typography.xs, color: c.textMuted, fontWeight: '600', marginTop: Spacing.xs },
   input: {
     backgroundColor: c.bgElevated,
-    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: c.border,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     fontSize: Typography.base,
     color: c.textPrimary,
+    ...Editorial.control,
   },
   segmentRow:          { flexDirection: 'row', gap: Spacing.xs, marginTop: Spacing.xs },
   segment:             { flex: 1, paddingVertical: Spacing.sm - 2, borderRadius: Radius.md, alignItems: 'center', borderWidth: 1 },
@@ -982,7 +983,8 @@ const makeModalStyles = (c: ThemeColors) => StyleSheet.create({
   buttons:   { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
   btn: {
     flex: 1, paddingVertical: Spacing.sm,
-    borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center', minHeight: 40,
+     alignItems: 'center', justifyContent: 'center', minHeight: 40,
+    ...Editorial.control,
   },
   cancelBtn: { backgroundColor: c.bgElevated },
   btnText:   { fontSize: Typography.base, fontWeight: '600' },
@@ -1634,15 +1636,15 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     flexDirection: 'row',
     margin: Spacing.md,
     marginBottom: Spacing.sm,
-    borderRadius: Radius.full,
     borderWidth: 1,
     borderColor: c.border,
     backgroundColor: c.bgElevated,
     overflow: 'hidden',
     padding: 2,
+    ...Editorial.control,
   },
-  segPill:  { flex: 1, paddingVertical: Spacing.sm, alignItems: 'center', borderRadius: Radius.full },
-  segLabel: { fontSize: Typography.sm, fontWeight: '600' },
+  segPill: { flex: 1, paddingVertical: Spacing.sm, alignItems: 'center', ...Editorial.control },
+  segLabel: { fontSize: Typography.sm, fontWeight: '600', ...Editorial.label },
 
   controlBar: {
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -1675,7 +1677,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   listEmpty:     { flex: 1, justifyContent: 'center' },
   empty:      { alignItems: 'center', gap: Spacing.sm, paddingVertical: 60 },
   emptyTitle: {
-    fontSize: Typography.lg, fontWeight: '600', color: c.textPrimary, marginTop: Spacing.sm,
+    fontSize: Typography.lg,  color: c.textPrimary, marginTop: Spacing.sm,
+    ...Editorial.heading,
   },
   emptySub: {
     fontSize: Typography.sm, color: c.textMuted, textAlign: 'center', paddingHorizontal: Spacing.xl,

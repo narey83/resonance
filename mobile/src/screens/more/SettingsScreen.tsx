@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, ThemeColors, Typography, themes } from '../../theme';
+
 import { useRemoteAccess } from '../../lib/remoteAccess';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -46,7 +48,6 @@ import { getDeviceName } from '../../store/auth';
 import { useAppSettings } from '../../store/appSettingsStore';
 import type { StreamQuality } from '../../store/appSettingsStore';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, ThemeColors, Typography, themes } from '../../theme';
 import type { ThemeName } from '../../theme';
 import { ACCENT_OPTIONS } from '../../lib/appearance';
 import type { MoreStackParamList } from '../../navigation/MainTabs';
@@ -392,16 +393,16 @@ function makeStyles(c: ThemeColors) {
     container:  { padding: Spacing.lg, gap: Spacing.sm },
     group: {
       backgroundColor: c.bgSurface,
-      borderRadius: Radius.lg,
       borderWidth: 1,
       borderColor: c.border,
       overflow: 'hidden',
+      ...Editorial.panel,
     },
     themeRow: {
       padding: Spacing.md,
       gap: Spacing.sm,
     },
-    rowLabel: { fontSize: Typography.base, fontWeight: '500', color: c.textPrimary },
+    rowLabel: { fontSize: Typography.base, color: c.textPrimary, ...Editorial.heading },
     colourGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     colourOption: { minWidth: 88, flexGrow: 1, flexBasis: '28%', minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 9, borderWidth: 1, borderColor: c.border },
     colourChip: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },

@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, Typography } from '../../theme';
+
 import React, { useMemo, useState } from 'react';
 import {
   Alert,
@@ -39,7 +41,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, Typography } from '../../theme';
 import type { ThemeColors } from '../../theme';
 import { useBlockedUsersStore } from '../../store/blockedUsersStore';
 import BlockedUserRow from '../../components/BlockedUserRow';
@@ -120,7 +121,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
   },
-  searchInput: { flex: 1, color: c.textPrimary, fontSize: Typography.sm, paddingVertical: 0 },
+  searchInput: { flex: 1, color: c.textPrimary, fontSize: Typography.sm, paddingVertical: 0, ...Editorial.control },
   listContent: {
     backgroundColor: c.bgElevated,
     borderRadius: Radius.md,

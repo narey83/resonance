@@ -29,6 +29,8 @@ import { LocalPlaylistPicker } from './LocalPlaylists';
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../theme';
+
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { StudioRack } from '../screens/more/StudioScreen';
 import { Image } from 'expo-image';
@@ -71,7 +73,6 @@ import { useTrackAnalysisStatus } from '../store/analysisProgressStore';
 import { useWindowFold } from '../lib/adaptiveWindow';
 import { useTrackWaveform } from '../hooks/useTrackWaveform';
 import { WaveformBars } from './WaveformBars';
-import { Radius, Spacing, ThemeColors, Typography } from '../theme';
 
 // Fixed queue-row height so FlatList offsets are exact (via getItemLayout) and scrolling the
 // current track to a consistent position never has to estimate/correct — which is what caused
@@ -1119,7 +1120,7 @@ function makeStyles(c: ThemeColors, compact: boolean, wide: boolean) {
     scrim: { backgroundColor: 'rgba(0,0,0,0.58)' },
 
     emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.xl },
-    emptyTitle: { fontSize: Typography.lg, color: '#fff', fontWeight: '600', marginTop: Spacing.md, textAlign: 'center' },
+    emptyTitle: { fontSize: Typography.lg, color: '#fff', marginTop: Spacing.md, textAlign: 'center', ...Editorial.heading },
     emptySub:   { fontSize: Typography.sm, color: 'rgba(255,255,255,0.6)', textAlign: 'center' },
     stopCastBtn: {
       marginTop: Spacing.xl, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm,
@@ -1141,7 +1142,7 @@ function makeStyles(c: ThemeColors, compact: boolean, wide: boolean) {
     bottom: { paddingHorizontal: 24, paddingTop: wide ? 16 : 8, flexGrow: wide ? 1 : 0, justifyContent: wide && !compact ? 'center' : 'flex-start' },
     titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: compact ? 10 : 16 },
     trackIdentity: { flex: 1, minWidth: 0 },
-    title: { fontSize: compact ? 21 : 23, fontWeight: '700', color: '#fff', marginBottom: 5, letterSpacing: -.5 },
+    title: { fontSize: compact ? 21 : 23, color: '#fff', marginBottom: 5, ...Editorial.heading },
     artist: { fontSize: 15, color: 'rgba(255,255,255,.82)' },
     album: { fontSize: 12, color: 'rgba(255,255,255,.5)', marginTop: 4 },
     metrics: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,.16)', paddingVertical: compact ? 6 : 9, marginBottom: compact ? 8 : 14 },
@@ -1182,7 +1183,7 @@ function makeSheetStyles(c: ThemeColors) {
       paddingBottom: Spacing.xxl, paddingTop: Spacing.sm,
     },
     handle:     { width: 36, height: 4, borderRadius: 2, backgroundColor: c.borderStrong, alignSelf: 'center', marginBottom: Spacing.md },
-    title:      { fontSize: Typography.md, fontWeight: '600', color: c.textPrimary, paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
+    title: { fontSize: Typography.md, color: c.textPrimary, paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm, ...Editorial.heading },
     row:        { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
     rowPressed: { backgroundColor: c.bgElevated },
     rowText:    { fontSize: Typography.base, color: c.textPrimary },

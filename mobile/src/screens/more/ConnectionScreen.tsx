@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, Typography, ThemeColors } from '../../theme';
+
 // Basic connection/server/disk status — open to every signed-in user, matching
 // the backend's own permission boundary (GET /application is
 // [Authorize(Policy = AuthPolicy.Any)], unlike the admin-only analytics in
@@ -54,7 +56,6 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useDeferredFocusEffect } from '../../hooks/useDeferredEffect';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 import { getApplicationState, AppState } from '../../api/application';
 import {
   connectToSoulseek,
@@ -695,7 +696,7 @@ function makeStyles(c: ThemeColors) {
     hopLabel:       { fontSize: Typography.xs, color: c.textMuted, fontWeight: '600', letterSpacing: 0.6, textTransform: 'uppercase' },
     hopStatus:      { fontSize: Typography.base, fontWeight: '600', flexShrink: 1 },
     chipRow:        { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },
-    chip:           { borderWidth: 1, borderRadius: Radius.full, paddingHorizontal: Spacing.sm, paddingVertical: 3 },
+    chip: { borderWidth: 1, paddingHorizontal: Spacing.sm, paddingVertical: 3, ...Editorial.control },
     chipText:       { fontSize: Typography.xs, fontWeight: '600', fontVariant: ['tabular-nums'] },
 
     soulseekActionBtn: {

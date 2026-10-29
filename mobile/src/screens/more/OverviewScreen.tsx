@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, Typography, ThemeColors } from '../../theme';
+
 // The default landing screen for every role. Admins get the full analytics
 // dashboard below; everyone else gets a small personal summary instead (see
 // PersonalSummary.tsx) — not the same global/other-users data. Basic
@@ -50,7 +52,6 @@ import type { NavigationProp } from '@react-navigation/native';
 import type { MainTabParamList, MoreStackParamList } from '../../navigation/MainTabs';
 import { useAfterInteractions } from '../../hooks/useDeferredEffect';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 import { useAuthStore } from '../../store/auth';
 import * as analytics from '../../api/analytics';
 import * as sharesApi from '../../api/shares';
@@ -470,15 +471,15 @@ function makeStyles(c: ThemeColors) {
     errorHint:   { fontSize: Typography.xs, color: c.textDim },
     segWrapper: {
       flexDirection: 'row',
-      borderRadius: Radius.full,
       borderWidth: 1,
       borderColor: c.border,
       backgroundColor: c.bgElevated,
       overflow: 'hidden',
       padding: 2,
+      ...Editorial.control,
     },
-    segPill:  { flex: 1, paddingVertical: Spacing.sm, alignItems: 'center', borderRadius: Radius.full },
-    segLabel: { fontSize: Typography.sm, fontWeight: '600' },
+    segPill: { flex: 1, paddingVertical: Spacing.sm, alignItems: 'center', ...Editorial.control },
+    segLabel: { fontSize: Typography.sm, fontWeight: '600', ...Editorial.label },
     tabScroll: { marginTop: Spacing.sm, flexGrow: 0 },
     tabPill: {
       borderWidth: 1,

@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
+
 import { isMaintenanceResponse } from '../../lib/maintenance';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -43,7 +45,6 @@ import { ResonanceLogo } from '../../components/ResonanceLogo';
 import { Ionicons } from '@expo/vector-icons';
 import { enterLocalMode } from '../../services/appMode';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import RecentServers from '../../components/RecentServers';
 import { biometricSignIn, signInToServer } from '../../services/serverSignIn';
 import { biometricsAvailable, useServerProfiles } from '../../store/serverProfilesStore';
@@ -199,7 +200,7 @@ function makeStyles(c: ThemeColors) {
     inner: { flexGrow: 1, paddingBottom: Spacing.xxl, paddingHorizontal: Spacing.xl, paddingTop: Spacing.xxl * 2 },
     header:  { alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.xxl },
     logo:    { color: c.textPrimary, fontSize: Typography.xxl, fontWeight: '700', letterSpacing: -0.5 },
-    title: { fontSize: Typography.xxl, fontWeight: '700', color: c.textPrimary, marginBottom: Spacing.xs },
+    title: { fontSize: Typography.xxl, color: c.textPrimary, marginBottom: Spacing.xs, ...Editorial.heading },
     sub:   { fontSize: Typography.sm, color: c.textMuted, marginBottom: Spacing.xxl },
     form:  { gap: Spacing.md },
     field: { gap: Spacing.xs },
@@ -208,14 +209,14 @@ function makeStyles(c: ThemeColors) {
       backgroundColor: c.bgSurface,
       borderWidth: 1,
       borderColor: c.border,
-      borderRadius: Radius.md,
       paddingHorizontal: Spacing.md,
       paddingVertical: Spacing.md,
       fontSize: Typography.base,
       color: c.textPrimary,
+      ...Editorial.control,
     },
     error:      { fontSize: Typography.sm, color: c.danger, marginTop: -Spacing.xs },
-    btn:        { backgroundColor: c.accent, borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.xs },
+    btn: { backgroundColor: c.accent, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.xs, ...Editorial.control },
     btnPressed: { opacity: 0.8 },
     scanBtn: {
       alignItems: 'center',

@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, Typography, ThemeColors } from '../../theme';
+
 // Detail drill-down for a single user, reached from the leaderboard or the
 // searchable user list. Unlike the web version's Files tab (which drives a
 // live Soulseek directory browse), mobile's Browse screen is still an
@@ -37,7 +39,6 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 import {
   getUserDetail,
   getUserNetworkInfo,
@@ -167,7 +168,7 @@ function makeStyles(c: ThemeColors) {
       borderBottomWidth: 1,
       borderBottomColor: c.border,
     },
-    title:  { fontSize: Typography.lg, fontWeight: '700', color: c.textPrimary, flex: 1, marginRight: Spacing.md },
+    title: { fontSize: Typography.lg, color: c.textPrimary, flex: 1, marginRight: Spacing.md, ...Editorial.heading },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     scroll: { padding: Spacing.lg, gap: Spacing.sm, paddingBottom: Spacing.xxl },
     chatButton: {

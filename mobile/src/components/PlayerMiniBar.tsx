@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, Typography } from '../theme';
+
 import { Ionicons } from '@expo/vector-icons';
 import React, { useRef } from 'react';
 import { Image } from 'expo-image';
@@ -37,7 +39,6 @@ import { usePlaybackPosition, usePlaybackStatus, usePlayer } from '../context/Pl
 import { useAppSettings } from '../store/appSettingsStore';
 import { usePlayerUI } from '../store/playerUIStore';
 import { getArtworkCacheKey, ARTWORK_THUMB_SIZE } from '../services/artworkCache';
-import { Radius, Spacing, Typography } from '../theme';
 
 // 44px artwork + Spacing.sm above and below it + the 4px progress strip.
 export const MINI_BAR_HEIGHT = 64;
@@ -165,11 +166,11 @@ const styles = StyleSheet.create({
   artFallback:{ justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)' },
 
   info:   { flex: 1, justifyContent: 'center' },
-  title:  { fontSize: Typography.base, fontWeight: '600', color: '#fff' },
+  title: { fontSize: Typography.base, color: '#fff', ...Editorial.heading },
   artist: { fontSize: Typography.sm, marginTop: 1, color: 'rgba(255,255,255,0.6)' },
 
   controls:   { flexDirection: 'row', alignItems: 'center' },
-  btn:        { padding: Spacing.sm },
+  btn: { padding: Spacing.sm, ...Editorial.control },
   btnDisabled:{ opacity: 0.3 },
 
   progressTrack: { height: 4, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 2 },

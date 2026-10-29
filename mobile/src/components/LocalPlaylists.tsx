@@ -1,3 +1,4 @@
+import { Editorial } from '../theme';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -79,11 +80,11 @@ function styles(c: ReturnType<typeof useTheme>['colors']) { return StyleSheet.cr
   root: { flex: 1, backgroundColor: c.bgPrimary, paddingHorizontal: 16 },
   caption: { color: c.textMuted, fontSize: 12, marginVertical: 10 },
   error: { color: c.accent, paddingVertical: 10 },
-  title: { color: c.textPrimary, fontSize: 17, fontWeight: '600' },
+  title: { color: c.textPrimary, fontSize: 17, ...Editorial.heading },
   editor: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12 },
-  input: { flex: 1, color: c.textPrimary, borderBottomWidth: 1, borderColor: c.border, minHeight: 44 },
+  input: { flex: 1, color: c.textPrimary, borderBottomWidth: 1, borderColor: c.border, minHeight: 44, ...Editorial.control },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
-  button: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 },
+  button: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8, ...Editorial.control },
   buttonText: { color: c.accent, fontSize: 15, fontWeight: '600' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, borderBottomWidth: 1, borderColor: c.border },
   grow: { flex: 1 }, control: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' },

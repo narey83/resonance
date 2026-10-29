@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Spacing, Typography } from '../../theme';
+
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -43,7 +45,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import type { ThemeColors } from '../../theme';
-import { Radius, Spacing, Typography } from '../../theme';
 import { useTransferStore } from '../../store/transferStore';
 import type { Transfer, TransferDir } from '../../api/transfers';
 import UserActionSheet from '../../components/UserActionSheet';
@@ -570,20 +571,20 @@ const makeStyles = (colors: ThemeColors) =>
       flexDirection: 'row',
       margin: Spacing.md,
       marginBottom: Spacing.sm,
-      borderRadius: Radius.full,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.bgElevated,
       overflow: 'hidden',
       padding: 2,
+      ...Editorial.control,
     },
-    segPill:  { flex: 1, paddingVertical: Spacing.sm, alignItems: 'center', borderRadius: Radius.full },
-    segLabel: { fontSize: Typography.sm, fontWeight: '600' },
+    segPill: { flex: 1, paddingVertical: Spacing.sm, alignItems: 'center', ...Editorial.control },
+    segLabel: { fontSize: Typography.sm, fontWeight: '600', ...Editorial.label },
 
     filterBar:   { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingBottom: Spacing.sm },
     filterPills: { flexDirection: 'row', gap: Spacing.xs },
-    filterPill:  { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.full, borderWidth: 1 },
-    filterLabel: { fontSize: Typography.xs },
+    filterPill: { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderWidth: 1, ...Editorial.control },
+    filterLabel: { fontSize: Typography.xs, ...Editorial.label },
     clearBtn:    { paddingHorizontal: Spacing.xs, paddingVertical: 4, marginLeft: Spacing.xs },
 
     userHeader: {
@@ -622,9 +623,9 @@ const makeStyles = (colors: ThemeColors) =>
     empty:     { alignItems: 'center', gap: Spacing.sm, paddingVertical: 60 },
     emptyTitle: {
       fontSize: Typography.lg,
-      fontWeight: '600',
       color: colors.textPrimary,
       marginTop: Spacing.sm,
+      ...Editorial.heading,
     },
     emptySub: {
       fontSize: Typography.sm,

@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Spacing, Typography, ThemeColors } from '../../theme';
+
 // Deliberately NOT react-native-maps: that needs a Google Maps SDK key on
 // Android and a native rebuild, neither of which fit "works out of the box".
 // The web dashboard's own WorldMap.jsx doesn't use Google Maps either — it
@@ -43,7 +45,6 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import type { GeometryObject } from 'geojson';
 import type { Topology } from 'topojson-specification';
 import { feature } from 'topojson-client';
-import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 import { UserReportSummary } from '../../api/analytics';
 import { EmptyState } from './shared';
 
@@ -179,10 +180,10 @@ function makeStyles(c: ThemeColors) {
   return StyleSheet.create({
     card: {
       backgroundColor: c.bgSurface,
-      borderRadius: Radius.lg,
       borderWidth: 1,
       borderColor: c.border,
       overflow: 'hidden',
+      ...Editorial.panel,
     },
     legend: {
       flexDirection: 'row',

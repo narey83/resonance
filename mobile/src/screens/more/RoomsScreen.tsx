@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
+
 import React, { useCallback, useMemo, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,7 +37,6 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useRoomStore } from '../../store/roomStore';
 import type { Room } from '../../api/rooms';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import type { RoomsStackParamList } from '../../navigation/MainTabs';
 import BottomSheet from '../../components/BottomSheet';
 
@@ -239,7 +240,7 @@ function makeStyles(c: ThemeColors) {
       alignItems: 'center',
     },
     rowContent: { flex: 1 },
-    rowLabel:   { fontSize: Typography.base, fontWeight: '500', color: c.textPrimary },
+    rowLabel: { fontSize: Typography.base, color: c.textPrimary, ...Editorial.heading },
     rowSub:     { fontSize: Typography.xs, color: c.textMuted, marginTop: 1 },
 
     mentionBadge: {
@@ -261,7 +262,7 @@ function makeStyles(c: ThemeColors) {
       padding: Spacing.xl,
       gap: Spacing.md,
     },
-    sheetTitle: { fontSize: Typography.md, fontWeight: '600', color: c.textPrimary },
+    sheetTitle: { fontSize: Typography.md, color: c.textPrimary, ...Editorial.heading },
     sheetInput: {
       backgroundColor: c.bgElevated,
       borderRadius: Radius.md,

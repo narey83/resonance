@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, Typography } from '../theme';
+
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -42,7 +44,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 import { useTheme } from '../context/ThemeContext';
-import { Radius, Spacing, Typography } from '../theme';
 import type { ThemeColors } from '../theme';
 import type { MainTabParamList } from '../navigation/MainTabs';
 import { getUserInfo, getUserStatus } from '../api/users';
@@ -271,7 +272,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  title:    { flex: 1, fontSize: Typography.lg, fontWeight: '600', color: c.textPrimary },
+  title: { flex: 1, fontSize: Typography.lg, color: c.textPrimary, ...Editorial.heading },
   presence: { fontSize: Typography.xs, color: c.textMuted },
   blockedBadge: {
     fontSize: Typography.xs,
@@ -319,5 +320,5 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     paddingVertical: Spacing.sm,
   },
   statValue: { fontSize: Typography.base, fontWeight: '600', color: c.textPrimary },
-  statLabel: { fontSize: Typography.xs, color: c.textMuted, marginTop: 2 },
+  statLabel: { fontSize: Typography.xs, color: c.textMuted, marginTop: 2, ...Editorial.label },
 });

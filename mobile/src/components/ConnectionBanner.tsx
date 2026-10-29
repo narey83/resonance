@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Typography, Spacing } from '../theme';
+
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -34,7 +36,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAppMode } from '../store/appModeStore';
 import { useTheme } from '../context/ThemeContext';
 import { useConnectionStore, ConnectionStatus } from '../services/connectionMonitor';
-import { Typography, Spacing, Radius } from '../theme';
 
 const TAB_BAR_HEIGHT  = 49;
 const MINI_BAR_HEIGHT = 82; // paddingVertical 16*2 + artwork 48 + progress 2
@@ -116,7 +117,6 @@ const styles = StyleSheet.create({
   pill: {
     maxWidth: '94%',
     alignItems: 'center',
-    borderRadius: Radius.full,
     elevation: 8,
     flexDirection: 'row',
     paddingHorizontal: Spacing.lg,
@@ -125,6 +125,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
+    ...Editorial.control,
   },
   icon:  { marginRight: Spacing.xs },
   label: { flexShrink: 1, color: '#fff', fontSize: Typography.sm, fontWeight: '600' },

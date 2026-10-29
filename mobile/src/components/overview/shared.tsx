@@ -27,11 +27,12 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, Typography, ThemeColors } from '../../theme';
+
 import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 
 export function fmtBytes(bytes: number): string {
   if (!Number.isFinite(bytes)) return '—';
@@ -414,7 +415,7 @@ function makeChainStyles(c: ThemeColors) {
     hopTitle:  { fontSize: Typography.xs, color: c.textMuted, fontWeight: '600', letterSpacing: 0.8 },
     hopStatus: { fontSize: Typography.base, fontWeight: '600' },
     chipRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs, marginTop: 2 },
-    chip:      { borderWidth: 1, borderRadius: Radius.full, paddingHorizontal: Spacing.sm, paddingVertical: 1 },
+    chip: { borderWidth: 1, paddingHorizontal: Spacing.sm, paddingVertical: 1, ...Editorial.control },
     chipText:  { fontSize: Typography.xs, fontWeight: '600', fontVariant: ['tabular-nums'] },
   });
 }

@@ -27,11 +27,12 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing } from '../theme';
+
 import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 import type { DimensionValue, StyleProp, ViewStyle } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
-import { Radius, Spacing } from '../theme';
 
 // Pulsing placeholder blocks shown while content loads. The opacity animation runs
 // on the native driver so a skeleton never competes with the JS thread for frames —
@@ -93,7 +94,7 @@ export function SkeletonRows({ rows = 4 }: { rows?: number }) {
 }
 
 const s = StyleSheet.create({
-  card:    { gap: Spacing.sm, marginBottom: Spacing.sm },
+  card: { gap: Spacing.sm, marginBottom: Spacing.sm, ...Editorial.panel },
   rows:    { gap: Spacing.xs },
   row:     {
     borderRadius: Radius.md,

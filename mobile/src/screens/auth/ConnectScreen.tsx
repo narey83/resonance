@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
+
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -42,7 +44,6 @@ import {
 import { ResonanceLogo } from '../../components/ResonanceLogo';
 import { enterLocalMode } from '../../services/appMode';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import RecentServers from '../../components/RecentServers';
 import { normalizeServerUrl } from '../../store/serverProfilesStore';
 import { checkInitialized } from '../../api/session';
@@ -161,14 +162,14 @@ function makeStyles(c: ThemeColors) {
       backgroundColor: c.bgSurface,
       borderWidth: 1,
       borderColor: c.border,
-      borderRadius: Radius.md,
       paddingHorizontal: Spacing.md,
       paddingVertical: Spacing.md,
       fontSize: Typography.base,
       color: c.textPrimary,
+      ...Editorial.control,
     },
     error:      { fontSize: Typography.sm, color: c.danger, marginTop: -Spacing.xs },
-    btn:        { backgroundColor: c.accent, borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.xs },
+    btn: { backgroundColor: c.accent, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.xs, ...Editorial.control },
     btnPressed: { opacity: 0.8 },
     scanBtn: {
       alignItems: 'center',

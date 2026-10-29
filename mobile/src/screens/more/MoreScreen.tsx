@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
+
 import React, { useMemo } from 'react';
 import {
   Pressable,
@@ -38,7 +40,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import { useAuthStore } from '../../store/auth';
 import { useRemoteAccess } from '../../lib/remoteAccess';
 import { useAppMode } from '../../store/appModeStore';
@@ -170,18 +171,17 @@ function makeStyles(c: ThemeColors) {
     container:  { padding: Spacing.lg, gap: Spacing.lg },
     sectionTitle: {
       fontSize: Typography.xs,
-      fontWeight: '600',
-      letterSpacing: 0.8,
       color: c.textMuted,
       paddingHorizontal: Spacing.sm,
       paddingBottom: Spacing.xs,
+      ...Editorial.heading,
     },
     group: {
       backgroundColor: c.bgSurface,
-      borderRadius: Radius.lg,
       borderWidth: 1,
       borderColor: c.border,
       overflow: 'hidden',
+      ...Editorial.panel,
     },
     row: {
       flexDirection: 'row',
@@ -202,7 +202,7 @@ function makeStyles(c: ThemeColors) {
       alignItems: 'center',
     },
     rowText:    { flex: 1, gap: 2 },
-    rowLabel:   { fontSize: Typography.base, fontWeight: '500', color: c.textPrimary },
+    rowLabel: { fontSize: Typography.base, color: c.textPrimary, ...Editorial.heading },
     rowSub:     { fontSize: Typography.xs, color: c.textMuted },
     logoutBtn: {
       backgroundColor: c.bgSurface,

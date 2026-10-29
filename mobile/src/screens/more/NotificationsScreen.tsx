@@ -27,11 +27,12 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Spacing, ThemeColors, Typography } from '../../theme';
+
 import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useAppSettings } from '../../store/appSettingsStore';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 
 export default function NotificationsScreen() {
   const { colors } = useTheme();
@@ -184,10 +185,10 @@ function makeStyles(c: ThemeColors) {
     container: { padding: Spacing.lg, gap: Spacing.sm },
     group: {
       backgroundColor: c.bgSurface,
-      borderRadius: Radius.lg,
       borderWidth: 1,
       borderColor: c.border,
       overflow: 'hidden',
+      ...Editorial.panel,
     },
   });
 }

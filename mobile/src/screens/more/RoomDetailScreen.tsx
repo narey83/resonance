@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
+
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -51,7 +53,6 @@ import { useTranslationStore } from '../../store/translationStore';
 import { languageName } from '../../api/translation';
 import type { RoomMessage, RoomUser } from '../../api/rooms';
 import { useTheme } from '../../context/ThemeContext';
-import { Radius, Spacing, ThemeColors, Typography } from '../../theme';
 import type { RoomsStackParamList } from '../../navigation/MainTabs';
 import UserActionSheet from '../../components/UserActionSheet';
 import Linkify, { findFirstUrl } from '../../components/Linkify';
@@ -537,12 +538,12 @@ function makeStyles(c: ThemeColors) {
       flex: 1,
       minHeight: 42,
       backgroundColor: c.bgElevated,
-      borderRadius: Radius.full,
       paddingHorizontal: Spacing.lg,
       paddingVertical: Platform.OS === 'ios' ? Spacing.sm : Spacing.xs,
       fontSize: Typography.base,
       color: c.textPrimary,
       maxHeight: 120,
+      ...Editorial.control,
     },
     sendBtn: {
       width: 40,
