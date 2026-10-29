@@ -1,3 +1,4 @@
+import NewLibraryBadge from '../../components/NewLibraryBadge';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
@@ -144,14 +145,20 @@ export default function DiscoveryScreen() {
   const statusMessage = error || offline.error || syncError;
   const statusLabel = error ? 'Library refresh unavailable' : offline.error ? 'Check offline downloads' : syncError?.includes('404') ? 'Notes sync needs a server update' : 'Notes waiting to sync';
   function art(track: MusicTrack, size = 48) {
-    return <View style={[s.art, { width: size, height: size }]}>{track.hasArtwork ? <Image source={{ uri: getArtworkUrl(track.path, ARTWORK_THUMB_SIZE) ?? undefined, cacheKey: getArtworkCacheKey(track.path, ARTWORK_THUMB_SIZE) }} style={{ width: size, height: size, borderRadius: 1 }} /> : <Text style={s.artNote}>♫</Text>}</View>;
+    return <View style={[s.art, { width: size, height: size }]}>{track.hasArtwork ? <Image source={{ uri: getArtworkUrl(track.path, ARTWORK_THUMB_SIZE) ?? undefined, cacheKey: getArtworkCacheKey(track.path, ARTWORK_THUMB_SIZE) }} style={{ width: size, height: size, borderRadius: 1 }} /> : <Text style={s.artNote}>♫</Text>}{track.hasArtwork && <NewLibraryBadge indexedAt={track.indexedAt} overlay />}</View>;
+  }
+  function trackTitle(track: MusicTrack) {
+    return <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <Text numberOfLines={1} style={[s.trackTitle, { flexShrink: 1 }]}>{getTrackTitle(track)}</Text>
+      {!track.hasArtwork && <NewLibraryBadge indexedAt={track.indexedAt} />}
+    </View>;
   }
   function button(label: string, onPress: () => void, subtle = false) {
     return <Pressable accessibilityRole="button" disabled={working} onPress={() => { haptics.selection(); onPress(); }} style={({ pressed }) => [s.button, subtle && s.subtle, pressed && { opacity: .65, transform: [{ scale: .97 }] }, working && { opacity: .5 }]}><Text style={[s.buttonText, subtle && { color: colors.textPrimary }]}>{label}</Text></Pressable>;
   }
   function row(track: MusicTrack, detail?: string) {
     return <View key={track.path} style={s.row}>
-      <Pressable accessibilityLabel={`Play ${getTrackTitle(track)}`} onPress={() => { haptics.light(); player.playTrack(track); }} style={s.track}>{art(track)}<View style={s.grow}><Text numberOfLines={1} style={s.trackTitle}>{getTrackTitle(track)}</Text><Text numberOfLines={2} style={s.muted}>{detail ?? [track.artist, track.bpm && `${track.bpm} BPM`, track.key].filter(Boolean).join(' · ')}</Text></View></Pressable>
+      <Pressable accessibilityLabel={`Play ${getTrackTitle(track)}`} onPress={() => { haptics.light(); player.playTrack(track); }} style={s.track}>{art(track)}<View style={s.grow}>{trackTitle(track)}<Text numberOfLines={2} style={s.muted}>{detail ?? [track.artist, track.bpm && `${track.bpm} BPM`, track.key].filter(Boolean).join(' · ')}</Text></View></Pressable>
       <Pressable accessibilityLabel={`Actions for ${getTrackTitle(track)}`} hitSlop={12} onPress={() => { haptics.selection(); setActionTrack(track); }}><Text style={s.more}>•••</Text></Pressable>
     </View>;
   }
@@ -178,6 +185,7 @@ export default function DiscoveryScreen() {
           <View style={s.featureBody}>
             <Pressable accessibilityRole="button" accessibilityLabel={`Play ${getTrackTitle(featured)}`} style={s.featureArt} onPress={() => { haptics.light(); player.playTrack(featured); }}>
               {featured.hasArtwork ? <Image source={{ uri: getArtworkUrl(featured.path, PLAYER_ART_SIZE) ?? undefined, cacheKey: getArtworkCacheKey(featured.path, PLAYER_ART_SIZE) }} contentFit="cover" style={StyleSheet.absoluteFill} transition={150} /> : <View style={s.featureFallback}><Ionicons name="disc-outline" size={100} color={colors.textMuted} /></View>}
+              {featured.hasArtwork && <NewLibraryBadge indexedAt={featured.indexedAt} overlay />}
             </Pressable>
             <View style={s.featureSide}>
               <View><Text style={s.dataLabel}>TEMPO</Text><Text style={s.dataValue}>{featured.bpm ?? '—'}</Text><Text style={s.dataUnit}>BPM</Text></View>
@@ -185,12 +193,12 @@ export default function DiscoveryScreen() {
               <Pressable accessibilityRole="button" accessibilityLabel={player.track?.path === featured.path && isPlaying ? 'Pause record' : 'Play record'} style={({ pressed }) => [s.playRecord, pressed && { opacity: .65 }]} onPress={() => { haptics.light(); if (player.track?.path === featured.path) player.togglePlayPause(); else player.playTrack(featured); }}><Ionicons name={player.track?.path === featured.path && isPlaying ? 'pause' : 'play'} size={24} color={colors.bgPrimary} /></Pressable>
             </View>
           </View>
-          <Text numberOfLines={2} style={s.featureTitle}>{getTrackTitle(featured)}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}><Text numberOfLines={2} style={[s.featureTitle, { flexShrink: 1 }]}>{getTrackTitle(featured)}</Text>{!featured.hasArtwork && <NewLibraryBadge indexedAt={featured.indexedAt} />}</View>
           <View style={s.featureFooter}><Text numberOfLines={1} style={s.featureArtist}>{featured.artist || 'Unknown artist'}</Text><Pressable accessibilityRole="button" onPress={() => { setSource(featured); setSection('Matches'); }} hitSlop={10}><Text style={s.matchLink}>FIND A MATCH ↗</Text></Pressable></View>
         </View> : <View style={s.welcome}><Text style={s.h2}>Your collection starts here.</Text><Text style={s.muted}>Browse your library or search for a record.</Text>{button('Open library', () => openServerLibrary())}</View>}
         {heading('New arrivals')}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.shelf}>{albums.map((album, index) => <Pressable key={`${album.directory}-${index}`} style={s.album} onPress={() => void perform(async () => { const page = await getTracks({ limit: 200, ...albumTrackParams(album) }); await player.playQueue(page.tracks); })}>
-          <Text style={s.sleeveIndex}>{String(index + 1).padStart(2, '0')} / {album.year ?? '—'}</Text><View style={s.albumArt}>{album.hasArtwork ? <Image source={{ uri: getArtworkUrl(album.coverPath, 384) ?? undefined, cacheKey: album.coverPath ? getArtworkCacheKey(album.coverPath, 384) : undefined }} style={StyleSheet.absoluteFill} transition={180} /> : <Text style={s.albumNote}>♫</Text>}</View><Text numberOfLines={1} style={s.trackTitle}>{album.album}</Text><Text numberOfLines={1} style={s.muted}>{album.artist}</Text>
+          <Text style={s.sleeveIndex}>{String(index + 1).padStart(2, '0')} / {album.year ?? '—'}</Text><View style={s.albumArt}>{album.hasArtwork ? <Image source={{ uri: getArtworkUrl(album.coverPath, 384) ?? undefined, cacheKey: album.coverPath ? getArtworkCacheKey(album.coverPath, 384) : undefined }} style={StyleSheet.absoluteFill} transition={180} /> : <Text style={s.albumNote}>♫</Text>}{album.hasArtwork && <NewLibraryBadge indexedAt={album.indexedAt} overlay />}</View><View style={{ flexDirection: 'row', alignItems: 'center' }}><Text numberOfLines={1} style={[s.trackTitle, { flexShrink: 1 }]}>{album.album}</Text>{!album.hasArtwork && <NewLibraryBadge indexedAt={album.indexedAt} />}</View><Text numberOfLines={1} style={s.muted}>{album.artist}</Text>
         </Pressable>)}</ScrollView>
         {!albums.length && empty('New albums will appear here as your library grows.')}
         {heading('Recently played')}
@@ -208,7 +216,7 @@ export default function DiscoveryScreen() {
         {source ? <View style={s.card}>{row(source, 'YOUR STARTING POINT')}{button('Choose another track', () => { setSource(null); setFilter(''); }, true)}</View> : <>
           <TextInput accessibilityLabel="Find a starting track" placeholder="Find a starting track…" placeholderTextColor={colors.textMuted} style={s.input} value={filter} onChangeText={setFilter} onSubmitEditing={() => void perform(async () => { const page = await getTracks({ search: filter, limit: 100 }); setTracks(page.tracks); })} returnKeyType="search" />
           {button('Search library', () => void perform(async () => { const page = await getTracks({ search: filter, limit: 100 }); setTracks(page.tracks); }), true)}
-          {tracks.filter(track => `${track.title} ${track.artist}`.toLowerCase().includes(filter.toLowerCase())).slice(0, 15).map(track => <Pressable key={track.path} style={s.row} onPress={() => setSource(track)}>{art(track)}<View style={s.grow}><Text style={s.trackTitle}>{getTrackTitle(track)}</Text><Text style={s.muted}>{track.artist}</Text></View><Text style={s.more}>↗</Text></Pressable>)}
+          {tracks.filter(track => `${track.title} ${track.artist}`.toLowerCase().includes(filter.toLowerCase())).slice(0, 15).map(track => <Pressable key={track.path} style={s.row} onPress={() => setSource(track)}>{art(track)}<View style={s.grow}>{trackTitle(track)}<Text style={s.muted}>{track.artist}</Text></View><Text style={s.more}>↗</Text></Pressable>)}
         </>}
         {source && <>{matches.map(match => row(match.track, match.reasons.join(' · ')))}{!matches.length && empty('No supported matches yet. Try an analysed track with BPM and key. Suggestions examine up to 500 candidates near its tempo.')}{!!matches.length && <Text style={s.muted}>Tap to audition; use ••• to queue or add to a playlist. Your ears make the final call.</Text>}</>}
       </>}

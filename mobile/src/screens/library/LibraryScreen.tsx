@@ -1,3 +1,4 @@
+import NewLibraryBadge from '../../components/NewLibraryBadge';
 import { isRecentlyIndexed } from '../../lib/recentLibraryItems';
 import { LocalPlaylists, LocalPlaylistPicker } from '../../components/LocalPlaylists';
 // <copyright file="LibraryScreen.tsx" company="John Narey">
@@ -249,11 +250,7 @@ const ArtworkBox = React.memo(({ path, size, overrideUrl, overrideCacheKey, mixt
           recyclingKey={cacheKey ?? url}
         />
         {badge}
-        {isRecentlyIndexed(indexedAt) && (
-          <View pointerEvents="none" accessibilityLabel="Added in the last 7 days" accessible style={{ position: 'absolute', top: 1, left: 1, width: 18, height: 18, borderRadius: 9, backgroundColor: c.bgPrimary, alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="sparkles" size={12} color={c.accent} />
-          </View>
-        )}
+        <NewLibraryBadge indexedAt={indexedAt} overlay />
       </View>
     );
   }
