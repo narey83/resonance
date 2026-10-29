@@ -1,3 +1,4 @@
+import { isRecentlyIndexed } from '../../lib/recentLibraryItems';
 import { LocalPlaylists, LocalPlaylistPicker } from '../../components/LocalPlaylists';
 // <copyright file="LibraryScreen.tsx" company="John Narey">
 //    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
@@ -122,8 +123,6 @@ const Stack = createNativeStackNavigator<LibraryStackParamList>();
 type LibraryNav = NativeStackNavigationProp<LibraryStackParamList>;
 
 const TRACKS_PER_PAGE = 50;
-const CSHARP_EPOCH_TICKS = 621_355_968_000_000_000;
-const NEW_LIBRARY_ITEM_AGE_MS = 7 * 86_400_000;
 
 // Fetches that feed the player are bounded to what the queue will actually keep. Folders here
 // run to tens of thousands of tracks (HATE is ~25k), and asking for one in a single response
@@ -167,12 +166,6 @@ const formatDuration = (seconds: number | null): string => {
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
-const isRecentlyIndexed = (ticks?: number | null): boolean => {
-  if (!ticks) return false;
-  const indexedAt = (ticks - CSHARP_EPOCH_TICKS) / 10_000;
-  const age = Date.now() - indexedAt;
-  return age >= 0 && age < NEW_LIBRARY_ITEM_AGE_MS;
-};
 
 function NewItemIcon({ labelled = true }: { labelled?: boolean }) {
   const { c } = useLibStyles();
@@ -207,7 +200,8 @@ function useKeyboardHeight() {
 
 // ── ArtworkBox ────────────────────────────────────────────────────────────────
 
-const ArtworkBox = React.memo(({ path, size, overrideUrl, overrideCacheKey, mixtape, source, thumbSize = ARTWORK_THUMB_SIZE, placeholderIcon = 'musical-note' }: {
+const ArtworkBox = React.memo(({ path, size, overrideUrl, overrideCacheKey, mixtape, source, thumbSize = ARTWORK_THUMB_SIZE, indexedAt, placeholderIcon = 'musical-note' }: {
+  indexedAt?: number | null;
   path: string | null; size: number; overrideUrl?: string | null; overrideCacheKey?: string;
   /** Show this mixtape's uploaded artwork, fetched at thumbSize, in place of path's cover. */
   mixtape?: Mixtape | null;
@@ -255,6 +249,11 @@ const ArtworkBox = React.memo(({ path, size, overrideUrl, overrideCacheKey, mixt
           recyclingKey={cacheKey ?? url}
         />
         {badge}
+        {isRecentlyIndexed(indexedAt) && (
+          <View pointerEvents="none" accessibilityLabel="Added in the last 7 days" accessible style={{ position: 'absolute', top: 1, left: 1, width: 18, height: 18, borderRadius: 9, backgroundColor: c.bgPrimary, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="sparkles" size={12} color={c.accent} />
+          </View>
+        )}
       </View>
     );
   }
@@ -266,6 +265,17 @@ const ArtworkBox = React.memo(({ path, size, overrideUrl, overrideCacheKey, mixt
   );
 });
 ArtworkBox.displayName = 'ArtworkBox';
+
+function TrackTitle({ track, artworkShown = true }: { track: MusicTrack; artworkShown?: boolean }) {
+  const { s } = useLibStyles();
+  return (
+    <View style={s.newTitleRow}>
+      <Text style={[s.rowTitle, s.newTitleText]} numberOfLines={1}>{getTrackTitle(track)}</Text>
+      {isRecentlyIndexed(track.indexedAt) && (!artworkShown || !getTrackArtworkPath(track)) && <NewItemIcon />}
+    </View>
+  );
+}
+
 
 // ── SearchBar ─────────────────────────────────────────────────────────────────
 
@@ -1978,15 +1988,13 @@ function TracksTab() {
       >
         <ArtworkBox
           path={item.hasArtwork && !local ? item.path : null}
+          indexedAt={item.indexedAt}
           overrideUrl={local && item.hasArtwork ? item.coverPath : undefined}
           size={42}
           source={showBadge ? (local ? 'local' : 'server') : undefined}
         />
         <View style={s.rowInfo}>
-          <View style={s.newTitleRow}>
-            <Text style={[s.rowTitle, s.newTitleText]} numberOfLines={1}>{getTrackTitle(item)}</Text>
-            {isRecentlyIndexed(item.indexedAt) && <NewItemIcon />}
-          </View>
+          <TrackTitle track={item} />
           <RowArtistAlbum
             artist={item.artist}
             album={item.album}
@@ -2153,11 +2161,12 @@ function LovedTab() {
     >
       <ArtworkBox
         path={item.hasArtwork && !local ? item.path : null}
+          indexedAt={item.indexedAt}
         overrideUrl={local && item.hasArtwork ? item.coverPath : undefined}
         size={42}
       />
       <View style={s.rowInfo}>
-        <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
+        <TrackTitle track={item} />
         <RowArtistAlbum artist={item.artist} album={item.album} />
       </View>
       <AnalysisBadge color={c.accent} path={item.path} />
@@ -3226,9 +3235,9 @@ function ArtistDetail({ route }: ArtistProps) {
       }}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
     >
-      <ArtworkBox path={getTrackArtworkPath(item)} size={42} />
+      <ArtworkBox path={getTrackArtworkPath(item)} size={42} indexedAt={item.indexedAt} />
       <View style={s.rowInfo}>
-        <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
+        <TrackTitle track={item} />
         <Text style={s.rowMeta} numberOfLines={1}>
           {[item.album].filter(Boolean).join('')}
         </Text>
@@ -3400,7 +3409,7 @@ function AlbumDetail({ route }: AlbumProps) {
     >
       {showTrackNumbers && <Text style={s.trackNum}>{item.trackNumber ?? index + 1}</Text>}
       <View style={s.rowInfo}>
-        <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
+        <TrackTitle track={item} artworkShown={false} />
         {item.artist && item.artist !== album.artist && (
           <Text style={s.rowMeta} numberOfLines={1}>{item.artist}</Text>
         )}
@@ -3590,9 +3599,9 @@ function GenreDetail({ route }: GenreDetailProps) {
       }}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
     >
-      <ArtworkBox path={getTrackArtworkPath(item)} size={42} />
+      <ArtworkBox path={getTrackArtworkPath(item)} size={42} indexedAt={item.indexedAt} />
       <View style={s.rowInfo}>
-        <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
+        <TrackTitle track={item} />
         <RowArtistAlbum artist={item.artist} album={item.album} />
       </View>
       <TrackMetaRight item={item} />
@@ -3828,9 +3837,9 @@ function YearDetail({ route }: YearDetailProps) {
       }}
       style={({ pressed }) => [s.trackRow, pressed && s.rowPressed]}
     >
-      <ArtworkBox path={getTrackArtworkPath(item)} size={42} />
+      <ArtworkBox path={getTrackArtworkPath(item)} size={42} indexedAt={item.indexedAt} />
       <View style={s.rowInfo}>
-        <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
+        <TrackTitle track={item} />
         <RowArtistAlbum artist={item.artist} album={item.album} />
       </View>
       <TrackMetaRight item={item} />
@@ -4045,11 +4054,12 @@ function FolderDetail({ route }: FolderDetailProps) {
       </Text>}
       <ArtworkBox
         path={item.hasArtwork && !isLocal ? item.path : null}
+        indexedAt={item.indexedAt}
         overrideUrl={isLocal && item.hasArtwork ? item.coverPath : undefined}
         size={42}
       />
       <View style={s.rowInfo}>
-        <Text style={s.rowTitle} numberOfLines={1}>{getTrackTitle(item)}</Text>
+        <TrackTitle track={item} />
         <RowArtistAlbum artist={item.artist} album={item.album} />
       </View>
       <TrackMetaRight item={item} />
