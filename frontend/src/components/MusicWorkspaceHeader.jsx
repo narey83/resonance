@@ -1,5 +1,5 @@
 import { urlBase } from '../config';
-import { ArrowUpRight, AudioWaveform, Disc3 } from 'lucide-react';
+import { ArrowUpRight, AudioWaveform, Disc3, Unplug } from 'lucide-react';
 import React from 'react';
 import { Link } from 'react-router-dom';
 
@@ -13,7 +13,9 @@ const pages = {
   converter: 'Audio converter',
 };
 const MusicWorkspaceHeader = ({ page }) => (
-  <header className="dj-workspace-header">
+  <header
+    className={`dj-workspace-header${page === 'export' ? ' dj-workspace-header--export' : ''}`}
+  >
     <div className="dj-workspace-heading">
       <Disc3
         aria-hidden="true"
@@ -28,9 +30,19 @@ const MusicWorkspaceHeader = ({ page }) => (
         </Link>
       )}
       {page === 'export' && (
-        <Link to={`${urlBase}/library`}>
-          Back to collection <ArrowUpRight size={14} />
-        </Link>
+        <>
+          <a
+            href="http://127.0.0.1:55460/usb#eject"
+            rel="noopener noreferrer"
+            target="_blank"
+            title="Choose and safely eject a USB drive on the computer running Bridge"
+          >
+            <Unplug size={14} /> Safely eject in Bridge
+          </a>
+          <Link to={`${urlBase}/library`}>
+            Back to collection <ArrowUpRight size={14} />
+          </Link>
+        </>
       )}
     </div>
   </header>

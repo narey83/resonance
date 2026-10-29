@@ -380,7 +380,9 @@ function renderUSB() {
       downloading: "Downloading and verifying your export…",
       ready: "Export verified. Choose a destination to copy your set.",
       writing: "Writing and verifying files on your USB drive…",
-      completed: "Transfer complete. Safely eject your USB drive.",
+      completed:
+        "Transfer complete. Choose Safely eject USB before unplugging.",
+      ejected: "USB safely ejected. You can unplug the drive.",
       failed: transfer.error || "The transfer could not finish.",
     };
     $("#export-status").textContent =
@@ -393,9 +395,10 @@ function renderUSB() {
     busy ||
     !paired() ||
     !transfer?.tracks ||
-    !["ready", "completed", "failed"].includes(transfer.status) ||
+    !["ready", "completed", "failed", "ejected"].includes(transfer.status) ||
     !$("#drive").value ||
     !$("#confirm").checked;
+  $("#eject").disabled = busy || !paired() || !!active || !$("#drive").value;
   $("#cancel-transfer").hidden = !active;
   $("#cancel-transfer").disabled = busy;
   for (const id of ["drive", "refresh-drives", "confirm", "handoff"])
@@ -415,7 +418,9 @@ function renderUSB() {
   $("#transfer-progress").textContent =
     transfer?.status === "writing"
       ? transfer.prepared + " / " + transfer.total + " files verified"
-      : "Safely eject the drive after the transfer completes.";
+      : transfer?.status === "ejected"
+        ? "USB safely ejected. You can unplug the drive."
+        : "After verification, safely eject the selected USB drive before unplugging it.";
 }
 function render() {
   applyAppearance();
@@ -508,6 +513,22 @@ $("#write").onclick = () =>
       confirm: $("#confirm").checked,
     }),
   );
+$("#eject").onclick = () =>
+  action(async () => {
+    const id = $("#drive").value;
+    if (!id) throw Error("Choose a USB drive to eject.");
+    try {
+      await request("usb/eject", { id });
+    } catch (failure) {
+      try {
+        await refreshDrives();
+      } catch {
+        /* Preserve the eject failure. */
+      }
+      throw failure;
+    }
+    await refreshDrives();
+  }, "USB safely ejected. You can unplug the drive.");
 $("#cancel-transfer").onclick = () => action(() => request("usb/cancel", {}));
 $("#quit").onclick = () => action(() => request("quit", {}));
 $("#diagnostics").onclick = () =>
@@ -543,7 +564,13 @@ $("#diagnostics").onclick = () =>
       );
     renderNetwork();
   }
-  if (page === "usb" && paired()) await refreshDrives();
+  if (page === "usb" && paired()) {
+    await refreshDrives();
+    if (location.hash === "#eject") {
+      $("#usb-drive-card").scrollIntoView?.({ block: "start" });
+      $("#drive").focus();
+    }
+  }
   if (status.error) error(status.error);
 })().catch(error);
 setInterval(async () => {

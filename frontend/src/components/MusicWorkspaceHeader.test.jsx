@@ -35,5 +35,10 @@ describe('Music workspace header', () => {
     expect(renderHeader('networklink').textContent).not.toContain('Analyse');
     expect(renderHeader('export').textContent).toContain('Back to collection');
     expect(renderHeader('export').textContent).not.toContain('Analyse');
+    expect(
+      renderHeader('export').querySelector(
+        'a[href="http://127.0.0.1:55460/usb#eject"]',
+      ).textContent,
+    ).toContain('Safely eject in Bridge');
   });
 });

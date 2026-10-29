@@ -1,6 +1,6 @@
 # Resonance Bridge (experimental)
 
-Updated **27 October 2026**. One desktop helper handles **USB Export** and **Network
+Updated **29 October 2026**. One desktop helper handles **USB Export** and **Network
 Link**, using `.resonance` action files and the same local dashboard. Behaviour,
 platform support and compatibility can change. This is development software;
 physical DJ-player acceptance is still pending.
@@ -19,7 +19,9 @@ installer tooling are in this directory; see Platforms and firewall below.
    it may need opening from Downloads if the browser does not launch the association.
 3. In the helper, select a mounted external FAT32/exFAT destination, confirm the
    destination checkbox and choose **Write**.
-4. Wait for verification to complete, then safely eject through the operating system.
+4. Wait for verification to complete, then choose **Safely eject USB**. Wait for the safe-removal message before unplugging. This ejects the selected physical USB drive; it never forces removal when the operating system reports it is busy.
+
+The app’s **Safely eject USB…** tray/menu shortcut and Resonance Export’s **Safely eject in Bridge** link open the same local drive picker. Choose the drive there; the main server never unmounts devices on its own host. Linux safe removal requires the desktop UDisks service and `udisksctl`. If the OS refuses removal, close files/apps using the drive and retry or use its normal system eject control.
 
 The helper downloads only that export using a scoped 24-hour token. It verifies the
 bundle, refuses existing-file/export overwrites and never formats drives. Cancellation

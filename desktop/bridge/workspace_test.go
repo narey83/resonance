@@ -36,7 +36,7 @@ func TestWorkspaceRequiresPairingAndKeepsSettingsAvailable(t *testing.T) {
 				t.Fatal("unpaired feature page was accessible", path, w.Code)
 			}
 		}
-		for _, path := range []string{"/api/start", "/api/usb/write", "/api/usb/receive"} {
+		for _, path := range []string{"/api/start", "/api/usb/write", "/api/usb/receive", "/api/usb/eject"} {
 			w := workspaceRequest(h, "POST", path, "{}")
 			if w.Code != 409 {
 				t.Fatal("unpaired feature action was accessible", path, w.Code)

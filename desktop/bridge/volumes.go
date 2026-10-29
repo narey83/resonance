@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
@@ -16,6 +17,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 	"unicode/utf16"
 )
 
@@ -79,6 +81,8 @@ func plistValues(data []byte) map[string]string {
 	return m
 }
 func usbVolumes() ([]usbVolume, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	out := []usbVolume{}
 	appendVolume := func(v usbVolume) {
 		if v, ok := normalizeVolume(v); ok {
@@ -93,18 +97,18 @@ func usbVolumes() ([]usbVolume, error) {
 		}
 		for _, entry := range entries {
 			path := filepath.Join("/Volumes", entry.Name())
-			data, e := exec.Command("/usr/sbin/diskutil", "info", "-plist", path).Output()
+			data, e := exec.CommandContext(ctx, "/usr/sbin/diskutil", "info", "-plist", path).Output()
 			if e != nil {
 				continue
 			}
 			m := plistValues(data)
-			if m["Internal"] != "false" || m["MountPoint"] != path {
+			if m["Internal"] != "false" || m["BusProtocol"] != "USB" || m["MountPoint"] != path {
 				continue
 			}
 			appendVolume(usbVolume{Path: path, Label: m["VolumeName"], Filesystem: m["FilesystemType"], Device: m["DeviceIdentifier"], UUID: m["VolumeUUID"]})
 		}
 	case "linux":
-		data, e := exec.Command("lsblk", "--json", "--output", "PATH,MOUNTPOINT,FSTYPE,RM,HOTPLUG,TRAN,UUID,LABEL").Output()
+		data, e := exec.CommandContext(ctx, "lsblk", "--json", "--output", "PATH,MOUNTPOINT,FSTYPE,RM,HOTPLUG,TRAN,UUID,LABEL").Output()
 		if e != nil {
 			return nil, errors.New("could not read mounted USB drives with lsblk")
 		}
@@ -149,7 +153,7 @@ func usbVolumes() ([]usbVolume, error) {
 		for i, c := range chars {
 			binary.LittleEndian.PutUint16(encoded[i*2:], c)
 		}
-		data, e := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", base64.StdEncoding.EncodeToString(encoded)).Output()
+		data, e := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", base64.StdEncoding.EncodeToString(encoded)).Output()
 		if e != nil {
 			return nil, errors.New("could not read mounted USB volumes")
 		}
@@ -172,17 +176,8 @@ func usbVolumes() ([]usbVolume, error) {
 	default:
 		return nil, fmt.Errorf("USB discovery is unavailable on %s", runtime.GOOS)
 	}
+	if ctx.Err() != nil {
+		return nil, errors.New("USB drive discovery timed out; refresh and try again")
+	}
 	return out, nil
-}
-func findUSBVolume(id string) (usbVolume, error) {
-	volumes, e := usbVolumes()
-	if e != nil {
-		return usbVolume{}, e
-	}
-	for _, v := range volumes {
-		if v.ID == id {
-			return v, nil
-		}
-	}
-	return usbVolume{}, errors.New("selected USB drive is no longer mounted or has changed")
 }

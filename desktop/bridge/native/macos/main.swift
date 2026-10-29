@@ -18,6 +18,7 @@ final class LinkApplication: NSObject, NSApplicationDelegate {
         statusMenu = menu.addItem(withTitle: "Resonance Bridge", action: nil, keyEquivalent: "")
         menu.addItem(withTitle: "Open dashboard", action: #selector(showDashboard), keyEquivalent: "")
         menu.addItem(withTitle: "USB export", action: #selector(showUSB), keyEquivalent: "")
+        menu.addItem(withTitle: "Safely eject USB…", action: #selector(showEject), keyEquivalent: "")
         menu.addItem(withTitle: "Bridge settings…", action: #selector(showSettings), keyEquivalent: ",")
         menu.addItem(NSMenuItem.separator())
         updateMenu = menu.addItem(withTitle: "Checking update status…", action: nil, keyEquivalent: "")
@@ -98,6 +99,13 @@ final class LinkApplication: NSObject, NSApplicationDelegate {
     @objc private func showDashboard() { ensureEngine { self.openDashboard() } }
     @objc private func showSettings() { ensureEngine { NSWorkspace.shared.open(self.dashboard.appendingPathComponent("settings")) } }
     @objc private func showUSB() { ensureEngine { NSWorkspace.shared.open(self.dashboard.appendingPathComponent("usb")) } }
+    @objc private func showEject() {
+        ensureEngine {
+            var destination = URLComponents(url: self.dashboard.appendingPathComponent("usb"), resolvingAgainstBaseURL: false)!
+            destination.fragment = "eject"
+            if let url = destination.url { NSWorkspace.shared.open(url) }
+        }
+    }
     @objc private func checkUpdates() { action("api/desktop/check-update") }
     @objc private func toggleStartup() {
         let enabled = startupMenu.state != .on

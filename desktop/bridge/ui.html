@@ -223,7 +223,7 @@
                 ><button id="receive">Receive export</button>
               </details>
             </section>
-            <section class="card">
+            <section class="card" id="usb-drive-card">
               <div class="section-heading">
                 <span class="step">2</span>
                 <div>
@@ -260,9 +260,11 @@
                 <button id="write" class="primary" disabled>
                   <span class="icon" data-icon="usb"></span>Write to USB</button
                 ><button id="cancel-transfer" hidden>Cancel transfer</button>
+                <button id="eject" disabled>Safely eject USB</button>
               </div>
               <p class="field-hint" id="transfer-progress" role="status">
-                Safely eject the drive after the transfer completes.
+                After verification completes, choose Safely eject USB before
+                unplugging the drive.
               </p>
             </section>
           </div>

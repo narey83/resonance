@@ -44,6 +44,7 @@ func runDesktop(ctx context.Context, h *helper, address string) {
 		status.Disable()
 		open := systray.AddMenuItem("Open dashboard", "")
 		usb := systray.AddMenuItem("USB export", "")
+		eject := systray.AddMenuItem("Safely eject USB…", "Choose a USB drive for safe removal")
 		settings := systray.AddMenuItem("Bridge settings", "")
 		update := systray.AddMenuItem("Checking update status…", "")
 		update.Disable()
@@ -63,6 +64,8 @@ func runDesktop(ctx context.Context, h *helper, address string) {
 					openDashboard("http://" + address + "/")
 				case <-usb.ClickedCh:
 					openDashboard("http://" + address + "/usb")
+				case <-eject.ClickedCh:
+					openDashboard("http://" + address + "/usb#eject")
 				case <-settings.ClickedCh:
 					openDashboard("http://" + address + "/settings")
 				case <-check.ClickedCh:

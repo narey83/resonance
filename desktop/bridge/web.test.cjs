@@ -58,6 +58,7 @@ function launch(t, page, options = {}) {
     error: "",
   };
   const transfer = options.transfer || null;
+  let ejected = false;
   w.fetch = async (url, request = {}) => {
     const body = request.body ? JSON.parse(request.body) : null;
     calls.push({ url, method: request.method || "GET", body });
@@ -86,15 +87,22 @@ function launch(t, page, options = {}) {
     } else if (url === "/api/interfaces")
       data = [{ name: "Ethernet", ip: "192.168.1.2" }];
     else if (url === "/api/usb/status") data = { transfer };
-    else if (url === "/api/usb/drives")
-      data = [
-        {
-          id: "test-drive",
-          path: "/media/Test USB",
-          label: "Test USB",
-          filesystem: "exfat",
-        },
-      ];
+    else if (url === "/api/usb/eject") {
+      if (options.ejectError)
+        return { ok: false, json: async () => ({ error: options.ejectError }) };
+      ejected = true;
+      data = { ejected: true };
+    } else if (url === "/api/usb/drives")
+      data = ejected
+        ? []
+        : [
+            {
+              id: "test-drive",
+              path: "/media/Test USB",
+              label: "Test USB",
+              filesystem: "exfat",
+            },
+          ];
     else if (url === "/api/start") data = state;
     else if (url === "/api/usb/write") data = { writing: true };
     else throw Error("Unexpected endpoint " + url);
@@ -333,4 +341,65 @@ test("Daylight and AMOLED use the web workspace palette overrides", () => {
         `${theme} ${token} differs from Resonance`,
       );
   }
+});
+
+test("USB safe eject works without a new export or write confirmation", async (t) => {
+  const { w, document: d, calls } = launch(t, "/usb");
+  await until(() => d.querySelector("#drive").options.length === 2);
+  assert.equal(d.querySelector("#eject").disabled, true);
+  const drive = d.querySelector("#drive");
+  drive.value = "test-drive";
+  drive.dispatchEvent(new w.Event("change"));
+  assert.equal(d.querySelector("#confirm").checked, false);
+  assert.equal(d.querySelector("#eject").disabled, false);
+  d.querySelector("#eject").click();
+  await until(
+    () =>
+      d.querySelector("#drive").options.length === 1 &&
+      calls.some((c) => c.url === "/api/usb/eject"),
+  );
+  assert.deepEqual(calls.find((c) => c.url === "/api/usb/eject").body, {
+    id: "test-drive",
+  });
+  await until(() =>
+    d.querySelector("#feedback").textContent.includes("safely ejected"),
+  );
+  assert.equal(d.querySelector("#eject").disabled, true);
+});
+test("USB eject remains disabled during a transfer", async (t) => {
+  for (const status of ["downloading", "writing"]) {
+    const {
+      w,
+      document: d,
+      calls,
+    } = launch(t, "/usb", { transfer: { name: "Set", tracks: 15, status } });
+    await until(() => d.querySelector("#drive").options.length === 2);
+    const drive = d.querySelector("#drive");
+    drive.value = "test-drive";
+    drive.dispatchEvent(new w.Event("change"));
+    assert.equal(d.querySelector("#eject").disabled, true);
+    d.querySelector("#eject").click();
+    assert.equal(
+      calls.some((c) => c.url === "/api/usb/eject"),
+      false,
+    );
+  }
+});
+test("USB eject failures preserve the error and refresh mounted drives", async (t) => {
+  const {
+    w,
+    document: d,
+    calls,
+  } = launch(t, "/usb", { ejectError: "Drive is in use" });
+  await until(() => d.querySelector("#drive").options.length === 2);
+  const drive = d.querySelector("#drive");
+  drive.value = "test-drive";
+  drive.dispatchEvent(new w.Event("change"));
+  d.querySelector("#eject").click();
+  await until(() =>
+    d.querySelector("#error").textContent.includes("Drive is in use"),
+  );
+  assert.equal(d.querySelector("#drive").options.length, 2);
+  assert.ok(calls.filter((c) => c.url === "/api/usb/drives").length >= 2);
+  assert.equal(d.querySelector("#feedback").textContent, "");
 });

@@ -206,3 +206,12 @@
   .dj-workspace .media-player { display: flex; flex-direction: column; }
   .dj-workspace .media-player-bar { order: -1; flex-shrink: 0; }
 }
+
+/* Export actions remain reachable at narrow interface sizes. */
+.dj-workspace-header--export { flex-wrap: wrap; }
+.dj-workspace-header--export .dj-workspace-heading { min-width: 160px; }
+.dj-workspace-header--export .dj-workspace-actions { flex-wrap: wrap; }
+@media (max-width: 600px) {
+  .dj-workspace-header--export .dj-workspace-actions { width: 100%; }
+  .dj-workspace-header--export .dj-workspace-actions a { min-height: 36px; }
+}

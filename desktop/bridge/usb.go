@@ -17,16 +17,17 @@ import (
 )
 
 type usbTransfer struct {
-	Done        chan struct{}      `json:"-"`
-	Status      string             `json:"status"`
-	Error       string             `json:"error"`
-	Name        string             `json:"name"`
-	Tracks      int                `json:"tracks"`
-	Destination string             `json:"destination,omitempty"`
-	Prepared    int                `json:"prepared"`
-	Total       int                `json:"total"`
-	Bundle      *bundle            `json:"-"`
-	Cancel      context.CancelFunc `json:"-"`
+	Done          chan struct{}      `json:"-"`
+	Status        string             `json:"status"`
+	Error         string             `json:"error"`
+	Name          string             `json:"name"`
+	Tracks        int                `json:"tracks"`
+	Destination   string             `json:"destination,omitempty"`
+	DestinationID string             `json:"destinationId,omitempty"`
+	Prepared      int                `json:"prepared"`
+	Total         int                `json:"total"`
+	Bundle        *bundle            `json:"-"`
+	Cancel        context.CancelFunc `json:"-"`
 }
 
 func isUSB(c connection) bool {
@@ -366,7 +367,7 @@ func (h *helper) usbRoutes(mux *http.ServeMux) {
 		jsonReply(w, 200, map[string]any{"transfer": h.USB})
 	})
 	mux.HandleFunc("GET /api/usb/drives", func(w http.ResponseWriter, r *http.Request) {
-		v, e := usbVolumes()
+		v, e := h.usbDeviceManager().List()
 		if e != nil {
 			jsonReply(w, 503, map[string]string{"error": e.Error()})
 			return
@@ -385,7 +386,33 @@ func (h *helper) usbRoutes(mux *http.ServeMux) {
 		}
 		jsonReply(w, 200, map[string]bool{"accepted": true})
 	})
+	mux.HandleFunc("POST /api/usb/eject", func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			ID string `json:"id"`
+		}
+		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&request) != nil || len(request.ID) != 64 {
+			jsonReply(w, 400, map[string]string{"error": "select a mounted USB drive to safely eject"})
+			return
+		}
+		if _, err := hex.DecodeString(request.ID); err != nil {
+			jsonReply(w, 400, map[string]string{"error": "invalid USB drive selection"})
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		volume, err := h.ejectUSB(ctx, request.ID)
+		if err != nil {
+			jsonReply(w, 409, map[string]string{"error": err.Error()})
+			return
+		}
+		jsonReply(w, 200, map[string]any{"ejected": true, "label": volume.Label})
+	})
 	mux.HandleFunc("POST /api/usb/write", func(w http.ResponseWriter, r *http.Request) {
+		if !h.operation.TryLock() {
+			jsonReply(w, 409, map[string]string{"error": "another Bridge operation is in progress"})
+			return
+		}
+		defer h.operation.Unlock()
 		var v struct {
 			ID      string `json:"id"`
 			Confirm bool   `json:"confirm"`
@@ -394,7 +421,7 @@ func (h *helper) usbRoutes(mux *http.ServeMux) {
 			jsonReply(w, 400, map[string]string{"error": "confirm the selected USB destination first"})
 			return
 		}
-		vol, e := findUSBVolume(v.ID)
+		vol, e := h.findUSBVolume(v.ID)
 		if e != nil {
 			jsonReply(w, 409, map[string]string{"error": e.Error()})
 			return
@@ -405,7 +432,7 @@ func (h *helper) usbRoutes(mux *http.ServeMux) {
 		}
 		h.mu.Lock()
 		u := h.USB
-		if h.Updating || u == nil || u.Bundle == nil || (u.Status != "ready" && u.Status != "completed" && u.Status != "failed") {
+		if h.Updating || u == nil || u.Bundle == nil || (u.Status != "ready" && u.Status != "completed" && u.Status != "failed" && u.Status != "ejected") {
 			h.mu.Unlock()
 			jsonReply(w, 409, map[string]string{"error": "wait for the export download to complete"})
 			return
@@ -417,13 +444,14 @@ func (h *helper) usbRoutes(mux *http.ServeMux) {
 		h.Diagnostics.event("info", "usb.writing", nil)
 		u.Error = ""
 		u.Destination = vol.Path
+		u.DestinationID = vol.ID
 		u.Prepared = 0
 		h.mu.Unlock()
 		go func() {
 			defer close(u.Done)
 			defer cancel()
 			e := writeUSB(ctx, u.Bundle, vol.Path, func() error {
-				current, e := findUSBVolume(v.ID)
+				current, e := h.findUSBVolume(v.ID)
 				if e != nil {
 					return e
 				}
