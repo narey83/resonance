@@ -28,6 +28,7 @@ export function StudioRack({ embedded = false }: { embedded?: boolean }) {
     ...[...STUDIO_PRESETS.filter(preset => preset.tones), ...STUDIO_PRESETS.filter(preset => !preset.tones)].map(preset => ({ ...preset, id: `builtin:${preset.name}` })),
     ...state.presets.map(preset => ({ ...preset, id: `saved:${preset.name}` })),
   ];
+  const presetRows = Array.from({ length: Math.ceil(presets.length / 2) }, (_, row) => presets.slice(row * 2, row * 2 + 2));
   const selectedPreset = presets.find(preset => preset.id === state.selectedPresetId);
   const button = { borderColor: c.borderStrong, backgroundColor: c.bgSurface };
   const level = (label: string, value: number, change: (value: number) => void, disabled: boolean, step = .05, min = 0, max = 1, db = false) => <View style={s.row}>
@@ -53,7 +54,7 @@ export function StudioRack({ embedded = false }: { embedded?: boolean }) {
     </View>
     <Text style={[s.small, muted]}>A/B matches levels by attenuation, never extra gain. Extreme ranges reset when the app restarts. Your handset volume still controls listening level.</Text>
     <Text style={[s.kicker, muted]}>STARTING POINTS</Text>
-    <View style={s.wrap}>{presets.map(preset => {
+    <View style={s.presetGrid}>{presetRows.map(row => <View key={row[0].id} style={s.presetRow}>{row.map(preset => {
       const presetUsable = usable && (studio.enhancedAvailable || !needsStudioTone(preset, state.outputProfile));
       const selected = presetUsable && state.enabled && !state.bypass && preset.id === state.selectedPresetId;
       return <Pressable key={preset.id} accessibilityRole="button" accessibilityLabel={preset.name} accessibilityState={{ selected, disabled: !presetUsable }} disabled={!presetUsable} onPress={() => {
@@ -62,9 +63,9 @@ export function StudioRack({ embedded = false }: { embedded?: boolean }) {
         state.apply(preset.values, preset.id, presetTone(preset, state.outputProfile));
         state.setEnabled(true);
       }} style={[s.chip, button, selected && { borderColor: c.accent, backgroundColor: c.bgElevated }]}>
-        <Text style={[text, selected && { color: c.accent, fontWeight: '700' }]}>{preset.name}</Text>
+        <Text style={[s.presetLabel, text, selected && { color: c.accent, fontWeight: '700' }]}>{preset.name}</Text>
       </Pressable>;
-    })}</View>
+    })}{row.length === 1 && <View style={s.grow} />}</View>)}</View>
     <Text accessibilityLiveRegion="polite" style={[s.small, muted]}>{selectedPreset ? `${selectedPreset.name} · ${!usable ? 'Unavailable on this playback route' : needsStudioTone(selectedPreset, state.outputProfile) && !studio.enhancedAvailable ? 'Needs an updated native app build' : !state.enabled ? 'Rack off' : state.bypass ? 'Bypassed for dry comparison' : 'Active'}` : 'Custom settings · choose a starting point or save your rack.'}</Text>
     <View style={[s.panel, button]}>{level('Preset amount', state.amount, state.setAmount, !toneUsable)}<Text style={[s.small, muted]}>Blend the strength of the whole preset. At 0%, the effects and EQ are neutral; the peak guard stays on.</Text></View>
     <View style={s.row}>{(['tone', 'mastering', 'creative'] as const).map(group => <Pressable key={group} accessibilityRole="tab" accessibilityState={{ selected: section === group }} style={[s.action, s.grow, { borderColor: section === group ? c.accent : c.borderStrong }]} onPress={() => setSection(group)}><Text style={[s.kicker, { color: section === group ? c.accent : c.textMuted }]}>{group.toUpperCase()}</Text></Pressable>)}</View>
@@ -85,4 +86,4 @@ export function StudioRack({ embedded = false }: { embedded?: boolean }) {
 }
 export default function StudioScreen() { return <StudioRack />; }
 
-const s = StyleSheet.create({ screen: { padding: 20, gap: 16, paddingBottom: 110 }, kicker: { fontSize: 10, ...Editorial.label }, title: { fontSize: 36, ...Editorial.heading }, copy: { fontSize: 14, lineHeight: 21 }, small: { fontSize: 11, lineHeight: 17 }, label: { fontSize: 14, fontWeight: '600' }, row: { flexDirection: 'row', alignItems: 'center', gap: 12 }, grow: { flex: 1 }, panel: { borderWidth: 1, padding: 16, gap: 14, ...Editorial.panel }, action: { borderWidth: 1, padding: 13, alignItems: 'center', justifyContent: 'center', minHeight: 48 }, step: { borderWidth: 1, width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }, chip: { borderWidth: 1, minHeight: 48, justifyContent: 'center', paddingVertical: 10, paddingHorizontal: 12, ...Editorial.control }, wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, readout: { fontVariant: ['tabular-nums'], fontFamily: Typography.mono, fontSize: 15, paddingVertical: 6 }, amountTrack: { height: 5, overflow: 'hidden' }, notice: { padding: 14, borderWidth: 1, fontSize: 13, lineHeight: 20 }, input: { borderBottomWidth: 1, paddingVertical: 12, fontSize: 14, ...Editorial.control } });
+const s = StyleSheet.create({ screen: { padding: 20, gap: 16, paddingBottom: 110 }, kicker: { fontSize: 10, ...Editorial.label }, title: { fontSize: 36, ...Editorial.heading }, copy: { fontSize: 14, lineHeight: 21 }, small: { fontSize: 11, lineHeight: 17 }, label: { fontSize: 14, fontWeight: '600' }, row: { flexDirection: 'row', alignItems: 'center', gap: 12 }, grow: { flex: 1 }, panel: { borderWidth: 1, padding: 16, gap: 14, ...Editorial.panel }, action: { borderWidth: 1, padding: 13, alignItems: 'center', justifyContent: 'center', minHeight: 48 }, step: { borderWidth: 1, width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }, chip: { flex: 1, minWidth: 0, borderWidth: 1, minHeight: 56, alignItems: 'center', justifyContent: 'center', paddingVertical: 12, paddingHorizontal: 12, ...Editorial.control }, presetGrid: { gap: 12 }, presetRow: { flexDirection: 'row', gap: 12 }, presetLabel: { textAlign: 'center' }, readout: { fontVariant: ['tabular-nums'], fontFamily: Typography.mono, fontSize: 15, paddingVertical: 6 }, amountTrack: { height: 5, overflow: 'hidden' }, notice: { padding: 14, borderWidth: 1, fontSize: 13, lineHeight: 20 }, input: { borderBottomWidth: 1, paddingVertical: 12, fontSize: 14, ...Editorial.control } });
