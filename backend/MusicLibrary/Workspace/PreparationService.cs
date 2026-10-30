@@ -48,10 +48,11 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
     private int reconcileRequested = 1;
     private bool recoveryNeeded;
     public long LastCheckedAt { get; private set; }
-    public string WaitingReason => store.Paused ? "Paused after the current track"
+    public string DependencyError => analysis.ScanState.DependencyUnavailable ? analysis.ScanState.Error : null;
+    public string WaitingReason => DependencyError ?? (store.Paused ? "Paused after the current track"
         : FilesBeingUpdated ? "Waiting for metadata updates to finish"
         : analysis.PlaybackActive ? "Waiting for playback to go idle"
-        : analysis.ScanState.Scanning ? "Analysis is running" : null;
+        : analysis.ScanState.Scanning ? "Analysis is running" : null);
     private static long Now => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     private bool FilesBeingUpdated => library?.IsQueueActive("metadata") == true || library?.IsQueueActive("tag-sanitization") == true;
 
@@ -251,6 +252,17 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
         while (analysis.ScanState.Scanning)
         {
             await Task.Delay(500, ct);
+        }
+
+        if (analysis.ScanState.DependencyUnavailable)
+        {
+            store.Paused = true;
+            store.Put(item with
+            {
+                State = "failed", Attempts = Math.Max(0, item.Attempts - 1), NextAttemptAt = 0,
+                Detail = analysis.ScanState.Error, UpdatedAt = Now,
+            });
+            return;
         }
 
         track = Track(item.Path);

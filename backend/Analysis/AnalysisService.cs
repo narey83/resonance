@@ -464,6 +464,7 @@ namespace resonance.Analysis
         private async Task RunScanAsync(AnalysisScanRequest request, CancellationToken ct)
         {
             var queueRegistered = false;
+            string dependencyError = null;
             try
             {
                 // null  → scan all files
@@ -479,6 +480,28 @@ namespace resonance.Analysis
 
                 // Fetch the selection directly rather than listing the share and discarding it.
                 var tracks = (only == null ? GetAllTracks() : GetTracks(only)).ToList();
+                var required = tracks.Aggregate(AnalysisMetrics.None, (metrics, track) => metrics |
+                    (request.ResetAll || !request.SkipAnalysed ? request.Metrics : MissingMetrics(track, request.Metrics)));
+                var options = Options.CurrentValue.Analysis;
+                string ffmpegPath = null;
+                if (required != AnalysisMetrics.None)
+                {
+                    // Check dependencies before resetting saved metrics or decoding any audio.
+                    SetState(true, false, false, tracks.Count, 0, 0, 0, metrics: request.Metrics.ToString());
+                    if ((required & (AnalysisMetrics.Bpm | AnalysisMetrics.Key)) != 0)
+                    {
+                        await Analyzer.CheckEssentiaAsync(options, ct);
+                    }
+
+                    try
+                    {
+                        ffmpegPath = await Ffmpeg.GetFfmpegPathAsync(ct);
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    {
+                        throw new AnalysisDependencyException("Basic analysis stopped: FFmpeg is unavailable. Install or configure the audio decoder.", exception);
+                    }
+                }
 
                 if (request.ResetAll)
                 {
@@ -571,20 +594,6 @@ namespace resonance.Analysis
                 MusicLibrary?.RegisterQueue("analysis");
                 queueRegistered = true;
 
-                string ffmpegPath;
-                try
-                {
-                    ffmpegPath = await Ffmpeg.GetFfmpegPathAsync(ct);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warning("Could not locate ffmpeg — analysis scan aborted: {Error}", ex.Message);
-                    SetState(false, false, false, 0, 0, 0, 0);
-                    return;
-                }
-
-                var options = Options.CurrentValue.Analysis;
-
                 // Bounded so the queue does not materialise every pending track's state at once
                 // on a library of tens of thousands of files.
                 var channel = Channel.CreateBounded<(TrackAnalysisInfo Track, AnalysisMetrics Metrics)>(
@@ -602,6 +611,8 @@ namespace resonance.Analysis
                 {
                     await foreach (var (track, metrics) in channel.Reader.ReadAllAsync(ct))
                     {
+                        ct.ThrowIfCancellationRequested();
+
                         // The share repository hands back paths in their stored form, which is
                         // relative to the music root; ffmpeg needs the real one.
                         var path = MusicPath.ToAbsolute(track.OriginalFilename);
@@ -654,13 +665,28 @@ namespace resonance.Analysis
                                     // lambda below, whose own Enumerable.Range parameter is named `_`.
                                     var broadcastTask = Hub?.BroadcastLibraryUpdatedAsync(0, 1, 0);
                                 }
+                            }
 
+                            var missing = result.MissingMetrics(metrics);
+                            if (missing != AnalysisMetrics.None)
+                            {
+                                Log.Warning("Analysis incomplete for '{File}'; missing requested metrics: {Metrics}", track.Filename, missing);
+                                Interlocked.Increment(ref failed);
+                            }
+                            else if (produced)
+                            {
                                 Interlocked.Increment(ref analysed);
                             }
                             else
                             {
                                 Interlocked.Increment(ref skipped);
                             }
+                        }
+                        catch (AnalysisDependencyException exception)
+                        {
+                            Interlocked.CompareExchange(ref dependencyError, exception.Message, null);
+                            Interlocked.Increment(ref failed);
+                            Cts.Cancel();
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException)
                         {
@@ -697,6 +723,9 @@ namespace resonance.Analysis
                         await channel.Writer.WriteAsync(item, ct);
                     }
                 }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                { /* Wait for every worker below before releasing the scan lock. */
+                }
                 finally
                 {
                     channel.Writer.Complete();
@@ -710,6 +739,13 @@ namespace resonance.Analysis
                 { /* expected on cancel */
                 }
 
+                if (dependencyError != null)
+                {
+                    SetState(false, false, false, total, analysed, skipped, failed,
+                        error: dependencyError, dependencyUnavailable: true);
+                    return;
+                }
+
                 if (!ct.IsCancellationRequested && request.Enhanced)
                 {
                     await RunEnhanced(tracks, ct, !request.SkipAnalysed || request.ResetAll);
@@ -717,16 +753,23 @@ namespace resonance.Analysis
 
                 var cancelled = ct.IsCancellationRequested;
                 SetState(false, !cancelled, cancelled, total, analysed, skipped, failed,
-                    cancelled ? CurrentState.Progress : 1.0);
+                    cancelled ? CurrentState.Progress : 1.0,
+                    error: failed > 0 ? $"Analysis finished with {failed} failed track(s). Required measurements were not completed; existing results were preserved. See the analysis log for details." : null);
                 Log.Information("Analysis scan complete. Analysed: {A}, Skipped: {S}, Failed: {F}",
                     analysed, skipped, failed);
 
                 // Guarantees a change made right before the scan ended isn't left sitting inside
                 // the throttle window above with nothing left running to eventually flush it.
-                if (analysed > 0)
+                if (analysed + failed > 0)
                 {
                     _ = Hub?.BroadcastLibraryUpdatedAsync(0, 1, 0);
                 }
+            }
+            catch (AnalysisDependencyException exception)
+            {
+                Log.Warning(exception, "Basic analysis stopped because a dependency is unavailable");
+                SetState(false, false, false, CurrentState.Total, CurrentState.Analysed, CurrentState.Skipped,
+                    Math.Max(1, CurrentState.Failed), error: exception.Message, dependencyUnavailable: true);
             }
             catch (OperationCanceledException)
             {
@@ -736,6 +779,7 @@ namespace resonance.Analysis
             {
                 Log.Error(ex, "Analysis scan failed unexpectedly");
                 SetState(false, false, false, CurrentState.Total, CurrentState.Analysed, CurrentState.Skipped, CurrentState.Failed);
+                CurrentState = CurrentState with { Error = "Analysis stopped unexpectedly. Existing results were preserved; see the analysis log for details." };
             }
             finally
             {
@@ -807,7 +851,8 @@ namespace resonance.Analysis
 
         private void SetState(
             bool scanning, bool completed, bool cancelled, int total, int analysed, int skipped, int failed,
-            double progress = 0, int inFlight = 0, string metrics = null, IReadOnlyList<string> inFlightPaths = null)
+            double progress = 0, int inFlight = 0, string metrics = null, IReadOnlyList<string> inFlightPaths = null,
+            string error = null, bool dependencyUnavailable = false)
         {
             CurrentState = new AnalysisScanState(
                 scanning, completed, cancelled, total, analysed, skipped, failed, progress, inFlight,
@@ -817,6 +862,8 @@ namespace resonance.Analysis
                 EnhancedCompleted = CurrentState.EnhancedCompleted,
                 EnhancedFailed = CurrentState.EnhancedFailed,
                 EnhancedPath = CurrentState.EnhancedPath,
+                Error = error,
+                DependencyUnavailable = dependencyUnavailable,
             };
         }
     }

@@ -5,7 +5,7 @@ import {
   retryPreparation,
 } from '../../../lib/libraryWorkspace';
 import { usePagedList } from '../../../lib/usePagedList';
-import PreparationView from './PreparationView';
+import PreparationView, { PreparationHomeCard } from './PreparationView';
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { act, Simulate } from 'react-dom/test-utils';
@@ -111,6 +111,27 @@ describe('Preparation workspace', () => {
         }),
       ],
       0,
+    );
+  });
+
+  it('shows the missing-package stop reason on Home and in Preparation', async () => {
+    expect.hasAssertions();
+    const analysisError =
+      'Basic analysis stopped: required Essentia packages are missing.';
+    usePreparationStatus.mockReturnValue({
+      status: { total: 1, paused: true, counts: { failed: 1 }, analysisError },
+      refresh,
+    });
+    await render();
+    expect(container.querySelector('[role="alert"]').textContent).toBe(
+      analysisError,
+    );
+    act(() => {
+      ReactDOM.render(<PreparationHomeCard />, container);
+    });
+    expect(container.textContent).toContain('Analysis stopped');
+    expect(container.querySelector('[role="alert"]').textContent).toBe(
+      analysisError,
     );
   });
   it('shows an analysed library as up to date during playback', async () => {

@@ -1,6 +1,7 @@
 namespace Resonance.Tests.Analysis;
 
 using System.Reflection;
+using Microsoft.Extensions.Options;
 using global::resonance.Analysis;
 using global::resonance.Common;
 using global::resonance.MusicLibrary;
@@ -17,6 +18,7 @@ public sealed class AnalysisResultPersistenceTests : IDisposable
     private readonly TrackAnalysisInfo track;
     private readonly AnalysisService service;
     private readonly ShareProxy proxy;
+    private readonly IShareService shares;
     private int writes;
     private Action<FileTags> write = _ => { };
 
@@ -33,7 +35,7 @@ public sealed class AnalysisResultPersistenceTests : IDisposable
         IndexTrack();
         track = new TrackAnalysisInfo("library\\track #1.flac", MusicPath.ToRelative(path), root, Path.GetFileName(path), "flac", null,
             string.Empty, false, null, "Artist", "Track", "Album");
-        var shares = DispatchProxy.Create<IShareService, ShareProxy>();
+        shares = DispatchProxy.Create<IShareService, ShareProxy>();
         proxy = (ShareProxy)(object)shares;
         proxy.Call = (method, args) =>
         {
@@ -100,6 +102,57 @@ public sealed class AnalysisResultPersistenceTests : IDisposable
         Assert.Same(failure, Assert.Throws<IOException>(() => service.PersistAnalysisResult(track, Result(), writeToTags: true)));
         Assert.Empty(store.GetDetectedTags());
         Assert.Null(store.GetWaveform(path));
+    }
+
+    [Fact]
+    public async Task MissingPackagesStopAResetBeforeClearingAnySavedAnalysisOrChangingTags()
+    {
+        service.PersistAnalysisResult(track, Result(), writeToTags: false);
+        var original = File.ReadAllBytes(path);
+        proxy.Call = (method, _) => method.Name == "FindFiles"
+            ? new[] { new TaggedFile(track.MaskedFilename, track.OriginalFilename, root, track.Filename, "flac", null!) }
+            : throw new InvalidOperationException("No file tags may be touched before dependency validation");
+        var monitor = DispatchProxy.Create<IOptionsMonitor<global::resonance.Options>, ShareProxy>();
+        ((ShareProxy)(object)monitor).Call = (_, _) => new global::resonance.Options
+        {
+            Analysis = new() { EssentiaPython = Path.Combine(root, "missing-python") },
+        };
+        var scan = new AnalysisService(shares, monitor, null!, store);
+        await scan.StartScanAsync(new(ResetAll: true, OnlyFilenames: [track.MaskedFilename]));
+        for (var i = 0; i < 500 && scan.ScanState.Scanning; i++) await Task.Delay(10);
+        Assert.False(scan.ScanState.Scanning);
+        Assert.False(scan.ScanState.Completed);
+        Assert.False(scan.ScanState.Cancelled);
+        Assert.True(scan.ScanState.DependencyUnavailable);
+        Assert.Contains("BPM/key", scan.ScanState.Error);
+        Assert.Equal(1, scan.ScanState.Failed);
+        Assert.Equal(0, scan.ScanState.Analysed);
+        Assert.Equal(0, writes);
+        Assert.Equal(original, File.ReadAllBytes(path));
+        AssertCached();
+    }
+
+    [Fact]
+    public async Task CachedCompleteAnalysisDoesNotRequireLoadingMissingDetectorPackages()
+    {
+        service.PersistAnalysisResult(track, Result(), writeToTags: false);
+        proxy.Call = (method, _) => method.Name == "FindFiles"
+            ? new[] { new TaggedFile(track.MaskedFilename, track.OriginalFilename, root, track.Filename, "flac", null!) }
+            : throw new InvalidOperationException("A cached result should not change tags");
+        var monitor = DispatchProxy.Create<IOptionsMonitor<global::resonance.Options>, ShareProxy>();
+        ((ShareProxy)(object)monitor).Call = (_, _) => new global::resonance.Options
+        {
+            Analysis = new() { EssentiaPython = Path.Combine(root, "missing-python") },
+        };
+        var scan = new AnalysisService(shares, monitor, null!, store);
+        await scan.StartScanAsync(new(OnlyFilenames: [track.MaskedFilename]));
+        for (var i = 0; i < 500 && scan.ScanState.Scanning; i++) await Task.Delay(10);
+        Assert.False(scan.ScanState.Scanning);
+        Assert.True(scan.ScanState.Completed);
+        Assert.False(scan.ScanState.DependencyUnavailable);
+        Assert.Null(scan.ScanState.Error);
+        Assert.Equal(0, scan.ScanState.Failed);
+        AssertCached();
     }
 
     private void IndexTrack()

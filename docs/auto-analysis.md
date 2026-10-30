@@ -34,6 +34,22 @@ Essentia Python environment; waveform and loudness still work with ffmpeg when t
 environment is missing. Enhanced model assets and environments must be installed
 separately. See [worker configuration](dj-workspace.md#independent-enhanced-analysis).
 
+Before decoding or clearing saved results, a basic scan checks any required BPM/key
+packages and the decoder. A missing interpreter or broken package environment stops
+the entire scan with an actionable error. If a dependency disappears during a scan,
+the remaining work stops too. Automatic preparation pauses on this failure instead
+of consuming every track's retry budget. The error appears on Library Home,
+Preparation and Analysis. Repair the environment, then explicitly resume/retry.
+Results missing a requested measurement count as failed, even if waveform or
+loudness was produced; partial results are retained without being called complete.
+
+Native backend publishes include the [basic-analysis provisioning kit](../tools/native-analysis/README.md).
+Its pinned installer and real detector preflight are required deployment steps;
+the configured interpreter lives outside application releases and its path is
+saved in persistent settings. A native host must not inherit Docker's
+`/opt/keyenv/bin/python` path without provisioning it. Existing waveform/loudness
+results are retained when filling missing BPM/key; no full-library reset is needed.
+
 ## Source tags and saved results
 
 Automatic preparation uses the same basic analysis options as a manual scan.

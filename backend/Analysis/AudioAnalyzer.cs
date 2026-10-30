@@ -364,11 +364,11 @@ namespace resonance.Analysis
             {
                 waveform = ComputeBands(pcm, SampleRate, BarsForDuration(pcm.Length, SampleRate))
                     with
-                    {
-                        DurationSeconds = pcm.Length / (double)SampleRate,
-                        SampleRate = SampleRate,
-                        WaveformVersion = CurrentWaveformVersion,
-                    };
+                {
+                    DurationSeconds = pcm.Length / (double)SampleRate,
+                    SampleRate = SampleRate,
+                    WaveformVersion = CurrentWaveformVersion,
+                };
             }
 
             uint? bpm = null;
@@ -458,6 +458,65 @@ namespace resonance.Analysis
         // measured a 6-minute track in ~64s against ebur128's ~9s (the rest of an 80s pass being
         // the decode itself). loudnorm is a normalisation filter whose measurement pass does far
         // more work than the meter actually wanted here.
+        internal async Task CheckEssentiaAsync(resonance.Options.AnalysisOptions options, CancellationToken ct)
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = options.EssentiaPython,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            psi.ArgumentList.Add("-c");
+            psi.ArgumentList.Add("import sys, numpy, essentia.standard as es; es.RhythmExtractor2013(method=sys.argv[1]); es.KeyExtractor(profileType=sys.argv[2]); print('RESONANCE_ESSENTIA_READY')");
+            psi.ArgumentList.Add(options.BpmMethod);
+            psi.ArgumentList.Add(options.EssentiaProfile);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
+            using var process = new Process { StartInfo = psi };
+            try
+            {
+                process.Start();
+            }
+            catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or InvalidOperationException)
+            {
+                throw new AnalysisDependencyException(
+                    $"Basic analysis stopped: the BPM/key detector cannot start at '{options.EssentiaPython}'. Install the native analysis packages and configure analysis.essentia_python.", exception);
+            }
+
+            try
+            {
+                var stdout = process.StandardOutput.ReadToEndAsync(linked.Token);
+                var stderr = process.StandardError.ReadToEndAsync(linked.Token);
+                await process.WaitForExitAsync(linked.Token);
+                var output = await stdout;
+                var error = await stderr;
+                if (process.ExitCode != 0 || !output.Split('\n').Any(line => line.Trim() == "RESONANCE_ESSENTIA_READY"))
+                {
+                    Log.Warning("BPM/key dependency preflight failed: {Error}", error.Trim());
+                    throw new AnalysisDependencyException("Basic analysis stopped: required BPM/key packages (Essentia and NumPy) are missing or could not load. Repair the configured analysis Python environment.");
+                }
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                throw new AnalysisDependencyException("Basic analysis stopped: the BPM/key package check timed out. Repair the configured analysis Python environment.");
+            }
+            finally
+            {
+                try
+                {
+                    if (!process.HasExited)
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                }
+                catch (InvalidOperationException)
+                { /* Already exited. */
+                }
+            }
+        }
+
         private static string BuildArguments(string filePath, bool wantPcm, bool wantLoudness, double seconds)
         {
             // ebur128 reports on stderr, so it must not run at -loglevel quiet.
@@ -683,9 +742,8 @@ namespace resonance.Analysis
             }
             catch (Exception ex)
             {
-                Log.Warning("Essentia is unavailable at '{Python}' — BPM and key will be skipped: {Error}",
-                    options.EssentiaPython, ex.Message);
-                return null;
+                throw new AnalysisDependencyException(
+                    $"Basic analysis stopped: the BPM/key detector is unavailable at '{options.EssentiaPython}'. Repair the native analysis packages.", ex);
             }
 
             // Only the leading AnalysisSeconds are needed; sending the whole track would
@@ -714,7 +772,7 @@ namespace resonance.Analysis
                 }
 
                 Log.Warning("Essentia returned no result: {Error}", stderr.Trim());
-                return null;
+                throw new AnalysisDependencyException("Basic analysis stopped: the BPM/key detector returned no result. Check the installed Essentia and NumPy packages.");
             }
             catch (OperationCanceledException)
             {
@@ -726,13 +784,18 @@ namespace resonance.Analysis
                 { /* already gone */
                 }
 
+                if (!ct.IsCancellationRequested)
+                {
+                    throw new AnalysisDependencyException("Basic analysis stopped: the BPM/key detector timed out. Check the analysis Python environment.");
+                }
+
                 throw;
             }
             catch (IOException)
             {
                 // Essentia died before consuming the PCM; its stderr explains why.
                 Log.Warning("Essentia exited early: {Error}", (await stderrTask).Trim());
-                return null;
+                throw new AnalysisDependencyException("Basic analysis stopped: the BPM/key detector exited unexpectedly. Check the installed Essentia and NumPy packages.");
             }
         }
     }

@@ -191,7 +191,36 @@ namespace resonance.Analysis
         double? BeatOffsetSeconds = null,
         float[] Beats = null,
         double? DownbeatOffsetSeconds = null,
-        double? DownbeatConfidence = null);
+        double? DownbeatConfidence = null)
+    {
+        /// <summary>Returns requested measurements that this result did not produce.</summary>
+        /// <returns>The missing requested metrics, or <see cref="AnalysisMetrics.None"/>.</returns>
+        public AnalysisMetrics MissingMetrics(AnalysisMetrics requested)
+        {
+            var missing = AnalysisMetrics.None;
+            if (requested.HasFlag(AnalysisMetrics.Bpm) && Bpm is not > 0)
+            {
+                missing |= AnalysisMetrics.Bpm;
+            }
+
+            if (requested.HasFlag(AnalysisMetrics.Key) && string.IsNullOrWhiteSpace(Key))
+            {
+                missing |= AnalysisMetrics.Key;
+            }
+
+            if (requested.HasFlag(AnalysisMetrics.Waveform) && Waveform == null)
+            {
+                missing |= AnalysisMetrics.Waveform;
+            }
+
+            if (requested.HasFlag(AnalysisMetrics.Loudness) && Loudness == null)
+            {
+                missing |= AnalysisMetrics.Loudness;
+            }
+
+            return missing;
+        }
+    }
 
     /// <summary>
     ///     State of an in-progress analysis scan.
@@ -218,6 +247,8 @@ namespace resonance.Analysis
         public int EnhancedCompleted { get; init; }
         public int EnhancedFailed { get; init; }
         public string EnhancedPath { get; init; }
+        public string Error { get; init; }
+        public bool DependencyUnavailable { get; init; }
     }
 
     /// <summary>Per-track analysis status, one row per audio file in the library.</summary>
@@ -237,7 +268,7 @@ namespace resonance.Analysis
     {
         public bool HasBpm => Bpm.HasValue && Bpm.Value != 0;
 
-        public bool HasKey => !string.IsNullOrEmpty(Key);
+        public bool HasKey => !string.IsNullOrWhiteSpace(Key);
 
         public bool HasLoudness => Lufs.HasValue;
     }

@@ -82,10 +82,24 @@ rewrite or database replacement.
 
 ## Backend deployment and state preservation
 
+Native basic analysis is a required deployment capability. Every backend publish
+includes `tools/native-analysis/`: use its hash-pinned provisioning command and
+real BPM/key detector preflight before declaring a native release ready. Read
+`tools/native-analysis/README.md`. Persist `analysis.essentia_python` through the
+settings API; never assume Docker's `/opt/keyenv/bin/python` exists on this host.
+The established persistent environment is
+`/home/narey/resonance-analysis/keyenv`; run the preflight against the interpreter
+configured in the running server. Preserve that environment across releases.
+Waveform/LUFS or an import-only test must not substitute for this gate. A missing
+or failing detector blocks readiness for deployment; do not silently ship partial
+basic analysis. Settings can reload without restarting the backend.
+
 Build on the dev laptop under the standing user restriction. Previous native Linux deployments use a self-contained
 `linux-x64` publish; inspect the current runtime/framework version and existing
 deployment records before choosing publish arguments. Keep all private settings,
 database files, cookies, signing material and application state outside artifacts.
+Use `/home/narey/.dotnet/dotnet` for the installed .NET 10 SDK (verify its version);
+the dev laptop's `/usr/bin/dotnet` currently selects SDK 9 and cannot build net10.0.
 
 For a backend restart, follow `docs/upload-peer-cooldown.md`: take a verified,
 consistent SQLite backup including committed WAL data, record queued upload IDs

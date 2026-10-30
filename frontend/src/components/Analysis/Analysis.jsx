@@ -844,9 +844,14 @@ const Analysis = () => {
       wasScanningRef.current = Boolean(state?.scanning);
       setScanState(state);
       // completion effect fires finalizeScan after this state update renders
-    } catch {
+    } catch (caughtError) {
       if (!mountedRef.current) return;
-      toast.error('Failed to start scan.');
+      const detail = caughtError?.response?.data;
+      toast.error(
+        (typeof detail === 'string' && detail) ||
+          detail?.message ||
+          'Failed to start scan.',
+      );
     }
   };
 
@@ -1142,6 +1147,7 @@ const Analysis = () => {
             <p>Key, tempo, waveform and loudness, organised by folder.</p>
           </div>
         </div>
+        {scanState?.error && <p role="alert">{scanState.error}</p>}
         {scanState?.enhancedTotal > 0 && (
           <p
             className="ka-enhanced-status"

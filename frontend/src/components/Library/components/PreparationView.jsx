@@ -58,15 +58,20 @@ export const PreparationHomeCard = ({ onCrates, onOpen }) => {
         <strong>
           {error
             ? 'Preparation status unavailable'
-            : !status
-              ? 'Checking your library…'
-              : status.paused
-                ? 'Preparation is paused'
-                : count.waiting || count.running
-                  ? `${count.waiting + count.running} tracks getting ready`
-                  : `${count.analysed} tracks analysed`}
+            : status?.analysisError
+              ? 'Analysis stopped'
+              : !status
+                ? 'Checking your library…'
+                : status.paused
+                  ? 'Preparation is paused'
+                  : count.waiting || count.running
+                    ? `${count.waiting + count.running} tracks getting ready`
+                    : `${count.analysed} tracks analysed`}
         </strong>
-        <p>Analysis and your existing enrichment, together in one view.</p>
+        <p role={status?.analysisError ? 'alert' : undefined}>
+          {status?.analysisError ||
+            'Analysis and your existing enrichment, together in one view.'}
+        </p>
       </div>
       <div className="workspace-actions">
         <button
@@ -151,6 +156,7 @@ const PreparationView = () => {
         </button>
       </header>
       <div className="preparation-overview">
+        {status?.analysisError && <p role="alert">{status.analysisError}</p>}
         <div className="preparation-progress-heading">
           <span
             className={`workspace-state ${status?.paused ? '' : 'is-complete'}`}

@@ -28,7 +28,7 @@ jest.mock('../../context/LibraryActivityContext', () => ({
 jest.mock('../../lib/analysis', () => ({
   METRICS: ['Key', 'Bpm'],
   startScan: jest.fn(),
-  getScanState: () => Promise.resolve({ scanning: false }),
+  getScanState: jest.fn(() => Promise.resolve({ scanning: false })),
 }));
 jest.mock('../../lib/musicLibrary', () => ({
   getAnalysisStats: () => Promise.resolve({ total: 3, complete: 0 }),
@@ -61,6 +61,7 @@ describe('analysis folder loading', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    analysisApi.getScanState.mockResolvedValue({ scanning: false });
     container = document.createElement('div');
     document.body.append(container);
     page = {
@@ -105,6 +106,26 @@ describe('analysis folder loading', () => {
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
     act(() => container.querySelector('.ka-page-btn').click());
     expect(page.loadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a missing-package scan failure visible after the scan has stopped', async () => {
+    expect.hasAssertions();
+    const error =
+      'Basic analysis stopped: Essentia and NumPy packages are missing.';
+    analysisApi.getScanState.mockResolvedValue({
+      scanning: false,
+      completed: false,
+      failed: 1,
+      analysed: 0,
+      dependencyUnavailable: true,
+      error,
+    });
+    await render();
+    await act(async () =>
+      container.querySelector('.ka-folder-scan-btn').click(),
+    );
+    expect(container.querySelector('[role="alert"]').textContent).toBe(error);
+    expect(container.textContent).not.toContain('Scan complete');
   });
 
   it('does not loop if a page returns no additional tracks', async () => {

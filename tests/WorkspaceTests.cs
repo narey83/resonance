@@ -170,6 +170,18 @@ public class WorkspaceTests : IDisposable
         store.Paused=false;analysis.Cancelled=true;await service.ProcessNext(default);
         Assert.True(store.Paused);Assert.Equal("queued",store.Find("nested/a.mp3").State);Assert.Equal(0,store.Find("nested/a.mp3").Attempts);
     }
+    [Fact] public async Task MissingPackagesPauseTheQueueAndExposeTheFailureWithoutConsumingRetries()
+    {
+        Add();var service=Service;service.Reconcile();analysis.DependencyFailure=true;
+        await service.ProcessNext(default);
+        Assert.True(store.Paused);
+        Assert.Equal("failed",store.Find("nested/a.mp3").State);
+        Assert.Equal(0,store.Find("nested/a.mp3").Attempts);
+        Assert.Contains("Essentia",store.Find("nested/a.mp3").Detail);
+        Assert.Equal(analysis.ScanState.Error,service.DependencyError);
+        Assert.Equal(analysis.ScanState.Error,service.WaitingReason);
+        await service.ProcessNext(default);Assert.Equal(1,analysis.Starts);
+    }
     [Fact] public void RestartRecoveryAndCombinedFiltersAgreeWithCounts()
     {
         Add();store.Put(new("nested/a.mp3",100,1,"running",1,0,"",Now));store.RecoverInterrupted();
@@ -308,8 +320,8 @@ public class WorkspaceTests : IDisposable
     {
         public AnalysisScanState ScanState {get;set;}=new(false,false,false,0,0,0,0,0);
         public bool PlaybackActive {get;set;}
-        public int Starts;public bool Reject;public bool Cancelled;public Action? OnStart;
-        public Task StartScanAsync(AnalysisScanRequest request) { if(Reject)throw new InvalidOperationException();Starts++;Assert.True(request.SkipAnalysed);Assert.False(request.ResetAll);OnStart?.Invoke();ScanState=new(false,!Cancelled,Cancelled,1,1,0,0,1);return Task.CompletedTask; }
+        public int Starts;public bool Reject;public bool Cancelled;public bool DependencyFailure;public Action? OnStart;
+        public Task StartScanAsync(AnalysisScanRequest request) { if(Reject)throw new InvalidOperationException();Starts++;Assert.True(request.SkipAnalysed);Assert.False(request.ResetAll);OnStart?.Invoke();ScanState=new(false,!Cancelled&&!DependencyFailure,Cancelled,1,DependencyFailure?0:1,0,DependencyFailure?1:0,1) { DependencyUnavailable=DependencyFailure,Error=DependencyFailure?"Basic analysis stopped: Essentia is missing":string.Empty };return Task.CompletedTask; }
         public void RecordPlaybackActivity(){} public IEnumerable<TrackAnalysisInfo> GetAllTracks()=>[];public bool CancelScan()=>false;
         public Task<WaveformData> GetWaveformAsync(string path,CancellationToken ct,bool cachedOnly=false)=>throw new NotImplementedException();
         public BeatAnalysis GetBeatInfo(string path)=>throw new NotImplementedException();

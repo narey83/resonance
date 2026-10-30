@@ -136,6 +136,7 @@ public class WorkspaceController(WorkspaceStore store, MusicRepository repositor
             automatic = true,
             enhancedEnabled = enhanced.Enabled,
             waitingReason = preparation.WaitingReason,
+            analysisError = preparation.DependencyError,
             preparation.LastCheckedAt,
             enrichment = new { metadata.Enabled, metadata.Scanning, metadata.Completed, metadata.Total, metadata.Written, metadata.Skipped, metadata.Failed, metadata.Progress },
         });
