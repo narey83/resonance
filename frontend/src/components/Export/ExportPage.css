@@ -1,15 +1,14 @@
 .export-page {
-  --page-form-width: 1120px;
   color: var(--text-primary);
   background: var(--bg-primary);
   height: 100%;
   overflow: auto;
   min-width: 0;
 }
-.export-page > :is(header, section) { width: 100%; max-width: var(--page-form-width); margin: 20px auto 0; box-sizing: border-box; }
+.export-page > :is(header, section) { width: 100%; max-width: var(--page-form-width); margin: var(--page-section-gap, 20px) auto 0; box-sizing: border-box; }
 .export-page > section { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; }
 .export-page > section:first-child { margin-top: 0; }
-.export-source, .export-source-context { padding: 28px; }
+.export-source, .export-source-context { padding: var(--page-surface-padding, 20px); }
 .export-source h2 { font-size: 24px; line-height: 1.25; margin: 0 0 8px; }
 .export-source-context h2 { font-size: 19px; margin: 0 0 8px; overflow-wrap: anywhere; }
 .export-source-intro { color: var(--text-secondary); margin: 0; }
@@ -43,9 +42,9 @@
 .export-source-library a { font-size: 13px; }
 .export-page > .export-saved { padding: 0; }
 .export-saved .usb-export-inspector { margin: 0; padding: 0; border: 0; border-radius: inherit; }
-.export-saved .usb-export-inspector > summary { padding: 20px 28px; font-size: 14px; }
+.export-saved .usb-export-inspector > summary { padding: var(--page-surface-padding, 20px); font-size: 14px; }
 .export-saved .usb-export-inspector[open] > summary { border-bottom: 1px solid var(--border); }
-.export-saved .usb-export-inspector-body { padding: 20px 28px 28px; }
+.export-saved .usb-export-inspector-body { padding: var(--page-surface-padding, 20px); }
 .export-saved .usb-export-inspector-body > p:first-child { margin-top: 0; color: var(--text-secondary); }
 .export-source-context p { margin: 8px 0 0; color: var(--text-secondary); }
 .export-steps { display: flex; flex-wrap: wrap; gap: 12px; list-style: none; padding: 0; margin: 0 0 28px; }
@@ -59,11 +58,8 @@
 .export-page .usb-export-database-scroll td:nth-child(4) { min-width: 180px; }
 @media (max-width: 600px) {
   .export-source-options { grid-template-columns: 1fr; gap: 10px; margin: 20px 0; }
-  .export-source, .export-source-context { padding: 20px; }
   .export-source h2 { font-size: 21px; }
   .export-source-card { min-height: 0; padding: 16px; gap: 10px; }
   .export-page button.export-primary-action { width: 100%; }
-  .export-saved .usb-export-inspector > summary { padding: 20px; }
-  .export-saved .usb-export-inspector-body { padding: 16px 20px 20px; }
   .export-steps li { flex: 1 1 40%; }
 }
