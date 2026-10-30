@@ -2,7 +2,7 @@
 
 Caddy owns web availability and serves an independent status page before React loads. It probes the backend's `/health/ready` endpoint before forwarding a request. The endpoint reports core and database readiness without exposing internal diagnostics. Background analysis, share scans and optional tools do not hold the site closed.
 
-The React app no longer polls `/startup` or `/maintenance/status` or renders the startup panel. An already-open app follows Caddy's explicitly classified `503` responses by reloading its existing URL. A disconnected application hub also checks Caddy once per existing reconnect attempt. The independent status page checks Caddy every five seconds and reloads when Caddy reports readiness. Sign-in storage is retained. Local network failures still use the application's connection screen because an unreachable Caddy cannot serve a page.
+The React app no longer polls `/startup` or `/maintenance/status` or renders the startup panel. An already-open app follows Caddy's explicitly classified `503` responses by reloading its existing URL. A disconnected application hub also checks Caddy once per existing reconnect attempt. The independent status page checks Caddy every five seconds and reloads when Caddy reports readiness. Sign-in storage is retained. Transient hub or local network failures retry in the background without covering the workspace. Initial session setup retains its normal loading indicator; an unreachable Caddy cannot serve a status page.
 
 ## Status contract
 

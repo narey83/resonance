@@ -9,6 +9,23 @@ describe('hub retry loop', () => {
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => jest.useRealTimers());
 
+  it('recovers in the background without an online presentation callback', async () => {
+    expect.hasAssertions();
+    const start = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(undefined);
+    const onRetry = jest.fn();
+    const loop = createHubRetryLoop({ start, onRetry });
+    await loop.start();
+    expect(onRetry).toHaveBeenCalledWith(1);
+    jest.advanceTimersByTime(1_000);
+    await flush();
+    expect(start).toHaveBeenCalledTimes(2);
+    expect(() => jest.advanceTimersByTime(1_000)).not.toThrow();
+    loop.dispose();
+  });
+
   it('backs off repeated closes after successful handshakes without flashing online', async () => {
     expect.hasAssertions();
     const start = jest.fn(async () => {});

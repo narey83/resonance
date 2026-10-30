@@ -77,7 +77,6 @@ import AppContext from './AppContext';
 import AppsIntegrations from './AppsIntegrations/AppsIntegrations';
 import Browse from './Browse/Browse';
 import Chat from './Chat/Chat';
-import ConnectionScreen from './ConnectionScreen';
 import Converter from './Converter/Converter';
 import Duplicates from './Duplicates/Duplicates';
 import ExportPage from './Export/ExportPage';
@@ -308,14 +307,6 @@ const App = () => {
   // confirmed valid by doInit (mirrors the original class component behaviour).
   // isPassthroughEnabled is the only safe exception since it needs no JWT.
   const [isLoggedIn, setIsLoggedIn] = useState(() => isPassthroughEnabled());
-  // Single source of truth for backend connectivity.
-  // 'connecting' = initial REST init failing; 'reconnecting' = established
-  // session lost its hub connection.
-  const [connection, setConnection] = useState({
-    attempt: 0,
-    since: null,
-    status: 'online',
-  });
   const [initialized, setInitialized] = useState(false);
   const [setup, setSetup] = useState({
     error: undefined,
@@ -381,9 +372,6 @@ const App = () => {
   const roomBaselines = useRef({});
   const initAttemptRef = useRef(0);
   const hasLiveApplicationStateRef = useRef(false);
-  // "Retry now" hooks for the connection screen/overlay.
-  const retryInitRef = useRef(null);
-  const hubRetryRef = useRef(null);
   // Keep latest notificationSettings accessible inside hub handlers without
   // re-creating the hub every time settings change.
   const notifSettingsRef = useRef(notificationSettings);
@@ -449,7 +437,6 @@ const App = () => {
         if (!appInitialized) {
           setSetup({ error: undefined, pending: false, required: true });
           setInitialized(true);
-          setConnection({ attempt: 0, since: null, status: 'online' });
           return;
         }
 
@@ -469,7 +456,6 @@ const App = () => {
 
         if (!cancelled) {
           setInitialized(true);
-          setConnection({ attempt: 0, since: null, status: 'online' });
         }
       } catch (error) {
         if (cancelled) return;
@@ -478,12 +464,7 @@ const App = () => {
         }
 
         initAttemptRef.current += 1;
-        setConnection((c) => ({
-          attempt: initAttemptRef.current,
-          since: c.since ?? new Date(),
-          status: 'connecting',
-        }));
-        setInitialized(true);
+        void siteAvailability.check();
         // Never dead-end: back off from 2s to 10s after INIT_MAX_ATTEMPTS.
         const delay =
           initAttemptRef.current < INIT_MAX_ATTEMPTS ? 2_000 : 10_000;
@@ -492,17 +473,11 @@ const App = () => {
       }
     };
 
-    retryInitRef.current = () => {
-      clearTimeout(timer);
-      doInit();
-    };
-
     initAttemptRef.current = 0;
     doInit();
     return () => {
       cancelled = true;
       clearTimeout(timer);
-      retryInitRef.current = null;
     };
   }, []);
 
@@ -577,17 +552,14 @@ const App = () => {
   useEffect(() => {
     if (!isLoggedIn) return undefined;
 
-    // Distinguishes deliberate hub.stop() (logout, unmount, retry-now) from a
+    // Distinguishes deliberate hub.stop() (logout or unmount) from a
     // genuine connection loss in onclose.
     let intentionalStop = false;
 
-    const markReconnecting = (attempt) => {
+    // A hub interruption must not block the workspace. Caddy decides whether
+    // the server is unavailable; transient hub failures retry in the background.
+    const markReconnecting = () => {
       void siteAvailability.check();
-      setConnection((c) => ({
-        attempt,
-        since: c.status === 'reconnecting' ? c.since : new Date(),
-        status: 'reconnecting',
-      }));
     };
 
     const hub = createApplicationHubConnection({
@@ -597,8 +569,6 @@ const App = () => {
     const retryLoop = createHubRetryLoop({
       start: () => hub.start(),
       onRetry: markReconnecting,
-      onOnline: () =>
-        setConnection({ attempt: 0, since: null, status: 'online' }),
     });
 
     let pendingState = null;
@@ -744,20 +714,6 @@ const App = () => {
       }
     });
 
-    // Force an immediate attempt instead of waiting out the retry backoff.
-    hubRetryRef.current = async () => {
-      retryLoop.pause();
-      intentionalStop = true;
-      try {
-        await hub.stop();
-      } catch {
-        /* ignore */
-      }
-
-      intentionalStop = false;
-      retryLoop.retryNow();
-    };
-
     retryLoop.start();
 
     // Cleanup: hub stops when isLoggedIn becomes false (logout) or component unmounts.
@@ -765,7 +721,6 @@ const App = () => {
       intentionalStop = true;
       clearTimeout(flushTimeout);
       retryLoop.dispose();
-      hubRetryRef.current = null;
       hub.stop().catch(() => {});
     };
   }, [isLoggedIn]);
@@ -973,7 +928,6 @@ const App = () => {
     clearStatusCaches();
     setApplicationOptions({});
     setLogin({ error: undefined, pending: false });
-    setConnection({ attempt: 0, since: null, status: 'online' });
   }, []);
 
   const handleSetupComplete = useCallback(() => {
@@ -1079,17 +1033,6 @@ const App = () => {
     );
   }
 
-  if (connection.status === 'connecting')
-    return (
-      <ConnectionScreen
-        attempt={connection.attempt}
-        message="Connecting to server"
-        onRetryNow={() => retryInitRef.current?.()}
-        since={connection.since}
-        variant="initial"
-      />
-    );
-
   if (!initialized && setup.required !== true)
     return (
       <Loader
@@ -1139,17 +1082,6 @@ const App = () => {
   const hasPending = pendingReconnect || pendingRestart || pendingShareRescan;
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  const connectionOverlay =
-    connection.status === 'reconnecting' ? (
-      <ConnectionScreen
-        attempt={connection.attempt}
-        message="Lost connection to server"
-        onRetryNow={() => hubRetryRef.current?.()}
-        since={connection.since}
-        variant="overlay"
-      />
-    ) : null;
-
   if (window.location.pathname.endsWith('/map') && isAdmin()) {
     return (
       <LibraryActivityProvider>
@@ -1177,7 +1109,6 @@ const App = () => {
               user={user}
             />
             <MapPage />
-            {connectionOverlay}
           </div>
         </PlayerProvider>
       </LibraryActivityProvider>
@@ -1670,8 +1601,6 @@ const App = () => {
               <AppQueuePanel />
             </div>
           </div>
-
-          {connectionOverlay}
 
           {notificationPanelOpen && (
             <NotificationCentre

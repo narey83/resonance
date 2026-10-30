@@ -64,7 +64,7 @@ const remove = (list, id) => {
 
 // Sits above the app chrome (nav 100, player 200) but below every "covers
 // everything" layer: semantic-ui's dimmer/modal and the expanded player at
-// 1000, the connection overlay at 2000, tooltips and context menus at 9999.
+// 1000, and tooltips and context menus at 9999.
 // A real modal should still cover a floating window.
 const Z_BASE = 900;
 

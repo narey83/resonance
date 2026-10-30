@@ -19,7 +19,7 @@ export const createHubRetryLoop = ({ start, onOnline, onRetry }) => {
     clearTimers();
     connectedAt = Date.now();
     onlineTimer = setTimeout(() => {
-      if (!disposed) onOnline();
+      if (!disposed) onOnline?.();
     }, 1_000);
   };
 
