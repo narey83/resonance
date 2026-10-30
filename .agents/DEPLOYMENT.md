@@ -100,17 +100,26 @@ generic deployment command.
 
 The established active test device is the user's **Pixel 9 Pro XL**, running the
 installed Resonance Expo development client. Its current JavaScript comes from
-Metro on `dev-laptop.local` at `http://127.0.0.1:8081`. For the Pixel connected to
-the Mac, forward that loopback port over SSH to the Mac, then use `adb reverse`.
+Metro on `dev-laptop.local` at `http://127.0.0.1:8082`. The Pixel-facing URL
+remains `http://127.0.0.1:8081` through SSH transport and `EXPO_PACKAGER_PROXY_URL`. For the Pixel connected to
+the Mac, forward Mac loopback port 8081 to dev-laptop loopback port 8082 over SSH,
+then use `adb reverse tcp:8081 tcp:8081`.
 Do not run a second Metro on the Mac. The earlier Mac Metro was stopped when the
 user clarified this rule on 30 October 2026.
 
 - Android tools: `/Users/narey/Projects/resonance/.dev/android/sdk/platform-tools/adb`.
 - Run `adb devices -l` to find the current Pixel connection. Wireless device IDs
   change; do not assume an old serial is still connected.
-- Check `http://127.0.0.1:8081/status` on the dev laptop and the existing Metro
+- Check `http://127.0.0.1:8082/status` on the dev laptop and the existing Metro
   process before starting another server. Its working directory must be the
   requested source snapshot's `mobile/`, with the matching dependency lockfile.
+  The snapshot established on 30 October is
+  `/home/narey/resonance-builds/home-recent-9deffa7a/mobile`; its parent contains
+  `mobile-metro.json` and `mobile-metro.log`. Verify the PID/cwd before reuse.
+- The corresponding Mac transport command is
+  `ssh -f -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -L 127.0.0.1:8081:127.0.0.1:8082 dev-laptop.local`.
+  A listener on the Mac must be `ssh`, not `node`/Expo. The laptop's LAN port 8081
+  already belongs to another service; do not replace that service.
 - Ensure the Pixel has `adb reverse tcp:8081 tcp:8081`.
 - Refresh/open the installed development client using
   `exp+resonance-mobile://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081`
