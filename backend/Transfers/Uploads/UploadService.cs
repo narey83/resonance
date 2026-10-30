@@ -1182,6 +1182,7 @@ namespace resonance.Transfers.Uploads
             var syncRoot = new SemaphoreSlim(1, 1);
             var callbacksOpen = true;
             var connectionAttemptStarted = false;
+            var transferStarted = false;
             string host = default;
             string localFilename = default;
             long localFileLength = default;
@@ -1290,6 +1291,9 @@ namespace resonance.Transfers.Uploads
                                 return;
                             }
 
+                            // Failed connection callbacks can have a synthetic start timestamp.
+                            // Only an actual transfer state or byte progress proves data flow began.
+                            transferStarted |= args.Transfer.State.HasFlag(TransferStates.InProgress) || args.Transfer.BytesTransferred > 0;
                             transfer = transfer.WithSoulseekTransfer(args.Transfer);
                             if (args.Transfer.State.HasFlag(TransferStates.InProgress) && args.Transfer.IPEndPoint?.Address != null)
                             {
@@ -1430,7 +1434,7 @@ namespace resonance.Transfers.Uploads
                 return new UploadAttempt(null, null);
             }
             catch (Exception ex) when (connectionAttemptStarted && !cancellationToken.IsCancellationRequested
-                && transfer.StartedAt is null && transfer.BytesTransferred == 0 && IsConnectionFailure(ex))
+                && !transferStarted && transfer.BytesTransferred == 0 && IsConnectionFailure(ex))
             {
                 syncRoot.Wait(CancellationToken.None);
                 try

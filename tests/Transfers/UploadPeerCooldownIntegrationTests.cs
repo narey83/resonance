@@ -23,11 +23,13 @@ public sealed partial class UploadEnqueueTests
             tasks.Add(service.UploadAsync(rows[0]));
             var first = await calls.Next();
             tasks.AddRange(rows.Skip(1).Select(service.UploadAsync));
+            first.ChangeState(TransferStates.Completed | TransferStates.Errored, started: clock.GetUtcNow().UtcDateTime);
             first.FailConnection();
             for (var i = 1; i < 3; i++)
             {
                 var next = await calls.Next();
                 Assert.Equal(rows[i].Filename, next.Filename);
+                next.ChangeState(TransferStates.Completed | TransferStates.Errored, started: clock.GetUtcNow().UtcDateTime);
                 next.FailConnection();
             }
 
@@ -144,7 +146,39 @@ public sealed partial class UploadEnqueueTests
     }
 
     [Fact]
-    public async Task ConnectionFailureAfterProgressRemainsTerminalAndIsNotRetried()
+    public async Task ConnectionFailureWithSdkStartTimestampStillKeepsTheOriginalFileQueued()
+    {
+        var calls = new UploadCalls();
+        var clock = new ManualUploadClock();
+        await using var service = CreateService([], upload: calls.Upload, cooldown: new UploadPeerCooldown(clock));
+        var row = QueueTransfer("alice", "album/unreachable.mp3");
+        var task = service.UploadAsync(row);
+        try
+        {
+            for (var i = 0; i < 3; i++)
+            {
+                var attempt = await calls.Next();
+                // Soulseek.NET stamps a start time even when connection establishment fails.
+                attempt.ChangeState(TransferStates.Completed | TransferStates.Errored, started: clock.GetUtcNow().UtcDateTime);
+                attempt.FailConnection();
+            }
+
+            Assert.Equal(TimeSpan.FromMinutes(5), await clock.NextDelay());
+            AssertAllQueued([row]);
+            Assert.False(task.IsCompleted);
+            Assert.Equal(3, calls.Count);
+        }
+        finally
+        {
+            await service.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            await task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(10)]
+    public async Task ConnectionFailureAfterProgressRemainsTerminalAndIsNotRetried(long bytes)
     {
         var calls = new UploadCalls();
         var clock = new ManualUploadClock();
@@ -152,13 +186,13 @@ public sealed partial class UploadEnqueueTests
         var row = QueueTransfer("alice", "album/interrupted.mp3");
         var task = service.UploadAsync(row);
         var attempt = await calls.Next();
-        attempt.ChangeState(TransferStates.InProgress, bytes: 10, started: clock.GetUtcNow().UtcDateTime);
+        attempt.ChangeState(TransferStates.InProgress, bytes: bytes, started: clock.GetUtcNow().UtcDateTime);
         attempt.FailConnection();
         await Assert.ThrowsAnyAsync<Exception>(() => task);
         using var db = factory.CreateDbContext();
         var saved = Assert.Single(db.Transfers);
         Assert.Equal(TransferStates.Completed | TransferStates.Errored, saved.State);
-        Assert.Equal(10, saved.BytesTransferred);
+        Assert.Equal(bytes, saved.BytesTransferred);
         Assert.NotNull(saved.EndedAt);
         Assert.Equal(1, calls.Count);
     }
