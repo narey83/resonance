@@ -66,21 +66,6 @@ const LOG_MAX_ZOOM = Math.log(MAX_ZOOM);
 const TOOLTIP_W = 260;
 const TOOLTIP_H = 280;
 
-// Hoisted so the React.memo on Geography isn't defeated by a fresh style
-// object every render — otherwise all ~180 country paths re-render (and
-// recompute their d3 path strings) on every state change.
-const GEO_STYLE = {
-  default: {
-    fill: 'var(--map-land)',
-    outline: 'none',
-    stroke: 'var(--map-border)',
-    strokeWidth: 0.4,
-    vectorEffect: 'non-scaling-stroke',
-  },
-  hover: { fill: 'var(--map-land-hover)', outline: 'none' },
-  pressed: { fill: 'var(--map-land)', outline: 'none' },
-};
-
 // Markers/strokes live inside the zoom transform, so they must be divided by
 // the zoom to keep a constant on-screen size. Doing that through a CSS custom
 // property (--map-k, set on the wrapper div) instead of React props means a
@@ -336,9 +321,9 @@ const WorldMap = ({
         {({ geographies }) =>
           geographies.map((geo) => (
             <Geography
+              className="world-map-country"
               geography={geo}
               key={geo.rsmKey}
-              style={GEO_STYLE}
             />
           ))
         }

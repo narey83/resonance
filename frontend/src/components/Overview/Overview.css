@@ -571,6 +571,22 @@ html.amoled {
   display: block;
 }
 
+.world-map-country {
+  fill: var(--map-land);
+  outline: none;
+  stroke: var(--map-border);
+  stroke-width: 0.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.world-map-country:hover {
+  fill: var(--map-land-hover);
+}
+
+.world-map-country:active {
+  fill: var(--map-land);
+}
+
 /* ── Arc animation ── */
 @keyframes arc-dash-ul {
   from { stroke-dashoffset: 30; }

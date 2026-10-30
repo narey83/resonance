@@ -47,11 +47,11 @@ import {
   setSessionId,
   setToken,
 } from './token';
-import axios from 'axios';
+import axios, { create as createClient } from 'axios';
 
 axios.defaults.baseURL = apiBaseUrl;
 
-const api = axios.create({
+const api = createClient({
   withCredentials: true,
 });
 
