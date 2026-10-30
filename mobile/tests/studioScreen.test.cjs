@@ -432,3 +432,36 @@ test('effect sliders honour Push it consent, restore controlled limits and disab
     }
   }
 });
+
+test('Mastering and Creative reset buttons clear their sliders and disabled module amounts through the native bridge', async () => {
+  const { STUDIO_MODULES } = mobileModules()('src/lib/studio.ts');
+  for (const section of ['mastering','creative']) {
+    const { store, nodes, configurations, syncEngine } = screen(); await store.getState().load();
+    store.getState().apply(Array(11).fill(.1), undefined, { eq: [2], bassControl: .3, smoothness: .2, amount: .8 });
+    store.getState().setEnabled(true); store.getState().setBypass(true); store.getState().setPushed(true);
+    const disabledIndex = STUDIO_MODULES.findIndex(module => module.group === section);
+    store.getState().toggleModule(disabledIndex);
+    assert.equal(button(nodes(), 'Reset Mastering'), undefined); assert.equal(button(nodes(), 'Reset Creative'), undefined);
+    nodes().find(node => node.type === 'Pressable' && text(node) === section.toUpperCase()).props.onPress();
+    const reset = button(nodes(), section === 'mastering' ? 'Reset Mastering' : 'Reset Creative');
+    assert.equal(reset.props.disabled, false); reset.props.onPress(); syncEngine();
+    const expected = STUDIO_MODULES.map(module => module.group === section ? 0 : .1);
+    assert.deepEqual(store.getState().values, expected);
+    assert.deepEqual(configurations.at(-1).values, expected);
+    assert.equal(store.getState().disabled[disabledIndex], true);
+    assert.equal(configurations.at(-1).enabled, true); assert.equal(configurations.at(-1).bypass, true); assert.equal(configurations.at(-1).pushed, true);
+    assert.deepEqual(configurations.at(-1).eq, [2,0,0,0,0,0,0,0]);
+    assert.equal(configurations.at(-1).bassControl, .3); assert.equal(configurations.at(-1).smoothness, .2); assert.equal(configurations.at(-1).amount, .8);
+    for (const module of STUDIO_MODULES.filter(module => module.group === section)) assert.equal(slider(nodes(), module.title).props.value, 0);
+  }
+});
+
+test('section resets are disabled until loaded and on unavailable playback routes', async () => {
+  for (const options of [{ available: false }, { casting: true }, { unloaded: true }]) {
+    const { store, nodes } = screen(options); if (!options.unloaded) await store.getState().load();
+    for (const [tab, label] of [['MASTERING','Reset Mastering'], ['CREATIVE','Reset Creative']]) {
+      nodes().find(node => node.type === 'Pressable' && text(node) === tab).props.onPress();
+      assert.equal(button(nodes(), label).props.disabled, true);
+    }
+  }
+});

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
-import { clampStudio, clampTone, CLEAN_VALUES, presetTone, studioNumber, STUDIO_PRESETS, StudioOutputProfile, StudioPreset, StudioToneSettings } from '../lib/studio';
+import { clampStudio, clampTone, CLEAN_VALUES, presetTone, studioNumber, STUDIO_MODULES, STUDIO_PRESETS, StudioOutputProfile, StudioPreset, StudioToneSettings } from '../lib/studio';
 const KEY = 'resonance_studio_v1';
 interface SavedPreset extends StudioPreset { values: number[]; tone: StudioToneSettings }
 interface StudioProfile extends StudioToneSettings {
@@ -20,6 +20,7 @@ interface StudioState extends StudioProfile {
   setBypass(bypass: boolean): void;
   setEq(index: number, gain: number, save?: boolean): void;
   resetEq(): void;
+  resetSection(section: 'mastering' | 'creative'): void;
   setBassControl(value: number, save?: boolean): void;
   setSmoothness(value: number, save?: boolean): void;
   setAmount(value: number, save?: boolean): void;
@@ -100,6 +101,12 @@ export const useStudio = create<StudioState>((set, get) => {
       set({ eq, selectedPresetId: eq[index] === get().eq[index] ? get().selectedPresetId : null }); if (save) persist();
     },
     resetEq: () => { if (!get().eq.some(gain => gain !== 0)) return; set({ eq: get().eq.map(() => 0), selectedPresetId: null }); persist(); },
+    resetSection: section => {
+      const state = get();
+      const values = state.values.map((value, index) => STUDIO_MODULES[index].group === section ? 0 : value);
+      if (values.every((value, index) => value === state.values[index])) return;
+      set({ values, selectedPresetId: null }); persist();
+    },
     setBassControl: (value, save = true) => { const bassControl = studioNumber(value, 0, 1); set({ bassControl, selectedPresetId: bassControl === get().bassControl ? get().selectedPresetId : null }); if (save) persist(); },
     setSmoothness: (value, save = true) => { const smoothness = studioNumber(value, 0, 1); set({ smoothness, selectedPresetId: smoothness === get().smoothness ? get().selectedPresetId : null }); if (save) persist(); },
     setAmount: (value, save = true) => { set({ amount: studioNumber(value, 0, 1, 1) }); if (save) persist(); },

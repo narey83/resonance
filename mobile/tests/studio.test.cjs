@@ -175,3 +175,51 @@ test('failed profile writes report the error and retain the previous stored sett
   const restarted = loadStore(storage); await restarted.getState().load();
   assert.equal(restarted.getState().outputProfile, 'headphones'); assert.equal(restarted.getState().values[0], .1);
 });
+
+test('section reset changes only the current profile and saves once while preserving tone and session settings', async () => {
+  const { STUDIO_MODULES } = mobileModules()('src/lib/studio.ts');
+  for (const section of ['mastering','creative']) {
+    const storage = secureStorage(); let writes = 0;
+    const save = storage.setItemAsync;
+    storage.setItemAsync = async (...args) => { writes++; return save(...args); };
+    const store = loadStore(storage); await store.getState().load();
+    store.getState().setOutputProfile('speakers'); store.getState().setValue(0, .2); store.getState().setEq(0, -1);
+    store.getState().setOutputProfile('headphones');
+    store.getState().apply(Array(11).fill(.1), undefined, { eq: [1.5], bassControl: .4, smoothness: .3, amount: .7 });
+    store.getState().savePreset('Full rack'); const preset = store.getState().presets[0];
+    store.getState().apply(preset.values, 'saved:Full rack', preset.tone);
+    store.getState().setEnabled(true); store.getState().setPushed(true); store.getState().setBypass(true);
+    await new Promise(setImmediate); writes = 0;
+    const before = store.getState();
+    store.getState().resetSection(section);
+    const after = store.getState();
+    assert.deepEqual(after.values, before.values.map((value, index) => STUDIO_MODULES[index].group === section ? 0 : value));
+    assert.equal(after.selectedPresetId, null);
+    for (const field of ['eq','bassControl','smoothness','amount','enabled','disabled','pushed','bypass','presets','outputProfile']) assert.deepEqual(after[field], before[field], field);
+    await new Promise(setImmediate); assert.equal(writes, 1);
+    const restarted = loadStore(storage); await restarted.getState().load();
+    assert.deepEqual(restarted.getState().values, after.values);
+    assert.deepEqual(restarted.getState().eq, after.eq); assert.equal(restarted.getState().amount, .7);
+    restarted.getState().setOutputProfile('speakers');
+    assert.equal(restarted.getState().values[0], .2); assert.equal(restarted.getState().eq[0], -1);
+  }
+});
+
+test('unknown and already neutral section resets leave settings, preset selection and storage untouched', async () => {
+  const storage = secureStorage(); let writes = 0;
+  const save = storage.setItemAsync;
+  storage.setItemAsync = async (...args) => { writes++; return save(...args); };
+  const store = loadStore(storage); await store.getState().load();
+  store.getState().apply(Array(11).fill(.1)); store.getState().savePreset('Unchanged');
+  const preset = store.getState().presets[0]; store.getState().apply(preset.values, 'saved:Unchanged', preset.tone);
+  await new Promise(setImmediate); writes = 0;
+  for (const section of ['tone','missing',undefined]) store.getState().resetSection(section);
+  await new Promise(setImmediate);
+  assert.deepEqual(store.getState().values, Array(11).fill(.1)); assert.equal(store.getState().selectedPresetId, 'saved:Unchanged');
+  assert.equal(writes, 0);
+  store.getState().apply(Array(11).fill(0), 'builtin:Clean');
+  await new Promise(setImmediate); writes = 0;
+  store.getState().resetSection('mastering'); store.getState().resetSection('creative');
+  await new Promise(setImmediate);
+  assert.equal(store.getState().selectedPresetId, 'builtin:Clean'); assert.equal(writes, 0);
+});
