@@ -44,9 +44,13 @@ export function StudioRack({ embedded = false }: { embedded?: boolean }) {
     <Text style={[s.small, muted]}>A/B matches levels by attenuation, never extra gain. Extreme ranges reset when the app restarts. Your handset volume still controls listening level.</Text>
     <Text style={[s.kicker, muted]}>STARTING POINTS</Text>
     <View style={s.wrap}>{presets.map(preset => {
-      const selected = preset.id === state.selectedPresetId;
-      return <Pressable key={preset.id} accessibilityRole="button" accessibilityLabel={preset.name} accessibilityState={{ selected, disabled: !usable }} disabled={!usable} onPress={() => { state.apply(preset.values, preset.id); state.setEnabled(true); }} style={[s.chip, button, selected && { borderColor: c.accent, backgroundColor: c.bgElevated }]}>
-        <Text style={[text, selected && { color: c.accent, fontWeight: '700' }]}>{selected ? '✓ ' : ''}{preset.name}</Text>
+      const selected = usable && state.enabled && !state.bypass && preset.id === state.selectedPresetId;
+      return <Pressable key={preset.id} accessibilityRole="button" accessibilityLabel={preset.name} accessibilityState={{ selected, disabled: !usable }} disabled={!usable} onPress={() => {
+        if (selected) { state.setEnabled(false); return; }
+        state.apply(preset.values, preset.id);
+        state.setEnabled(true);
+      }} style={[s.chip, button, selected && { borderColor: c.accent, backgroundColor: c.bgElevated }]}>
+        <Text style={[text, selected && { color: c.accent, fontWeight: '700' }]}>{preset.name}</Text>
       </Pressable>;
     })}</View>
     <Text accessibilityLiveRegion="polite" style={[s.small, muted]}>{selectedPreset ? `${selectedPreset.name} · ${!usable ? 'Unavailable on this playback route' : !state.enabled ? 'Rack off' : state.bypass ? 'Bypassed for dry comparison' : 'Active'}` : 'Custom settings · choose a starting point or save your rack.'}</Text>

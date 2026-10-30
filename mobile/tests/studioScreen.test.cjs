@@ -39,7 +39,7 @@ test('preset buttons highlight and announce only the selected preset', async () 
   button(nodes(), 'Warm pressing').props.onPress();
   const selected = button(nodes(), 'Warm pressing');
   assert.equal(selected.props.accessibilityState.selected, true);
-  assert.equal(text(selected), '✓ Warm pressing');
+  assert.equal(text(selected), 'Warm pressing');
   assert.equal(selected.props.style.at(-1).borderColor, 'accent');
   assert.equal(button(nodes(), 'Clean').props.accessibilityState.selected, false);
   assert.ok(nodes().some(node => node.props.accessibilityLiveRegion === 'polite' && text(node) === 'Warm pressing · Active'));
@@ -47,8 +47,10 @@ test('preset buttons highlight and announce only the selected preset', async () 
   assert.equal(button(nodes(), 'Warm pressing').props.accessibilityState.selected, false);
   assert.equal(button(nodes(), 'Drum focus').props.accessibilityState.selected, true);
   store.getState().setBypass(true);
+  assert.equal(button(nodes(), 'Drum focus').props.accessibilityState.selected, false);
   assert.ok(nodes().some(node => text(node) === 'Drum focus · Bypassed for dry comparison'));
   store.getState().setEnabled(false);
+  assert.equal(button(nodes(), 'Drum focus').props.accessibilityState.selected, false);
   assert.ok(nodes().some(node => text(node) === 'Drum focus · Rack off'));
   store.getState().setValue(0, .2);
   assert.equal(button(nodes(), 'Drum focus').props.accessibilityState.selected, false);
@@ -78,4 +80,44 @@ test('rack renders without audio meters or native meter polling', async () => {
   }
   assert.ok(content.includes('Harmonic exciter'));
   assert.ok(content.includes('Processing rack'));
+});
+
+test('pressing an active preset toggles processing off and back on without ticks', async () => {
+  const { store, nodes } = screen();
+  await store.getState().load();
+  for (const name of ['Warm pressing', 'Drum focus']) {
+    button(nodes(), name).props.onPress();
+    const values = [...store.getState().values];
+    assert.equal(store.getState().enabled, true);
+    assert.equal(button(nodes(), name).props.accessibilityState.selected, true);
+    assert.equal(text(button(nodes(), name)), name);
+    button(nodes(), name).props.onPress();
+    assert.equal(store.getState().enabled, false);
+    assert.equal(button(nodes(), name).props.accessibilityState.selected, false);
+    assert.equal(button(nodes(), name).props.style.at(-1), false);
+    assert.deepEqual(store.getState().values, values);
+    button(nodes(), name).props.onPress();
+    assert.equal(store.getState().enabled, true);
+    assert.equal(button(nodes(), name).props.accessibilityState.selected, true);
+    assert.deepEqual(store.getState().values, values);
+  }
+});
+
+test('saved presets toggle off too, and pressing a bypassed preset restores processing', async () => {
+  const { store, nodes } = screen();
+  await store.getState().load();
+  store.getState().setValue(0, .2);
+  store.getState().savePreset('My rack');
+  button(nodes(), 'My rack').props.onPress();
+  button(nodes(), 'My rack').props.onPress();
+  assert.equal(store.getState().enabled, false);
+  assert.equal(button(nodes(), 'My rack').props.accessibilityState.selected, false);
+  button(nodes(), 'My rack').props.onPress();
+  store.getState().setBypass(true);
+  assert.equal(button(nodes(), 'My rack').props.accessibilityState.selected, false);
+  button(nodes(), 'My rack').props.onPress();
+  assert.equal(store.getState().enabled, true);
+  assert.equal(store.getState().bypass, false);
+  assert.equal(button(nodes(), 'My rack').props.accessibilityState.selected, true);
+  assert.equal(store.getState().values[0], .2);
 });
