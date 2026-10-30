@@ -161,6 +161,34 @@ public sealed class UploadEnqueueTests : IDisposable
     }
 
     [Fact]
+    public async Task ShareLookupErrorDuringUploadRemainsCompletedAndErrored()
+    {
+        var transfer = new Transfer
+        {
+            Id = Guid.NewGuid(),
+            Username = "alice",
+            Filename = "album/failing.mp3",
+            Direction = TransferDirection.Upload,
+            State = TransferStates.Queued | TransferStates.Locally,
+            RequestedAt = DateTime.UtcNow,
+        };
+        using (var db = factory.CreateDbContext())
+        {
+            db.Transfers.Add(transfer);
+            db.SaveChanges();
+        }
+
+        var service = CreateService([], new IOException("share lookup failed"));
+        await Assert.ThrowsAsync<IOException>(() => service.UploadAsync(transfer));
+
+        using var dbAfter = factory.CreateDbContext();
+        var saved = Assert.Single(dbAfter.Transfers);
+        Assert.Equal(TransferStates.Completed | TransferStates.Errored, saved.State);
+        Assert.NotNull(saved.EndedAt);
+        Assert.Contains("share lookup failed", saved.Exception);
+    }
+
+    [Fact]
     public async Task MissingFileDuringUploadRemainsTerminalInsteadOfBeingOverwritten()
     {
         var transfer = new Transfer
