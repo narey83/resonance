@@ -233,8 +233,11 @@ public sealed class UploadEnqueueTests : IDisposable
         var service = CreateService([], new IOException("share unavailable"), watch.Task);
         var transfer = new Transfer
         {
-            Id = Guid.NewGuid(), Username = "alice", Filename = "album/track.mp3",
-            Direction = TransferDirection.Upload, State = TransferStates.Queued | TransferStates.Locally,
+            Id = Guid.NewGuid(),
+            Username = "alice",
+            Filename = "album/track.mp3",
+            Direction = TransferDirection.Upload,
+            State = TransferStates.Queued | TransferStates.Locally,
         };
         using (var db = factory.CreateDbContext()) { db.Add(transfer); db.SaveChanges(); }
         var upload = service.UploadAsync(transfer);
@@ -262,13 +265,21 @@ public sealed class UploadEnqueueTests : IDisposable
             "OnChange" => null,
             _ => throw new InvalidOperationException(m.Name),
         });
-        var users = Stub<IUserService>((m, _) => m.Name switch
+        var users = Stub<IUserService>((m, args) =>
         {
-            "GetGroup" => Application.DefaultGroup,
-            "IsWatched" => false,
-            "WatchAsync" => watch ?? Task.CompletedTask,
-            "TryGetCachedPresence" => false,
-            _ => throw new InvalidOperationException(m.Name),
+            if (m.Name == "TryGetCachedPresence")
+            {
+                args![1] = default(UserPresence);
+                return false;
+            }
+
+            return m.Name switch
+            {
+                "GetGroup" => Application.DefaultGroup,
+                "IsWatched" => false,
+                "WatchAsync" => watch ?? Task.CompletedTask,
+                _ => throw new InvalidOperationException(m.Name),
+            };
         });
         var client = Stub<ISoulseekClient>((m, _) => m.Name == "get_Uploads" ? uploads : throw new InvalidOperationException(m.Name));
         var shares = Stub<IShareService>((m, _) => m.Name == "ResolveFileAsync" && failure is not null

@@ -746,41 +746,6 @@ namespace resonance.Transfers.Uploads
         }
 
         /// <summary>
-        ///     Enforces a short peer/file cooldown after repeated real transfer failures.
-        ///     A successful upload resets the failure streak; cancellations, offline parking,
-        ///     and missing files are not evidence of a broken peer connection.
-        /// </summary>
-        private static DateTime? UploadRetryBlockedUntil(IEnumerable<Transfer> records, DateTime utcNow)
-        {
-            const int failureLimit = 3;
-            var window = TimeSpan.FromMinutes(30);
-            var cutoff = utcNow - window;
-            var recent = records
-                .Where(t => t.EndedAt.HasValue && t.EndedAt.Value >= cutoff)
-                .OrderByDescending(t => t.EndedAt.Value)
-                .ToList();
-
-            var lastSuccess = recent.FirstOrDefault(t =>
-                t.State == (TransferStates.Completed | TransferStates.Succeeded))?.EndedAt;
-
-            var failures = recent
-                .Where(t => (!lastSuccess.HasValue || t.EndedAt > lastSuccess)
-                    && (t.State == (TransferStates.Completed | TransferStates.Errored)
-                        || t.State == (TransferStates.Completed | TransferStates.TimedOut)
-                        || t.State == (TransferStates.Completed | TransferStates.Rejected)))
-                .ToList();
-
-            if (failures.Count < failureLimit)
-            {
-                return null;
-            }
-
-            // Count the most recent streak only; the block expires 30 minutes after
-            // its latest failure and does not extend merely because the peer polls.
-            return failures[0].EndedAt.Value + window;
-        }
-
-        /// <summary>
         ///     Enqueues the requested file.
         /// </summary>
         /// <param name="username">The username of the requesting user.</param>
@@ -1392,6 +1357,41 @@ namespace resonance.Transfers.Uploads
                 .FirstOrDefault();
 
             return stats ?? new UserUploadStatistics();
+        }
+
+        /// <summary>
+        ///     Enforces a short peer/file cooldown after repeated real transfer failures.
+        ///     A successful upload resets the failure streak; cancellations, offline parking,
+        ///     and missing files are not evidence of a broken peer connection.
+        /// </summary>
+        private static DateTime? UploadRetryBlockedUntil(IEnumerable<Transfer> records, DateTime utcNow)
+        {
+            const int failureLimit = 3;
+            var window = TimeSpan.FromMinutes(30);
+            var cutoff = utcNow - window;
+            var recent = records
+                .Where(t => t.EndedAt.HasValue && t.EndedAt.Value >= cutoff)
+                .OrderByDescending(t => t.EndedAt.Value)
+                .ToList();
+
+            var lastSuccess = recent.FirstOrDefault(t =>
+                t.State == (TransferStates.Completed | TransferStates.Succeeded))?.EndedAt;
+
+            var failures = recent
+                .Where(t => (!lastSuccess.HasValue || t.EndedAt > lastSuccess)
+                    && (t.State == (TransferStates.Completed | TransferStates.Errored)
+                        || t.State == (TransferStates.Completed | TransferStates.TimedOut)
+                        || t.State == (TransferStates.Completed | TransferStates.Rejected)))
+                .ToList();
+
+            if (failures.Count < failureLimit)
+            {
+                return null;
+            }
+
+            // Count the most recent streak only; the block expires 30 minutes after
+            // its latest failure and does not extend merely because the peer polls.
+            return failures[0].EndedAt.Value + window;
         }
 
         /// <summary>
