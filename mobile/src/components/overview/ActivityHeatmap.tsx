@@ -27,8 +27,9 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text } from '../Typography';
 import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { Spacing, Typography, ThemeColors } from '../../theme';
 import { HeatmapCell } from '../../api/analytics';
 import { Card, EmptyState } from './shared';

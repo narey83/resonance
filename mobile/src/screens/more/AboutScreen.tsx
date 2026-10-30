@@ -27,10 +27,12 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text } from '../../components/Typography';
 import { Editorial, Radius, Spacing, Typography, ThemeColors } from '../../theme';
 
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ResonanceLogo } from '../../components/ResonanceLogo';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import * as Application from 'expo-application';
@@ -100,7 +102,7 @@ export default function AboutScreen() {
     <ScrollView style={s.scroll} contentContainerStyle={s.container}>
       <View style={s.hero}>
         <View style={s.heroIcon}>
-          <Ionicons color={colors.accent} name="musical-notes-outline" size={28} />
+          <ResonanceLogo size={48} />
         </View>
         <Text style={s.heroTitle}>Resonance</Text>
         <Text style={s.heroSub}>
@@ -177,7 +179,7 @@ function makeStyles(c: ThemeColors) {
       alignItems: 'center',
       marginBottom: Spacing.xs,
     },
-    heroTitle: { fontSize: Typography.xl, fontWeight: '600', color: c.textPrimary },
+    heroTitle: { fontFamily: Typography.display, fontSize: Typography.xl, fontWeight: '600', color: c.textPrimary },
     heroSub:   { fontSize: Typography.sm, color: c.textMuted },
     group: {
       backgroundColor: c.bgSurface,

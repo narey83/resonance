@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text } from '../../components/Typography';
 import { Editorial, Spacing, Typography } from '../../theme';
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -38,7 +39,6 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';

@@ -1,5 +1,6 @@
+import { Text } from '../../components/Typography';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, View } from 'react-native';
 import { apiClient } from '../../api/client';
 import { seedTrackSignatures, getTrackTitle, type MusicTrack } from '../../api/musicLibrary';
 import { useTheme } from '../../context/ThemeContext';

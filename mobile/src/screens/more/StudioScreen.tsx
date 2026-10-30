@@ -1,6 +1,7 @@
+import { Text, TextInput } from '../../components/Typography';
 import { Editorial } from '../../theme';
 import React, { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
 import { useCast } from '../../context/CastContext';
 import { needsStudioTone, presetTone, STUDIO_EQ_BANDS, STUDIO_MODULES, STUDIO_PRESETS } from '../../lib/studio';

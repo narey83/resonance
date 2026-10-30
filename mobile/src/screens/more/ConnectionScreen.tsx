@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text, TextInput } from '../../components/Typography';
 import { Editorial, Radius, Spacing, Typography, ThemeColors } from '../../theme';
 
 // Basic connection/server/disk status — open to every signed-in user, matching
@@ -50,8 +51,9 @@ import { Editorial, Radius, Spacing, Typography, ThemeColors } from '../../theme
 // belongs to exactly one hop.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import Svg, { Circle, Path } from 'react-native-svg';
+import { ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
+import { ResonanceLogo } from '../../components/ResonanceLogo';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useDeferredFocusEffect } from '../../hooks/useDeferredEffect';
@@ -560,15 +562,7 @@ export default function ConnectionScreen() {
               // Matches the web UI's ResonanceMark fallback (frontend/src/components/Shared/ResonanceMark.jsx)
               // rather than an initial-letter avatar, so "no picture set" looks the same on both.
               <View style={[s.avatarImg, s.avatarPlaceholder]}>
-                <Svg fill="none" height={28} viewBox="0 0 24 24" width={28}>
-                  <Circle cx="12" cy="12" r="8" stroke={colors.textMuted} strokeWidth="2" />
-                  <Path
-                    d="M4 12 C6 6.5 10 6.5 12 12 C14 17.5 18 17.5 20 12"
-                    stroke={colors.textMuted}
-                    strokeLinecap="round"
-                    strokeWidth="2"
-                  />
-                </Svg>
+                <ResonanceLogo size={28} />
               </View>
             )}
             {isAdmin && (

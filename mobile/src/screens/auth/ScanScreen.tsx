@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text } from '../../components/Typography';
 import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
 
 import { getSessionGeneration, isCurrentSession } from '../../lib/sessionScope';
@@ -36,7 +37,6 @@ import {
   Linking,
   Pressable,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';

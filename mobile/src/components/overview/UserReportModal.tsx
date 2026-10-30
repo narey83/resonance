@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text } from '../Typography';
 import { Editorial, Radius, Spacing, Typography, ThemeColors } from '../../theme';
 
 // Detail drill-down for a single user, reached from the leaderboard or the
@@ -36,7 +37,7 @@ import { Editorial, Radius, Spacing, Typography, ThemeColors } from '../../theme
 // plus a hand-off into the existing Chat screen for messaging.
 
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {

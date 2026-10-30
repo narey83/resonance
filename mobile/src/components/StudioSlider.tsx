@@ -1,5 +1,6 @@
+import { Text } from './Typography';
 import React, { useRef } from 'react';
-import { StyleSheet, Text, UIManager, View } from 'react-native';
+import { StyleSheet, UIManager, View } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { useTheme } from '../context/ThemeContext';
 import { Typography } from '../theme';

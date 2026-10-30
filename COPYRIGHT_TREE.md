@@ -817,3 +817,7 @@ Artwork processing uses SkiaSharp under the MIT license. Its notice is retained 
 ## Bundled runtime components
 
 The pinned bgutil yt-dlp provider plugin under `backend/tools/yt-dlp-plugins/` is vendored third-party code under GPL-3.0-only. Its upstream version, archive digest and provider-image digest are recorded in `SOURCE.txt`; the accompanying `LICENSE` is copied into builds and published output.
+
+## Bundled Resonance fonts
+
+- `branding/fonts/`, `frontend/public/fonts/`, `mobile/assets/fonts/`: Outfit by the Outfit Project Authors and Inter by Rasmus Andersson / the Inter Project Authors, under the SIL Open Font License 1.1. See the adjacent `*-OFL.txt` notices and `branding/README.md` for the pinned source and generated formats.

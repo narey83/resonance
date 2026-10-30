@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text } from '../../components/Typography';
 import { Editorial, Radius, Spacing, ThemeColors, Typography, themes } from '../../theme';
 
 import { useRemoteAccess } from '../../lib/remoteAccess';
@@ -38,7 +39,6 @@ import {
   ScrollView,
   StyleSheet,
   Switch,
-  Text,
   View,
 } from 'react-native';
 import { floatingOverlay } from '../../native/floatingOverlay';

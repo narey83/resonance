@@ -32,8 +32,9 @@
 // already surfaces one summary row from the same call for every user — so this stands alone here,
 // open to everyone, rather than living inside an admin analytics screen.
 
+import { Text } from '../../components/Typography';
 import React, { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { Spacing, Typography, ThemeColors } from '../../theme';

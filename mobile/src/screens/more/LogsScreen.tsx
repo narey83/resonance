@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text, TextInput } from '../../components/Typography';
 import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
 
 import { stopHubConnection } from '../../lib/hubLifecycle';
@@ -45,8 +46,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';

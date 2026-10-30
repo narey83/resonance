@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text, TextInput } from '../../components/Typography';
 import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
 
 import React, { useMemo, useState } from 'react';
@@ -37,8 +38,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
 import { ResonanceLogo } from '../../components/ResonanceLogo';
@@ -153,7 +152,7 @@ function makeStyles(c: ThemeColors) {
     inner:     { flexGrow: 1, justifyContent: 'center', paddingHorizontal: Spacing.xl, paddingVertical: Spacing.xl },
 
     header:  { alignItems: 'center', marginBottom: Spacing.xxl, gap: Spacing.sm },
-    logo:    { fontSize: Typography.xxl, fontWeight: '700', color: c.textPrimary, letterSpacing: -0.5 },
+    logo:    { fontFamily: Typography.display, fontSize: Typography.xxl, fontWeight: '600', color: c.textPrimary, letterSpacing: -0.5 },
     tagline: { fontSize: Typography.sm, color: c.textMuted },
 
     form:       { gap: Spacing.sm },

@@ -288,10 +288,18 @@
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 14px;
   line-height: 1.5;
   margin: 0;
+}
+
+button, input, select, textarea {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+h1, h2, h3, h4, .ui.header, .page-title, .auth-heading {
+  font-family: 'Outfit', 'Inter', sans-serif;
 }
 
 /* ─── App shell ─────────────────────────────────────────────────────────────── */
@@ -825,7 +833,7 @@ body {
 /* ── Left brand panel ── */
 .auth-brand-panel {
   align-items: center;
-  background: var(--accent);
+  background: #0c1020;
   display: flex;
   flex: 1;
   justify-content: center;
@@ -844,8 +852,9 @@ body {
 }
 
 .auth-brand-title {
+  font-family: 'Outfit', 'Inter', sans-serif;
   font-size: 28px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.5px;
   margin-bottom: 10px;
 }

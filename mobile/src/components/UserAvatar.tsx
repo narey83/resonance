@@ -32,8 +32,9 @@
 // all, so the fallback is the normal case, not an error state. Mounting one
 // asks userInfoStore for the profile; see that file for why the fetch is lazy.
 
+import { Text } from './Typography';
 import React, { useEffect } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 import { Radius } from '../theme';
 import { useUserInfoStore } from '../store/userInfoStore';
 

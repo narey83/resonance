@@ -27,8 +27,9 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text } from './Typography';
 import React from 'react';
-import { Linking, Text } from 'react-native';
+import { Linking } from 'react-native';
 
 import { URL_PATTERN, stripTrailingPunctuation } from '../lib/messageLinks';
 export { findFirstUrl } from '../lib/messageLinks';

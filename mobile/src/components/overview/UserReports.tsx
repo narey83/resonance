@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text, TextInput } from '../Typography';
 import { Editorial, Radius, Spacing, Typography, ThemeColors } from '../../theme';
 
 // FlatList already virtualizes rows, so unlike the web version (which needs
@@ -34,7 +35,7 @@ import { Editorial, Radius, Spacing, Typography, ThemeColors } from '../../theme
 // needed here for large user lists.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getUserList, UserReportSummary } from '../../api/analytics';
 import { SkeletonRows } from '../Skeleton';

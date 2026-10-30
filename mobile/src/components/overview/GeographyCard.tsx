@@ -27,8 +27,9 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text } from '../Typography';
 import React from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 import { Spacing, Typography, ThemeColors } from '../../theme';
 import { GeographyReport } from '../../api/analytics';
 import { BarRow, Card, EmptyState, fmtBytes, fmtPct } from './shared';

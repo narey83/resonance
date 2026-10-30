@@ -27,12 +27,13 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text } from './Typography';
 import { Editorial, Radius, Spacing, Typography } from '../theme';
 
 import { Ionicons } from '@expo/vector-icons';
 import React, { useRef } from 'react';
 import { Image } from 'expo-image';
-import { Keyboard, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Keyboard, PanResponder, Pressable, StyleSheet, View } from 'react-native';
 import { getArtworkUrl, getTrackTitle } from '../api/musicLibrary';
 import { useCast } from '../context/CastContext';
 import { usePlaybackPosition, usePlaybackStatus, usePlayer } from '../context/PlayerContext';

@@ -1,5 +1,3 @@
-import { useLocalPlaylistStore } from '../store/localPlaylistStore';
-import { LocalPlaylistPicker } from './LocalPlaylists';
 // <copyright file="PlayerOverlay.tsx" company="John Narey">
 //    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
 //   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
@@ -29,6 +27,10 @@ import { LocalPlaylistPicker } from './LocalPlaylists';
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text, TextInput } from './Typography';
+import { useLocalPlaylistStore } from '../store/localPlaylistStore';
+import { LocalPlaylistPicker } from './LocalPlaylists';
+
 import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../theme';
 
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -49,8 +51,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';

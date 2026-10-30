@@ -37,7 +37,8 @@ import {
   waitForConnection,
 } from '../lib/soulseekConnection';
 import FolderPicker from './Shared/FolderPicker';
-import { CheckCircle, Headphones, Loader as LoaderIcon } from 'lucide-react';
+import ResonanceMark from './Shared/ResonanceMark';
+import { CheckCircle, Loader as LoaderIcon } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import YAML from 'yaml';
 
@@ -676,10 +677,7 @@ const Setup = ({ initialStep = STEP_ACCOUNT, onComplete }) => {
     <div className="auth-shell">
       <div className="auth-card auth-card--wide">
         <div className="auth-brand">
-          <Headphones
-            size={28}
-            strokeWidth={1.5}
-          />
+          <ResonanceMark size={28} />
           <span className="auth-brand-name">Resonance</span>
         </div>
 

@@ -6,3 +6,9 @@
 @linkHoverUnderline: var(--smui-site-link-hover-underline, none);
 
 @inputBackground: var(--smui-input-background, @white);
+
+@fontName: 'Inter';
+@headerFont: 'Outfit', 'Inter', sans-serif;
+@pageFont: 'Inter', sans-serif;
+@fontFamily: 'Inter', sans-serif;
+@importGoogleFonts: false;

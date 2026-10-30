@@ -24,6 +24,7 @@ function screen() {
   const load = mobileModules({
     react: { ...React, useState: state, useRef: initial => state(() => ({ current: initial }))[0], useMemo: factory => factory(), useEffect: effect },
     'react-native': { ActivityIndicator: 'ActivityIndicator', FlatList: 'FlatList', Pressable: 'Pressable', Text: 'Text', View: 'View' },
+    'src/components/Typography.tsx': { Text: 'Text', TextInput: 'TextInput' },
     'src/context/ThemeContext.ts': { useTheme: () => ({ colors: {} }) },
     'src/context/PlayerContext.tsx': { MAX_QUEUE: 200, LEAD_IN: 50, usePlayer: () => ({ playQueue: async (...args) => { queues.push(args); } }) },
     'src/store/libraryActivityStore.ts': { useLibraryActivityStore: selector => selector({ libraryRevision: 0 }) },

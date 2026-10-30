@@ -1,7 +1,3 @@
-import SmartCratesTab from './SmartCratesTab';
-import NewLibraryBadge from '../../components/NewLibraryBadge';
-import { isRecentlyIndexed } from '../../lib/recentLibraryItems';
-import { LocalPlaylists, LocalPlaylistPicker } from '../../components/LocalPlaylists';
 // <copyright file="LibraryScreen.tsx" company="John Narey">
 //    ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮  ╭╮
 //   ─╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰──╯╰  resonance
@@ -31,6 +27,12 @@ import { LocalPlaylists, LocalPlaylistPicker } from '../../components/LocalPlayl
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text, TextInput } from '../../components/Typography';
+import SmartCratesTab from './SmartCratesTab';
+import NewLibraryBadge from '../../components/NewLibraryBadge';
+import { isRecentlyIndexed } from '../../lib/recentLibraryItems';
+import { LocalPlaylists, LocalPlaylistPicker } from '../../components/LocalPlaylists';
+
 import { Editorial, makeScreenOptions, Radius, Spacing, ThemeColors, Typography } from '../../theme';
 
 import React, {
@@ -50,8 +52,6 @@ import {
   Share,
   StyleSheet,
   Switch,
-  Text,
-  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';

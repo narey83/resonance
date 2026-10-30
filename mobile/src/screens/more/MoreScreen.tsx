@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text } from '../../components/Typography';
 import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
 
 import React, { useMemo } from 'react';
@@ -35,7 +36,6 @@ import {
   ScrollView,
   StyleSheet,
   Alert,
-  Text,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';

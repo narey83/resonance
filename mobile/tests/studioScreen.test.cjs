@@ -19,6 +19,7 @@ function screen({ available = true, casting = false, enhanced = true, slidersAva
       Pressable: 'Pressable', ScrollView: 'ScrollView', Switch: 'Switch',
       Text: 'Text', TextInput: 'TextInput', View: 'View',
     },
+    'src/components/Typography.tsx': { Text: 'Text', TextInput: 'TextInput' },
     'src/theme.ts': { Editorial: {}, Typography: {} },
     'src/context/ThemeContext.ts': { useTheme: () => ({ colors: { accent: 'accent', danger: 'danger', borderStrong: 'border', bgElevated: 'elevated' } }) },
     'src/context/CastContext.ts': { useCast: () => ({ isCasting: casting }) },

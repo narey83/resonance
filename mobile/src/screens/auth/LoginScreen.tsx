@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text, TextInput } from '../../components/Typography';
 import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
 
 import { isMaintenanceResponse } from '../../lib/maintenance';
@@ -36,8 +37,6 @@ import {
   Switch,
   Pressable,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
@@ -199,7 +198,7 @@ function makeStyles(c: ThemeColors) {
     container: { flex: 1, backgroundColor: c.bgPrimary },
     inner: { flexGrow: 1, paddingBottom: Spacing.xxl, paddingHorizontal: Spacing.xl, paddingTop: Spacing.xxl * 2 },
     header:  { alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.xxl },
-    logo:    { color: c.textPrimary, fontSize: Typography.xxl, fontWeight: '700', letterSpacing: -0.5 },
+    logo:    { fontFamily: Typography.display, color: c.textPrimary, fontSize: Typography.xxl, fontWeight: '600', letterSpacing: -0.5 },
     title: { fontSize: Typography.xxl, color: c.textPrimary, marginBottom: Spacing.xs, ...Editorial.heading },
     sub:   { fontSize: Typography.sm, color: c.textMuted, marginBottom: Spacing.xxl },
     form:  { gap: Spacing.md },

@@ -1,6 +1,8 @@
+import { Text } from '../../components/Typography';
 import { Editorial, Typography } from '../../theme';
+import { ResonanceLogo } from '../../components/ResonanceLogo';
 import React, { useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
@@ -18,7 +20,7 @@ export default function StartScreen() {
     finally { setBusy(false); }
   };
   return <SafeAreaView style={[s.screen, { backgroundColor: colors.bgPrimary }]}><View style={s.content}>
-    <Text style={[s.wordmark, { color: colors.textPrimary }]}>RESONANCE</Text>
+    <View style={s.brand}><ResonanceLogo size={48} /><Text adjustsFontSizeToFit minimumFontScale={0.65} numberOfLines={1} style={[s.wordmark, { color: colors.textPrimary }]}>Resonance</Text></View>
     <View style={[s.rule, { backgroundColor: colors.textPrimary }]} />
     <Text style={[s.title, { color: colors.textPrimary }]}>Where’s your music?</Text>
     <Text style={[s.copy, { color: colors.textMuted }]}>Start with music on this device. Connect to a Resonance server whenever you want.</Text>
@@ -28,4 +30,4 @@ export default function StartScreen() {
     {modeError && <Text style={{ color: colors.danger }}>Your choice could not be saved. Try again.</Text>}
   </View></SafeAreaView>;
 }
-const s = StyleSheet.create({ screen: { flex: 1 }, content: { flex: 1, justifyContent: 'center', padding: 24, gap: 18 }, wordmark: { fontFamily: Typography.display, fontSize: 44, letterSpacing: -1.3 }, rule: { height: 2 }, title: { fontSize: 32, marginTop: 20, ...Editorial.heading }, copy: { fontSize: 13, lineHeight: 20 }, option: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, padding: 18, gap: 14, minHeight: 96 }, optionText: { flex: 1, gap: 6 }, optionTitle: { fontSize: 16, fontWeight: '600' } });
+const s = StyleSheet.create({ screen: { flex: 1 }, content: { flex: 1, justifyContent: 'center', padding: 24, gap: 18 }, brand: { flexDirection: 'row', alignItems: 'center', gap: 10 }, wordmark: { flexShrink: 1, fontFamily: Typography.display, fontSize: 32, letterSpacing: -0.5 }, rule: { height: 2 }, title: { fontSize: 32, marginTop: 20, ...Editorial.heading }, copy: { fontSize: 13, lineHeight: 20 }, option: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, padding: 18, gap: 14, minHeight: 96 }, optionText: { flex: 1, gap: 6 }, optionTitle: { fontSize: 16, fontWeight: '600' } });

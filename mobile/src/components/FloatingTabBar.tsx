@@ -29,8 +29,9 @@
 
 // A fixed five-tab rail. Shared-folder browsing and community screens live under More.
 
+import { Text } from './Typography';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useTheme } from '../context/ThemeContext';

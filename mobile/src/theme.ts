@@ -104,8 +104,8 @@ export const themes: Record<PaletteName, ThemeColors> = { dark, amoled, midnight
 export const Colors: ThemeColors = dark;
 
 export const Typography = {
-  fontFamily: Platform.select({ ios: 'Helvetica Neue', android: 'sans-serif', default: 'System' }),
-  display: Platform.select({ ios: 'HelveticaNeue-CondensedBold', android: 'sans-serif-condensed', default: 'System' }),
+  fontFamily: 'Inter-Regular',
+  display: 'Outfit-SemiBold',
   xs:    11,
   sm:    12,
   base:  14,
@@ -136,7 +136,7 @@ export const Radius = {
 // local to each control so dense lists, messages and accessibility layouts retain
 // their existing hierarchy and contrast.
 export const Editorial = {
-  heading: { fontFamily: Typography.display, fontWeight: '700' as const, letterSpacing: -0.4 },
+  heading: { fontFamily: Typography.display, fontWeight: '600' as const, letterSpacing: -0.4 },
   label: { fontFamily: Typography.mono, letterSpacing: 0.8, textTransform: 'uppercase' as const },
   control: { borderRadius: Radius.sm },
   panel: { borderRadius: Radius.sm, shadowOpacity: 0, elevation: 0 },
@@ -146,7 +146,7 @@ export const Editorial = {
 export const makeScreenOptions = (c: ThemeColors) => ({
   headerStyle:         { backgroundColor: c.header },
   headerTintColor:     c.textPrimary,
-  headerTitleStyle:    { fontFamily: Typography.display, fontSize: 30, letterSpacing: -0.6, fontWeight: '700' as const },
+  headerTitleStyle:    { fontFamily: Typography.display, fontSize: 30, letterSpacing: -0.6, fontWeight: '600' as const },
   headerShadowVisible: false,
   contentStyle:        { backgroundColor: c.bgPrimary },
 });

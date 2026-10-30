@@ -43,8 +43,9 @@
 // Used for both the admin dashboard (everyone's traffic) and PersonalSummary
 // (just yours) — same shape of data, same card.
 
+import { Text } from '../Typography';
 import React, { useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Radius, Spacing, Typography, ThemeColors } from '../../theme';
 import { TransferSummary } from '../../api/analytics';

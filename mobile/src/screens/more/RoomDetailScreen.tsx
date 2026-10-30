@@ -27,6 +27,9 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text, TextInput } from '../../components/Typography';
+import type { TextInput as NativeTextInput } from 'react-native';
+
 import { useLatestMessage } from '../../hooks/useLatestMessage';
 
 import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
@@ -40,8 +43,6 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
@@ -119,7 +120,7 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
   const [sending, setSending] = useState(false);
   const [showUsers, setShowUsers] = useState(false);
   const [actionUser, setActionUser] = useState<string | null>(null);
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<NativeTextInput>(null);
 
   const miniBarHeight = useMiniBarHeight();
   const headerHeight = useHeaderHeight();

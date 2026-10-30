@@ -33,8 +33,9 @@
 // slice: parent -> you -> children, which is the most any single client can
 // ever see of the tree.
 
+import { Text } from '../Typography';
 import React, { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Spacing, Typography, ThemeColors } from '../../theme';
 import { Card, ChainLink, ChainNode, EmptyState, SectionHeader, StatRow, StatTileGrid } from './shared';
 import type { AppState } from '../../api/application';

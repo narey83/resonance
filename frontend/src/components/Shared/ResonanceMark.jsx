@@ -28,49 +28,19 @@
 // </copyright>
 
 import './ResonanceMark.css';
+import mark from '../../assets/resonance-mark.svg';
 import React from 'react';
 
+// A single static asset avoids duplicated SVG gradient IDs in repeated marks.
 const ResonanceMark = ({ size = 24 }) => (
-  <svg
+  <img
+    alt=""
     aria-hidden="true"
     className="resonance-mark"
-    fill="none"
-    focusable="false"
     height={size}
-    viewBox="0 0 24 24"
+    src={mark}
     width={size}
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <circle
-      className="resonance-mark-ring"
-      cx="12"
-      cy="12"
-      r="8"
-      stroke="currentColor"
-      strokeWidth="1.7"
-    />
-    <path
-      className="resonance-mark-wave"
-      d="M4 12 C6 6.5 10 6.5 12 12 C14 17.5 18 17.5 20 12"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeWidth="1.7"
-    />
-    <path
-      className="resonance-mark-highlight"
-      d="M6.4 6.4 A8 8 0 0 1 12 4"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeWidth="1.7"
-    />
-    <circle
-      className="resonance-mark-core"
-      cx="12"
-      cy="12"
-      fill="currentColor"
-      r="1.3"
-    />
-  </svg>
+  />
 );
 
 export default ResonanceMark;

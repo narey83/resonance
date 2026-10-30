@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text, TextInput } from '../../components/Typography';
 import { Editorial, Radius, Spacing, Typography } from '../../theme';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -36,8 +37,6 @@ import {
   FlatList,
   Pressable,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
 import { File, Directory, Paths } from 'expo-file-system';

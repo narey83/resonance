@@ -27,12 +27,13 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text } from '../components/Typography';
 import { useServerProfiles } from '../store/serverProfilesStore';
 import { tokenUsername } from '../lib/jwt';
 import StudioController from '../components/StudioController';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useEffect } from 'react';
-import { View, ActivityIndicator, Pressable, Text } from 'react-native';
+import { View, ActivityIndicator, Pressable } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import TrackPlayer from 'react-native-track-player';

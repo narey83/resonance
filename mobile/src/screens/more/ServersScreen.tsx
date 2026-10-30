@@ -1,5 +1,6 @@
+import { Text, TextInput } from '../../components/Typography';
 import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuthStore } from '../../store/auth';
 import { useAppMode } from '../../store/appModeStore';

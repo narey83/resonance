@@ -13,7 +13,7 @@
     "android": {
       "package": "com.resonance.mobile",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0C1020",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -28,6 +28,19 @@
     },
     "plugins": [
       "expo-dev-client",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0C1020",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 160,
+          "resizeMode": "contain",
+          "dark": {
+            "backgroundColor": "#0C1020",
+            "image": "./assets/splash-icon.png"
+          }
+        }
+      ],
       "./plugins/withStudio",
       "./plugins/withAndroidAuto",
       "./plugins/withCarPlay",

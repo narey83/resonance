@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { Text } from '../Typography';
 import { Editorial, Spacing, Typography, ThemeColors } from '../../theme';
 
 // Deliberately NOT react-native-maps: that needs a Google Maps SDK key on
@@ -40,7 +41,7 @@ import { Editorial, Spacing, Typography, ThemeColors } from '../../theme';
 // dependency — good enough for a small admin map, not survey-grade).
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 import type { GeometryObject } from 'geojson';
 import type { Topology } from 'topojson-specification';

@@ -29,6 +29,9 @@
 
 import 'react-native-gesture-handler';
 import React from 'react';
+import { ActivityIndicator, View } from 'react-native';
+import { useFonts } from 'expo-font';
+import { ResonanceLogo } from './src/components/ResonanceLogo';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import RootNavigator from './src/navigation/RootNavigator';
@@ -36,6 +39,20 @@ import { PlayerProvider } from './src/context/PlayerContext';
 import { CastProvider } from './src/context/CastContext';
 
 export default function App() {
+  const [fontsLoaded, fontError] = useFonts({
+    'Inter-Regular': require('./assets/fonts/Inter-Regular.ttf'),
+    'Inter-Medium': require('./assets/fonts/Inter-Medium.ttf'),
+    'Inter-SemiBold': require('./assets/fonts/Inter-SemiBold.ttf'),
+    'Inter-Bold': require('./assets/fonts/Inter-Bold.ttf'),
+    'Outfit-SemiBold': require('./assets/fonts/Outfit-SemiBold.ttf'),
+  });
+  // A failed font load must never keep the user out of their library.
+  if (!fontsLoaded && !fontError) {
+    return <View style={{ flex: 1, backgroundColor: '#0C1020', alignItems: 'center', justifyContent: 'center', gap: 24 }}>
+      <ResonanceLogo />
+      <ActivityIndicator accessibilityLabel="Loading Resonance" color="#22D3EE" />
+    </View>;
+  }
   return (
     <SafeAreaProvider>
       <KeyboardProvider>
