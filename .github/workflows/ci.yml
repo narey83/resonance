@@ -74,6 +74,8 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
       - run: npm ci
+      - name: Dependency security audit
+        run: npm run audit:security
       - name: Lint
         run: npx eslint .
       - name: Typecheck

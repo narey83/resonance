@@ -1,6 +1,6 @@
 # Mobile development with Expo
 
-Updated **22 October 2026** for the current Expo SDK 57 source. Dependencies and native tooling can change; check `package.json`, `app.json`, the lockfile and the [versioned Expo SDK documentation](https://docs.expo.dev/versions/v57.0.0/) before making changes.
+Updated **30 October 2026** for the current Expo SDK 57 source. Dependencies and native tooling can change; check `package.json`, `app.json`, the lockfile and the [versioned Expo SDK documentation](https://docs.expo.dev/versions/v57.0.0/) before making changes.
 
 ## Use a development build
 
@@ -69,9 +69,16 @@ Use an isolated server/library when testing downloads, file management, mixtape 
 
 ```bash
 npm test
+npm run audit:security
 npx eslint .
 npx tsc --noEmit
 ```
+
+Dependency security maintenance (30 October 2026): the lockfile updates `shell-quote` to 1.12.0, Axios to 1.21.0 and compatible Expo 57 tooling. The unused `expo-music-info-2` package and its obsolete nested Expo FileSystem were removed. ExpoModulesJSI 57.1.3 includes the Swift-interface fix, so its old local patch is no longer needed.
+
+The scoped `@expo/cli` Zod override selects 4.6.7 or newer. Regression tests exercise Expo's plugin descriptors, command schemas and output validation against that major version. Keep the override until Expo's declared dependency accepts a patched Zod release.
+
+`deepmerge` 4.3.1 has no published patched version for [GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4). `patches/deepmerge+4.3.1.patch` uses own data properties when merging, preventing `__proto__` from changing the result's prototype. Tests cover poisoned source/target objects, nested values and both runtime entry points. `postinstall` must apply this patch. npm audit still reports seven low findings through Expo's dependency chain because it checks versions rather than local patches. No advisory is suppressed; the CI audit fails on moderate or higher findings. Replace the patch with an upstream release when one becomes available.
 
 Then build and exercise the affected platform. Type checks cannot validate native linking, background playback, notification delivery, device permissions, casting or Android Auto. Screenshots are visual evidence for the displayed screens, not a substitute for those integration tests.
 
