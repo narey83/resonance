@@ -3,7 +3,7 @@ export const STUDIO_MODULES = [
   { id: 'warmth', title: 'Tape warmth', detail: 'Soft saturation for density and colour', safe: .35, group: 'mastering' },
   { id: 'punch', title: 'Transient shaper', detail: 'Bring drum attacks forward', safe: .3, group: 'mastering' },
   { id: 'glue', title: 'Glue compressor', detail: 'Linked stereo compression, without makeup gain', safe: .4, group: 'mastering' },
-  { id: 'width', title: 'Stereo width', detail: 'Open the sides; check mono compatibility on the meter', safe: .3, group: 'mastering' },
+  { id: 'width', title: 'Stereo width', detail: 'Open the sides; use subtle amounts to preserve mono detail', safe: .3, group: 'mastering' },
   { id: 'monoBass', title: 'Mono bass', detail: 'Centre the low frequencies below 140 Hz', safe: 1, group: 'mastering' },
   { id: 'flutter', title: 'Tape flutter', detail: 'Slow pitch movement and worn-tape character', safe: .15, group: 'creative' },
   { id: 'echo', title: 'Tape echo', detail: '280 ms echo with restrained feedback', safe: .25, group: 'creative' },

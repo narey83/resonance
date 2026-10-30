@@ -22,7 +22,7 @@ function mobileModules(mocks = {}, globals = {}) {
     const module = { exports: {} };
     cache.set(file, module);
     const { outputText } = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
-      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true, jsx: ts.JsxEmit.ReactJSX },
       fileName: file,
     });
     const run = new Function('require', 'module', 'exports', 'setTimeout', 'clearTimeout', 'Date', outputText);
