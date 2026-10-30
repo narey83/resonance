@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { useLatestMessage } from '../../hooks/useLatestMessage';
+
 import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
 
 import { sessionGuard } from '../../lib/sessionScope';
@@ -134,6 +136,7 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
   // a virtualized list that only renders the first ~10 items, would keep
   // firing before the real last item was even measured.
   const reversedThread = useMemo(() => [...thread].reverse(), [thread]);
+  const latestMessage = useLatestMessage<PrivateMessage>(threadKey, JSON.stringify(reversedThread[0] ?? null));
 
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -368,6 +371,11 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
     <View style={s.container}>
       <ProfileStrip username={username} colors={colors} onPress={() => setActionUser(username)} />
       <Animated.FlatList
+        ref={latestMessage.listRef}
+        onScroll={latestMessage.onScroll}
+        scrollEventThrottle={16}
+        onContentSizeChange={latestMessage.onContentSizeChange}
+        onLayout={latestMessage.onLayout}
         data={reversedThread}
         inverted
         keyExtractor={(item, index) => `${item.direction}-${item.id}-${item.timestamp}-${index}`}
@@ -394,6 +402,7 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
           )}
           <TextInput
             multiline
+            onFocus={latestMessage.showLatest}
             onChangeText={setText}
             onSubmitEditing={handleSend}
             placeholder={reply ? 'Reply in their language…' : 'Message…'}

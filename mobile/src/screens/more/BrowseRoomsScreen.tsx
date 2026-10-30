@@ -59,7 +59,6 @@ const RoomRow = React.memo(function RoomRow({ room, isFirst, isLast, s, colors, 
       </View>
       <View style={s.rowContent}>
         <Text style={s.rowLabel}>{room.name}</Text>
-        <Text style={s.rowSub}>{room.userCount} user{room.userCount !== 1 ? 's' : ''}</Text>
       </View>
       {isJoined ? (
         <View style={s.joinedPill}>
@@ -232,7 +231,6 @@ function makeStyles(c: ThemeColors) {
     },
     rowContent: { flex: 1 },
     rowLabel: { fontSize: Typography.base, color: c.textPrimary, ...Editorial.heading },
-    rowSub:     { fontSize: Typography.xs, color: c.textMuted, marginTop: 1 },
 
     joinBtn:             { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.sm, backgroundColor: c.accent },
     joinBtnDisabled:     { backgroundColor: c.bgElevated },

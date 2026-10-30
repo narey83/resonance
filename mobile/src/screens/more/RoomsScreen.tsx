@@ -64,7 +64,6 @@ const JoinedRow = React.memo(function JoinedRow({ room, isFirst, isLast, s, colo
       </View>
       <View style={s.rowContent}>
         <Text style={s.rowLabel}>{room.name}</Text>
-        <Text style={s.rowSub}>{room.users.length} user{room.users.length !== 1 ? 's' : ''}</Text>
       </View>
       {mentions > 0 && (
         <View style={s.mentionBadge}>
@@ -241,7 +240,6 @@ function makeStyles(c: ThemeColors) {
     },
     rowContent: { flex: 1 },
     rowLabel: { fontSize: Typography.base, color: c.textPrimary, ...Editorial.heading },
-    rowSub:     { fontSize: Typography.xs, color: c.textMuted, marginTop: 1 },
 
     mentionBadge: {
       minWidth: 18,

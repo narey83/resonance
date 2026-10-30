@@ -27,6 +27,8 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { useLatestMessage } from '../../hooks/useLatestMessage';
+
 import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -111,6 +113,7 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
   // anchored to the latest message — see ChatConversationScreen for why
   // scrollToEnd on a normal-order virtualized list falls short of the truth.
   const reversedThread = useMemo(() => [...thread].reverse(), [thread]);
+  const latestMessage = useLatestMessage<RoomMessage>(threadKey, JSON.stringify(reversedThread[0] ?? null));
 
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -197,8 +200,10 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
 
   useFocusEffect(
     useCallback(() => {
+      setShowUsers(false);
       void loadMessages(roomName).catch(() => {});
       clearMentions(roomName);
+      return () => setShowUsers(false);
     }, [roomName, loadMessages, clearMentions])
   );
 
@@ -373,6 +378,11 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
     <View style={s.container}>
       <FlatList
         {...LIST_PERF_PROPS}
+        ref={latestMessage.listRef}
+        onScroll={latestMessage.onScroll}
+        scrollEventThrottle={16}
+        onContentSizeChange={latestMessage.onContentSizeChange}
+        onLayout={latestMessage.onLayout}
         // removeClippedSubviews is unreliable on Android inverted lists (blanks rows),
         // so opt this one back out while keeping the batching/window tuning.
         removeClippedSubviews={false}
@@ -410,6 +420,7 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
           )}
           <TextInput
             multiline
+            onFocus={latestMessage.showLatest}
             onChangeText={setText}
             onSubmitEditing={handleSend}
             placeholder={reply ? 'Reply in their language…' : `Message ${roomName}…`}
