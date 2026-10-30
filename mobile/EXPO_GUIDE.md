@@ -47,6 +47,8 @@ npx expo start --dev-client
 
 TypeScript, JavaScript and styles normally update through Fast Refresh. Rebuild after adding/removing native dependencies, changing native plugins or permissions, or updating the SDK/native runtime. An old installed binary may not match a newly upgraded JavaScript bundle.
 
+Keep the `expo` import first in `index.ts`, before application and native-dependent imports. Expo's startup side effects initialize React Native globals before modules such as SecureStore load. Importing those modules first can leave `globalThis.expo` undefined and fail with an `EventEmitter` error before the main screen registers. `tests/entrypoint.test.cjs` exercises a cold startup and playback-service registration order.
+
 For Expo packages, use the SDK-aware installer:
 
 ```bash

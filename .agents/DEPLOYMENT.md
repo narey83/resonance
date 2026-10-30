@@ -120,7 +120,7 @@ user clarified this rule on 30 October 2026.
   process before starting another server. Its working directory must be the
   requested source snapshot's `mobile/`, with the matching dependency lockfile.
   The snapshot established on 30 October is
-  `/home/narey/resonance-builds/home-recent-9deffa7a/mobile`; its parent contains
+  `/home/narey/resonance-builds/expo-bootstrap-1f8f1ae/mobile`; its parent contains
   `mobile-metro.json` and `mobile-metro.log`. Verify the PID/cwd before reuse.
 - The corresponding Mac transport command is
   `ssh -f -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -L 127.0.0.1:8081:127.0.0.1:8082 dev-laptop.local`.

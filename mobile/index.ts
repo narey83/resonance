@@ -27,12 +27,13 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import { AppRegistry } from 'react-native';
-import { registerCarPlay } from './src/services/carPlay';
+// Initialize React Native globals before modules such as SecureStore are imported.
 import { registerRootComponent } from 'expo';
+import { AppRegistry } from 'react-native';
 import TrackPlayer from 'react-native-track-player';
 
 import App from './App';
+import { registerCarPlay } from './src/services/carPlay';
 import PlaybackService from './src/services/playback-service';
 
 // Must be registered before registerRootComponent
