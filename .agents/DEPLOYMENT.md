@@ -57,7 +57,13 @@ existing checkout and private state intact; never reset it to perform a deployme
 ## Web deployment
 
 1. Read `AGENTS.md` and `.agents/BUILD_AND_DEPLOY.md`. Verify the source commit,
-   relevant tests, lint, security checks and production build.
+   relevant tests, lint, security checks and production build on the dev laptop.
+   Use a clean dependency install inside the isolated snapshot; matching source
+   lockfiles do not prove an existing `node_modules` directory is current. The
+   laptop has Node 22; its system npm 9 cannot install this frontend lockfile
+   correctly. Use a current npm 11 via `npx npm@11` without replacing global tools.
+   Pre-commit validation must also run remotely against the exact staged files;
+   do not skip the quality gate to avoid running it on the Mac.
 2. Read the current server deployment record, running executable/PID, resolved
    `backend/wwwroot` link and the live Caddy routes. Check public and direct readiness.
 3. Package `frontend/build` as an immutable web release with a SHA-256 file manifest.
