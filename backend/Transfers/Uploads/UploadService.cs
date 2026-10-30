@@ -644,11 +644,20 @@ namespace resonance.Transfers.Uploads
             {
                 Log.Error(ex, "Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
 
-                TryFail(transfer.Id, "File could not be found", TransferStates.Completed | TransferStates.Aborted);
-                await ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, "File could not be found");
+                // Persist the terminal state under the same lock as progress callbacks.
+                // Do not write the stale in-memory transfer back afterwards: that would
+                // overwrite the Completed flag and leave this upload stuck in the queue.
+                syncRoot.Wait(CancellationToken.None);
+                try
+                {
+                    TryFail(transfer.Id, "File could not be found", TransferStates.Completed | TransferStates.Aborted);
+                }
+                finally
+                {
+                    syncRoot.Release();
+                }
 
-                // todo: broadcast
-                SynchronizedUpdate(transfer, semaphore: syncRoot, cancellationToken: CancellationToken.None);
+                await ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, "File could not be found");
 
                 throw;
             }
@@ -687,11 +696,19 @@ namespace resonance.Transfers.Uploads
                     Log.Error(ex, "Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
                 }
 
-                TryFail(transfer.Id, exception: ex);
-                await ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, ex.Message);
+                // Serialize the final failure update with SDK state/progress callbacks.
+                // A second write of 'transfer' here would restore its pre-error state.
+                syncRoot.Wait(CancellationToken.None);
+                try
+                {
+                    TryFail(transfer.Id, exception: ex);
+                }
+                finally
+                {
+                    syncRoot.Release();
+                }
 
-                // todo: broadcast
-                SynchronizedUpdate(transfer, semaphore: syncRoot, cancellationToken: CancellationToken.None);
+                await ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, ex.Message);
 
                 throw;
             }
