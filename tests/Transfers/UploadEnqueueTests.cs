@@ -13,7 +13,7 @@ using Microsoft.Extensions.Options;
 using Soulseek;
 using Transfer = global::resonance.Transfers.Transfer;
 
-public sealed class UploadEnqueueTests : IDisposable
+public sealed partial class UploadEnqueueTests : IDisposable
 {
     private readonly SqliteConnection connection = new("Data Source=:memory:");
     private readonly ContextFactory factory;
@@ -256,7 +256,9 @@ public sealed class UploadEnqueueTests : IDisposable
     private static Soulseek.Transfer SdkUpload(TransferStates state) => new(
         Soulseek.TransferDirection.Upload, "alice", "album/track.mp3", 1, state, 100, 0);
 
-    private UploadService CreateService(IReadOnlyCollection<Soulseek.Transfer> uploads, Exception? failure = null, Task? watch = null)
+    private UploadService CreateService(IReadOnlyCollection<Soulseek.Transfer> uploads, Exception? failure = null, Task? watch = null,
+        Func<string, string, TransferOptions, CancellationToken, Task<Soulseek.Transfer>>? upload = null, UploadPeerCooldown? cooldown = null,
+        IDbContextFactory<TransfersDbContext>? contexts = null, UserPresence? cachedPresence = null)
     {
         var options = new AppOptions();
         var monitor = Stub<IOptionsMonitor<AppOptions>>((m, _) => m.Name switch
@@ -269,8 +271,8 @@ public sealed class UploadEnqueueTests : IDisposable
         {
             if (m.Name == "TryGetCachedPresence")
             {
-                args![1] = default(UserPresence);
-                return false;
+                args![1] = cachedPresence ?? default(UserPresence);
+                return cachedPresence.HasValue;
             }
 
             return m.Name switch
@@ -281,20 +283,37 @@ public sealed class UploadEnqueueTests : IDisposable
                 _ => throw new InvalidOperationException(m.Name),
             };
         });
-        var client = Stub<ISoulseekClient>((m, _) => m.Name == "get_Uploads" ? uploads : throw new InvalidOperationException(m.Name));
-        var shares = Stub<IShareService>((m, _) => m.Name == "ResolveFileAsync" && failure is not null
-            ? Task.FromException<(string, string, long)>(failure)
-            : throw new InvalidOperationException("Unexpected share lookup: " + m.Name));
+        var client = Stub<ISoulseekClient>((m, args) => m.Name switch
+        {
+            "get_Uploads" => uploads,
+            "UploadAsync" when upload is not null => upload((string)args![0]!, (string)args[1]!,
+                args.OfType<TransferOptions>().Single(), args.OfType<CancellationToken>().Single()),
+            _ => throw new InvalidOperationException(m.Name),
+        });
+        var shares = Stub<IShareService>((m, args) =>
+        {
+            if (m.Name != "ResolveFileAsync") { throw new InvalidOperationException(m.Name); }
+            if (failure is not null) { return Task.FromException<(string, string, long)>(failure); }
+            if (upload is not null) { return Task.FromResult(("relay", (string)args![0]!, 100L)); }
+            throw new InvalidOperationException("Unexpected share lookup");
+        });
+        var relay = Stub<global::resonance.Relay.IRelayService>((m, _) => m.Name switch
+        {
+            "GetFileInfoAsync" => Task.FromResult((true, 100L)),
+            "TryCloseFileStream" => true,
+            _ => throw new InvalidOperationException(m.Name),
+        });
         var notifications = Stub<ITransferErrorNotificationService>((m, _) => m.Name switch
         {
             "NotifyUploadErrorAsync" or "NotifyUploadRejectedAsync" => Task.CompletedTask,
             _ => throw new InvalidOperationException(m.Name),
         });
-        return new UploadService(null!, users, client, monitor, shares, null!, factory, null!, notifications,
+        return new UploadService(null!, users, client, monitor, shares, relay, contexts ?? factory, new QuietEvents(), notifications,
             new ConnectionStringDictionary(new Dictionary<Database, ConnectionString>
             {
                 [Database.Transfers] = "Data Source=:memory:",
-            }));
+            }))
+        { PeerCooldown = cooldown ?? new UploadPeerCooldown() };
     }
 
     private static T Stub<T>(Func<MethodInfo, object?[]?, object?> call) where T : class
