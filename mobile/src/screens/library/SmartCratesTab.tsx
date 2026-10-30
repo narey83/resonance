@@ -1,9 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
 import { apiClient } from '../../api/client';
 import { seedTrackSignatures, getTrackTitle, type MusicTrack } from '../../api/musicLibrary';
 import { useTheme } from '../../context/ThemeContext';
-import { usePlayer } from '../../context/PlayerContext';
+import { LEAD_IN, MAX_QUEUE, usePlayer } from '../../context/PlayerContext';
 import { useLibraryActivityStore } from '../../store/libraryActivityStore';
 import { Editorial } from '../../theme';
 
@@ -26,6 +26,30 @@ export default function SmartCratesTab() {
   const [collectionRevision, setCollectionRevision] = useState(0);
   const [trackError, setTrackError] = useState('');
   const [error, setError] = useState('');
+  const playbackRequestRef = useRef(0);
+  useEffect(() => () => { playbackRequestRef.current++; }, [selected, page]);
+  const playFromCrate = async (track: MusicTrack, index: number) => {
+    if (!selected) return;
+    const request = ++playbackRequestRef.current;
+    setTrackError('');
+    try {
+      const { data } = await apiClient.get<{ tracks: MusicTrack[]; total: number }>(
+        `/musiclibrary/crates/${encodeURIComponent(selected.id)}/tracks`,
+        { params: { limit: MAX_QUEUE, offset: Math.max(0, page * 100 + index - LEAD_IN), sort: 'title' } },
+      );
+      if (request !== playbackRequestRef.current) return;
+      const selectedIndex = data.tracks.findIndex((item) => item.path === track.path);
+      if (selectedIndex < 0) {
+        setTrackError('This track is no longer in this crate. Refresh and try again.');
+        return;
+      }
+      seedTrackSignatures(data.tracks);
+      await player.playQueue(data.tracks, selectedIndex);
+    } catch {
+      if (request === playbackRequestRef.current)
+        setTrackError('Could not load the crate playback queue. Please try again.');
+    }
+  };
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -174,11 +198,11 @@ export default function SmartCratesTab() {
                 <Text style={{ color: c.textMuted }}>No tracks currently match this crate.</Text>
               ) : null
             }
-            renderItem={({ item }) => (
+            renderItem={({ item, index }) => (
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`Play ${getTrackTitle(item)}`}
-                onPress={() => player.playTrack(item)}
+                onPress={() => { void playFromCrate(item, index); }}
                 style={{ paddingVertical: 14, borderBottomWidth: 1, borderColor: c.border }}
               >
                 <Text numberOfLines={1} style={{ color: c.textPrimary }}>

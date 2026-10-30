@@ -183,6 +183,7 @@ const TrackTable = ({
   onDeleteTracks,
   onEndReached,
   onExportTracks,
+  resolvePlaybackQueue,
   scrollContainerRef,
   serverFilter,
   serverSort,
@@ -358,6 +359,24 @@ const TrackTable = ({
     () => sortedTracks.map(toQueue),
     [sortedTracks],
   );
+
+  // Paged collections can resolve a queue beyond the rows currently visible.
+  const requestPlayback = async (track, index, time) => {
+    let queued = filteredQueue;
+    let queueIndex = index;
+    if (resolvePlaybackQueue) {
+      const resolved = await resolvePlaybackQueue(track, index);
+      if (!resolved) return;
+      queued = resolved.tracks.map(toQueue);
+      queueIndex = resolved.index;
+    }
+
+    if (time === undefined) playQueue(queued, queueIndex);
+    else
+      seekTrack(queued, queueIndex, time, {
+        replaceQueue: Boolean(resolvePlaybackQueue),
+      });
+  };
 
   // Drop selections for tracks that are no longer in the list
   useEffect(() => {
@@ -1099,7 +1118,7 @@ const TrackTable = ({
                     onDoubleClick={
                       selectMode
                         ? undefined
-                        : () => playQueue(filteredQueue, vRow.index)
+                        : () => requestPlayback(track, vRow.index)
                     }
                     onDragStart={
                       selectMode
@@ -1140,7 +1159,7 @@ const TrackTable = ({
                             className="jb-track-play-btn"
                             onClick={(event) => {
                               event.stopPropagation();
-                              playQueue(filteredQueue, vRow.index);
+                              void requestPlayback(track, vRow.index);
                             }}
                             type="button"
                           >
@@ -1159,8 +1178,8 @@ const TrackTable = ({
                         onSeek={
                           track.duration
                             ? (fraction) =>
-                                seekTrack(
-                                  filteredQueue,
+                                requestPlayback(
+                                  track,
                                   vRow.index,
                                   fraction * track.duration,
                                 )
@@ -1467,11 +1486,8 @@ const TrackTable = ({
             const index = sortedTracks.findIndex(
               (t) => t.path === inspected.path,
             );
-            seekTrack(
-              index >= 0 ? filteredQueue : [toQueue(inspected)],
-              index >= 0 ? index : 0,
-              time,
-            );
+            if (index >= 0) void requestPlayback(inspected, index, time);
+            else seekTrack([toQueue(inspected)], 0, time);
           }}
           reviewed={hasReviewed(
             tracks.find((t) => t.path === inspected.path) || inspected,

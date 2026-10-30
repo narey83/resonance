@@ -788,17 +788,18 @@ const MediaPlayer = () => {
 
       const resumeIdentity = track.path || track.filename;
       if (
-        pendingResumeRef.current &&
-        pendingResumeRef.current.path === resumeIdentity
-      ) {
-        audio.currentTime = pendingResumeRef.current.time;
-        pendingResumeRef.current = null;
-      } else if (
         pendingSeekRef.current &&
         pendingSeekRef.current.identity === resumeIdentity
       ) {
         audio.currentTime = pendingSeekRef.current.time;
         pendingSeekRef.current = null;
+        pendingResumeRef.current = null;
+      } else if (
+        pendingResumeRef.current &&
+        pendingResumeRef.current.path === resumeIdentity
+      ) {
+        audio.currentTime = pendingResumeRef.current.time;
+        pendingResumeRef.current = null;
       }
 
       const started = await playAudio();

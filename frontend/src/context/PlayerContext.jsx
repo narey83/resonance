@@ -262,14 +262,20 @@ export const PlayerProvider = ({ children }) => {
   // Same track already loaded → seek it in place. Different track → queue it
   // like a normal click would, and leave the position for MediaPlayer to pick
   // up once that track's audio has actually loaded.
+  // Paged collections request replaceQueue so their successors are adopted
+  // even when the user seeks the track that is already loaded.
   const seekTrack = useCallback(
-    (allTracks, index, time) => {
+    (allTracks, index, time, { replaceQueue = false } = {}) => {
       const target = allTracks[index];
       if (!target) return;
       const identity = target.filename || target.path;
       const currentIdentity =
         trackRef.current?.filename || trackRef.current?.path;
-      if (identity === currentIdentity && seekHandlerRef.current) {
+      if (
+        !replaceQueue &&
+        identity === currentIdentity &&
+        seekHandlerRef.current
+      ) {
         seekHandlerRef.current(time);
         return;
       }

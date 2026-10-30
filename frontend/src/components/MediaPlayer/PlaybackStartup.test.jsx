@@ -273,6 +273,29 @@ describe('player startup and playback intent', () => {
     expect(play).toHaveBeenCalledTimes(2);
   });
 
+  it('replaces a previous queue when a crate waveform selects the same track and honours the clicked position', async () => {
+    expect.hasAssertions();
+    sessionStorage.setItem(
+      'resonance-player-position',
+      JSON.stringify({ path: tracks[0].path, time: 42 }),
+    );
+    await restore();
+    const crateTracks = [
+      player.track,
+      { ...tracks[1], title: 'Crate successor' },
+    ];
+    await act(async () =>
+      player.seekTrack(crateTracks, 0, 75, { replaceQueue: true }),
+    );
+    expect(player.queue).toBe(crateTracks);
+    expect(container.querySelector('audio').currentTime).toBe(75);
+    await act(async () => {
+      container.querySelector('audio').dispatchEvent(new Event('ended'));
+    });
+    expect(player.track.title).toBe('Crate successor');
+    expect(player.isPlaying).toBe(true);
+  });
+
   it('does not replay a consumed selection when the audio owner remounts', async () => {
     expect.hasAssertions();
     await render();

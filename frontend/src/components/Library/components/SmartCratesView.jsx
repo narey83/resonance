@@ -1,5 +1,6 @@
 import '../LibraryWorkspace.css';
 import { useLibraryActivity } from '../../../context/LibraryActivityContext';
+import { MAX_QUEUE } from '../../../context/PlayerContext';
 import useDebounce from '../../../hooks/useDebounce';
 import { CAMELOT_KEYS, harmonicNeighbours } from '../../../lib/camelot';
 import {
@@ -433,11 +434,13 @@ export const CrateEditor = ({ crate, onCancel, onSaved }) => {
   );
 };
 
-const CrateTracks = ({ crate, onBack, onEdit, ...trackActions }) => {
+export const CrateTracks = ({ crate, onBack, onEdit, ...trackActions }) => {
   const activity = useLibraryActivity();
   const [sort, setSort] = useState({ col: 'title', dir: 'asc' });
   const [filter, setFilter] = useState('');
   const [revision, setRevision] = useState(0);
+  const [playbackError, setPlaybackError] = useState('');
+  const playbackRequestRef = useRef(0);
   const search = useDebounce(filter, 250);
   useEffect(
     () => setRevision((n) => n + 1),
@@ -461,6 +464,42 @@ const CrateTracks = ({ crate, onBack, onEdit, ...trackActions }) => {
     pageSize: 100,
     refreshToken: revision,
   });
+  useEffect(
+    () => () => {
+      playbackRequestRef.current++;
+    },
+    [query],
+  );
+  const resolvePlaybackQueue = async (track, index) => {
+    const request = ++playbackRequestRef.current;
+    setPlaybackError('');
+    try {
+      const result = await getCratePage({
+        ...query,
+        limit: MAX_QUEUE,
+        offset: Math.max(0, index - 50),
+      });
+      if (request !== playbackRequestRef.current) return null;
+      const selectedIndex = result.items.findIndex(
+        (item) => item.path === track.path,
+      );
+      if (selectedIndex < 0) {
+        setPlaybackError(
+          'This track is no longer in this crate. Refresh and try again.',
+        );
+        return null;
+      }
+
+      return { tracks: result.items, index: selectedIndex };
+    } catch {
+      if (request === playbackRequestRef.current)
+        setPlaybackError(
+          'Could not load the crate playback queue. Please try again.',
+        );
+      return null;
+    }
+  };
+
   return (
     <div className="crate-track-view">
       <header className="library-workspace workspace-detail-heading">
@@ -497,12 +536,13 @@ const CrateTracks = ({ crate, onBack, onEdit, ...trackActions }) => {
           <b>{page.total} tracks</b>
         </div>
       </header>
-      {page.error && (
+      {(page.error || playbackError) && (
         <p
           className="workspace-error"
           role="alert"
         >
-          Could not load this crate. Reopen it to try again.
+          {playbackError ||
+            'Could not load this crate. Reopen it to try again.'}
         </p>
       )}
       <TrackTable
@@ -510,6 +550,7 @@ const CrateTracks = ({ crate, onBack, onEdit, ...trackActions }) => {
         loading={page.loading}
         loadingMore={page.loadingMore}
         onEndReached={() => page.loadMore()}
+        resolvePlaybackQueue={resolvePlaybackQueue}
         serverFilter={{ value: filter, onChange: setFilter }}
         serverSort={{ ...sort, onChange: (col, dir) => setSort({ col, dir }) }}
         tracks={page.items}

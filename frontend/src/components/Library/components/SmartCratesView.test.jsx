@@ -1,10 +1,12 @@
 import { useLibraryActivity } from '../../../context/LibraryActivityContext';
 import {
+  getCratePage,
   getCrates,
   previewCrate,
   saveCrate,
 } from '../../../lib/libraryWorkspace';
-import SmartCratesView, { CrateEditor } from './SmartCratesView';
+import SmartCratesView, { CrateEditor, CrateTracks } from './SmartCratesView';
+import TrackTable from './TrackTable';
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { act, Simulate } from 'react-dom/test-utils';
@@ -15,6 +17,7 @@ jest.mock('../../../context/LibraryActivityContext', () => ({
 jest.mock('../../../lib/libraryWorkspace', () => ({
   ...jest.requireActual('../../../lib/libraryWorkspace'),
   getCrates: jest.fn(),
+  getCratePage: jest.fn(),
   previewCrate: jest.fn(),
   saveCrate: jest.fn(),
   deleteCrate: jest.fn(),
@@ -25,7 +28,7 @@ jest.mock('../../../lib/musicLibrary', () => ({
 jest.mock('../../../lib/usePagedList', () => ({
   usePagedList: () => ({ items: [], total: 0, loading: false }),
 }));
-jest.mock('./TrackTable', () => () => <p>Crate track list</p>);
+jest.mock('./TrackTable', () => jest.fn(() => <p>Crate track list</p>));
 const button = (container, text) =>
   [...container.querySelectorAll('button')].find((item) =>
     item.textContent.includes(text),
@@ -40,6 +43,7 @@ describe('Smart crate workflow', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     jest.clearAllMocks();
+    TrackTable.mockImplementation(() => <p>Crate track list</p>);
     useLibraryActivity.mockReturnValue({ libraryRevision: 0 });
     previewCrate.mockResolvedValue({
       total: 15,
@@ -226,5 +230,141 @@ describe('Smart crate workflow', () => {
     expect(previewCrate).toHaveBeenLastCalledWith(
       expect.objectContaining({ bpmMaxExclusive: true, analysedOnly: true }),
     );
+  });
+
+  it('resolves a bounded ordered queue beyond the displayed page and keeps the clicked track selected', async () => {
+    expect.hasAssertions();
+    await act(async () => {
+      ReactDOM.render(
+        <CrateTracks crate={{ id: 'genre/techno' }} />,
+        container,
+      );
+    });
+    expect(getCratePage).not.toHaveBeenCalled();
+    const items = Array.from({ length: 200 }, (_, index) => ({
+      path: `/track-${index + 49}`,
+    }));
+    getCratePage.mockResolvedValue({ items, total: 300 });
+    let queue;
+    await act(async () => {
+      queue = await TrackTable.mock.calls
+        .at(-1)[0]
+        .resolvePlaybackQueue({ path: '/track-99' }, 99);
+    });
+    expect(getCratePage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        crateId: 'genre/techno',
+        sort: 'title',
+        descending: false,
+        search: '',
+        offset: 49,
+        limit: 500,
+      }),
+    );
+    expect(queue).toEqual({ tracks: items, index: 50 });
+    expect(queue.tracks[queue.index + 1].path).toBe('/track-100');
+  });
+
+  it('retains the active filter and descending sort in playback requests', async () => {
+    expect.hasAssertions();
+    await act(async () => {
+      ReactDOM.render(<CrateTracks crate={{ id: 'key' }} />, container);
+    });
+    act(() => {
+      const props = TrackTable.mock.calls.at(-1)[0];
+      props.serverFilter.onChange('mix');
+      props.serverSort.onChange('bpm', 'desc');
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(300);
+    });
+    getCratePage.mockResolvedValue({
+      items: [{ path: '/selected' }],
+      total: 1,
+    });
+    await act(async () => {
+      await TrackTable.mock.calls
+        .at(-1)[0]
+        .resolvePlaybackQueue({ path: '/selected' }, 0);
+    });
+    expect(getCratePage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        search: 'mix',
+        sort: 'bpm',
+        descending: true,
+        offset: 0,
+      }),
+    );
+  });
+
+  it('keeps playback unchanged on a failed fetch or changed crate membership', async () => {
+    expect.hasAssertions();
+    await act(async () => {
+      ReactDOM.render(<CrateTracks crate={{ id: 'recent' }} />, container);
+    });
+    getCratePage
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ items: [], total: 0 });
+    let result;
+    await act(async () => {
+      result = await TrackTable.mock.calls
+        .at(-1)[0]
+        .resolvePlaybackQueue({ path: '/removed' }, 0);
+    });
+    expect(result).toBeNull();
+    expect(container.textContent).toContain(
+      'Could not load the crate playback queue',
+    );
+    await act(async () => {
+      result = await TrackTable.mock.calls
+        .at(-1)[0]
+        .resolvePlaybackQueue({ path: '/removed' }, 0);
+    });
+    expect(result).toBeNull();
+    expect(container.textContent).toContain('no longer in this crate');
+  });
+
+  it('discards stale playback responses after another selection or leaving the crate', async () => {
+    expect.hasAssertions();
+    await act(async () => {
+      ReactDOM.render(<CrateTracks crate={{ id: 'recent' }} />, container);
+    });
+    let finish;
+    getCratePage
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({ items: [{ path: '/new' }], total: 1 });
+    const resolveQueue = TrackTable.mock.calls.at(-1)[0].resolvePlaybackQueue;
+    let old;
+    act(() => {
+      old = resolveQueue({ path: '/old' }, 0);
+    });
+    let newest;
+    await act(async () => {
+      newest = await resolveQueue({ path: '/new' }, 1);
+    });
+    await act(async () => {
+      finish({ items: [{ path: '/old' }], total: 1 });
+    });
+    await expect(old).resolves.toBeNull();
+    expect(newest.index).toBe(0);
+    getCratePage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    act(() => {
+      old = resolveQueue({ path: '/old' }, 0);
+    });
+    act(() => {
+      ReactDOM.unmountComponentAtNode(container);
+    });
+    finish({ items: [{ path: '/old' }], total: 1 });
+    await expect(old).resolves.toBeNull();
   });
 });
