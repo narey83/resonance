@@ -5,7 +5,7 @@ const { mkdtempSync, rmSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 
-test('native Studio DSP preserves the peak ceiling and finite output across sample rates', () => {
+test('native Studio DSP verifies A/B, the peak ceiling and finite output across sample rates', () => {
   const temporary = mkdtempSync(path.join(tmpdir(), 'resonance-studio-test-'));
   try {
     const binary = path.join(temporary, 'studio-dsp');

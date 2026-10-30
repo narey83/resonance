@@ -5,9 +5,13 @@ const { mobileModules, secureStorage } = require('./helpers.cjs');
 
 function screen({ available = true, casting = false } = {}) {
   const store = mobileModules({ 'expo-secure-store': secureStorage() })('src/store/studioStore.ts').useStudio;
-  const { StudioRack } = mobileModules({
-    react: { ...React, useState: initial => [initial, () => {}] },
+  const effects = [], configurations = [];
+  const native = { configure: async config => { configurations.push(config); } };
+  const load = mobileModules({
+    react: { ...React, useState: initial => [initial, () => {}], useEffect: effect => effects.push(effect) },
     'react-native': {
+      NativeModules: available ? { ResonanceStudio: native } : {},
+      TurboModuleRegistry: { get: () => available ? native : undefined },
       Alert: {}, StyleSheet: { create: styles => styles },
       Pressable: 'Pressable', ScrollView: 'ScrollView', Switch: 'Switch',
       Text: 'Text', TextInput: 'TextInput', View: 'View',
@@ -15,9 +19,10 @@ function screen({ available = true, casting = false } = {}) {
     'src/theme.ts': { Editorial: {}, Typography: {} },
     'src/context/ThemeContext.ts': { useTheme: () => ({ colors: { accent: 'accent', borderStrong: 'border', bgElevated: 'elevated' } }) },
     'src/context/CastContext.ts': { useCast: () => ({ isCasting: casting }) },
-    'src/native/studio.ts': { studio: { available } },
-    'src/store/studioStore.ts': { useStudio: () => store.getState() },
-  })('src/screens/more/StudioScreen.tsx');
+    'src/store/studioStore.ts': { useStudio: Object.assign(() => store.getState(), store) },
+  });
+  const { StudioRack } = load('src/screens/more/StudioScreen.tsx');
+  const StudioController = load('src/components/StudioController.tsx').default;
   const nodes = () => {
     const result = [];
     const visit = node => {
@@ -28,7 +33,12 @@ function screen({ available = true, casting = false } = {}) {
     visit(StudioRack({}));
     return result;
   };
-  return { store, nodes };
+  const syncEngine = () => {
+    effects.length = 0;
+    StudioController();
+    effects.forEach(effect => effect());
+  };
+  return { store, nodes, configurations, syncEngine };
 }
 const button = (nodes, name) => nodes.find(node => node.type === 'Pressable' && node.props.accessibilityLabel === name);
 const text = node => React.isValidElement(node) ? React.Children.toArray(node.props.children).map(text).join('') : String(node ?? '');
@@ -120,4 +130,53 @@ test('saved presets toggle off too, and pressing a bypassed preset restores proc
   assert.equal(store.getState().bypass, false);
   assert.equal(button(nodes(), 'My rack').props.accessibilityState.selected, true);
   assert.equal(store.getState().values[0], .2);
+});
+
+test('A/B toggles the native bridge between dry and processed without changing rack settings', async () => {
+  const { store, nodes, configurations, syncEngine } = screen();
+  await store.getState().load();
+  const comparison = label => nodes().find(node => node.type === 'Pressable' && text(node) === label);
+  assert.equal(comparison('B / Processed').props.disabled, true);
+  button(nodes(), 'Warm pressing').props.onPress();
+  syncEngine();
+  const processed = configurations.at(-1);
+  assert.equal(processed.enabled, true);
+  assert.equal(processed.bypass, false);
+  comparison('B / Processed').props.onPress();
+  syncEngine();
+  assert.deepEqual(configurations.at(-1), { ...processed, bypass: true });
+  assert.equal(comparison('A / Dry comparison').props.accessibilityState.selected, true);
+  assert.equal(store.getState().selectedPresetId, 'builtin:Warm pressing');
+  comparison('A / Dry comparison').props.onPress();
+  syncEngine();
+  assert.deepEqual(configurations.at(-1), processed);
+  assert.equal(comparison('B / Processed').props.accessibilityState.selected, false);
+  assert.equal(button(nodes(), 'Warm pressing').props.accessibilityState.selected, true);
+  button(nodes(), 'Warm pressing').props.onPress();
+  syncEngine();
+  assert.equal(configurations.at(-1).enabled, false);
+  assert.equal(comparison('B / Processed').props.disabled, true);
+});
+
+test('A/B preserves disabled modules and is unavailable for casting or missing native support', async () => {
+  const { store, nodes, configurations, syncEngine } = screen();
+  await store.getState().load();
+  button(nodes(), 'Warm pressing').props.onPress();
+  store.getState().toggleModule(0);
+  syncEngine();
+  const values = [...configurations.at(-1).values];
+  assert.equal(values[0], 0);
+  assert.ok(store.getState().values[0] > 0);
+  for (const label of ['B / Processed', 'A / Dry comparison']) {
+    nodes().find(node => node.type === 'Pressable' && text(node) === label).props.onPress();
+    syncEngine();
+    assert.deepEqual(configurations.at(-1).values, values);
+  }
+  for (const options of [{ available: false }, { casting: true }]) {
+    const unavailable = screen(options);
+    await unavailable.store.getState().load();
+    unavailable.store.getState().setEnabled(true);
+    const ab = unavailable.nodes().find(node => node.type === 'Pressable' && text(node) === 'B / Processed');
+    assert.equal(ab.props.disabled, true);
+  }
 });

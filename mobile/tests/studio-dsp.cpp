@@ -3,6 +3,47 @@
 #include <limits>
 #include <iostream>
 using namespace resonance;
+
+// Compare two identically fed engines. Only one switches to A, so returning to B
+// must recover the reference's live envelopes, flutter phase and delay tails.
+static void verifyAB(int rate, int setting) {
+  auto& c=controls();
+  c.enabled=true; c.pushed=false;
+  for(auto& value:c.values) value=0;
+  if(setting==1) c.values[Warmth]=.3f;
+  if(setting==2) c.values[Width]=.3f;
+  if(setting==3) for(int i=0;i<Count;i++) c.values[i]=cap(i,false);
+  StudioDSP reference(rate), comparison(rate);
+  double dryEnergy=0, wetEnergy=0, dryShapeError=0, restoredError=0;
+  for(int block=0;block<rate*10/256;block++) {
+    const double start=block*256.0/rate;
+    c.bypass=false; reference.begin();
+    c.bypass=start>=3 && start<7; comparison.begin();
+    for(int frame=0;frame<256;frame++) {
+      const double t=(block*256+frame)/double(rate);
+      const float l=.12f*std::sin(2*3.141592653589793*440*t)+.06f*std::sin(2*3.141592653589793*3400*t);
+      const float r=.11f*std::sin(2*3.141592653589793*555*t)+.05f*std::sin(2*3.141592653589793*3900*t);
+      float wetL=l, wetR=r, aL=l, aR=r;
+      reference.frame(wetL,wetR); comparison.frame(aL,aR);
+      assert(std::isfinite(aL) && std::isfinite(aR));
+      if(t>5 && t<6.9) {
+        dryEnergy+=aL*aL+aR*aR; wetEnergy+=wetL*wetL+wetR*wetR;
+        // Dry A may attenuate but must retain the original stereo waveform.
+        dryShapeError=std::max(dryShapeError,double(std::abs(aL*r-aR*l)));
+        // Smoothed switching leaves a few float ULPs of wet residue at high rates.
+        assert(aL*aL+aR*aR<=l*l+r*r+4*std::numeric_limits<float>::epsilon());
+      }
+      if(t>7.1) restoredError=std::max(restoredError,double(std::max(std::abs(wetL-aL),std::abs(wetR-aR))));
+    }
+    reference.end(); comparison.end();
+  }
+  assert(dryEnergy>0 && wetEnergy>0);
+  const double levelDifference=10*std::log10(dryEnergy/wetEnergy);
+  assert(std::abs(levelDifference)<.15);
+  assert(dryShapeError<2e-6);
+  assert(restoredError<1e-6);
+  std::cout<<"A/B "<<rate<<" Hz, setting "<<setting<<": "<<levelDifference<<" dB; dry shape error "<<dryShapeError<<"; B restoration error "<<restoredError<<"\n";
+}
 int main() {
   auto& c=controls();
   for(int mode=0;mode<4;mode++) {
@@ -50,5 +91,6 @@ int main() {
     }
     assert(difference>1e-10);
   }
+  for(int rate:{44100,48000,96000,192000}) for(int setting=0;setting<4;setting++) verifyAB(rate,setting);
   std::cout << "Studio DSP: finite output, fixed ceiling, clean bypass and audible processing passed\n";
 }
