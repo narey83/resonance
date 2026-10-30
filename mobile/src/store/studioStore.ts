@@ -20,8 +20,8 @@ interface StudioState extends StudioProfile {
   setBypass(bypass: boolean): void;
   setEq(index: number, gain: number, save?: boolean): void;
   resetEq(): void;
-  setBassControl(value: number): void;
-  setSmoothness(value: number): void;
+  setBassControl(value: number, save?: boolean): void;
+  setSmoothness(value: number, save?: boolean): void;
   setAmount(value: number, save?: boolean): void;
   apply(values: readonly number[], presetId?: string, tone?: StudioToneSettings): void;
   savePreset(name: string): void;
@@ -100,8 +100,8 @@ export const useStudio = create<StudioState>((set, get) => {
       set({ eq, selectedPresetId: eq[index] === get().eq[index] ? get().selectedPresetId : null }); if (save) persist();
     },
     resetEq: () => { if (!get().eq.some(gain => gain !== 0)) return; set({ eq: get().eq.map(() => 0), selectedPresetId: null }); persist(); },
-    setBassControl: value => { const bassControl = studioNumber(value, 0, 1); set({ bassControl, selectedPresetId: bassControl === get().bassControl ? get().selectedPresetId : null }); persist(); },
-    setSmoothness: value => { const smoothness = studioNumber(value, 0, 1); set({ smoothness, selectedPresetId: smoothness === get().smoothness ? get().selectedPresetId : null }); persist(); },
+    setBassControl: (value, save = true) => { const bassControl = studioNumber(value, 0, 1); set({ bassControl, selectedPresetId: bassControl === get().bassControl ? get().selectedPresetId : null }); if (save) persist(); },
+    setSmoothness: (value, save = true) => { const smoothness = studioNumber(value, 0, 1); set({ smoothness, selectedPresetId: smoothness === get().smoothness ? get().selectedPresetId : null }); if (save) persist(); },
     setAmount: (value, save = true) => { set({ amount: studioNumber(value, 0, 1, 1) }); if (save) persist(); },
     apply: (values, presetId, tone) => {
       set({ values: clampStudio(values, get().pushed), ...clampTone(tone), selectedPresetId: presetId ?? null, disabled: CLEAN_VALUES.map(() => false), bypass: false }); persist();

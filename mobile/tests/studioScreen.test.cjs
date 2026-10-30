@@ -220,8 +220,8 @@ test('EQ, tone controls and saved tone presets reach the native bridge', async (
   const { store, nodes, configurations, syncEngine } = screen();
   await store.getState().load();
   slider(nodes(), 'EQ 60 Hz').props.onSlidingComplete(.5);
-  button(nodes(), 'Increase Bass control').props.onPress();
-  button(nodes(), 'Increase Smoothness').props.onPress();
+  slider(nodes(), 'Bass control').props.onSlidingComplete(.05);
+  slider(nodes(), 'Smoothness').props.onSlidingComplete(.05);
   store.getState().savePreset('My tone');
   button(nodes(), 'Clean').props.onPress();
   assert.equal(store.getState().eq[0], 0);
@@ -239,8 +239,7 @@ test('older native builds retain legacy presets and disable unsupported tone fea
   const { store, nodes } = screen({ enhanced: false });
   await store.getState().load();
   assert.equal(button(nodes(), 'Resonance Enhance').props.disabled, true);
-  assert.equal(slider(nodes(), 'EQ 60 Hz').props.disabled, true);
-  assert.equal(slider(nodes(), 'Preset amount').props.disabled, true);
+  for (const label of ['EQ 60 Hz','Preset amount','Bass control','Smoothness']) assert.equal(slider(nodes(), label).props.disabled, true);
   assert.equal(button(nodes(), 'Warm pressing').props.disabled, false);
   assert.ok(text(nodes()[0]).includes('updated native app build'));
 });
@@ -306,7 +305,7 @@ test('slider limits and non-drag adjustments persist; disabled sliders reject ch
   slider(nodes(), 'Preset amount').props.onValueChange(NaN); assert.equal(store.getState().amount, 0);
   for (const options of [{ casting: true }, { available: false }, { enhanced: false }]) {
     const blocked = screen(options); await blocked.store.getState().load();
-    for (const label of ['Preset amount','EQ 60 Hz']) {
+    for (const label of ['Preset amount','EQ 60 Hz','Bass control','Smoothness']) {
       const control = slider(blocked.nodes(), label);
       assert.equal(control.props.disabled, true);
       assert.equal(control.props.accessibilityState.disabled, true);
@@ -314,6 +313,39 @@ test('slider limits and non-drag adjustments persist; disabled sliders reject ch
     }
     assert.equal(blocked.store.getState().amount, 1);
     assert.equal(blocked.store.getState().eq[0], 0);
+    assert.equal(blocked.store.getState().bassControl, 0);
+    assert.equal(blocked.store.getState().smoothness, 0);
+  }
+});
+
+test('Bass control and Smoothness sliders preview live, clear preset selection and save on release', async () => {
+  for (const [label, field] of [['Bass control','bassControl'], ['Smoothness','smoothness']]) {
+    const storage = secureStorage(); let writes = 0;
+    const save = storage.setItemAsync;
+    storage.setItemAsync = async (...args) => { writes++; return save(...args); };
+    const { store, nodes, configurations, syncEngine } = screen({ storage });
+    await store.getState().load(); button(nodes(), 'Resonance Enhance').props.onPress();
+    await new Promise(setImmediate); writes = 0;
+    slider(nodes(), label).props.onSlidingStart();
+    for (const value of [.36,.41,.45]) slider(nodes(), label).props.onValueChange(value);
+    syncEngine(); await new Promise(setImmediate);
+    assert.equal(configurations.at(-1)[field], .45);
+    assert.equal(store.getState().selectedPresetId, null);
+    assert.equal(slider(nodes(), label).props.accessibilityValue.text, '45 percent');
+    assert.equal(writes, 0);
+    slider(nodes(), label).props.onSlidingComplete(.45000002);
+    await new Promise(setImmediate);
+    assert.equal(writes, 1);
+    const restarted = mobileModules({ 'expo-secure-store': storage })('src/store/studioStore.ts').useStudio;
+    await restarted.getState().load(); assert.equal(restarted.getState()[field], .45);
+    slider(nodes(), label).props.onValueChange(.22);
+    await new Promise(setImmediate);
+    assert.equal(JSON.parse(storage.values.get('resonance_studio_v1'))[field], .22);
+    slider(nodes(), label).props.onSlidingComplete(2); assert.equal(store.getState()[field], 1);
+    slider(nodes(), label).props.onSlidingComplete(-1); assert.equal(store.getState()[field], 0);
+    slider(nodes(), label).props.onValueChange(NaN); assert.equal(store.getState()[field], 0);
+    assert.equal(button(nodes(), `Increase ${label}`), undefined);
+    assert.equal(button(nodes(), `Reduce ${label}`), undefined);
   }
 });
 
@@ -322,7 +354,7 @@ test('a development client without the native slider shows a rebuild notice with
   await store.getState().load();
   assert.equal(nodes().filter(node => node.type === 'NativeSlider').length, 0);
   assert.ok(text(nodes()[0]).includes('Sliders need an updated native app build'));
-  assert.equal(button(nodes(), 'Increase Bass control').props.disabled, false);
+  assert.equal(button(nodes(), 'Increase Bass control'), undefined);
   button(nodes(), 'Warm pressing').props.onPress();
   assert.equal(store.getState().enabled, true);
   assert.equal(store.getState().selectedPresetId, 'builtin:Warm pressing');
