@@ -161,6 +161,34 @@ public sealed class UploadEnqueueTests : IDisposable
     }
 
     [Fact]
+    public async Task MissingFileDuringUploadRemainsTerminalInsteadOfBeingOverwritten()
+    {
+        var transfer = new Transfer
+        {
+            Id = Guid.NewGuid(),
+            Username = "alice",
+            Filename = "album/missing.mp3",
+            Direction = TransferDirection.Upload,
+            State = TransferStates.Queued | TransferStates.Locally,
+            RequestedAt = DateTime.UtcNow,
+        };
+        using (var db = factory.CreateDbContext())
+        {
+            db.Transfers.Add(transfer);
+            db.SaveChanges();
+        }
+
+        var service = CreateService([], new NotFoundException("file disappeared"));
+        await Assert.ThrowsAsync<NotFoundException>(() => service.UploadAsync(transfer));
+
+        using var context = factory.CreateDbContext();
+        var saved = Assert.Single(context.Transfers);
+        Assert.Equal(TransferStates.Completed | TransferStates.Aborted, saved.State);
+        Assert.NotNull(saved.EndedAt);
+        Assert.Contains("File could not be found", saved.Exception);
+    }
+
+    [Fact]
     public async Task ShutdownRejectsNewEnqueuesAndUploadsBeforeAccessingDependencies()
     {
         var service = CreateService([]);
@@ -218,7 +246,12 @@ public sealed class UploadEnqueueTests : IDisposable
         var shares = Stub<IShareService>((m, _) => m.Name == "ResolveFileAsync" && failure is not null
             ? Task.FromException<(string, string, long)>(failure)
             : throw new InvalidOperationException("Unexpected share lookup: " + m.Name));
-        return new UploadService(null!, users, client, monitor, shares, null!, factory, null!, null!,
+        var notifications = Stub<ITransferErrorNotificationService>((m, _) => m.Name switch
+        {
+            "NotifyUploadErrorAsync" or "NotifyUploadRejectedAsync" => Task.CompletedTask,
+            _ => throw new InvalidOperationException(m.Name),
+        });
+        return new UploadService(null!, users, client, monitor, shares, null!, factory, null!, notifications,
             new ConnectionStringDictionary(new Dictionary<Database, ConnectionString>
             {
                 [Database.Transfers] = "Data Source=:memory:",
