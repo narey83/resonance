@@ -261,6 +261,8 @@ namespace resonance.Transfers.Uploads
         /// </summary>
         public IUploadQueue Queue { get; init; }
 
+        internal UploadPeerCooldown PeerCooldown { get; init; } = new();
+
         private UploadWorkLifetime Work { get; } = new();
 
         private FileService Files { get; }
@@ -392,356 +394,58 @@ namespace resonance.Transfers.Uploads
         {
             using var work = Work.Enter();
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(Work.Token);
-            var cancellationToken = cts.Token;
-            var syncRoot = new SemaphoreSlim(1, 1);
-
-            string host = default;
-            string localFilename = default;
-            long localFileLength = default;
-
             var lockName = $"{nameof(UploadAsync)}:{transfer.Username}:{transfer.Filename}";
-
             if (!Locks.TryAdd(lockName, true))
             {
-                Log.Debug("Ignoring concurrent invocation; lock {LockName} already held", lockName);
                 return null;
             }
 
-            /*
-                from this point forward, any exit from this method MUST result in an update to the Transfer record
-                in the database that sets EndedAt and ensures that the State property includes the Completed flag
-
-                failure to do so means records will get "stuck" in the database/on the UI
-
-                the one deliberate exception is the "parked" exit below, for a peer that has gone offline: the record is
-                left in Queued | Locally on purpose so the upload survives until they return. that exit is only safe
-                because two things can un-park it (ResumeParkedUploads when the server reports the peer online, and
-                EnqueueAsync when the peer re-requests the file), and because startup cleanup dispositions anything
-                still parked if the application restarts
-
-                additionally, any acquired locks/semaphores must be released, including (and most importantly) the queue slot
-            */
+            CancellationTokens.TryAdd(transfer.Id, cts);
             try
             {
-                Log.Debug("Acquired lock {LockName}", lockName);
-
-                /*
-                    fetch an updated copy of the transfer record from the database; now that we are locked, we *should*
-                    have exclusive access to this record
-
-                    we're not using DbContext and tracked changes here because we don't want to hold a connection
-                    open for the duration of the upload
-                */
-                transfer = Find(t => t.Id == transfer.Id)
-                    ?? throw new TransferNotFoundException($"Transfer with ID {transfer.Id} not found");
-
-                if (transfer.State != (TransferStates.Queued | TransferStates.Locally))
+                while (true)
                 {
-                    throw new InvalidOperationException($"Invalid starting state for upload; expected {TransferStates.Queued | TransferStates.Locally}, encountered {transfer.State}");
-                }
-
-                /*
-                    Soulseek.NET keeps an internal dictionary of all transfers for the duration of the transfer logic;
-                    check that list to see if there's already an instance of this upload in it, just in case we've gotten
-                    out of sync somehow
-                */
-                if (Client.Uploads.Any(u => u.Username == transfer.Username && u.Filename == transfer.Filename))
-                {
-                    throw new DuplicateTransferException("A duplicate upload of the same file to the same user is already registered");
-                }
-
-                // users with uploads must be watched so that we can keep informed of their online status, privileges, and
-                // statistics. this is so that we can accurately determine their effective group.
-                try
-                {
-                    if (!Users.IsWatched(transfer.Username))
+                    // All waiting files remain visible in the queue, but only one file per peer
+                    // reaches the SDK. This also gates files queued before the circuit opens.
+                    Queue.Enqueue(transfer.Username, transfer.Filename);
+                    using var peer = await PeerCooldown.EnterAsync(transfer.Username, cts.Token);
+                    var attempt = await UploadAttemptAsync(transfer, cts.Token);
+                    if (attempt.ConnectionFailure is null)
                     {
-                        await Users.WatchAsync(transfer.Username);
+                        if (attempt.Transfer?.State.HasFlag(TransferStates.Succeeded) == true)
+                        {
+                            peer.RecordSuccess();
+                        }
+
+                        return attempt.Transfer;
+                    }
+
+                    var retryAt = peer.RecordConnectionFailure();
+                    if (retryAt.HasValue)
+                    {
+                        Log.Warning("Pausing uploads to {Username} after repeated connection failures until {RetryAt:u}; files remain queued. Last error: {Message}", transfer.Username, retryAt.Value, attempt.ConnectionFailure.Message);
+                    }
+                    else
+                    {
+                        Log.Warning("Connection attempt to {Username} failed: {Message}; keeping {Filename} queued for retry", transfer.Username, attempt.ConnectionFailure.Message, transfer.Filename);
                     }
                 }
-                catch (Exception ex)
-                {
-                    Log.Warning(ex, "Failed to watch user {Username}", transfer.Username);
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-
-                /*
-                    now that the user is watched, if their last known presence is offline, don't hand a doomed transfer
-                    to Soulseek.NET (which would hold a slot and wait on a long connection timeout before failing).
-
-                    park the transfer rather than failing it: leave the record in Queued | Locally and return without an
-                    in-flight task. a queued upload is meant to survive the peer going offline -- that's what the peer's
-                    place-in-queue polling is for -- so completing it as Errored here means a single dropped connection
-                    terminates every file the peer still had queued. their client reacts by re-requesting the whole
-                    folder, which is exactly the request storm this check was added to avoid.
-
-                    parking keeps the resource win of not holding a slot or a task per waiting file, without throwing
-                    the queue away. see the comment above for what un-parks it.
-                */
-                if (Users.TryGetCachedPresence(transfer.Username, out var presence) && presence == UserPresence.Offline)
-                {
-                    Log.Debug("Parked upload of {Filename} to {Username}; user is offline", transfer.Filename, transfer.Username);
-                    return null;
-                }
-
-                Log.Information("Initializing upload of {Filename} to {Username}", transfer.Filename, transfer.Username);
-
-                // locate the file on disk. we checked this once already when enqueueing, but it may have moved since
-                // can throw NotFoundException
-                (host, localFilename, localFileLength) = await ResolveFileInfoAsync(remoteFilename: transfer.Filename);
-
-                using var rateLimiter = new RateLimiter(250, concurrencyLimit: 1, flushOnDispose: true);
-
-                var topts = new TransferOptions(
-                    stateChanged: (args) =>
-                    {
-                        using var callback = Work.TryEnter();
-                        if (callback is null)
-                        {
-                            return;
-                        }
-
-                        Log.Debug("Upload of {Filename} to user {Username} changed state from {Previous} to {New}", localFilename, transfer.Username, args.PreviousState, args.Transfer.State);
-
-                        // prevent Exceptions thrown during shutdown from updating the transfer record with related Exceptions;
-                        // instead, allow these to be left "hanging" so that they are properly cleaned up at the next startup
-                        if (Application.IsShuttingDown)
-                        {
-                            Log.Debug("Upload update of {Filename} to {Username} not persisted; app is shutting down", transfer.Filename, transfer.Username);
-                            return;
-                        }
-
-                        transfer = transfer.WithSoulseekTransfer(args.Transfer);
-
-                        if (args.Transfer.State.HasFlag(TransferStates.InProgress) && args.Transfer.IPEndPoint?.Address != null)
-                        {
-                            PeerAddresses[transfer.Username] = args.Transfer.IPEndPoint.Address.ToString();
-                        }
-
-                        // todo: broadcast
-                        SynchronizedUpdate(transfer, semaphore: syncRoot, cancellationToken: cancellationToken);
-                    },
-                    progressUpdated: (args) => rateLimiter.Invoke(() =>
-                    {
-                        // don't do anything unless the `transfer` within the outer scope is in the
-                        // InProgress state; this will help prevent out-of-band updates that are sometimes
-                        // being made after the transfer is completed, causing them to appear 'stuck'
-                        using var callback = Work.TryEnter();
-                        if (callback is null)
-                        {
-                            return;
-                        }
-
-                        if (transfer.State == TransferStates.InProgress)
-                        {
-                            // don't wait for the semaphore; if a previous progress update is still hanging, don't make
-                            // the problem worse. this will result in fewer/jumpy updates on systems with slow filesystems
-                            // but the alternative is to continue to stack slow writes on top of one another
-                            if (syncRoot.Wait(millisecondsTimeout: 0, cancellationToken))
-                            {
-                                try
-                                {
-                                    // update only the properties that we expect to change between progress updates
-                                    // this helps prevent this update from 'stepping' on other updates
-                                    transfer.BytesTransferred = args.Transfer.BytesTransferred;
-                                    transfer.AverageSpeed = args.Transfer.AverageSpeed;
-
-                                    using var context = ContextFactory.CreateDbContext();
-
-                                    context.Transfers.Where(t => t.Id == transfer.Id).ExecuteUpdate(setter => setter
-                                        .SetProperty(t => t.BytesTransferred, transfer.BytesTransferred)
-                                        .SetProperty(t => t.AverageSpeed, transfer.AverageSpeed));
-                                }
-                                finally
-                                {
-                                    syncRoot.Release();
-                                }
-                            }
-                            else
-                            {
-                                Log.Debug("Skipped progress update of {Filename} to {Username} {BytesTransferred}/{TotalBytes}; previous update still pending", transfer.Filename, transfer.Username, args.Transfer.BytesTransferred, args.Transfer.Size);
-                            }
-                        }
-                    }),
-                    seekInputStreamAutomatically: false,
-                    disposeInputStreamOnCompletion: true, // note: don't set this to false!
-                    governor: (tx, req, ct) => Governor.GetBytesAsync(tx.Username, req, ct),
-                    reporter: (tx, att, grant, act) => Governor.ReturnBytes(tx.Username, att, grant, act),
-                    slotAwaiter: (tx, ct) => Queue.AwaitStartAsync(tx.Username, tx.Filename).WaitAsync(ct),
-                    slotReleased: (tx) => Queue.Complete(tx.Username, tx.Filename));
-
-                // register the cancellation token
-                CancellationTokens.TryAdd(transfer.Id, cts);
-
-                // add the transfer to the UploadQueue so that it can become eligible for selection
-                Queue.Enqueue(transfer.Username, transfer.Filename);
-                transfer.EnqueuedAt = DateTime.UtcNow;
-                SynchronizedUpdate(transfer, semaphore: syncRoot, cancellationToken: cancellationToken);
-
-                Soulseek.Transfer completedTransfer;
-
-                if (host == Program.LocalHostName)
-                {
-                    completedTransfer = await Client.UploadAsync(
-                        username: transfer.Username,
-                        remoteFilename: transfer.Filename,
-                        size: localFileLength,
-                        inputStreamFactory: (startOffset) =>
-                        {
-#pragma warning disable S2930 // "IDisposables" should be disposed
-                            // disposeInputStreamOnCompletion takes care of this
-                            var stream = new FileStream(localFilename, FileMode.Open, FileAccess.Read);
-#pragma warning restore S2930 // "IDisposables" should be disposed
-
-                            stream.Seek(startOffset, SeekOrigin.Begin);
-                            return Task.FromResult((Stream)stream);
-                        },
-                        options: topts,
-                        cancellationToken: cancellationToken);
-                }
-                else
-                {
-                    completedTransfer = await Client.UploadAsync(
-                        username: transfer.Username,
-                        remoteFilename: transfer.Filename,
-                        size: localFileLength,
-                        inputStreamFactory: (startOffset) => Relay.GetFileStreamAsync(agentName: host, filename: transfer.Filename, startOffset, id: transfer.Id),
-                        options: topts,
-                        cancellationToken: cancellationToken);
-
-                    Relay.TryCloseFileStream(host, id: transfer.Id);
-                }
-
-                // explicitly dispose the rate limiter to prevent updates from it beyond this point, and in doing so we
-                // flushe any pending update, _probably_ pushing the state of the transfer back to InProgress
-                rateLimiter.Dispose();
-
-                // copy the completed transfer that was returned from Soulseek.NET in a terminal, fully updated state
-                // over the top of the transfer record, then persist it
-                transfer = transfer.WithSoulseekTransfer(completedTransfer);
-
-                // todo: broadcast
-                SynchronizedUpdate(transfer, semaphore: syncRoot, cancellationToken: CancellationToken.None);
-
-                EventBus.Raise(new UploadFileCompleteEvent
-                {
-                    Timestamp = transfer.EndedAt.Value,
-                    LocalFilename = localFilename,
-                    RemoteFilename = transfer.Filename,
-                    Transfer = transfer,
-                });
-
-                return transfer;
             }
-            catch (Exception) when (Work.Token.IsCancellationRequested)
+            catch (OperationCanceledException) when (Work.Token.IsCancellationRequested)
             {
-                // Preserve shutdown records for the existing startup recovery pass.
-                Log.Debug("Upload of {Filename} to {Username} stopped for shutdown", transfer.Filename, transfer.Username);
+                // Leave queued records intact for the existing startup recovery policy.
                 return null;
             }
-            catch (NotFoundException ex)
+            catch (OperationCanceledException ex)
             {
-                Log.Error(ex, "Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
-
-                // Persist the terminal state under the same lock as progress callbacks.
-                // Do not write the stale in-memory transfer back afterwards: that would
-                // overwrite the Completed flag and leave this upload stuck in the queue.
-                syncRoot.Wait(CancellationToken.None);
-                try
-                {
-                    TryFail(transfer.Id, "File could not be found", TransferStates.Completed | TransferStates.Aborted);
-                }
-                finally
-                {
-                    syncRoot.Release();
-                }
-
-                await ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, "File could not be found");
-
-                throw;
-            }
-            catch (Exception ex)
-            {
-                /*
-                    the peer turned out to be unreachable after all. our cached presence said online (or we had none
-                    yet), so the transfer was handed to Soulseek.NET, which resolves the peer's endpoint through the
-                    server and raises UserOfflineException -- with wording identical to the presence check above,
-                    which is why the two were indistinguishable in the logs.
-
-                    this is the same situation the presence check parks for, just discovered a step later, so park it
-                    here too rather than completing it and taking the peer's whole queue with it. before this, the
-                    check above merely masked this path; once it stopped throwing, the cascade simply reappeared here
-                    (1,184 files for a single peer in five hours).
-
-                    only park while the record still holds the starting state. once Soulseek.NET has reported any
-                    progress the record has moved on, and a resume would fail UploadAsync's starting-state check, so
-                    anything past that point is failed normally below. in practice this path is reached before any
-                    state change is raised, so it covers the cascade.
-                */
-                if (IsUserOffline(ex) && transfer.State == (TransferStates.Queued | TransferStates.Locally))
-                {
-                    Log.Debug("Parked upload of {Filename} to {Username}; user is offline", transfer.Filename, transfer.Username);
-                    return null;
-                }
-
-                if (IsExpectedPeerFailure(ex))
-                {
-                    // the remote user is offline, dropped the connection, rejected the transfer, or simply timed
-                    // out; routine in a P2P network, so log quietly without the stack trace.
-                    Log.Warning("Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
-                }
-                else
-                {
-                    Log.Error(ex, "Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
-                }
-
-                // Serialize the final failure update with SDK state/progress callbacks.
-                // A second write of 'transfer' here would restore its pre-error state.
-                syncRoot.Wait(CancellationToken.None);
-                try
-                {
-                    TryFail(transfer.Id, exception: ex);
-                }
-                finally
-                {
-                    syncRoot.Release();
-                }
-
-                await ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, ex.Message);
-
+                TryFail(transfer.Id, ex);
                 throw;
             }
             finally
             {
-                if (host != Program.LocalHostName)
-                {
-                    try
-                    {
-                        Relay.TryCloseFileStream(host, id: transfer.Id);
-                    }
-                    catch
-                    {
-                        // noop
-                    }
-                }
-
-                try
-                {
-                    Locks.TryRemove(lockName, out _);
-                    Log.Debug("Released lock {LockName}", lockName);
-
-                    CancellationTokens.TryRemove(transfer.Id, out _);
-
-                    // if for some reason this logic exits without the slotReleased delegate and Complete() being invoked,
-                    // the file will get stuck in the queue and prevent any further uploads to the user. be extra cautious
-                    // and ensure it gets removed
-                    Queue.TryComplete(username: transfer.Username, filename: transfer.Filename);
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, "Failed to finalize upload of {Filename} to {Username}: {Message}", transfer.Filename, transfer.Username, ex.Message);
-                }
+                Locks.TryRemove(lockName, out _);
+                CancellationTokens.TryRemove(transfer.Id, out _);
+                Queue.TryComplete(transfer.Username, transfer.Filename);
             }
         }
 
@@ -1394,6 +1098,29 @@ namespace resonance.Transfers.Uploads
             return failures[0].EndedAt.Value + window;
         }
 
+        private static bool IsConnectionFailure(Exception exception)
+        {
+            if (IsUserOffline(exception))
+            {
+                return false;
+            }
+
+            for (var ex = exception; ex is not null; ex = ex.InnerException)
+            {
+                if (ex is AggregateException aggregate)
+                {
+                    return aggregate.InnerExceptions.Count > 0 && aggregate.Flatten().InnerExceptions.All(IsConnectionFailure);
+                }
+
+                if (ex is ConnectionException or TimeoutException)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         /// <summary>
         ///     Determines whether the given <paramref name="exception"/> represents an expected peer/connection
         ///     failure (e.g. the remote user disconnected or reset the connection mid-transfer) rather than an
@@ -1448,6 +1175,381 @@ namespace resonance.Transfers.Uploads
             }
 
             return false;
+        }
+
+        private async Task<UploadAttempt> UploadAttemptAsync(Transfer transfer, CancellationToken cancellationToken)
+        {
+            var syncRoot = new SemaphoreSlim(1, 1);
+            var callbacksOpen = true;
+            var connectionAttemptStarted = false;
+            string host = default;
+            string localFilename = default;
+            long localFileLength = default;
+
+            try
+            {
+                /*
+                    fetch an updated copy of the transfer record from the database; now that we are locked, we *should*
+                    have exclusive access to this record
+
+                    we're not using DbContext and tracked changes here because we don't want to hold a connection
+                    open for the duration of the upload
+                */
+                transfer = Find(t => t.Id == transfer.Id)
+                    ?? throw new TransferNotFoundException($"Transfer with ID {transfer.Id} not found");
+
+                if (transfer.State != (TransferStates.Queued | TransferStates.Locally))
+                {
+                    throw new InvalidOperationException($"Invalid starting state for upload; expected {TransferStates.Queued | TransferStates.Locally}, encountered {transfer.State}");
+                }
+
+                /*
+                    Soulseek.NET keeps an internal dictionary of all transfers for the duration of the transfer logic;
+                    check that list to see if there's already an instance of this upload in it, just in case we've gotten
+                    out of sync somehow
+                */
+                while (Client.Uploads.FirstOrDefault(u => u.Username == transfer.Username && u.Filename == transfer.Filename) is { } tracked)
+                {
+                    if (!tracked.State.HasFlag(TransferStates.Completed))
+                    {
+                        throw new DuplicateTransferException("A duplicate upload of the same file to the same user is already registered");
+                    }
+
+                    // A failed SDK entry can linger briefly after its task exits. Keep the
+                    // queued retry intact until that entry has finished releasing its resources.
+                    await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
+                }
+
+                // users with uploads must be watched so that we can keep informed of their online status, privileges, and
+                // statistics. this is so that we can accurately determine their effective group.
+                try
+                {
+                    if (!Users.IsWatched(transfer.Username))
+                    {
+                        await Users.WatchAsync(transfer.Username);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Failed to watch user {Username}", transfer.Username);
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                /*
+                    now that the user is watched, if their last known presence is offline, don't hand a doomed transfer
+                    to Soulseek.NET (which would hold a slot and wait on a long connection timeout before failing).
+
+                    park the transfer rather than failing it: leave the record in Queued | Locally and return without an
+                    in-flight task. a queued upload is meant to survive the peer going offline -- that's what the peer's
+                    place-in-queue polling is for -- so completing it as Errored here means a single dropped connection
+                    terminates every file the peer still had queued. their client reacts by re-requesting the whole
+                    folder, which is exactly the request storm this check was added to avoid.
+
+                    parking keeps the resource win of not holding a slot or a task per waiting file, without throwing
+                    the queue away. see the comment above for what un-parks it.
+                */
+                if (Users.TryGetCachedPresence(transfer.Username, out var presence) && presence == UserPresence.Offline)
+                {
+                    Log.Debug("Parked upload of {Filename} to {Username}; user is offline", transfer.Filename, transfer.Username);
+                    return new UploadAttempt(null, null);
+                }
+
+                Log.Information("Initializing upload of {Filename} to {Username}", transfer.Filename, transfer.Username);
+
+                // locate the file on disk. we checked this once already when enqueueing, but it may have moved since
+                // can throw NotFoundException
+                (host, localFilename, localFileLength) = await ResolveFileInfoAsync(remoteFilename: transfer.Filename);
+
+                using var rateLimiter = new RateLimiter(250, concurrencyLimit: 1, flushOnDispose: true);
+
+                var topts = new TransferOptions(
+                    stateChanged: (args) =>
+                    {
+                        using var callback = Work.TryEnter();
+                        if (callback is null)
+                        {
+                            return;
+                        }
+
+                        Log.Debug("Upload of {Filename} to user {Username} changed state from {Previous} to {New}", localFilename, transfer.Username, args.PreviousState, args.Transfer.State);
+
+                        // prevent Exceptions thrown during shutdown from updating the transfer record with related Exceptions;
+                        // instead, allow these to be left "hanging" so that they are properly cleaned up at the next startup
+                        if (Application.IsShuttingDown)
+                        {
+                            Log.Debug("Upload update of {Filename} to {Username} not persisted; app is shutting down", transfer.Filename, transfer.Username);
+                            return;
+                        }
+
+                        syncRoot.Wait(CancellationToken.None);
+                        try
+                        {
+                            if (!callbacksOpen)
+                            {
+                                return;
+                            }
+
+                            transfer = transfer.WithSoulseekTransfer(args.Transfer);
+                            if (args.Transfer.State.HasFlag(TransferStates.InProgress) && args.Transfer.IPEndPoint?.Address != null)
+                            {
+                                PeerAddresses[transfer.Username] = args.Transfer.IPEndPoint.Address.ToString();
+                            }
+
+                            Update(transfer);
+                        }
+                        finally
+                        {
+                            syncRoot.Release();
+                        }
+                    },
+                    progressUpdated: (args) => rateLimiter.Invoke(() =>
+                    {
+                        // don't do anything unless the `transfer` within the outer scope is in the
+                        // InProgress state; this will help prevent out-of-band updates that are sometimes
+                        // being made after the transfer is completed, causing them to appear 'stuck'
+                        using var callback = Work.TryEnter();
+                        if (callback is null)
+                        {
+                            return;
+                        }
+
+                        if (transfer.State == TransferStates.InProgress)
+                        {
+                            // don't wait for the semaphore; if a previous progress update is still hanging, don't make
+                            // the problem worse. this will result in fewer/jumpy updates on systems with slow filesystems
+                            // but the alternative is to continue to stack slow writes on top of one another
+                            if (syncRoot.Wait(millisecondsTimeout: 0, cancellationToken))
+                            {
+                                try
+                                {
+                                    if (!callbacksOpen)
+                                    {
+                                        return;
+                                    }
+
+                                    // update only the properties that we expect to change between progress updates
+                                    // this helps prevent this update from 'stepping' on other updates
+                                    transfer.BytesTransferred = args.Transfer.BytesTransferred;
+                                    transfer.AverageSpeed = args.Transfer.AverageSpeed;
+
+                                    using var context = ContextFactory.CreateDbContext();
+
+                                    context.Transfers.Where(t => t.Id == transfer.Id).ExecuteUpdate(setter => setter
+                                        .SetProperty(t => t.BytesTransferred, transfer.BytesTransferred)
+                                        .SetProperty(t => t.AverageSpeed, transfer.AverageSpeed));
+                                }
+                                finally
+                                {
+                                    syncRoot.Release();
+                                }
+                            }
+                            else
+                            {
+                                Log.Debug("Skipped progress update of {Filename} to {Username} {BytesTransferred}/{TotalBytes}; previous update still pending", transfer.Filename, transfer.Username, args.Transfer.BytesTransferred, args.Transfer.Size);
+                            }
+                        }
+                    }),
+                    seekInputStreamAutomatically: false,
+                    disposeInputStreamOnCompletion: true, // note: don't set this to false!
+                    governor: (tx, req, ct) => Governor.GetBytesAsync(tx.Username, req, ct),
+                    reporter: (tx, att, grant, act) => Governor.ReturnBytes(tx.Username, att, grant, act),
+                    slotAwaiter: (tx, ct) => Queue.AwaitStartAsync(tx.Username, tx.Filename).WaitAsync(ct),
+                    slotReleased: (tx) => Queue.Complete(tx.Username, tx.Filename));
+
+                transfer.EnqueuedAt = DateTime.UtcNow;
+                SynchronizedUpdate(transfer, semaphore: syncRoot, cancellationToken: cancellationToken);
+
+                Soulseek.Transfer completedTransfer;
+                connectionAttemptStarted = true;
+
+                if (host == Program.LocalHostName)
+                {
+                    completedTransfer = await Client.UploadAsync(
+                        username: transfer.Username,
+                        remoteFilename: transfer.Filename,
+                        size: localFileLength,
+                        inputStreamFactory: (startOffset) =>
+                        {
+#pragma warning disable S2930 // "IDisposables" should be disposed
+                            // disposeInputStreamOnCompletion takes care of this
+                            var stream = new FileStream(localFilename, FileMode.Open, FileAccess.Read);
+#pragma warning restore S2930 // "IDisposables" should be disposed
+
+                            stream.Seek(startOffset, SeekOrigin.Begin);
+                            return Task.FromResult((Stream)stream);
+                        },
+                        options: topts,
+                        cancellationToken: cancellationToken);
+                }
+                else
+                {
+                    completedTransfer = await Client.UploadAsync(
+                        username: transfer.Username,
+                        remoteFilename: transfer.Filename,
+                        size: localFileLength,
+                        inputStreamFactory: (startOffset) => Relay.GetFileStreamAsync(agentName: host, filename: transfer.Filename, startOffset, id: transfer.Id),
+                        options: topts,
+                        cancellationToken: cancellationToken);
+
+                    Relay.TryCloseFileStream(host, id: transfer.Id);
+                }
+
+                // explicitly dispose the rate limiter to prevent updates from it beyond this point, and in doing so we
+                // flushe any pending update, _probably_ pushing the state of the transfer back to InProgress
+                rateLimiter.Dispose();
+
+                // copy the completed transfer that was returned from Soulseek.NET in a terminal, fully updated state
+                // over the top of the transfer record, then persist it
+                syncRoot.Wait(CancellationToken.None);
+                try
+                {
+                    callbacksOpen = false;
+                    transfer = transfer.WithSoulseekTransfer(completedTransfer);
+                    Update(transfer);
+                }
+                finally
+                {
+                    syncRoot.Release();
+                }
+
+                EventBus.Raise(new UploadFileCompleteEvent
+                {
+                    Timestamp = transfer.EndedAt.Value,
+                    LocalFilename = localFilename,
+                    RemoteFilename = transfer.Filename,
+                    Transfer = transfer,
+                });
+
+                return new UploadAttempt(transfer, null);
+            }
+            catch (Exception) when (Work.Token.IsCancellationRequested)
+            {
+                // Preserve shutdown records for the existing startup recovery pass.
+                Log.Debug("Upload of {Filename} to {Username} stopped for shutdown", transfer.Filename, transfer.Username);
+                return new UploadAttempt(null, null);
+            }
+            catch (Exception ex) when (connectionAttemptStarted && !cancellationToken.IsCancellationRequested
+                && transfer.StartedAt is null && transfer.BytesTransferred == 0 && IsConnectionFailure(ex))
+            {
+                syncRoot.Wait(CancellationToken.None);
+                try
+                {
+                    callbacksOpen = false;
+                    transfer.State = TransferStates.Queued | TransferStates.Locally;
+                    transfer.StartedAt = null;
+                    transfer.EndedAt = null;
+                    transfer.Exception = null;
+                    transfer.AverageSpeed = 0;
+                    Update(transfer);
+                }
+                finally
+                {
+                    syncRoot.Release();
+                }
+
+                return new UploadAttempt(null, ex);
+            }
+            catch (NotFoundException ex)
+            {
+                Log.Error(ex, "Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
+
+                // Persist the terminal state under the same lock as progress callbacks.
+                // Do not write the stale in-memory transfer back afterwards: that would
+                // overwrite the Completed flag and leave this upload stuck in the queue.
+                syncRoot.Wait(CancellationToken.None);
+                try
+                {
+                    callbacksOpen = false;
+                    TryFail(transfer.Id, "File could not be found", TransferStates.Completed | TransferStates.Aborted);
+                }
+                finally
+                {
+                    syncRoot.Release();
+                }
+
+                await ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, "File could not be found");
+
+                throw;
+            }
+            catch (Exception ex)
+            {
+                /*
+                    the peer turned out to be unreachable after all. our cached presence said online (or we had none
+                    yet), so the transfer was handed to Soulseek.NET, which resolves the peer's endpoint through the
+                    server and raises UserOfflineException -- with wording identical to the presence check above,
+                    which is why the two were indistinguishable in the logs.
+
+                    this is the same situation the presence check parks for, just discovered a step later, so park it
+                    here too rather than completing it and taking the peer's whole queue with it. before this, the
+                    check above merely masked this path; once it stopped throwing, the cascade simply reappeared here
+                    (1,184 files for a single peer in five hours).
+
+                    only park while the record still holds the starting state. once Soulseek.NET has reported any
+                    progress the record has moved on, and a resume would fail UploadAsync's starting-state check, so
+                    anything past that point is failed normally below. in practice this path is reached before any
+                    state change is raised, so it covers the cascade.
+                */
+                if (IsUserOffline(ex) && transfer.State == (TransferStates.Queued | TransferStates.Locally))
+                {
+                    Log.Debug("Parked upload of {Filename} to {Username}; user is offline", transfer.Filename, transfer.Username);
+                    return new UploadAttempt(null, null);
+                }
+
+                if (IsExpectedPeerFailure(ex))
+                {
+                    // the remote user is offline, dropped the connection, rejected the transfer, or simply timed
+                    // out; routine in a P2P network, so log quietly without the stack trace.
+                    Log.Warning("Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
+                }
+                else
+                {
+                    Log.Error(ex, "Upload of {Filename} to user {Username} failed: {Message}", transfer.Filename, transfer.Username, ex.Message);
+                }
+
+                // Serialize the final failure update with SDK state/progress callbacks.
+                // A second write of 'transfer' here would restore its pre-error state.
+                syncRoot.Wait(CancellationToken.None);
+                try
+                {
+                    callbacksOpen = false;
+                    TryFail(transfer.Id, exception: ex);
+                }
+                finally
+                {
+                    syncRoot.Release();
+                }
+
+                await ErrorNotifications.NotifyUploadErrorAsync(transfer.Username, transfer.Filename, ex.Message);
+
+                throw;
+            }
+            finally
+            {
+                if (host != Program.LocalHostName)
+                {
+                    try
+                    {
+                        Relay.TryCloseFileStream(host, id: transfer.Id);
+                    }
+                    catch
+                    {
+                        // noop
+                    }
+                }
+
+                syncRoot.Wait(CancellationToken.None);
+                try
+                {
+                    callbacksOpen = false;
+                }
+                finally
+                {
+                    syncRoot.Release();
+                }
+
+                Queue.TryComplete(username: transfer.Username, filename: transfer.Filename);
+            }
         }
 
         /// <summary>
@@ -1646,5 +1748,7 @@ namespace resonance.Transfers.Uploads
                 semaphore.Release();
             }
         }
+
+        private sealed record UploadAttempt(Transfer Transfer, Exception ConnectionFailure);
     }
 }
