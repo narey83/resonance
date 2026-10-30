@@ -80,6 +80,31 @@ public sealed class UploadEnqueueTests : IDisposable
     }
 
     [Fact]
+    public async Task ThreeExpiredFailuresAllowAFreshRequest()
+    {
+        SeedAttempts("alice", "album/track.mp3",
+            TransferStates.Errored, TransferStates.TimedOut, TransferStates.Errored);
+        using (var db = factory.CreateDbContext())
+        {
+            foreach (var attempt in db.Transfers)
+                attempt.EndedAt = DateTime.UtcNow.AddHours(-1);
+            db.SaveChanges();
+        }
+
+        var service = CreateService([], new IOException("share lookup reached"));
+        await Assert.ThrowsAsync<IOException>(() => service.EnqueueAsync("alice", "album/track.mp3"));
+    }
+
+    [Fact]
+    public async Task TwoFailuresAllowAnotherAttempt()
+    {
+        SeedAttempts("alice", "album/track.mp3",
+            TransferStates.Errored, TransferStates.TimedOut);
+        var service = CreateService([], new IOException("share lookup reached"));
+        await Assert.ThrowsAsync<IOException>(() => service.EnqueueAsync("alice", "album/track.mp3"));
+    }
+
+    [Fact]
     public async Task RepeatedFailuresDoNotBlockAnotherPeerOrFile()
     {
         SeedAttempts("alice", "album/track.mp3",
