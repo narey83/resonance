@@ -2,12 +2,12 @@
 
 Use this page to orient yourself before changing, building or deploying Resonance. `AGENTS.md` remains authoritative for safety and host restrictions.
 
-## Current workflow — updated 29 October 2026
+## Current workflow — updated 30 October 2026
 
 - The Mac checkout at `/Users/narey/Projects/resonance` is the source of truth.
-- Develop, build and verify changes on the Mac, then commit and push to GitHub (`narey83/resonance`, `main`) for publication and distribution.
+- Edit and manage Git on the Mac. Build, test and run services on `dev-laptop.local` until the user explicitly permits Mac runtimes again, then commit and push to GitHub (`narey83/resonance`, `main`).
 - Preserve local edits and commits. Fetch for comparison when needed, and deliberately reconcile incoming changes; never overwrite or reset Mac work to match GitHub or merely obtain a clean tree.
-- Do not use the checkout on `192.168.0.80` / `dev-laptop.local` / `lan-server`, remote development helpers, VS Code Remote SSH or mobile source mirroring unless the user explicitly resumes that workflow.
+- The user explicitly resumed dev-laptop use on 30 October 2026. Use isolated source snapshots there; preserve its checkout, private configuration and databases. Do not start Mac web/backend/Metro/QA servers or use the historical Docker helpers.
 - The reported server runtime is native. Docker/Compose guides remain available for other installations and historical context; they are not the active development or deployment workflow.
 - Preserve application state, databases, credentials, dependencies and native projects. Never print secrets or signed URLs.
 - The old `resonance-dev` / `192.168.0.254` host remains off limits unless the user explicitly requests access. Existing SMB consumption does not authorize administration.
@@ -15,15 +15,15 @@ Use this page to orient yourself before changing, building or deploying Resonanc
 
 ## Local verification and human testing
 
-A Git push publishes source; it does not deploy a running service. Do not access a server or change its runtime as part of a Git synchronization request. For implementation changes, build affected targets on the Mac and make the local result available for testing, or report a concrete blocker.
+A Git push publishes source; it does not deploy a running service. Do not access a server or change its runtime as part of a Git synchronization request. For implementation changes, build affected targets on the dev laptop and make that result available for testing, or report a concrete blocker.
 
 | Changed area | Required local verification |
 | --- | --- |
 | Documentation or Git synchronization only | Review the diff, check referenced paths and Git state. Runtime builds and deployment are not required. |
-| `frontend/` | Relevant tests and lint, production build, then headless interaction and visual checks at desktop and narrow/mobile sizes against the locally served build. Use authenticated state for protected routes. |
-| Backend/server code | Relevant .NET tests and build; exercise changed behavior against the local backend. Include client checks when the API contract changes. |
+| `frontend/` | Relevant tests and lint, production build, then headless interaction and visual checks at desktop and narrow/mobile sizes against the build served on the dev laptop. Use authenticated state for protected routes. |
+| Backend/server code | Relevant .NET tests and build; exercise changed behavior against the dev-laptop backend. Include client checks when the API contract changes. |
 | Bridge | Relevant Go/UI tests and build; make the affected native application available for local testing. |
-| `mobile/` TypeScript/styles | Relevant mobile lint/tests and current JS served through Metro to a compatible installed development client, or a new native development build. |
+| `mobile/` TypeScript/styles | Relevant mobile lint/tests and current JS served through Metro on the dev laptop to a compatible installed development client, or a new native development build. |
 | Mobile native dependencies, plugins, permissions or config | Build and install the affected Android/iOS development client; Metro alone is insufficient. |
 
 Inspect the private `.dev/config.json` runtime selector before running `bin/dev`: historical remote/server modes invoke remote helpers. Use local commands only. The README documents local development ports and commands. Do not expose private configuration in diagnostic output.
@@ -36,7 +36,7 @@ Deployment is separate from Git synchronization and needs an explicit deployment
 
 ## Mobile human-test flow
 
-Read `mobile/AGENTS.md`, the exact Expo 57 documentation, and `mobile/EXPO_GUIDE.md` before editing. Native builds belong on the Mac checkout with its Android SDK/Xcode environment.
+Read `mobile/AGENTS.md`, the exact Expo 57 documentation, and `mobile/EXPO_GUIDE.md` before editing. Build and serve on the dev laptop under the standing user restriction. A native iOS/Xcode build needs an explicit exception before using the Mac.
 
 Install dependencies and build/install the appropriate development client:
 
@@ -60,7 +60,7 @@ Run the documented mobile lint/tests before handoff. Native configuration change
 
 1. Read `git status --short` and preserve unrelated work.
 2. Identify affected targets: web, backend, Android, iOS, or a combination.
-3. Implement and run focused checks.
-4. Build and serve/install every affected local human-test target; deploy remotely only when explicitly requested.
+3. Edit on the Mac and run focused checks on an isolated dev-laptop snapshot.
+4. Build and serve affected targets on the dev laptop; deploy/install only the requested targets. Mac-side SSH/ADB forwarding is transport only.
 5. Verify the local artifact, application health, and changed behavior.
 6. Report exactly what is ready, what was verified, and any platform still blocked.

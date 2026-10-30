@@ -2,12 +2,17 @@
 
 Last confirmed: 30 October 2026. Read this file before any deployment.
 
+**Standing user rule: use only the dev laptop for builds, tests, application and
+development servers, including temporary web QA and Metro, until the user explicitly
+says Mac runtime use is OK.** Keep source editing and Git on the Mac; SSH/ADB
+forwarding and artifact transfer are transport, not Mac application runtimes.
+
 ## User intent and defaults
 
 When the user says **deploy**, deploy the requested changes to the existing
 Resonance instance below. Do not ask them to repeat these established destinations.
 When they say **everything**, include every changed application component, including
-the web UI and mobile development app. Restart the backend only if its deployed
+the web UI and mobile development app running from the dev laptop. Restart the backend only if its deployed
 code or runtime actually needs updating. A source-control push alone is not a
 deployment.
 
@@ -46,8 +51,8 @@ deployment target.
 
 The Mac source of truth is `/Users/narey/Projects/resonance`, repository
 `narey83/resonance`, branch `main`. Do not reset or overwrite local or server work.
-Deploy tested release artifacts from the Mac rather than treating the server
-checkout as a development workspace.
+Prepare isolated source snapshots on the dev laptop and build/test there. Keep its
+existing checkout and private state intact; never reset it to perform a deployment.
 
 ## Web deployment
 
@@ -71,7 +76,7 @@ rewrite or database replacement.
 
 ## Backend deployment and state preservation
 
-Build only on the Mac. Previous native Linux deployments use a self-contained
+Build on the dev laptop under the standing user restriction. Previous native Linux deployments use a self-contained
 `linux-x64` publish; inspect the current runtime/framework version and existing
 deployment records before choosing publish arguments. Keep all private settings,
 database files, cookies, signing material and application state outside artifacts.
@@ -95,13 +100,17 @@ generic deployment command.
 
 The established active test device is the user's **Pixel 9 Pro XL**, running the
 installed Resonance Expo development client. Its current JavaScript comes from
-Metro on the Mac at `http://127.0.0.1:8081` through `adb reverse`.
+Metro on `dev-laptop.local` at `http://127.0.0.1:8081`. For the Pixel connected to
+the Mac, forward that loopback port over SSH to the Mac, then use `adb reverse`.
+Do not run a second Metro on the Mac. The earlier Mac Metro was stopped when the
+user clarified this rule on 30 October 2026.
 
 - Android tools: `/Users/narey/Projects/resonance/.dev/android/sdk/platform-tools/adb`.
 - Run `adb devices -l` to find the current Pixel connection. Wireless device IDs
   change; do not assume an old serial is still connected.
-- Check `http://127.0.0.1:8081/status` and the existing Metro process before starting
-  another server. The existing process must serve this Mac checkout's `mobile/`.
+- Check `http://127.0.0.1:8081/status` on the dev laptop and the existing Metro
+  process before starting another server. Its working directory must be the
+  requested source snapshot's `mobile/`, with the matching dependency lockfile.
 - Ensure the Pixel has `adb reverse tcp:8081 tcp:8081`.
 - Refresh/open the installed development client using
   `exp+resonance-mobile://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081`
@@ -117,7 +126,8 @@ Metro on the Mac at `http://127.0.0.1:8081` through `adb reverse`.
   setup; do not claim delivery based solely on a successful bundle export.
 
 If the Pixel is disconnected or locked, report that concrete verification limit.
-Do not ask again which already-established mobile workflow to use.
+Do not ask again which already-established mobile workflow to use. Mac/Xcode
+native builds require an explicit exception to the dev-laptop-only rule.
 
 ## Historical targets and secrets
 
