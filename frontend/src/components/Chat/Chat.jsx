@@ -32,10 +32,10 @@
 //   │ SPDX-License-Identifier: AGPL-3.0-only
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
-
 import './Chat.css';
 import '../Search/Search.css';
 import { activeChatKey } from '../../config';
+import useLatestMessage from '../../hooks/useLatestMessage';
 import * as chat from '../../lib/chat';
 import { onPrivateMessage } from '../../lib/chatEvents';
 import * as prefs from '../../lib/prefs';
@@ -216,11 +216,6 @@ const Chat = ({ history, location, onConversationRead }) => {
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
-  const scrollToBottom = useCallback(() => {
-    const element = chatScrollRef.current;
-    if (element) element.scrollTop = element.scrollHeight;
-  }, []);
-
   // ── Fetch conversations ──────────────────────────────────────────────────────
 
   const fetchConversations = useCallback(async () => {
@@ -335,12 +330,11 @@ const Chat = ({ history, location, onConversationRead }) => {
       } finally {
         if (mountedRef.current && activeRef.current === username) {
           setLoading(false);
-          setTimeout(scrollToBottom, 50);
           inputRef.current?.focus();
         }
       }
     },
-    [onConversationRead, scrollToBottom],
+    [onConversationRead],
   );
 
   // ── Mount ────────────────────────────────────────────────────────────────────
@@ -702,14 +696,13 @@ const Chat = ({ history, location, onConversationRead }) => {
     overscan: 8,
   });
 
-  useEffect(() => {
-    const element = chatScrollRef.current;
-    if (element && flatItems.length > 0) {
-      requestAnimationFrame(() => {
-        element.scrollTop = element.scrollHeight;
-      });
-    }
-  }, [flatItems.length, active]);
+  useLatestMessage(chatScrollRef, {
+    active,
+    count: flatItems.length,
+    latest: messages.length ? translation.messageKey(messages.at(-1)) : null,
+    loading,
+    virtualizer: messageVirtualizer,
+  });
 
   return (
     <>

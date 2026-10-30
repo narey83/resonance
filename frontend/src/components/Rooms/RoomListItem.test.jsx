@@ -15,12 +15,12 @@ const renderItem = (unreadCount) => {
 };
 
 describe('Room unread message indicator', () => {
-  it('shows new messages beside the room without replacing the user count', () => {
+  it('shows unread messages without a room user count', () => {
     const row = renderItem(3);
     expect(
       row.querySelector('[aria-label="3 new messages in music"]'),
     ).not.toBeNull();
-    expect(row.querySelector('.sr-search-item-count').textContent).toBe('12');
+    expect(row.querySelector('.sr-search-item-count')).toBeNull();
   });
   it('omits the indicator for read rooms and caps large displayed counts', () => {
     expect(renderItem(0).querySelector('.room-unread-badge')).toBeNull();

@@ -32,11 +32,11 @@
 //   │ SPDX-License-Identifier: AGPL-3.0-only
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
-
 import '../Chat/Chat.css';
 import '../Search/Search.css';
 import './Rooms.css';
 import { activeRoomKey } from '../../config';
+import useLatestMessage from '../../hooks/useLatestMessage';
 import * as prefs from '../../lib/prefs';
 import * as rooms from '../../lib/rooms';
 import * as translation from '../../lib/translation';
@@ -135,13 +135,7 @@ export const RoomListItem = ({
         {unreadCount > 99 ? '99+' : unreadCount}
       </span>
     )}
-    <span className="sr-search-item-count">
-      {joining
-        ? 'Joining…'
-        : Number.isFinite(room.userCount)
-          ? room.userCount
-          : ''}
-    </span>
+    {joining && <span className="sr-search-item-count">Joining…</span>}
   </button>
 );
 
@@ -248,8 +242,6 @@ const Rooms = ({ history, onRoomRead, unreadCounts = {} }) => {
         if (mountedRef.current) {
           setLoading(false);
           setTimeout(() => {
-            const el = messagesRef.current;
-            if (el) el.scrollTop = el.scrollHeight;
             inputRef.current?.focus();
           }, 50);
         }
@@ -643,10 +635,12 @@ const Rooms = ({ history, onRoomRead, unreadCounts = {} }) => {
     return result;
   }, [groups]);
 
-  useEffect(() => {
-    const el = messagesRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [flatItems.length]);
+  useLatestMessage(messagesRef, {
+    active,
+    count: flatItems.length,
+    latest: room.messages.length ? roomMessageKey(room.messages.at(-1)) : null,
+    loading,
+  });
 
   return (
     <>
