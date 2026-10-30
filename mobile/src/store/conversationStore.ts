@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { prefetchMessagePreviews } from '../api/linkPreview';
 import { shallowEqual } from '../lib/shallowEqual';
 import { onSessionReset, sessionGuard } from '../lib/sessionScope';
 import { create } from 'zustand';
@@ -35,6 +36,10 @@ import type { Conversation, PrivateMessage } from '../api/chat';
 
 let listRequest = 0;
 const messageRequests = new Map<string, number>();
+
+// Warm a few recent histories once per last-message revision, without acknowledging them.
+const previewHistory = new Map<string, string>();
+onSessionReset(() => previewHistory.clear());
 
 interface ConversationStore {
   conversations: Conversation[];
@@ -63,8 +68,22 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
     try {
       const conversations = await chatAPI.getAll();
       if (!current()) return;
+      prefetchMessagePreviews(conversations.flatMap(c => c.lastMessage ? [c.lastMessage] : []));
       const totalUnread = conversations.reduce((n, c) => n + c.unAcknowledgedMessageCount, 0);
       set({ conversations, totalUnread, isLoading: false });
+      const recent = [...conversations].filter(c => c.username !== '..' && c.lastMessage).sort((a, b) =>
+        Date.parse(b.lastMessageTimestamp ?? b.lastMessage!.timestamp) -
+        Date.parse(a.lastMessageTimestamp ?? a.lastMessage!.timestamp)).slice(0, 4);
+      for (const conversation of recent) {
+        const signature = JSON.stringify(conversation.lastMessage);
+        if (previewHistory.get(conversation.username) === signature) continue;
+        if (previewHistory.size >= 128) previewHistory.delete(previewHistory.keys().next().value!);
+        previewHistory.set(conversation.username, signature);
+        void get().loadMessages(conversation.username).catch(() => {
+          if (session() && previewHistory.get(conversation.username) === signature)
+            previewHistory.delete(conversation.username);
+        });
+      }
     } catch {
       if (!current()) return;
       set({ isLoading: false });
@@ -78,6 +97,7 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
     const current = () => session() && messageRequests.get(username) === request;
     const messages = await chatAPI.getMessages(username);
     if (!current()) return;
+    prefetchMessagePreviews(messages);
     set((s) => {
       const prev = s.messages[username];
       return prev && prev.length === messages.length && prev.every((m, i) => shallowEqual(m, messages[i]))

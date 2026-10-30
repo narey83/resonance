@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { prefetchMessagePreviews } from '../api/linkPreview';
 import { onSessionReset, sessionGuard } from '../lib/sessionScope';
 import { shallowEqual } from '../lib/shallowEqual';
 import { create } from 'zustand';
@@ -108,6 +109,7 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
       }));
       if (!current()) return;
       const joined = reconcileJoined(get().joined, fresh);
+      for (const room of joined) prefetchMessagePreviews(room.messages);
       set((s) => ({ joined, isLoadingJoined: false,
         messages: Object.fromEntries(joined.map((room) => [room.name, s.messages[room.name] ?? room.messages])),
       }));
@@ -138,6 +140,7 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
     const current = () => session() && messageRequests.get(roomName) === request;
     const messages = await roomsAPI.getMessages(roomName);
     if (!current()) return;
+    prefetchMessagePreviews(messages);
     set((s) => {
       const previous = s.messages[roomName];
       if (previous && sameItems(previous, messages)) return s;

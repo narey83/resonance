@@ -35,6 +35,7 @@ import { sessionGuard } from '../../lib/sessionScope';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   AppState,
+  FlatList,
   Platform,
   Pressable,
   StyleSheet,
@@ -42,11 +43,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import Animated, { useAnimatedStyle } from 'react-native-reanimated';
-import { KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Ionicons } from '@expo/vector-icons';
 import { useIsFocused, useFocusEffect } from '@react-navigation/native';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { useHeaderHeight } from '@react-navigation/elements';
+import { useMiniBarHeight } from '../../components/PlayerMiniBar';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useConversationStore } from '../../store/conversationStore';
 import { useTranslationStore } from '../../store/translationStore';
@@ -158,33 +159,8 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
     haptics.light();
   };
 
-  // Reserves scroll space below the (inverted) list's newest message equal to
-  // the live keyboard height, so it isn't left hidden behind the keyboard —
-  // paired with `KeyboardStickyView` below, which pins the input bar itself
-  // to the top of the keyboard. `height` runs 0 (closed) to -keyboardHeight.
-  //
-  // The reservation lives on this Animated.View spacer, rendered as the
-  // inverted list's header (i.e. visually at the bottom), rather than on the
-  // list's `contentContainerStyle`: an animated style on `contentContainerStyle`
-  // crashes ("attempted to set the key `current` … on an object … frozen"),
-  // because the list machinery freezes that style object before Reanimated can
-  // manage it. A genuine Animated component's `style` is the supported path.
-  const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
-  const spacerAnimatedStyle = useAnimatedStyle(() => ({
-    height: -keyboardHeight.value,
-  }));
-
-  // The input bar rests above the (non-absolute) bottom tab bar, so it starts
-  // `tabBarHeight` up from the true screen bottom. KeyboardStickyView lifts it
-  // by the full keyboard height measured from that bottom, which would overshoot
-  // and leave a gap the size of the tab bar between the input and the keyboard;
-  // `offset.opened` pulls it back down flush against the keyboard.
-  //
-  // `tabBarHeight` is the tab bar alone, mini bar excluded (MainTabs reports it —
-  // react-navigation never measures a custom tabBar). So when the mini bar is
-  // showing, the input bar's resting position is that much higher and this lift
-  // lands it exactly on top of the mini bar, which rides the keyboard too.
-  const tabBarHeight = useBottomTabBarHeight();
+  const miniBarHeight = useMiniBarHeight();
+  const headerHeight = useHeaderHeight();
 
   React.useLayoutEffect(() => {
     navigation.setOptions({
@@ -368,9 +344,9 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
   };
 
   return (
-    <View style={s.container}>
+    <KeyboardAvoidingView key={threadKey} behavior="height" keyboardVerticalOffset={headerHeight + miniBarHeight} style={s.container}>
       <ProfileStrip username={username} colors={colors} onPress={() => setActionUser(username)} />
-      <Animated.FlatList
+      <FlatList
         ref={latestMessage.listRef}
         onScroll={latestMessage.onScroll}
         scrollEventThrottle={16}
@@ -381,59 +357,56 @@ export default function ChatConversationScreen({ navigation, route }: Props) {
         keyExtractor={(item, index) => `${item.direction}-${item.id}-${item.timestamp}-${index}`}
         renderItem={renderMessage}
         contentContainerStyle={s.list}
-        ListHeaderComponent={<Animated.View style={spacerAnimatedStyle} />}
         onRefresh={() => { void loadMessages(username).catch(() => {}); }}
         refreshing={false}
       />
-      <KeyboardStickyView offset={{ opened: tabBarHeight }}>
-        <View style={s.inputBar}>
-          {translationEnabled && (
-            <Pressable
-              hitSlop={8}
-              onPress={() => toggleReply(threadKey)}
-              style={[s.replyToggle, reply && s.replyToggleOn]}
-            >
-              <Ionicons
-                color={reply ? '#fff' : colors.textMuted}
-                name="globe-outline"
-                size={18}
-              />
-            </Pressable>
-          )}
-          <TextInput
-            multiline
-            onFocus={latestMessage.showLatest}
-            onChangeText={setText}
-            onSubmitEditing={handleSend}
-            placeholder={reply ? 'Reply in their language…' : 'Message…'}
-            placeholderTextColor={colors.textMuted}
-            ref={inputRef}
-            returnKeyType="send"
-            style={s.input}
-            value={text}
-            blurOnSubmit={false}
-          />
+      <View style={s.inputBar}>
+        {translationEnabled && (
           <Pressable
-            disabled={!text.trim() || sending}
             hitSlop={8}
-            onPress={handleSend}
-            style={[s.sendBtn, (!text.trim() || sending) && s.sendBtnDisabled]}
+            onPress={() => toggleReply(threadKey)}
+            style={[s.replyToggle, reply && s.replyToggleOn]}
           >
             <Ionicons
-              color={!text.trim() || sending ? colors.textDim : '#fff'}
-              name="send"
+              color={reply ? '#fff' : colors.textMuted}
+              name="globe-outline"
               size={18}
             />
           </Pressable>
-        </View>
-      </KeyboardStickyView>
+        )}
+        <TextInput
+          multiline
+          onFocus={latestMessage.showLatest}
+          onChangeText={setText}
+          onSubmitEditing={handleSend}
+          placeholder={reply ? 'Reply in their language…' : 'Message…'}
+          placeholderTextColor={colors.textMuted}
+          ref={inputRef}
+          returnKeyType="send"
+          style={s.input}
+          value={text}
+          blurOnSubmit={false}
+        />
+        <Pressable
+          disabled={!text.trim() || sending}
+          hitSlop={8}
+          onPress={handleSend}
+          style={[s.sendBtn, (!text.trim() || sending) && s.sendBtnDisabled]}
+        >
+          <Ionicons
+            color={!text.trim() || sending ? colors.textDim : '#fff'}
+            name="send"
+            size={18}
+          />
+        </Pressable>
+      </View>
 
       <UserActionSheet
         username={actionUser}
         onClose={() => setActionUser(null)}
         hide={['chat']}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

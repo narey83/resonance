@@ -30,18 +30,8 @@
 import React from 'react';
 import { Linking, Text } from 'react-native';
 
-const URL_PATTERN = /https?:\/\/[^\s"')<>\]]+/gi;
-
-// Trailing punctuation (a period ending the sentence, a closing paren that
-// wasn't part of the URL, …) reads as part of the match but isn't part of
-// the link, so it's peeled off and put back as plain text.
-const stripTrailingPunctuation = (url: string) => url.replace(/[!),.:;?\]]+$/, '');
-
-export function findFirstUrl(text: string | null | undefined): string | null {
-  if (!text) return null;
-  const match = text.match(URL_PATTERN);
-  return match ? stripTrailingPunctuation(match[0]) : null;
-}
+import { URL_PATTERN, stripTrailingPunctuation } from '../lib/messageLinks';
+export { findFirstUrl } from '../lib/messageLinks';
 
 type Segment = string | { url: string };
 

@@ -34,7 +34,7 @@ import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import type { ThemeColors } from '../theme';
-import { getLinkPreview } from '../api/linkPreview';
+import { getLinkPreview, peekLinkPreview } from '../api/linkPreview';
 import type { LinkPreview } from '../api/linkPreview';
 
 function hostname(url: string): string {
@@ -48,11 +48,11 @@ function hostname(url: string): string {
 export default function LinkPreviewCard({ url }: { url: string }) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
-  const [preview, setPreview] = useState<LinkPreview | null>(null);
+  const [preview, setPreview] = useState<LinkPreview | null>(() => peekLinkPreview(url));
 
   useEffect(() => {
     let cancelled = false;
-    setPreview(null);
+    setPreview(peekLinkPreview(url));
 
     getLinkPreview(url).then((result) => {
       if (!cancelled) setPreview(result);

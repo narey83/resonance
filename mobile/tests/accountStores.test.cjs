@@ -3,10 +3,11 @@ const assert = require('node:assert/strict');
 const { mobileModules, deferred } = require('./helpers.cjs');
 
 function setup(mocks) {
-  const load = mobileModules(mocks);
+  const previews = [];
+  const load = mobileModules({ 'src/api/linkPreview.ts': { prefetchMessagePreviews: messages => previews.push(messages) }, ...mocks });
   const session = load('src/lib/sessionScope.ts');
   session.resetSessionScope('alice');
-  return { load, session };
+  return { load, session, previews };
 }
 
 test('late chat responses do not repopulate a signed-out account', async () => {
@@ -142,4 +143,40 @@ test('room updates refresh previews and a late response cannot resurrect a room 
   const pending = store.getState().loadMessages('music');
   await store.getState().leave('music'); gate.resolve([{ message: 'late' }]); await pending;
   assert.equal(store.getState().messages.music, undefined);
+});
+
+test('recent private histories warm previews before opening without acknowledging messages', async () => {
+  const calls = [];
+  const lastMessage = { id: 1, timestamp: '2026-10-30T12:00:00Z', message: 'Latest message' };
+  const { load, previews } = setup({ 'src/api/chat.ts': {
+    getAll: async () => [{ username: 'peer', lastMessage, unAcknowledgedMessageCount: 1 }],
+    getMessages: async username => { calls.push(username); return [{ message: 'https://example.com/music' }]; },
+    acknowledge: async () => { throw new Error('Preloading must not acknowledge'); },
+  } });
+  const store = load('src/store/conversationStore.ts').useConversationStore;
+  await store.getState().loadConversations();
+  await new Promise(setImmediate);
+  assert.deepEqual(calls, ['peer']);
+  assert.ok(previews.some(messages => messages.some(message => message.message === 'https://example.com/music')));
+  assert.equal(store.getState().totalUnread, 1);
+  await store.getState().loadConversations();
+  await new Promise(setImmediate);
+  assert.deepEqual(calls, ['peer'], 'unchanged history is not fetched repeatedly');
+});
+
+test('failed history warming retries after an inbox poll during the pending request', async () => {
+  const gate = deferred();
+  let calls = 0;
+  const { load } = setup({ 'src/api/chat.ts': {
+    getAll: async () => [{ username: 'peer', lastMessage: { id: 1, message: 'hello', timestamp: '2026-10-30T12:00:00Z' }, unAcknowledgedMessageCount: 0 }],
+    getMessages: async () => { calls += 1; return calls === 1 ? gate.promise : []; },
+  } });
+  const store = load('src/store/conversationStore.ts').useConversationStore;
+  await store.getState().loadConversations();
+  await store.getState().loadConversations();
+  assert.equal(calls, 1);
+  gate.reject(new Error('offline'));
+  await new Promise(setImmediate);
+  await store.getState().loadConversations();
+  assert.equal(calls, 2);
 });
