@@ -100,7 +100,7 @@ def generate(destination):
                 for variant, color in (("light", INK), ("dark", "#F7F8FC"), ("mono", "#FFFFFF")):
                     mark = svg(monochrome=variant == "mono")
                     body = mark[mark.index('>') + 1:mark.rindex('</svg>')]
-                    wordmark = f'<svg xmlns="{NS}" viewBox="0 0 {width} 96" role="img" aria-label="Resonance">{body}<g fill="{color}" transform="translate(112 68) scale({scale} {-scale})">{"".join(paths)}</g></svg>\n'
+                    wordmark = f'<svg xmlns="{NS}" viewBox="0 0 {width} 96" fill="none" role="img" aria-label="Resonance">{body}<g fill="{color}" transform="translate(112 68) scale({scale} {-scale})">{"".join(paths)}</g></svg>\n'
                     write(f"frontend/public/assets/brand/wordmark-{variant}.svg", wordmark)
         license_text = (ROOT / f"branding/fonts/{family}-OFL.txt").read_bytes()
         write(f"frontend/public/fonts/{family}-OFL.txt", license_text)

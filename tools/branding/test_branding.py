@@ -1,9 +1,12 @@
 """Checks for the shipping brand assets, including native icon mask constraints."""
 import json
+from io import BytesIO
+
 from pathlib import Path
 import unittest
 import xml.etree.ElementTree as ET
 
+import cairosvg
 from fontTools.ttLib import TTFont
 from PIL import Image
 
@@ -37,6 +40,16 @@ class BrandingTests(unittest.TestCase):
             self.assertFalse(svg.findall(".//s:image", ns))
             self.assertGreater(len(svg.findall(".//s:path", ns)), 9)
             self.assertEqual(svg.getroot().get("aria-label"), "Resonance")
+
+    def test_wordmark_cutouts_stay_transparent_on_every_surface(self):
+        for variant in ("light", "dark", "mono"):
+            with self.subTest(variant=variant):
+                png = cairosvg.svg2png(bytestring=(ROOT / f"frontend/public/assets/brand/wordmark-{variant}.svg").read_bytes())
+                with Image.open(BytesIO(png)) as image:
+                    pixels = image.convert("RGBA")
+                    self.assertEqual(pixels.getpixel((55, 34))[3], 0)
+                    self.assertEqual(pixels.getpixel((35, 34))[3], 255)
+                    self.assertIsNotNone(pixels.crop((112, 0, image.width, 96)).getchannel("A").getbbox())
 
     def test_fonts_are_real_faces_with_expected_weight_and_brand_glyphs(self):
         for family, weights in (("Inter", {"Regular": 400, "Medium": 500, "SemiBold": 600, "Bold": 700}), ("Outfit", {"SemiBold": 600})):
