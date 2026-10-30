@@ -37,6 +37,9 @@ import {
   useSetPlanner,
 } from '../../context/SetPlannerContext';
 import useDebounce from '../../hooks/useDebounce';
+import useLibraryHomeData, {
+  HOME_RECENT_ALBUM_LIMIT,
+} from '../../hooks/useLibraryHomeData';
 import { createMixtapesHubConnection } from '../../lib/hubFactory';
 import {
   djQuery,
@@ -53,13 +56,10 @@ import {
   deleteFolder,
   deleteTrack,
   deleteTrackBatchLocal,
-  getAlbumPage,
   getArtistPage,
   getFolders,
   getGenres,
   getIssueTracks,
-  getLibraryStats,
-  getRecentlyAdded,
   getTrackPage,
   getYears,
   renameFolder,
@@ -2755,7 +2755,7 @@ const HomeView = ({
           onMore={() => onNavigate(VIEWS.ALBUMS)}
         >
           <div className="jb-home-album-row">
-            {recentlyAdded.slice(0, 16).map((album) => (
+            {recentlyAdded.slice(0, HOME_RECENT_ALBUM_LIMIT).map((album) => (
               <button
                 className="jb-home-album-card"
                 key={albumKey(album)}
@@ -3096,12 +3096,6 @@ const LibraryContent = () => {
   const [toolbarTools, setToolbarTools] = useState(null);
   const [toolbarView, setToolbarView] = useState(null);
 
-  // Only the counts, not the lists: the Artists and Albums views page their own rows now, and
-  // Home just prints these two numbers. A limit=1 request answers both from X-Total-Count for
-  // ~300 bytes, where fetching the lists to call .length on them cost 9MB.
-  const [albumCount, setAlbumCount] = useState(0);
-  const [artistCount, setArtistCount] = useState(0);
-  const [libraryStats, setLibraryStats] = useState(null);
   // last-known home counts so the page doesn't flash zeros while the lists load
   const cachedCounts = useMemo(() => {
     try {
@@ -3114,7 +3108,7 @@ const LibraryContent = () => {
   }, []);
   const [folders, setFolders] = useState([]);
   const [genres, setGenres] = useState([]);
-  const [recentlyAdded, setRecentlyAdded] = useState([]);
+  const [genresLoaded, setGenresLoaded] = useState(false);
   const [years, setYears] = useState([]);
   const [issueCounts, setIssueCounts] = useState({});
   const [contextMenu, setContextMenu] = useState(null);
@@ -3135,14 +3129,6 @@ const LibraryContent = () => {
     Number(prefs.get('resonance-library-tilesize', 160)),
   );
 
-  const isMountedRef = useRef(true);
-  useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
-
   const searchRef = useRef(null);
   const viewScrollRef = useRef(null);
   const alphaHandlerRef = useRef(null);
@@ -3152,31 +3138,16 @@ const LibraryContent = () => {
   const [alphaEnabled, setAlphaEnabled] = useState(true);
   const current = navStack[navStack.length - 1];
   const activeView = current.view;
+  const { albumCount, artistCount, libraryStats, recentlyAdded } =
+    useLibraryHomeData(
+      libraryRevision,
+      activeView === VIEWS.RECENT ? 48 : HOME_RECENT_ALBUM_LIMIT,
+    );
 
   const reloadMixtapes = useCallback(async () => {
     try {
       const data = await mixtapesAPI.getAll();
       setPlaylists(data ?? []);
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const loadInitialData = useCallback(async () => {
-    // apply each result as it arrives so the cheap stats call (track count)
-    // isn't held up behind the other fetches
-    const apply = (promise, set) =>
-      promise.then((data) => {
-        if (isMountedRef.current && data != null) set(data);
-      });
-    try {
-      await Promise.all([
-        apply(getArtistPage({ limit: 1 }), (p) => setArtistCount(p.total)),
-        apply(getAlbumPage({ limit: 1 }), (p) => setAlbumCount(p.total)),
-        apply(getGenres(), setGenres),
-        apply(getRecentlyAdded(48), setRecentlyAdded),
-        apply(getLibraryStats(), setLibraryStats).catch(() => {}),
-      ]);
     } catch {
       // ignore
     }
@@ -3199,16 +3170,15 @@ const LibraryContent = () => {
   }, [albumCount, artistCount, libraryStats]);
 
   useEffect(() => {
-    loadInitialData();
     reloadMixtapes();
-  }, [loadInitialData, reloadMixtapes]);
+  }, [reloadMixtapes]);
 
   useEffect(() => {
     if (libraryRevision === 0) return;
     setGenres([]);
+    setGenresLoaded(false);
     setYears([]);
     setFolders([]);
-    loadInitialData();
   }, [libraryRevision]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -3248,7 +3218,11 @@ const LibraryContent = () => {
   }, [activeView, libraryRevision]);
 
   useEffect(() => {
-    if (activeView === VIEWS.GENRES && genres.length === 0 && !loadingGenres) {
+    if (
+      (activeView === VIEWS.GENRES || activeView === VIEWS.SEARCH) &&
+      !genresLoaded &&
+      !loadingGenres
+    ) {
       const load = async () => {
         setLoadingGenres(true);
         try {
@@ -3257,13 +3231,14 @@ const LibraryContent = () => {
         } catch {
           // ignore
         } finally {
+          setGenresLoaded(true);
           setLoadingGenres(false);
         }
       };
 
       load();
     }
-  }, [activeView, genres.length, loadingGenres]);
+  }, [activeView, genresLoaded, loadingGenres]);
 
   useEffect(() => {
     if (
