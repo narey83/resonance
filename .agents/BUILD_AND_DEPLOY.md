@@ -32,7 +32,7 @@ If a required tool, browser authentication, platform or local runtime is unavail
 
 ## Deployment
 
-Deployment is separate from Git synchronization and needs an explicit request identifying the target. Use the approved native runtime workflow for that target, preserve private state, and verify the served artifact and changed behavior. Do not use the former development-server checkout or historical Compose updater by default.
+Deployment is separate from Git synchronization and needs an explicit deployment request. The established default live destination and mobile delivery workflow are recorded in [DEPLOYMENT.md](DEPLOYMENT.md); read it first and do not ask the user to repeat those known destinations. Use that native runtime workflow, preserve private state, and verify the served artifact and changed behavior. Do not use the server checkout as a development workspace or run the historical Compose updater by default.
 
 ## Mobile human-test flow
 
