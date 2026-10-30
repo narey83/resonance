@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cmath>
 #include <vector>
+#include "StudioTone.h"
 
 namespace resonance {
 // Parameters are published at buffer boundaries; no locks, allocation or bridge calls on
@@ -12,6 +13,8 @@ namespace resonance {
 enum Parameter { Exciter, Warmth, Punch, Glue, Width, MonoBass, Flutter, Echo, Room, Crush, Filter, Count };
 struct Controls {
   std::array<std::atomic<float>, Count> values{};
+  std::array<std::atomic<float>, EqCount> eq{};
+  std::atomic<float> bassControl{0}, smoothness{0}, amount{1};
   std::atomic<bool> enabled{false}, pushed{false}, bypass{false};
   std::atomic<float> input{0}, output{0}, reduction{0}, correlation{1};
   std::atomic<unsigned> buffers{0};
@@ -23,6 +26,7 @@ inline float cap(int parameter, bool pushed) {
   return pushed ? 1.f : normal[parameter];
 }
 class StudioDSP {
+  StudioTone tone;
   double rate = 48000;
   float monoLow=0, high[2]{}, filtered[2]{}, fast=0, slow=0, envelope=0, limiter=1, phase=0;
   std::vector<float> delay;
@@ -48,11 +52,16 @@ public:
     attackCoeff=1-std::exp(-1/(.01*rate)); releaseCoeff=1-std::exp(-1/(.15*rate));
     limiterRelease=1-std::exp(-1/(.1*rate)); rmsCoeff=1-std::exp(-1/(.4*rate));
     dryPower=wetPower=compareBlend=0;
+    tone.prepare(rate);
   }
   void begin() {
     auto& c=controls(); enabled=c.enabled.load(); bypass=c.bypass.load();
     bool pushed=c.pushed.load();
-    for(int i=0;i<Count;i++) { targetValues[i]=limit(c.values[i].load(),0,cap(i,pushed)); p[i]=std::min(p[i],cap(i,pushed)); }
+    float amount=limit(c.amount.load(),0,1);
+    std::array<float,EqCount> eq;
+    for(int i=0;i<EqCount;i++) eq[i]=toneLimit(c.eq[i].load(),-6,6)*amount;
+    tone.configure(eq,limit(c.bassControl.load(),0,1)*amount,limit(c.smoothness.load(),0,1)*amount);
+    for(int i=0;i<Count;i++) { targetValues[i]=limit(c.values[i].load(),0,cap(i,pushed))*amount; p[i]=std::min(p[i],cap(i,pushed)); }
     filterCoeff=1-std::exp(-2*3.141592653589793*(18000*std::pow(.025f,p[Filter]))/rate);
     inPeak=outPeak=0; minGain=1; leftEnergy=rightEnergy=cross=0;
   }
@@ -68,6 +77,7 @@ public:
     slow += (level-slow)*slowCoeff;
     envelope += (level-envelope)*(level>envelope?attackCoeff:releaseCoeff);
     if(enabled || rackBlend>.00001f) {
+      tone.process(x[0],x[1]);
       float drive=1+p[Warmth]*7;
       float transient=limit(1+p[Punch]*3*(fast-slow)/std::max(.1f,slow),.5f,2.5f);
       float compression=std::pow(std::max(1.f,envelope/.25f),-.65f*p[Glue]);

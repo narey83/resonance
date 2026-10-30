@@ -96,11 +96,11 @@ Set `ADB_PATH` if `adb` is outside your shell's path. This test stops the Resona
 
 Feature descriptions, platform differences and the current gallery live in the [mobile guide](README.md). Native screenshot capture instructions live in the [screenshot guide](../docs/screenshots/mobile/README.md).
 
-Studio changes require rebuilding the Android/iOS development client. The `withStudio` plugin installs the shared DSP and native bridges into TrackPlayer, and adds a CocoaPods post-install adjustment to preload SwiftAudioEx audio tracks. Keep `patch-package && node scripts/install-studio.cjs` as the postinstall command. Android uses the app's NDK version and CMake 3.22.1 or newer. Audio offload stays disabled to preserve the processing path.
+Studio native changes require rebuilding the Android/iOS development client. The version 2 engine adds `StudioTone.h`, eight EQ gains, dynamic bass/treble controls and preset Amount to the native configuration. Run `node scripts/install-studio.cjs` before a native rebuild; both platforms must receive the updated bridge and shared header together. The `withStudio` plugin installs the shared DSP and native bridges into TrackPlayer, and adds a CocoaPods post-install adjustment to preload SwiftAudioEx audio tracks. Keep `patch-package && node scripts/install-studio.cjs` as the postinstall command. Android uses the app's NDK version and CMake 3.22.1 or newer. Audio offload stays disabled to preserve the processing path.
 
 Expo modules are built from source (`expo-build-properties.ios.usePrecompiledModules: false`) to avoid the Swift 6.3 precompiled-module interface mismatch with the installed Swift 6.4 / Xcode 27.1 toolchain. React Native can continue using its prebuilt core.
 
-The ExpoModulesJSI patch also extends its existing Swift-interface cleanup to match Swift 6.4's `__ObjC::` spelling, as well as `__ObjC.`. These C++ extensions are already intended to be stripped by Expo's build script; leaving the newer spelling in the public interface prevents importing ExpoModulesJSI on Xcode 27.1.
+ExpoModulesJSI 57.1.3 includes Swift-interface cleanup for Swift 6.4's `__ObjC::` spelling as well as `__ObjC.`. The older local patch is no longer needed. Leaving these C++ extensions in the public interface prevents importing ExpoModulesJSI on Xcode 27.1.
 
 Recent-server biometric sign-in uses the existing `expo-secure-store` native module, with `requireAuthentication: true` and a dedicated keychain service. Its config-plugin Face ID description explains saved-server sign-in. No new biometric library is required; rebuild an older client if its Face ID usage description is missing. Real-device verification requires an enrolled Face ID / Touch ID / strong Android biometric.
 

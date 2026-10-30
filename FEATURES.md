@@ -200,6 +200,8 @@ The [mobile guide](mobile/README.md) includes native screenshots, build status a
 - Server library browsing by artist, album, track, folder, genre and year; search, sorting, list/tile layouts, loved tracks and history.
 - Mini-player and full-screen player with artwork, waveform seeking, queue selection, shuffle/repeat and available BPM, key, LUFS and genre metadata.
 - Automatic, Original and Data saver streaming quality; native background playback and Google Cast controls.
+- Handset Studio rack with separate Headphones/Speakers settings, eight-band EQ, dynamic bass and treble control, and Resonance Enhance, Deep & Clean and Smooth Detail presets. Preset Amount scales the complete rack; saved presets include tone settings.
+- Level-matched dry/processed A/B and a fixed −1 dBFS sample-peak guard. Studio applies to handset playback, requires the version 2 native build for tone controls, and does not process Cast receiver audio.
 - Create, rename, delete, edit, reorder, play and share server playlists, subject to account permissions.
 - Separate handset-only playlists for local music on Android and iOS: create, rename, delete, add/remove/reorder tracks and play, without server playlist calls or synchronization. Local collections remain on the handset across server changes and sign-out.
 - Soulseek search, shared-folder browsing and transfer management; rooms, mentions and private chat.

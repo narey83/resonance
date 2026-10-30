@@ -13,7 +13,7 @@ object StudioNative {
     external fun destroy(handle: Long)
     external fun prepare(handle: Long, rate: Int)
     external fun process(handle: Long, input: ByteBuffer, offset: Int, output: ByteBuffer, bytes: Int, channels: Int)
-    external fun configure(values: FloatArray, enabled: Boolean, pushed: Boolean, bypass: Boolean)
+    external fun configure(values: FloatArray, enabled: Boolean, pushed: Boolean, bypass: Boolean, eq: FloatArray, bassControl: Float, smoothness: Float, amount: Float)
     external fun meters(): FloatArray
 }
 

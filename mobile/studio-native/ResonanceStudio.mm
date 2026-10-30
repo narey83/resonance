@@ -79,12 +79,25 @@ static void AttachStudio(AVPlayerItem *item) {
 @implementation ResonanceStudio
 RCT_EXPORT_MODULE(ResonanceStudio)
 + (BOOL)requiresMainQueueSetup { return NO; }
+- (NSDictionary *)constantsToExport { return @{@"version": @2}; }
 RCT_EXPORT_METHOD(configure:(NSDictionary *)options resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
   NSArray *values=options[@"values"];
-  if(values.count!=resonance::Count) { reject(@"studio_config",@"Invalid Studio parameters",nil); return; }
+  if(![values isKindOfClass:[NSArray class]] || values.count!=resonance::Count) { reject(@"studio_config",@"Invalid Studio parameters",nil); return; }
+  NSArray *eq=options[@"eq"];
+  if(eq && (![eq isKindOfClass:[NSArray class]] || eq.count!=resonance::EqCount)) { reject(@"studio_config",@"Invalid EQ parameters",nil); return; }
+  for(id value in values) if(![value isKindOfClass:[NSNumber class]]) { reject(@"studio_config",@"Invalid Studio value",nil); return; }
+  for(id value in eq) if(![value isKindOfClass:[NSNumber class]]) { reject(@"studio_config",@"Invalid EQ value",nil); return; }
+  for(NSString *key in @[@"bassControl",@"smoothness",@"amount"]) {
+    id value=options[key];
+    if(value && ![value isKindOfClass:[NSNumber class]]) { reject(@"studio_config",@"Invalid tone value",nil); return; }
+  }
   auto& c=resonance::controls(); bool pushed=[options[@"pushed"] boolValue];
   c.pushed.store(pushed); c.enabled.store([options[@"enabled"] boolValue]); c.bypass.store([options[@"bypass"] boolValue]);
   for(int i=0;i<resonance::Count;i++) c.values[i].store(resonance::limit([values[i] floatValue],0,resonance::cap(i,pushed)));
+  for(int i=0;i<resonance::EqCount;i++) c.eq[i].store(resonance::toneLimit(eq ? [eq[i] floatValue] : 0,-6,6));
+  c.bassControl.store(resonance::limit([options[@"bassControl"] floatValue],0,1));
+  c.smoothness.store(resonance::limit([options[@"smoothness"] floatValue],0,1));
+  c.amount.store(options[@"amount"] ? resonance::limit([options[@"amount"] floatValue],0,1) : 1);
   resolve(nil);
 }
 RCT_EXPORT_METHOD(meters:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
