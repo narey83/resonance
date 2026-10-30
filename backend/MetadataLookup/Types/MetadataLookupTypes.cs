@@ -50,6 +50,9 @@ namespace resonance.MetadataLookup
 
         /// <summary>The lookup failed with an error.</summary>
         Failed,
+
+        /// <summary>A match supplied no changes that could be confirmed on disk.</summary>
+        Unchanged,
     }
 
     /// <summary>
@@ -66,7 +69,9 @@ namespace resonance.MetadataLookup
         string? Genre,
         int Score,
         string? RecordingMbid,
-        string? Source = null);
+        string? Source = null,
+        IReadOnlyDictionary<string, string>? FieldSources = null,
+        string? LookupId = null);
 
     /// <summary>
     ///     A single track's status within the current or most recent enrichment pass.
@@ -93,7 +98,20 @@ namespace resonance.MetadataLookup
         int EtaSeconds,
         IReadOnlyList<MetadataScanItem> Recent,
         bool Paused = false,
-        string? PauseReason = null);
+        string? PauseReason = null,
+        IReadOnlyList<string>? Providers = null);
+
+    /// <summary>A terminal lookup outcome. Fields maps verified changed tag names to providers.</summary>
+    public record MetadataActivityEvent(string Id, System.DateTimeOffset At, string Status, string Origin,
+        string Summary, IReadOnlyDictionary<string, string> Fields);
+
+    /// <summary>Current share identity and retained lookup evidence for a track.</summary>
+    public record MetadataTrackActivity(string MaskedFilename, string Filename, string Directory, string Status,
+        IReadOnlyList<MetadataActivityEvent> History, MetadataActivityEvent? LastUpdate);
+
+    /// <summary>A bounded page of activity for currently shared audio tracks.</summary>
+    public record MetadataActivityPage(int Total, int Updated, int NotUpdated, int Unknown, int Page,
+        int PageSize, int Filtered, bool HistoryHealthy, IReadOnlyList<MetadataTrackActivity> Items);
 
     /// <summary>
     ///     Request body for a per-track lookup (returns candidates without writing).

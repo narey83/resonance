@@ -51,14 +51,16 @@ namespace resonance.Shares.API
         /// <summary>
         ///     Initializes a new instance of the <see cref="TagsController"/> class.
         /// </summary>
-        public TagsController(IShareService shareService, IUploadService uploadService)
+        public TagsController(IShareService shareService, IUploadService uploadService, resonance.MetadataLookup.IMetadataLookupService metadataLookup = null)
         {
             Shares = shareService;
             Uploads = uploadService;
+            MetadataLookup = metadataLookup;
         }
 
         private IShareService Shares { get; }
         private IUploadService Uploads { get; }
+        private resonance.MetadataLookup.IMetadataLookupService MetadataLookup { get; }
 
         /// <summary>
         ///     Returns the list of shared files that have tag metadata.
@@ -104,6 +106,7 @@ namespace resonance.Shares.API
         /// </summary>
         /// <param name="maskedFilename">The masked filename identifying the file.</param>
         /// <param name="tags">The tag data to write.</param>
+        /// <param name="lookupId">An optional server-issued online candidate identifier.</param>
         /// <response code="204">Tags written successfully.</response>
         /// <response code="400">The request body is invalid.</response>
         /// <response code="404">The file was not found in the share cache.</response>
@@ -115,7 +118,7 @@ namespace resonance.Shares.API
         [ProducesResponseType(400)]
         [ProducesResponseType(404)]
         [ProducesResponseType(422)]
-        public IActionResult WriteTags(string maskedFilename, [FromBody] FileTags tags)
+        public IActionResult WriteTags(string maskedFilename, [FromBody] FileTags tags, [FromQuery] string lookupId = null)
         {
             if (tags == null)
             {
@@ -124,8 +127,25 @@ namespace resonance.Shares.API
 
             try
             {
-                Shares.WriteFileTags(maskedFilename, tags);
+                if (lookupId != null)
+                {
+                    if (MetadataLookup == null)
+                    {
+                        return BadRequest("Lookup service unavailable");
+                    }
+
+                    MetadataLookup.WriteLookupTags(maskedFilename, tags, lookupId);
+                }
+                else
+                {
+                    Shares.WriteFileTags(maskedFilename, tags);
+                }
+
                 return StatusCode(204);
+            }
+            catch (System.ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
             }
             catch (NotFoundException)
             {

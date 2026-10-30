@@ -41,11 +41,14 @@ export const getIncomplete = async () => {
   return (await api.get('/tags/incomplete')).data;
 };
 
-export const writeTags = async ({ maskedFilename, tags } = {}) => {
+export const writeTags = async ({ maskedFilename, tags, lookupId } = {}) => {
   if (!maskedFilename)
     throw new Error('unable to write tags: maskedFilename is missing');
-  return (await api.put(`/tags/${encodeURIComponent(maskedFilename)}`, tags))
-    .data;
+  return (
+    await api.put(`/tags/${encodeURIComponent(maskedFilename)}`, tags, {
+      params: lookupId ? { lookupId } : {},
+    })
+  ).data;
 };
 
 export const renameDirectory = async ({ maskedDirectory, newName } = {}) => {

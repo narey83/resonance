@@ -61,5 +61,12 @@ namespace resonance.MetadataLookup
         ///     pass picks up where this one left off (already-enriched tracks are skipped).
         /// </summary>
         void RequestStop();
+
+        /// <summary>Gets a bounded page of track outcomes and retained history.</summary>
+        /// <returns></returns>
+        MetadataActivityPage GetActivity(int page, int pageSize, string search, string outcome);
+
+        /// <summary>Writes an editor draft using a server-issued, track-bound candidate for provenance.</summary>
+        void WriteLookupTags(string maskedFilename, resonance.Shares.FileTags tags, string lookupId);
     }
 }

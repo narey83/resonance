@@ -29,6 +29,7 @@
 
 import './MetadataLookup.css';
 import { getStatus, runNow, stopNow } from '../../lib/metadataLookup';
+import MetadataLookupActivity from './MetadataLookupActivity';
 import {
   AlertCircle,
   CheckCircle,
@@ -42,12 +43,20 @@ import {
 import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 
+const PROVIDER_LABEL = {
+  musicbrainz: 'MusicBrainz',
+  discogs: 'Discogs',
+  lastfm: 'Last.fm',
+  deezer: 'Deezer',
+};
+
 const STATUS_LABEL = {
   Failed: 'Failed',
   Looking: 'Looking…',
   NoMatch: 'No match',
   Queued: 'Queued',
   Written: 'Updated',
+  Unchanged: 'Unchanged',
 };
 
 const formatEta = (seconds) => {
@@ -64,6 +73,7 @@ const StatusIcon = ({ status }) => {
       return <CheckCircle size={14} />;
     case 'Failed':
       return <AlertCircle size={14} />;
+    case 'Unchanged':
     case 'NoMatch':
       return <MinusCircle size={14} />;
     default:
@@ -79,13 +89,15 @@ const StatusIcon = ({ status }) => {
 const MetadataLookup = () => {
   const [status, setStatus] = useState(null);
   const [starting, setStarting] = useState(false);
+  const [statusError, setStatusError] = useState(false);
   const pollRef = useRef(null);
 
   const refresh = async () => {
     try {
       setStatus(await getStatus());
+      setStatusError(false);
     } catch {
-      /* transient — keep last known state */
+      setStatusError(true);
     }
   };
 
@@ -142,11 +154,41 @@ const MetadataLookup = () => {
           <div className="ml-title">
             <Globe size={16} />
             Online metadata lookup
+            <span
+              className={`ml-enabled ${status?.enabled ? 'ml-enabled--on' : ''}`}
+            >
+              {statusError
+                ? 'Status unavailable'
+                : !status
+                  ? 'Loading…'
+                  : status.enabled
+                    ? 'Automatic lookup enabled'
+                    : 'Automatic lookup disabled'}
+            </span>
           </div>
           <div className="ml-subtitle">
-            {status?.enabled
-              ? 'Enabled — missing track details are filled in automatically from MusicBrainz.'
-              : 'Disabled — turn it on in Settings → Options to fill in missing track details automatically.'}
+            {!status
+              ? 'Checking automatic lookup settings…'
+              : status.enabled
+                ? 'Missing track details are filled automatically. Existing values are preserved.'
+                : 'Enable automatic lookup in Settings → Options → Metadata lookup.'}
+            {status && (
+              <div>
+                Available providers:{' '}
+                {status.providers?.length
+                  ? status.providers
+                      .map((provider) => PROVIDER_LABEL[provider] || provider)
+                      .join(', ')
+                  : 'none configured'}
+                .
+              </div>
+            )}
+            {statusError && (
+              <div role="alert">
+                Could not refresh settings. Any displayed settings are the last
+                known values.
+              </div>
+            )}
           </div>
         </div>
         <div className="ml-actions">
@@ -163,7 +205,14 @@ const MetadataLookup = () => {
           )}
           <button
             className="ml-btn hover-fx"
-            disabled={starting || status?.scanning}
+            disabled={
+              !status ||
+              statusError ||
+              !status.enabled ||
+              !status.providers?.length ||
+              starting ||
+              status.scanning
+            }
             onClick={() => handleRunNow(true)}
             title="Re-query the online services for every track with missing details, including previous no-matches"
             type="button"
@@ -173,7 +222,14 @@ const MetadataLookup = () => {
           </button>
           <button
             className="ml-btn hover-fx"
-            disabled={starting || status?.scanning}
+            disabled={
+              !status ||
+              statusError ||
+              !status.enabled ||
+              !status.providers?.length ||
+              starting ||
+              status.scanning
+            }
             onClick={() => handleRunNow(false)}
             type="button"
           >
@@ -215,7 +271,7 @@ const MetadataLookup = () => {
             <span className="ml-chip ml-chip--ok">
               {status.written} updated
             </span>
-            <span className="ml-chip">{status.skipped} no match</span>
+            <span className="ml-chip">{status.skipped} not updated</span>
             {status.failed > 0 && (
               <span className="ml-chip ml-chip--err">
                 {status.failed} failed
@@ -230,11 +286,13 @@ const MetadataLookup = () => {
 
       {!status?.scanning && status?.completed && status.total > 0 && (
         <div className="ml-idle">
-          Last pass: {status.written} updated, {status.skipped} no match
+          Last pass: {status.written} updated, {status.skipped} not updated
           {status.failed > 0 ? `, ${status.failed} failed` : ''}.
         </div>
       )}
 
+      <MetadataLookupActivity />
+      <h2 className="ml-live-title">Current / last pass · recent activity</h2>
       <div className="ml-list">
         {recent.length === 0 ? (
           <div className="ml-empty">No recent activity.</div>

@@ -38,6 +38,7 @@ namespace resonance.MetadataLookup
     using System.Threading.Tasks;
     using Microsoft.Extensions.Hosting;
     using Microsoft.Extensions.Options;
+    using resonance.Common;
     using resonance.Events;
     using resonance.MusicLibrary;
     using resonance.Shares;
@@ -67,6 +68,12 @@ namespace resonance.MetadataLookup
         private int sinceLastSave;
 
         public MetadataLookupService(IShareService shareService, IOptionsMonitor<resonance.Options> optionsMonitor, MusicBrainzClient musicBrainz, DiscogsClient discogs, LastfmClient lastfm, DeezerClient deezer, EventBus eventBus, IMusicLibraryService musicLibrary = null)
+            : this(shareService, optionsMonitor, musicBrainz, discogs, lastfm, deezer, eventBus, musicLibrary,
+                Program.DataDirectory ?? System.IO.Path.GetTempPath())
+        {
+        }
+
+        internal MetadataLookupService(IShareService shareService, IOptionsMonitor<resonance.Options> optionsMonitor, MusicBrainzClient musicBrainz, DiscogsClient discogs, LastfmClient lastfm, DeezerClient deezer, EventBus eventBus, IMusicLibraryService musicLibrary, string dataDirectory)
         {
             ShareService = shareService;
             IndexGate = new EnrichmentIndexGate(() => ShareService.StateMonitor.CurrentValue);
@@ -78,8 +85,10 @@ namespace resonance.MetadataLookup
             Events = eventBus;
             MusicLibrary = musicLibrary;
             AttemptCache = new MetadataAttemptCache(
-                System.IO.Path.Combine(Program.DataDirectory ?? System.IO.Path.GetTempPath(), "metadata-lookup-attempts.json"),
+                System.IO.Path.Combine(dataDirectory, "metadata-lookup-attempts.json"),
                 Log);
+            Activity = new MetadataActivityStore(
+                System.IO.Path.Combine(dataDirectory, "metadata-lookup-activity.jsonl"), Log);
         }
 
         public MetadataScanState State
@@ -112,7 +121,8 @@ namespace resonance.MetadataLookup
                         EtaSeconds: eta,
                         Recent: recent,
                         Paused: paused,
-                        PauseReason: paused ? "Waiting for share indexing" : null);
+                        PauseReason: paused ? "Waiting for share indexing" : null,
+                        Providers: EnabledProviders());
                 }
             }
         }
@@ -127,6 +137,8 @@ namespace resonance.MetadataLookup
         private EventBus Events { get; }
         private IMusicLibraryService MusicLibrary { get; }
         private MetadataAttemptCache AttemptCache { get; }
+        private MetadataActivityStore Activity { get; }
+        private ConcurrentDictionary<string, PendingMatch> PendingMatches { get; } = new();
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Metadata);
 
         private Channel<bool> RunSignal { get; } = Channel.CreateBounded<bool>(new BoundedChannelOptions(1)
@@ -194,6 +206,65 @@ namespace resonance.MetadataLookup
 
             static string Fill(string existingValue, string matchValue)
                 => string.IsNullOrWhiteSpace(existingValue) && !string.IsNullOrWhiteSpace(matchValue) ? matchValue : existingValue;
+        }
+
+        public MetadataActivityPage GetActivity(int page, int pageSize, string search, string outcome)
+        {
+            var summaries = Activity.Summaries();
+            var paths = new Dictionary<string, string>(StringComparer.Ordinal);
+            var tracks = ShareService.GetTaggedFiles().Select(file => (file.MaskedFilename, file.OriginalFilename, file.Filename, file.Directory, file.Extension))
+                .Concat(ShareService.GetUntaggedFiles().Select(file => (file.MaskedFilename, file.OriginalFilename, file.Filename, file.Directory, file.Extension)))
+                .Where(file => AudioExtensions.Contains(file.Extension))
+                .DistinctBy(file => file.MaskedFilename)
+                .Select(file =>
+                {
+                    paths[file.MaskedFilename] = file.OriginalFilename;
+                    summaries.TryGetValue(MusicPath.ToRelative(file.OriginalFilename), out var evidence);
+                    var state = evidence.Latest?.Status ?? (AttemptCache.ShouldSkip(file.OriginalFilename) ? "Unknown" : "NotChecked");
+                    return new MetadataTrackActivity(file.MaskedFilename, file.Filename, file.Directory, state,
+                        evidence.Latest == null ? [] : [evidence.Latest], evidence.LastUpdate);
+                }).ToArray();
+            var updated = tracks.Count(track => track.LastUpdate != null);
+            var unknown = tracks.Count(track => track.LastUpdate == null && track.Status is "Unknown" or "NotChecked");
+            var filtered = tracks.Where(track => (string.IsNullOrWhiteSpace(search)
+                    || (track.Filename + " " + track.Directory).Contains(search, StringComparison.OrdinalIgnoreCase))
+                && (string.IsNullOrEmpty(outcome) || outcome == "all"
+                    || (outcome == "updated" && track.LastUpdate != null)
+                    || (outcome == "notupdated" && track.LastUpdate == null && track.Status is not "Unknown" and not "NotChecked")
+                    || (outcome == "unknown" && track.LastUpdate == null && track.Status is "Unknown" or "NotChecked")))
+                .OrderByDescending(track => track.History.FirstOrDefault()?.At)
+                .ThenBy(track => track.MaskedFilename, StringComparer.Ordinal).ToArray();
+            return new MetadataActivityPage(tracks.Length, updated, tracks.Length - updated - unknown, unknown,
+                page, pageSize, filtered.Length, Activity.Healthy, filtered.Skip((page - 1) * pageSize).Take(pageSize)
+                    .Select(track => track with { History = Activity.Get(paths[track.MaskedFilename]).History }).ToArray());
+        }
+
+        public void WriteLookupTags(string maskedFilename, FileTags tags, string lookupId)
+        {
+            if (!PendingMatches.TryGetValue(lookupId, out var pending) || pending.Expires <= DateTimeOffset.UtcNow
+                || pending.MaskedFilename != maskedFilename)
+            {
+                throw new ArgumentException("The lookup preview expired. Look up this track again before saving.");
+            }
+
+            var file = ShareService.FindFiles([maskedFilename]).FirstOrDefault() ?? throw new NotFoundException("Track not found");
+            var expected = MetadataTagEvidence.Values(MergeTags(null, pending.Match));
+            var submitted = MetadataTagEvidence.Values(tags);
+            var sources = pending.Match.FieldSources.Where(pair => expected[pair.Key] == submitted[pair.Key])
+                .ToDictionary(pair => pair.Key, pair => pair.Value);
+            try
+            {
+                var result = MetadataTagEvidence.Write(MusicPath.ToAbsolute(file.OriginalFilename), _ => tags,
+                    sources, proposed => ShareService.WriteFileTags(maskedFilename, proposed));
+                AddActivity(file.OriginalFilename, result.Fields.Count > 0 ? "Updated" : "Unchanged", "Editor",
+                    result.Fields.Count > 0 ? "Saved online metadata" : "Saved draft; no changed online fields confirmed", result.Fields);
+                PendingMatches.TryRemove(lookupId, out _);
+            }
+            catch
+            {
+                AddActivity(file.OriginalFilename, "Failed", "Editor", "Could not confirm saved online metadata");
+                throw;
+            }
         }
 
         // ── IHostedService ──────────────────────────────────────────────────────
@@ -288,16 +359,98 @@ namespace resonance.MetadataLookup
                 return Array.Empty<MetadataMatch>();
             }
 
-            foreach (var provider in EnabledProviders())
+            var file = string.IsNullOrEmpty(request.MaskedFilename) ? null : ShareService.FindFiles([request.MaskedFilename]).FirstOrDefault();
+            try
             {
-                var results = await LookupProviderAsync(provider, artist, title, album);
-                if (results.Count > 0)
+                foreach (var provider in EnabledProviders())
                 {
-                    return results;
+                    var results = await LookupProviderAsync(provider, artist, title, album);
+                    if (results.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    if (file == null)
+                    {
+                        return results;
+                    }
+
+                    foreach (var key in PendingMatches.Where(pair => pair.Value.Expires <= DateTimeOffset.UtcNow).Select(pair => pair.Key))
+                    {
+                        PendingMatches.TryRemove(key, out _);
+                    }
+
+                    // Bound candidate memory even if clients repeatedly preview without saving.
+                    while (PendingMatches.Count >= 1000)
+                    {
+                        PendingMatches.TryRemove(PendingMatches.First().Key, out _);
+                    }
+
+                    var issued = results.Take(10).Select(match =>
+                    {
+                        var id = Guid.NewGuid().ToString("N");
+                        var sourced = WithSources(match, provider);
+                        PendingMatches[id] = new PendingMatch(file.MaskedFilename, sourced, DateTimeOffset.UtcNow.AddHours(2));
+                        return sourced with { LookupId = id };
+                    }).ToArray();
+                    AddActivity(file.OriginalFilename, "Preview", "Editor", "Match found; draft has not been saved");
+                    return issued;
+                }
+
+                if (file != null)
+                {
+                    AddActivity(file.OriginalFilename, "NoMatch", "Editor", "No online match found; no tags updated");
+                }
+
+                return Array.Empty<MetadataMatch>();
+            }
+            catch
+            {
+                if (file != null)
+                {
+                    AddActivity(file.OriginalFilename, "Failed", "Editor", "Online lookup failed; no update confirmed");
+                }
+
+                throw;
+            }
+        }
+
+        private static IReadOnlyDictionary<string, string> MergeSources(MetadataMatch acc, MetadataMatch next)
+        {
+            var sources = new Dictionary<string, string>(acc.FieldSources);
+            var values = MetadataTagEvidence.Values(new FileTags(acc.Artist, acc.AlbumArtist, acc.Album, acc.Title,
+                acc.TrackNumber, acc.Year, Genre: acc.Genre, DiscNumber: acc.DiscNumber));
+            var nextValues = MetadataTagEvidence.Values(new FileTags(next.Artist, next.AlbumArtist, next.Album, next.Title,
+                next.TrackNumber, next.Year, Genre: next.Genre, DiscNumber: next.DiscNumber));
+            foreach (var field in new[] { "Album", "Album artist", "Year", "Track number", "Disc number", "Genre" })
+            {
+                if ((string.IsNullOrWhiteSpace(values[field]) || values[field] == "0")
+                    && !string.IsNullOrWhiteSpace(nextValues[field]) && nextValues[field] != "0")
+                {
+                    sources[field] = next.FieldSources[field];
                 }
             }
 
-            return Array.Empty<MetadataMatch>();
+            return sources;
+        }
+
+        private static MetadataMatch WithSources(MetadataMatch match, string provider)
+        {
+            var source = match.Source ?? provider switch
+            {
+                "musicbrainz" => "MusicBrainz",
+                "discogs" => "Discogs",
+                "lastfm" => "Last.fm",
+                "deezer" => "Deezer",
+                _ => provider,
+            };
+            return match with
+            {
+                Source = source,
+                FieldSources = MetadataTagEvidence.Values(MergeTags(null, match))
+                    .Where(pair => !string.IsNullOrWhiteSpace(pair.Value) && pair.Value != "0")
+                    .ToDictionary(pair => pair.Key, _ => source),
+            };
         }
 
         // fills empty fields of acc from next; acc's identity (title/artist/source/score) is kept
@@ -309,6 +462,7 @@ namespace resonance.MetadataLookup
             TrackNumber = acc.TrackNumber != 0 ? acc.TrackNumber : next.TrackNumber,
             DiscNumber = acc.DiscNumber != 0 ? acc.DiscNumber : next.DiscNumber,
             Genre = string.IsNullOrWhiteSpace(acc.Genre) ? next.Genre : acc.Genre,
+            FieldSources = MergeSources(acc, next),
         };
 
         private static bool IsComplete(MetadataMatch m)
@@ -496,7 +650,7 @@ namespace resonance.MetadataLookup
                     break;
             }
 
-            return match != null && match.Score >= minScore ? match : null;
+            return match != null && match.Score >= minScore ? WithSources(match, provider) : null;
         }
 
         // ── Background loop ─────────────────────────────────────────────────────
@@ -684,6 +838,7 @@ namespace resonance.MetadataLookup
                     if (match == null)
                     {
                         RecordOutcome(candidate, MetadataItemStatus.NoMatch, "no confident match");
+                        AddActivity(candidate.OriginalPath, "NoMatch", "Automatic", "No confident match; no tags updated");
 
                         // a no-match is permanent for this query: automatic passes never retry it
                         // (the providers are very unlikely to find it later); only a retag of the
@@ -694,12 +849,17 @@ namespace resonance.MetadataLookup
 
                     // Keep an already-fetched match in memory until indexing finishes.
                     await IndexGate.WaitAsync(ct);
-                    var written = WriteMatch(candidate.Masked, match);
+                    var result = MetadataTagEvidence.Write(MusicPath.ToAbsolute(candidate.OriginalPath), existing => MergeTags(existing, match),
+                        match.FieldSources, proposed => ShareService.WriteFileTags(candidate.Masked, proposed));
+                    var written = result.Tags;
+                    var changed = result.Fields.Count > 0;
+                    AddActivity(candidate.OriginalPath, changed ? "Updated" : "Unchanged", "Automatic",
+                        changed ? "Saved online metadata" : "Match supplied no changed fields confirmed on disk", result.Fields);
 
                     // record against the post-write identity so the enriched file isn't re-queried
                     // next pass (the write may have changed artist/title/album)
-                    RecordAttempt(candidate.OriginalPath, BuildIdentity(written.Artist, written.Title, written.Album), MetadataAttemptCache.OutcomeWritten);
-                    RecordOutcome(candidate, MetadataItemStatus.Written, FormatSummary(match));
+                    RecordAttempt(candidate.OriginalPath, BuildIdentity(written.Artist, written.Title, written.Album), changed ? MetadataAttemptCache.OutcomeWritten : "unchanged");
+                    RecordOutcome(candidate, changed ? MetadataItemStatus.Written : MetadataItemStatus.Unchanged, FormatSummary(match));
                 }
                 catch (OperationCanceledException)
                 {
@@ -708,17 +868,10 @@ namespace resonance.MetadataLookup
                 catch (Exception ex)
                 {
                     Log.Debug("Metadata enrichment failed for '{File}': {Error}", candidate.Filename, ex.Message);
-                    RecordOutcome(candidate, MetadataItemStatus.Failed, ex.Message);
+                    RecordOutcome(candidate, MetadataItemStatus.Failed, "Lookup or write failed");
+                    AddActivity(candidate.OriginalPath, "Failed", "Automatic", "Lookup or write failed; no update confirmed");
                 }
             }
-        }
-
-        private FileTags WriteMatch(string maskedFilename, MetadataMatch match)
-        {
-            var existing = ShareService.GetAllTags().TryGetValue(maskedFilename, out var tags) ? tags : null;
-            var merged = MergeTags(existing, match);
-            ShareService.WriteFileTags(maskedFilename, merged);
-            return merged;
         }
 
         // ── Candidate selection ─────────────────────────────────────────────────
@@ -794,6 +947,10 @@ namespace resonance.MetadataLookup
             }
         }
 
+        private void AddActivity(string path, string status, string origin, string summary, IReadOnlyDictionary<string, string> fields = null)
+            => Activity.Record(path, new MetadataActivityEvent(Guid.NewGuid().ToString("N"), DateTimeOffset.UtcNow,
+                status, origin, summary, fields ?? new Dictionary<string, string>()));
+
         private (string Artist, string Title, string Album) ResolveQuery(MetadataLookupRequest request)
         {
             if (!string.IsNullOrWhiteSpace(request.Title))
@@ -803,8 +960,8 @@ namespace resonance.MetadataLookup
 
             if (!string.IsNullOrWhiteSpace(request.MaskedFilename))
             {
-                if (ShareService.GetAllTags().TryGetValue(request.MaskedFilename, out var tags) && tags != null
-                    && (!string.IsNullOrWhiteSpace(tags.Title) || !string.IsNullOrWhiteSpace(tags.Artist)))
+                var tags = ShareService.GetTags(request.MaskedFilename);
+                if (tags != null && (!string.IsNullOrWhiteSpace(tags.Title) || !string.IsNullOrWhiteSpace(tags.Artist)))
                 {
                     var (artist, title) = ResolveArtistTitle(tags.Artist, tags.Title, LeafName(request.MaskedFilename));
                     return (artist, title, tags.Album);
@@ -842,6 +999,7 @@ namespace resonance.MetadataLookup
                         Written++;
                         break;
                     case MetadataItemStatus.NoMatch:
+                    case MetadataItemStatus.Unchanged:
                         Skipped++;
                         break;
                     case MetadataItemStatus.Failed:
@@ -870,6 +1028,7 @@ namespace resonance.MetadataLookup
             return (int)Math.Round(remaining * 2 / rate);
         }
 
+        private sealed record PendingMatch(string MaskedFilename, MetadataMatch Match, DateTimeOffset Expires);
         private sealed record Candidate(string Masked, string OriginalPath, string Filename, string Artist, string Title, string Album);
     }
 }

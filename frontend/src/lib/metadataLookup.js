@@ -29,6 +29,18 @@
 
 import api from './api';
 
+export const getActivity = async ({
+  page = 1,
+  search = '',
+  outcome = 'all',
+} = {}) => {
+  return (
+    await api.get('/metadatalookup/activity', {
+      params: { outcome, page, search },
+    })
+  ).data;
+};
+
 export const getStatus = async () => {
   return (await api.get('/metadatalookup/status')).data;
 };

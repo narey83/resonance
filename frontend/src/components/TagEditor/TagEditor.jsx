@@ -332,10 +332,14 @@ const FolderEditorForm = ({ directory, files, onSave, saving }) => {
 const TagEditorForm = ({ file, mode, onSave, onSkip, saving }) => {
   const [form, setForm] = useState(EMPTY_FORM);
   const [looking, setLooking] = useState(false);
+  const [lookupId, setLookupId] = useState(null);
+  const lookupFileRef = useRef(null);
   const titleRef = useRef(null);
 
   useEffect(() => {
     if (!file) return;
+    lookupFileRef.current = file.maskedFilename;
+    setLookupId(null);
     setForm(file.tags ? tagsToForm(file.tags) : EMPTY_FORM);
     setTimeout(() => titleRef.current?.focus(), 50);
   }, [file]);
@@ -359,16 +363,19 @@ const TagEditorForm = ({ file, mode, onSave, onSkip, saving }) => {
   const handleLookup = async () => {
     if (!file || looking) return;
     setLooking(true);
+    setLookupId(null);
     try {
       const matches = await lookupMetadata({
         maskedFilename: file.maskedFilename,
       });
+      if (lookupFileRef.current !== file.maskedFilename) return;
       const match = matches?.[0];
       if (!match) {
         toast.info('No online match found for this track.');
         return;
       }
 
+      setLookupId(match.lookupId);
       setForm((previous) => ({
         ...previous,
         album: match.album || previous.album,
@@ -384,7 +391,9 @@ const TagEditorForm = ({ file, mode, onSave, onSkip, saving }) => {
           : previous.trackNumber,
         year: match.year ? String(match.year) : previous.year,
       }));
-      toast.success('Filled from MusicBrainz — review, then save.');
+      toast.success(
+        `Filled from ${match.source || 'online lookup'} — review, then save.`,
+      );
     } catch {
       toast.error('Online lookup failed.');
     } finally {
@@ -397,6 +406,7 @@ const TagEditorForm = ({ file, mode, onSave, onSkip, saving }) => {
     if (!Object.values(form).some(Boolean)) return;
     onSave({
       maskedFilename: file.maskedFilename,
+      lookupId,
       tags: {
         album: form.album || null,
         albumArtist: form.albumArtist || null,
@@ -621,7 +631,7 @@ const TagEditorForm = ({ file, mode, onSave, onSkip, saving }) => {
           className="te-btn te-btn--ghost hover-fx"
           disabled={looking}
           onClick={handleLookup}
-          title="Look up track details online (MusicBrainz)"
+          title="Look up track details using configured online providers"
           type="button"
         >
           {looking ? (
@@ -778,11 +788,11 @@ const TagEditor = () => {
     setSelectedFolder(directory);
   };
 
-  const handleSave = async ({ maskedFilename, tags }) => {
+  const handleSave = async ({ lookupId, maskedFilename, tags }) => {
     setSaving(true);
     setErrorMessage(null);
     try {
-      await writeTags({ maskedFilename, tags });
+      await writeTags({ maskedFilename, tags, lookupId });
       setSavedCount((count) => count + 1);
       // Drop the file from the list once it no longer belongs there: always in untagged
       // mode, and in incomplete mode once the edit has filled every core field.

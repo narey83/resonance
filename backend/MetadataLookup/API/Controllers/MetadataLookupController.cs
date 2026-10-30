@@ -59,6 +59,23 @@ namespace resonance.MetadataLookup.API
         [ProducesResponseType(typeof(MetadataScanState), 200)]
         public IActionResult GetStatus() => Ok(Service.State);
 
+        /// <summary>Returns lookup evidence for shared audio tracks.</summary>
+        /// <returns></returns>
+        [HttpGet("activity")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(typeof(MetadataActivityPage), 200)]
+        public IActionResult GetActivity([FromQuery] int page = 1, [FromQuery] int pageSize = 50,
+            [FromQuery] string search = "", [FromQuery] string outcome = "all")
+        {
+            if (page < 1 || page > 1000000 || pageSize < 1 || pageSize > 100 || (search?.Length ?? 0) > 250
+                || outcome is not ("all" or "updated" or "notupdated" or "unknown"))
+            {
+                return BadRequest("Invalid activity filter or page.");
+            }
+
+            return Ok(Service.GetActivity(page, pageSize, search, outcome));
+        }
+
         /// <summary>Looks up candidate metadata for a single track without writing anything.</summary>
         /// <param name="request">The track to look up.</param>
         /// <returns></returns>
