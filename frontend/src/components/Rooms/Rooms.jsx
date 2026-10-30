@@ -153,7 +153,7 @@ const Rooms = ({ history, onRoomRead, unreadCounts = {} }) => {
   );
   const [joiningRoom, setJoiningRoom] = useState(null);
   const [message, setMessage] = useState('');
-  const [showUsers, setShowUsers] = useState(true);
+  const [showUsers, setShowUsers] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = Number(prefs.get(SIDEBAR_WIDTH_KEY, 240));
