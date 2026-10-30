@@ -829,6 +829,9 @@ namespace resonance.MetadataLookup
 
                 await IndexGate.WaitAsync(ct);
                 MarkLooking(candidate);
+                var started = System.Diagnostics.Stopwatch.GetTimestamp();
+                using var trackScope = Serilog.Context.LogContext.PushProperty("TrackId", candidate.Masked);
+                Log.Debug("Online lookup started with {ProviderCount} available providers", EnabledProviders().Count);
 
                 try
                 {
@@ -853,6 +856,7 @@ namespace resonance.MetadataLookup
                         match.FieldSources, proposed => ShareService.WriteFileTags(candidate.Masked, proposed));
                     var written = result.Tags;
                     var changed = result.Fields.Count > 0;
+                    Log.Debug("Online lookup confirmed {ChangedCount} changed fields: {ChangedFields}", result.Fields.Count, result.Fields.Keys);
                     AddActivity(candidate.OriginalPath, changed ? "Updated" : "Unchanged", "Automatic",
                         changed ? "Saved online metadata" : "Match supplied no changed fields confirmed on disk", result.Fields);
 
@@ -867,9 +871,14 @@ namespace resonance.MetadataLookup
                 }
                 catch (Exception ex)
                 {
-                    Log.Debug("Metadata enrichment failed for '{File}': {Error}", candidate.Filename, ex.Message);
+                    Log.Warning("Online lookup or tag verification failed: {ErrorType}, code {ErrorCode}", ex.GetType().Name, ex.HResult);
+                    Log.Debug("Online lookup failure details: {Diagnostic}", resonance.Core.Http.SensitiveData.RedactText(ex.ToString()));
                     RecordOutcome(candidate, MetadataItemStatus.Failed, "Lookup or write failed");
                     AddActivity(candidate.OriginalPath, "Failed", "Automatic", "Lookup or write failed; no update confirmed");
+                }
+                finally
+                {
+                    Log.Debug("Online lookup finished in {ElapsedMilliseconds:F1}ms", System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
                 }
             }
         }

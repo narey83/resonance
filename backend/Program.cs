@@ -1003,13 +1003,7 @@ namespace resonance
                     options.UseNpgsql(connectionStringDictionary[Database.Logs], npgsql => npgsql.CommandTimeout(120));
                 }
 
-                if (OptionsAtStartup.Flags.LogSQL)
-                {
-                    options
-                        .EnableSensitiveDataLogging()
-                        .EnableDetailedErrors()
-                        .LogTo(OptionsAtStartup.Debug ? Log.Debug : Log.Information, LogLevel.Information);
-                }
+                DiagnosticLogging.ConfigureDatabase(options, DiagnosticLogging.DevelopmentEnabled, OptionsAtStartup.Flags.LogSQL);
             });
 
             // Schema and partition setup use raw DDL (LogsSchemaInitializer), not AddDbContext<T>'s
@@ -1645,21 +1639,27 @@ namespace resonance
                 await next();
             });
 
-            if (OptionsAtStartup.Web.Logging)
+            if (DiagnosticLogging.DevelopmentEnabled)
             {
-                var httpLogPath = Path.Combine(LogDirectory, $"{AppName}-http-.log");
-                var retainDays = OptionsAtStartup.Retention.Logs;
+                Serilog.ILogger requestLogger = Serilog.Log.Logger;
+                if (OptionsAtStartup.Web.Logging)
+                {
+                    var retainDays = OptionsAtStartup.Retention.Logs;
+                    var httpLogger = new LoggerConfiguration()
+                        .MinimumLevel.Debug()
+                        .Enrich.FromLogContext()
+                        .WriteTo.Logger(Serilog.Log.Logger)
+                        .WriteTo.Async(config => config.File(
+                            Path.Combine(LogDirectory, $"{AppName}-http-.log"),
+                            outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss}] {Message:lj}{NewLine}",
+                            rollingInterval: RollingInterval.Day,
+                            retainedFileTimeLimit: retainDays > 0 ? TimeSpan.FromDays(retainDays) : null))
+                        .CreateLogger();
+                    app.Lifetime.ApplicationStopped.Register(httpLogger.Dispose);
+                    requestLogger = httpLogger;
+                }
 
-                var httpLogger = new LoggerConfiguration()
-                    .MinimumLevel.Information()
-                    .WriteTo.Async(config => config.File(
-                        httpLogPath,
-                        outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss}] {Message:lj}{NewLine}",
-                        rollingInterval: RollingInterval.Day,
-                        retainedFileTimeLimit: retainDays > 0 ? TimeSpan.FromDays(retainDays) : null))
-                    .CreateLogger();
-
-                app.UseSerilogRequestLogging(opts => opts.Logger = httpLogger);
+                app.UseMiddleware<resonance.Core.Http.DevelopmentRequestLoggingMiddleware>(requestLogger);
             }
 
             app.UseAuthentication();
@@ -1875,12 +1875,13 @@ namespace resonance
 
             const string outputTemplate = "{UtcTimestamp} {Level:u3} [{SourceContext}] {Message:lj}{NewLine}{Exception}";
 
-            LevelSwitch.MinimumLevel = OptionsAtStartup.Debug ? LogEventLevel.Debug : LogEventLevel.Information;
+            LevelSwitch.MinimumLevel = DiagnosticLogging.ApplicationLevel(DiagnosticLogging.DevelopmentEnabled);
+            FrameworkLevelSwitch.MinimumLevel = LogEventLevel.Warning;
 
             Serilog.Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.ControlledBy(LevelSwitch)
                 .MinimumLevel.Override("Microsoft", FrameworkLevelSwitch)
-                .MinimumLevel.Override("System.Net.Http.HttpClient", OptionsAtStartup.Debug ? LogEventLevel.Warning : LogEventLevel.Fatal)
+                .MinimumLevel.Override("System.Net.Http.HttpClient", LogEventLevel.Warning)
                 .MinimumLevel.Override("resonance.Authentication.PassthroughAuthenticationHandler", LogEventLevel.Warning)
                 .MinimumLevel.Override("resonance.Authentication.ApiKeyAuthenticationHandler", LogEventLevel.Warning)
                 .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", LogEventLevel.Warning) // bump this down to Information to show SQL
@@ -1946,7 +1947,7 @@ namespace resonance
                 }))
                 .CreateLogger();
 
-            if (OptionsAtStartup.Flags.LogUnobservedExceptions)
+            if (DiagnosticLogging.DevelopmentEnabled || OptionsAtStartup.Flags.LogUnobservedExceptions)
             {
                 // log Exceptions raised on fired-and-forgotten tasks, which adds very little value but might help debug someday
                 TaskScheduler.UnobservedTaskException += (sender, e) =>
@@ -2104,13 +2105,7 @@ namespace resonance
                 {
                     SelectedDatabase.Configure(options);
 
-                    if (OptionsAtStartup.Flags.LogSQL)
-                    {
-                        options
-                            .EnableSensitiveDataLogging()
-                            .EnableDetailedErrors()
-                            .LogTo(OptionsAtStartup.Debug ? Log.Debug : Log.Information, LogLevel.Information);
-                    }
+                    DiagnosticLogging.ConfigureDatabase(options, DiagnosticLogging.DevelopmentEnabled, OptionsAtStartup.Flags.LogSQL);
                 });
 
                 var databaseServiceId = $"database-{typeof(T).Name}";
@@ -2229,9 +2224,9 @@ namespace resonance
                             {
                                 // Schema names are SQL identifiers, which can't be passed as parameters; the value
                                 // comes from our own compiled EF model (HasDefaultSchema), never from user input.
-        #pragma warning disable EF1002 // Risk of vulnerability to SQL injection.
+#pragma warning disable EF1002 // Risk of vulnerability to SQL injection.
                                 ctx.Database.ExecuteSqlRaw($"CREATE SCHEMA IF NOT EXISTS \"{schema}\"");
-        #pragma warning restore EF1002 // Risk of vulnerability to SQL injection.
+#pragma warning restore EF1002 // Risk of vulnerability to SQL injection.
                             }
 
                             var script = ctx.Database.GenerateCreateScript();

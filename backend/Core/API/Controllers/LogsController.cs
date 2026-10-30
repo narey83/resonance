@@ -249,8 +249,14 @@ namespace resonance.Core.API
             {
                 "ERROR" => "Error",
                 "WARN" or "WARNING" => "Warning",
+                "DEBUG" or "VERBOSE" => "Debug",
                 _ => "Information",
             };
+
+            if (!resonance.DiagnosticLogging.AcceptRemoteLevel(resonance.DiagnosticLogging.DevelopmentEnabled, level))
+            {
+                return Ok();
+            }
 
             var context = string.IsNullOrWhiteSpace(entry.Context) ? resonance.Logs.Browser : entry.Context;
 
@@ -268,6 +274,7 @@ namespace resonance.Core.API
             switch (level)
             {
                 case "Error": remoteLog.Error("{RemoteMessage}", resonance.Core.Http.SensitiveData.RedactText(entry.Message)); break;
+                case "Debug": remoteLog.Debug("{RemoteMessage}", resonance.Core.Http.SensitiveData.RedactText(entry.Message)); break;
                 case "Warning": remoteLog.Warning("{RemoteMessage}", resonance.Core.Http.SensitiveData.RedactText(entry.Message)); break;
                 default: remoteLog.Information("{RemoteMessage}", resonance.Core.Http.SensitiveData.RedactText(entry.Message)); break;
             }

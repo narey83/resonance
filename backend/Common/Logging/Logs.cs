@@ -52,6 +52,7 @@ namespace resonance
         public const string Telemetry = "Telemetry";
         public const string Database = "Database";
         public const string Browser = "Browser";
+        public const string Http = "HTTP";
         public const string Mobile = "Mobile";
         public const string Dlna = "DLNA";
         public const string SystemStats = "System Stats";
