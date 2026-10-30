@@ -34,6 +34,7 @@
 // </copyright>
 
 import { apiBaseUrl } from '../config';
+import { siteAvailability } from './siteAvailability';
 import {
   clearRefreshToken,
   clearSessionId,
@@ -91,6 +92,7 @@ export const attemptRefresh = () => {
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
+    siteAvailability.handleResponse(error.response);
     const config = error.config;
     const status = error.response?.status;
 

@@ -1,0 +1,22 @@
+:root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; background: #f3f5f6; color: #24323b; --surface: #fff; --muted: #647582; --line: #dce5e8; --accent: #087e8c; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100svh; display: grid; place-items: center; padding: 24px; }
+main { width: min(100%, 740px); background: var(--surface); border: 1px solid var(--line); border-radius: 24px; overflow: hidden; box-shadow: 0 24px 90px #132e3c09; }
+header { display: flex; align-items: center; gap: 12px; padding: 28px 36px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 750; letter-spacing: .12em; }
+.mark { color: var(--accent); font-size: 25px; }
+section { padding: 48px 48px 56px; }
+.eyebrow { display: flex; align-items: center; gap: 9px; color: var(--accent); text-transform: uppercase; font-size: 11px; font-weight: 750; letter-spacing: .14em; }
+.dot { width: 7px; height: 7px; background: currentColor; border-radius: 50%; }
+h1 { margin: 20px 0; max-width: 580px; font-size: clamp(30px, 5.5vw, 48px); font-weight: 650; line-height: 1.12; letter-spacing: -.045em; overflow-wrap: anywhere; }
+.message { max-width: 530px; color: var(--muted); font-size: 16px; line-height: 1.75; }
+.recovery { margin: 32px 0 24px; display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.spinner { flex-shrink: 0; width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: turn 1s linear infinite; }
+button { border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: inherit; padding: 12px 22px; font: inherit; font-size: 14px; cursor: pointer; }
+button:hover { border-color: var(--accent); color: var(--accent); }
+button:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding: 20px 36px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+footer span { font-family: ui-monospace, monospace; }
+@keyframes turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+@media (prefers-color-scheme: dark) { :root { background: #10171c; color: #e1eaee; --surface: #192229; --muted: #a0b0bb; --line: #303f48; --accent: #67c9cd; } }
+@media (max-width: 480px) { body { padding: 16px; } header, footer { padding: 22px 24px; } section { padding: 32px 24px 40px; } }

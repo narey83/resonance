@@ -66,6 +66,7 @@ import * as prefs from '../lib/prefs';
 import * as roomsAPI from '../lib/rooms';
 import { connect, disconnect } from '../lib/server';
 import * as session from '../lib/session';
+import { siteAvailability } from '../lib/siteAvailability';
 import { playMessageReceived } from '../lib/sound';
 import { getSessionId, isAdmin, isPassthroughEnabled } from '../lib/token';
 import { emitTransferComplete } from '../lib/transferEvents';
@@ -96,7 +97,6 @@ import Searches from './Search/Searches';
 import Setup from './Setup';
 import ResonanceMark from './Shared/ResonanceMark';
 import ZoomControl from './Shared/ZoomControl';
-import StartupStatus from './StartupStatus';
 import DatabaseViewer from './System/DatabaseViewer';
 import Logs from './System/Logs';
 import System from './System/System';
@@ -317,7 +317,6 @@ const App = () => {
     status: 'online',
   });
   const [initialized, setInitialized] = useState(false);
-  const [startupStatus, setStartupStatus] = useState(null);
   const [setup, setSetup] = useState({
     error: undefined,
     pending: false,
@@ -507,30 +506,6 @@ const App = () => {
     };
   }, []);
 
-  // The API becomes available before heavyweight service recovery completes. Keep the app usable
-  // and surface that work as a small live banner instead of holding the entire UI on a spinner.
-  useEffect(() => {
-    let cancelled = false;
-    let timer;
-
-    const pollStartup = async () => {
-      try {
-        const status = await session.getStartup();
-        if (cancelled) return;
-        setStartupStatus(status);
-        timer = setTimeout(pollStartup, status.ready ? 15_000 : 1_000);
-      } catch {
-        if (!cancelled) timer = setTimeout(pollStartup, 2_000);
-      }
-    };
-
-    pollStartup();
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, []);
-
   // ══════════════════════════════════════════════════════════════════════════════
   // Effect 2 — System-preference theme listener (only when no saved theme)
   // ══════════════════════════════════════════════════════════════════════════════
@@ -607,6 +582,7 @@ const App = () => {
     let intentionalStop = false;
 
     const markReconnecting = (attempt) => {
+      void siteAvailability.check();
       setConnection((c) => ({
         attempt,
         since: c.status === 'reconnecting' ? c.since : new Date(),
@@ -1116,33 +1092,21 @@ const App = () => {
 
   if (!initialized && setup.required !== true)
     return (
-      <>
-        <StartupStatus status={startupStatus} />
-        <Loader
-          active
-          size="big"
-        />
-      </>
+      <Loader
+        active
+        size="big"
+      />
     );
 
-  if (setup.required)
-    return (
-      <>
-        <StartupStatus status={startupStatus} />
-        <Setup onComplete={handleSetupComplete} />
-      </>
-    );
+  if (setup.required) return <Setup onComplete={handleSetupComplete} />;
 
   if (!isLoggedIn) {
     return (
-      <>
-        <StartupStatus status={startupStatus} />
-        <LoginForm
-          error={login.error}
-          loading={login.pending}
-          onLoginAttempt={handleLogin}
-        />
-      </>
+      <LoginForm
+        error={login.error}
+        loading={login.pending}
+        onLoginAttempt={handleLogin}
+      />
     );
   }
 
@@ -1191,7 +1155,6 @@ const App = () => {
       <LibraryActivityProvider>
         <PlayerProvider>
           <div className="map-shell">
-            <StartupStatus status={startupStatus} />
             <StatusStrip
               brand={
                 <div className="status-brand">
@@ -1208,7 +1171,6 @@ const App = () => {
               onLogout={handleLogout}
               server={server}
               shares={shares}
-              startupStatus={startupStatus}
               system={system}
               uploads={uploads}
               upnp={applicationState?.upnp}
@@ -1228,7 +1190,6 @@ const App = () => {
         <TagEditActivityProvider>
           <PlayTracker />
           <div className="app-shell dj-workspace">
-            <StartupStatus status={startupStatus} />
             {!isAgent && (
               <StatusStrip
                 brand={
@@ -1249,7 +1210,6 @@ const App = () => {
                 onLogout={handleLogout}
                 server={server}
                 shares={shares}
-                startupStatus={startupStatus}
                 system={system}
                 uploads={uploads}
                 upnp={applicationState?.upnp}

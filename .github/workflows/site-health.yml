@@ -1,0 +1,59 @@
+name: Caddy site health
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ops/caddy/**'
+      - 'bin/site-state'
+      - 'docker/maintenance/maintenance.py'
+      - 'docker/tests/test_maintenance.py'
+      - 'backend/Core/SiteReadiness.cs'
+      - 'backend/Core/API/Controllers/SiteHealthController.cs'
+      - '.github/workflows/site-health.yml'
+  pull_request:
+    paths:
+      - 'ops/caddy/**'
+      - 'bin/site-state'
+      - 'docker/maintenance/maintenance.py'
+      - 'docker/tests/test_maintenance.py'
+      - 'backend/Core/SiteReadiness.cs'
+      - 'backend/Core/API/Controllers/SiteHealthController.cs'
+      - '.github/workflows/site-health.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-health-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  routing:
+    name: Caddy availability routing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch and verify official Caddy binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          caddy_test_dir="$RUNNER_TEMP/caddy-site-test"
+          mkdir -p "$caddy_test_dir"
+          caddy_version=2.11.7
+          caddy_archive="caddy_${caddy_version}_linux_amd64.tar.gz"
+          caddy_base="https://github.com/caddyserver/caddy/releases/download/v${caddy_version}"
+          curl -fsSL --retry 3 --max-time 180 "$caddy_base/$caddy_archive" -o "$caddy_test_dir/$caddy_archive"
+          curl -fsSL --retry 3 --max-time 180 "$caddy_base/caddy_${caddy_version}_checksums.txt" -o "$caddy_test_dir/checksums.txt"
+          cd "$caddy_test_dir"
+          grep "  $caddy_archive$" checksums.txt | sha512sum --check -
+          tar -xzf "$caddy_archive" caddy
+          chmod +x caddy
+          echo "CADDY_BIN=$caddy_test_dir/caddy" >> "$GITHUB_ENV"
+      - name: Test availability routing against real Caddy
+        run: python3 -m unittest discover -s ops/caddy/tests -v
+      - name: Test existing authenticated restart control
+        env:
+          STATE_DIR: ${{ runner.temp }}/maintenance-control-test
+        run: python3 -m unittest discover -s docker/tests -p test_maintenance.py -v

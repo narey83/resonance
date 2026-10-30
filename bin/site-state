@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""Set Caddy's explicit maintenance/restart override without restarting Caddy."""
+
+import argparse
+import fcntl
+import os
+import tempfile
+import time
+from pathlib import Path
+from urllib.error import URLError
+from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
+
+
+def read_override(directory):
+    result = []
+    for name in ('maintenance', 'restarting'):
+        try:
+            info = (Path(directory) / name).stat()
+            result.append((name, info.st_ino, info.st_mtime_ns))
+        except FileNotFoundError:
+            pass
+    return tuple(result)
+
+
+def set_state(directory, state, expected=None):
+    if state not in ('normal', 'maintenance', 'restarting'):
+        raise ValueError('Use normal, maintenance or restarting')
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    with (directory / '.site-state.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if expected is not None and read_override(directory) != expected:
+            raise RuntimeError('The site override changed while waiting; it was left in place')
+        _write_state(directory, state)
+
+
+def _write_state(directory, state):
+    if state != 'normal':
+        with tempfile.NamedTemporaryFile(dir=directory, prefix='.site-', delete=False) as output:
+            temporary = Path(output.name)
+            output.write((state + '\n').encode())
+        try:
+            temporary.chmod(0o644)
+            temporary.replace(directory / state)
+        finally:
+            temporary.unlink(missing_ok=True)
+    for marker in ('maintenance', 'restarting'):
+        if marker != state:
+            (directory / marker).unlink(missing_ok=True)
+
+
+def wait_for_caddy(url, timeout):
+    parsed = urlsplit(url)
+    if parsed.scheme not in ('http', 'https') or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path != '/__site/readiness':
+        raise ValueError('Use the Caddy site URL ending in /__site/readiness, without credentials or query parameters')
+    if not 0 < timeout <= 3600:
+        raise ValueError('Timeout must be between 1 and 3600 seconds')
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        remaining = max(.001, deadline - time.monotonic())
+        try:
+            request = Request(url, headers={'Cache-Control': 'no-cache'})
+            with urlopen(request, timeout=min(5, remaining)) as response:
+                if response.status == 200 and response.headers.get('X-Resonance-Gateway') == 'caddy' and response.headers.get('X-Resonance-Site-State') in ('available', 'degraded'):
+                    return
+        except (OSError, URLError):
+            pass
+        time.sleep(max(0, min(2, deadline - time.monotonic())))
+    raise TimeoutError('Caddy did not report readiness; the site override was left in place')
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('state', choices=['normal', 'maintenance', 'restarting'])
+    parser.add_argument('--state-dir', default=os.environ.get('RESONANCE_SITE_STATE_ROOT'))
+    parser.add_argument('--wait-for', help='For normal: wait for Caddy /__site/readiness before clearing the override')
+    parser.add_argument('--timeout', type=int, default=300)
+    args = parser.parse_args()
+    if not args.state_dir:
+        parser.error('Set RESONANCE_SITE_STATE_ROOT or pass --state-dir')
+    expected = None
+    if args.wait_for:
+        if args.state != 'normal':
+            parser.error('--wait-for is only supported with normal')
+        try:
+            expected = read_override(args.state_dir)
+            wait_for_caddy(args.wait_for, args.timeout)
+        except (ValueError, TimeoutError) as error:
+            parser.exit(1, str(error) + '\n')
+    try:
+        set_state(args.state_dir, args.state, expected=expected)
+    except RuntimeError as error:
+        parser.exit(1, str(error) + '\n')
+    print('Caddy override:', args.state)

@@ -1,0 +1,178 @@
+# Import inside a native Caddy site block. Keep Caddy and these pages running
+# independently of the backend and the React build. See README.md in this folder.
+(site_failure) {
+	vars site_state {args[0]}
+	error 503
+}
+
+(resonance_site) {
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer-when-downgrade
+		-Server
+	}
+	encode zstd gzip
+	route {
+		vars site_state unavailable
+		@status_assets path /__site/assets/status.css /__site/assets/recovery.js /__site/assets/mark.svg
+		handle @status_assets {
+			uri strip_prefix /__site/assets
+			root * "{$RESONANCE_STATUS_ROOT}"
+			file_server
+		}
+		handle /__site/assets/* {
+			respond 404
+		}
+		handle /__site/live {
+			header Cache-Control no-store
+			respond `{"state":"alive"}` 200
+		}
+		# Preserve the existing administrator-authenticated restart coordinator.
+		# It is optional for native deployments using the site-state command.
+		handle /maintenance/control {
+			reverse_proxy {$RESONANCE_MAINTENANCE_UPSTREAM:127.0.0.1:8090}
+		}
+		@maintenance {
+			not path /__site/readiness
+			file {
+				root "{$RESONANCE_SITE_STATE_ROOT}"
+				try_files maintenance
+			}
+		}
+		handle @maintenance {
+			import site_failure maintenance
+		}
+		@restarting {
+			not path /__site/readiness
+			file {
+				root "{$RESONANCE_SITE_STATE_ROOT}"
+				try_files restarting active.json
+			}
+		}
+		handle @restarting {
+			import site_failure restarting
+		}
+		# Pre-check a cloned GET. The original method, URI and request body are
+		# preserved for the API/hub handler after a successful readiness response.
+		reverse_proxy {$RESONANCE_BACKEND_UPSTREAM:127.0.0.1:55450} {
+			method GET
+			rewrite /health/ready?
+			header_up -Authorization
+			header_up -Cookie
+			header_up -X-Api-Key
+			header_up -X-Resonance-Link-Token
+			header_up -Connection
+			header_up -Upgrade
+			transport http {
+				dial_timeout 1s
+				response_header_timeout 3s
+			}
+			@ready {
+				status 200
+				header X-Resonance-Site-State available
+			}
+			handle_response @ready {
+				vars site_state available
+			}
+			@degraded {
+				status 200
+				header X-Resonance-Site-State degraded
+			}
+			handle_response @degraded {
+				vars site_state degraded
+			}
+			@starting {
+				status 503
+				header X-Resonance-Site-State starting
+			}
+			handle_response @starting {
+				import site_failure starting
+			}
+			@shutdown {
+				status 503
+				header X-Resonance-Site-State restarting
+			}
+			handle_response @shutdown {
+				import site_failure restarting
+			}
+			handle_response {
+				import site_failure unavailable
+			}
+		}
+		header X-Resonance-Gateway caddy
+		header X-Resonance-Site-State {http.vars.site_state}
+		@api path /api/* /health /health/*
+		handle @api {
+			reverse_proxy {$RESONANCE_BACKEND_UPSTREAM:127.0.0.1:55450}
+		}
+		handle /hub/* {
+			reverse_proxy {$RESONANCE_BACKEND_UPSTREAM:127.0.0.1:55450} {
+				flush_interval -1
+			}
+		}
+		@missing_frontend not file {
+			root "{$RESONANCE_WEB_ROOT}"
+			try_files index.html
+		}
+		handle @missing_frontend {
+			import site_failure frontend-unavailable
+		}
+		@site_status path /__site/status /__site/readiness
+		handle @site_status {
+			header Content-Type application/json
+			header Cache-Control no-store
+			respond `{"ready":true,"state":"{http.vars.site_state}"}` 200
+		}
+		@assets path /static/* /assets/* /favicon.ico /favicon.svg /manifest.json /robots.txt
+		handle @assets {
+			root * "{$RESONANCE_WEB_ROOT}"
+			file_server
+		}
+		handle {
+			root * "{$RESONANCE_WEB_ROOT}"
+			header Cache-Control no-store
+			try_files {path} /index.html
+			file_server
+		}
+	}
+	handle_errors 502 503 504 {
+		route {
+			# A successful pre-check does not guarantee the following upstream
+			# request survives. Classify that transport failure as unavailable.
+			@previously_available vars site_state available
+			vars @previously_available site_state unavailable
+			@previously_degraded vars site_state degraded
+			vars @previously_degraded site_state unavailable
+			header X-Resonance-Gateway caddy
+			header X-Resonance-Site-State {http.vars.site_state}
+			header Cache-Control no-store
+			header Retry-After 5
+			@planned_maintenance vars site_state maintenance
+			header @planned_maintenance X-Resonance-Maintenance true
+			@planned_restart vars site_state restarting
+			header @planned_restart X-Resonance-Maintenance true
+			@machine path /api/* /hub/* /health /health/* /__site/status /__site/readiness /maintenance/control
+			handle @machine {
+				header Content-Type application/json
+				respond `{"ready":false,"code":"{http.vars.site_state}","state":"{http.vars.site_state}","retryAfter":5}` 503
+			}
+			handle {
+				request_header -If-None-Match
+				request_header -If-Modified-Since
+				request_header -Range
+				request_header -If-Range
+				header Content-Security-Policy "default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"
+				root * "{$RESONANCE_STATUS_ROOT}"
+				rewrite /{http.vars.site_state}.html
+				route {
+					file_server {
+						status 503
+						pass_thru
+					}
+					respond "Resonance is temporarily unavailable. Please try again shortly." 503
+				}
+			}
+		}
+	}
+}

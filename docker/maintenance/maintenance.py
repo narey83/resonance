@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 
 MESSAGE = 'The server is being maintained. We will reconnect automatically when it is ready.'
 BACKEND = os.environ.get('BACKEND_URL', 'http://resonance-backend:5030').rstrip('/')
+CADDY_READINESS = os.environ.get('CADDY_READINESS_URL', '')
 
 
 class Maintenance:
@@ -70,6 +71,10 @@ state = Maintenance(os.environ.get('STATE_DIR', '/state'))
 
 def backend_ready():
     try:
+        if CADDY_READINESS:
+            request = Request(CADDY_READINESS, headers={'Cache-Control': 'no-cache'})
+            with urlopen(request, timeout=3) as response:
+                return response.status == 200 and response.headers.get('X-Resonance-Gateway') == 'caddy' and response.headers.get('X-Resonance-Site-State') in ('available', 'degraded')
         with urlopen(BACKEND + '/api/v0/session/initialized', timeout=3) as response:
             if json.load(response) is not True:
                 return False

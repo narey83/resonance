@@ -1,0 +1,6 @@
+# Set the four paths/addresses described in README.md before running Caddy.
+import site.caddy
+
+localhost:8443 {
+	import resonance_site
+}
