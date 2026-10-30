@@ -14,7 +14,7 @@ interface StudioState extends StudioProfile {
   load(): Promise<void>;
   setOutputProfile(profile: StudioOutputProfile): void;
   setEnabled(enabled: boolean): void;
-  setValue(index: number, value: number): void;
+  setValue(index: number, value: number, save?: boolean): void;
   toggleModule(index: number): void;
   setPushed(pushed: boolean): void;
   setBypass(bypass: boolean): void;
@@ -77,11 +77,11 @@ export const useStudio = create<StudioState>((set, get) => {
       set({ outputProfile, profiles, ...next, bypass: false }); persist();
     },
     setEnabled: enabled => { set({ enabled }); persist(); },
-    setValue: (index, value) => {
+    setValue: (index, value, save = true) => {
       if (!Number.isInteger(index) || index < 0 || index >= CLEAN_VALUES.length) return;
       const values = [...get().values]; values[index] = value;
       const clamped = clampStudio(values, get().pushed);
-      set({ values: clamped, selectedPresetId: clamped[index] === get().values[index] ? get().selectedPresetId : null }); persist();
+      set({ values: clamped, selectedPresetId: clamped[index] === get().values[index] ? get().selectedPresetId : null }); if (save) persist();
     },
     toggleModule: index => {
       if (!Number.isInteger(index) || index < 0 || index >= CLEAN_VALUES.length) return;

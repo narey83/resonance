@@ -12,12 +12,16 @@ interface Props {
   onChange(value: number, save?: boolean): void;
   disabled: boolean;
   db?: boolean;
+  maximumValue?: number;
+  warning?: boolean;
+  headerAccessory?: React.ReactNode;
 }
 
-export default function StudioSlider({ label, value, onChange, disabled, db = false }: Props) {
+export default function StudioSlider({ label, value, onChange, disabled, db = false, maximumValue = 1, warning = false, headerAccessory }: Props) {
   const { colors: c } = useTheme();
   const dragging = useRef(false);
-  const min = db ? -6 : 0, max = db ? 6 : 1, step = db ? .5 : .01;
+  const min = db ? -6 : 0, max = db ? 6 : maximumValue, step = db ? .5 : .01;
+  const tint = warning ? c.danger : c.accent;
   const readout = db ? `${value > 0 ? '+' : ''}${value.toFixed(1)} dB` : `${Math.round(value * 100)}%`;
   const update = (next: number, save = true) => {
     if (disabled || !Number.isFinite(next)) return;
@@ -25,14 +29,14 @@ export default function StudioSlider({ label, value, onChange, disabled, db = fa
     onChange(Number(Math.max(min, Math.min(max, Math.round(next / step) * step)).toFixed(2)), save);
   };
   return <View style={{ opacity: disabled || !studioSlidersAvailable ? .5 : 1 }}>
-    <View style={s.header}><Text style={[s.label, { color: c.textPrimary }]}>{label}</Text><Text accessible={false} style={[s.readout, { color: c.textPrimary }]}>{readout}</Text></View>
+    <View style={s.header}><Text style={[s.label, { color: c.textPrimary }]}>{label}</Text><Text accessible={false} style={[s.readout, { color: c.textPrimary }]}>{readout}</Text>{headerAccessory}</View>
     {studioSlidersAvailable && <Slider accessibilityLabel={label} accessibilityRole="adjustable" accessibilityState={{ disabled }} accessibilityValue={{ min, max, now: value, text: db ? readout : `${Math.round(value * 100)} percent` }}
       value={value} minimumValue={min} maximumValue={max} step={step} disabled={disabled} tapToSeek
-      minimumTrackTintColor={c.accent} maximumTrackTintColor={c.borderStrong} thumbTintColor={c.accent} style={s.slider}
+      minimumTrackTintColor={tint} maximumTrackTintColor={c.borderStrong} thumbTintColor={tint} style={s.slider}
       onSlidingStart={() => { dragging.current = true; }}
       onValueChange={next => update(next, !dragging.current)}
       onSlidingComplete={next => { dragging.current = false; update(next); }} />}
-    <View accessible={false} importantForAccessibility="no-hide-descendants" style={s.range}><Text style={[s.limit, { color: c.textMuted }]}>{db ? '−6 dB' : '0%'}</Text>{db && <Text style={[s.limit, { color: c.textMuted }]}>0 dB</Text>}<Text style={[s.limit, { color: c.textMuted }]}>{db ? '+6 dB' : '100%'}</Text></View>
+    <View accessible={false} importantForAccessibility="no-hide-descendants" style={s.range}><Text style={[s.limit, { color: c.textMuted }]}>{db ? '−6 dB' : '0%'}</Text>{db && <Text style={[s.limit, { color: c.textMuted }]}>0 dB</Text>}<Text style={[s.limit, { color: c.textMuted }]}>{db ? '+6 dB' : `${Math.round(max * 100)}%`}</Text></View>
   </View>;
 }
 

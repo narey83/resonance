@@ -20,7 +20,7 @@ function screen({ available = true, casting = false, enhanced = true, slidersAva
       Text: 'Text', TextInput: 'TextInput', View: 'View',
     },
     'src/theme.ts': { Editorial: {}, Typography: {} },
-    'src/context/ThemeContext.ts': { useTheme: () => ({ colors: { accent: 'accent', borderStrong: 'border', bgElevated: 'elevated' } }) },
+    'src/context/ThemeContext.ts': { useTheme: () => ({ colors: { accent: 'accent', danger: 'danger', borderStrong: 'border', bgElevated: 'elevated' } }) },
     'src/context/CastContext.ts': { useCast: () => ({ isCasting: casting }) },
     'src/store/studioStore.ts': { useStudio: Object.assign(() => store.getState(), store) },
   });
@@ -96,7 +96,7 @@ test('rack renders without audio meters or native meter polling', async () => {
   }
   assert.ok(content.includes('Eight-band EQ'));
   nodes().find(node => node.type === 'Pressable' && text(node) === 'MASTERING').props.onPress();
-  assert.ok(text(nodes()[0]).includes('Harmonic exciter'));
+  assert.ok(nodes().some(node => node.type === 'Text' && text(node) === 'Harmonic exciter'));
   assert.ok(content.includes('Processing rack'));
 });
 
@@ -358,4 +358,77 @@ test('a development client without the native slider shows a rebuild notice with
   button(nodes(), 'Warm pressing').props.onPress();
   assert.equal(store.getState().enabled, true);
   assert.equal(store.getState().selectedPresetId, 'builtin:Warm pressing');
+});
+
+test('every Mastering and Creative slider previews its native parameter, saves on release and preserves module bypass', async () => {
+  const { STUDIO_MODULES } = mobileModules()('src/lib/studio.ts');
+  for (const group of ['mastering','creative']) {
+    const storage = secureStorage(); let writes = 0;
+    const save = storage.setItemAsync;
+    storage.setItemAsync = async (...args) => { writes++; return save(...args); };
+    const { store, nodes, configurations, syncEngine } = screen({ storage });
+    await store.getState().load();
+    nodes().find(node => node.type === 'Pressable' && text(node) === group.toUpperCase()).props.onPress();
+    for (const [index, module] of STUDIO_MODULES.entries()) {
+      if (module.group !== group) continue;
+      button(nodes(), 'Warm pressing').props.onPress();
+      await new Promise(setImmediate); writes = 0;
+      const expected = Math.round(module.safe * 50) / 100;
+      assert.equal(slider(nodes(), module.title).props.maximumValue, module.safe);
+      slider(nodes(), module.title).props.onSlidingStart();
+      slider(nodes(), module.title).props.onValueChange(expected);
+      syncEngine(); await new Promise(setImmediate);
+      assert.equal(configurations.at(-1).values[index], expected, module.title);
+      assert.equal(store.getState().selectedPresetId, null, module.title);
+      assert.equal(writes, 0, module.title);
+      slider(nodes(), module.title).props.onSlidingComplete(expected + .00000001);
+      await new Promise(setImmediate);
+      assert.equal(writes, 1, module.title);
+      assert.equal(JSON.parse(storage.values.get('resonance_studio_v1')).values[index], expected);
+      nodes().find(node => node.type === 'Switch' && node.props.accessibilityLabel === `${module.title} enabled`).props.onValueChange(false);
+      await new Promise(setImmediate); const writesBeforeDisabled = writes;
+      assert.equal(slider(nodes(), module.title).props.disabled, true);
+      slider(nodes(), module.title).props.onValueChange(0);
+      slider(nodes(), module.title).props.onSlidingComplete(0);
+      syncEngine(); await new Promise(setImmediate);
+      assert.equal(writes, writesBeforeDisabled);
+      assert.equal(configurations.at(-1).values[index], 0);
+      assert.equal(store.getState().values[index], expected);
+      nodes().find(node => node.type === 'Switch' && node.props.accessibilityLabel === `${module.title} enabled`).props.onValueChange(true);
+      assert.equal(slider(nodes(), module.title).props.disabled, false);
+      assert.equal(slider(nodes(), module.title).props.value, expected);
+      slider(nodes(), module.title).props.onSlidingComplete(1); assert.equal(store.getState().values[index], module.safe);
+      slider(nodes(), module.title).props.onSlidingComplete(-1); assert.equal(store.getState().values[index], 0);
+      slider(nodes(), module.title).props.onValueChange(NaN); assert.equal(store.getState().values[index], 0);
+      assert.equal(button(nodes(), `Increase ${module.title}`), undefined);
+      assert.equal(button(nodes(), `Reduce ${module.title}`), undefined);
+    }
+  }
+});
+
+test('effect sliders honour Push it consent, restore controlled limits and disable unavailable playback routes', async () => {
+  const { store, nodes, configurations, syncEngine } = screen();
+  await store.getState().load();
+  nodes().find(node => node.type === 'Pressable' && text(node) === 'MASTERING').props.onPress();
+  store.getState().setPushed(true);
+  const pushed = slider(nodes(), 'Harmonic exciter');
+  assert.equal(pushed.props.maximumValue, 1);
+  pushed.props.onSlidingStart(); pushed.props.onValueChange(.8); syncEngine();
+  assert.equal(configurations.at(-1).values[0], .8);
+  assert.equal(slider(nodes(), 'Harmonic exciter').props.minimumTrackTintColor, 'danger');
+  store.getState().setPushed(false);
+  pushed.props.onSlidingComplete(.8); // A late release cannot restore an expired range.
+  assert.equal(store.getState().values[0], .35);
+  assert.equal(slider(nodes(), 'Harmonic exciter').props.maximumValue, .35);
+  assert.equal(slider(nodes(), 'Harmonic exciter').props.minimumTrackTintColor, 'accent');
+  for (const options of [{ casting: true }, { available: false }]) {
+    const blocked = screen(options); await blocked.store.getState().load();
+    for (const [tab, label] of [['MASTERING','Harmonic exciter'], ['CREATIVE','Tape flutter']]) {
+      blocked.nodes().find(node => node.type === 'Pressable' && text(node) === tab).props.onPress();
+      const control = slider(blocked.nodes(), label);
+      assert.equal(control.props.disabled, true);
+      control.props.onValueChange(.1); control.props.onSlidingComplete(.1);
+      assert.ok(blocked.store.getState().values.every(value => value === 0));
+    }
+  }
 });
