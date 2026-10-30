@@ -6,17 +6,14 @@ describe('Soulseek connection phase', () => {
       { busy: true, label: 'Waiting for shares' },
     );
   });
-  it('shows share preparation while the validated cache initializes, even without a rescan', () => {
-    expect(
-      connectionStatus(
-        {},
-        { scanning: false },
-        { services: [{ id: 'shares', state: 'starting' }] },
-      ),
-    ).toMatchObject({ busy: true, label: 'Preparing shares…' });
+  it('waits for a pending share scan', () => {
+    expect(connectionStatus({}, { scanPending: true })).toEqual({
+      busy: true,
+      label: 'Waiting for shares',
+    });
   });
   it('shows preparation errors instead of an endless busy indicator', () => {
-    expect(connectionStatus({}, { faulted: true }, {})).toMatchObject({
+    expect(connectionStatus({}, { faulted: true })).toMatchObject({
       busy: false,
       label: 'Share preparation failed',
     });

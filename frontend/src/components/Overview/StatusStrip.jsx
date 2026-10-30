@@ -88,7 +88,6 @@ const StatusStrip = ({
   onLogout,
   server,
   shares,
-  startupStatus,
   system,
   uploads,
   upnp,
@@ -325,7 +324,7 @@ const StatusStrip = ({
 
   const isConnected = server?.isLoggedIn;
 
-  const connection = connectionStatus(server, shares, startupStatus);
+  const connection = connectionStatus(server, shares);
   const connPhase = connection.label;
   const connBusy = connection.busy;
 
