@@ -67,6 +67,75 @@ public sealed class UploadEnqueueTests : IDisposable
     }
 
     [Fact]
+    public async Task ThreeRecentNetworkFailuresRejectAnotherRequestWithoutCreatingAQueueRecord()
+    {
+        SeedAttempts("alice", "album/track.mp3",
+            TransferStates.Errored, TransferStates.TimedOut, TransferStates.Errored);
+        var service = CreateService([]);
+        var error = await Assert.ThrowsAsync<DownloadEnqueueException>(
+            () => service.EnqueueAsync("alice", "album/track.mp3"));
+        Assert.Contains("repeated transfer errors", error.Message);
+        using var db = factory.CreateDbContext();
+        Assert.Equal(3, db.Transfers.Count());
+    }
+
+    [Fact]
+    public async Task RepeatedFailuresDoNotBlockAnotherPeerOrFile()
+    {
+        SeedAttempts("alice", "album/track.mp3",
+            TransferStates.Errored, TransferStates.Errored, TransferStates.TimedOut);
+        var service = CreateService([], new IOException("share lookup reached"));
+        await Assert.ThrowsAsync<IOException>(() => service.EnqueueAsync("bob", "album/track.mp3"));
+        await Assert.ThrowsAsync<IOException>(() => service.EnqueueAsync("alice", "album/other.mp3"));
+    }
+
+    [Fact]
+    public async Task CancellationAndAnOldFailureDoNotTriggerTheCircuitBreaker()
+    {
+        SeedAttempts("alice", "album/track.mp3",
+            TransferStates.Cancelled, TransferStates.Errored, TransferStates.TimedOut);
+        using (var db = factory.CreateDbContext())
+        {
+            var old = db.Transfers.First(t => t.State == (TransferStates.Completed | TransferStates.TimedOut));
+            old.EndedAt = DateTime.UtcNow.AddHours(-2);
+            db.SaveChanges();
+        }
+        var service = CreateService([], new IOException("share lookup reached"));
+        await Assert.ThrowsAsync<IOException>(() => service.EnqueueAsync("alice", "album/track.mp3"));
+    }
+
+    [Fact]
+    public async Task RecentSuccessfulUploadResetsTheErrorStreak()
+    {
+        SeedAttempts("alice", "album/track.mp3",
+            TransferStates.Errored, TransferStates.Errored, TransferStates.Errored,
+            TransferStates.Succeeded, TransferStates.Errored);
+        var service = CreateService([], new IOException("share lookup reached"));
+        await Assert.ThrowsAsync<IOException>(() => service.EnqueueAsync("alice", "album/track.mp3"));
+    }
+
+    private void SeedAttempts(string username, string filename, params TransferStates[] outcomes)
+    {
+        using var db = factory.CreateDbContext();
+        var now = DateTime.UtcNow;
+        for (var i = 0; i < outcomes.Length; i++)
+        {
+            db.Transfers.Add(new Transfer
+            {
+                Id = Guid.NewGuid(),
+                Username = username,
+                Filename = filename,
+                Direction = TransferDirection.Upload,
+                RequestedAt = now.AddMinutes(-outcomes.Length + i),
+                EndedAt = now.AddMinutes(-outcomes.Length + i),
+                State = TransferStates.Completed | outcomes[i],
+                Removed = true,
+            });
+        }
+        db.SaveChanges();
+    }
+
+    [Fact]
     public async Task ShutdownRejectsNewEnqueuesAndUploadsBeforeAccessingDependencies()
     {
         var service = CreateService([]);
