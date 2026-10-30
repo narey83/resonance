@@ -98,6 +98,8 @@ Feature descriptions, platform differences and the current gallery live in the [
 
 Studio native changes require rebuilding the Android/iOS development client. The version 2 engine adds `StudioTone.h`, eight EQ gains, dynamic bass/treble controls and preset Amount to the native configuration. Run `node scripts/install-studio.cjs` before a native rebuild; both platforms must receive the updated bridge and shared header together. The `withStudio` plugin installs the shared DSP and native bridges into TrackPlayer, and adds a CocoaPods post-install adjustment to preload SwiftAudioEx audio tracks. Keep `patch-package && node scripts/install-studio.cjs` as the postinstall command. Android uses the app's NDK version and CMake 3.22.1 or newer. Audio offload stays disabled to preserve the processing path.
 
+Studio Amount and EQ sliders use the Expo 57 compatible `@react-native-community/slider` 5.2.0. Rebuild both development clients after installing this native dependency; Metro refresh alone cannot add its view. Older clients show a rebuild notice instead of rendering an unavailable slider.
+
 Expo modules are built from source (`expo-build-properties.ios.usePrecompiledModules: false`) to avoid the Swift 6.3 precompiled-module interface mismatch with the installed Swift 6.4 / Xcode 27.1 toolchain. React Native can continue using its prebuilt core.
 
 ExpoModulesJSI 57.1.3 includes Swift-interface cleanup for Swift 6.4's `__ObjC::` spelling as well as `__ObjC.`. The older local patch is no longer needed. Leaving these C++ extensions in the public interface prevents importing ExpoModulesJSI on Xcode 27.1.

@@ -3,16 +3,18 @@ const assert = require('node:assert/strict');
 const React = require('react');
 const { mobileModules, secureStorage } = require('./helpers.cjs');
 
-function screen({ available = true, casting = false, enhanced = true } = {}) {
-  const store = mobileModules({ 'expo-secure-store': secureStorage() })('src/store/studioStore.ts').useStudio;
+function screen({ available = true, casting = false, enhanced = true, slidersAvailable = true, storage = secureStorage() } = {}) {
+  const store = mobileModules({ 'expo-secure-store': storage })('src/store/studioStore.ts').useStudio;
   const effects = [], configurations = [];
   let hook = 0; const hookState = [];
   const native = { version: enhanced ? 2 : 1, configure: async config => { configurations.push(config); } };
   const load = mobileModules({
-    react: { ...React, useState: initial => { const index = hook++; if (index >= hookState.length) hookState[index] = initial; return [hookState[index], value => { hookState[index] = value; }]; }, useEffect: effect => effects.push(effect) },
+    react: { ...React, useState: initial => { const index = hook++; if (index >= hookState.length) hookState[index] = initial; return [hookState[index], value => { hookState[index] = value; }]; }, useRef: initial => { const index = hook++; if (index >= hookState.length) hookState[index] = { current: initial }; return hookState[index]; }, useEffect: effect => effects.push(effect) },
+    '@react-native-community/slider': 'NativeSlider',
     'react-native': {
       NativeModules: available ? { ResonanceStudio: native } : {},
       TurboModuleRegistry: { get: () => available ? native : undefined },
+      UIManager: { hasViewManagerConfig: name => name === 'RNCSlider' && slidersAvailable },
       Alert: {}, StyleSheet: { create: styles => styles },
       Pressable: 'Pressable', ScrollView: 'ScrollView', Switch: 'Switch',
       Text: 'Text', TextInput: 'TextInput', View: 'View',
@@ -29,7 +31,8 @@ function screen({ available = true, casting = false, enhanced = true } = {}) {
     const visit = node => {
       if (!React.isValidElement(node)) return;
       result.push(node);
-      React.Children.forEach(node.props.children, visit);
+      if (typeof node.type === 'function') visit(node.type(node.props));
+      else React.Children.forEach(node.props.children, visit);
     };
     hook = 0;
     visit(StudioRack({}));
@@ -43,6 +46,7 @@ function screen({ available = true, casting = false, enhanced = true } = {}) {
   return { store, nodes, configurations, syncEngine };
 }
 const button = (nodes, name) => nodes.find(node => node.type === 'Pressable' && node.props.accessibilityLabel === name);
+const slider = (nodes, name) => nodes.find(node => node.type === 'NativeSlider' && node.props.accessibilityLabel === name);
 const text = node => React.isValidElement(node) ? React.Children.toArray(node.props.children).map(text).join('') : String(node ?? '');
 
 test('preset buttons highlight and announce only the selected preset', async () => {
@@ -195,7 +199,7 @@ test('new presets apply the output recipe and Amount survives toggling off and o
   assert.equal(configurations.at(-1).eq.length, 8);
   assert.equal(configurations.at(-1).eq[0], 2.2);
   assert.equal(configurations.at(-1).bassControl, .35);
-  button(nodes(), 'Increase Preset amount').props.onPress();
+  slider(nodes(), 'Preset amount').props.onSlidingComplete(.7);
   const amount = store.getState().amount;
   assert.ok(amount > .65);
   button(nodes(), 'Resonance Enhance').props.onPress();
@@ -215,7 +219,7 @@ test('new presets apply the output recipe and Amount survives toggling off and o
 test('EQ, tone controls and saved tone presets reach the native bridge', async () => {
   const { store, nodes, configurations, syncEngine } = screen();
   await store.getState().load();
-  button(nodes(), 'Increase EQ 60 Hz').props.onPress();
+  slider(nodes(), 'EQ 60 Hz').props.onSlidingComplete(.5);
   button(nodes(), 'Increase Bass control').props.onPress();
   button(nodes(), 'Increase Smoothness').props.onPress();
   store.getState().savePreset('My tone');
@@ -235,8 +239,8 @@ test('older native builds retain legacy presets and disable unsupported tone fea
   const { store, nodes } = screen({ enhanced: false });
   await store.getState().load();
   assert.equal(button(nodes(), 'Resonance Enhance').props.disabled, true);
-  assert.equal(button(nodes(), 'Increase EQ 60 Hz').props.disabled, true);
-  assert.equal(button(nodes(), 'Increase Preset amount').props.disabled, true);
+  assert.equal(slider(nodes(), 'EQ 60 Hz').props.disabled, true);
+  assert.equal(slider(nodes(), 'Preset amount').props.disabled, true);
   assert.equal(button(nodes(), 'Warm pressing').props.disabled, false);
   assert.ok(text(nodes()[0]).includes('updated native app build'));
 });
@@ -248,4 +252,78 @@ test('restored enhanced settings cannot silently run on an older native engine',
   assert.equal(configurations.at(-1).enabled, false);
   store.getState().apply(Array(11).fill(0)); syncEngine();
   assert.equal(configurations.at(-1).enabled, true);
+});
+
+test('slider drags preview the audio immediately and save only the released value', async () => {
+  const storage = secureStorage(); let writes = 0;
+  const save = storage.setItemAsync;
+  storage.setItemAsync = async (...args) => { writes++; return save(...args); };
+  const { store, nodes, configurations, syncEngine } = screen({ storage });
+  await store.getState().load();
+  button(nodes(), 'Resonance Enhance').props.onPress();
+  await new Promise(setImmediate); writes = 0;
+  slider(nodes(), 'Preset amount').props.onSlidingStart();
+  for (const value of [.5,.41,.42]) slider(nodes(), 'Preset amount').props.onValueChange(value);
+  syncEngine(); await new Promise(setImmediate);
+  assert.equal(configurations.at(-1).amount, .42);
+  assert.equal(writes, 0);
+  assert.equal(store.getState().selectedPresetId, 'builtin:Resonance Enhance');
+  assert.equal(slider(nodes(), 'Preset amount').props.accessibilityValue.text, '42 percent');
+  slider(nodes(), 'Preset amount').props.onSlidingComplete(.42000002);
+  await new Promise(setImmediate);
+  assert.equal(writes, 1);
+  assert.equal(JSON.parse(storage.values.get('resonance_studio_v1')).amount, .42);
+  slider(nodes(), 'EQ 60 Hz').props.onSlidingStart();
+  slider(nodes(), 'EQ 60 Hz').props.onValueChange(-2.5);
+  syncEngine(); await new Promise(setImmediate);
+  assert.equal(configurations.at(-1).eq[0], -2.5);
+  assert.equal(store.getState().selectedPresetId, null);
+  assert.equal(writes, 1);
+  slider(nodes(), 'EQ 60 Hz').props.onSlidingComplete(-2.5);
+  await new Promise(setImmediate);
+  assert.equal(writes, 2);
+  const restarted = mobileModules({ 'expo-secure-store': storage })('src/store/studioStore.ts').useStudio;
+  await restarted.getState().load();
+  assert.equal(restarted.getState().amount, .42);
+  assert.equal(restarted.getState().eq[0], -2.5);
+  assert.equal(button(nodes(), 'Increase Preset amount'), undefined);
+  assert.equal(button(nodes(), 'Reduce EQ 60 Hz'), undefined);
+});
+
+test('slider limits and non-drag adjustments persist; disabled sliders reject changes', async () => {
+  const storage = secureStorage();
+  const { store, nodes } = screen({ storage }); await store.getState().load();
+  // Accessibility and keyboard adjustments can emit value changes without touch start/end.
+  slider(nodes(), 'Preset amount').props.onValueChange(.37000001);
+  slider(nodes(), 'EQ 12 kHz').props.onValueChange(7);
+  await new Promise(setImmediate);
+  assert.equal(JSON.parse(storage.values.get('resonance_studio_v1')).amount, .37);
+  assert.equal(store.getState().eq[7], 6);
+  slider(nodes(), 'EQ 12 kHz').props.onValueChange(-7);
+  assert.equal(store.getState().eq[7], -6);
+  slider(nodes(), 'Preset amount').props.onSlidingComplete(2); assert.equal(store.getState().amount, 1);
+  slider(nodes(), 'Preset amount').props.onSlidingComplete(-1); assert.equal(store.getState().amount, 0);
+  slider(nodes(), 'Preset amount').props.onValueChange(NaN); assert.equal(store.getState().amount, 0);
+  for (const options of [{ casting: true }, { available: false }, { enhanced: false }]) {
+    const blocked = screen(options); await blocked.store.getState().load();
+    for (const label of ['Preset amount','EQ 60 Hz']) {
+      const control = slider(blocked.nodes(), label);
+      assert.equal(control.props.disabled, true);
+      assert.equal(control.props.accessibilityState.disabled, true);
+      control.props.onValueChange(.5); control.props.onSlidingComplete(.5);
+    }
+    assert.equal(blocked.store.getState().amount, 1);
+    assert.equal(blocked.store.getState().eq[0], 0);
+  }
+});
+
+test('a development client without the native slider shows a rebuild notice without rendering an unavailable view', async () => {
+  const { store, nodes } = screen({ slidersAvailable: false });
+  await store.getState().load();
+  assert.equal(nodes().filter(node => node.type === 'NativeSlider').length, 0);
+  assert.ok(text(nodes()[0]).includes('Sliders need an updated native app build'));
+  assert.equal(button(nodes(), 'Increase Bass control').props.disabled, false);
+  button(nodes(), 'Warm pressing').props.onPress();
+  assert.equal(store.getState().enabled, true);
+  assert.equal(store.getState().selectedPresetId, 'builtin:Warm pressing');
 });

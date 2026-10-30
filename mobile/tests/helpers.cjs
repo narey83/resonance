@@ -15,7 +15,8 @@ function mobileModules(mocks = {}, globals = {}) {
   function load(name, parent = path.join(root, 'index.ts')) {
     const resolved = name.startsWith('.') || name.startsWith('/')
       ? path.resolve(path.dirname(parent), name) : name;
-    const file = resolved.startsWith(root) && !path.extname(resolved) ? `${resolved}.ts` : resolved;
+    const file = resolved.startsWith(root) && !path.extname(resolved)
+      ? ([`${resolved}.ts`, `${resolved}.tsx`].find(candidate => replacements.has(candidate) || fs.existsSync(candidate)) ?? `${resolved}.ts`) : resolved;
     if (replacements.has(file)) return replacements.get(file);
     if (!file.startsWith(root)) return localRequire(name);
     if (cache.has(file)) return cache.get(file).exports;

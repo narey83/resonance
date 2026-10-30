@@ -18,11 +18,11 @@ interface StudioState extends StudioProfile {
   toggleModule(index: number): void;
   setPushed(pushed: boolean): void;
   setBypass(bypass: boolean): void;
-  setEq(index: number, gain: number): void;
+  setEq(index: number, gain: number, save?: boolean): void;
   resetEq(): void;
   setBassControl(value: number): void;
   setSmoothness(value: number): void;
-  setAmount(value: number): void;
+  setAmount(value: number, save?: boolean): void;
   apply(values: readonly number[], presetId?: string, tone?: StudioToneSettings): void;
   savePreset(name: string): void;
 }
@@ -93,15 +93,16 @@ export const useStudio = create<StudioState>((set, get) => {
       set({ pushed, values, selectedPresetId }); persist();
     },
     setBypass: bypass => set({ bypass }),
-    setEq: (index, gain) => {
+    // Drag previews reach the engine immediately; release commits one storage write.
+    setEq: (index, gain, save = true) => {
       if (!Number.isInteger(index) || index < 0 || index >= get().eq.length) return;
       const eq = [...get().eq]; eq[index] = studioNumber(gain, -6, 6);
-      set({ eq, selectedPresetId: eq[index] === get().eq[index] ? get().selectedPresetId : null }); persist();
+      set({ eq, selectedPresetId: eq[index] === get().eq[index] ? get().selectedPresetId : null }); if (save) persist();
     },
     resetEq: () => { if (!get().eq.some(gain => gain !== 0)) return; set({ eq: get().eq.map(() => 0), selectedPresetId: null }); persist(); },
     setBassControl: value => { const bassControl = studioNumber(value, 0, 1); set({ bassControl, selectedPresetId: bassControl === get().bassControl ? get().selectedPresetId : null }); persist(); },
     setSmoothness: value => { const smoothness = studioNumber(value, 0, 1); set({ smoothness, selectedPresetId: smoothness === get().smoothness ? get().selectedPresetId : null }); persist(); },
-    setAmount: value => { set({ amount: studioNumber(value, 0, 1, 1) }); persist(); },
+    setAmount: (value, save = true) => { set({ amount: studioNumber(value, 0, 1, 1) }); if (save) persist(); },
     apply: (values, presetId, tone) => {
       set({ values: clampStudio(values, get().pushed), ...clampTone(tone), selectedPresetId: presetId ?? null, disabled: CLEAN_VALUES.map(() => false), bypass: false }); persist();
     },
