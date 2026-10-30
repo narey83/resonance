@@ -53,8 +53,10 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
-      - name: Production dependency security audit
+      - name: Full dependency security audit
         run: npm run audit:security
+      - name: Dependency security regressions
+        run: npm run test:dependency-security
       - name: Node compatibility (HTTP and WebSocket)
         run: npm run test:node-compat
       - name: Lint

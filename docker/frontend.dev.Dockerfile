@@ -4,6 +4,7 @@ ARG DEV_UID=1000
 ARG DEV_GID=1000
 WORKDIR /src/frontend
 COPY frontend/package.json frontend/package-lock.json ./
+COPY frontend/vendor/ ./vendor/
 COPY frontend/scripts/apply-node-compat.cjs ./scripts/apply-node-compat.cjs
 RUN npm ci && sha256sum package-lock.json > node_modules/.resonance-package-lock \
     && mkdir -p /home/dev /cache/npm \

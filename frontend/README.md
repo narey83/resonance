@@ -36,6 +36,8 @@ Run from this directory:
 
 ```sh
 npm run lint
+npm run audit:security
+npm run test:dependency-security
 npm run test-unattended -- --runInBand
 npm run build
 ```
@@ -54,6 +56,14 @@ The beatgrid matrix uses 15 tracks' saved analysis with synthetic waveform ampli
 it measures rendering consistency, not musical correctness. See the
 [verification guide](../docs/beatgrid-verification.md). Passing automated tests also
 does not replace browser, theme, screen-size or physical-player acceptance checks.
+
+The security audit covers both production and development dependencies. The
+package overrides select fixed transitive releases while retaining the existing
+build and test commands. `deepmerge` has a small, MIT-licensed local security
+backport because upstream has not published a patched release; see
+[`vendor/deepmerge/README.md`](vendor/deepmerge/README.md) for the exact change,
+regression checks and removal criteria. Keep `vendor/` available when installing
+from the lockfile, including in container dependency layers.
 
 ## Themes and player window
 

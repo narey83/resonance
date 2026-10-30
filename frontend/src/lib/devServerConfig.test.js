@@ -64,4 +64,18 @@ describe('modern dev-server middleware', () => {
     const middlewares = [];
     expect(config.setupMiddlewares(middlewares, { app: {} })).toBe(middlewares);
   });
+
+  it('translates legacy HTTPS options without overriding an explicit server', () => {
+    const tls = { key: 'private-test-key', cert: 'test-certificate' };
+    const config = devServer({ https: tls });
+    expect(config).not.toHaveProperty('https');
+    expect(config.server).toEqual({ type: 'https', options: tls });
+    expect(devServer({ https: true }).server).toEqual({
+      type: 'https',
+      options: {},
+    });
+    expect(devServer({ https: false }).server).toBe('http');
+    const explicit = { type: 'https', options: { cert: 'explicit' } };
+    expect(devServer({ https: tls, server: explicit }).server).toBe(explicit);
+  });
 });

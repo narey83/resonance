@@ -25,7 +25,9 @@ const overrides = {
 module.exports = {
   env: { es2021: true },
   extends: ['canonical/auto', 'canonical/browser', 'canonical/node'],
-  ignorePatterns: ['build', 'node_modules', 'package-lock.json'],
+  // The upstream distribution is kept intact apart from its documented backport;
+  // its security and compatibility are checked by test:dependency-security.
+  ignorePatterns: ['build', 'node_modules', 'package-lock.json', 'vendor'],
   overrides: [
     {
       extends: [

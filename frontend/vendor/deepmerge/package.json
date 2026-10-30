@@ -1,0 +1,9 @@
+{
+  "name": "deepmerge",
+  "version": "4.3.1-resonance.1",
+  "description": "Resonance security backport of deepmerge 4.3.1",
+  "main": "index.cjs",
+  "types": "index.d.ts",
+  "license": "MIT",
+  "private": true
+}

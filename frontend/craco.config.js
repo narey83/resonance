@@ -50,11 +50,17 @@ module.exports = {
       onBeforeSetupMiddleware: before,
       onAfterSetupMiddleware: after,
       setupMiddlewares: setup,
+      https,
       ...modern
     } = config;
 
     return {
       ...modern,
+      server:
+        modern.server ||
+        (https
+          ? { type: 'https', options: typeof https === 'object' ? https : {} }
+          : 'http'),
       client: {
         ...modern.client,
         webSocketURL: 'auto://0.0.0.0:0/ws',

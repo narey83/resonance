@@ -6,6 +6,7 @@ ARG CADDY_RUNTIME_IMAGE=caddy:2
 FROM node:22 AS build
 WORKDIR /web
 COPY frontend/package.json frontend/package-lock.json ./
+COPY frontend/vendor/ ./vendor/
 COPY frontend/scripts/apply-node-compat.cjs ./scripts/apply-node-compat.cjs
 RUN npm ci
 COPY frontend/ .
