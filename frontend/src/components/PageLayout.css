@@ -1,9 +1,13 @@
-/* Shared page rhythm. Split-pane tools keep their full-width working canvas. */
+/* Master page layout and spacing tokens.
+   All routes inherit these gutters; split-pane tools retain their working canvas.
+   Keep page-level padding here rather than duplicating it in route styles. */
 .app-main {
   --page-gutter: 24px;
   --workspace-header-height: 44px;
   --workspace-title-size: 16px;
   --page-spacing: 20px;
+  --page-surface-padding: 20px;
+  --page-section-gap: 20px;
   --page-form-width: none;
   min-width: 0;
 }
@@ -121,12 +125,16 @@
   .app-main {
     --page-gutter: 16px;
     --page-spacing: 16px;
+    --page-surface-padding: 16px;
+    --page-section-gap: 16px;
   }
 }
 @media (max-width: 480px) {
   .app-main {
     --page-gutter: 12px;
     --page-spacing: 12px;
+    --page-surface-padding: 16px;
+    --page-section-gap: 12px;
   }
 }
 .app-main > .dj-workspace-header {
