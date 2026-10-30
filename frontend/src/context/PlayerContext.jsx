@@ -111,9 +111,9 @@ export const PlayerProvider = ({ children }) => {
   );
   const [track, setTrack] = useState(initialSession?.track ?? null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [restoredFromSession, setRestoredFromSession] = useState(() =>
-    Boolean(loadSession()?.track),
-  );
+  // Playback intent belongs to this provider lifetime, never to saved state.
+  // A new request also lets selecting the already-loaded track start playback.
+  const [playbackRequest, setPlaybackRequest] = useState(0);
   const [queue, setQueue] = useState(initialSession?.queue ?? []);
   const [queueIndex, setQueueIndex] = useState(initialSession?.queueIndex ?? 0);
   const [shuffle, setShuffle] = useState(initialSession?.shuffle ?? false);
@@ -236,17 +236,16 @@ export const PlayerProvider = ({ children }) => {
   }, [queue, queueIndex, shuffle, shuffleOrder, track]);
 
   const play = useCallback((newTrack) => {
-    setRestoredFromSession(false);
     setTrack(newTrack);
     setQueue([newTrack]);
     setQueueIndex(0);
     setShuffleOrder([0]);
+    setPlaybackRequest((request) => request + 1);
   }, []);
 
   const playQueue = useCallback((allTracks, startIndex = 0) => {
     if (!allTracks?.length) return;
     const [tracks, index] = windowQueue(allTracks, startIndex);
-    setRestoredFromSession(false);
     setQueue(tracks);
     setQueueIndex(index);
     setTrack(tracks[index]);
@@ -256,6 +255,8 @@ export const PlayerProvider = ({ children }) => {
     } else {
       setShuffleOrder([]);
     }
+
+    setPlaybackRequest((request) => request + 1);
   }, []);
 
   // Same track already loaded → seek it in place. Different track → queue it
@@ -293,9 +294,9 @@ export const PlayerProvider = ({ children }) => {
       nextIndex = (currentIndex + 1) % currentQueue.length;
     }
 
-    setRestoredFromSession(false);
     setQueueIndex(nextIndex);
     setTrack(currentQueue[nextIndex]);
+    setPlaybackRequest((request) => request + 1);
   }, []);
 
   const previous = useCallback(() => {
@@ -313,9 +314,9 @@ export const PlayerProvider = ({ children }) => {
         (currentIndex - 1 + currentQueue.length) % currentQueue.length;
     }
 
-    setRestoredFromSession(false);
     setQueueIndex(previousIndex);
     setTrack(currentQueue[previousIndex]);
+    setPlaybackRequest((request) => request + 1);
   }, []);
 
   const toggleShuffle = useCallback(() => {
@@ -355,9 +356,9 @@ export const PlayerProvider = ({ children }) => {
   const jumpTo = useCallback((index) => {
     const currentQueue = queueRef.current;
     if (index < 0 || index >= currentQueue.length) return;
-    setRestoredFromSession(false);
     setQueueIndex(index);
     setTrack(currentQueue[index]);
+    setPlaybackRequest((request) => request + 1);
   }, []);
 
   const enqueueTrack = useCallback((newTrack) => {
@@ -434,6 +435,7 @@ export const PlayerProvider = ({ children }) => {
       jumpTo,
       next,
       pendingSeekRef,
+      playbackRequest,
       pausePlayback,
       play,
       playQueue,
@@ -446,7 +448,6 @@ export const PlayerProvider = ({ children }) => {
       registerTempoHandler,
       removeFromQueue,
       reorderQueue,
-      restoredFromSession: sessionValidated && restoredFromSession,
       seekTrack,
       setIsPlaying,
       shuffle,
@@ -468,6 +469,7 @@ export const PlayerProvider = ({ children }) => {
       pausePlayback,
       play,
       playQueue,
+      playbackRequest,
       previous,
       queue,
       queueIndex,
@@ -477,7 +479,6 @@ export const PlayerProvider = ({ children }) => {
       registerTempoHandler,
       removeFromQueue,
       reorderQueue,
-      restoredFromSession,
       seekTrack,
       sessionValidated,
       setIsPlaying,

@@ -274,6 +274,7 @@ const MediaPlayer = () => {
     jumpTo,
     next,
     pendingSeekRef,
+    playbackRequest,
     prev,
     queue,
     queueIndex,
@@ -282,7 +283,6 @@ const MediaPlayer = () => {
     registerSeekHandler,
     registerTempoHandler,
     removeFromQueue,
-    restoredFromSession,
     setIsPlaying,
     shuffle,
     stop,
@@ -293,12 +293,26 @@ const MediaPlayer = () => {
   const activity = useLibraryActivity();
   const audioRef = useRef(null);
   const auditionTempoRef = useRef(ORIGINAL_AUDITION_TEMPO);
-  const playbackPausedRef = useRef(false);
+  const playbackPausedRef = useRef(true);
   const playerRef = useRef(null);
   const repeatRef = useRef(false);
 
-  const skipAutoPlayRef = useRef(restoredFromSession);
+  // Consume each explicit selection once. Restoring a track, remounting this
+  // owner, or refreshing effects during HMR must not authorize a new stream.
+  const lastPlaybackRequestRef = useRef(playbackRequest);
   const triggerPlayRef = useRef(null);
+
+  // Position to resume at once the user presses play after a refresh — read once,
+  // consumed (and cleared) the first time it matches the track being loaded.
+  const pendingResumeRef = useRef(undefined);
+  if (pendingResumeRef.current === undefined) {
+    try {
+      const raw = sessionStorage.getItem(RESUME_POSITION_KEY);
+      pendingResumeRef.current = raw ? JSON.parse(raw) : null;
+    } catch {
+      pendingResumeRef.current = null;
+    }
+  }
 
   const [playing, setPlaying] = useState(false);
   useEffect(() => {
@@ -450,13 +464,24 @@ const MediaPlayer = () => {
 
       const audio = audioRef.current;
       if (!audio) return;
+      if (!audio.src) {
+        pendingResumeRef.current = null;
+        pendingSeekRef.current = {
+          identity: trackRef.current?.path || trackRef.current?.filename,
+          time,
+        };
+        void triggerPlayRef.current?.();
+        return;
+      }
+
       audio.currentTime = time;
       audio
         .play()
         .then(() => setPlaying(!playbackPausedRef.current))
         .catch(() => {});
     });
-  }, [registerSeekHandler]);
+    return () => registerSeekHandler(null);
+  }, [pendingSeekRef, registerSeekHandler]);
 
   // Reads the live position directly from refs (not React state) so the
   // waveform's animation-frame redraw loop always sees the freshest value
@@ -483,26 +508,15 @@ const MediaPlayer = () => {
   // being fired and forgotten. Genuine failures (missing file, decode error)
   // still surface via the element's own "error" event.
   const playAudio = async () => {
-    if (playbackPausedRef.current) return false;
+    const audio = audioRef.current;
+    if (!audio?.src || playbackPausedRef.current) return false;
     try {
-      await audioRef.current?.play();
-      return true;
+      await audio.play();
+      return !playbackPausedRef.current;
     } catch {
       return false;
     }
   };
-
-  // Position to resume at once the user presses play after a refresh — read once,
-  // consumed (and cleared) the first time it matches the track being loaded.
-  const pendingResumeRef = useRef(undefined);
-  if (pendingResumeRef.current === undefined) {
-    try {
-      const raw = sessionStorage.getItem(RESUME_POSITION_KEY);
-      pendingResumeRef.current = raw ? JSON.parse(raw) : null;
-    } catch {
-      pendingResumeRef.current = null;
-    }
-  }
 
   // Record playback position right before the tab closes/reloads so it can be
   // restored on the next load. Written once at unload rather than continuously.
@@ -580,6 +594,7 @@ const MediaPlayer = () => {
     if (googleCast.connected && !wasCastingRef.current) {
       const currentTrack = trackRef.current;
       const startTime = audio.currentTime;
+      const wasPlaying = !audio.paused && !playbackPausedRef.current;
       audio.pause();
       setPlaying(false);
 
@@ -587,12 +602,13 @@ const MediaPlayer = () => {
       // locally, re-cast it from the position the local audio had reached.
       if (
         googleCastRef.current.sessionType === 'resumed' &&
+        wasPlaying &&
         currentTrack &&
         audio.src
       ) {
         void (async () => {
           const currentCast = googleCastRef.current;
-          if (!currentCast?.connected) return;
+          if (!currentCast?.connected || playbackPausedRef.current) return;
           try {
             const isLocalResume = Boolean(currentTrack.localRelativePath);
             const token = isPassthroughEnabled() ? null : getToken();
@@ -606,6 +622,7 @@ const MediaPlayer = () => {
               ? getLocalStreamUrl(currentTrack.localRelativePath)
               : `/api/v0/streams/${encodeURIComponent(currentTrack.username)}/preview?filename=${encodeURIComponent(currentTrack.filename)}${sizeParameter}${tokenParameter}`;
             const absoluteUrl = await castApi.getAbsoluteStreamUrl(streamPath);
+            if (!currentCast.connected || playbackPausedRef.current) return;
             const castInfo = parseTrackInfo(currentTrack.filename);
             await currentCast.castMedia(absoluteUrl, {
               title: currentTrack.title || castInfo.title,
@@ -636,6 +653,7 @@ const MediaPlayer = () => {
     }
 
     const state = googleCast.castPlayerState;
+    if (playbackPausedRef.current) return;
 
     if (state === 'PLAYING' || state === 'BUFFERING') {
       castWasPlayingRef.current = true;
@@ -649,12 +667,15 @@ const MediaPlayer = () => {
   }, [googleCast.castPlayerState, googleCast.connected, next]);
 
   useEffect(() => {
+    setPlaying(false);
     if (!track || !audioRef.current) return undefined;
 
     let cancelled = false;
     const audio = audioRef.current;
     const token = isPassthroughEnabled() ? null : getToken();
-    playbackPausedRef.current = false;
+    const requested = playbackRequest !== lastPlaybackRequestRef.current;
+    lastPlaybackRequestRef.current = playbackRequest;
+    playbackPausedRef.current = !requested;
     const tokenParameter = token
       ? `&access_token=${encodeURIComponent(token)}`
       : '';
@@ -673,7 +694,7 @@ const MediaPlayer = () => {
     setCurrentTime(0);
     setDuration(0);
     setBuffered(0);
-    setLoading(!skipAutoPlayRef.current);
+    setLoading(requested);
 
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
     const onDurationChange = () => setDuration(audio.duration || 0);
@@ -684,6 +705,7 @@ const MediaPlayer = () => {
     };
 
     const onEnded = () => {
+      if (playbackPausedRef.current) return;
       if (repeatRef.current) {
         audio.currentTime = 0;
         void playAudio();
@@ -702,6 +724,11 @@ const MediaPlayer = () => {
 
     const onWaiting = () => setLoading(true);
     const onPlaying = () => {
+      if (playbackPausedRef.current) {
+        audio.pause();
+        return;
+      }
+
       setLoading(false);
       setStatusMessage(null);
       setWaveformReadyPath(track.path);
@@ -717,6 +744,7 @@ const MediaPlayer = () => {
 
     // eslint-disable-next-line complexity
     const startPlayback = async () => {
+      if (cancelled || playbackPausedRef.current) return;
       setLoading(true);
       if (!isLocal) {
         setStatusMessage('Loading...');
@@ -724,30 +752,14 @@ const MediaPlayer = () => {
         await ensureSigned([track.localRelativePath]);
       }
 
-      if (cancelled) return;
+      if (cancelled || playbackPausedRef.current) return;
       const localUrl = buildLocalUrl();
 
       // When Google Cast is active, stream to the cast device instead of local audio
       if (googleCastRef.current?.connected) {
         try {
           const absoluteUrl = await castApi.getAbsoluteStreamUrl(localUrl);
-          if (cancelled) return;
-
-          // After the await, React state has settled. If cast resumed an existing
-          // session (HMR or page reload) and the device is already playing,
-          // don't interrupt — the cast continues from where it was.
-          const castDeviceState = googleCastRef.current.castPlayerState;
-          const castIsActive =
-            castDeviceState === 'PLAYING' ||
-            castDeviceState === 'BUFFERING' ||
-            castDeviceState === 'PAUSED';
-          if (
-            googleCastRef.current.sessionType === 'resumed' &&
-            !audioRef.current?.src &&
-            castIsActive
-          ) {
-            return;
-          }
+          if (cancelled || playbackPausedRef.current) return;
 
           const castInfo = parseTrackInfo(track.filename);
           await googleCastRef.current.castMedia(absoluteUrl, {
@@ -800,14 +812,15 @@ const MediaPlayer = () => {
     };
 
     triggerPlayRef.current = startPlayback;
-    if (skipAutoPlayRef.current) {
-      skipAutoPlayRef.current = false;
-    } else {
-      void startPlayback();
-    }
+    if (requested) void startPlayback();
 
     return () => {
       cancelled = true;
+      playbackPausedRef.current = true;
+      triggerPlayRef.current = null;
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
       audio.removeEventListener('timeupdate', onTimeUpdate);
       audio.removeEventListener('durationchange', onDurationChange);
       audio.removeEventListener('progress', onProgress);
@@ -816,11 +829,12 @@ const MediaPlayer = () => {
       audio.removeEventListener('waiting', onWaiting);
       audio.removeEventListener('playing', onPlaying);
     };
-  }, [next, pendingSeekRef, track]);
+  }, [next, pendingSeekRef, playbackRequest, track]);
 
   const togglePlay = async () => {
     if (!playing) playbackPausedRef.current = false;
     if (googleCast.connected) {
+      playbackPausedRef.current = !googleCast.castIsPaused;
       googleCast.castTogglePlay();
       return;
     }
@@ -977,6 +991,7 @@ const MediaPlayer = () => {
     const absoluteUrl = await castApi.getAbsoluteStreamUrl(streamPath);
     const contentType = getContentType(track.filename);
     try {
+      playbackPausedRef.current = false;
       await googleCast.castMedia(absoluteUrl, {
         ...getTrackMeta(),
         contentType,
@@ -1026,6 +1041,7 @@ const MediaPlayer = () => {
   const toggleRepeat = () => setRepeat((r) => !r);
 
   const handleClose = () => {
+    playbackPausedRef.current = true;
     const audio = audioRef.current;
     if (audio) {
       audio.pause();
