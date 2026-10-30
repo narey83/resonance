@@ -433,7 +433,7 @@ namespace resonance.Transfers.Uploads
             }
             catch (OperationCanceledException) when (Work.Token.IsCancellationRequested)
             {
-                // Leave queued records intact for the existing startup recovery policy.
+                // The next process restores these queued records after logging in.
                 return null;
             }
             catch (OperationCanceledException ex)
@@ -706,7 +706,7 @@ namespace resonance.Transfers.Uploads
             // every queued record and let UploadAsync's per-file lock discard the redundant ones
             var parked = List(
                 t => t.Username == username && t.EndedAt == null && t.State == (TransferStates.Queued | TransferStates.Locally),
-                includeRemoved: false);
+                includeRemoved: false).OrderBy(t => t.RequestedAt).ThenBy(t => t.Id).ToList();
 
             if (parked.Count == 0)
             {

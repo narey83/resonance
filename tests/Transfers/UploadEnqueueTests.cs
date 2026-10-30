@@ -257,7 +257,8 @@ public sealed partial class UploadEnqueueTests : IDisposable
         Soulseek.TransferDirection.Upload, "alice", "album/track.mp3", 1, state, 100, 0);
 
     private UploadService CreateService(IReadOnlyCollection<Soulseek.Transfer> uploads, Exception? failure = null, Task? watch = null,
-        Func<string, string, TransferOptions, CancellationToken, Task<Soulseek.Transfer>>? upload = null, UploadPeerCooldown? cooldown = null)
+        Func<string, string, TransferOptions, CancellationToken, Task<Soulseek.Transfer>>? upload = null, UploadPeerCooldown? cooldown = null,
+        IDbContextFactory<TransfersDbContext>? contexts = null, UserPresence? cachedPresence = null)
     {
         var options = new AppOptions();
         var monitor = Stub<IOptionsMonitor<AppOptions>>((m, _) => m.Name switch
@@ -270,8 +271,8 @@ public sealed partial class UploadEnqueueTests : IDisposable
         {
             if (m.Name == "TryGetCachedPresence")
             {
-                args![1] = default(UserPresence);
-                return false;
+                args![1] = cachedPresence ?? default(UserPresence);
+                return cachedPresence.HasValue;
             }
 
             return m.Name switch
@@ -307,7 +308,7 @@ public sealed partial class UploadEnqueueTests : IDisposable
             "NotifyUploadErrorAsync" or "NotifyUploadRejectedAsync" => Task.CompletedTask,
             _ => throw new InvalidOperationException(m.Name),
         });
-        return new UploadService(null!, users, client, monitor, shares, relay, factory, new QuietEvents(), notifications,
+        return new UploadService(null!, users, client, monitor, shares, relay, contexts ?? factory, new QuietEvents(), notifications,
             new ConnectionStringDictionary(new Dictionary<Database, ConnectionString>
             {
                 [Database.Transfers] = "Data Source=:memory:",

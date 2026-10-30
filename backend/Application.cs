@@ -70,6 +70,7 @@ namespace resonance
     using resonance.Shares;
     using resonance.Telemetry;
     using resonance.Transfers;
+    using resonance.Transfers.Uploads;
     using resonance.Users;
     using resonance.Users.Blocking;
     using Serilog;
@@ -116,12 +117,6 @@ namespace resonance
         private static readonly TimeSpan KickRecoveryCooldown = TimeSpan.FromMinutes(5);
 
         private static readonly TimeSpan ShareScanDebounceDelay = TimeSpan.FromMinutes(3);
-
-        // brief disconnects are common and self-heal via ResumeParkedUploads, so a peer going offline doesn't purge
-        // their parked uploads right away; only a peer who is still offline after this long has their queue
-        // cleared, so a dropped connection followed by a quick reconnect never triggers the request-storm behavior
-        // described in UploadService.UploadAsync.
-        private static readonly TimeSpan ParkedUploadPurgeGracePeriod = TimeSpan.FromMinutes(5);
 
 #pragma warning disable SA1306 // Field names should begin with lower-case letter
         private static int EnqueueQueueDepth = 0;
@@ -334,6 +329,7 @@ namespace resonance
         private IMemoryCache Cache { get; set; } = new MemoryCache(new MemoryCacheOptions());
         private IReadOnlyList<Regex> CompiledSearchRequestFilters { get; set; } = [];
         private IReadOnlyList<Guid> ActiveDownloadIdsAtPreviousShutdown { get; set; } = [];
+        private IReadOnlyList<Guid> ActiveUploadIdsAtPreviousShutdown { get; set; } = [];
         private Options.FlagsOptions Flags { get; set; }
         private IReadOnlyList<string> ExcludedSearchPhrases { get; set; } = [];
         private SemaphoreSlim IncomingSearchRequestSemaphore { get; set; }
@@ -489,20 +485,11 @@ namespace resonance
 
             Log.Debug("Cleaning up any dangling records");
 
-            // if the application shut down "uncleanly", transfers may need to be cleaned up. we deliberately don't allow these
-            // records to be updated if the application has started to shut down so that we can do this cleanup and properly
-            // disposition them as having failed due to an application shutdown, instead of some random exception thrown while
-            // things are being disposed.
-            var activeUploads = Transfers.Uploads.ListForRecovery();
-
-            foreach (var upload in activeUploads)
-            {
-                Log.Debug("Cleaning up dangling upload {Filename} to {Username}", upload.Filename, upload.Username);
-                upload.State = TransferStates.Completed | TransferStates.Errored;
-                upload.EndedAt = DateTime.UtcNow;
-                upload.Exception = ApplicationShutdownTransferExceptionMessage;
-                await TransferRecovery.RetryBusyWriteAsync(() => Transfers.Uploads.Update(upload), cancellationToken);
-            }
+            // Retain queued and interrupted uploads, including rows written by the previous binary.
+            // Connection attempts are deferred until login; completed/removed records stay terminal.
+            ActiveUploadIdsAtPreviousShutdown = await UploadRestartRecovery.PrepareAsync(
+                Transfers.Uploads, ApplicationShutdownTransferExceptionMessage, cancellationToken);
+            Log.Information("Retained {Count} unfinished upload(s) for resumption after login", ActiveUploadIdsAtPreviousShutdown.Count);
 
             var activeDownloads = Transfers.Downloads.ListForRecovery();
 
@@ -1322,9 +1309,33 @@ namespace resonance
             }
         }
 
+        private void ResumeRecoveredUploadsIfReady()
+        {
+            using var recovery = TransferCallbacks.TryEnter();
+            if (recovery is null || ShuttingDown || ActiveUploadIdsAtPreviousShutdown.Count == 0)
+            {
+                return;
+            }
+
+            try
+            {
+                ActiveUploadIdsAtPreviousShutdown = UploadRestartRecovery.Resume(
+                    Transfers.Uploads, ActiveUploadIdsAtPreviousShutdown,
+                    loggedIn: Client.State.HasFlag(SoulseekClientStates.Connected | SoulseekClientStates.LoggedIn),
+                    sharesReady: OptionsAtStartup.Flags.NoShareScan || Shares.StateMonitor.CurrentValue.Ready);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Could not schedule recovered uploads; queued records retained for the next readiness event or login");
+            }
+        }
+
         private async void Client_LoggedIn(object sender, EventArgs e)
         {
             Log.Information("Logged in to the Soulseek server as {Username}", Client.Username);
+
+            // A statistics/download failure must not strand recovered uploads.
+            ResumeRecoveredUploadsIfReady();
 
             try
             {
@@ -1892,12 +1903,10 @@ namespace resonance
                 return;
             }
 
-            // a peer going offline is the cue to eventually clear out the uploads parked for them, once we're sure
-            // it isn't just a brief disconnect (see PurgeParkedUploadsAfterGracePeriodAsync). a peer returning is the
-            // cue to restart uploads that were parked for a fresh disconnect (see UploadService.UploadAsync).
-            if (args.Presence == UserPresence.Offline)
+            // Keep offline peers' files queued until they return or the user cancels them.
+            // A temporary absence during deployment must not silently erase a recovered backlog.
+            if (args.Presence == UserPresence.Offline || (!OptionsAtStartup.Flags.NoShareScan && !Shares.StateMonitor.CurrentValue.Ready))
             {
-                _ = PurgeParkedUploadsAfterGracePeriodAsync(args.Username);
                 return;
             }
 
@@ -1908,35 +1917,6 @@ namespace resonance
             catch (Exception ex)
             {
                 Log.Warning(ex, "Failed to resume parked uploads to {Username}: {Message}", args.Username, ex.Message);
-            }
-        }
-
-        private async Task PurgeParkedUploadsAfterGracePeriodAsync(string username)
-        {
-            using var callback = TransferCallbacks.TryEnter();
-            if (callback is null)
-            {
-                return;
-            }
-
-            try
-            {
-                await Task.Delay(ParkedUploadPurgeGracePeriod, TransferCallbacks.Token);
-
-                // re-check presence rather than purging unconditionally; the peer may have already reconnected
-                // (and had their uploads resumed) during the grace period.
-                if (Users.TryGetCachedPresence(username, out var presence) && presence == UserPresence.Offline)
-                {
-                    Transfers.Uploads.PurgeParkedUploads(username);
-                }
-            }
-            catch (OperationCanceledException) when (TransferCallbacks.Token.IsCancellationRequested)
-            {
-                // No delayed purge may outlive application services.
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "Failed to purge parked uploads to {Username}: {Message}", username, ex.Message);
             }
         }
 
@@ -2455,6 +2435,11 @@ namespace resonance
         private void ShareState_OnChange((ShareState Previous, ShareState Current) state)
         {
             var (previous, current) = state;
+            if (current.Ready)
+            {
+                ResumeRecoveredUploadsIfReady();
+            }
+
             bool rebuildBrowseCache = false;
 
             if (!previous.Scanning && current.Scanning)
