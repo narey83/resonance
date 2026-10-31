@@ -1,0 +1,12 @@
+[Unit]
+Description=Reconnect paired Resonance Pixel and restore Metro forwarding
+
+[Service]
+ExecStart=/usr/bin/python3 %h/.local/lib/resonance/pixel-reconnect.py
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=default.target

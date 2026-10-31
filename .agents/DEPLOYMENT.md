@@ -191,3 +191,30 @@ remote mode; never infer the deployment method from that selector.
 
 Do not put passwords, tokens, cookies, private environment values or signed media
 URLs in this document, command output, commits or deployment reports.
+
+## Automatic Pixel reconnection
+
+The dev laptop runs the enabled user service `resonance-pixel-reconnect.service`.
+Its source is `tools/android/pixel-reconnect.py`; the unit template is
+`tools/android/resonance-pixel-reconnect.service`. Installed copies live under
+`~/.local/lib/resonance/` and `~/.config/systemd/user/` on the laptop.
+Every ten seconds it discovers this Pixel's current TLS endpoint, reconnects
+using the existing trusted pairing, verifies its hardware serial, and restores
+`tcp:8081` on the phone to laptop `tcp:8082`. It never pairs devices, opens apps,
+starts Metro, or modifies another device's forwarding. Laptop user lingering is
+enabled, so the service starts after laptop reboot without an interactive login.
+
+Inspect with `systemctl --user status resonance-pixel-reconnect.service` and
+`journalctl --user -u resonance-pixel-reconnect.service`. Stop automatic forwarding
+before using the Mac fallback with
+`systemctl --user stop resonance-pixel-reconnect.service`; resume with `start`.
+Update installed copies from these source files and run
+`systemctl --user daemon-reload` followed by `restart` after changes.
+
+Recovery requires the Pixel to rejoin the same reachable LAN with Wireless
+debugging enabled. Android may require unlocking after reboot, approving a new
+Wi-Fi network, or turning Wireless debugging back on; the laptop cannot bypass
+those Android controls. Revoked pairing requires a new pairing code. Metro must
+also be running separately for the app to load. Automatic recovery was tested by
+removing forwarding and disconnecting the Pixel; a physical reboot/network
+switch was not performed.
