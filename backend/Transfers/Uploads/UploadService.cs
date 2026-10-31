@@ -1434,7 +1434,7 @@ namespace resonance.Transfers.Uploads
                 return new UploadAttempt(null, null);
             }
             catch (Exception ex) when (connectionAttemptStarted && !cancellationToken.IsCancellationRequested
-                && !transferStarted && transfer.BytesTransferred == 0 && IsConnectionFailure(ex))
+                && !transferStarted && transfer.BytesTransferred == 0 && (IsConnectionFailure(ex) || IsUserOffline(ex)))
             {
                 syncRoot.Wait(CancellationToken.None);
                 try
@@ -1452,7 +1452,7 @@ namespace resonance.Transfers.Uploads
                     syncRoot.Release();
                 }
 
-                return new UploadAttempt(null, ex);
+                return new UploadAttempt(null, IsUserOffline(ex) ? null : ex);
             }
             catch (NotFoundException ex)
             {
@@ -1478,22 +1478,8 @@ namespace resonance.Transfers.Uploads
             }
             catch (Exception ex)
             {
-                /*
-                    the peer turned out to be unreachable after all. our cached presence said online (or we had none
-                    yet), so the transfer was handed to Soulseek.NET, which resolves the peer's endpoint through the
-                    server and raises UserOfflineException -- with wording identical to the presence check above,
-                    which is why the two were indistinguishable in the logs.
-
-                    this is the same situation the presence check parks for, just discovered a step later, so park it
-                    here too rather than completing it and taking the peer's whole queue with it. before this, the
-                    check above merely masked this path; once it stopped throwing, the cascade simply reappeared here
-                    (1,184 files for a single peer in five hours).
-
-                    only park while the record still holds the starting state. once Soulseek.NET has reported any
-                    progress the record has moved on, and a resume would fail UploadAsync's starting-state check, so
-                    anything past that point is failed normally below. in practice this path is reached before any
-                    state change is raised, so it covers the cascade.
-                */
+                // Offline failures before SDK handoff also keep the upload parked. Attempts with
+                // SDK state callbacks are reset under the callback lock by the earlier catch.
                 if (IsUserOffline(ex) && transfer.State == (TransferStates.Queued | TransferStates.Locally))
                 {
                     Log.Debug("Parked upload of {Filename} to {Username}; user is offline", transfer.Filename, transfer.Username);

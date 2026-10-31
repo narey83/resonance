@@ -210,6 +210,55 @@ public sealed partial class UploadEnqueueTests
         Assert.Equal(1, calls.Count);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OfflineSdkCallbacksCannotFailOrOverwriteAParkedUpload(bool wrapped)
+    {
+        var calls = new UploadCalls();
+        var clock = new ManualUploadClock();
+        await using var service = CreateService([], upload: calls.Upload);
+        var row = QueueTransfer("alice", "album/offline-callback.mp3");
+        var task = service.UploadAsync(row);
+        var attempt = await calls.Next();
+        attempt.ChangeState(TransferStates.Initializing);
+        attempt.ChangeState(TransferStates.Completed | TransferStates.Errored, started: clock.GetUtcNow().UtcDateTime);
+        Exception offline = new UserOfflineException("peer is offline");
+        attempt.Completion.SetException(wrapped ? new InvalidOperationException("upload failed", offline) : offline);
+        Assert.Null(await task.WaitAsync(TimeSpan.FromSeconds(5)));
+        AssertAllQueued([row]);
+        attempt.ChangeState(TransferStates.Completed | TransferStates.Errored);
+        AssertAllQueued([row]);
+        Assert.Equal(1, calls.Count);
+        var resumed = service.UploadAsync(row);
+        (await calls.Next()).Succeed(clock);
+        Assert.Equal(row.Id, (await resumed.WaitAsync(TimeSpan.FromSeconds(5)))!.Id);
+        using var db = factory.CreateDbContext();
+        var saved = Assert.Single(db.Transfers);
+        Assert.Equal(TransferStates.Completed | TransferStates.Succeeded, saved.State);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(10)]
+    public async Task OfflineFailureAfterDataFlowRemainsTerminal(long bytes)
+    {
+        var calls = new UploadCalls();
+        await using var service = CreateService([], upload: calls.Upload);
+        var row = QueueTransfer("alice", "album/offline-in-progress.mp3");
+        var task = service.UploadAsync(row);
+        var attempt = await calls.Next();
+        attempt.ChangeState(TransferStates.InProgress, bytes: bytes, started: DateTime.UtcNow);
+        attempt.Completion.SetException(new UserOfflineException("peer is offline"));
+        await Assert.ThrowsAnyAsync<Exception>(() => task);
+        using var db = factory.CreateDbContext();
+        var saved = Assert.Single(db.Transfers);
+        Assert.True(saved.State.HasFlag(TransferStates.Completed));
+        Assert.NotNull(saved.EndedAt);
+        Assert.Equal(bytes, saved.BytesTransferred);
+        Assert.Equal(1, calls.Count);
+    }
+
     [Fact]
     public async Task LingeringCompletedSdkEntryDoesNotFailOrDuplicateTheQueuedRetry()
     {
