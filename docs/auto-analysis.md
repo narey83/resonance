@@ -115,3 +115,14 @@ System → Logs → Contexts → Music → Analysis includes queue-check duratio
 track path and missing metrics when decoding starts, and the saved BPM, key,
 waveform and LUFS when it succeeds. Incomplete results and dependency failures
 remain warnings/errors rather than successful completion entries.
+
+Finishing an analysis batch does not force a full-library rescan. Analysis refreshes
+its changed rows directly, and delayed watcher events for known files are checked
+against their indexed fingerprints. Known changed audio files are refreshed
+individually without a scanning banner. New files, directories, renames, deletions,
+watcher overflow and explicit rescan requests retain full reconciliation when needed.
+Track updates still reach web and mobile through the library activity hub.
+
+The mobile Library screen keeps routine server scans and cache refreshes silent.
+Background refresh still runs; initial library downloads and device music scans
+retain their progress displays.

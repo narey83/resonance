@@ -108,6 +108,8 @@ namespace resonance.MusicLibrary
         private readonly object debounceLock = new();
         private readonly HashSet<string> activeQueues = new(StringComparer.OrdinalIgnoreCase);
         private readonly object queueLock = new();
+        private readonly object fsChangeLock = new();
+        private readonly Dictionary<string, long> pendingFsPaths = new(StringComparer.Ordinal);
 
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> syncExcluded =
             new(StringComparer.OrdinalIgnoreCase);
@@ -128,6 +130,8 @@ namespace resonance.MusicLibrary
         // can only ever report "nothing changed" — which is exactly what was happening: six scans
         // of 48k tracks in forty minutes, every one of them added=0 updated=0 removed=0.
         private volatile bool pendingFsChange;
+        private long fsChangeVersion;
+        private bool pendingFsOverflow;
 
         // The path that set the flag, purely so the log can say what woke it.
         private string pendingFsChangePath;
@@ -321,22 +325,7 @@ namespace resonance.MusicLibrary
         public void TriggerImmediateSync()
         {
             forceNextScan = true;
-
-            lock (debounceLock)
-            {
-                DebounceCts?.Cancel();
-                DebounceCts = null;
-                if (SyncNow.CurrentCount == 0)
-                {
-                    try
-                    {
-                        SyncNow.Release();
-                    }
-                    catch
-                    { /* already signalled */
-                    }
-                }
-            }
+            WakeSync();
         }
 
         public void ExcludeFromSync(string directory)
@@ -436,10 +425,22 @@ namespace resonance.MusicLibrary
         {
             lock (queueLock)
             {
-                activeQueues.Remove(name);
+                if (!activeQueues.Remove(name))
+                {
+                    return;
+                }
             }
 
-            TriggerImmediateSync();
+            if (string.Equals(name, "analysis", StringComparison.OrdinalIgnoreCase))
+            {
+                // Analysis already refreshes each changed row. Check deferred real changes,
+                // but do not force a full-tree scan after every automatic batch.
+                WakeSync();
+            }
+            else
+            {
+                TriggerImmediateSync();
+            }
         }
 
         public bool IsQueueActive(string name)
@@ -588,6 +589,25 @@ namespace resonance.MusicLibrary
         private static string Trim(string s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
         // ── Background loop ───────────────────────────────────────────────────
+        private void WakeSync()
+        {
+            lock (debounceLock)
+            {
+                DebounceCts?.Cancel();
+                DebounceCts = null;
+                if (SyncNow.CurrentCount == 0)
+                {
+                    try
+                    {
+                        SyncNow.Release();
+                    }
+                    catch
+                    { /* already signalled */
+                    }
+                }
+            }
+        }
+
         private async Task RunLoopAsync(CancellationToken ct)
         {
             try
@@ -672,6 +692,18 @@ namespace resonance.MusicLibrary
             // Only scan when something was actually detected. The periodic pass and any redundant
             // debounce that slips through the watcher floor both land here and go no further unless
             // the disk really changed.
+            if (!forceNextScan && pendingFsChange)
+            {
+                try
+                {
+                    ApplyIndexedFileChanges();
+                }
+                catch (Exception exception)
+                {
+                    Log.Warning(exception, "Targeted library change check failed; falling back to full reconciliation");
+                }
+            }
+
             var forced = forceNextScan;
             var detected = pendingFsChange;
             var sinceLastScan = DateTime.UtcNow - lastSyncCompletedUtc;
@@ -687,8 +719,13 @@ namespace resonance.MusicLibrary
             var trigger = forced ? "requested" : detected ? $"detected \"{pendingFsChangePath}\"" : "periodic safety net";
 
             forceNextScan = false;
-            pendingFsChange = false;
-            pendingFsChangePath = null;
+            lock (fsChangeLock)
+            {
+                pendingFsChange = false;
+                pendingFsChangePath = null;
+                pendingFsPaths.Clear();
+                pendingFsOverflow = false;
+            }
 
             Log.Information("Music library sync starting ({Trigger})", trigger);
             SetState(CurrentState with { Running = true, Completed = false, Progress = 0 });
@@ -989,8 +1026,89 @@ namespace resonance.MusicLibrary
         /// </summary>
         private void NoteFsChange(string path)
         {
-            pendingFsChangePath ??= path;
-            pendingFsChange = true;
+            lock (fsChangeLock)
+            {
+                pendingFsChangePath ??= path;
+                if (pendingFsPaths.Count < 512 || pendingFsPaths.ContainsKey(path))
+                {
+                    pendingFsPaths[path] = ++fsChangeVersion;
+                }
+                else
+                {
+                    pendingFsOverflow = true;
+                }
+
+                pendingFsChange = true;
+            }
+        }
+
+        private void ApplyIndexedFileChanges()
+        {
+            KeyValuePair<string, long>[] changes;
+            lock (fsChangeLock)
+            {
+                if (pendingFsOverflow)
+                {
+                    return; // A full scan must cover changes that did not fit the bounded set.
+                }
+
+                changes = pendingFsPaths.ToArray();
+            }
+
+            var known = Repository.GetByPaths(changes.Select(change => change.Key).ToArray())
+                .ToDictionary(track => track.Path, StringComparer.Ordinal);
+            var handled = new List<KeyValuePair<string, long>>();
+            var updated = 0;
+            foreach (var change in changes)
+            {
+                if (!known.TryGetValue(change.Key, out var track))
+                {
+                    continue; // New files, deleted files and directories still need reconciliation.
+                }
+
+                try
+                {
+                    if (!IsLibraryPath(change.Key))
+                    {
+                        continue;
+                    }
+
+                    var file = new FileInfo(change.Key);
+                    if (file.Exists && (file.Length == track.FileSize && file.LastWriteTimeUtc.Ticks == track.FileModified))
+                    {
+                        handled.Add(change);
+                    }
+                    else if (file.Exists && RefreshTrack(change.Key))
+                    {
+                        handled.Add(change);
+                        updated++;
+                    }
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    Log.Debug("Deferred file change needs library reconciliation: {Error}", exception.Message);
+                }
+            }
+
+            lock (fsChangeLock)
+            {
+                foreach (var change in handled)
+                {
+                    // Keep an event that arrived while its earlier version was being checked.
+                    if (pendingFsPaths.TryGetValue(change.Key, out var version) && version == change.Value)
+                    {
+                        pendingFsPaths.Remove(change.Key);
+                    }
+                }
+
+                pendingFsChange = pendingFsOverflow || pendingFsPaths.Count > 0;
+                pendingFsChangePath = pendingFsPaths.Keys.FirstOrDefault();
+            }
+
+            if (updated > 0)
+            {
+                _ = Hub.BroadcastLibraryUpdatedAsync(0, updated, 0);
+            }
         }
 
         private void TriggerWatcherSync()
@@ -1043,6 +1161,11 @@ namespace resonance.MusicLibrary
             if (ShouldReactTo(e.FullPath) || ShouldReactTo(e.OldFullPath))
             {
                 NoteFsChange(e.FullPath);
+                if (ShouldReactTo(e.OldFullPath))
+                {
+                    NoteFsChange(e.OldFullPath);
+                }
+
                 TriggerWatcherSync();
             }
         }

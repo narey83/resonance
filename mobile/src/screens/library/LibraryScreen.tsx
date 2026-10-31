@@ -73,7 +73,6 @@ import {
   deleteFolder as deleteFolderApi,
   renameFolder as renameFolderApi, renameTrack as renameTrackApi,
   seedCoverSignatures, seedTrackSignatures,
-  cancelSync,
   MusicAlbum, MusicArtist, MusicFolder, MusicGenre, MusicTrack, MusicYear,
 } from '../../api/musicLibrary';
 import { useAppSettings } from '../../store/appSettingsStore';
@@ -2944,20 +2943,9 @@ function LibraryHome({ navigation }: HomeProps) {
   const syncLabel = useLibrarySync((s) => s.currentLabel);
   const hasSyncedOnce = useLibrarySync((s) => s.hasSyncedOnce);
 
-  // Backend library scan state (server-side BPM/key/metadata indexing). The LibraryActivity hub pushes
-  // SYNC_STATE — on connect and on every lifecycle transition — so we read it straight from the store
-  // to drive a "scanning" banner. The list keeps rendering cached data underneath; this only surfaces
-  // that a server-side (re)scan is in flight.
-  // Select the two fields the banner actually uses, not the syncState object. applySyncState stores
-  // a fresh object on every SYNC_STATE push, so subscribing to it re-rendered this screen — and the
-  // whole active tab under it — on every progress tick of a server-side scan.
+  // Background server scans are silent on the phone. Keep the running state only
+  // to defer cache reads until the server is ready; avoid progress-tick rerenders.
   const serverScanning = useLibraryActivityStore((s) => s.syncState?.running ?? false);
-  const serverScanProgress = useLibraryActivityStore((s) => s.syncState?.progress ?? 0);
-  const applyServerSyncState = useLibraryActivityStore((s) => s.applySyncState);
-  const serverScanPercent =
-    serverScanning && serverScanProgress > 0
-      ? Math.round(serverScanProgress * 100)
-      : null;
 
   // Sync the on-device cache from the backend when the library changes — BUT hold off while the
   // backend is mid-rescan. During a full rescan the server fires LIBRARY_UPDATED repeatedly, bumping
@@ -3048,11 +3036,6 @@ function LibraryHome({ navigation }: HomeProps) {
     );
   }
 
-  // Background (refresh) sync feedback: a thin top progress line that overlays the very top edge
-  // without shifting layout. The full % lives in the first-install overlay; here it's just a subtle
-  // "library is updating" hint, shown only while an actual sync is running.
-  const showSyncBar = remote && syncStatus === 'syncing' && !showFirstSync;
-
   return (
     <View style={s.flex}>
       {includeLocalLibrary && <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderColor: c.border }}><Text style={{ color: c.textMuted, fontFamily: Typography.mono, fontSize: 11 }}>ON THIS DEVICE</Text><Pressable accessibilityRole="button" disabled={importing} onPress={async () => {
@@ -3062,38 +3045,6 @@ function LibraryHome({ navigation }: HomeProps) {
         finally { setImporting(false); }
       }} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 }}><Text style={{ color: c.accent, fontWeight: '600' }}>{importing ? 'Importing…' : 'Import audio'}</Text></Pressable></View>}
       <TabBar tabs={visibleTabs} active={tab} onSelect={(t) => setTab(t as LibraryTab)} />
-      {serverScanning && (
-        <View style={{
-          flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-          gap: 8, paddingVertical: 5, backgroundColor: c.bgElevated,
-        }}>
-          <ActivityIndicator size="small" color={c.accent} />
-          <Text style={{ color: c.textMuted, fontSize: 12 }}>
-            Scanning music library
-            {serverScanPercent === null ? '…' : ` — ${serverScanPercent}%`}
-          </Text>
-          <Pressable
-            onPress={() => {
-              cancelSync().catch(() => {});
-              // optimistic: hide the banner now; the hub will push the confirmed running=false state.
-              // Read the object off the store rather than subscribing to it — see the selectors above.
-              const current = useLibraryActivityStore.getState().syncState;
-              if (current) applyServerSyncState({ ...current, running: false });
-            }}
-            hitSlop={8}
-          >
-            <Text style={{ color: c.accent, fontSize: 12, fontWeight: '600' }}>Stop</Text>
-          </Pressable>
-        </View>
-      )}
-      {showSyncBar && (
-        <View
-          pointerEvents="none"
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, backgroundColor: c.bgElevated, zIndex: 10 }}
-        >
-          <View style={{ width: `${syncPercent}%`, height: '100%', backgroundColor: c.accent }} />
-        </View>
-      )}
       {includeLocalLibrary && localScanProgress && (
         <View style={{
           flexDirection: 'row', alignItems: 'center', justifyContent: 'center',

@@ -271,7 +271,7 @@ namespace resonance.Analysis
         ///     One write, not one per metric: WriteFileTags rewrites the whole tag block through
         ///     TagLib, so writing BPM and key separately rewrote every scanned file twice.
         /// </remarks>
-        public void Apply(string maskedFilename, uint? bpm, string key)
+        public void Apply(string maskedFilename, uint? bpm, string key, bool requestLibrarySync = true)
         {
             var hasBpm = bpm.HasValue && bpm.Value != 0;
             var hasKey = !string.IsNullOrEmpty(key);
@@ -291,7 +291,7 @@ namespace resonance.Analysis
                 updated = updated with { Key = key };
             }
 
-            ShareService.WriteFileTags(maskedFilename, updated);
+            ShareService.WriteFileTags(maskedFilename, updated, requestLibrarySync);
         }
 
         public void ClearBpm(string maskedFilename)
@@ -341,7 +341,7 @@ namespace resonance.Analysis
             {
                 try
                 {
-                    Apply(track.MaskedFilename, result.Bpm, result.Key);
+                    Apply(track.MaskedFilename, result.Bpm, result.Key, requestLibrarySync: false);
                 }
                 catch (System.IO.IOException ex) when (resonance.Common.FileSharingViolation.Is(ex))
                 {
@@ -648,7 +648,11 @@ namespace resonance.Analysis
                                 // analysis queue is registered (which is the whole of this scan),
                                 // leaving every client that refetches on the broadcast below reading
                                 // the row back exactly as it was before the analysis ran.
-                                MusicLibrary?.RefreshTrack(path);
+                                if (MusicLibrary != null && !MusicLibrary.RefreshTrack(path))
+                                {
+                                    Log.Warning("Could not refresh analysed track '{File}'; scheduling a library catch-up", track.OriginalFilename);
+                                    MusicLibrary.TriggerSync();
+                                }
 
                                 // Do not broadcast on every track — a full scan can touch thousands
                                 // of them, and one update per track would flood every

@@ -57,6 +57,7 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
     internal int BatchSize { get; init; } = Math.Max(1, Environment.ProcessorCount);
     private static long Now => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     private bool FilesBeingUpdated => library?.IsQueueActive("metadata") == true || library?.IsQueueActive("tag-sanitization") == true;
+    private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Analysis);
 
     public void Retry(string path)
     {

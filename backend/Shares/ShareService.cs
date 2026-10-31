@@ -271,7 +271,7 @@ namespace resonance.Shares
         /// <summary>
         ///     Writes tag data to the specified file on disk and updates the share cache.
         /// </summary>
-        public void WriteFileTags(string maskedFilename, FileTags tags)
+        public void WriteFileTags(string maskedFilename, FileTags tags, bool requestLibrarySync = true)
         {
             var (originalFilename, _) = Local.Repository.FindFileInfo(maskedFilename);
             if (originalFilename == null)
@@ -392,7 +392,10 @@ namespace resonance.Shares
             var info = new System.IO.FileInfo(originalFilename);
 
             Local.Repository.UpdateFileTags(maskedFilename, tags, info.Length, info.LastWriteTimeUtc);
-            MusicLibrary?.TriggerSync();
+            if (requestLibrarySync)
+            {
+                MusicLibrary?.TriggerSync();
+            }
         }
 
         /// <summary>

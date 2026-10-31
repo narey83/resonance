@@ -20,6 +20,7 @@ public sealed class AnalysisResultPersistenceTests : IDisposable
     private readonly ShareProxy proxy;
     private readonly IShareService shares;
     private int writes;
+    private bool? requestedLibrarySync;
     private Action<FileTags> write = _ => { };
 
     public AnalysisResultPersistenceTests()
@@ -43,6 +44,7 @@ public sealed class AnalysisResultPersistenceTests : IDisposable
             if (method.Name == "WriteFileTags")
             {
                 writes++;
+                requestedLibrarySync = (bool)args![2]!;
                 write((FileTags)args![1]!);
                 return null;
             }
@@ -82,7 +84,16 @@ public sealed class AnalysisResultPersistenceTests : IDisposable
         Assert.True(service.PersistAnalysisResult(track, Result(), writeToTags: true));
         Assert.True(new FileInfo(path).Length > originalSize);
         Assert.Equal(1, writes);
+        Assert.False(requestedLibrarySync);
         AssertCached();
+    }
+
+    [Fact]
+    public void ExplicitTagEditsStillRequestLibraryReconciliation()
+    {
+        service.SetBpm(track.MaskedFilename, 128);
+        Assert.Equal(1, writes);
+        Assert.True(requestedLibrarySync);
     }
 
     [Fact]

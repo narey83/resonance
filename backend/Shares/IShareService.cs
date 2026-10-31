@@ -147,7 +147,8 @@ namespace resonance.Shares
         /// </summary>
         /// <param name="maskedFilename">The masked filename identifying the file.</param>
         /// <param name="tags">The tag data to write.</param>
-        void WriteFileTags(string maskedFilename, FileTags tags);
+        /// <param name="requestLibrarySync">Request a catch-up scan; false only when the caller refreshes and broadcasts the changed track itself.</param>
+        void WriteFileTags(string maskedFilename, FileTags tags, bool requestLibrarySync = true);
 
         /// <summary>
         ///     Renames a directory on the filesystem and updates the share cache.
