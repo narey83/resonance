@@ -21,6 +21,23 @@ jest.mock('@tanstack/react-virtual', () => ({
 jest.mock('../../context/PlayerContext', () => ({
   usePlayer: () => ({ play: jest.fn(), track: null }),
 }));
+jest.mock('../../lib/libraryWorkspace', () => ({
+  getPreparationStatus: () =>
+    Promise.resolve({
+      counts: { complete: 5 },
+      paused: true,
+      enhancedEnabled: true,
+    }),
+}));
+jest.mock(
+  '../TrackAnalysis/CandidateAnalysisPanel',
+  () =>
+    ({ path, resultsOnly }) => (
+      <p>
+        Result details: {path}, {resultsOnly ? 'read only' : 'editable'}
+      </p>
+    ),
+);
 jest.mock('../../lib/usePagedList', () => ({ usePagedList: jest.fn() }));
 jest.mock('../../context/LibraryActivityContext', () => ({
   useLibraryActivity: () => ({ libraryRevision: 0 }),
@@ -73,6 +90,10 @@ describe('analysis folder loading', () => {
       error: null,
     };
     usePagedList.mockImplementation(() => page);
+    musicLibraryApi.getTrackPage.mockImplementation(async () => ({
+      items: page.items,
+      total: page.total,
+    }));
   });
 
   afterEach(() => {
@@ -205,5 +226,99 @@ describe('analysis folder loading', () => {
     expect(analysisApi.startScan).toHaveBeenLastCalledWith(
       expect.objectContaining({ enhanced: true }),
     );
+  });
+  it('uses the visible enhanced option for folder scans and enhanced readiness filters', async () => {
+    expect.hasAssertions();
+    page = { ...page, items: [row('one'), row('two'), row('three')] };
+    await render();
+    expect(container.querySelector('input[value="basic"]').checked).toBe(true);
+    act(() => container.querySelector('input[value="enhanced"]').click());
+    await act(async () =>
+      container.querySelector('.ka-folder-scan-btn').click(),
+    );
+    expect(analysisApi.startScan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        enhanced: true,
+        onlyPaths: ['one', 'two', 'three'],
+      }),
+    );
+    act(() =>
+      [...container.querySelectorAll('button')]
+        .find((b) => b.textContent === 'Enhanced ready')
+        .click(),
+    );
+    expect(usePagedList.mock.calls.at(-1)[1].analysis).toBe('enhanced');
+  });
+  it('opens details on demand and keeps saved and enhanced BPM/key separate', async () => {
+    expect.hasAssertions();
+    page = {
+      ...page,
+      total: 1,
+      items: [
+        {
+          ...row('one'),
+          title: 'Test track',
+          bpm: 130,
+          key: 'G',
+          hasWaveform: true,
+          lufs: -8,
+          djSummary: JSON.stringify({
+            complete: true,
+            bpm: 129.8,
+            key: 'Gm',
+            analysisId: 'full-job',
+          }),
+        },
+      ],
+    };
+    await render();
+    expect(container.textContent).not.toContain('Result details:');
+    act(() => container.querySelector('.ka-folder-expand').click());
+    act(() =>
+      container
+        .querySelector('[aria-label="Analysis details for Test track"]')
+        .click(),
+    );
+    const details = container.querySelector(
+      '[aria-label="Track analysis details"]',
+    );
+    expect(details.textContent).toContain('130');
+    expect(details.textContent).toContain('129.8 / Gm');
+    expect(details.textContent).toContain('Result details: one, read only');
+    expect(analysisApi.startScan).not.toHaveBeenCalled();
+    act(() =>
+      container.querySelector('[aria-label="Close analysis details"]').click(),
+    );
+    expect(
+      container.querySelector('[aria-label="Track analysis details"]'),
+    ).toBeNull();
+  });
+  it('shows active enhanced progress, worker readiness and mode coverage', async () => {
+    expect.hasAssertions();
+    analysisApi.getScanState.mockResolvedValue({
+      scanning: true,
+      enhancedTotal: 20,
+      enhancedCompleted: 5,
+      enhancedFailed: 2,
+      total: 0,
+      analysed: 0,
+      skipped: 0,
+      failed: 0,
+    });
+    await render();
+    const progress = container.querySelector(
+      '[aria-label="Enhanced tracks processed"]',
+    );
+    expect(progress.max).toBe(20);
+    expect(progress.value).toBe(7);
+    expect(container.querySelector('input[value="enhanced"]').checked).toBe(
+      true,
+    );
+    expect(container.textContent).toContain('5 / 20 ready');
+    expect(container.textContent).toContain('13 remaining');
+    expect(container.textContent).toContain('Some tracks need attention');
+    expect(container.textContent).toContain('beat and downbeat grids');
+    expect(container.textContent).toContain('Automatic preparation: Paused');
+    expect(container.textContent).toContain('Enhanced worker: Available');
   });
 });

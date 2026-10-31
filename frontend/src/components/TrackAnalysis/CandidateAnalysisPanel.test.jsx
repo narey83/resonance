@@ -370,4 +370,39 @@ describe('CandidateAnalysisPanel', () => {
     expect(container.textContent).toContain('3.0s–8.0s');
     expect(api.post).not.toHaveBeenCalled();
   });
+  it('shows saved full-track results without starting a new analysis in results-only mode', async () => {
+    expect.hasAssertions();
+    const full = {
+      ...job,
+      jobId: 'full',
+      requestedSeconds: null,
+      status: 'completed',
+    };
+    api.get
+      .mockResolvedValueOnce({ data: { enabled: true, jobs: [job, full] } })
+      .mockResolvedValueOnce({
+        data: {
+          ...result,
+          job: full,
+          analysis: { ...result.analysis, scope: { fullTrack: true } },
+        },
+      });
+    await act(async () => {
+      ReactDOM.render(
+        <CandidateAnalysisPanel
+          path="track.flac"
+          resultsOnly
+        />,
+        container,
+      );
+    });
+    expect(container.textContent).toContain('Enhanced analysis results');
+    expect(
+      container.querySelector('[aria-label="Analysis preset"]'),
+    ).toBeNull();
+    expect(button('Generate candidate')).toBeUndefined();
+    expect(container.querySelectorAll('select option')).toHaveLength(2);
+    expect(api.get).toHaveBeenCalledWith('/analysis/candidates/full');
+    expect(api.post).not.toHaveBeenCalled();
+  });
 });

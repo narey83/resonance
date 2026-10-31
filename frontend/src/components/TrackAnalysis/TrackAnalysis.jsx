@@ -29,7 +29,6 @@
 
 import './TrackAnalysis.css';
 import Analysis from '../Analysis/Analysis';
-import IndependentAnalysisLibrary from './IndependentAnalysisLibrary';
 import WaveformAnalysis from './WaveformAnalysis';
 import { AudioWaveform, SlidersHorizontal } from 'lucide-react';
 import React, { useState } from 'react';
@@ -38,7 +37,6 @@ import React, { useState } from 'react';
 // page. The waveform tab is a different job — inspecting a single track — not a
 // fourth copy of the same table.
 const TABS = [
-  { icon: SlidersHorizontal, id: 'independent', label: 'Advanced analysis' },
   { icon: SlidersHorizontal, id: 'analysis', label: 'Track Analysis' },
   { icon: AudioWaveform, id: 'waveform', label: 'Waveform Inspector' },
 ];
@@ -47,13 +45,7 @@ const TrackAnalysis = () => {
   const [activeTab, setActiveTab] = useState('analysis');
 
   const renderPanel = () =>
-    activeTab === 'independent' ? (
-      <IndependentAnalysisLibrary />
-    ) : activeTab === 'analysis' ? (
-      <Analysis />
-    ) : (
-      <WaveformAnalysis />
-    );
+    activeTab === 'analysis' ? <Analysis /> : <WaveformAnalysis />;
 
   return (
     <div className="ta-root">

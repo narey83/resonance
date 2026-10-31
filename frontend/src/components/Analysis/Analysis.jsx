@@ -39,10 +39,13 @@ import {
   harmonicNeighbours,
   toCamelot,
 } from '../../lib/camelot';
+import { djSummary } from '../../lib/libraryWorkbench';
+import { getPreparationStatus } from '../../lib/libraryWorkspace';
 import * as musicLibraryApi from '../../lib/musicLibrary';
 import { useKeyFormat } from '../../lib/useKeyFormat';
 import { usePagedList } from '../../lib/usePagedList';
 import KeyFormatToggle from '../Shared/KeyFormatToggle';
+import AnalysisDetails from './AnalysisDetails';
 import RowWaveform from './RowWaveform';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -82,6 +85,9 @@ const PAGE_SIZE = 10_000;
 // is only resolved (per row, on demand) when an action actually needs it.
 const toRow = (t) => ({
   album: t.album,
+  djSummary: t.djSummary,
+  duration: t.duration,
+  genre: t.genre,
   artist: t.artist,
   bpm: t.bpm,
   directory: t.directory,
@@ -98,10 +104,17 @@ const toRow = (t) => ({
 
 // ── Scan settings panel ───────────────────────────────────────────────────────
 
-const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
+const ScanSettings = ({
+  enhanced,
+  enhancedAvailable,
+  onClose,
+  onEnhancedChange,
+  onStart,
+  scanning,
+  selectedCount = 0,
+}) => {
   const [skipTagged, setSkipTagged] = useState(true);
   const [resetAll, setResetAll] = useState(false);
-  const [enhanced, setEnhanced] = useState(false);
 
   return (
     <div className="ka-panel">
@@ -129,11 +142,18 @@ const ScanSettings = ({ onClose, onStart, scanning, selectedCount = 0 }) => {
           <span className="ka-field-label">Analysis mode</span>
           <select
             className="ka-select"
-            onChange={(event) => setEnhanced(event.target.value === 'enhanced')}
+            onChange={(event) =>
+              onEnhancedChange(event.target.value === 'enhanced')
+            }
             value={enhanced ? 'enhanced' : 'basic'}
           >
             <option value="basic">Basic only — fast</option>
-            <option value="enhanced">Basic + enhanced predictions</option>
+            <option
+              disabled={!enhancedAvailable}
+              value="enhanced"
+            >
+              Basic + enhanced predictions
+            </option>
           </select>
           <span className="ka-field-hint">
             Enhanced analysis is CPU- and memory-intensive. Existing enhanced
@@ -291,6 +311,7 @@ const TrackRow = ({
   globalScanning,
   onClearBpm,
   onClearKey,
+  onInspect,
   onScan,
   onSetBpm,
   onSetKey,
@@ -308,6 +329,9 @@ const TrackRow = ({
   const compatible = focusKey
     ? harmonicNeighbours(focusKey).has(track.key) || track.key === focusKey
     : null;
+  const summary = djSummary(track) || {};
+  const basicReady =
+    track.hasBpm && track.hasKey && track.hasWaveform && track.hasLoudness;
   const wasUpdated = recentlyUpdated?.has(track.path) ?? false;
   const { play, track: currentTrack } = usePlayer();
   const isPlaying = currentTrack?.localRelativePath === track.path;
@@ -464,11 +488,25 @@ const TrackRow = ({
           {track.artist && (
             <span className="ka-track-artist">{track.artist}</span>
           )}
+          <span className="ka-track-readiness">
+            {basicReady ? 'Basic ready' : 'Basic incomplete'} ·{' '}
+            {summary.complete ? 'Enhanced ready' : 'Enhanced pending'}
+            {summary.genre ? ` · ${summary.genre}` : ''}
+          </span>
           {track.album && track.album !== track.artist && (
             <span className="ka-track-album">{track.album}</span>
           )}
         </div>
         <div className="ka-track-actions">
+          <button
+            aria-label={`Analysis details for ${track.title || track.filename}`}
+            className="ka-icon-btn"
+            onClick={() => onInspect(track)}
+            title="Analysis details"
+            type="button"
+          >
+            <Search size={13} />
+          </button>
           <button
             className={`ka-icon-btn${isPlaying ? ' ka-icon-btn--playing' : ''}`}
             onClick={handlePlay}
@@ -616,6 +654,12 @@ const FolderGroup = ({
 // eslint-disable-next-line complexity
 const Analysis = () => {
   const [scanState, setScanState] = useState(null);
+  const [enhanced, setEnhanced] = useState(false);
+  const [inspectedTrack, setInspectedTrack] = useState(null);
+  const [preparation, setPreparation] = useState(null);
+  useEffect(() => {
+    if (scanState?.scanning && scanState.enhancedTotal > 0) setEnhanced(true);
+  }, [scanState?.scanning, scanState?.enhancedTotal]);
   const { fmtKey, format, setFormat } = useKeyFormat();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
@@ -668,13 +712,20 @@ const Analysis = () => {
   // a different question from the one the toolbar asks.
   const query = useMemo(
     () => ({
-      analysis: filter === 'all' ? undefined : filter,
+      analysis:
+        filter === 'all'
+          ? undefined
+          : enhanced
+            ? filter === 'complete'
+              ? 'enhanced'
+              : 'pending'
+            : filter,
       descending: sortDirection === 'desc',
       key: keyFilter || undefined,
       search: debouncedSearch.trim() || undefined,
       sort: sortKey,
     }),
-    [debouncedSearch, filter, keyFilter, sortDirection, sortKey],
+    [debouncedSearch, enhanced, filter, keyFilter, sortDirection, sortKey],
   );
 
   const {
@@ -732,12 +783,14 @@ const Analysis = () => {
 
   const loadSummary = useCallback(async () => {
     try {
-      const [nextStats, keys] = await Promise.all([
+      const [nextStats, keys, nextPreparation] = await Promise.all([
         musicLibraryApi.getAnalysisStats(),
         musicLibraryApi.getKeys().catch(() => []),
+        getPreparationStatus().catch(() => null),
       ]);
       if (!mountedRef.current) return;
       setStats(nextStats);
+      setPreparation(nextPreparation);
       setKeyOptions(keys ?? []);
     } catch {
       /* the counts are a headline, not the page — the list still renders without them */
@@ -874,6 +927,7 @@ const Analysis = () => {
         metrics: METRICS.join(', '),
         skipAnalysed: true,
         resetAll: false,
+        enhanced,
       },
       paths,
     );
@@ -1078,6 +1132,7 @@ const Analysis = () => {
         metrics: METRICS.join(', '),
         skipAnalysed: true,
         resetAll: false,
+        enhanced,
       },
       paths,
     );
@@ -1143,21 +1198,114 @@ const Analysis = () => {
         <div className="ka-view-heading">
           <AudioWaveform size={18} />
           <div>
-            <h2>Library analysis</h2>
+            <h2>Track analysis</h2>
             <p>Key, tempo, waveform and loudness, organised by folder.</p>
           </div>
         </div>
         {scanState?.error && <p role="alert">{scanState.error}</p>}
+        <fieldset
+          className="ka-analysis-modes"
+          disabled={scanning}
+        >
+          <legend>Analysis mode</legend>
+          <label className={enhanced ? '' : 'ka-mode-selected'}>
+            <input
+              checked={!enhanced}
+              name="analysis-mode"
+              onChange={() => setEnhanced(false)}
+              type="radio"
+              value="basic"
+            />
+            <strong>Basic</strong>
+            <span>BPM, musical key, waveform and loudness (LUFS).</span>
+          </label>
+          <label className={enhanced ? 'ka-mode-selected' : ''}>
+            <input
+              checked={enhanced}
+              disabled={preparation?.enhancedEnabled === false}
+              name="analysis-mode"
+              onChange={() => setEnhanced(true)}
+              type="radio"
+              value="enhanced"
+            />
+            <strong>Enhanced</strong>
+            <span>
+              Everything in Basic, plus beat and downbeat grids, vocals and
+              stems, sections and phrase labels, genre and energy, cue and loop
+              suggestions, and similarity.
+            </span>
+          </label>
+        </fieldset>
+        <div className="ka-analysis-context">
+          <span>
+            <strong>Basic ready:</strong> {coverage.complete} tracks
+          </span>
+          <span>
+            <strong>Enhanced ready:</strong>{' '}
+            {preparation ? preparation.counts?.complete || 0 : '—'} tracks
+          </span>
+          <span>
+            <strong>Automatic preparation:</strong>{' '}
+            {preparation
+              ? preparation.paused
+                ? 'Paused'
+                : 'Enabled'
+              : 'Checking…'}
+          </span>
+          <span>
+            <strong>Enhanced worker:</strong>{' '}
+            {preparation
+              ? preparation.enhancedEnabled
+                ? 'Available'
+                : 'Not configured'
+              : 'Checking…'}
+          </span>
+        </div>
+        <p className="ka-analysis-note">
+          Enhanced results are predictions stored separately from file tags.
+          Review beat grids, vocal and phrase labels before using them in a mix.
+          Open a track’s analysis details to compare measurements and inspect
+          every feature.
+        </p>
         {scanState?.enhancedTotal > 0 && (
-          <p
+          <section
+            aria-label="Enhanced analysis progress"
             className="ka-enhanced-status"
             role="status"
           >
-            Enhanced analysis: {scanState.enhancedCompleted} /{' '}
-            {scanState.enhancedTotal} ready · {scanState.enhancedFailed || 0}{' '}
-            failed{scanState.enhancedPath ? ` · ${scanState.enhancedPath}` : ''}
-            . Vocal and phrase predictions appear on the player waveform.
-          </p>
+            <strong>
+              Enhanced analysis: {scanState.enhancedCompleted} /{' '}
+              {scanState.enhancedTotal} ready · {scanState.enhancedFailed || 0}{' '}
+              failed
+            </strong>
+            <progress
+              aria-label="Enhanced tracks processed"
+              max={scanState.enhancedTotal}
+              value={
+                (scanState.enhancedCompleted || 0) +
+                (scanState.enhancedFailed || 0)
+              }
+            />
+            <span>
+              {Math.max(
+                0,
+                scanState.enhancedTotal -
+                  (scanState.enhancedCompleted || 0) -
+                  (scanState.enhancedFailed || 0),
+              )}{' '}
+              remaining
+              {scanState.enhancedPath
+                ? ` · Latest track started: ${scanState.enhancedPath.split(/[/\\]/).pop()}`
+                : ''}
+            </span>
+            {scanState.enhancedFailed > 0 && (
+              <span>
+                Some tracks need attention. Open their analysis details for
+                missing features and check System → Logs → Music → Enhanced
+                Analysis.
+              </span>
+            )}
+          </section>
         )}
         {/* ── Stats bar ── */}
         <div className="ka-stats-bar">
@@ -1267,13 +1415,23 @@ const Analysis = () => {
 
       {showSettings && (
         <ScanSettings
+          enhanced={enhanced}
+          enhancedAvailable={preparation?.enhancedEnabled !== false}
           onClose={() => setShowSettings(false)}
+          onEnhancedChange={setEnhanced}
           onStart={handleStartScan}
           scanning={scanning}
           selectedCount={selected.size}
         />
       )}
 
+      {inspectedTrack && (
+        <AnalysisDetails
+          key={inspectedTrack.path}
+          onClose={() => setInspectedTrack(null)}
+          track={inspectedTrack}
+        />
+      )}
       {/* ── Toolbar ── */}
       <div className="ka-toolbar">
         <span className="ka-browser-title">
@@ -1313,8 +1471,12 @@ const Analysis = () => {
               {f === 'all'
                 ? 'All'
                 : f === 'complete'
-                  ? 'Fully analysed'
-                  : 'Incomplete'}
+                  ? enhanced
+                    ? 'Enhanced ready'
+                    : 'Basic ready'
+                  : enhanced
+                    ? 'Enhanced pending'
+                    : 'Basic incomplete'}
             </button>
           ))}
         </div>
@@ -1504,6 +1666,7 @@ const Analysis = () => {
                       globalScanning={scanning}
                       onClearBpm={handleClearBpm}
                       onClearKey={handleClearKey}
+                      onInspect={setInspectedTrack}
                       onScan={handleScanTrack}
                       onSetBpm={handleSetBpm}
                       onSetKey={handleSetKey}

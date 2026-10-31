@@ -33,6 +33,7 @@ import {
   candidateBeatWindow,
   candidateFeatureRows,
 } from '../../lib/candidateAnalysis';
+import { fullTrackJobs } from '../../lib/independentSummary';
 import React, { useEffect, useRef, useState } from 'react';
 
 const analysisChoices = [
@@ -67,7 +68,11 @@ const analysisPresets = {
   full: analysisChoices.map(([id]) => id),
 };
 
-const CandidateAnalysisPanel = ({ initialJobId, path }) => {
+const CandidateAnalysisPanel = ({
+  initialJobId,
+  path,
+  resultsOnly = false,
+}) => {
   const [enabled, setEnabled] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [selected, setSelected] = useState('');
@@ -136,6 +141,15 @@ const CandidateAnalysisPanel = ({ initialJobId, path }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialJobId, path]);
 
+  useEffect(() => {
+    if (resultsOnly && !initialJobId && !selected) {
+      const latest = fullTrackJobs(jobs)[0];
+      if (latest) load(latest.jobId, generation.current);
+    }
+    // Only choose an initial result; manual result selection remains in place.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialJobId, jobs, resultsOnly, selected]);
+
   const generate = async () => {
     const current = ++generation.current;
     const controller = new AbortController();
@@ -202,118 +216,130 @@ const CandidateAnalysisPanel = ({ initialJobId, path }) => {
       aria-label="Independent analysis candidates"
       className="candidate-analysis"
     >
-      <h3>Independent analysis candidates</h3>
+      <h3>
+        {resultsOnly
+          ? 'Enhanced analysis results'
+          : 'Independent analysis candidates'}
+      </h3>
       <p>
-        Independent engines can differ from Rekordbox. Candidates preserve
-        existing analysis and manual edits.
+        {resultsOnly
+          ? 'Saved measurements and predictions are kept separate from file tags and your manual edits.'
+          : 'Independent engines can differ from Rekordbox. Candidates preserve existing analysis and manual edits.'}
       </p>
-      <fieldset
-        className="candidate-analysis-settings"
-        disabled={busy}
-      >
-        <legend>Analysis settings</legend>
-        <label>
-          Preset
-          <select
-            aria-label="Analysis preset"
-            onChange={(event) => {
-              const next = event.target.value;
-              setPreset(next);
-              if (analysisPresets[next]) setFeatures(analysisPresets[next]);
-            }}
-            value={preset}
-          >
-            <option value="quick">Quick · waveform, energy, loudness</option>
-            <option value="standard">
-              Standard · adds beats, key, similarity, sections
-            </option>
-            <option value="full">Full · adds stems and vocal activity</option>
-            <option
-              disabled
-              value="custom"
-            >
-              Custom
-            </option>
-          </select>
-        </label>
-        <div className="candidate-feature-options">
-          {analysisChoices.map(([id, label]) => (
-            <label key={id}>
-              <input
-                checked={features.includes(id)}
-                onChange={() => toggleFeature(id)}
-                type="checkbox"
-              />
-              {label}
-            </label>
-          ))}
-        </div>
-        <fieldset>
-          <legend>Experimental features · off in presets</legend>
-          {experimentalChoices.map(([id, label]) => (
-            <label key={id}>
-              <input
-                checked={features.includes(id)}
-                onChange={() => toggleFeature(id)}
-                type="checkbox"
-              />
-              {label}
-            </label>
-          ))}
-          <p>
-            Predictions may differ from Rekordbox and are not calibrated
-            confidence scores.
-          </p>
-        </fieldset>
-        <p>
-          Genre needs an embedding; sections, cues and loop suggestions need
-          beats. Vocal activity, the presence detector and semantic labels need
-          stems. Stems also need waveform analysis. Required dependencies run
-          automatically; unavailable engines remain unavailable.
-        </p>
-        {features.some((id) =>
-          [
-            'stems',
-            'vocalActivity',
-            'semanticPhrases',
-            'vocalPresence',
-          ].includes(id),
-        ) && (
-          <p>
-            Stem analysis takes more time and stores four separated audio files.
-          </p>
-        )}
-        {features.length === 0 && (
-          <p role="alert">Select at least one analysis feature.</p>
-        )}
-      </fieldset>
-      <div className="candidate-analysis-controls">
-        <label>
-          Scope
-          <select
-            aria-label="Analysis scope"
-            disabled={busy}
-            onChange={(event) => setScope(event.target.value)}
-            value={scope}
-          >
-            <option value="30">First 30 seconds</option>
-            <option value="full">Full track</option>
-          </select>
-        </label>
-        <button
-          disabled={!enabled || busy || features.length === 0}
-          onClick={generate}
-          type="button"
+      {!resultsOnly && (
+        <fieldset
+          className="candidate-analysis-settings"
+          disabled={busy}
         >
-          Generate candidate
-        </button>
-        {busy && (
-          <button
-            onClick={() => pending.current?.abort()}
-            type="button"
-          >
-            Cancel generation
-          </button>
+          <legend>Analysis settings</legend>
+          <label>
+            Preset
+            <select
+              aria-label="Analysis preset"
+              onChange={(event) => {
+                const next = event.target.value;
+                setPreset(next);
+                if (analysisPresets[next]) setFeatures(analysisPresets[next]);
+              }}
+              value={preset}
+            >
+              <option value="quick">Quick · waveform, energy, loudness</option>
+              <option value="standard">
+                Standard · adds beats, key, similarity, sections
+              </option>
+              <option value="full">Full · adds stems and vocal activity</option>
+              <option
+                disabled
+                value="custom"
+              >
+                Custom
+              </option>
+            </select>
+          </label>
+          <div className="candidate-feature-options">
+            {analysisChoices.map(([id, label]) => (
+              <label key={id}>
+                <input
+                  checked={features.includes(id)}
+                  onChange={() => toggleFeature(id)}
+                  type="checkbox"
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          <fieldset>
+            <legend>Experimental features · off in presets</legend>
+            {experimentalChoices.map(([id, label]) => (
+              <label key={id}>
+                <input
+                  checked={features.includes(id)}
+                  onChange={() => toggleFeature(id)}
+                  type="checkbox"
+                />
+                {label}
+              </label>
+            ))}
+            <p>
+              Predictions may differ from Rekordbox and are not calibrated
+              confidence scores.
+            </p>
+          </fieldset>
+          <p>
+            Genre needs an embedding; sections, cues and loop suggestions need
+            beats. Vocal activity, the presence detector and semantic labels
+            need stems. Stems also need waveform analysis. Required dependencies
+            run automatically; unavailable engines remain unavailable.
+          </p>
+          {features.some((id) =>
+            [
+              'stems',
+              'vocalActivity',
+              'semanticPhrases',
+              'vocalPresence',
+            ].includes(id),
+          ) && (
+            <p>
+              Stem analysis takes more time and stores four separated audio
+              files.
+            </p>
+          )}
+          {features.length === 0 && (
+            <p role="alert">Select at least one analysis feature.</p>
+          )}
+        </fieldset>
+      )}
+      <div className="candidate-analysis-controls">
+        {!resultsOnly && (
+          <>
+            <label>
+              Scope
+              <select
+                aria-label="Analysis scope"
+                disabled={busy}
+                onChange={(event) => setScope(event.target.value)}
+                value={scope}
+              >
+                <option value="30">First 30 seconds</option>
+                <option value="full">Full track</option>
+              </select>
+            </label>
+            <button
+              disabled={!enabled || busy || features.length === 0}
+              onClick={generate}
+              type="button"
+            >
+              Generate candidate
+            </button>
+            {busy && (
+              <button
+                onClick={() => pending.current?.abort()}
+                type="button"
+              >
+                Cancel generation
+              </button>
+            )}
+          </>
         )}
         <button
           onClick={() =>
@@ -323,10 +349,10 @@ const CandidateAnalysisPanel = ({ initialJobId, path }) => {
           }
           type="button"
         >
-          Refresh candidates
+          {resultsOnly ? 'Refresh results' : 'Refresh candidates'}
         </button>
         <label>
-          Candidate
+          {resultsOnly ? 'Saved full-track result' : 'Candidate'}
           <select
             disabled={busy}
             onChange={(event) =>
@@ -336,8 +362,10 @@ const CandidateAnalysisPanel = ({ initialJobId, path }) => {
             }
             value={selected}
           >
-            <option value="">Choose a candidate</option>
-            {jobs.map((job) => (
+            <option value="">
+              {resultsOnly ? 'Choose a saved result' : 'Choose a candidate'}
+            </option>
+            {(resultsOnly ? fullTrackJobs(jobs) : jobs).map((job) => (
               <option
                 key={job.jobId}
                 value={job.jobId}
@@ -374,7 +402,7 @@ const CandidateAnalysisPanel = ({ initialJobId, path }) => {
               <tr>
                 <th>Feature</th>
                 <th>Status</th>
-                <th>Engine and result</th>
+                <th>{resultsOnly ? 'Result' : 'Engine and result'}</th>
               </tr>
             </thead>
             <tbody>
@@ -383,7 +411,8 @@ const CandidateAnalysisPanel = ({ initialJobId, path }) => {
                   <td>{row.name}</td>
                   <td>{row.status}</td>
                   <td>
-                    {row.engine}: {row.description}
+                    {!resultsOnly && `${row.engine}: `}
+                    {row.description}
                   </td>
                 </tr>
               ))}
