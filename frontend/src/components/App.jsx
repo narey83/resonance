@@ -81,6 +81,7 @@ import Converter from './Converter/Converter';
 import Duplicates from './Duplicates/Duplicates';
 import ExportPage from './Export/ExportPage';
 import NetworkLinkPage from './Export/NetworkLinkPage';
+import { reportFrontendReady } from './FrontendHealthBoundary';
 import Library from './Library/Library';
 import LoginForm from './LoginForm';
 import MapPage from './Map';
@@ -308,6 +309,9 @@ const App = () => {
   // isPassthroughEnabled is the only safe exception since it needs no JWT.
   const [isLoggedIn, setIsLoggedIn] = useState(() => isPassthroughEnabled());
   const [initialized, setInitialized] = useState(false);
+  useEffect(() => {
+    if (initialized) reportFrontendReady();
+  }, [initialized]);
   const [setup, setSetup] = useState({
     error: undefined,
     pending: false,

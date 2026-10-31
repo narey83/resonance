@@ -6,6 +6,17 @@
 }
 
 (resonance_site) {
+	import resonance_site_checked true
+}
+
+# The browser monitor needs the real app while the public site is gated. This
+# separate listener is always loopback-bound and never bypasses application auth.
+(resonance_site_probe) {
+	bind 127.0.0.1
+	import resonance_site_checked false
+}
+
+(resonance_site_checked) {
 	header {
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
@@ -34,6 +45,7 @@
 			reverse_proxy {$RESONANCE_MAINTENANCE_UPSTREAM:127.0.0.1:8090}
 		}
 		@maintenance {
+			expression `"{args[0]}" == "true"`
 			not path /__site/readiness
 			file {
 				root "{$RESONANCE_SITE_STATE_ROOT}"
@@ -44,6 +56,7 @@
 			import site_failure maintenance
 		}
 		@restarting {
+			expression `"{args[0]}" == "true"`
 			not path /__site/readiness
 			file {
 				root "{$RESONANCE_SITE_STATE_ROOT}"
@@ -117,6 +130,34 @@
 		}
 		handle @missing_frontend {
 			import site_failure frontend-unavailable
+		}
+		@check_frontend expression `"{args[0]}" == "true"`
+		route @check_frontend {
+			vars backend_site_state {http.vars.site_state}
+			# Preserve this classification if the monitor itself times out or stops.
+			vars site_state frontend-unavailable
+			reverse_proxy {$RESONANCE_FRONTEND_HEALTH_UPSTREAM:127.0.0.1:8091} {
+				method GET
+				rewrite /health/ready?
+				header_up -Authorization
+				header_up -Cookie
+				header_up -X-Api-Key
+				header_up -X-Resonance-Link-Token
+				transport http {
+					dial_timeout 1s
+					response_header_timeout 2s
+				}
+				@frontend_ready {
+					status 200
+					header X-Resonance-Frontend-State ready
+				}
+				handle_response @frontend_ready {
+					vars site_state {http.vars.backend_site_state}
+				}
+				handle_response {
+					import site_failure frontend-unavailable
+				}
+			}
 		}
 		@site_status path /__site/status /__site/readiness
 		handle @site_status {

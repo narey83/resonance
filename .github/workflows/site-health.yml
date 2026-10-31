@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - 'ops/caddy/**'
+      - 'frontend/src/components/FrontendHealthBoundary*'
+      - 'frontend/src/components/App.jsx'
+      - 'frontend/src/index.jsx'
+      - 'frontend/package*.json'
       - 'bin/site-state'
       - 'docker/maintenance/maintenance.py'
       - 'docker/tests/test_maintenance.py'
@@ -14,6 +18,10 @@ on:
   pull_request:
     paths:
       - 'ops/caddy/**'
+      - 'frontend/src/components/FrontendHealthBoundary*'
+      - 'frontend/src/components/App.jsx'
+      - 'frontend/src/index.jsx'
+      - 'frontend/package*.json'
       - 'bin/site-state'
       - 'docker/maintenance/maintenance.py'
       - 'docker/tests/test_maintenance.py'
@@ -57,3 +65,35 @@ jobs:
         env:
           STATE_DIR: ${{ runner.temp }}/maintenance-control-test
         run: python3 -m unittest discover -s docker/tests -p test_maintenance.py -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked frontend and browser dependencies
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Test browser-health state, deadlines and local recovery
+        run: |
+          node --test ops/caddy/tests/frontend-health.test.mjs
+          cd frontend
+          CI=true npm test -- --watchAll=false --runInBand FrontendHealthBoundary siteAvailability siteRecoveryPage
+      - name: Allow the downloaded test browser to use its sandbox on restricted Ubuntu runners
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] &&
+             [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = 1 ]; then
+            browser_executable="$(find "$HOME/.cache/ms-playwright" -type f -name chrome-headless-shell -print -quit)"
+            test -n "$browser_executable"
+            browser_profile="$RUNNER_TEMP/resonance-browser.apparmor"
+            printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile resonance-ci-browser "%s" flags=(unconfined) {\n  userns,\n}\n' "$browser_executable" > "$browser_profile"
+            sudo apparmor_parser --add "$browser_profile"
+          fi
+      - name: Build the real frontend for browser health checks
+        working-directory: frontend
+        run: npm run build
+      - name: Exercise failures and automatic recovery through real Caddy and Chromium
+        run: python3 ops/caddy/tests/browser_check.py

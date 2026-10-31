@@ -1,0 +1,20 @@
+[Unit]
+Description=Resonance frontend browser health
+After=network.target
+
+[Service]
+Type=simple
+# Replace these paths with a complete, immutable source snapshot and its Node.
+WorkingDirectory=/absolute/path/to/resonance
+ExecStart=/absolute/path/to/node /absolute/path/to/resonance/ops/caddy/frontend-health.mjs
+Environment=RESONANCE_FRONTEND_PROBE_ORIGIN=http://127.0.0.1:8092
+Environment=RESONANCE_FRONTEND_HEALTH_PORT=8091
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillMode=control-group
+Nice=10
+MemoryMax=1G
+
+[Install]
+WantedBy=default.target

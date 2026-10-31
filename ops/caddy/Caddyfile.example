@@ -1,6 +1,12 @@
-# Set the four paths/addresses described in README.md before running Caddy.
+# Set the paths and addresses described in README.md before running Caddy.
 import site.caddy
 
 localhost:8443 {
 	import resonance_site
+}
+
+# Never expose this listener publicly. It lets the browser monitor check recovery
+# while Caddy continues serving the independent status page to normal visitors.
+http://127.0.0.1:8092 {
+	import resonance_site_probe
 }

@@ -44,10 +44,16 @@ class Upstream(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({'state': mode['state']}).encode())
             return
         if self.path == '/api/v0/session/initialized':
+            session = json.loads(fixture.mode.read_text()).get('session', 'normal')
+            if session == 'hang':
+                time.sleep(30)
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
-            self.wfile.write(b'true')
+            try:
+                self.wfile.write(b'false' if session == 'setup' else b'true')
+            except (BrokenPipeError, ConnectionResetError):
+                pass
             return
         if self.path.startswith('/hub/'):
             if self.headers.get('Upgrade', '').lower() == 'websocket':
@@ -88,7 +94,7 @@ class Upstream(BaseHTTPRequestHandler):
 
 
 class SiteFixture:
-    def __init__(self, caddy, web_root=None):
+    def __init__(self, caddy, web_root=None, frontend_health_upstream=None):
         self.temporary = tempfile.TemporaryDirectory(prefix='resonance-caddy-test-')
         self.root = pathlib.Path(self.temporary.name)
         self.state = self.root / 'state'
@@ -100,6 +106,11 @@ class SiteFixture:
         self.mode = self.root / 'upstream.json'
         self.set_mode('available')
         self.last_probe = None
+        self.frontend_mode = 'ready'
+        self.last_frontend_probe = None
+        self.frontend_health = ThreadingHTTPServer(('127.0.0.1', 0), FrontendHealth)
+        self.frontend_health.fixture = self
+        threading.Thread(target=self.frontend_health.serve_forever, daemon=True).start()
         self.backend = ThreadingHTTPServer(('127.0.0.1', 0), Upstream)
         self.backend.fixture = self
         self.thread = threading.Thread(target=self.backend.serve_forever, daemon=True)
@@ -108,9 +119,13 @@ class SiteFixture:
             listener.bind(('127.0.0.1', 0))
             self.port = listener.getsockname()[1]
         self.origin = f'http://127.0.0.1:{self.port}'
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            self.probe_port = listener.getsockname()[1]
+        self.probe_origin = f'http://127.0.0.1:{self.probe_port}'
         self.config = self.root / 'Caddyfile'
-        self.config.write_text('{\n admin off\n auto_https off\n}\nimport "' + str(ROOT / 'ops/caddy/site.caddy') + '"\n' + self.origin + ' {\n import resonance_site\n}\n')
-        environment = dict(os.environ, RESONANCE_STATUS_ROOT=str(ROOT / 'ops/caddy/status'), RESONANCE_WEB_ROOT=str(self.web), RESONANCE_SITE_STATE_ROOT=str(self.state), RESONANCE_BACKEND_UPSTREAM=f'127.0.0.1:{self.backend.server_port}')
+        self.config.write_text('{\n admin off\n auto_https off\n}\nimport "' + str(ROOT / 'ops/caddy/site.caddy') + '"\n' + self.origin + ' {\n import resonance_site\n}\n' + self.probe_origin + ' {\n import resonance_site_probe\n}\n')
+        environment = dict(os.environ, RESONANCE_STATUS_ROOT=str(ROOT / 'ops/caddy/status'), RESONANCE_WEB_ROOT=str(self.web), RESONANCE_SITE_STATE_ROOT=str(self.state), RESONANCE_BACKEND_UPSTREAM=f'127.0.0.1:{self.backend.server_port}', RESONANCE_FRONTEND_HEALTH_UPSTREAM=frontend_health_upstream or f'127.0.0.1:{self.frontend_health.server_port}')
         self.log = (self.root / 'caddy.log').open('wb')
         self.process = subprocess.Popen([str(caddy), 'run', '--config', str(self.config), '--adapter', 'caddyfile'], env=environment, stdout=self.log, stderr=self.log)
         for _ in range(100):
@@ -152,5 +167,25 @@ class SiteFixture:
             self.process.wait()
         self.backend.shutdown()
         self.backend.server_close()
+        self.frontend_health.shutdown()
+        self.frontend_health.server_close()
         self.log.close()
         self.temporary.cleanup()
+
+
+class FrontendHealth(BaseHTTPRequestHandler):
+    def log_message(self, *_):
+        pass
+
+    def do_GET(self):
+        fixture = self.server.fixture
+        fixture.last_frontend_probe = {key: self.headers.get(key) for key in ['Authorization', 'Cookie', 'X-Api-Key', 'X-Resonance-Link-Token']}
+        if fixture.frontend_mode == 'offline':
+            self.connection.shutdown(socket.SHUT_RDWR)
+            self.connection.close()
+            return
+        ready = fixture.frontend_mode == 'ready'
+        self.send_response(200 if ready else 503)
+        self.send_header('X-Resonance-Frontend-State', fixture.frontend_mode)
+        self.end_headers()
+        self.wfile.write(json.dumps({'ready': ready}).encode())

@@ -10,13 +10,13 @@ The React app no longer polls `/startup` or `/maintenance/status` or renders the
 
 | HTTP | State | Meaning |
 | --- | --- | --- |
-| 200 | available | Core services, databases and the web entry point are ready. |
+| 200 | available | Core services and databases are ready, and a fresh browser probe rendered the web app. |
 | 200 | degraded | The site is usable; an optional background service failed. |
 | 503 | maintenance | An operator deliberately closed the site. |
 | 503 | restarting | An explicit restart marker exists, or the backend reports shutdown. |
 | 503 | starting | The backend is responding but required initialization is unfinished. |
 | 503 | unavailable | The backend cannot be reached or its readiness contract is invalid. |
-| 503 | frontend-unavailable | The backend is ready but the web entry point is missing. |
+| 503 | frontend-unavailable | The backend is ready, but the web app cannot render/respond, its files are missing, or browser monitoring is unavailable/stale. |
 
 All unavailable responses include `Retry-After: 5`. Navigation receives HTML from `status/`; API, hub and status requests receive JSON with `ready`, `state`, `code` and `retryAfter`. A real API `401`, `404` or business-level `503` is preserved. Existing native clients also receive `X-Resonance-Maintenance: true` for planned maintenance and restarts. A missing web build does not disable otherwise healthy native API clients.
 
@@ -35,6 +35,7 @@ RESONANCE_BACKEND_UPSTREAM=127.0.0.1:55450
 RESONANCE_WEB_ROOT=/absolute/path/to/complete/frontend/build
 RESONANCE_STATUS_ROOT=/absolute/path/to/gateway/status
 RESONANCE_SITE_STATE_ROOT=/absolute/path/to/gateway/state
+RESONANCE_FRONTEND_HEALTH_UPSTREAM=127.0.0.1:8091
 ```
 
 The backend address defaults to `127.0.0.1:55450`. All three filesystem paths are required. Caddy needs read access to the build, status pages and marker directory. Only the deployment operator needs write access to the markers. This template assumes the application is mounted at the domain root.
@@ -48,7 +49,21 @@ caddy validate --config /path/to/Caddyfile --adapter caddyfile
 caddy reload --config /path/to/Caddyfile --adapter caddyfile
 ```
 
-Deploy the backend readiness endpoint and the complete frontend build before activating the gateway configuration. Until the endpoint exists, Caddy deliberately fails closed. Publish frontend builds as complete releases before switching Caddy's web root; the web check verifies `index.html`, not browser execution of every JavaScript module. The status pages remain available even when that build is absent.
+Deploy the backend readiness endpoint, the complete frontend build with its render-health signal, and the browser monitor before activating this gateway configuration. Until their contracts are ready, Caddy deliberately fails closed for web traffic. Publish frontend builds as complete releases before switching Caddy's web root. The status pages remain available even when that build is absent. The browser monitor is required by this configuration; installing source changes alone does not start it or update a running Caddy.
+
+## Browser readiness
+
+Run `node ops/caddy/frontend-health.mjs` from a complete source snapshot with Node 22 or newer, npm 11 for the existing lockfile, `npm ci` dependencies in `frontend/`, and Playwright Chromium installed (`cd frontend && npx playwright install --with-deps chromium`). Playwright is already pinned by the existing frontend lockfile; this introduces no new package. Keep the monitor outside frontend build/release replacement and run it under the existing process supervisor, or adapt `frontend-health.service.example` as a user service. The service example restarts a stopped monitor, gives its work a lower scheduling priority, and bounds its memory. No application restart, state change, or deployment is performed by the monitor.
+
+Chromium's sandbox stays enabled. On Ubuntu with restricted unprivileged user namespaces, an administrator must allow this specific browser executable to use its sandbox, or supply an appropriately installed supported browser. Follow [Chromium's documented per-executable AppArmor approach](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md), avoiding broad path patterns. Do not disable the host-wide restriction or use `--no-sandbox`. The monitor fails closed if the browser cannot start. CI configures a profile for its exact downloaded test browser on its disposable runner; no production host policy is changed by these sources or tests. Browser child processes receive only a minimal environment, without application credentials, and browser-control and health ports bind only to loopback.
+
+Add the separate `http://127.0.0.1:8092` listener shown in `Caddyfile.example`. It uses the same backend and web-root variables as the public site. The `resonance_site_probe` snippet binds it to loopback and skips only the public maintenance overrides and browser-health gate; application authentication and backend readiness still apply. There is no public probe path or client header that bypasses these gates. This separation avoids recovery deadlocks: the monitor can test the repaired app while visitors still see a status page. Keep both the probe and monitor ports private.
+
+The monitor visits that loopback origin with a fresh, credential-free Chromium context. It verifies successful navigation, loaded same-origin JavaScript/CSS with correct MIME types, the application's explicit post-initialization render signal, visible root content and a responsive browser event loop. It exercises the login username field without submitting a form. Failed asset loads, uncaught script errors, React render failures, stuck session initialization and frozen renderers fail the probe even if `/health/ready` still returns 200. Optional third-party requests are blocked in the probe; optional services do not decide core readiness. Real users get a local reload screen if a React render fails, without deleting their sign-in storage.
+
+Only one probe runs at a time. Each has a 20-second deadline; checks repeat 15 seconds after completion. Two consecutive failures close web traffic and two consecutive successes reopen it. A single transient failure does not flap the site. Results older than 75 seconds fail closed, so a stalled or stopped probe cannot leave a permanent healthy signal. A hung renderer's owned browser is stopped and recreated. The loopback monitor's read-only `/health/ready` endpoint is queried by Caddy, not a new browser per HTTP request. Caddy gives this check a short timeout and classifies a missing or invalid monitor as `frontend-unavailable`.
+
+The probe verifies anonymous login or first-time setup, not every authenticated page, account permission, business operation, or client/browser extension. A user's route-specific React crash has a local recovery screen; it does not let one browser close the site for everyone. Persistent failures on unprobed authenticated operations still require application diagnostics or separately authorized synthetic-account checks. Caddy cannot supply a status page if Caddy or the user's network itself is unreachable.
 
 ## Maintenance and restarts
 
@@ -70,7 +85,10 @@ The existing authenticated `/maintenance/control` coordinator remains compatible
 
 ```sh
 CADDY_BIN=/path/to/caddy python3 -m unittest discover -s ops/caddy/tests -v
+node --test ops/caddy/tests/frontend-health.test.mjs
+# After npm ci and npm run build in frontend/, with Chromium installed:
+CADDY_BIN=/path/to/caddy python3 ops/caddy/tests/browser_check.py
 dotnet test tests --filter FullyQualifiedName~SiteReadinessTests
 ```
 
-The integration tests run real Caddy against an isolated local backend. They cover state precedence, offline and recovery transitions, HTML and JSON responses, streaming, request-body/auth preservation, status-page caching and a backend failure occurring after a successful readiness probe. The dedicated site-health workflow runs these checks without triggering unrelated native app builds.
+The integration tests run real Caddy against an isolated local backend. They cover state precedence, offline and recovery transitions, browser-monitor outages, private recovery probes, HTML and JSON responses, streaming, request-body/auth preservation, status-page caching and a backend failure occurring after a successful readiness probe. Browser checks use a disposable copy of the actual production build, inject failures without touching application state, and inspect desktop/mobile views. The dedicated site-health workflow runs these checks without triggering unrelated native app builds.

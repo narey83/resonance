@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import socket
 import unittest
+import urllib.request
 
 from fixture import ROOT, SiteFixture
 
@@ -29,6 +30,7 @@ class CaddySiteTests(unittest.TestCase):
 
     def setUp(self):
         self.fixture.set_mode('available')
+        self.fixture.frontend_mode = 'ready'
         self.control.set_state(self.fixture.state, 'normal')
 
     def assert_unavailable(self, state):
@@ -184,6 +186,35 @@ class CaddySiteTests(unittest.TestCase):
             self.assertEqual(200, self.fixture.request('/api/echo')[0])
         finally:
             index.write_bytes(saved)
+
+    def test_browser_failure_or_monitor_outage_gates_only_the_web(self):
+        for mode in ['unavailable', 'offline', 'unexpected']:
+            self.fixture.frontend_mode = mode
+            for path in ['/library', '/__site/status', '/__site/readiness']:
+                status, headers, _ = self.fixture.request(path)
+                self.assertEqual(503, status)
+                self.assertEqual('frontend-unavailable', headers['X-Resonance-Site-State'])
+            self.assertEqual(200, self.fixture.request('/api/echo')[0])
+            self.assertEqual(200, self.fixture.request('/hub/stream')[0])
+            self.assertEqual(200, self.fixture.request('/__site/live')[0])
+        self.fixture.frontend_mode = 'ready'
+        self.assertEqual(200, self.fixture.request('/__site/status')[0])
+
+    def test_loopback_probe_can_verify_recovery_without_opening_public_maintenance(self):
+        self.fixture.frontend_mode = 'unavailable'
+        self.control.set_state(self.fixture.state, 'maintenance')
+        with urllib.request.urlopen(self.fixture.probe_origin + '/library', timeout=8) as response:
+            self.assertIn(b'APP_READY', response.read())
+        self.assertEqual('maintenance', self.fixture.request('/library')[1]['X-Resonance-Site-State'])
+        self.control.set_state(self.fixture.state, 'normal')
+        self.assertEqual('frontend-unavailable', self.fixture.request('/library', headers={'X-Resonance-Probe': 'true'})[1]['X-Resonance-Site-State'])
+
+    def test_frontend_probe_does_not_receive_credentials_and_preserves_degraded_state(self):
+        self.fixture.set_mode('degraded')
+        status, headers, _ = self.fixture.request('/library', headers={'Authorization': 'Bearer fixture', 'Cookie': 'session=fixture', 'X-Api-Key': 'fixture', 'X-Resonance-Link-Token': 'fixture'})
+        self.assertEqual(200, status)
+        self.assertEqual('degraded', headers['X-Resonance-Site-State'])
+        self.assertEqual({key: None for key in ['Authorization', 'Cookie', 'X-Api-Key', 'X-Resonance-Link-Token']}, self.fixture.last_frontend_probe)
 
 
 if __name__ == '__main__':

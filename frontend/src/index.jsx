@@ -35,6 +35,7 @@
 
 import 'semantic-ui-less/semantic.less';
 import App from './components/App';
+import FrontendHealthBoundary from './components/FrontendHealthBoundary';
 import { postLog } from './lib/logs';
 import React from 'react';
 import ReactDOM from 'react-dom';
@@ -66,8 +67,10 @@ window.addEventListener('error', (event) => {
 });
 
 ReactDOM.render(
-  <Router>
-    <App />
-  </Router>,
+  <FrontendHealthBoundary>
+    <Router>
+      <App />
+    </Router>
+  </FrontendHealthBoundary>,
   document.querySelector('#root'),
 );
