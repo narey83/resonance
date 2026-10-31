@@ -152,7 +152,7 @@ const PreparationView = () => {
           type="button"
         >
           {status?.paused ? <Play size={15} /> : <Pause size={15} />}
-          {status?.paused ? 'Resume preparation' : 'Pause after current track'}
+          {status?.paused ? 'Resume preparation' : 'Pause after active tracks'}
         </button>
       </header>
       <div className="preparation-overview">

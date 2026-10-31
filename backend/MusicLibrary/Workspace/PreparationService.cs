@@ -50,10 +50,11 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
     private bool recoveryNeeded;
     public long LastCheckedAt { get; private set; }
     public string DependencyError => analysis.ScanState.DependencyUnavailable ? analysis.ScanState.Error : null;
-    public string WaitingReason => DependencyError ?? (store.Paused ? "Paused after the current track"
+    public string WaitingReason => DependencyError ?? (store.Paused ? "Paused after active tracks"
         : FilesBeingUpdated ? "Waiting for metadata updates to finish"
         : analysis.PlaybackActive ? "Waiting for playback to go idle"
         : analysis.ScanState.Scanning ? "Analysis is running" : null);
+    internal int BatchSize { get; init; } = Math.Max(1, Environment.ProcessorCount);
     private static long Now => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     private bool FilesBeingUpdated => library?.IsQueueActive("metadata") == true || library?.IsQueueActive("tag-sanitization") == true;
 
@@ -145,15 +146,15 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
             recoveryNeeded = false;
         }
 
-        var item = store.Due(Now);
-        if (item == null)
+        var items = store.DueBatch(Now, Math.Max(1, BatchSize));
+        if (items.Count == 0)
         {
             return;
         }
 
         try
         {
-            await Prepare(item, ct);
+            await PrepareBatch(items, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -162,14 +163,17 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
         catch (Exception exception)
         {
             recoveryNeeded = true;
-            var current = store.Find(item.Path);
-            if (current?.State == "running")
+            foreach (var item in items)
             {
-                store.Put(PreparationPolicy.Failed(current, Now, "Analysis was interrupted. Existing results are preserved."));
+                var current = store.Find(item.Path);
+                if (current?.State == "running")
+                {
+                    store.Put(PreparationPolicy.Failed(current, Now, "Analysis was interrupted. Existing results are preserved."));
+                }
             }
 
             recoveryNeeded = false;
-            Log.Warning(exception, "Preparation for {Path} was interrupted", item.Path);
+            Log.Warning(exception, "Automatic preparation batch of {Tracks} tracks was interrupted", items.Count);
         }
     }
 
@@ -221,7 +225,92 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
 
     private void RequestReconcile(IReadOnlyList<string> changedPaths) => Interlocked.Exchange(ref reconcileRequested, 1);
 
-    private async Task Prepare(PreparationItem item, CancellationToken ct)
+    private async Task PrepareBatch(IReadOnlyList<PreparationItem> items, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var candidates = items.Select(item => (Item: item, Track: Track(item.Path))).ToArray();
+        if (candidates.Any(candidate => candidate.Track == null))
+        {
+            store.RemoveDeleted();
+        }
+
+        var batch = new List<(PreparationItem Item, MusicTrack Track)>();
+        lock (gate)
+        {
+            if (store.Paused)
+            {
+                return;
+            }
+
+            foreach (var candidate in candidates)
+            {
+                // A retry, deletion or reconciliation may have changed this row meanwhile.
+                if (candidate.Track == null || store.Find(candidate.Item.Path) != candidate.Item)
+                {
+                    continue;
+                }
+
+                var completed = PreparationPolicy.CompletedState(candidate.Track, enhanced.Enabled);
+                if (completed != null)
+                {
+                    store.Put(candidate.Item with { State = completed, Detail = "Analysis available", UpdatedAt = Now });
+                }
+                else
+                {
+                    batch.Add(candidate);
+                }
+            }
+
+            if (batch.Count > 0)
+            {
+                store.PutMany(batch.Select(candidate => candidate.Item with
+                {
+                    State = "running",
+                    Attempts = candidate.Item.Attempts + 1,
+                    Detail = "Analysing audio",
+                    UpdatedAt = Now,
+                }));
+            }
+        }
+
+        if (batch.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            Log.Information("Automatic preparation starting {Tracks} tracks across up to {Workers} CPU workers", batch.Count, Math.Min(batch.Count, Environment.ProcessorCount));
+            await analysis.StartScanAsync(new(OnlyPaths: batch.Select(candidate => candidate.Track.Path).ToArray(), SkipAnalysed: true, Enhanced: enhanced.Enabled));
+        }
+        catch (InvalidOperationException)
+        {
+            // Another scan won the race. No attempt was made, so preserve its retry budget.
+            store.PutMany(batch.Select(candidate => candidate.Item));
+            return;
+        }
+
+        while (analysis.ScanState.Scanning)
+        {
+            await Task.Delay(500, ct);
+        }
+
+        if (analysis.ScanState.DependencyUnavailable || analysis.ScanState.Cancelled)
+        {
+            store.Paused = true;
+        }
+
+        foreach (var candidate in batch)
+        {
+            var item = store.Find(candidate.Item.Path);
+            if (item?.State == "running")
+            {
+                Finish(item);
+            }
+        }
+    }
+
+    private void Finish(PreparationItem item)
     {
         var track = Track(item.Path);
         if (track == null)
@@ -230,45 +319,14 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
             return;
         }
 
+        item = item with { FileSize = track.FileSize, FileModified = track.FileModified };
         var completed = PreparationPolicy.CompletedState(track, enhanced.Enabled);
         if (completed != null)
         {
-            store.Put(item with { State = completed, Detail = "Analysis available", UpdatedAt = Now });
-            return;
+            store.Put(item with { State = completed, NextAttemptAt = 0, Detail = "Analysis available", UpdatedAt = Now });
         }
-
-        lock (gate)
+        else if (analysis.ScanState.DependencyUnavailable)
         {
-            // A retry, pause or reconciliation may have changed the selected row meanwhile.
-            var current = store.Find(item.Path);
-            if (store.Paused || current != item)
-            {
-                return;
-            }
-
-            store.Put(item with { State = "running", Attempts = item.Attempts + 1, Detail = "Analysing audio", UpdatedAt = Now });
-        }
-
-        try
-        {
-            await analysis.StartScanAsync(new(OnlyPaths: [track.Path], SkipAnalysed: true, Enhanced: enhanced.Enabled));
-        }
-        catch (InvalidOperationException)
-        {
-            // Another scan won the race. No attempt was made, so preserve its retry budget.
-            store.Put(item);
-            return;
-        }
-
-        item = store.Find(item.Path);
-        while (analysis.ScanState.Scanning)
-        {
-            await Task.Delay(500, ct);
-        }
-
-        if (analysis.ScanState.DependencyUnavailable)
-        {
-            store.Paused = true;
             store.Put(item with
             {
                 State = "failed",
@@ -277,21 +335,6 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
                 Detail = analysis.ScanState.Error,
                 UpdatedAt = Now,
             });
-            return;
-        }
-
-        track = Track(item.Path);
-        if (track == null)
-        {
-            store.RemoveDeleted();
-            return;
-        }
-
-        item = item with { FileSize = track.FileSize, FileModified = track.FileModified };
-        completed = PreparationPolicy.CompletedState(track, enhanced.Enabled);
-        if (completed != null)
-        {
-            store.Put(item with { State = completed, NextAttemptAt = 0, Detail = "Analysis available", UpdatedAt = Now });
         }
         else if (analysis.ScanState.Cancelled)
         {

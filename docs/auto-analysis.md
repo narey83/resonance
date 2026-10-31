@@ -1,6 +1,6 @@
 # Automatic library preparation
 
-Updated **21 October 2026**. This describes current scheduling and defaults; both can
+Updated **31 October 2026**. This describes current scheduling and defaults; both can
 change. See the [feature inventory](../FEATURES.md) for the wider product scope.
 
 Newly indexed tracks enter a persistent preparation queue. This applies to Soulseek,
@@ -14,12 +14,17 @@ at startup and at least once per minute, so a missed event does not lose work.
 Completed, unchanged analysis is reused. BPM/key tags alone do not count as complete
 waveform, loudness or enhanced analysis.
 
-Preparation processes one queued track at a time through `AnalysisService`. It
+Preparation submits a bounded group to `AnalysisService`, with at most one track
+per CPU core available to the process. Its existing per-core workers analyse that
+group concurrently; it does not start an unbounded task for every queued track. It
 waits while playback is active, a manual analysis scan is running, or metadata/tag
 updates are active. An explicit pause persists across restarts. Stopping analysis
 pauses automatic preparation rather than immediately restarting the cancelled job.
 Interrupted jobs recover on startup. Failed work retries with backoff, up to three
 attempts; Library → Preparation exposes its status and a manual Retry action.
+Pause prevents the next group from starting while active tracks finish. Completed
+tracks keep their results if another worker fails or the scan is stopped. Missing
+dependencies pause the queue and restore the unfinished tracks' retry budgets.
 
 ## Analysis engines
 

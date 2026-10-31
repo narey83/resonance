@@ -260,6 +260,87 @@ public class WorkspaceTests : IDisposable
         service.Reconcile();
         Assert.Equal(503, store.Counts()["queued"]);
     }
+    [Fact] public async Task AutomaticBatchFillsCpuSlotsAndLeavesRemainingTracksQueued()
+    {
+        foreach (var name in new[] { "a", "b", "c" }) Add($"nested/{name}.mp3");
+        var service = new PreparationService(store, repository, null!, analysis, new(null!, null!, null!, null!)) { BatchSize = 2 };
+        service.Reconcile();
+        analysis.OnStart = () =>
+        {
+            Assert.Equal(analysis.LastRequest!.OnlyPaths!.Length, store.Counts()["running"]);
+            foreach (var path in analysis.LastRequest.OnlyPaths) Complete(MusicPath.ToRelative(path), false);
+        };
+        await service.ProcessNext(default);
+        Assert.Equal(2, analysis.LastRequest!.OnlyPaths!.Length);
+        Assert.Equal(1, analysis.Starts);
+        Assert.Equal(2, store.Counts()["basic"]);
+        Assert.Equal("queued", store.Find("nested/c.mp3").State);
+        Assert.Equal(0, store.Find("nested/c.mp3").Attempts);
+        await service.ProcessNext(default);
+        Assert.Single(analysis.LastRequest.OnlyPaths!);
+        Assert.Equal(2, analysis.Starts);
+        Assert.Equal(3, store.Counts()["basic"]);
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StoppedBatchKeepsCompletedTracksAndRestoresUnfinishedRetryBudgets(bool dependency)
+    {
+        foreach (var name in new[] { "a", "b", "c" }) Add($"nested/{name}.mp3");
+        var service = new PreparationService(store, repository, null!, analysis, new(null!, null!, null!, null!)) { BatchSize = 2 };
+        service.Reconcile();
+        analysis.OnStart = () => Complete("nested/a.mp3", false);
+        analysis.DependencyFailure = dependency;
+        analysis.Cancelled = !dependency;
+        await service.ProcessNext(default);
+        Assert.True(store.Paused);
+        Assert.Equal("basic", store.Find("nested/a.mp3").State);
+        Assert.Equal(1, store.Find("nested/a.mp3").Attempts);
+        Assert.Equal(dependency ? "failed" : "queued", store.Find("nested/b.mp3").State);
+        Assert.Equal(0, store.Find("nested/b.mp3").Attempts);
+        Assert.Equal("queued", store.Find("nested/c.mp3").State);
+        await service.ProcessNext(default);
+        Assert.Equal(1, analysis.Starts);
+    }
+    [Fact] public async Task FailedTrackInBatchDoesNotDiscardOtherTracksOrSpendTheirRetries()
+    {
+        Add("nested/a.mp3"); Add("nested/b.mp3");
+        var service = new PreparationService(store, repository, null!, analysis, new(null!, null!, null!, null!)) { BatchSize = 2 };
+        service.Reconcile();
+        analysis.OnStart = () => Complete("nested/a.mp3", false);
+        await service.ProcessNext(default);
+        Assert.False(store.Paused);
+        Assert.Equal("basic", store.Find("nested/a.mp3").State);
+        Assert.Equal("retrying", store.Find("nested/b.mp3").State);
+        Assert.Equal(1, store.Find("nested/b.mp3").Attempts);
+    }
+    [Fact] public async Task RejectedBatchRestoresEveryQueueRecordWithoutSpendingRetries()
+    {
+        Add("nested/a.mp3"); Add("nested/b.mp3");
+        var service = new PreparationService(store, repository, null!, analysis, new(null!, null!, null!, null!)) { BatchSize = 2 };
+        service.Reconcile();
+        var before = store.DueBatch(Now, 2);
+        analysis.Reject = true;
+        await service.ProcessNext(default);
+        Assert.Equal(before, store.DueBatch(Now, 2));
+        Assert.Equal(0, analysis.Starts);
+    }
+    [Fact] public async Task PauseDuringBatchFinishesItsTracksButDoesNotStartTheNextGroup()
+    {
+        foreach (var name in new[] { "a", "b", "c" }) Add($"nested/{name}.mp3");
+        var service = new PreparationService(store, repository, null!, analysis, new(null!, null!, null!, null!)) { BatchSize = 2 };
+        service.Reconcile();
+        analysis.OnStart = () =>
+        {
+            store.Paused = true;
+            foreach (var path in analysis.LastRequest!.OnlyPaths!) Complete(MusicPath.ToRelative(path), false);
+        };
+        await service.ProcessNext(default);
+        await service.ProcessNext(default);
+        Assert.Equal(1, analysis.Starts);
+        Assert.Equal(2, store.Counts()["basic"]);
+        Assert.Equal("queued", store.Find("nested/c.mp3").State);
+    }
     [Fact] public void SetsPersistOrderTemposNotesPerAccountAndDetectConcurrentEdits()
     {
         var a=Add("nested/a.mp3");var b=Add("nested/b.mp3",138);
@@ -384,7 +465,8 @@ public class WorkspaceTests : IDisposable
         public AnalysisScanState ScanState {get;set;}=new(false,false,false,0,0,0,0,0);
         public bool PlaybackActive {get;set;}
         public int Starts;public bool Reject;public bool Cancelled;public bool DependencyFailure;public Action? OnStart;
-        public Task StartScanAsync(AnalysisScanRequest request) { if(Reject)throw new InvalidOperationException();Starts++;Assert.True(request.SkipAnalysed);Assert.False(request.ResetAll);OnStart?.Invoke();ScanState=new(false,!Cancelled&&!DependencyFailure,Cancelled,1,DependencyFailure?0:1,0,DependencyFailure?1:0,1) { DependencyUnavailable=DependencyFailure,Error=DependencyFailure?"Basic analysis stopped: Essentia is missing":string.Empty };return Task.CompletedTask; }
+        public AnalysisScanRequest? LastRequest;
+        public Task StartScanAsync(AnalysisScanRequest request) { if(Reject)throw new InvalidOperationException();Starts++;LastRequest=request;Assert.True(request.SkipAnalysed);Assert.False(request.ResetAll);OnStart?.Invoke();ScanState=new(false,!Cancelled&&!DependencyFailure,Cancelled,request.OnlyPaths?.Length??1,DependencyFailure?0:1,0,DependencyFailure?1:0,1) { DependencyUnavailable=DependencyFailure,Error=DependencyFailure?"Basic analysis stopped: Essentia is missing":string.Empty };return Task.CompletedTask; }
         public void RecordPlaybackActivity(){} public IEnumerable<TrackAnalysisInfo> GetAllTracks()=>[];public bool CancelScan()=>false;
         public Task<WaveformData> GetWaveformAsync(string path,CancellationToken ct,bool cachedOnly=false)=>throw new NotImplementedException();
         public BeatAnalysis GetBeatInfo(string path)=>throw new NotImplementedException();

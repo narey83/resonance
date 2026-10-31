@@ -156,7 +156,7 @@ describe('Preparation workspace', () => {
   it('pauses automatic preparation without changing enrichment', async () => {
     expect.hasAssertions();
     await render();
-    await click(container, 'Pause after current track');
+    await click(container, 'Pause after active tracks');
     expect(pausePreparation).toHaveBeenCalledWith(true);
     expect(refresh).toHaveBeenCalledWith();
   });

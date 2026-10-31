@@ -188,10 +188,13 @@ public partial class WorkspaceStore
         db.Execute($"DELETE FROM {Preparation} WHERE NOT EXISTS (SELECT 1 FROM {Tracks} t WHERE t.path={Preparation}.path)");
     }
 
-    public PreparationItem Due(long now)
+    public PreparationItem Due(long now) => DueBatch(now, 1).FirstOrDefault();
+
+    public IReadOnlyList<PreparationItem> DueBatch(long now, int limit)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
         using var db = Open();
-        return db.QueryFirstOrDefault<PreparationItem>($"SELECT {ItemColumns} FROM {Preparation} WHERE state IN ('queued','retrying') AND next_attempt_at<=@now ORDER BY next_attempt_at,updated_at,path LIMIT 1", new { now });
+        return db.Query<PreparationItem>($"SELECT {ItemColumns} FROM {Preparation} WHERE state IN ('queued','retrying') AND next_attempt_at<=@now ORDER BY next_attempt_at,updated_at,path LIMIT @limit", new { now, limit }).ToArray();
     }
 
     public Dictionary<string, int> Counts()
