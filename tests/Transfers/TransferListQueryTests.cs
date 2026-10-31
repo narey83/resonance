@@ -155,6 +155,115 @@ public class TransferListQueryTests
     private static int SeedIndex(Transfer transfer) =>
         int.Parse(transfer.Filename.Split('-')[^1].Replace(".mp3", string.Empty));
 
+    [Fact]
+    public void Pending_Pages_Are_Bounded_And_Cover_The_Queue_Without_Changing_Records()
+    {
+        var sql = new List<string>();
+        using var connection = Connect();
+        using var context = Context(connection, sql);
+        Seed(context, completed: 30, inFlight: 12);
+        TransferListQuery.EnsureSqliteIndexes(context);
+        var before = context.Transfers.AsNoTracking().OrderBy(t => t.Id).Select(t => new { t.Id, t.State, t.EndedAt }).ToList();
+        var ids = new List<Guid>();
+        for (var page = 0; page < 3; page++)
+        {
+            var result = TransferListQuery.ListPage(context, TransferDirection.Upload, false, false, 5, page, 5);
+            Assert.Equal(12, result.TotalPending);
+            var pending = result.Transfers.Where(t => t.EndedAt is null).ToList();
+            Assert.Equal(page == 2 ? 2 : 5, pending.Count);
+            Assert.Equal(5, result.Transfers.Count(t => t.EndedAt is not null));
+            ids.AddRange(pending.Select(t => t.Id));
+        }
+
+        Assert.Equal(12, ids.Distinct().Count());
+        Assert.Equal(before, context.Transfers.AsNoTracking().OrderBy(t => t.Id).Select(t => new { t.Id, t.State, t.EndedAt }).ToList());
+        Assert.Contains(sql, statement => statement.Contains("LIMIT") && statement.Contains("OFFSET"));
+    }
+
+    [Fact]
+    public void Pending_Pages_Prioritize_Data_Flow_And_Filter_Removed_And_Other_Directions()
+    {
+        using var connection = Connect();
+        using var context = Context(connection);
+        Seed(context, completed: 2, inFlight: 8);
+        Seed(context, completed: 1, inFlight: 3, removed: true, prefix: "removed");
+        Seed(context, completed: 1, inFlight: 4, direction: TransferDirection.Download, prefix: "download");
+        var queued = context.Transfers.Where(t => t.Direction == TransferDirection.Upload && !t.Removed && t.EndedAt == null).ToList();
+        foreach (var row in queued) row.State = TransferStates.Queued | TransferStates.Locally;
+        queued[0].State = TransferStates.InProgress;
+        queued[0].RequestedAt = DateTime.UtcNow;
+        context.SaveChanges();
+        var first = TransferListQuery.ListPage(context, TransferDirection.Upload, false, true, 5, 0, 1);
+        Assert.Equal(8, first.TotalPending);
+        Assert.Equal(queued[0].Id, Assert.Single(first.Transfers).Id);
+        var removed = TransferListQuery.ListPage(context, TransferDirection.Upload, true, true, 5, 0, 20);
+        Assert.Equal(11, removed.TotalPending);
+        Assert.Equal(11, removed.Transfers.Count);
+        Assert.All(removed.Transfers, t => Assert.Equal(TransferDirection.Upload, t.Direction));
+        Assert.Empty(TransferListQuery.ListPage(context, TransferDirection.Upload, false, true, 5, 99, 5).Transfers);
+    }
+
+    [Theory]
+    [InlineData(-1, 250)]
+    [InlineData(0, 0)]
+    [InlineData(0, 501)]
+    [InlineData(int.MaxValue, 250)]
+    public void Pending_Pages_Reject_Invalid_Bounds(int page, int pageSize)
+    {
+        using var connection = Connect();
+        using var context = Context(connection);
+        Assert.Throws<ArgumentOutOfRangeException>(() => TransferListQuery.ListPage(context, TransferDirection.Upload, false, false, 5, page, pageSize));
+    }
+
+    [Fact]
+    public void Status_Counts_The_Whole_Queue_But_Only_Returns_Throughput_Samples()
+    {
+        using var connection = Connect();
+        using var context = Context(connection);
+        Seed(context, completed: 30, inFlight: 8);
+        Seed(context, completed: 1, inFlight: 3, removed: true, prefix: "removed");
+        Seed(context, completed: 1, inFlight: 4, direction: TransferDirection.Download, prefix: "download");
+        var waiting = context.Transfers.Where(t => t.Direction == TransferDirection.Upload && !t.Removed && t.EndedAt == null).ToList();
+        foreach (var row in waiting) row.State = TransferStates.Queued | TransferStates.Locally;
+        waiting[0].State = TransferStates.InProgress;
+        waiting[0].BytesTransferred = 42;
+        waiting[1].State = TransferStates.Initializing;
+        var recent = context.Transfers.First(t => t.Direction == TransferDirection.Upload && !t.Removed && t.EndedAt != null);
+        recent.EndedAt = DateTime.UtcNow;
+        recent.BytesTransferred = 100;
+        context.SaveChanges();
+        TransferListQuery.EnsureSqliteIndexes(context);
+        var status = TransferListQuery.Status(context, TransferDirection.Upload);
+        Assert.Equal(6, status.QueuedCount);
+        Assert.Equal(2, status.ActiveCount);
+        Assert.Equal(3, status.Transfers.Count);
+        Assert.Contains(status.Transfers, t => t.Id == waiting[0].Id && t.BytesTransferred == 42);
+        Assert.Contains(status.Transfers, t => t.Id == recent.Id && t.BytesTransferred == 100);
+        Assert.DoesNotContain(status.Transfers, t => t.State == (TransferStates.Queued | TransferStates.Locally));
+        Assert.Equal(4, TransferListQuery.Status(context, TransferDirection.Download).ActiveCount);
+    }
+
+    [Fact]
+    public void Status_Recent_History_Is_Bounded_And_Uses_An_Indexed_Time_Range()
+    {
+        using var connection = Connect();
+        using var context = Context(connection);
+        Seed(context, completed: 600, inFlight: 0);
+        foreach (var row in context.Transfers) row.EndedAt = DateTime.UtcNow;
+        context.SaveChanges();
+        TransferListQuery.EnsureSqliteIndexes(context);
+        Assert.Equal(500, TransferListQuery.Status(context, TransferDirection.Upload).Transfers.Count);
+        using var command = connection.CreateCommand();
+        command.CommandText = $"EXPLAIN QUERY PLAN SELECT Id,State,BytesTransferred FROM Transfers WHERE Direction='Upload' AND Removed=0 AND ({TransferListQuery.CompletedFlagSql})=1 AND COALESCE(EndedAt,RequestedAt)>=@since ORDER BY COALESCE(EndedAt,RequestedAt) DESC LIMIT 500";
+        command.Parameters.AddWithValue("@since", DateTime.UtcNow.AddSeconds(-15));
+        using var reader = command.ExecuteReader();
+        Assert.True(reader.Read());
+        var plan = reader.GetString(3);
+        Assert.Contains(TransferListQuery.SqliteListIndex, plan);
+        Assert.Contains("SEARCH", plan);
+        Assert.Contains(">", plan);
+    }
+
     private static SqliteConnection Connect()
     {
         var connection = new SqliteConnection("Data Source=:memory:");

@@ -112,6 +112,10 @@ namespace resonance.Transfers.Downloads
         /// <returns>All matching active transfers and at most the requested number of completed transfers.</returns>
         List<Transfer> ListCapped(bool includeRemoved, bool activeOnly, int maxCompleted);
 
+        /// <summary>Gets small transfer counts and throughput samples.</summary>
+        /// <returns>Status for this transfer direction.</returns>
+        TransferListStatus GetStatus();
+
         /// <summary>Lists dangling transfers, including removed records, for startup recovery.</summary>
         /// <returns>Transfers that are unfinished or lack a completed state, including removed records.</returns>
         List<Transfer> ListForRecovery() => List(t => t.EndedAt == null || !TransferStateCategories.Completed.Contains(t.State), includeRemoved: true);
@@ -840,6 +844,13 @@ namespace resonance.Transfers.Downloads
         {
             using var context = ContextFactory.CreateDbContext();
             return TransferListQuery.ListForRecovery(context, TransferDirection.Download);
+        }
+
+        /// <inheritdoc/>
+        public TransferListStatus GetStatus()
+        {
+            using var context = ContextFactory.CreateDbContext();
+            return TransferListQuery.Status(context, TransferDirection.Download);
         }
 
         public List<Transfer> ListCapped(bool includeRemoved, bool activeOnly, int maxCompleted)

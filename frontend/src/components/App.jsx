@@ -242,11 +242,6 @@ const notificationFromEventRecord = (record, lastReadAt) => {
   };
 };
 
-const flattenTransfers = (groups) =>
-  (groups ?? []).flatMap((g) =>
-    (g.directories ?? []).flatMap((d) => d.files ?? []),
-  );
-
 // ── Nav helpers ───────────────────────────────────────────────────────────────
 
 const NavItem = ({ active, badge, icon: NavIcon, label, onClick, to }) => {
@@ -358,6 +353,7 @@ const App = () => {
         ? 'dark'
         : 'light'),
   );
+  const [queuedTransferCount, setQueuedTransferCount] = useState(null);
   const [uploadCount, setUploadCount] = useState(0);
   const [uploads, setUploads] = useState([]);
   const [ytdlpCount, setYtdlpCount] = useState(0);
@@ -790,37 +786,22 @@ const App = () => {
   useEffect(() => {
     if (!isLoggedIn) return undefined;
 
-    let inFlight = false;
+    const requests = new Set();
+    const controller = new AbortController();
+    let disposed = false;
     const poll = async () => {
-      if (inFlight) return;
-      inFlight = true;
+      if (requests.size > 0 || document.hidden || disposed) return;
+      requests.add(controller);
       try {
-        const [downloadGroups, uploadGroups, ytdlpJobs] = await Promise.all([
-          transfersAPI.getAll({ direction: 'download' }).catch(() => null),
-          transfersAPI.getAll({ direction: 'upload' }).catch(() => null),
+        const [transferStatus, ytdlpJobs] = await Promise.all([
+          transfersAPI
+            .getStatus({ signal: controller.signal })
+            .catch(() => null),
           ytdlpAPI
             .listJobs()
             .then((r) => r.data)
             .catch(() => null),
         ]);
-        const countActive = (groups) => {
-          if (!Array.isArray(groups)) return 0;
-          return groups.reduce(
-            (sum, g) =>
-              sum +
-              (g.directories ?? []).reduce(
-                (s, d) =>
-                  s +
-                  (d.files ?? []).filter(
-                    (f) =>
-                      f.state === 'InProgress' || f.state === 'Initializing',
-                  ).length,
-                0,
-              ),
-            0,
-          );
-        };
-
         // Tracks not yet resolved across in-flight yt-dlp jobs (mirrors the
         // per-job "remaining" maths in YtDlp/JobList.jsx)
         const countYtdlpRemaining = (jobsList) => {
@@ -846,23 +827,40 @@ const App = () => {
         };
 
         unstable_batchedUpdates(() => {
-          setDownloadCount(countActive(downloadGroups));
-          setDownloads(flattenTransfers(downloadGroups));
-          setUploadCount(countActive(uploadGroups));
-          setUploads(flattenTransfers(uploadGroups));
+          if (disposed) return;
+          if (transferStatus) {
+            setDownloadCount(transferStatus.downloads.activeCount);
+            setDownloads(transferStatus.downloads.transfers);
+            setUploadCount(transferStatus.uploads.activeCount);
+            setUploads(transferStatus.uploads.transfers);
+            setQueuedTransferCount(
+              transferStatus.downloads.queuedCount +
+                transferStatus.uploads.queuedCount,
+            );
+          }
+
           setYtdlpCount(countYtdlpRemaining(ytdlpJobs));
         });
       } catch {
         /* silently ignore */
       } finally {
-        // eslint-disable-next-line require-atomic-updates -- Only the poll that set this flag can release it.
-        inFlight = false;
+        requests.delete(controller);
       }
     };
 
-    poll();
+    void poll();
     const id = setInterval(poll, 5_000);
-    return () => clearInterval(id);
+    const onVisibility = () => {
+      if (!document.hidden) void poll();
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      disposed = true;
+      controller.abort();
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [isLoggedIn]);
 
   // ══════════════════════════════════════════════════════════════════════════════
@@ -1105,6 +1103,7 @@ const App = () => {
               onConnect={connect}
               onDisconnect={disconnect}
               onLogout={handleLogout}
+              queuedTransferCount={queuedTransferCount}
               server={server}
               shares={shares}
               system={system}
@@ -1143,6 +1142,7 @@ const App = () => {
                 onConnect={connect}
                 onDisconnect={disconnect}
                 onLogout={handleLogout}
+                queuedTransferCount={queuedTransferCount}
                 server={server}
                 shares={shares}
                 system={system}

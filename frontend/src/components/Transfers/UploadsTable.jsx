@@ -26,12 +26,12 @@
 //   │ SPDX-License-Identifier: AGPL-3.0-only
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
-
 import { lookupIp } from '../../lib/network';
 import { isStateCancellable, isStateRemovable } from '../../lib/transfers';
 import { getStatus } from '../../lib/users';
 import { formatBitrate, formatBytes, getFileName } from '../../lib/util';
 import { UsernameLink } from '../Shared';
+import UploadQueuePagination from './UploadQueuePagination';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Ban,
@@ -632,7 +632,7 @@ const UserGroup = ({
                 username: user.username,
               });
             }}
-            title={`Cancel all ${activeCount} upload${activeCount === 1 ? '' : 's'} to this user`}
+            title="Cancel all uploads to this user"
             type="button"
           >
             <Ban
@@ -725,7 +725,7 @@ const Toolbar = ({
               size={12}
               strokeWidth={2}
             />
-            Cancel active
+            Cancel listed
           </button>
         )}
         {succeededFiles.length > 0 && (
@@ -757,7 +757,10 @@ const UploadsTable = ({
   onCancelDirectory,
   onCancelUser,
   onClearCompleted,
+  onPendingPageChange,
   onRemove,
+  pendingPage = 0,
+  totalPending,
   transfers,
 }) => {
   const [completedPage, setCompletedPage] = useState(0);
@@ -859,7 +862,11 @@ const UploadsTable = ({
     overscan: 6,
   });
 
-  if (activeGroups.length === 0 && completedGroups.length === 0) {
+  if (
+    activeGroups.length === 0 &&
+    completedGroups.length === 0 &&
+    !totalPending
+  ) {
     return (
       <div className="dl-empty">
         <Upload
@@ -945,6 +952,13 @@ const UploadsTable = ({
 
   return (
     <div className="dl-root">
+      {Number.isInteger(totalPending) && (
+        <UploadQueuePagination
+          onPageChange={onPendingPageChange}
+          page={pendingPage}
+          total={totalPending}
+        />
+      )}
       <Toolbar
         allFiles={allFiles}
         onCancel={onCancel}

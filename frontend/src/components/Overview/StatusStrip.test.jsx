@@ -47,6 +47,22 @@ describe('Status and controls explanations', () => {
     expect(panel.textContent).toContain('3 folders');
   });
 
+  it('uses the whole-queue counter with only active byte samples', () => {
+    const panel = renderPanel({
+      queuedTransferCount: 35_007,
+      uploads: [{ id: 'active', state: 'InProgress', bytesTransferred: 42 }],
+    });
+    expect(panel.textContent).toContain('35007 queued');
+  });
+
+  it('preserves an explicit zero instead of counting stale samples', () => {
+    const panel = renderPanel({
+      queuedTransferCount: 0,
+      uploads: [{ state: 'Queued' }],
+    });
+    expect(panel.textContent).toContain('No transfers waiting');
+  });
+
   it('keeps display size in the top bar and restart out of the dropdown', () => {
     const panel = renderPanel({
       viewControls: <button type="button">Auto size</button>,

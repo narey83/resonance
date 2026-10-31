@@ -61,8 +61,8 @@ namespace resonance.Transfers.API
     public class TransfersController : ControllerBase
     {
         /// <summary>
-        ///     How many finished transfers the list endpoints will return, newest first. In-flight
-        ///     transfers are always returned in full. Finished history is limited in the database query.
+        ///     How many finished transfers the list endpoints will return, newest first. Legacy lists
+        ///     retain every in-flight transfer; callers opting into pages bound pending transfers too.
         /// </summary>
         private const int MaxCompletedInList = 500;
         private static readonly SemaphoreSlim ListRequestLimiter = new(2, 2);
@@ -613,6 +613,33 @@ namespace resonance.Transfers.API
             }
         }
 
+        /// <summary>Gets small status-strip counts and byte counters.</summary>
+        /// <returns>Status for both directions without the queued file lists.</returns>
+        [HttpGet("status")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        public async Task<IActionResult> GetStatus()
+        {
+            if (Program.IsRelayAgent)
+            {
+                return Forbid();
+            }
+
+            if (!await ListRequestLimiter.WaitAsync(TimeSpan.FromMilliseconds(500), HttpContext?.RequestAborted ?? CancellationToken.None))
+            {
+                Response.Headers.RetryAfter = "2";
+                return StatusCode(503, new { code = "server_busy" });
+            }
+
+            try
+            {
+                return Ok(new { downloads = Transfers.Downloads.GetStatus(), uploads = Transfers.Uploads.GetStatus() });
+            }
+            finally
+            {
+                ListRequestLimiter.Release();
+            }
+        }
+
         /// <summary>
         ///     Gets all uploads.
         /// </summary>
@@ -621,11 +648,17 @@ namespace resonance.Transfers.API
         [HttpGet("uploads")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(200)]
-        public async Task<IActionResult> GetUploads([FromQuery] bool includeRemoved = false, [FromQuery] bool activeOnly = false)
+        public async Task<IActionResult> GetUploads([FromQuery] bool includeRemoved = false, [FromQuery] bool activeOnly = false,
+            [FromQuery] int? page = null, [FromQuery] int pageSize = 250)
         {
             if (Program.IsRelayAgent)
             {
                 return Forbid();
+            }
+
+            if (!ModelState.IsValid || (page.HasValue && (page.Value < 0 || pageSize < 1 || pageSize > 500 || page.Value > int.MaxValue / pageSize)))
+            {
+                return BadRequest(new { code = "invalid_pagination", message = "Page must be nonnegative and page size must be between 1 and 500." });
             }
 
             if (!await ListRequestLimiter.WaitAsync(TimeSpan.FromMilliseconds(500), HttpContext?.RequestAborted ?? CancellationToken.None))
@@ -636,7 +669,17 @@ namespace resonance.Transfers.API
 
             try
             {
-                var uploads = Transfers.Uploads.ListCapped(includeRemoved, activeOnly, MaxCompletedInList);
+                List<Transfers.Transfer> uploads;
+                if (page.HasValue)
+                {
+                    var result = Transfers.Uploads.ListPage(includeRemoved, activeOnly, MaxCompletedInList, page.Value, pageSize);
+                    uploads = result.Transfers;
+                    Response.Headers["X-Uploads-Total-Pending"] = result.TotalPending.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                }
+                else
+                {
+                    uploads = Transfers.Uploads.ListCapped(includeRemoved, activeOnly, MaxCompletedInList);
+                }
 
                 var peerAddresses = Transfers.Uploads.GetPeerAddresses(uploads.Select(t => t.Username));
 

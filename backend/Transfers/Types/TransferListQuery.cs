@@ -154,6 +154,76 @@ internal static class TransferListQuery
         return transfers;
     }
 
+    /// <summary>Returns one page of pending transfers and bounded recent history.</summary>
+    /// <returns>The matching files and the total pending count before pagination.</returns>
+    internal static (List<Transfer> Transfers, int TotalPending) ListPage(
+        TransfersDbContext context, TransferDirection direction, bool includeRemoved,
+        bool activeOnly, int maxCompleted, int page, int pageSize)
+    {
+        if (page < 0 || pageSize < 1 || pageSize > 500 || page > int.MaxValue / pageSize)
+        {
+            throw new ArgumentOutOfRangeException(nameof(page));
+        }
+
+        var completed = TransferStateCategories.Completed;
+        var scoped = context.Transfers.AsNoTracking()
+            .Where(t => t.Direction == direction && (!t.Removed || includeRemoved));
+        var pending = context.Database.IsSqlite()
+            ? context.Transfers.FromSqlRaw(
+                "SELECT * FROM \"Transfers\" WHERE \"Direction\"=@direction AND " +
+                (includeRemoved ? string.Empty : "\"Removed\"=0 AND ") + $"({CompletedFlagSql})=0",
+                new SqliteParameter("@direction", direction.ToString())).AsNoTracking()
+            : scoped.Where(t => !completed.Contains(t.State));
+        var total = pending.Count();
+        var files = pending.OrderBy(t => t.State == TransferStates.InProgress ? 0
+                : t.State == TransferStates.Initializing ? 1 : 2)
+            .ThenBy(t => t.RequestedAt).ThenBy(t => t.Id)
+            .Skip(page * pageSize).Take(pageSize).ToList();
+        if (!activeOnly && maxCompleted > 0)
+        {
+            // Retain the existing recent-history cap, independent of the pending page.
+            var history = context.Database.IsSqlite()
+                ? context.Transfers.FromSqlRaw(
+                    "SELECT * FROM \"Transfers\" WHERE \"Direction\"=@direction AND " +
+                    (includeRemoved ? string.Empty : "\"Removed\"=0 AND ") + $"({CompletedFlagSql})=1",
+                    new SqliteParameter("@direction", direction.ToString())).AsNoTracking()
+                : scoped.Where(t => completed.Contains(t.State));
+            files.AddRange(history.OrderByDescending(t => t.EndedAt ?? t.RequestedAt).ThenBy(t => t.Id)
+                .Take(maxCompleted).ToList());
+        }
+
+        return (files, total);
+    }
+
+    /// <summary>Reads aggregate counts without materializing the queued files.</summary>
+    /// <returns>Counts and the byte samples needed by the status strip.</returns>
+    internal static TransferListStatus Status(TransfersDbContext context, TransferDirection direction)
+    {
+        var completed = TransferStateCategories.Completed;
+        var scoped = context.Transfers.AsNoTracking().Where(t => t.Direction == direction && !t.Removed);
+        var pending = context.Database.IsSqlite()
+            ? context.Transfers.FromSqlRaw("SELECT * FROM \"Transfers\" WHERE \"Direction\"=@direction AND \"Removed\"=0 AND (" + CompletedFlagSql + ")=0",
+                new SqliteParameter("@direction", direction.ToString())).AsNoTracking()
+            : scoped.Where(t => !completed.Contains(t.State));
+        var counts = pending.GroupBy(t => t.State).Select(g => new { State = g.Key, Count = g.Count() }).ToList();
+        var active = pending.Where(t => t.State == TransferStates.InProgress || t.State == TransferStates.Initializing)
+            .Select(t => new TransferProgress(t.Id, t.State, t.BytesTransferred)).ToList();
+        var history = context.Database.IsSqlite()
+            ? context.Transfers.FromSqlRaw("SELECT * FROM \"Transfers\" WHERE \"Direction\"=@direction AND \"Removed\"=0 AND (" + CompletedFlagSql + ")=1",
+                new SqliteParameter("@direction", direction.ToString())).AsNoTracking()
+            : scoped.Where(t => completed.Contains(t.State));
+        var cutoff = DateTime.UtcNow.AddSeconds(-15);
+
+        // Match the expression index's time key so quiet periods do not scan the archive.
+        active.AddRange(history.Where(t => (t.EndedAt ?? t.RequestedAt) >= cutoff)
+            .OrderByDescending(t => t.EndedAt ?? t.RequestedAt).Take(500)
+            .Select(t => new TransferProgress(t.Id, t.State, t.BytesTransferred)).ToList());
+        return new TransferListStatus(
+            counts.Where(c => c.State == TransferStates.InProgress || c.State == TransferStates.Initializing).Sum(c => c.Count),
+            counts.Where(c => TransferStateCategories.Queued.Contains(c.State) || c.State.ToString() == "Requested").Sum(c => c.Count),
+            active);
+    }
+
     private static List<Transfer> ListSqlite(TransfersDbContext context, TransferDirection direction,
         bool includeRemoved, bool activeOnly, int maxCompleted)
     {

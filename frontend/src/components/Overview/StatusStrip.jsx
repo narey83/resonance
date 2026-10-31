@@ -86,6 +86,7 @@ const StatusStrip = ({
   onConnect,
   onDisconnect,
   onLogout,
+  queuedTransferCount,
   server,
   shares,
   system,
@@ -339,16 +340,18 @@ const StatusStrip = ({
   const scanPending = shares?.scanPending;
 
   const queuedCount =
-    (Array.isArray(downloads)
-      ? downloads.filter(
-          (t) => t.state?.startsWith('Queued') || t.state === 'Requested',
-        ).length
-      : 0) +
-    (Array.isArray(uploads)
-      ? uploads.filter(
-          (t) => t.state?.startsWith('Queued') || t.state === 'Requested',
-        ).length
-      : 0);
+    Number.isSafeInteger(queuedTransferCount) && queuedTransferCount >= 0
+      ? queuedTransferCount
+      : (Array.isArray(downloads)
+          ? downloads.filter(
+              (t) => t.state?.startsWith('Queued') || t.state === 'Requested',
+            ).length
+          : 0) +
+        (Array.isArray(uploads)
+          ? uploads.filter(
+              (t) => t.state?.startsWith('Queued') || t.state === 'Requested',
+            ).length
+          : 0);
   const dlSpeed = rates.down;
   const ulSpeed = rates.up;
 

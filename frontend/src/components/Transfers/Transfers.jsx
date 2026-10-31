@@ -40,7 +40,7 @@ import { LoaderSegment } from '../Shared';
 import DownloadsTable from './DownloadsTable';
 import FindAlternateModal from './FindAlternateModal';
 import UploadsTable from './UploadsTable';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 
 const findTransferByFilename = (transfers, username, filename) => {
@@ -146,7 +146,7 @@ const cancelUploadDirectory = async ({ directory, files, username }) => {
   if (count === 0) return;
   if (
     !window.confirm(
-      `Cancel ${count} queued/active upload${count === 1 ? '' : 's'} of this folder to ${username}? This folder will be permanently denied to them — they won't be able to request it again.`,
+      `Cancel all queued/active uploads of this folder to ${username}? This folder will be permanently denied to them — they won't be able to request it again.`,
     )
   )
     return;
@@ -164,7 +164,7 @@ const cancelUserUploads = async ({ directories, username }) => {
   if (count === 0) return;
   if (
     !window.confirm(
-      `Cancel all ${count} queued/active upload${count === 1 ? '' : 's'} to ${username}? They can request them again later.`,
+      `Cancel all queued/active uploads to ${username}? They can request them again later.`,
     )
   )
     return;
@@ -203,18 +203,59 @@ const Transfers = ({ direction }) => {
 
   const [connecting, setConnecting] = useState(true);
   const [transfers, setTransfers] = useState([]);
+  const [uploadPage, setUploadPage] = useState(0);
+  const [totalPending, setTotalPending] = useState(0);
+  const [loadError, setLoadError] = useState(false);
   const [findAlternate, setFindAlternate] = useState(null);
   const replacementsRef = useRef([]);
 
   useEffect(() => {
     let mounted = true;
-    let timeoutId;
+    const scheduled = new Set();
+    const inFlight = new Set();
+    let controller;
     setConnecting(true);
+    setTransfers([]);
+    setLoadError(false);
 
     const poll = async () => {
+      if (!mounted || inFlight.size > 0) return;
+      for (const timer of scheduled) clearTimeout(timer);
+      scheduled.clear();
+      if (document.visibilityState === 'hidden') {
+        scheduled.add(setTimeout(poll, 2_000));
+        return;
+      }
+
+      controller = new AbortController();
+      inFlight.add(controller);
       try {
-        const response = await transfersLibrary.getAll({ direction });
+        let response;
+        if (direction === 'upload') {
+          const result = await transfersLibrary.getUploadsPage({
+            page: uploadPage,
+            pageSize: 250,
+            signal: controller.signal,
+          });
+          response = result.transfers;
+          if (mounted) {
+            setTotalPending(result.totalPending);
+            setUploadPage((page) =>
+              Math.min(
+                page,
+                Math.max(0, Math.ceil(result.totalPending / 250) - 1),
+              ),
+            );
+          }
+        } else {
+          response = await transfersLibrary.getAll({
+            direction,
+            signal: controller.signal,
+          });
+        }
+
         if (mounted) {
+          setLoadError(false);
           setTransfers(response);
 
           const pending = replacementsRef.current;
@@ -256,27 +297,32 @@ const Transfers = ({ direction }) => {
           }
         }
       } catch (error) {
-        if (mounted) {
+        if (mounted && !controller.signal.aborted) {
+          setLoadError(true);
           console.error(error);
         }
+      } finally {
+        inFlight.delete(controller);
+        if (mounted) setConnecting(false);
       }
 
-      if (mounted) timeoutId = setTimeout(poll, 2_000);
+      if (mounted) scheduled.add(setTimeout(poll, 2_000));
     };
 
-    poll().then(() => {
-      if (mounted) setConnecting(false);
-    });
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void poll();
+    };
 
+    document.addEventListener('visibilitychange', onVisibility);
+    void poll();
     return () => {
       mounted = false;
-      clearTimeout(timeoutId);
+      controller?.abort();
+      for (const timer of scheduled) clearTimeout(timer);
+      scheduled.clear();
+      document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [direction]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useMemo(() => {
-    setConnecting(true);
-  }, [direction]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [direction, uploadPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFindAlternate = ({ directory, files, folderName, username }) => {
     setFindAlternate({ directory, files, folderName, username });
@@ -315,14 +361,24 @@ const Transfers = ({ direction }) => {
 
   if (direction === 'upload') {
     return (
-      <UploadsTable
-        onCancel={cancel}
-        onCancelDirectory={cancelUploadDirectory}
-        onCancelUser={cancelUserUploads}
-        onClearCompleted={clearCompleted}
-        onRemove={remove}
-        transfers={transfers}
-      />
+      <>
+        {loadError && (
+          <div role="status">
+            Unable to refresh uploads. Retrying automatically.
+          </div>
+        )}
+        <UploadsTable
+          onCancel={cancel}
+          onCancelDirectory={cancelUploadDirectory}
+          onCancelUser={cancelUserUploads}
+          onClearCompleted={clearCompleted}
+          onPendingPageChange={setUploadPage}
+          onRemove={remove}
+          pendingPage={uploadPage}
+          totalPending={totalPending}
+          transfers={transfers}
+        />
+      </>
     );
   }
 

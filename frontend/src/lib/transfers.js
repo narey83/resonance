@@ -35,10 +35,56 @@
 
 import api from './api';
 
-export const getAll = async ({ direction, activeOnly = false }) => {
+export const getStatus = async ({ signal } = {}) => {
+  const { data } = await api.get('/transfers/status', {
+    signal,
+    timeout: 10_000,
+  });
+  for (const direction of ['downloads', 'uploads']) {
+    const status = data?.[direction];
+    if (
+      !status ||
+      !Number.isSafeInteger(status.activeCount) ||
+      status.activeCount < 0 ||
+      !Number.isSafeInteger(status.queuedCount) ||
+      status.queuedCount < 0 ||
+      !Array.isArray(status.transfers)
+    ) {
+      throw new Error('Invalid transfer status response');
+    }
+  }
+
+  return data;
+};
+
+export const getUploadsPage = async ({
+  page = 0,
+  pageSize = 250,
+  signal,
+} = {}) => {
+  const response = await api.get(
+    `/transfers/uploads?page=${page}&pageSize=${pageSize}`,
+    { signal, timeout: 10_000 },
+  );
+  const rawTotal = response.headers['x-uploads-total-pending'];
+  const total =
+    rawTotal === '' || rawTotal == null ? Number.NaN : Number(rawTotal);
+  if (
+    !Array.isArray(response.data) ||
+    !Number.isSafeInteger(total) ||
+    total < 0
+  ) {
+    throw new Error('Invalid paged uploads response');
+  }
+
+  return { totalPending: total, transfers: response.data };
+};
+
+export const getAll = async ({ direction, activeOnly = false, signal }) => {
   const qs = activeOnly ? '?activeOnly=true' : '';
   const response = (
     await api.get(`/transfers/${encodeURIComponent(direction)}s${qs}`, {
+      signal,
       timeout: 10_000,
     })
   ).data;
