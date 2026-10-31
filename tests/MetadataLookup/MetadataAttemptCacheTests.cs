@@ -80,7 +80,21 @@ public sealed class MetadataAttemptCacheTests : IDisposable
         Directory.CreateDirectory(Path.Combine(Root, "album"));
         WriteHistory(("album/deleted.flac", 1, "written"));
         var cache = new MetadataAttemptCache(CacheFile, logger);
+        Assert.True(cache.ShouldSkip(Path.Combine(Root, "album/deleted.flac")));
+        cache.PruneMissing();
         Assert.False(cache.ShouldSkip(Path.Combine(Root, "album/deleted.flac")));
+    }
+
+    [Fact]
+    public void CancelledCleanupKeepsPreviouslyLoadedHistory()
+    {
+        Directory.CreateDirectory(Path.Combine(Root, "album"));
+        WriteHistory(("album/deleted.flac", 1, "written"));
+        var cache = new MetadataAttemptCache(CacheFile, logger);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        Assert.Throws<OperationCanceledException>(() => cache.PruneMissing(cancellation.Token));
+        Assert.True(cache.ShouldSkip("album/deleted.flac"));
     }
 
     private void WriteTrack(string relative)

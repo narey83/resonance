@@ -699,11 +699,20 @@ namespace resonance.MetadataLookup
         {
             try
             {
+                // Keep network probes out of startup, even when enrichment is disabled.
+                // Perform this optional cleanup once, on an enabled scheduled sweep.
+                var cleanupPending = true;
                 using var timer = new PeriodicTimer(SweepInterval);
                 while (await timer.WaitForNextTickAsync(ct))
                 {
                     if (Options.CurrentValue.MetadataLookup.Enabled)
                     {
+                        if (cleanupPending && !IndexGate.Blocked)
+                        {
+                            AttemptCache.PruneMissing(ct);
+                            cleanupPending = false;
+                        }
+
                         Signal();
                     }
                 }

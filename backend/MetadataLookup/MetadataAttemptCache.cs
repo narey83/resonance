@@ -34,6 +34,7 @@ namespace resonance.MetadataLookup
     using System.Collections.Generic;
     using System.IO;
     using System.Text.Json;
+    using System.Threading;
     using resonance.Common;
     using Serilog;
 
@@ -103,6 +104,28 @@ namespace resonance.MetadataLookup
             }
         }
 
+        /// <summary>Prunes missing files in background maintenance, never while constructing the server.</summary>
+        public void PruneMissing(CancellationToken ct = default)
+        {
+            var pruned = 0;
+            foreach (var entry in entries)
+            {
+                ct.ThrowIfCancellationRequested();
+                var physicalPath = MusicPath.ToAbsolute(entry.Key);
+                if (Path.IsPathRooted(physicalPath) && !File.Exists(physicalPath) && DirectoryAccessible(physicalPath)
+                    && ((ICollection<KeyValuePair<string, Attempt>>)entries).Remove(entry))
+                {
+                    pruned++;
+                }
+            }
+
+            if (pruned > 0)
+            {
+                Save();
+                log.Debug("Pruned {Count} missing-file metadata lookup attempt(s) in background maintenance", pruned);
+            }
+        }
+
         private static string NormalizeKey(string path)
         {
             var key = MusicPath.ToRelative(path);
@@ -145,7 +168,6 @@ namespace resonance.MetadataLookup
                     return;
                 }
 
-                var pruned = 0;
                 var migrated = 0;
                 foreach (var (path, attempt) in loaded)
                 {
@@ -157,24 +179,15 @@ namespace resonance.MetadataLookup
                         migrated++;
                     }
 
-                    // Relative keys are storage identities, not paths relative to the process cwd.
-                    // Without a configured root, retain them until the filesystem can be resolved.
-                    var physicalPath = MusicPath.ToAbsolute(key);
-                    if (Path.IsPathRooted(physicalPath) && !File.Exists(physicalPath) && DirectoryAccessible(physicalPath))
-                    {
-                        pruned++;
-                        continue;
-                    }
-
                     if (!entries.TryGetValue(key, out var existing) || existing.AttemptedAt < attempt.AttemptedAt)
                     {
                         entries[key] = attempt;
                     }
                 }
 
-                log.Debug("Loaded {Count} metadata lookup attempt(s) from cache ({Pruned} stale entries pruned, {Migrated} legacy paths re-keyed)", entries.Count, pruned, migrated);
+                log.Debug("Loaded {Count} metadata lookup attempt(s) from cache ({Migrated} legacy paths re-keyed); filesystem cleanup is deferred", entries.Count, migrated);
 
-                if (pruned > 0 || migrated > 0)
+                if (migrated > 0)
                 {
                     Save();
                 }

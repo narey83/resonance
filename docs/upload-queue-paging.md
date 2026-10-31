@@ -59,3 +59,9 @@ that work without starting a final scan. Completed analysis/tag changes already
 persist their library rows; startup reconciliation discovers outstanding files.
 An unavailable share can still prevent audio reads, but must not prevent the
 HTTP listener from serving the indexed library and transfer summaries.
+
+Metadata lookup history loads its saved skip records without probing every music
+file during service construction. Missing-file pruning runs on the existing
+background sweep task and supports cancellation; until then, prior attempts stay
+protected from automatic re-enrichment. This was confirmed as a live startup
+blocker with a managed stack trace before changing the implementation.
