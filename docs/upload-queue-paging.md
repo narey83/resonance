@@ -51,3 +51,11 @@ pending page plus 500 recent completions produced 469,942 JSON bytes (134,308 gz
 bytes). The corresponding warm queries took 490 ms and 136 ms. The compact status
 response was 323 bytes, queried in 56 ms. These are measurements of that snapshot,
 not a guarantee of browser latency or zero impact under every load.
+
+Network storage must not block the interface at startup or shutdown. Playlist
+folder creation runs in the existing background rebuild, and music filesystem
+watchers start on the background loop with the initial scan. Shutdown cancels
+that work without starting a final scan. Completed analysis/tag changes already
+persist their library rows; startup reconciliation discovers outstanding files.
+An unavailable share can still prevent audio reads, but must not prevent the
+HTTP listener from serving the indexed library and transfer summaries.

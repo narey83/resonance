@@ -189,29 +189,19 @@ namespace resonance.MusicLibrary
             });
             LoopCts = new CancellationTokenSource();
             _ = RunLoopAsync(LoopCts.Token);
-            StartWatchers();
             return Task.CompletedTask;
         }
 
-        public async Task StopAsync(CancellationToken cancellationToken)
+        public Task StopAsync(CancellationToken cancellationToken)
         {
-            // Run one final sync to persist any keys written since the last scheduled sync.
-            // Skip if a sync is already running; it will complete the write naturally.
-            if (!CurrentState.Running)
-            {
-                try
-                {
-                    Log.Information("Running final music library sync before shutdown...");
-                    await RunSyncAsync(cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warning(ex, "Final music library sync on shutdown did not complete");
-                }
-            }
-
-            StopWatchers();
+            // Analysis and tag edits persist their rows as they finish. Starting another
+            // filesystem scan here can hold shutdown forever on an unavailable share;
+            // the next startup scan reconciles outstanding filesystem changes.
             LoopCts?.Cancel();
+            DebounceCts?.Cancel();
+            CancelSync();
+            StopWatchers();
+            return Task.CompletedTask;
         }
 
         // ── Public API ────────────────────────────────────────────────────────
@@ -615,6 +605,10 @@ namespace resonance.MusicLibrary
                 // Give the rest of the app time to finish starting
                 await Task.Delay(StartupDelay, ct);
 
+                // Directory probes and watcher setup may wait on network storage. Keep
+                // them on the background loop, after HTTP startup, with the first scan.
+                StartWatchers(ct);
+
                 while (!ct.IsCancellationRequested)
                 {
                     await RunSyncAsync(ct);
@@ -940,13 +934,15 @@ namespace resonance.MusicLibrary
         }
 
         // ── Filesystem watchers ───────────────────────────────────────────────
-        private void StartWatchers()
+        private void StartWatchers(CancellationToken ct)
         {
             foreach (var dir in GetScanDirectories())
             {
+                ct.ThrowIfCancellationRequested();
+                FileSystemWatcher watcher = null;
                 try
                 {
-                    var watcher = new FileSystemWatcher(dir)
+                    watcher = new FileSystemWatcher(dir)
                     {
                         IncludeSubdirectories = true,
 
@@ -969,8 +965,19 @@ namespace resonance.MusicLibrary
                     watcher.Error += OnFsError;
                     watcher.EnableRaisingEvents = true;
 
-                    watchers.Add(watcher);
-                    Log.Information("Watching library directory for changes: {Dir}", dir);
+                    lock (watchers)
+                    {
+                        if (!ct.IsCancellationRequested)
+                        {
+                            watchers.Add(watcher);
+                            watcher = null; // Ownership passed to StopWatchers.
+                        }
+                    }
+
+                    if (watcher == null)
+                    {
+                        Log.Information("Watching library directory for changes: {Dir}", dir);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -978,12 +985,23 @@ namespace resonance.MusicLibrary
                     // break the service — the periodic scan still keeps the library in sync.
                     Log.Warning("Could not watch library directory {Dir}: {Err}", dir, ex.Message);
                 }
+                finally
+                {
+                    watcher?.Dispose();
+                }
             }
         }
 
         private void StopWatchers()
         {
-            foreach (var watcher in watchers)
+            FileSystemWatcher[] stopping;
+            lock (watchers)
+            {
+                stopping = watchers.ToArray();
+                watchers.Clear();
+            }
+
+            foreach (var watcher in stopping)
             {
                 try
                 {
@@ -994,8 +1012,6 @@ namespace resonance.MusicLibrary
                 { /* best-effort teardown on shutdown */
                 }
             }
-
-            watchers.Clear();
         }
 
         // Returns true if a filesystem path is worth reacting to: audio files, and structural changes

@@ -167,6 +167,19 @@ public sealed class LibrarySyncTests : IDisposable
         Assert.Contains(broadcasts, state => state.Running);
     }
 
+    [Fact]
+    public async Task ShutdownKeepsPersistedRowsWithoutStartingAnotherFilesystemScan()
+    {
+        var existing = Wave("persisted.wav");
+        await Sync();
+        var pending = Wave("next-start.wav");
+        broadcasts.Clear();
+        await service.StopAsync(CancellationToken.None);
+        Assert.NotNull(repository.GetByPath(existing));
+        Assert.Null(repository.GetByPath(pending));
+        Assert.Empty(broadcasts);
+    }
+
     public void Dispose()
     {
         var debounce = (CancellationTokenSource?)typeof(MusicLibraryService).GetProperty("DebounceCts", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(service);

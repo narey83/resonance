@@ -69,9 +69,6 @@ namespace resonance.Mixtapes
             ArtworkDir = artworkDir;
             Hub = hub;
             Repository.Initialize();
-
-            // Ensure the mixtapes directory always exists
-            Directory.CreateDirectory(MixtapesBaseDir);
         }
 
         // All initialization (directory creation, migrations)
@@ -97,6 +94,9 @@ namespace resonance.Mixtapes
                 {
                     try
                     {
+                        // Downloads can be a stalled network mount. Never touch it while
+                        // constructing hosted services: that also blocks the HTTP listener.
+                        Directory.CreateDirectory(MixtapesBaseDir);
                         RebuildFolders();
                         resonance.Core.StartupProgress.Ready("mixtapes", "Playlist folders are up to date");
                     }
