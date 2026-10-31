@@ -1045,3 +1045,5 @@
   .ka-col-actions { display: none; }
   .ka-track-actions { grid-column: 2 / -1; justify-content: flex-start; }
 }
+.ka-analysis-details .candidate-analysis-controls label { min-width: 0; max-width: 100%; }
+.ka-analysis-details .candidate-analysis-controls select { min-width: 0; width: 100%; max-width: 100%; box-sizing: border-box; }
