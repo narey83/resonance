@@ -116,6 +116,44 @@ database was repaired earlier that day. Preserve recovered state and backups.
 Never rerun historical database-repair or migration activation scripts as a
 generic deployment command.
 
+## Native enhanced analysis
+
+The enhanced worker is installed separately from basic BPM/key analysis on the dev
+laptop. Preserve these persistent paths across backend releases:
+
+- Worker source: `/home/narey/resonance-analysis/native-worker-source/tools/analysis-worker/`.
+- Enhanced Python: `/home/narey/resonance-analysis/enhanced/bin/python` (Python 3.12).
+- DBN decoder Python: `/home/narey/resonance-analysis/dbn/bin/python`.
+- Private native configuration: `/home/narey/resonance-analysis/enhanced-config.json`.
+- Verified models: `/home/narey/projects/resonance/.dev/app/data/analysis-models/`.
+- Results: `/home/narey/projects/resonance/.dev/app/data/candidates/`.
+- Installed dependency locks, audits, model verification and preflight reports:
+  `/home/narey/resonance-analysis/`.
+
+Startup requires `RESONANCE_CANDIDATE_PYTHON`, `RESONANCE_CANDIDATE_WORKER`,
+`RESONANCE_CANDIDATE_CONFIG` and `RESONANCE_CANDIDATE_OUTPUT_ROOT` pointing to
+those locations. The native full-feature timeout is 3600 seconds; the private worker
+configuration allows 3500 seconds. Preserve the running process's environment in
+subsequent deployments. Basic analysis keeps its separate Python 3.14 `keyenv`.
+
+Leave worker/thread overrides unset for automatic CPU and memory allocation. The
+8-processor, 31 GiB laptop selects four simultaneous jobs with two CPU threads each.
+Use CPU-only tensor wheels. The installed environments must pass dependency checks;
+retain the exact installed locks rather than assuming the old Docker recipe is
+compatible with native Python. The initial native audit retains setuptools and
+PyTorch advisories; inspect the saved audit reports when updating. Model weights
+are explicitly installed and verified against `tools/analysis-worker/models.lock.json`;
+inference runs offline and must not accept unverified model/code uploads.
+
+For a bounded test, pause automatic preparation and wait for active tracks to finish
+before enabling the worker. Submit an explicit `onlyPaths` list to `analysis/scan`
+with `enhanced: true`, `skipAnalysed: true` and `resetAll: false`. Confirm the selected
+count, every enhanced completion, no failed features, and current full-track results.
+Keep the automatic queue paused until bulk enhanced processing is requested; enabling
+the worker otherwise makes the whole library eligible. The independent results do
+not overwrite native/manual analysis or source tags. See `docs/dj-workspace.md` for
+the feature contracts and model limitations.
+
 ## Default mobile delivery
 
 The established active test device is the user's **Pixel 9 Pro XL**, running the
