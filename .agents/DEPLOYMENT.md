@@ -39,7 +39,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/088fd31/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/frontend-health-f24694b/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -80,14 +80,32 @@ existing checkout and private state intact; never reset it to perform a deployme
 Web-only changes do not require a backend restart, database migration, queue
 rewrite or database replacement.
 
-The frontend reload screen and render-readiness signal were deployed on 31 October
-2026. The continuous browser monitor and its new Caddy gate are still inactive:
-Chromium on the dev laptop needs its exact-executable AppArmor permission. The
-prepared administrator script is
-`/home/narey/resonance-analysis/deployment-a68e234/install-browser-permission.sh`.
-The user authorized Mac Brave for deployment browser checks; those checks do not
-replace the continuous server monitor. Start and verify the monitor before
-activating its Caddy gate. See `ops/caddy/README.md`.
+The frontend reload screen, render-readiness signal, continuous browser monitor
+and Caddy browser-health gate are active as of 31 October 2026. The user installed
+the exact-executable AppArmor permission; sandboxed Chromium was verified without
+disabling browser protection. All eight real browser failure/recovery scenarios
+passed. Mac Brave was used for the earlier desktop and narrow deployment checks.
+
+The enabled user service is `resonance-frontend-health.service`, running from the
+complete snapshot `/home/narey/resonance-builds/deploy-a68e234` with `/usr/bin/node`.
+User lingering is enabled, so it starts after laptop reboot. Inspect with
+`systemctl --user status resonance-frontend-health.service` and
+`journalctl --user -u resonance-frontend-health.service`.
+Its browser origin is `http://127.0.0.1:8092`; its health endpoint is
+`http://127.0.0.1:8091/health/ready`. Both listeners bind only to loopback.
+Two consecutive failures close web access; two successes reopen it. API and hub
+requests remain independent of browser health when the backend is healthy.
+A stopped/stalled monitor also closes web access; keep it running during ordinary
+web deployments. See `ops/caddy/README.md` for freshness and recovery behavior.
+
+Use the current imported site configuration from the table above when updating
+web roots or restarting the backend. Older private deployment helpers hardcode
+the previous `088fd31` site path and must be adapted before reuse. The existing
+`088fd31/site-state` command still manages the shared gateway state directory.
+When changing Playwright/browser versions, verify the new executable's sandbox
+permission and real browser checks before switching the service. Activation and
+backup evidence is recorded in
+`/home/narey/resonance-builds/deploy-a68e234/deployment/frontend-health-verification.json`.
 
 ## Backend deployment and state preservation
 
