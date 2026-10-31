@@ -468,6 +468,7 @@ namespace resonance.Analysis
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
+            LimitWorkerThreads(psi);
             psi.ArgumentList.Add("-c");
             psi.ArgumentList.Add("import sys, numpy, essentia.standard as es; es.RhythmExtractor2013(method=sys.argv[1]); es.KeyExtractor(profileType=sys.argv[2]); print('RESONANCE_ESSENTIA_READY')");
             psi.ArgumentList.Add(options.BpmMethod);
@@ -546,7 +547,7 @@ namespace resonance.Analysis
             var psi = new ProcessStartInfo
             {
                 FileName = ffmpegBinary,
-                Arguments = BuildArguments(filePath, wantPcm, wantLoudness, seconds),
+                Arguments = "-threads 1 -filter_threads 1 -filter_complex_threads 1 " + BuildArguments(filePath, wantPcm, wantLoudness, seconds),
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -711,6 +712,16 @@ namespace resonance.Analysis
         }
 
         // ── Essentia (BPM + key) ──────────────────────────────────────────────
+        private static void LimitWorkerThreads(ProcessStartInfo process)
+        {
+            // The scan owns one worker per CPU; numerical libraries must not create
+            // another full-machine pool inside each detector process.
+            process.Environment["OMP_NUM_THREADS"] = "1";
+            process.Environment["OPENBLAS_NUM_THREADS"] = "1";
+            process.Environment["MKL_NUM_THREADS"] = "1";
+            process.Environment["NUMEXPR_NUM_THREADS"] = "1";
+        }
+
         private async Task<JsonElement?> RunEssentiaAsync(
             float[] pcm, string want, resonance.Options.AnalysisOptions options, CancellationToken ct)
         {
@@ -725,6 +736,7 @@ namespace resonance.Analysis
                 CreateNoWindow = true,
             };
 
+            LimitWorkerThreads(psi);
             psi.ArgumentList.Add("-c");
             psi.ArgumentList.Add(EssentiaScript);
             psi.ArgumentList.Add(options.EssentiaProfile);

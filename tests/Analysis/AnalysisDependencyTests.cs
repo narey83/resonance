@@ -5,6 +5,44 @@ using global::resonance.Analysis;
 public sealed class AnalysisDependencyTests
 {
     [Fact]
+    public async Task CpuWorkersBoundDecoderAndDetectorThreadPools()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var directory = Path.Combine(Path.GetTempPath(), "resonance-worker-budget-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var decoder = Path.Combine(directory, "decoder");
+        var python = Path.Combine(directory, "python");
+        await File.WriteAllBytesAsync(decoder + ".raw", new byte[44100 * sizeof(float)]);
+        await File.WriteAllTextAsync(decoder, "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$0.args\"\ncat \"$0.raw\"\n");
+        await File.WriteAllTextAsync(python, """
+            #!/bin/sh
+            [ "$OMP_NUM_THREADS" = 1 ] && [ "$OPENBLAS_NUM_THREADS" = 1 ] && [ "$MKL_NUM_THREADS" = 1 ] && [ "$NUMEXPR_NUM_THREADS" = 1 ] || exit 72
+            case "$2" in *RESONANCE_ESSENTIA_READY*) echo RESONANCE_ESSENTIA_READY; exit 0;; esac
+            cat >/dev/null
+            printf 'RESONANCE_JSON:{"bpm":128,"key":"Am"}\n'
+            """);
+        File.SetUnixFileMode(decoder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        File.SetUnixFileMode(python, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        try
+        {
+            var analyzer = new AudioAnalyzer();
+            var options = new global::resonance.Options.AnalysisOptions { EssentiaPython = python };
+            await analyzer.CheckEssentiaAsync(options, default);
+            var result = await analyzer.AnalyseAsync("unused.wav", decoder, AnalysisMetrics.Bpm | AnalysisMetrics.Key, options, default);
+            Assert.Equal((uint)128, result.Bpm);
+            Assert.Equal("Am", result.Key);
+            var arguments = await File.ReadAllTextAsync(decoder + ".args");
+            Assert.Contains("-threads\n1\n", arguments);
+            Assert.Contains("-filter_threads\n1\n", arguments);
+            Assert.Contains("-filter_complex_threads\n1\n", arguments);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task MissingInterpreterFailsWithActionablePackageError()
     {
         var options = new global::resonance.Options.AnalysisOptions

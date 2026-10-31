@@ -25,6 +25,8 @@ attempts; Library → Preparation exposes its status and a manual Retry action.
 Pause prevents the next group from starting while active tracks finish. Completed
 tracks keep their results if another worker fails or the scan is stopped. Missing
 dependencies pause the queue and restore the unfinished tracks' retry budgets.
+Decoder/filter thread pools and detector numerical-library pools are limited to
+one thread per worker, preventing nested full-machine pools from competing.
 
 ## Analysis engines
 
