@@ -121,26 +121,46 @@ generic deployment command.
 The established active test device is the user's **Pixel 9 Pro XL**, running the
 installed Resonance Expo development client. Its current JavaScript comes from
 Metro on `dev-laptop.local` at `http://127.0.0.1:8082`. The Pixel-facing URL
-remains `http://127.0.0.1:8081` through SSH transport and `EXPO_PACKAGER_PROXY_URL`. For the Pixel connected to
-the Mac, forward Mac loopback port 8081 to dev-laptop loopback port 8082 over SSH,
-then use `adb reverse tcp:8081 tcp:8081`.
+remains `http://127.0.0.1:8081` through `EXPO_PACKAGER_PROXY_URL`. The Pixel is
+securely paired directly with the dev laptop for wireless ADB. On the laptop,
+use `adb -s PIXEL_TARGET reverse tcp:8081 tcp:8082`; the Mac is not needed for
+this connection. Pairing was verified on 31 October 2026.
 Do not run a second Metro on the Mac. The earlier Mac Metro was stopped when the
 user clarified this rule on 30 October 2026.
 
-- Android tools: `/Users/narey/Projects/resonance/.dev/android/sdk/platform-tools/adb`.
-- Run `adb devices -l` to find the current Pixel connection. Wireless device IDs
-  change; do not assume an old serial is still connected.
+- Laptop Android tools: `/home/narey/Android/Sdk/platform-tools/adb`.
+- Run `adb devices -l` on the laptop to find the current Pixel connection.
+  The Pixel's hardware serial is `4B211FDAS002B9` (model `Pixel_9_Pro_XL`).
+  Wireless endpoints and ports change; do not assume an old endpoint still works.
+  If disconnected, run `adb mdns services`, select this Pixel's
+  `_adb-tls-connect._tcp` endpoint, then `adb connect IP:PORT`. Verify the target
+  with `adb -s PIXEL_TARGET shell getprop ro.serialno` before changing its state.
+  Ignore other discovered devices. Keep the laptop and Pixel on the same LAN,
+  with Wireless debugging enabled on the Pixel.
+- The laptop has its own trusted pairing; do not copy private ADB keys between
+  hosts. If Android forgets it, use Developer options > Wireless debugging >
+  Pair device with pairing code, then `adb pair IP:PAIRING_PORT` on the laptop.
+  Enter the code at the prompt; never save it in this runbook or command logs.
 - Check `http://127.0.0.1:8082/status` on the dev laptop and the existing Metro
   process before starting another server. Its working directory must be the
   requested source snapshot's `mobile/`, with the matching dependency lockfile.
   The active snapshot verified on 31 October is
   `/home/narey/resonance-builds/branding-20261030/mobile`; its parent contains
   `mobile-metro.json` and `mobile-metro.log`. Verify the PID/cwd before reuse.
-- The corresponding Mac transport command is
+- Reapply `adb -s PIXEL_TARGET reverse tcp:8081 tcp:8082` after a disconnect or
+  reboot, and verify it with `adb -s PIXEL_TARGET reverse --list`. Device port
+  8081 must reach laptop loopback port 8082. The laptop's LAN port 8081 belongs
+  to another service; do not replace that service.
+- Mac transport remains a fallback if the direct laptop connection is unavailable.
+  Mac Android tools are
+  `/Users/narey/Projects/resonance/.dev/android/sdk/platform-tools/adb`.
+  The corresponding Mac transport command is
   `ssh -f -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -L 127.0.0.1:8081:127.0.0.1:8082 dev-laptop.local`.
-  A listener on the Mac must be `ssh`, not `node`/Expo. The laptop's LAN port 8081
-  already belongs to another service; do not replace that service.
-- Ensure the Pixel has `adb reverse tcp:8081 tcp:8081`.
+  A listener on the Mac must be `ssh`, not `node`/Expo. Only when using that
+  fallback, remove the existing device port 8081 reverse and run
+  `adb -s PIXEL_TARGET reverse tcp:8081 tcp:8081` from the Mac. Do not leave both
+  hosts competing for the same device port. The previous Mac SSH bridge was
+  stopped after the direct laptop connection was verified.
 - Refresh/open the installed development client using
   `exp+resonance-mobile://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081`
   for package `com.resonance.mobile`.
