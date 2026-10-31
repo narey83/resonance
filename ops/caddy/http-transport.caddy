@@ -1,0 +1,6 @@
+# Import inside the Caddyfile's global options block. Media playback must not
+# depend on a browser recovering a stalled UDP/QUIC connection after a reload
+# or network change. HTTP/2 retains multiplexing and TLS over TCP.
+servers {
+	protocols h1 h2
+}

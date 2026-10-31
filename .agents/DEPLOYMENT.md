@@ -182,6 +182,20 @@ The existing upload limit was approximately 15 Mb/s (1831 KiB/s); a temporary
 The user authorized read-only storage-host diagnosis for this investigation;
 this does not grant standing permission to administer the old server.
 
+The user subsequently moved the laptop: Ethernet was rechecked at **1000 Mb/s,
+full duplex**, with gigabit advertised by both ends. No upload cap was applied.
+Fresh server-browser playback then measured 0.20–0.22 seconds, but Mac Brave
+still reproduced approximately twelve-second waits on different tracks. Do not
+present a dev-laptop browser result as a measurement of the user's Mac.
+
+The durable gateway policy is HTTPS over HTTP/2 and HTTP/1.1. Import
+`ops/caddy/http-transport.caddy` inside the main Caddyfile's global options block,
+and deploy the shared site's `Alt-Svc: clear` header together. This removes the
+QUIC connection path where Brave recorded protocol errors and stalls. The exact
+browser/router/QUIC defect was not proven; no particular upstream bug is claimed.
+Preserve this policy across reloads/rollback; never disable TLS or browser security.
+Run `ops/caddy/tests/media_transport_check.py` and verify real Mac playback.
+
 ## Native enhanced analysis
 
 The enhanced worker is installed separately from basic BPM/key analysis on the dev

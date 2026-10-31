@@ -58,6 +58,14 @@ class CaddySiteTests(unittest.TestCase):
         self.assertEqual('available', headers['X-Resonance-Site-State'])
         self.assertIn(b'data: connected', self.fixture.request('/hub/stream')[2])
 
+    def test_clears_cached_quic_advertisements_and_preserves_media_ranges(self):
+        for path in ['/library', '/api/test-audio?track=unplayed']:
+            self.assertEqual('clear', self.fixture.request(path)[1]['Alt-Svc'])
+        status, headers, body = self.fixture.request('/api/test-audio', headers={'Range': 'bytes=100-199'})
+        self.assertEqual(206, status)
+        self.assertEqual(f'bytes 100-199/{len(self.fixture.audio)}', headers['Content-Range'])
+        self.assertEqual(self.fixture.audio[100:200], body)
+
     def test_maintenance_precedes_restart_and_clears_without_reload(self):
         self.control.set_state(self.fixture.state, 'maintenance')
         (self.fixture.state / 'restarting').write_text('restarting')

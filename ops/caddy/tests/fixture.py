@@ -1,17 +1,20 @@
 """Real Caddy with a local upstream; also reusable for browser verification."""
 
 import json
+import io
 import base64
 import hashlib
 import os
 import pathlib
 import socket
+import ssl
 import subprocess
 import tempfile
 import threading
 import time
 import urllib.error
 import urllib.request
+import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -85,6 +88,26 @@ class Upstream(BaseHTTPRequestHandler):
             self.connection.shutdown(socket.SHUT_RDWR)
             self.connection.close()
             return
+        if self.path.startswith('/api/test-audio'):
+            audio = fixture.audio
+            start, end = 0, len(audio) - 1
+            requested_range = self.headers.get('Range')
+            if requested_range:
+                start_text, end_text = requested_range.removeprefix('bytes=').split('-', 1)
+                start = int(start_text)
+                end = min(int(end_text), end) if end_text else end
+            self.send_response(206 if requested_range else 200)
+            self.send_header('Content-Type', 'audio/wav')
+            self.send_header('Accept-Ranges', 'bytes')
+            self.send_header('Content-Length', str(end - start + 1))
+            if requested_range:
+                self.send_header('Content-Range', f'bytes {start}-{end}/{len(audio)}')
+            self.end_headers()
+            try:
+                self.wfile.write(audio[start:end + 1])
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
         body = self.rfile.read(int(self.headers.get('Content-Length', 0)))
         status = 503 if self.path.startswith('/api/business503') else 401 if self.path.startswith('/api/private') else 200
         self.send_response(status)
@@ -94,9 +117,16 @@ class Upstream(BaseHTTPRequestHandler):
 
 
 class SiteFixture:
-    def __init__(self, caddy, web_root=None, frontend_health_upstream=None):
+    def __init__(self, caddy, web_root=None, frontend_health_upstream=None, tls=False):
         self.temporary = tempfile.TemporaryDirectory(prefix='resonance-caddy-test-')
         self.root = pathlib.Path(self.temporary.name)
+        audio = io.BytesIO()
+        with wave.open(audio, 'wb') as output:
+            output.setnchannels(1)
+            output.setsampwidth(2)
+            output.setframerate(44100)
+            output.writeframes(b'\0' * 44100 * 2 * 8)
+        self.audio = audio.getvalue()
         self.state = self.root / 'state'
         self.state.mkdir()
         self.web = pathlib.Path(web_root) if web_root else self.root / 'web'
@@ -118,13 +148,24 @@ class SiteFixture:
         with socket.socket() as listener:
             listener.bind(('127.0.0.1', 0))
             self.port = listener.getsockname()[1]
-        self.origin = f'http://127.0.0.1:{self.port}'
+        self.origin = f'https://localhost:{self.port}' if tls else f'http://127.0.0.1:{self.port}'
         with socket.socket() as listener:
             listener.bind(('127.0.0.1', 0))
             self.probe_port = listener.getsockname()[1]
         self.probe_origin = f'http://127.0.0.1:{self.probe_port}'
+        self.ssl_context = None
+        tls_config = ''
+        if tls:
+            self.cert = self.root / 'cert.pem'
+            key = self.root / 'key.pem'
+            subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', str(key), '-out', str(self.cert), '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost'], check=True, capture_output=True)
+            self.ssl_context = ssl.create_default_context(cafile=str(self.cert))
+            tls_config = f'bind 127.0.0.1\ntls "{self.cert}" "{key}"\n'
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            self.admin = f'127.0.0.1:{listener.getsockname()[1]}'
         self.config = self.root / 'Caddyfile'
-        self.config.write_text('{\n admin off\n auto_https off\n}\nimport "' + str(ROOT / 'ops/caddy/site.caddy') + '"\n' + self.origin + ' {\n import resonance_site\n}\n' + self.probe_origin + ' {\n import resonance_site_probe\n}\n')
+        self.config.write_text('{\n admin ' + (self.admin if tls else 'off') + '\n auto_https off\n import "' + str(ROOT / 'ops/caddy/http-transport.caddy') + '"\n}\nimport "' + str(ROOT / 'ops/caddy/site.caddy') + '"\n' + self.origin + ' {\n' + tls_config + ' import resonance_site\n}\n' + self.probe_origin + ' {\n import resonance_site_probe\n}\n')
         environment = dict(os.environ, RESONANCE_STATUS_ROOT=str(ROOT / 'ops/caddy/status'), RESONANCE_WEB_ROOT=str(self.web), RESONANCE_SITE_STATE_ROOT=str(self.state), RESONANCE_BACKEND_UPSTREAM=f'127.0.0.1:{self.backend.server_port}', RESONANCE_FRONTEND_HEALTH_UPSTREAM=frontend_health_upstream or f'127.0.0.1:{self.frontend_health.server_port}')
         self.log = (self.root / 'caddy.log').open('wb')
         self.process = subprocess.Popen([str(caddy), 'run', '--config', str(self.config), '--adapter', 'caddyfile'], env=environment, stdout=self.log, stderr=self.log)
@@ -152,7 +193,7 @@ class SiteFixture:
     def request(self, path, method='GET', body=None, headers=None):
         request = urllib.request.Request(self.origin + path, method=method, data=body, headers=headers or {})
         try:
-            response = urllib.request.urlopen(request, timeout=8)
+            response = urllib.request.urlopen(request, timeout=8, context=self.ssl_context)
         except urllib.error.HTTPError as error:
             response = error
         with response:

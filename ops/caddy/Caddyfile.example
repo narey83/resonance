@@ -1,4 +1,8 @@
 # Set the paths and addresses described in README.md before running Caddy.
+{
+	import http-transport.caddy
+}
+
 import site.caddy
 
 localhost:8443 {

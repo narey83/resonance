@@ -42,6 +42,22 @@ The backend address defaults to `127.0.0.1:55450`. All three filesystem paths ar
 
 Import `site.caddy` at the top level of the existing Caddyfile, then import `resonance_site` directly inside each application site block, replacing its old API/hub/static routing. `Caddyfile.example` demonstrates the placement with a local hostname. Keep the current deployment's HTTPS site address and certificate configuration when adopting it.
 
+Import `http-transport.caddy` **inside the existing global options block**, as in
+the example. Resonance uses HTTPS over HTTP/2 and HTTP/1.1; HTTP/3 is deliberately
+not enabled. Mac Brave exhibited QUIC errors and roughly twelve-second media
+response waits, despite fast TCP reads of the same files. Reloading the gateway
+cleared the observed stalls, but is not a durable transport policy. The precise
+browser/network QUIC defect was not established; do not attribute it to a specific
+upstream bug without a failing trace. Restricting the listener to TCP removes that
+failure path while retaining TLS and HTTP/2 multiplexing.
+
+The shared site sends `Alt-Svc: clear` so existing browsers discard HTTP/3
+advertisements left by earlier deployments. Changing only the advertised header
+does not disable an existing HTTP/3 listener: deploy both the global transport
+import and the site header. Preserve this policy during future config generation,
+reloads and rollback. Do not change browser-wide flags, disable TLS, or reset the
+backend to work around a client connection issue.
+
 Validate and reload using the existing Caddy binary and service environment:
 
 ```sh
@@ -88,7 +104,15 @@ CADDY_BIN=/path/to/caddy python3 -m unittest discover -s ops/caddy/tests -v
 node --test ops/caddy/tests/frontend-health.test.mjs
 # After npm ci and npm run build in frontend/, with Chromium installed:
 CADDY_BIN=/path/to/caddy python3 ops/caddy/tests/browser_check.py
+CADDY_BIN=/path/to/caddy python3 ops/caddy/tests/media_transport_check.py
 dotnet test tests --filter FullyQualifiedName~SiteReadinessTests
 ```
 
 The integration tests run real Caddy against an isolated local backend. They cover state precedence, offline and recovery transitions, browser-monitor outages, private recovery probes, HTML and JSON responses, streaming, request-body/auth preservation, status-page caching and a backend failure occurring after a successful readiness probe. Browser checks use a disposable copy of the actual production build, inject failures without touching application state, and inspect desktop/mobile views. The dedicated site-health workflow runs these checks without triggering unrelated native app builds.
+
+The media transport check uses disposable loopback TLS, real HTTP/2 and a sandboxed
+Chromium browser. It checks eight distinct track requests, byte ranges, seeking,
+rapidly cancelled loads and reuse of the browser after a forced gateway reload.
+Its startup deadline detects multi-second stalls in the fixture; it is not a
+guarantee about playback over an arbitrary storage or client network. Verify the
+actual Mac/browser route as well as server-local checks when investigating latency.
