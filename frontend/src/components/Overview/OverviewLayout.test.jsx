@@ -10,7 +10,10 @@ import { act, Simulate } from 'react-dom/test-utils';
 /* eslint-disable unicorn/consistent-function-scoping -- Hoisted Jest module factories must remain self-contained. */
 jest.mock('../../lib/reports');
 jest.mock('../../lib/shares', () => ({ getFileTypeCounts: jest.fn() }));
-jest.mock('../../lib/transfers', () => ({ getAll: jest.fn() }));
+jest.mock('../../lib/transfers', () => ({
+  getAll: jest.fn(),
+  getStatus: jest.fn(),
+}));
 jest.mock('../../lib/prefs', () => ({
   get: (_key, fallback) => fallback,
   set: jest.fn(),
@@ -81,6 +84,8 @@ describe('Overview card placement and view changes', () => {
     expect.hasAssertions();
     await render();
     expect(container.textContent).toContain('Successful uploads');
+    expect(transfers.getAll).not.toHaveBeenCalled();
+    expect(transfers.getStatus).not.toHaveBeenCalled();
     expect(container.textContent).not.toContain(
       'CPU, memory and storage panel',
     );

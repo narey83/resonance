@@ -364,8 +364,9 @@ const App = () => {
       isAdmin: isAdmin(),
       options: applicationOptions,
       state: applicationState,
+      transferProgress: { downloads, uploads },
     }),
-    [applicationOptions, applicationState],
+    [applicationOptions, applicationState, downloads, uploads],
   );
 
   // ── Refs (mutable, don't trigger re-renders) ────────────────────────────────

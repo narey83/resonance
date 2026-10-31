@@ -29,3 +29,25 @@ for active transfers plus at most 500 completions in the last 15 seconds. Recent
 completion samples preserve the final byte delta in throughput calculations.
 SQLite uses the existing completion/time expression index to bound that lookup;
 quiet periods do not scan the whole archive. Hidden tabs pause this poll too.
+
+The Overview dashboard reuses the shell's byte samples for current throughput.
+It does not poll transfer lists or start a second status poll. The header and
+dashboard calculate speed from byte deltas, including a final completion sample,
+rather than adding lifetime average speeds.
+
+Browser performance boundaries:
+
+- Process queues and analysis on the server; opening a page must not fetch a queue
+  proportional to its entire backlog just to display totals.
+- Fetch a bounded page for detailed rows; preserve totals and explicit navigation.
+- Share small status samples, serialize polls, pause hidden tabs, and cancel
+  obsolete requests so background UI refreshes cannot pile up.
+- Start audio from the user's playback request independently of transfer refreshes
+  and analysis completion. Verify actual player latency as well as API timings.
+
+Read-only measurement against the live SQLite database on 31 October 2026:
+42,836 records produced 18,673,322 JSON bytes (4,584,038 gzip bytes); a 250-record
+pending page plus 500 recent completions produced 469,942 JSON bytes (134,308 gzip
+bytes). The corresponding warm queries took 490 ms and 136 ms. The compact status
+response was 323 bytes, queried in 56 ms. These are measurements of that snapshot,
+not a guarantee of browser latency or zero impact under every load.

@@ -174,29 +174,13 @@ const KpiGroupCard = ({ primary, secondary }) => (
 
 const KpiCards = ({
   direction,
-  downloads,
+  liveRates = { down: 0, up: 0 },
   loading,
   prevSummary,
   summary,
-  uploads,
 }) => {
   const kpis = extractKpis(summary, direction);
   const prev = extractKpis(prevSummary, direction);
-
-  const activeDownloads = Array.isArray(downloads)
-    ? downloads.filter((t) => t.state === 'InProgress')
-    : [];
-  const activeUploads = Array.isArray(uploads)
-    ? uploads.filter((t) => t.state === 'InProgress')
-    : [];
-  const liveDownSpeed = activeDownloads.reduce(
-    (s, t) => s + (t.averageSpeed ?? 0),
-    0,
-  );
-  const liveUpSpeed = activeUploads.reduce(
-    (s, t) => s + (t.averageSpeed ?? 0),
-    0,
-  );
 
   return (
     <div className="kpi-cards">
@@ -207,8 +191,8 @@ const KpiCards = ({
             label: 'Downloaded',
             loading,
             sub:
-              liveDownSpeed > 0
-                ? `${formatBitrate(liveDownSpeed)} now`
+              liveRates.down > 0
+                ? `${formatBitrate(liveRates.down)} now`
                 : undefined,
             value: kpis ? formatBytes(kpis.dlBytes) : '—',
           }}
@@ -231,7 +215,9 @@ const KpiCards = ({
             label: 'Uploaded',
             loading,
             sub:
-              liveUpSpeed > 0 ? `${formatBitrate(liveUpSpeed)} now` : undefined,
+              liveRates.up > 0
+                ? `${formatBitrate(liveRates.up)} now`
+                : undefined,
             value: kpis ? formatBytes(kpis.ulBytes) : '—',
           }}
           secondary={{

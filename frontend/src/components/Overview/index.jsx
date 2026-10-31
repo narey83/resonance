@@ -37,8 +37,7 @@ import './Overview.css';
 import * as prefs from '../../lib/prefs';
 import * as reportsAPI from '../../lib/reports';
 import * as sharesAPI from '../../lib/shares';
-import * as transfersAPI from '../../lib/transfers';
-import { keepIfEqual } from '../../lib/util';
+import useTransferRates from '../../lib/useTransferRates';
 import AppContext from '../AppContext';
 import ActivityChart from './ActivityChart';
 import ActivityHeatmap from './ActivityHeatmap';
@@ -105,13 +104,6 @@ const getHistogramInterval = (hours) => {
   return 14_400;
 };
 
-const flattenTransfers = (groups) => {
-  if (!Array.isArray(groups)) return [];
-  return groups.flatMap((g) =>
-    (g.directories ?? []).flatMap((d) => d.files ?? []),
-  );
-};
-
 const AdminOverview = () => {
   const [activeTab, setActiveTab] = useState(() => {
     const saved = prefs.get('overview:tab', 'uploads');
@@ -141,9 +133,12 @@ const AdminOverview = () => {
       ? 'glance'
       : analyticsTab;
   const showCoverage = activeTab === 'community';
-  const showLive = Boolean(direction) && section === 'glance';
-  const [downloads, setDownloads] = useState([]);
-  const [uploads, setUploads] = useState([]);
+  // Reuse the shell's compact sample; this view must never fetch a whole queue.
+  const { transferProgress } = useContext(AppContext);
+  const liveRates = useTransferRates(
+    transferProgress?.downloads,
+    transferProgress?.uploads,
+  );
   const [range, setRange] = useState(() => {
     const n = Number(prefs.get('overview:range-h', 168));
     return RANGES.some((r) => r.hours === n) ? n : 168;
@@ -172,37 +167,6 @@ const AdminOverview = () => {
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [reportError, setReportError] = useState(false);
   const [analyticsRefresh, setAnalyticsRefresh] = useState(0);
-
-  // Only poll the selected direction, and never overlap live requests.
-  useEffect(() => {
-    if (!showLive) return undefined;
-    let cancelled = false;
-    let timer;
-    const load = async () => {
-      try {
-        if (!document.hidden) {
-          const value = await transfersAPI.getAll({
-            activeOnly: true,
-            direction,
-          });
-          if (!cancelled) {
-            const setter = direction === 'download' ? setDownloads : setUploads;
-            setter((previous) => keepIfEqual(previous, value ?? []));
-          }
-        }
-      } catch {
-        // Retain the last live snapshot during a brief connection failure.
-      } finally {
-        if (!cancelled) timer = setTimeout(load, 1_000);
-      }
-    };
-
-    load().catch(() => {});
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [direction, showLive]);
 
   // Catalog queries are only needed on the upload overview.
   useEffect(() => {
@@ -343,8 +307,6 @@ const AdminOverview = () => {
     };
   }, [activeTab, analyticsRefresh, direction, range, refreshMs, section]);
 
-  const allDownloads = flattenTransfers(downloads);
-  const allUploads = flattenTransfers(uploads);
   const totalSharedFiles = fileTypeCounts
     ? Object.values(fileTypeCounts).reduce((s, v) => s + (Number(v) || 0), 0)
     : 0;
@@ -502,11 +464,10 @@ const AdminOverview = () => {
                   <section className="overview-section">
                     <KpiCards
                       direction={direction}
-                      downloads={allDownloads}
+                      liveRates={liveRates}
                       loading={analyticsLoading && !summary}
                       prevSummary={prevSummary}
                       summary={summary}
-                      uploads={allUploads}
                     />
                   </section>
                 )}

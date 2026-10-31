@@ -31,6 +31,7 @@ import { connectionStatus } from '../../lib/connectionStatus';
 import * as serverAPI from '../../lib/server';
 import * as session from '../../lib/session';
 import * as sharesAPI from '../../lib/shares';
+import useTransferRates from '../../lib/useTransferRates';
 import { formatBitrate, formatBytes } from '../../lib/util';
 import MetadataLookupWatcher from '../MetadataLookup/MetadataLookupWatcher';
 import ResonanceMark from '../Shared/ResonanceMark';
@@ -144,49 +145,7 @@ const StatusStrip = ({
     };
   }, []);
 
-  // Instantaneous transfer throughput. The API's averageSpeed is a lifetime
-  // average (total bytes ÷ the transfer's whole lifetime), so summing it makes
-  // the header wildly over-report: a completed-but-not-yet-cleared transfer keeps
-  // contributing its old average even though nothing is moving. Instead we derive
-  // the true current rate from how many bytes actually moved since the last poll.
-  const [rates, setRates] = useState({ down: 0, up: 0 });
-  const prevBytesRef = useRef({
-    down: new Map(),
-    t: Date.now(),
-    up: new Map(),
-  });
-
-  useEffect(() => {
-    const now = Date.now();
-    const elapsed = (now - prevBytesRef.current.t) / 1_000;
-
-    // Guard against rapid double-fires (elapsed too small → divide-by-near-zero
-    // spikes); keep the previous sample so the next real poll spans a full window.
-    if (elapsed < 0.5) {
-      return;
-    }
-
-    const rate = (list, prevMap) => {
-      const nextMap = new Map();
-      let delta = 0;
-      for (const t of Array.isArray(list) ? list : []) {
-        const bytes = t.bytesTransferred ?? 0;
-        nextMap.set(t.id, bytes);
-        const prev = prevMap.get(t.id);
-
-        if (prev != null && bytes > prev) {
-          delta += bytes - prev;
-        }
-      }
-
-      return { bytesPerSecond: delta / elapsed, nextMap };
-    };
-
-    const down = rate(downloads, prevBytesRef.current.down);
-    const up = rate(uploads, prevBytesRef.current.up);
-    prevBytesRef.current = { down: down.nextMap, t: now, up: up.nextMap };
-    setRates({ down: down.bytesPerSecond, up: up.bytesPerSecond });
-  }, [downloads, uploads]);
+  const rates = useTransferRates(downloads, uploads);
 
   useEffect(() => {
     if (!isLoggedIn) return;
