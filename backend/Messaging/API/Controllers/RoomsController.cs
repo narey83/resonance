@@ -407,7 +407,6 @@ namespace resonance.Messaging.API
             }
 
             await RoomService.LeaveAsync(roomName);
-            Tracker.TryRemove(roomName);
 
             return StatusCode(StatusCodes.Status204NoContent);
         }

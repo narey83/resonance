@@ -45,6 +45,7 @@ namespace resonance.Messaging
     using Microsoft.AspNetCore.SignalR;
     using Microsoft.EntityFrameworkCore;
     using resonance.Core.API;
+    using resonance.Core.Settings;
     using resonance.Events;
     using resonance.Users;
     using resonance.Users.Blocking;
@@ -88,6 +89,8 @@ namespace resonance.Messaging
     {
         private const string PersistedRoomsSettingKey = "resonance:messaging:rooms";
 
+        private readonly object membershipLock = new object();
+
         /// <summary>
         ///     Initializes a new instance of the <see cref="RoomService"/> class.
         /// </summary>
@@ -100,6 +103,7 @@ namespace resonance.Messaging
         /// <param name="blockedUsersService"></param>
         /// <param name="contextFactory"></param>
         /// <param name="applicationHub"></param>
+        /// <param name="settingsStore">The subscription store; defaults to the application's settings store.</param>
         public RoomService(
             ISoulseekClient soulseekClient,
             IOptionsMonitor<Options> optionsMonitor,
@@ -109,7 +113,8 @@ namespace resonance.Messaging
             EventBus eventBus,
             BlockedUsersService blockedUsersService,
             IDbContextFactory<MessagingDbContext> contextFactory,
-            IHubContext<ApplicationHub> applicationHub)
+            IHubContext<ApplicationHub> applicationHub,
+            SettingsService settingsStore = null)
         {
             Client = soulseekClient;
 
@@ -123,6 +128,7 @@ namespace resonance.Messaging
             Blocked = blockedUsersService;
             ContextFactory = contextFactory;
             ApplicationHub = applicationHub;
+            SettingsStore = settingsStore ?? Program.SettingsStore;
 
             Client.LoggedIn += Client_LoggedIn;
 
@@ -141,6 +147,7 @@ namespace resonance.Messaging
         private EventBus EventBus { get; }
         private BlockedUsersService Blocked { get; }
         private IDbContextFactory<MessagingDbContext> ContextFactory { get; }
+        private SettingsService SettingsStore { get; }
 
         /// <summary>
         ///     Joins the specified <paramref name="roomName"/>.
@@ -155,7 +162,11 @@ namespace resonance.Messaging
             {
                 var data = await Client.JoinRoomAsync(roomName);
                 var room = Room.FromRoomData(data);
-                RoomTracker.TryAdd(roomName, room);
+                RoomTracker.Rooms.AddOrUpdate(roomName, room, (_, previous) =>
+                {
+                    room.Messages = previous.Messages;
+                    return room;
+                });
 
                 Logger.Debug("Room data for {Room}: {Info}", roomName, data.ToJson());
                 return data;
@@ -199,7 +210,7 @@ namespace resonance.Messaging
         {
             var tasks = new List<Task>();
 
-            foreach (var room in roomNames)
+            foreach (var room in roomNames.Distinct())
             {
                 tasks.Add(JoinAsync(room));
             }
@@ -215,34 +226,57 @@ namespace resonance.Messaging
         }
 
         /// <summary>
+        ///     Captures all subscriptions before any join notifications can change runtime state.
+        /// </summary>
+        /// <returns>The restore operation.</returns>
+        internal async Task RestoreJoinedRoomsAsync()
+        {
+            string[] rooms;
+            lock (membershipLock)
+            {
+                rooms = OptionsMonitor.CurrentValue.Rooms
+                    .Concat(LoadPersistedRooms())
+                    .Concat(RoomTracker.Rooms.Keys)
+                    .Distinct().ToArray();
+            }
+
+            if (rooms.Any())
+            {
+                Logger.Information("Attempting to rejoin room(s) {Rooms}", string.Join(", ", rooms));
+                await TryJoinAsync(rooms);
+            }
+        }
+
+        /// <summary>
         ///     Loads the set of rooms persisted by <see cref="PersistJoinedRooms(string[])"/>.
         /// </summary>
         /// <returns>The persisted room names, or an empty array if none are persisted.</returns>
-        private static string[] LoadPersistedRooms()
+        private string[] LoadPersistedRooms()
         {
-            if (!Program.SettingsStore.GetAll().TryGetValue(PersistedRoomsSettingKey, out var json) || string.IsNullOrWhiteSpace(json))
+            if (!SettingsStore.GetAll().TryGetValue(PersistedRoomsSettingKey, out var json) || string.IsNullOrWhiteSpace(json))
             {
                 return Array.Empty<string>();
             }
 
             try
             {
-                return JsonSerializer.Deserialize<string[]>(json) ?? Array.Empty<string>();
+                return (JsonSerializer.Deserialize<string[]>(json) ?? Array.Empty<string>())
+                    .Where(room => !string.IsNullOrWhiteSpace(room)).Distinct().ToArray();
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
+                Logger.Warning(ex, "Unable to load saved room subscriptions");
                 return Array.Empty<string>();
             }
         }
 
         /// <summary>
-        ///     Persists the set of currently-joined rooms so they can be rejoined after a process restart, when
-        ///     <see cref="RoomTracker"/>'s in-memory state is gone.
+        ///     Persists room subscriptions, including rooms awaiting a successful rejoin.
         /// </summary>
-        /// <param name="rooms">The full set of currently-joined room names.</param>
-        private static void PersistJoinedRooms(string[] rooms)
+        /// <param name="rooms">The full set of subscribed room names.</param>
+        private void PersistJoinedRooms(string[] rooms)
         {
-            Program.SettingsStore.SetMany(new Dictionary<string, string>
+            SettingsStore.SetMany(new Dictionary<string, string>
             {
                 [PersistedRoomsSettingKey] = JsonSerializer.Serialize(rooms),
             });
@@ -250,26 +284,13 @@ namespace resonance.Messaging
 
         private async void Client_LoggedIn(object sender, EventArgs e)
         {
-            var autoJoinRooms = OptionsMonitor.CurrentValue.Rooms;
-
-            if (autoJoinRooms.Any())
+            try
             {
-                Logger.Information("Auto-joining room(s) {Rooms}", string.Join(", ", autoJoinRooms));
-                await TryJoinAsync(autoJoinRooms);
+                await RestoreJoinedRoomsAsync();
             }
-
-            // covers both a live reconnect (RoomTracker still has the old keys) and a process
-            // restart (RoomTracker is empty, so the persisted set carries the rejoin instead)
-            var previouslyJoinedRooms = RoomTracker.Rooms.Keys
-                .Concat(LoadPersistedRooms())
-                .Except(autoJoinRooms)
-                .Distinct()
-                .ToArray();
-
-            if (previouslyJoinedRooms.Any())
+            catch (Exception ex)
             {
-                Logger.Information("Attempting to rejoin room(s) {Rooms}", string.Join(", ", previouslyJoinedRooms));
-                await TryJoinAsync(previouslyJoinedRooms);
+                Logger.Warning(ex, "Unable to restore room subscriptions");
             }
         }
 
@@ -278,8 +299,13 @@ namespace resonance.Messaging
             if (args.Username == Client.Username)
             {
                 Logger.Information("Joined room {Room}", args.RoomName);
-                var state = StateMutator.SetValue(state => state with { Rooms = state.Rooms.Concat(new[] { args.RoomName }).Distinct().ToArray() });
-                PersistJoinedRooms(state.Rooms);
+                lock (membershipLock)
+                {
+                    // State only contains joins acknowledged during this connection. Never use it
+                    // to replace subscriptions that have not finished (or failed) rejoining.
+                    var state = StateMutator.SetValue(state => state with { Rooms = state.Rooms.Append(args.RoomName).Distinct().ToArray() });
+                    PersistJoinedRooms(LoadPersistedRooms().Concat(state.Rooms).Distinct().ToArray());
+                }
             }
             else
             {
@@ -292,8 +318,12 @@ namespace resonance.Messaging
             if (args.Username == Client.Username)
             {
                 Logger.Information("Left room {Room}", args.RoomName);
-                var state = StateMutator.SetValue(state => state with { Rooms = state.Rooms.Where(room => room != args.RoomName).ToArray() });
-                PersistJoinedRooms(state.Rooms);
+                lock (membershipLock)
+                {
+                    var state = StateMutator.SetValue(state => state with { Rooms = state.Rooms.Where(room => room != args.RoomName).ToArray() });
+                    PersistJoinedRooms(LoadPersistedRooms().Concat(state.Rooms).Where(room => room != args.RoomName).Distinct().ToArray());
+                    RoomTracker.TryRemove(args.RoomName);
+                }
             }
             else
             {
