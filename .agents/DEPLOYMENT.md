@@ -39,7 +39,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/media-quic-91c9eb3/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-ui-6f76a83/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -61,7 +61,10 @@ existing checkout and private state intact; never reset it to perform a deployme
    Use a clean dependency install inside the isolated snapshot; matching source
    lockfiles do not prove an existing `node_modules` directory is current. The
    laptop has Node 22; its system npm 9 cannot install this frontend lockfile
-   correctly. Use a current npm 11 via `npx npm@11` without replacing global tools.
+   correctly. Use a current npm 11 without replacing global tools. Launch `npx npm@11`
+   outside the project and pass `--prefix` for the frontend directory, or invoke
+   its previously downloaded CLI with Node. Launching npx through npm 9 from
+   inside this frontend can fail on `file:vendor/deepmerge` before npm 11 starts.
    Pre-commit validation must also run remotely against the exact staged files;
    do not skip the quality gate to avoid running it on the Mac.
 2. Read the current server deployment record, running executable/PID, resolved
@@ -156,7 +159,7 @@ generic deployment command.
 ## Browser performance and storage link — 31 October 2026
 
 The active backend is `8d2ccbf` (`media-path-8d2ccbf`) and web release is
-`fcf1e59` (`uploads-browser-fcf1e59`). Transfer screens use paginated queues;
+`6f76a83` (`analysis-ui-6f76a83`). Transfer screens use paginated queues;
 the global header and Overview share compact status samples. Do not restore
 full transfer-list polling on every page. See `docs/upload-queue-paging.md`.
 
@@ -220,6 +223,30 @@ next-track playback in approximately 0.65 seconds, paused state after frontend
 reload, manual play after reload and seeking. Timing is a wall-clock estimate
 minus advancing audio time, not a precise browser playing-event timestamp.
 Test audio was paused afterward. Private proof: `.dev/quic-forensics/` on the Mac.
+
+## Analysis controls web release — 31 October 2026
+
+Deployed web `analysis-ui-6f76a83` with native gateway imports from
+`/home/narey/resonance-gateway/releases/analysis-ui-6f76a83/`. Basic/Enhanced cards
+are the only mode selector; Scan Settings shows the selected mode with skip/reset
+options. The existing HTTP/3 policy remains `0rtt off`, explicit 16 KiB headers
+and HTTP/1.1 + HTTP/2 + HTTP/3. Backend PID 359197 / release `8d2ccbf` and Caddy
+PID 3992646 were preserved; this was a web-only activation.
+
+A clean npm 11 install in the isolated source snapshot, 12 focused tests, five
+dependency-security tests, lint, formatting, production build and desktop/phone
+browser checks passed. Mac Brave verified the live selector, absent dropdown and
+correct Basic/Enhanced button changes without starting a real scan. Public HTML
+and JS/CSS hashes matched the release, and 80 older static files were retained for
+open tabs. The unchanged dependency lock still reports 79 moderate npm audit
+findings; third-party source-map warnings also remain. No dependency upgrade was
+part of this UI correction.
+
+Snapshot: `/home/narey/resonance-builds/precommit-upload-paging-14b99031e8`.
+Rollback backup: `/home/narey/resonance-backups/analysis-ui-6f76a83`.
+The gateway's `deployment.json` records activation and the prior web release;
+`target-config.json` in the backup is the reviewed active configuration. Private
+Mac proof and deployment scripts are under `.dev/analysis-mode-cleanup/deployment/`.
 
 ## Native enhanced analysis
 
