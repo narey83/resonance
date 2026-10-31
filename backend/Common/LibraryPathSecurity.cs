@@ -30,6 +30,7 @@
 namespace resonance.Common;
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 
 /// <summary>Canonical filesystem containment, including links in every parent directory.</summary>
@@ -37,18 +38,36 @@ public static class LibraryPathSecurity
 {
     public static string Resolve(string path) => Resolve(path, 0);
 
-    public static bool Contains(string root, string path)
+    public static bool Contains(string root, string path) => ResolveWithin([root], path) != null;
+
+    /// <summary>Resolves a file once and authorizes it against freshly resolved configured roots.</summary>
+    /// <returns>The canonical file path, or null when it is outside every accessible root.</returns>
+    public static string ResolveWithin(IEnumerable<string> roots, string path)
     {
         try
         {
-            var canonicalRoot = Resolve(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
             var canonicalPath = Resolve(path);
-            return canonicalPath.StartsWith(canonicalRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+            foreach (var root in roots)
+            {
+                try
+                {
+                    var canonicalRoot = Resolve(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                    if (canonicalPath.StartsWith(canonicalRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                    {
+                        return canonicalPath;
+                    }
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+                {
+                    // An unavailable root cannot authorize a file; another configured root may.
+                }
+            }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
-            return false;
         }
+
+        return null;
     }
 
     private static string Resolve(string path, int links)
@@ -65,6 +84,11 @@ public static class LibraryPathSecurity
         {
             current = Path.Combine(current, segment);
             var attributes = File.GetAttributes(current);
+            if (!attributes.HasFlag(FileAttributes.ReparsePoint))
+            {
+                continue;
+            }
+
             FileSystemInfo info = attributes.HasFlag(FileAttributes.Directory) ? new DirectoryInfo(current) : new FileInfo(current);
             if (info.LinkTarget is { } target)
             {

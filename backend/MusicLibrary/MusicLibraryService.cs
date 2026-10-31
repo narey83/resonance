@@ -442,23 +442,12 @@ namespace resonance.MusicLibrary
         }
 
         /// <inheritdoc/>
-        public bool IsLibraryPath(string path)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                return false;
-            }
+        public bool IsLibraryPath(string path) => ResolveLibraryPath(path) != null;
 
-            foreach (var dir in GetScanDirectories())
-            {
-                if (resonance.Common.LibraryPathSecurity.Contains(dir, path))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
+        /// <inheritdoc/>
+        public string ResolveLibraryPath(string path)
+            => string.IsNullOrWhiteSpace(path) ? null
+                : resonance.Common.LibraryPathSecurity.ResolveWithin(GetConfiguredDirectories(), path);
 
         private static IEnumerable<FileInfo> EnumerateAudio(string root)
             => new DirectoryInfo(root)
@@ -1196,11 +1185,12 @@ namespace resonance.MusicLibrary
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────
-        private IEnumerable<string> GetScanDirectories()
+        private IEnumerable<string> GetConfiguredDirectories()
             => Options.Shares.Directories
                 .Select(d => new Share(d.TrimEnd('/', '\\')).LocalPath)
-                .Where(Directory.Exists)
                 .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        private IEnumerable<string> GetScanDirectories() => GetConfiguredDirectories().Where(Directory.Exists);
 
         private bool IsExcludedFromSync(string filePath)
         {

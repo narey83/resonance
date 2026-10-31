@@ -52,6 +52,10 @@ namespace resonance.MusicLibrary
         /// <returns>A value indicating whether the path resolves inside a configured library directory.</returns>
         bool IsLibraryPath(string path);
 
+        /// <summary>Returns the authorized canonical file path without repeating filesystem resolution.</summary>
+        /// <returns>The resolved path, or null when it is outside the configured library.</returns>
+        string ResolveLibraryPath(string path);
+
         (int Total, double TotalDuration) GetStats();
         MusicAnalysisStats GetAnalysisStats();
         string GetLibraryVersion();

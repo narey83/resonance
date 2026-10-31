@@ -19,7 +19,7 @@ public class TranscodeBudgetTests
         try
         {
             while (held < 4) { await slots.WaitAsync(); held++; }
-            var library = Stub<IMusicLibraryService>((method, _) => method.Name == "IsLibraryPath" ? true : null);
+            var library = Stub<IMusicLibraryService>((method, _) => method.Name == "ResolveLibraryPath" ? path : method.Name == "IsLibraryPath" ? true : null);
             var analysis = Stub<IAnalysisService>((_, _) => null);
             var ffmpeg = Stub<IFfmpegService>((method, _) => method.Name == "get_FfmpegPath" ? "/unused-by-budget-rejection" : null);
             var signer = new StreamUrlSigner("synthetic-signing-key", 60000);

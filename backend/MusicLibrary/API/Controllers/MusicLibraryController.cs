@@ -464,7 +464,8 @@ namespace resonance.MusicLibrary.API
         [Produces("audio/mpeg", "audio/flac", "audio/ogg", "audio/wav", "audio/mp4", "audio/aac")]
         public async Task<IActionResult> StreamTrack([FromQuery] string path, [FromQuery] long exp = 0, [FromQuery] string sig = null, [FromQuery] string quality = null)
         {
-            if (!Service.IsLibraryPath(path))
+            var file = Service.ResolveLibraryPath(path);
+            if (file == null)
             {
                 return StatusCode(StatusCodes.Status403Forbidden);
             }
@@ -474,17 +475,9 @@ namespace resonance.MusicLibrary.API
                 return Unauthorized();
             }
 
-            if (!System.IO.File.Exists(path))
+            if (!System.IO.File.Exists(file))
             {
                 return NotFound();
-            }
-
-            // Resolve symlinks to the real file: PhysicalFile range/sendfile throws on a symlink
-            // (ArgumentOutOfRangeException), and a link could point outside the library — re-check.
-            var file = ResolveRealPath(path);
-            if (!Service.IsLibraryPath(file))
-            {
-                return StatusCode(StatusCodes.Status403Forbidden);
             }
 
             // Marks "someone is listening right now" so background analysis (the auto BPM check
@@ -542,7 +535,8 @@ namespace resonance.MusicLibrary.API
         [ResponseCache(Duration = 86400, Location = ResponseCacheLocation.Client)]
         public IActionResult GetArtwork([FromQuery] string path, [FromQuery] int? size, [FromQuery] long exp = 0, [FromQuery] string sig = null)
         {
-            if (!Service.IsLibraryPath(path))
+            var file = Service.ResolveLibraryPath(path);
+            if (file == null)
             {
                 return StatusCode(StatusCodes.Status403Forbidden);
             }
@@ -552,16 +546,9 @@ namespace resonance.MusicLibrary.API
                 return Unauthorized();
             }
 
-            if (!System.IO.File.Exists(path))
+            if (!System.IO.File.Exists(file))
             {
                 return NotFound();
-            }
-
-            // Resolve symlinks and re-check, so a link can't point at artwork outside the library.
-            var file = ResolveRealPath(path);
-            if (!Service.IsLibraryPath(file))
-            {
-                return StatusCode(StatusCodes.Status403Forbidden);
             }
 
             path = file;
@@ -1125,16 +1112,6 @@ namespace resonance.MusicLibrary.API
             Buffer.BlockCopy(countBytes, 0, combined, 0, countBytes.Length);
             Buffer.BlockCopy(acc, 0, combined, countBytes.Length, acc.Length);
             return $"\"{Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(combined))}\"";
-        }
-
-        /// <summary>
-        ///     Resolves a (possibly symlinked) path to its real on-disk target, following a chain
-        ///     of links. Returns the original path unchanged if it is not a link or cannot be
-        ///     resolved. Callers must re-validate the result with <see cref="IMusicLibraryService.IsLibraryPath"/>.
-        /// </summary>
-        private static string ResolveRealPath(string path)
-        {
-            return resonance.Common.LibraryPathSecurity.Resolve(path);
         }
 
         /// <summary>

@@ -65,3 +65,10 @@ file during service construction. Missing-file pruning runs on the existing
 background sweep task and supports cancellation; until then, prior attempts stay
 protected from automatic re-enrichment. This was confirmed as a live startup
 blocker with a managed stack trace before changing the implementation.
+
+Media delivery resolves each requested file once and checks that canonical path
+against freshly resolved configured roots. Stream and artwork handlers reuse the
+authorized canonical result instead of walking network directories repeatedly.
+Ordinary files/directories do not incur an unnecessary link-target lookup; actual
+reparse points are still followed and checked. There is no cross-request path or
+authorization cache, so link retargeting is checked again on every request.
