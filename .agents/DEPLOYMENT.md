@@ -80,6 +80,15 @@ existing checkout and private state intact; never reset it to perform a deployme
 Web-only changes do not require a backend restart, database migration, queue
 rewrite or database replacement.
 
+The frontend reload screen and render-readiness signal were deployed on 31 October
+2026. The continuous browser monitor and its new Caddy gate are still inactive:
+Chromium on the dev laptop needs its exact-executable AppArmor permission. The
+prepared administrator script is
+`/home/narey/resonance-analysis/deployment-a68e234/install-browser-permission.sh`.
+The user authorized Mac Brave for deployment browser checks; those checks do not
+replace the continuous server monitor. Start and verify the monitor before
+activating its Caddy gate. See `ops/caddy/README.md`.
+
 ## Backend deployment and state preservation
 
 Native basic analysis is a required deployment capability. Every backend publish
@@ -110,6 +119,16 @@ Keep a verified off-server backup. Abort if backup or reconciliation fails.
 Do not roll back to a binary that clears unfinished uploads. The queue-preserving
 connection-failure correction was deployed as backend commit `53053c7`; inspect
 the current build rather than assuming an older release is a safe rollback.
+
+Keep the additional offline SDK callback correction from `f24694b` in rollback
+builds too. On 31 October, deployment verification caught two original queued
+uploads marked failed when the SDK emitted a terminal callback before reporting
+that the peer was offline, with no data flow. The correction parks those uploads
+under their original IDs. Those two records were recovered while the backend was
+stopped, with a scoped audit and fresh verified backups. Do not replay unrelated
+terminal history. Builds such as `2238c51` predate this additional correction.
+The verified deployment report is
+`/home/narey/resonance-builds/deploy-a68e234/deployment/DEPLOYMENT.md`.
 
 The server's SSD reported real media/read errors on 30 October 2026 and the
 database was repaired earlier that day. Preserve recovered state and backups.
