@@ -18,8 +18,6 @@
 
 (resonance_site_checked) {
 	header {
-		# Expire advertisements retained by browsers from an older HTTP/3 listener.
-		Alt-Svc clear
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
 		Referrer-Policy no-referrer-when-downgrade

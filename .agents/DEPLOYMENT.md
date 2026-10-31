@@ -188,18 +188,27 @@ Fresh server-browser playback then measured 0.20–0.22 seconds, but Mac Brave
 still reproduced approximately twelve-second waits on different tracks. Do not
 present a dev-laptop browser result as a measurement of the user's Mac.
 
-The durable gateway policy is HTTPS over HTTP/2 and HTTP/1.1. Import
-`ops/caddy/http-transport.caddy` inside the main Caddyfile's global options block,
-and deploy the shared site's `Alt-Svc: clear` header together. This removes the
-QUIC connection path where Brave recorded protocol errors and stalls. The exact
-browser/router/QUIC defect was not proven; no particular upstream bug is claimed.
-Preserve this policy across reloads/rollback; never disable TLS or browser security.
-Run `ops/caddy/tests/media_transport_check.py` and verify real Mac playback.
-This policy was deployed as gateway `media-http2-e4ab872`; the main configuration
-imports its transport and native site files. The backend stayed at PID 359197 and
-release `8d2ccbf`, and the web build stayed at `fcf1e59`. The immutable gateway's
-`deployment.json` and `mac-media-trace.json` record activation and confirmed Mac
-HTTP/2 requests. Backups are under `/home/narey/resonance-backups/media-http2-e4ab872`.
+The initial HTTP/2-only mitigation was deployed as `media-http2-e4ab872`.
+Its rollback backup remains under `/home/narey/resonance-backups/media-http2-e4ab872`.
+A subsequent controlled Mac capture reproduced QUIC error 164 with matching server
+traces: the browser remembered a 1 MiB header limit while the new proxy advertised
+16 KiB on an early-data connection. The old gateway was Caddy 2.11.4; installed
+2.11.7 has the smaller default. The original twelve-second incident was not
+captured, so this proves the reproduced compatibility failure, not every historical
+delay. See `docs/http3-playback-investigation.md`.
+
+The replacement gateway policy imports `ops/caddy/http-transport.caddy` globally:
+HTTP/1.1 + HTTP/2 + HTTP/3, `0rtt off`, explicit `max_header_size 16KiB`. Remove
+`Alt-Svc: clear` from the native site at the same deployment. Preserve TLS,
+authorization, range streaming and existing routing. Caddy may reuse an existing
+QUIC listener across reloads, retaining its original early-data setting: apply
+this policy to a fresh UDP listener. The initial migration starts from HTTP/2-only;
+future changes on an active HTTP/3 listener need a controlled gateway restart or
+an HTTP/3-off phase before re-enabling. Never restart the backend for this alone.
+Run both `media_transport_check.py` (HTTP/2 fallback) and
+`http3_resumption_check.py` (HTTP/3-only settings-change regression), then check
+actual Mac playback. Keep synthetic diagnostic listeners separate from production
+and stop them before enabling the production UDP listener.
 
 ## Native enhanced analysis
 

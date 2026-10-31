@@ -43,20 +43,24 @@ The backend address defaults to `127.0.0.1:55450`. All three filesystem paths ar
 Import `site.caddy` at the top level of the existing Caddyfile, then import `resonance_site` directly inside each application site block, replacing its old API/hub/static routing. `Caddyfile.example` demonstrates the placement with a local hostname. Keep the current deployment's HTTPS site address and certificate configuration when adopting it.
 
 Import `http-transport.caddy` **inside the existing global options block**, as in
-the example. Resonance uses HTTPS over HTTP/2 and HTTP/1.1; HTTP/3 is deliberately
-not enabled. Mac Brave exhibited QUIC errors and roughly twelve-second media
-response waits, despite fast TCP reads of the same files. Reloading the gateway
-cleared the observed stalls, but is not a durable transport policy. The precise
-browser/network QUIC defect was not established; do not attribute it to a specific
-upstream bug without a failing trace. Restricting the listener to TCP removes that
-failure path while retaining TLS and HTTP/2 multiplexing.
+the example. It enables HTTP/1.1, HTTP/2 and HTTP/3, disables HTTP/3 early data
+(`0rtt off`), and explicitly sets `max_header_size 16KiB`. Caddy advertises the
+actual HTTP/3 listener automatically; do not add a fixed-port `Alt-Svc` override.
 
-The shared site sends `Alt-Svc: clear` so existing browsers discard HTTP/3
-advertisements left by earlier deployments. Changing only the advertised header
-does not disable an existing HTTP/3 listener: deploy both the global transport
-import and the site header. Preserve this policy during future config generation,
-reloads and rollback. Do not change browser-wide flags, disable TLS, or reset the
-backend to work around a client connection issue.
+A controlled Mac Brave capture reproduced QUIC error 164 when a resumed
+connection remembered a 1 MiB header limit and Caddy advertised 16 KiB. This
+matches the default change between the old 2.11.4 gateway and installed 2.11.7.
+Disabling early data passed the same settings change over HTTP/3. See
+[the investigation](../../docs/http3-playback-investigation.md) for evidence and
+its limits. The earlier HTTP/2-only policy was a temporary mitigation.
+
+Deploy the global import and remove the old shared site's `Alt-Svc: clear`
+together. A Caddy reload can reuse a QUIC listener created with early data enabled;
+verify that the listener is freshly created with early data disabled. During the
+HTTP/2-only to HTTP/3 migration there is no existing production UDP listener.
+For future changes to this setting on an active HTTP/3 listener, use a controlled
+gateway restart or first disable HTTP/3 and allow that listener to close before
+re-enabling it. Do not restart the backend or change browser security settings.
 
 Validate and reload using the existing Caddy binary and service environment:
 
@@ -105,6 +109,7 @@ node --test ops/caddy/tests/frontend-health.test.mjs
 # After npm ci and npm run build in frontend/, with Chromium installed:
 CADDY_BIN=/path/to/caddy python3 ops/caddy/tests/browser_check.py
 CADDY_BIN=/path/to/caddy python3 ops/caddy/tests/media_transport_check.py
+CADDY_BIN=/path/to/caddy python3 ops/caddy/tests/http3_resumption_check.py
 dotnet test tests --filter FullyQualifiedName~SiteReadinessTests
 ```
 
@@ -116,3 +121,10 @@ rapidly cancelled loads and reuse of the browser after a forced gateway reload.
 Its startup deadline detects multi-second stalls in the fixture; it is not a
 guarantee about playback over an arbitrary storage or client network. Verify the
 actual Mac/browser route as well as server-local checks when investigating latency.
+
+The HTTP/3 regression check uses a disposable TLS origin with only an HTTP/3
+listener, so TCP fallback cannot conceal a failure. With the same browser cache,
+it changes the header budget from 1 MiB to 16 KiB across a gateway reload, then
+checks playback, seeking, byte ranges, new connection IDs and the browser NetLog.
+Only the generated loopback certificate's public-key fingerprint is trusted by
+that isolated test browser. Production certificate validation is unchanged.

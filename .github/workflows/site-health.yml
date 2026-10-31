@@ -98,4 +98,6 @@ jobs:
       - name: Exercise failures and automatic recovery through real Caddy and Chromium
         run: python3 ops/caddy/tests/browser_check.py
       - name: Verify HTTPS media startup, seeking and connection recovery
-        run: python3 ops/caddy/tests/media_transport_check.py
+        run: |
+          python3 ops/caddy/tests/media_transport_check.py
+          python3 ops/caddy/tests/http3_resumption_check.py

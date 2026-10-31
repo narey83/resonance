@@ -1,6 +1,8 @@
-# Import inside the Caddyfile's global options block. Media playback must not
-# depend on a browser recovering a stalled UDP/QUIC connection after a reload
-# or network change. HTTP/2 retains multiplexing and TLS over TCP.
+# Import inside the Caddyfile's global options block. Keep HTTP/3, but do not
+# resume requests using cached HTTP settings before the handshake completes.
+# Pin the header budget so proxy upgrades cannot silently change that contract.
 servers {
-	protocols h1 h2
+	protocols h1 h2 h3
+	0rtt off
+	max_header_size 16KiB
 }

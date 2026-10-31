@@ -58,9 +58,9 @@ class CaddySiteTests(unittest.TestCase):
         self.assertEqual('available', headers['X-Resonance-Site-State'])
         self.assertIn(b'data: connected', self.fixture.request('/hub/stream')[2])
 
-    def test_clears_cached_quic_advertisements_and_preserves_media_ranges(self):
+    def test_plain_http_does_not_advertise_quic_and_preserves_media_ranges(self):
         for path in ['/library', '/api/test-audio?track=unplayed']:
-            self.assertEqual('clear', self.fixture.request(path)[1]['Alt-Svc'])
+            self.assertNotIn('Alt-Svc', self.fixture.request(path)[1])
         status, headers, body = self.fixture.request('/api/test-audio', headers={'Range': 'bytes=100-199'})
         self.assertEqual(206, status)
         self.assertEqual(f'bytes 100-199/{len(self.fixture.audio)}', headers['Content-Range'])

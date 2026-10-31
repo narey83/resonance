@@ -9,6 +9,8 @@ const { origin, admin } = JSON.parse(process.env.MEDIA_TRANSPORT_FIXTURE);
 const browser = await chromium.launch({
   headless: true,
   chromiumSandbox: true,
+  // Keep this existing test as the strict TCP/HTTP2 fallback check.
+  args: ['--disable-quic'],
 });
 try {
   // Trust is relaxed only for this disposable loopback fixture's one-day cert.
@@ -105,7 +107,11 @@ try {
   });
   assert.equal(rangeResponse.status(), 206);
   assert.equal((await rangeResponse.body()).length, 100);
-  assert.equal(rangeResponse.headers()['alt-svc'], 'clear');
+  assert.ok(
+    rangeResponse
+      .headers()
+      ['alt-svc'].includes(`h3=":${new URL(origin).port}"`),
+  );
   assert.ok(responses.length >= 9);
   assert.ok(responses.every((response) => response.protocol === 'h2'));
   assert.ok(results.every((ms) => ms !== null && ms < 2000));
