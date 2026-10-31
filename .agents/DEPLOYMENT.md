@@ -1,6 +1,6 @@
 # Resonance deployment destinations and runbook
 
-Last confirmed: 30 October 2026. Read this file before any deployment.
+Last confirmed: 31 October 2026. Read this file before any deployment.
 
 **Standing user rule: use only the dev laptop for builds, tests, application and
 development servers, including temporary web QA and Metro, until the user explicitly
@@ -133,8 +133,8 @@ user clarified this rule on 30 October 2026.
 - Check `http://127.0.0.1:8082/status` on the dev laptop and the existing Metro
   process before starting another server. Its working directory must be the
   requested source snapshot's `mobile/`, with the matching dependency lockfile.
-  The snapshot established on 30 October is
-  `/home/narey/resonance-builds/expo-bootstrap-1f8f1ae/mobile`; its parent contains
+  The active snapshot verified on 31 October is
+  `/home/narey/resonance-builds/branding-20261030/mobile`; its parent contains
   `mobile-metro.json` and `mobile-metro.log`. Verify the PID/cwd before reuse.
 - The corresponding Mac transport command is
   `ssh -f -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -L 127.0.0.1:8081:127.0.0.1:8082 dev-laptop.local`.
@@ -147,6 +147,9 @@ user clarified this rule on 30 October 2026.
 - JavaScript/TypeScript-only changes use this existing client and Metro. Verify
   successful bundle loading and the changed screen on the device. Preserve its
   account, server settings, playlists and application data.
+- The branding development client was installed in place on the Pixel on
+  31 October 2026. Its saved sign-in and library remained available; Discover
+  now uses the shared waveform-R and Outfit wordmark in its masthead.
 - Native dependency, plugin or configuration changes require a compatible native
   rebuild/install. Read `mobile/AGENTS.md` and `mobile/EXPO_GUIDE.md` first. Do not
   uninstall the app or clear its data as a routine update.

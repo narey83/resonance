@@ -1,5 +1,6 @@
 import { Text, TextInput } from '../../components/Typography';
 import NewLibraryBadge from '../../components/NewLibraryBadge';
+import { ResonanceLogo } from '../../components/ResonanceLogo';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
@@ -173,8 +174,8 @@ export default function DiscoveryScreen() {
   return <SafeAreaView edges={['top']} style={s.screen}>
     <ScrollView refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void load()} tintColor={colors.accent} />} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
       <View style={s.masthead}>
-        <Text accessibilityRole="header" style={s.wordmark}>RESONANCE</Text>
-        <View accessible={false} style={s.recordMark}><View style={s.recordGroove}><View style={s.recordLabel}><View style={s.recordHole} /></View></View></View>
+        <ResonanceLogo size={52} />
+        <Text accessibilityRole="header" adjustsFontSizeToFit minimumFontScale={0.65} numberOfLines={1} style={s.wordmark}>Resonance</Text>
       </View>
       <View style={s.imprint}><Text style={s.imprintText}>PERSONAL MUSIC LIBRARY</Text><View style={s.connection}><View style={[s.connectionDot, { backgroundColor: connection === 'connected' ? colors.success : colors.warning }]} /><Text style={s.imprintText}>{connection === 'connected' ? 'ONLINE' : connection.toUpperCase()}</Text></View></View>
       <View style={s.tabs}>{sections.map(item => <Pressable key={item} accessibilityRole="tab" accessibilityLabel={sectionLabels[item]} accessibilityState={{ selected: section === item }} onPress={() => { haptics.selection(); setSection(item); }} style={[s.sectionTab, section === item && { borderBottomColor: colors.accent }]}><Text style={[s.tabText, section === item && { color: colors.accent }]}>{sectionLabels[item]}</Text></Pressable>)}</View>
@@ -303,12 +304,8 @@ function PreparationEditor({ track, onClose }: { track: MusicTrack; onClose: () 
 function styles(c: ThemeColors) { return StyleSheet.create({
   screen: { flex: 1, backgroundColor: c.bgPrimary },
   content: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 32, gap: 0 },
-  masthead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingBottom: 8, borderBottomWidth: 2, borderBottomColor: c.textPrimary },
-  wordmark: { flexShrink: 1, fontFamily: Typography.display, color: c.textPrimary, fontSize: 46, lineHeight: 52, letterSpacing: -1.6 },
-  recordMark: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, borderColor: c.textPrimary, alignItems: 'center', justifyContent: 'center' },
-  recordGroove: { width: 29, height: 29, borderRadius: 15, borderWidth: 1, borderColor: c.textPrimary, alignItems: 'center', justifyContent: 'center' },
-  recordLabel: { width: 17, height: 17, borderRadius: 9, backgroundColor: c.accent, alignItems: 'center', justifyContent: 'center' },
-  recordHole: { width: 4, height: 4, borderRadius: 2, backgroundColor: c.bgPrimary },
+  masthead: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingBottom: 12, borderBottomWidth: 2, borderBottomColor: c.textPrimary },
+  wordmark: { flexShrink: 1, fontFamily: Typography.display, fontWeight: '600', color: c.textPrimary, fontSize: 38, lineHeight: 46, letterSpacing: -.8 },
   imprint: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, paddingVertical: 9 },
   imprintText: { fontFamily: Typography.mono, color: c.textMuted, fontSize: 9, letterSpacing: .7 },
   connection: { flexDirection: 'row', alignItems: 'center', gap: 6 },
