@@ -39,7 +39,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/media-http2-e4ab872/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/media-quic-91c9eb3/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -209,6 +209,17 @@ Run both `media_transport_check.py` (HTTP/2 fallback) and
 `http3_resumption_check.py` (HTTP/3-only settings-change regression), then check
 actual Mac playback. Keep synthetic diagnostic listeners separate from production
 and stop them before enabling the production UDP listener.
+
+Activated gateway `media-quic-91c9eb3` on 31 October 2026 at 23:21 UTC. Its
+`deployment.json` records early data disabled, a freshly created QUIC listener,
+16 KiB headers and unchanged backend PID 359197 / release `8d2ccbf` and web
+`fcf1e59`. Backup: `/home/narey/resonance-backups/media-quic-91c9eb3`.
+All temporary diagnostic origins were removed from the active gateway and their
+separate UDP Caddy process stopped. Actual Mac Brave confirmed HTTP/3, HTTP 206,
+next-track playback in approximately 0.65 seconds, paused state after frontend
+reload, manual play after reload and seeking. Timing is a wall-clock estimate
+minus advancing audio time, not a precise browser playing-event timestamp.
+Test audio was paused afterward. Private proof: `.dev/quic-forensics/` on the Mac.
 
 ## Native enhanced analysis
 

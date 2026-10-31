@@ -77,3 +77,16 @@ Private evidence remains under `.dev/quic-forensics/` on the Mac and
 completed `chrome-net-export-log.json` remains private and excluded from Git.
 Raw browser logs and proxy configuration can contain sensitive data: do not
 attach them to public issues. No upstream issue has been submitted.
+
+## Deployed result
+
+Gateway `media-quic-91c9eb3` was activated at 23:21 UTC on 31 October 2026.
+The backend PID, backend release and frontend release were preserved. The
+production listener was created fresh with early data disabled; temporary
+synthetic origins/listeners were removed. Mac Brave confirmed a real library
+stream used HTTP/3 with status 206. Advancing audio gave an approximate 0.65-second
+next-track start. Frontend reload restored the track paused; manual play and
+seeking worked afterward, with further HTTP/3 partial-content requests. The
+measurement is wall elapsed minus advancing audio time, not a direct playing-event
+timestamp. Test audio was paused afterward. Preserve the deployment's private
+rollback backup and immutable gateway record.
