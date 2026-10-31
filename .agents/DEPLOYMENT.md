@@ -39,7 +39,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/frontend-health-f24694b/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/media-http2-e4ab872/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -100,7 +100,7 @@ web deployments. See `ops/caddy/README.md` for freshness and recovery behavior.
 
 Use the current imported site configuration from the table above when updating
 web roots or restarting the backend. Older private deployment helpers hardcode
-the previous `088fd31` site path and must be adapted before reuse. The existing
+the previous `088fd31` or `frontend-health-f24694b` site paths and must be adapted before reuse. The existing
 `088fd31/site-state` command still manages the shared gateway state directory.
 When changing Playwright/browser versions, verify the new executable's sandbox
 permission and real browser checks before switching the service. Activation and
@@ -195,6 +195,11 @@ QUIC connection path where Brave recorded protocol errors and stalls. The exact
 browser/router/QUIC defect was not proven; no particular upstream bug is claimed.
 Preserve this policy across reloads/rollback; never disable TLS or browser security.
 Run `ops/caddy/tests/media_transport_check.py` and verify real Mac playback.
+This policy was deployed as gateway `media-http2-e4ab872`; the main configuration
+imports its transport and native site files. The backend stayed at PID 359197 and
+release `8d2ccbf`, and the web build stayed at `fcf1e59`. The immutable gateway's
+`deployment.json` and `mac-media-trace.json` record activation and confirmed Mac
+HTTP/2 requests. Backups are under `/home/narey/resonance-backups/media-http2-e4ab872`.
 
 ## Native enhanced analysis
 
