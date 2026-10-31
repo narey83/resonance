@@ -197,7 +197,7 @@ describe('analysis folder loading', () => {
       10_001,
     );
   });
-  it('offers basic and enhanced scan modes with basic as the default', async () => {
+  it('uses one mode selector for the overview and scan settings', async () => {
     expect.hasAssertions();
     page = { ...page, items: [row('one'), row('two'), row('three')] };
     await render();
@@ -205,8 +205,17 @@ describe('analysis folder loading', () => {
       (button) => button.textContent.trim() === 'Scan',
     );
     act(() => scanButton.click());
-    const mode = container.querySelector('.ka-panel select');
-    expect(mode.value).toBe('basic');
+    expect(container.querySelectorAll('[name="analysis-mode"]')).toHaveLength(
+      2,
+    );
+    expect(container.querySelector('input[value="basic"]').checked).toBe(true);
+    expect(container.querySelector('.ka-panel select')).toBeNull();
+    expect(container.querySelector('.ka-panel').textContent).toContain(
+      'Selected mode: Basic',
+    );
+    expect(
+      container.querySelector('.ka-panel .ka-btn--primary').textContent,
+    ).toContain('Start Basic Scan');
     await act(async () => {
       container.querySelector('.ka-panel .ka-btn--primary').click();
     });
@@ -215,16 +224,45 @@ describe('analysis folder loading', () => {
     );
 
     act(() => scanButton.click());
-    const enhancedMode = container.querySelector('.ka-panel select');
-    act(() => {
-      enhancedMode.value = 'enhanced';
-      enhancedMode.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    act(() => container.querySelector('input[value="enhanced"]').click());
+    expect(container.querySelector('.ka-panel select')).toBeNull();
+    expect(container.querySelector('.ka-panel').textContent).toContain(
+      'Selected mode: Enhanced',
+    );
+    expect(
+      container.querySelector('.ka-panel .ka-btn--primary').textContent,
+    ).toContain('Start Enhanced Scan');
     await act(async () => {
       container.querySelector('.ka-panel .ka-btn--primary').click();
     });
     expect(analysisApi.startScan).toHaveBeenLastCalledWith(
       expect.objectContaining({ enhanced: true }),
+    );
+  });
+  it('preserves scan options when changing the shared analysis mode', async () => {
+    expect.hasAssertions();
+    await render();
+    act(() =>
+      [...container.querySelectorAll('button')]
+        .find((button) => button.textContent.trim() === 'Scan')
+        .click(),
+    );
+    act(() => container.querySelectorAll('.ka-panel .ka-toggle')[1].click());
+    act(() => container.querySelector('input[value="enhanced"]').click());
+    act(() => container.querySelector('input[value="basic"]').click());
+    expect(container.querySelector('.ka-panel').textContent).toContain(
+      'Selected mode: Basic',
+    );
+    expect(container.querySelector('.ka-warn')).not.toBeNull();
+    await act(async () =>
+      container.querySelector('.ka-panel .ka-btn--primary').click(),
+    );
+    expect(analysisApi.startScan).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        enhanced: false,
+        resetAll: true,
+        skipAnalysed: false,
+      }),
     );
   });
   it('uses the visible enhanced option for folder scans and enhanced readiness filters', async () => {

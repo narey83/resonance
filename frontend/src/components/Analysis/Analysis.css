@@ -1026,7 +1026,7 @@
 .ka-enhanced-status progress { width: 100%; height: 8px; accent-color: var(--accent); }
 .ka-track-readiness { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ka-analysis-details { flex-shrink: 0; margin: 0 20px 16px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; }
-.ka-analysis-details header { display: flex; gap: 12px; align-items: start; justify-content: space-between; }
+.ka-analysis-details header { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
 .ka-analysis-details h3, .ka-analysis-details h4 { margin: 0 0 8px; }
 .ka-analysis-details p { color: var(--text-muted); overflow-wrap: anywhere; }
 .ka-detail-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 16px 0; }

@@ -106,9 +106,7 @@ const toRow = (t) => ({
 
 const ScanSettings = ({
   enhanced,
-  enhancedAvailable,
   onClose,
-  onEnhancedChange,
   onStart,
   scanning,
   selectedCount = 0,
@@ -138,28 +136,15 @@ const ScanSettings = ({
           </span>
         </div>
 
-        <label className="ka-field">
-          <span className="ka-field-label">Analysis mode</span>
-          <select
-            className="ka-select"
-            onChange={(event) =>
-              onEnhancedChange(event.target.value === 'enhanced')
-            }
-            value={enhanced ? 'enhanced' : 'basic'}
-          >
-            <option value="basic">Basic only — fast</option>
-            <option
-              disabled={!enhancedAvailable}
-              value="enhanced"
-            >
-              Basic + enhanced predictions
-            </option>
-          </select>
+        <div className="ka-field">
+          <p className="ka-field-label">
+            Selected mode: <strong>{enhanced ? 'Enhanced' : 'Basic'}</strong>
+          </p>
           <span className="ka-field-hint">
-            Enhanced analysis is CPU- and memory-intensive. Existing enhanced
+            Choose Basic or Enhanced using the cards above. Existing enhanced
             results are preserved unless reset is selected.
           </span>
-        </label>
+        </div>
 
         {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
         <label className="ka-toggle-row">
@@ -1416,9 +1401,7 @@ const Analysis = () => {
       {showSettings && (
         <ScanSettings
           enhanced={enhanced}
-          enhancedAvailable={preparation?.enhancedEnabled !== false}
           onClose={() => setShowSettings(false)}
-          onEnhancedChange={setEnhanced}
           onStart={handleStartScan}
           scanning={scanning}
           selectedCount={selected.size}
