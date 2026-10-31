@@ -623,6 +623,7 @@ namespace resonance.Analysis
                             (double)(analysed + skipped + failed) / total, inFlight, request.Metrics.ToString(), inFlightFiles.Keys.ToList());
                         try
                         {
+                            Log.Information("Analysing '{File}'; missing metrics: {Metrics}", track.OriginalFilename, metrics);
                             var result = await Analyzer.AnalyseAsync(path, ffmpegPath, metrics, options, ct);
 
                             if (result == null)
@@ -675,6 +676,10 @@ namespace resonance.Analysis
                             }
                             else if (produced)
                             {
+                                Log.Information(
+                                    "Analysis saved for '{File}': BPM={Bpm}, Key={Key}, Waveform={HasWaveform}, LUFS={Lufs}; measured {Metrics}",
+                                    track.OriginalFilename, result.Bpm ?? track.Bpm, result.Key ?? track.Key,
+                                    result.Waveform != null || track.HasWaveform, result.Loudness?.IntegratedLufs ?? track.Lufs, metrics);
                                 Interlocked.Increment(ref analysed);
                             }
                             else

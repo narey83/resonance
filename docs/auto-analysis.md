@@ -90,3 +90,21 @@ promise of completed analysis.
 
 The queue is visible under Library → Preparation. Logging defaults to database storage
 and is available in System → Logs; disk output is optional.
+
+## Queue checks and progress logs
+
+Preparation walks the existing path index in bounded pages. It does not repeatedly
+count and sort the entire library by title while reconciling each page. The cursor
+uses the same database ordering as the query, and shutdown cancellation is checked
+between pages. Tags, cached BPM/key, waveform, loudness and enhanced results retain
+the normal library query's file-size guard and fallback rules.
+
+On the native dev laptop's 59,413-track SQLite library, a read-only benchmark on
+31 October 2026 checked all tracks in 2.1 seconds. The previous query took 1.6
+seconds for a single late page of 200 tracks. These measurements cover queue
+bookkeeping; audio decoding and detection still depend on the file and host load.
+
+System → Logs → Contexts → Music → Analysis includes queue-check duration, the
+track path and missing metrics when decoding starts, and the saved BPM, key,
+waveform and LUFS when it succeeds. Incomplete results and dependency failures
+remain warnings/errors rather than successful completion entries.

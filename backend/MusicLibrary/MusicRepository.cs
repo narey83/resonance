@@ -1336,6 +1336,46 @@ namespace resonance.MusicLibrary
             return null;
         }
 
+        /// <summary>Walks the library by its indexed path without sorting or counting every page.</summary>
+        /// <param name="afterPath">The last relative path from the preceding page, or null for the first page.</param>
+        /// <param name="limit">The maximum number of tracks to read.</param>
+        /// <returns>Current tags and fingerprint-matched analysis, in path order.</returns>
+        internal IReadOnlyList<MusicTrack> GetPreparationPage(string afterPath = null, int limit = 500)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, 2000);
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"
+                SELECT path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
+                       title, artist, album_artist, album, year, track_number, disc_number,
+                       genre, {CachedBpm}, {CachedKey}, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth,
+                       EXISTS (SELECT 1 FROM {TA} a WHERE {CacheMatch("a")} AND a.overall_peaks IS NOT NULL),
+                       (SELECT a.lufs FROM {TA} a WHERE {CacheMatch("a")}),
+                       (SELECT c.dj_summary FROM {TA} c WHERE {CacheMatch("c")})
+                FROM {T} {(afterPath == null ? string.Empty : "WHERE path > @after")}
+                ORDER BY path LIMIT @limit";
+            if (afterPath != null)
+            {
+                AddParam(cmd, "@after", MusicPath.ToRelative(afterPath));
+            }
+
+            AddParam(cmd, "@limit", limit);
+            var tracks = new List<MusicTrack>();
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                tracks.Add(ReadRow(reader) with
+                {
+                    HasWaveform = !reader.IsDBNull(24) && Convert.ToBoolean(reader.GetValue(24)),
+                    Lufs = reader.IsDBNull(25) ? null : reader.GetDouble(25),
+                    DjSummary = reader.IsDBNull(26) ? null : reader.GetString(26),
+                });
+            }
+
+            return tracks;
+        }
+
         private static void AddParam(DbCommand cmd, string name, object value)
         {
             var p = cmd.CreateParameter();

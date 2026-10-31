@@ -197,6 +197,69 @@ public class WorkspaceTests : IDisposable
         using var db=Db();Assert.Equal(1,db.ExecuteScalar<int>($"SELECT COUNT(*) FROM {CacheTable}"));
         Assert.Throws<ArgumentException>(()=>service.Retry("../../outside.mp3"));
     }
+    [Fact] public void PreparationPagesKeepTheirCursorWhenEarlierRowsAreDeletedAndTitlesTie()
+    {
+        foreach (var name in new[] { "a", "b", "c", "d", "e" })
+            repository.Upsert(Add($"nested/{name}.mp3") with { Title = "Same title" });
+        var first = repository.GetPreparationPage(limit: 2);
+        Assert.Equal(new[] { "nested/a.mp3", "nested/b.mp3" }, first.Select(t => MusicPath.ToRelative(t.Path)));
+        repository.DeletePaths(["nested/a.mp3"]);
+        Add("nested/c'quoted.mp3");
+        var rest = new List<MusicTrack>();
+        var cursor = first[^1].Path;
+        while (true)
+        {
+            var page = repository.GetPreparationPage(cursor, 2);
+            if (page.Count == 0) break;
+            rest.AddRange(page);
+            cursor = page[^1].Path;
+        }
+        Assert.Equal(new[] { "nested/c'quoted.mp3", "nested/c.mp3", "nested/d.mp3", "nested/e.mp3" }, rest.Select(t => MusicPath.ToRelative(t.Path)).OrderBy(p => p, StringComparer.Ordinal));
+        Assert.Throws<ArgumentOutOfRangeException>(() => repository.GetPreparationPage(limit: 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => repository.GetPreparationPage(limit: 2001));
+    }
+    [Fact] public void PreparationPagesMatchLibraryCacheFallbacksAndRejectStaleAnalysis()
+    {
+        foreach (var name in new[] { "cached", "tagged", "stale" })
+        {
+            var track = Add($"nested/{name}.mp3", 0);
+            repository.Upsert(track with { Key = null! });
+            Complete($"nested/{name}.mp3");
+        }
+        repository.Upsert(Add("nested/tagged.mp3", 140) with { Key = "F#m" });
+        using (var db = Db())
+        {
+            db.Execute($"UPDATE {CacheTable} SET detected_bpm=127,detected_key='G#'");
+            db.Execute($"UPDATE {CacheTable} SET file_size=99 WHERE masked_filename='nested/stale.mp3'");
+        }
+        var expected = repository.Query(null!, null!, null!, null!, null!, null!, false, false, false, false, false, 100, 0).Tracks.ToDictionary(t => t.Path);
+        var tracks = repository.GetPreparationPage().ToDictionary(t => MusicPath.ToRelative(t.Path));
+        Assert.All(tracks.Values, t => Assert.Equal(expected[t.Path], t));
+        Assert.Equal(127, tracks["nested/cached.mp3"].Bpm);
+        Assert.Equal("G#", tracks["nested/cached.mp3"].Key);
+        Assert.Equal(140, tracks["nested/tagged.mp3"].Bpm);
+        Assert.Equal("F#m", tracks["nested/tagged.mp3"].Key);
+        Assert.False(tracks["nested/stale.mp3"].HasWaveform);
+        Assert.Null(tracks["nested/stale.mp3"].Lufs);
+        Assert.Null(tracks["nested/stale.mp3"].Bpm);
+        Assert.Null(tracks["nested/stale.mp3"].Key);
+    }
+    [Fact] public void ReconciliationCrossesPageBoundariesAndHonoursCancellation()
+    {
+        for (var i = 0; i < 503; i++) Add($"nested/{i:D4}.mp3");
+        var service = Service;
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        Assert.Throws<OperationCanceledException>(() => service.Reconcile(cancelled.Token));
+        Assert.Empty(store.Counts());
+        Assert.Equal(0, service.LastCheckedAt);
+        service.Reconcile();
+        Assert.Equal(503, store.Counts()["queued"]);
+        Assert.NotNull(store.Find("nested/0502.mp3"));
+        Assert.True(service.LastCheckedAt > 0);
+        service.Reconcile();
+        Assert.Equal(503, store.Counts()["queued"]);
+    }
     [Fact] public void SetsPersistOrderTemposNotesPerAccountAndDetectConcurrentEdits()
     {
         var a=Add("nested/a.mp3");var b=Add("nested/b.mp3",138);

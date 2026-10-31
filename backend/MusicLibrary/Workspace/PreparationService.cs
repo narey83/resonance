@@ -31,6 +31,7 @@ namespace resonance.MusicLibrary.Workspace;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -71,16 +72,26 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
         }
     }
 
-    public void Reconcile()
+    public void Reconcile(CancellationToken ct = default)
     {
-        for (var offset = 0; ; offset += 200)
+        var timer = Stopwatch.StartNew();
+        var checkedTracks = 0;
+        var updatedItems = 0;
+        string afterPath = null;
+        while (true)
         {
-            var page = repository.Query(null, null, null, null, null, null, false, false, false, false, false, 200, offset, sort: "title");
+            ct.ThrowIfCancellationRequested();
+            var tracks = repository.GetPreparationPage(afterPath);
+            if (tracks.Count == 0)
+            {
+                break;
+            }
+
             lock (gate)
             {
-                var known = store.FindMany(page.Tracks.Select(track => MusicPath.ToRelative(track.Path)));
+                var known = store.FindMany(tracks.Select(track => MusicPath.ToRelative(track.Path)));
                 var changes = new List<PreparationItem>();
-                foreach (var track in page.Tracks)
+                foreach (var track in tracks)
                 {
                     var path = MusicPath.ToRelative(track.Path);
                     known.TryGetValue(path, out var existing);
@@ -107,17 +118,18 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
                 if (changes.Count > 0)
                 {
                     store.PutMany(changes);
+                    updatedItems += changes.Count;
                 }
             }
 
-            if (offset + page.Tracks.Count >= page.Total || page.Tracks.Count == 0)
-            {
-                break;
-            }
+            checkedTracks += tracks.Count;
+            afterPath = MusicPath.ToRelative(tracks[^1].Path);
         }
 
+        ct.ThrowIfCancellationRequested();
         store.RemoveDeleted();
         LastCheckedAt = Now;
+        Log.Information("Automatic preparation checked {Tracks} tracks in {ElapsedMs:F0} ms; updated {Items} queue entries", checkedTracks, timer.Elapsed.TotalMilliseconds, updatedItems);
     }
 
     internal async Task ProcessNext(CancellationToken ct)
@@ -181,7 +193,7 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
 
                     if (Interlocked.Exchange(ref reconcileRequested, 0) == 1 || Now - LastCheckedAt > 60_000)
                     {
-                        Reconcile();
+                        Reconcile(stoppingToken);
                     }
 
                     await ProcessNext(stoppingToken);
@@ -259,8 +271,11 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
             store.Paused = true;
             store.Put(item with
             {
-                State = "failed", Attempts = Math.Max(0, item.Attempts - 1), NextAttemptAt = 0,
-                Detail = analysis.ScanState.Error, UpdatedAt = Now,
+                State = "failed",
+                Attempts = Math.Max(0, item.Attempts - 1),
+                NextAttemptAt = 0,
+                Detail = analysis.ScanState.Error,
+                UpdatedAt = Now,
             });
             return;
         }
