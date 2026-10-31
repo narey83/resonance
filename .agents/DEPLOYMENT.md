@@ -153,6 +153,35 @@ database was repaired earlier that day. Preserve recovered state and backups.
 Never rerun historical database-repair or migration activation scripts as a
 generic deployment command.
 
+## Browser performance and storage link — 31 October 2026
+
+The active backend is `8d2ccbf` (`media-path-8d2ccbf`) and web release is
+`fcf1e59` (`uploads-browser-fcf1e59`). Transfer screens use paginated queues;
+the global header and Overview share compact status samples. Do not restore
+full transfer-list polling on every page. See `docs/upload-queue-paging.md`.
+
+Rollback builds must also retain the lifecycle corrections `5a5084c` and
+`2373e7b`: network playlist/watcher setup must not block HTTP startup, shutdown
+must not launch a final library rescan, and loading the saved metadata-attempt
+cache must not probe every music file on SMB. The media correction `8d2ccbf`
+reuses a freshly authorized canonical path within each request; preserve signed
+URL validation, root boundaries, symlink checks and range streaming.
+
+The final restart stopped gracefully and verified all 44,902 pending upload IDs,
+with consistent SQLite/WAL backups and matching complete off-server hashes.
+Evidence: `/home/narey/resonance-builds/uploads-performance-20261031/verification/media-activation.log`.
+Backups: `/home/narey/resonance-backups/uploads-paged-20261031-211447/media-path-8d2ccbf`.
+Never replay the recovery operations from older private deployment helpers.
+
+Ethernet diagnosis on 31 October found `enp0s31f6` negotiated at **10 Mb/s full
+duplex**, despite laptop support for 1 Gb/s. The link partner advertised only
+10baseT. Treat this as a dated measurement and recheck after the cable/port is
+fixed; do not force gigabit or change network configuration based on this note.
+The existing upload limit was approximately 15 Mb/s (1831 KiB/s); a temporary
+6 Mb/s cap was proposed but **not approved or applied**. User expects 1 Gb/s.
+The user authorized read-only storage-host diagnosis for this investigation;
+this does not grant standing permission to administer the old server.
+
 ## Native enhanced analysis
 
 The enhanced worker is installed separately from basic BPM/key analysis on the dev
