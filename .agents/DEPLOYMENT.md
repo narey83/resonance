@@ -770,7 +770,7 @@ user clarified this rule on 30 October 2026.
   process before starting another server. Its working directory must be the
   requested source snapshot's `mobile/`, with the matching dependency lockfile.
   The active snapshot verified on 1 November is
-  `/home/narey/resonance-builds/arrivals-20261101/mobile`;
+  `/home/narey/resonance-builds/mobile-session-20261101/mobile`;
   its parent contains
   `mobile-metro.json` and `mobile-metro.log`. Verify the PID/cwd before reuse.
 - Reapply `adb -s PIXEL_TARGET reverse tcp:8081 tcp:8082` after a disconnect or
@@ -848,3 +848,44 @@ automated tests on the laptop. The live Pixel was discovered at its advertised
 address and Metro forwarding was verified after Wireless debugging was enabled.
 Automatic recovery was also tested previously by removing forwarding and
 disconnecting the Pixel; a physical reboot/network switch was not performed.
+
+
+## Mobile session recovery — 1 November 2026
+
+Mobile source `c884108` is served to the existing Pixel development client from
+`/home/narey/resonance-builds/mobile-session-20261101/mobile`. Metro PID 681971
+uses laptop loopback 8082 and the established device 8081 reverse. Its parent
+contains `mobile-metro.json`, `mobile-metro.log`, source verification and both
+platform bundle exports. Previous source remains under `arrivals-20261101`.
+No native rebuild, backend restart, database rewrite or application-data reset.
+
+The phone initially displayed an empty Discover view and spinner. Its visible
+network log did not establish an authentication failure; navigating away and
+back restored music with the existing login. Do not attribute this incident to
+the separate expired saved web-QA credential. The new code closes confirmed auth
+failure gaps: access-only 401s and a rejected replay now exit to an explicit
+sign-in-again screen. Renewal rejection records the same reason. Temporary
+network failures retain credentials. Session checks run on startup, foreground
+return and every minute while active, independently of public reachability.
+Late responses cannot sign out a new login. Discover refreshes on foreground
+return and distinguishes loading/failure from an empty collection.
+
+Dev-laptop verification: clean npm 11 install; all 218 mobile tests, TypeScript,
+ESLint with zero warnings, zero dependency-audit findings, Android and iOS bundle
+exports passed. The Pixel retained login and displayed music. Its network log
+confirmed the new authenticated `GET /session` returning 200. Expiry/revocation
+failure cases used automated fixtures; the real phone's working session was not
+revoked for testing. Private evidence: Mac `.dev/mobile-session/` and the laptop
+snapshot above. Unrelated live link-preview 404s remain outside this change.
+
+The web analysis-card release `17a15e8` is committed and pushed but **not activated**.
+Its 62 regressions, five dependency-security tests, lint/formatting, production
+build and fixture browser checks at 1440/1100/800/390 passed on the laptop. Real
+authenticated laptop browser verification remains pending a valid QA sign-in;
+the old saved credential expired on 30 October and refresh returned 401. The live
+web root remains `queue-running-d42fed2`. The candidate web snapshot is
+`/home/narey/resonance-builds/precommit-upload-paging-f441495cae`; private manifests,
+checks, screenshots and prepared activation helper are in Mac `.dev/analysis-data/`.
+Leave automatic preparation paused and the Basic scan stopped; queued work and
+saved results were retained. Resume this release from its existing verified
+snapshot rather than rebuilding or treating the Git push as a deployment.
