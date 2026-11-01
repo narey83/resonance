@@ -117,10 +117,13 @@ const ENHANCED_FEATURES = [
   ['similarity', 'Similarity'],
 ];
 
+const formatCount = (value) =>
+  typeof value === 'number' ? value.toLocaleString('en-GB') : value;
+
 const enhancedFeatureValue = (coverage, feature) => {
   const count = coverage?.features?.[feature];
   if (count == null) return '—';
-  if (coverage.unindexed > 0) return count > 0 ? `${count}+` : '—';
+  if (coverage.unindexed > 0) return count > 0 ? `${formatCount(count)}+` : '—';
   return count;
 };
 
@@ -129,7 +132,7 @@ const MetricCard = ({ label, title, value }) => (
     className="ka-stat"
     title={title}
   >
-    <span className="ka-stat-value">{value ?? '—'}</span>
+    <span className="ka-stat-value">{formatCount(value) ?? '—'}</span>
     <span className="ka-stat-label">{label}</span>
   </div>
 );
@@ -147,10 +150,14 @@ const ScanSettings = ({
   const [resetAll, setResetAll] = useState(false);
 
   return (
-    <div className="ka-panel">
+    <section
+      aria-label="Scan settings"
+      className="ka-panel"
+    >
       <div className="ka-panel-header">
-        <span>Scan Settings</span>
+        <span>Scan settings</span>
         <button
+          aria-label="Close scan settings"
           className="ka-icon-btn hover-fx"
           onClick={onClose}
           type="button"
@@ -166,35 +173,39 @@ const ScanSettings = ({
           </p>
         </div>
 
-        {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
-        <label className="ka-toggle-row">
+        <div className="ka-toggle-row">
           <span className="ka-field-label">Skip already-analysed tracks</span>
           <button
+            aria-checked={skipTagged}
+            aria-label="Skip already-analysed tracks"
             className={`ka-toggle hover-fx${skipTagged ? ' on' : ''}`}
             onClick={() => {
               setSkipTagged((v) => !v);
               if (!skipTagged) setResetAll(false);
             }}
+            role="switch"
             type="button"
           >
             <span className="ka-toggle-thumb" />
           </button>
-        </label>
+        </div>
 
-        {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
-        <label className="ka-toggle-row">
+        <div className="ka-toggle-row">
           <span className="ka-field-label">Reset & re-scan all tracks</span>
           <button
+            aria-checked={resetAll}
+            aria-label="Reset & re-scan all tracks"
             className={`ka-toggle hover-fx${resetAll ? ' on' : ''}`}
             onClick={() => {
               setResetAll((v) => !v);
               if (!resetAll) setSkipTagged(false);
             }}
+            role="switch"
             type="button"
           >
             <span className="ka-toggle-thumb" />
           </button>
-        </label>
+        </div>
         {resetAll && (
           <p className="ka-warn">
             <AlertCircle size={13} /> This will clear the selected metrics on
@@ -232,7 +243,7 @@ const ScanSettings = ({
               : 'Start Basic Scan'}
         </button>
       </div>
-    </div>
+    </section>
   );
 };
 
@@ -1345,7 +1356,7 @@ const Analysis = () => {
               Enhanced analysis{' '}
               <span>
                 {stats?.enhanced
-                  ? `${stats.enhanced.complete} ready · ${Math.max(0, coverage.total - stats.enhanced.complete)} incomplete`
+                  ? `${formatCount(stats.enhanced.complete)} ready · ${formatCount(Math.max(0, coverage.total - stats.enhanced.complete))} incomplete`
                   : 'Checking coverage…'}
               </span>
             </h3>

@@ -236,6 +236,29 @@ describe('analysis folder loading', () => {
     );
   });
 
+  it('formats large coverage and queue counts consistently', async () => {
+    expect.hasAssertions();
+    musicLibraryApi.getAnalysisStats.mockResolvedValue({
+      total: 59_413,
+      complete: 1_679,
+      enhanced: { complete: 35, unindexed: 0, features: { beats: 35 } },
+    });
+    getPreparationStatus.mockResolvedValue({ counts: { queued: 59_376 } });
+    await render();
+    expect(container.querySelector('.ka-summary-basic').textContent).toContain(
+      '59,413Tracks',
+    );
+    expect(container.querySelector('.ka-summary-basic').textContent).toContain(
+      '57,734Incomplete',
+    );
+    expect(
+      container.querySelector('.ka-summary-enhanced').textContent,
+    ).toContain('35 ready · 59,378 incomplete');
+    expect(container.querySelector('.ka-summary-queue').textContent).toContain(
+      '59,376queued',
+    );
+  });
+
   it('shows unknown feature coverage while older saved results are being indexed', async () => {
     expect.hasAssertions();
     musicLibraryApi.getAnalysisStats.mockResolvedValue({
@@ -401,7 +424,17 @@ describe('analysis folder loading', () => {
         .find((button) => button.textContent.trim() === 'Scan')
         .click(),
     );
-    act(() => container.querySelectorAll('.ka-panel .ka-toggle')[1].click());
+    const skip = container.querySelector(
+      '[role="switch"][aria-label="Skip already-analysed tracks"]',
+    );
+    const reset = container.querySelector(
+      '[role="switch"][aria-label="Reset & re-scan all tracks"]',
+    );
+    expect(skip.getAttribute('aria-checked')).toBe('true');
+    expect(reset.getAttribute('aria-checked')).toBe('false');
+    act(() => reset.click());
+    expect(skip.getAttribute('aria-checked')).toBe('false');
+    expect(reset.getAttribute('aria-checked')).toBe('true');
     act(() => container.querySelector('input[value="enhanced"]').click());
     act(() => container.querySelector('input[value="basic"]').click());
     expect(container.querySelector('.ka-panel').textContent).toContain(
