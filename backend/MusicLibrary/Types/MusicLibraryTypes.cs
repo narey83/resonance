@@ -153,5 +153,8 @@ namespace resonance.MusicLibrary
         int Bpmed,
         int Waveformed,
         int Loudness,
-        int Complete);
+        int Complete,
+        EnhancedAnalysisStats Enhanced = null);
+
+    public record EnhancedAnalysisStats(int Saved, int Complete, int Unindexed, IReadOnlyDictionary<string, int> Features);
 }

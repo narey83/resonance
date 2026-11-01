@@ -957,15 +957,27 @@ namespace resonance.MusicLibrary
                 FROM {T}
                 LEFT JOIN {TA} a ON {CacheMatch("a")}";
 
-            using var r = cmd.ExecuteReader();
-            if (!r.Read())
+            MusicAnalysisStats basic;
+            using (var r = cmd.ExecuteReader())
             {
-                return new MusicAnalysisStats(0, 0, 0, 0, 0, 0);
+                int At(int i) => r.IsDBNull(i) ? 0 : Convert.ToInt32(r.GetValue(i));
+                basic = r.Read() ? new MusicAnalysisStats(At(0), At(1), At(2), At(3), At(4), At(5)) : new MusicAnalysisStats(0, 0, 0, 0, 0, 0);
             }
 
-            int At(int i) => r.IsDBNull(i) ? 0 : Convert.ToInt32(r.GetValue(i));
+            // Read only saved enhanced summaries with the same indexed content guard.
+            // This streams compact rows, without parsing audio or allocating a library dump.
+            cmd.CommandText = $@"SELECT a.dj_summary FROM {TA} a
+                JOIN {T} ON {CacheMatch("a")} WHERE a.dj_summary IS NOT NULL";
+            using var reader = cmd.ExecuteReader();
+            IEnumerable<string> Summaries()
+            {
+                while (reader.Read())
+                {
+                    yield return reader.GetString(0);
+                }
+            }
 
-            return new MusicAnalysisStats(At(0), At(1), At(2), At(3), At(4), At(5));
+            return basic with { Enhanced = EnhancedCoverage.Count(Summaries()) };
         }
 
         /// <summary>

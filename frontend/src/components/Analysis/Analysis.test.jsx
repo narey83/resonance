@@ -1,4 +1,5 @@
 import * as analysisApi from '../../lib/analysis';
+import { getPreparationStatus } from '../../lib/libraryWorkspace';
 import * as musicLibraryApi from '../../lib/musicLibrary';
 import { usePagedList } from '../../lib/usePagedList';
 import Analysis from './Analysis';
@@ -12,13 +13,9 @@ jest.mock('../../context/PlayerContext', () => ({
   usePlayer: () => ({ play: jest.fn(), track: null }),
 }));
 jest.mock('../../lib/libraryWorkspace', () => ({
-  getPreparationStatus: () =>
-    Promise.resolve({
-      counts: { complete: 5 },
-      paused: true,
-      enhancedEnabled: true,
-    }),
+  getPreparationStatus: jest.fn(),
 }));
+
 jest.mock(
   '../TrackAnalysis/CandidateAnalysisPanel',
   () =>
@@ -38,7 +35,7 @@ jest.mock('../../lib/analysis', () => ({
   getScanState: jest.fn(() => Promise.resolve({ scanning: false })),
 }));
 jest.mock('../../lib/musicLibrary', () => ({
-  getAnalysisStats: () => Promise.resolve({ total: 3, complete: 0 }),
+  getAnalysisStats: jest.fn(),
   getKeys: () => Promise.resolve([]),
   getTrackPage: jest.fn(),
 }));
@@ -68,6 +65,15 @@ describe('analysis folder loading', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    musicLibraryApi.getAnalysisStats.mockResolvedValue({
+      total: 3,
+      complete: 0,
+    });
+    getPreparationStatus.mockResolvedValue({
+      counts: { complete: 5 },
+      paused: true,
+      enhancedEnabled: true,
+    });
     useVirtualizer.mockImplementation(
       ({ count, getItemKey, scrollMargin }) => ({
         getTotalSize: () => count * 44,
@@ -172,6 +178,83 @@ describe('analysis folder loading', () => {
         value: previousObserver,
       });
     }
+  });
+
+  it('separates basic coverage, enhanced features and preparation queue counts', async () => {
+    expect.hasAssertions();
+    musicLibraryApi.getAnalysisStats.mockResolvedValue({
+      total: 100,
+      keyed: 90,
+      bpmed: 80,
+      waveformed: 70,
+      loudness: 60,
+      complete: 50,
+      enhanced: {
+        saved: 20,
+        complete: 12,
+        unindexed: 0,
+        features: {
+          beats: 19,
+          downbeats: 18,
+          vocals: 17,
+          stems: 16,
+          sections: 15,
+          phrases: 14,
+          genre: 13,
+          energy: 12,
+          cues: 11,
+          loops: 10,
+          similarity: 9,
+        },
+      },
+    });
+    getPreparationStatus.mockResolvedValue({
+      paused: true,
+      enhancedEnabled: true,
+      counts: { queued: 7, running: 2, retrying: 3, failed: 4 },
+    });
+    await render();
+    const basic = container.querySelector(
+      '[aria-label="Basic analysis coverage"]',
+    );
+    const enhanced = container.querySelector(
+      '[aria-label="Enhanced feature coverage"]',
+    );
+    const queue = container.querySelector(
+      '[aria-label="Preparation queue status"]',
+    );
+    expect(basic.textContent).toContain('90Key');
+    expect(basic.textContent).not.toContain('Beat grids');
+    expect(enhanced.textContent).toContain('19Beat grids');
+    expect(enhanced.textContent).toContain('17Vocals');
+    expect(enhanced.textContent).toContain('12 ready · 88 incomplete');
+    expect(queue.textContent).toContain('7queued');
+    expect(queue.textContent).toContain('2running');
+    expect(queue.textContent).toContain('4failed');
+    expect(container.querySelector('details.ka-analysis-help').open).toBe(
+      false,
+    );
+  });
+
+  it('shows unknown feature coverage while older saved results are being indexed', async () => {
+    expect.hasAssertions();
+    musicLibraryApi.getAnalysisStats.mockResolvedValue({
+      total: 100,
+      complete: 10,
+      enhanced: {
+        saved: 5,
+        complete: 5,
+        unindexed: 2,
+        features: { beats: 3, vocals: 0 },
+      },
+    });
+    await render();
+    const enhanced = container.querySelector(
+      '[aria-label="Enhanced feature coverage"]',
+    );
+    expect(enhanced.textContent).toContain('3+Beat grids');
+    expect(enhanced.textContent).toContain('—Vocals');
+    expect(enhanced.textContent).toContain('2 older saved results');
   });
 
   it('loads every page automatically and counts the complete folder', async () => {

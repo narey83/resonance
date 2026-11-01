@@ -103,6 +103,37 @@ const toRow = (t) => ({
   title: t.title,
 });
 
+const ENHANCED_FEATURES = [
+  ['beats', 'Beat grids'],
+  ['downbeats', 'Downbeats'],
+  ['vocals', 'Vocals'],
+  ['stems', 'Stem analysis'],
+  ['sections', 'Sections'],
+  ['phrases', 'Phrases'],
+  ['genre', 'Genre'],
+  ['energy', 'Energy'],
+  ['cues', 'Cue analysis'],
+  ['loops', 'Loop analysis'],
+  ['similarity', 'Similarity'],
+];
+
+const enhancedFeatureValue = (coverage, feature) => {
+  const count = coverage?.features?.[feature];
+  if (count == null) return '—';
+  if (coverage.unindexed > 0) return count > 0 ? `${count}+` : '—';
+  return count;
+};
+
+const MetricCard = ({ label, title, value }) => (
+  <div
+    className="ka-stat"
+    title={title}
+  >
+    <span className="ka-stat-value">{value ?? '—'}</span>
+    <span className="ka-stat-label">{label}</span>
+  </div>
+);
+
 // ── Scan settings panel ───────────────────────────────────────────────────────
 
 const ScanSettings = ({
@@ -130,21 +161,9 @@ const ScanSettings = ({
 
       <div className="ka-panel-body">
         <div className="ka-field">
-          <span className="ka-field-hint">
-            Basic analysis measures key, BPM, loudness and waveform in one
-            decode. Enhanced analysis adds vocal, phrase, downbeat and genre
-            models after the basic pass.
-          </span>
-        </div>
-
-        <div className="ka-field">
           <p className="ka-field-label">
             Selected mode: <strong>{enhanced ? 'Enhanced' : 'Basic'}</strong>
           </p>
-          <span className="ka-field-hint">
-            Choose Basic or Enhanced using the cards above. Existing enhanced
-            results are preserved unless reset is selected.
-          </span>
         </div>
 
         {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
@@ -846,11 +865,16 @@ const Analysis = () => {
   useEffect(() => {
     pollRef.current = setInterval(async () => {
       try {
-        const state = await analysisApi.getScanState();
+        const [state, nextPreparation] = await Promise.all([
+          analysisApi.getScanState(),
+          getPreparationStatus().catch(() => null),
+        ]);
         if (!mountedRef.current) {
           clearInterval(pollRef.current);
           return;
         }
+
+        if (nextPreparation) setPreparation(nextPreparation);
 
         // A scan that started without this page's own startScan() (i.e. the automatic
         // check) still needs finalizing when it ends.
@@ -1191,10 +1215,6 @@ const Analysis = () => {
     total: 0,
     waveformed: 0,
   };
-  const pct =
-    coverage.total > 0
-      ? Math.round((coverage.complete / coverage.total) * 100)
-      : 0;
 
   return (
     <div
@@ -1202,55 +1222,61 @@ const Analysis = () => {
       ref={scrollRef}
     >
       <section className="ka-overview">
-        <div className="ka-view-heading">
-          <AudioWaveform size={18} />
-          <div>
-            <h2>Track analysis</h2>
-            <p>Key, tempo, waveform and loudness, organised by folder.</p>
+        {scanState?.error && <p role="alert">{scanState.error}</p>}
+        <div className="ka-analysis-toolbar">
+          <fieldset
+            className="ka-analysis-modes"
+            disabled={scanning}
+          >
+            <legend>Analysis mode</legend>
+            <label className={enhanced ? '' : 'ka-mode-selected'}>
+              <input
+                checked={!enhanced}
+                name="analysis-mode"
+                onChange={() => setEnhanced(false)}
+                type="radio"
+                value="basic"
+              />
+              <strong>Basic</strong>
+              <span>BPM · key · waveform · LUFS</span>
+            </label>
+            <label className={enhanced ? 'ka-mode-selected' : ''}>
+              <input
+                checked={enhanced}
+                disabled={preparation?.enhancedEnabled === false}
+                name="analysis-mode"
+                onChange={() => setEnhanced(true)}
+                type="radio"
+                value="enhanced"
+              />
+              <strong>Enhanced</strong>
+              <span>Basic + grids, vocals, structure and genre</span>
+            </label>
+          </fieldset>
+          <div className="ka-analysis-actions">
+            <KeyFormatToggle
+              format={format}
+              onChange={setFormat}
+            />
+            <button
+              className="ka-btn hover-fx"
+              onClick={hardRefresh}
+              title="Refresh"
+              type="button"
+            >
+              <RefreshCw size={13} />
+            </button>
+            <button
+              className={`ka-btn hover-fx${showSettings ? ' ka-btn--active' : ''}`}
+              disabled={scanning}
+              onClick={() => setShowSettings((v) => !v)}
+              type="button"
+            >
+              <Settings2 size={13} /> Scan
+            </button>
           </div>
         </div>
-        {scanState?.error && <p role="alert">{scanState.error}</p>}
-        <fieldset
-          className="ka-analysis-modes"
-          disabled={scanning}
-        >
-          <legend>Analysis mode</legend>
-          <label className={enhanced ? '' : 'ka-mode-selected'}>
-            <input
-              checked={!enhanced}
-              name="analysis-mode"
-              onChange={() => setEnhanced(false)}
-              type="radio"
-              value="basic"
-            />
-            <strong>Basic</strong>
-            <span>BPM, musical key, waveform and loudness (LUFS).</span>
-          </label>
-          <label className={enhanced ? 'ka-mode-selected' : ''}>
-            <input
-              checked={enhanced}
-              disabled={preparation?.enhancedEnabled === false}
-              name="analysis-mode"
-              onChange={() => setEnhanced(true)}
-              type="radio"
-              value="enhanced"
-            />
-            <strong>Enhanced</strong>
-            <span>
-              Everything in Basic, plus beat and downbeat grids, vocals and
-              stems, sections and phrase labels, genre and energy, cue and loop
-              suggestions, and similarity.
-            </span>
-          </label>
-        </fieldset>
         <div className="ka-analysis-context">
-          <span>
-            <strong>Basic ready:</strong> {coverage.complete} tracks
-          </span>
-          <span>
-            <strong>Enhanced ready:</strong>{' '}
-            {preparation ? preparation.counts?.complete || 0 : '—'} tracks
-          </span>
           <span>
             <strong>Automatic preparation:</strong>{' '}
             {preparation
@@ -1268,12 +1294,102 @@ const Analysis = () => {
               : 'Checking…'}
           </span>
         </div>
-        <p className="ka-analysis-note">
-          Enhanced results are predictions stored separately from file tags.
-          Review beat grids, vocal and phrase labels before using them in a mix.
-          Open a track’s analysis details to compare measurements and inspect
-          every feature.
-        </p>
+        <details className="ka-analysis-help">
+          <summary>Analysis details</summary>
+          <p>
+            Basic measures BPM, musical key, waveform and loudness (LUFS).
+            Enhanced adds beat and downbeat grids, vocals and stems, sections
+            and phrase labels, genre and energy, cue and loop suggestions, and
+            similarity.
+          </p>
+          <p>
+            Enhanced results are independent predictions; review them before
+            mixing. Coverage counts saved, available results. Vocals, cue and
+            loop analysis can be complete with no detections or suggestions.
+            Stem analysis counts processing, not retained audio files.
+          </p>
+          <p>
+            Enhanced analysis uses more CPU and memory. Existing enhanced
+            results are preserved unless reset is selected.
+          </p>
+        </details>
+        <div className="ka-analysis-summary">
+          <section
+            aria-label="Basic analysis coverage"
+            className="ka-summary-basic"
+          >
+            <h3>Basic analysis</h3>
+            <div className="ka-metric-grid">
+              {[
+                ['Tracks', coverage.total],
+                ['Key', coverage.keyed],
+                ['BPM', coverage.bpmed],
+                ['Waveform', coverage.waveformed],
+                ['Loudness', coverage.loudness],
+                ['Ready', coverage.complete],
+                ['Incomplete', Math.max(0, coverage.total - coverage.complete)],
+              ].map(([label, value]) => (
+                <MetricCard
+                  key={label}
+                  label={label}
+                  value={value}
+                />
+              ))}
+            </div>
+          </section>
+          <section
+            aria-label="Enhanced feature coverage"
+            className="ka-summary-enhanced"
+          >
+            <h3>
+              Enhanced analysis{' '}
+              <span>
+                {stats?.enhanced
+                  ? `${stats.enhanced.complete} ready · ${Math.max(0, coverage.total - stats.enhanced.complete)} incomplete`
+                  : 'Checking coverage…'}
+              </span>
+            </h3>
+            <div className="ka-metric-grid">
+              {ENHANCED_FEATURES.map(([key, label]) => {
+                const pending = stats?.enhanced?.unindexed > 0;
+                return (
+                  <MetricCard
+                    key={key}
+                    label={label}
+                    title={
+                      pending
+                        ? 'Older saved results are still being indexed; shown counts are confirmed minimums.'
+                        : 'Tracks with usable saved enhanced results for this feature.'
+                    }
+                    value={enhancedFeatureValue(stats?.enhanced, key)}
+                  />
+                );
+              })}
+            </div>
+            {stats?.enhanced?.unindexed > 0 && (
+              <p className="ka-coverage-pending">
+                Coverage is being indexed for {stats.enhanced.unindexed} older
+                saved results.
+              </p>
+            )}
+          </section>
+          <section
+            aria-label="Preparation queue status"
+            className="ka-summary-queue"
+          >
+            <h3>Preparation queue</h3>
+            <div className="ka-metric-grid">
+              {['queued', 'running', 'retrying', 'failed'].map((state) => (
+                <MetricCard
+                  key={state}
+                  label={state}
+                  title="Automatic preparation runs Basic, then Enhanced when configured. Manual scan progress is shown separately."
+                  value={preparation ? preparation.counts?.[state] ?? 0 : '—'}
+                />
+              ))}
+            </div>
+          </section>
+        </div>
         {scanState?.enhancedTotal > 0 && (
           <section
             aria-label="Enhanced analysis progress"
@@ -1314,43 +1430,7 @@ const Analysis = () => {
             )}
           </section>
         )}
-        {/* ── Stats bar ── */}
-        <div className="ka-stats-bar">
-          <div className="ka-stat">
-            <span className="ka-stat-value">{coverage.total}</span>
-            <span className="ka-stat-label">Tracks</span>
-          </div>
-          <div className="ka-stat ka-stat--keyed">
-            <span className="ka-stat-value">{coverage.keyed}</span>
-            <span className="ka-stat-label">Key</span>
-          </div>
-          <div className="ka-stat ka-stat--keyed">
-            <span className="ka-stat-value">{coverage.bpmed}</span>
-            <span className="ka-stat-label">BPM</span>
-          </div>
-          <div className="ka-stat ka-stat--keyed">
-            <span className="ka-stat-value">{coverage.waveformed}</span>
-            <span className="ka-stat-label">Waveform</span>
-          </div>
-          <div className="ka-stat ka-stat--keyed">
-            <span className="ka-stat-value">{coverage.loudness}</span>
-            <span className="ka-stat-label">Loudness</span>
-          </div>
-          <div className="ka-stat ka-stat--unkeyed">
-            <span className="ka-stat-value">
-              {coverage.total - coverage.complete}
-            </span>
-            <span className="ka-stat-label">Incomplete</span>
-          </div>
-          <div className="ka-stat-bar-wrap">
-            <div className="ka-stat-bar">
-              <div
-                className="ka-stat-bar-fill"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-          </div>
-
+        <div className="ka-scan-progress">
           {/* inline scan progress */}
           {scanning && scanState.total > 0 && (
             <div className="ka-progress-bar-wrap">
@@ -1395,28 +1475,6 @@ const Analysis = () => {
               Scanning… Cancel
             </button>
           )}
-
-          <div className="ka-spacer" />
-          <KeyFormatToggle
-            format={format}
-            onChange={setFormat}
-          />
-          <button
-            className="ka-btn hover-fx"
-            onClick={hardRefresh}
-            title="Refresh"
-            type="button"
-          >
-            <RefreshCw size={13} />
-          </button>
-          <button
-            className={`ka-btn hover-fx${showSettings ? ' ka-btn--active' : ''}`}
-            disabled={scanning}
-            onClick={() => setShowSettings((v) => !v)}
-            type="button"
-          >
-            <Settings2 size={13} /> Scan
-          </button>
         </div>
       </section>
 

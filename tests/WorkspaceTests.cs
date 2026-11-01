@@ -38,6 +38,26 @@ public class WorkspaceTests : IDisposable
         if(postgres)db.Execute("CREATE SCHEMA library_activity");
         db.Execute($"CREATE TABLE {(postgres ? "library_activity." : "")}\"PlayHistory\" (\"Id\" TEXT,\"Path\" TEXT,\"Username\" TEXT,\"PlayedAt\" BIGINT); CREATE TABLE {(postgres ? "library_activity." : "")}\"LovedTracks\" (\"Path\" TEXT,\"Username\" TEXT)");
     }
+    [Fact]
+    public void EnhancedCoverageUsesCurrentIndexedTracksWithoutOpeningAudioFiles()
+    {
+        var valid = Add("coverage/current.mp3");
+        Add("coverage/stale.mp3");
+        const string summary = """{"complete":true,"coverageVersion":1,"coverage":{"beats":true,"downbeats":true,"vocals":true,"stems":false,"sections":false,"phrases":false,"genre":true,"energy":true,"cues":false,"loops":false,"similarity":true}}""";
+        using var db = Db();
+        foreach (var (path, size) in new[] { (valid.Path, 100), ("coverage/stale.mp3", 99), ("coverage/deleted.mp3", 100) })
+        {
+            db.Execute($"INSERT INTO {CacheTable} (masked_filename,file_size,analysed_at,dj_summary) VALUES(@path,@size,0,@summary)", new { path, size, summary });
+        }
+        var stats = repository.GetAnalysisStats();
+        Assert.Equal(2, stats.Total);
+        Assert.Equal(1, stats.Enhanced.Saved);
+        Assert.Equal(1, stats.Enhanced.Complete);
+        Assert.Equal(1, stats.Enhanced.Features["beats"]);
+        Assert.Equal(0, stats.Enhanced.Features["stems"]);
+        Assert.False(File.Exists(Path.Combine(root, valid.Path)));
+    }
+
     private DbConnection Db() { DbConnection db = postgres ? new Npgsql.NpgsqlConnection(connection) : new SqliteConnection(connection); db.Open(); return db; }
     private MusicTrack Add(string path="nested/a.mp3", int bpm=128, long? added=null)
     {

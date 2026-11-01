@@ -89,13 +89,27 @@ internal static class CrateAnalysisSummary
         var automatic = arrangement?.TryGetProperty("djStructure", out _) == true
             && arrangement.Value.GetProperty("djStructure").TryGetProperty("automatic", out var auto) && auto.ValueKind == JsonValueKind.True;
         var neutralPhrases = automatic ? arrangement.Value.GetProperty("djStructure").GetProperty("segments").EnumerateArray().Count(segment => segment.GetProperty("label").GetString() == "Transition") : 0;
-        if (genre == null && energy == null && vocals == null && arrangement == null && bpm == null && key == null)
+        bool HasGrid(string name) => beats.HasValue && beats.Value.TryGetProperty(name, out var grid)
+            && grid.ValueKind == JsonValueKind.Array && grid.GetArrayLength() > 0;
+        var coverage = new
+        {
+            beats = HasGrid("beats_seconds"), downbeats = HasGrid("downbeats_seconds"),
+            vocals = vocals.HasValue, stems = Result("stems").HasValue,
+            sections = Result("structure").HasValue, phrases = arrangement.HasValue,
+            genre = genre != null, energy = energy.HasValue,
+            cues = Result("cues").HasValue, loops = Result("loops").HasValue,
+            similarity = Result("embedding").HasValue,
+        };
+
+        if (genre == null && energy == null && vocals == null && arrangement == null && bpm == null && key == null
+            && !coverage.beats && !coverage.downbeats && !coverage.stems && !coverage.sections && !coverage.cues && !coverage.loops && !coverage.similarity)
         {
             return null;
         }
 
         return JsonSerializer.Serialize(new
         {
+            coverageVersion = 1, coverage,
             complete = CandidateAnalysisService.HasEnhanced(analysis), exportReady = ExportAnalysisContract.Ready(analysis), experimental = true, analysisId,
             bpm, key, genre, energy, energySemantics = "Mean PCM RMS; loudness-based energy proxy", vocals,
             automaticArrangement = automatic, neutralPhraseCount = neutralPhrases,
