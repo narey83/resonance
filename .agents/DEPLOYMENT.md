@@ -49,7 +49,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-live-cards-405d46c/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/queue-running-d42fed2/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -658,6 +658,50 @@ not included in this web-only activation.
 Snapshot: `/home/narey/resonance-builds/precommit-upload-paging-d6f67e6daa`.
 Rollback: `/home/narey/resonance-backups/analysis-live-cards-405d46c`.
 Private checks and live before/after proof: `.dev/analysis-live-cards/`.
+
+## Preparation Running card includes Basic workers — 1 November 2026
+
+Live web/gateway: `queue-running-d42fed2`, source
+`d42fed26a6ac5c355fa0379e59311a22c3481eaa`. The Running card previously read only
+automatic preparation-store counts, so a manually started Basic scan could show
+Analysing: 8 while the card showed zero. Positive live scan worker counts now take
+precedence; otherwise the card falls back to automatic preparation. The two sources
+are never added, because automatic batches can reserve or report the same work.
+The separate Analysing/queued progress uses the same live worker value. Legacy
+scan responses can fall back to active paths; stale in-flight counts are ignored
+when scanning is false. Other queue cards retain their automatic-queue totals,
+with clearer descriptions. Existing APIs already supply the required Basic count;
+no backend contract, worker or database change was needed.
+
+Per the standing user instruction, stopped the real Basic job through the deployed
+Stop action before development. Verified automatic preparation Paused, no active
+scan progress and disabled Stop. Queued work and saved results were retained.
+The job was left stopped after deployment; no real analysis was started for QA.
+
+On the dev laptop: clean dependency installation, ESLint/Prettier, 51 frontend
+regressions, five dependency-security tests and production build passed. Added
+cases for eight manual workers with automatic running zero, overlapping/reserved
+automatic work, worker changes/stopping and older path-only responses. Browser
+checks at 1440/1100/800/390 verified **8 Running** alongside **Analysing: 8**, no
+double counting when both sources reported eight, and return to automatic counts
+when the scan ended. Existing coverage refresh, controls, selection, ring/reduced-
+motion and virtual browsing checks passed; desktop/phone screenshots inspected.
+Actual Mac Brave verified the new Running description and correct idle zero while
+paused, with Stop disabled. Active-worker cases used isolated fixtures.
+
+Used an isolated Git index for checks and path-scoped commits, preserving concurrent
+staged mobile work. The complete frontend subtree was verified against the tested
+snapshot before commit/deployment. Web-only activation verified current/retained
+assets and readiness; 133 old assets retained. Backend PID 476721 and Caddy PID
+3992646 preserved; backend remains `analysis-folder-first-1164c3c`. HTTP/1/2/3,
+disabled early data and 16 KiB headers preserved. No backend restart, database,
+queue or environment changes during deployment. Backend tests not rerun for this
+frontend-only change. Existing 79 moderate npm findings and source-map/bundle-size/
+deprecation warnings remain.
+
+Snapshot: `/home/narey/resonance-builds/precommit-upload-paging-ebb13f825b`.
+Rollback: `/home/narey/resonance-backups/queue-running-d42fed2`.
+Private checks, eight-worker fixture and live-idle proof: `.dev/queue-running/`.
 
 ## Native enhanced analysis
 
