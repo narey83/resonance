@@ -672,8 +672,8 @@ user clarified this rule on 30 October 2026.
 - Check `http://127.0.0.1:8082/status` on the dev laptop and the existing Metro
   process before starting another server. Its working directory must be the
   requested source snapshot's `mobile/`, with the matching dependency lockfile.
-  The active snapshot verified on 31 October is
-  `/home/narey/resonance-builds/branding-20261030/mobile`; its parent contains
+  The active snapshot verified on 1 November is
+  `/home/narey/resonance-builds/startup-20261101/mobile`; its parent contains
   `mobile-metro.json` and `mobile-metro.log`. Verify the PID/cwd before reuse.
 - Reapply `adb -s PIXEL_TARGET reverse tcp:8081 tcp:8082` after a disconnect or
   reboot, and verify it with `adb -s PIXEL_TARGET reverse --list`. Device port

@@ -16,7 +16,10 @@ for (const platform of ['ios', 'android']) {
     assert.equal(first, second);
     assert.equal(calls.length, 1);
     assert.equal(calls[0][1].minBuffer, platform === 'ios' ? 5 : 30);
-    assert.equal(calls[0][1].playBuffer, 1);
+    assert.equal(calls[0][1].playBuffer, platform === 'android' ? 0.5 : 1);
+    assert.equal(calls[0][1].maxBuffer, 120);
+    assert.equal(calls[0][1].backBuffer, 30);
+    assert.ok(calls[0][1].playBuffer > 0 && calls[0][1].playBuffer < calls[0][1].minBuffer);
     gate.resolve(); await Promise.all([first, second]);
     assert.equal(calls.length, 2);
     assert.ok(calls[1][1].capabilities.includes('play'));

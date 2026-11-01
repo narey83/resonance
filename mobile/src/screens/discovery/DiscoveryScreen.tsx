@@ -1,7 +1,7 @@
 import { Text, TextInput } from '../../components/Typography';
 import NewLibraryBadge from '../../components/NewLibraryBadge';
 import { ResonanceLogo } from '../../components/ResonanceLogo';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,8 +12,8 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { MainTabParamList } from '../../navigation/MainTabs';
 import { useTheme } from '../../context/ThemeContext';
 import { usePlayer, usePlaybackPosition, usePlaybackStatus } from '../../context/PlayerContext';
-import { getArtworkUrl, getTracks, getRecentlyAdded, getTrackTitle, type MusicAlbum, type MusicTrack } from '../../api/musicLibrary';
-import { getPlayHistory, type PlayRecord } from '../../api/libraryActivity';
+import { getArtworkUrl, getTracks, getTrackTitle, type MusicAlbum, type MusicTrack } from '../../api/musicLibrary';
+import { type PlayRecord } from '../../api/libraryActivity';
 import * as discovery from '../../api/discovery';
 import * as searches from '../../api/searches';
 import { useDiscoveryStore } from '../../store/discoveryStore';
@@ -28,6 +28,7 @@ import { useConnectionStore } from '../../services/connectionMonitor';
 import { ARTWORK_THUMB_SIZE, PLAYER_ART_SIZE, getArtworkCacheKey } from '../../services/artworkCache';
 import { haptics } from '../../lib/haptics';
 import { albumTrackParams } from '../../lib/albumTracks';
+import { loadDiscoveryPlayback } from '../../services/discoveryPlayback';
 import { sessionGuard } from '../../lib/sessionScope';
 import { Typography, type ThemeColors } from '../../theme';
 
@@ -84,29 +85,23 @@ export default function DiscoveryScreen() {
     catch (reason) { if (current()) setError((reason as Error).message); }
     finally { if (current()) setWorking(false); }
   };
+  const loadGeneration = useRef(0);
   const load = useCallback(async () => {
-    const current = sessionGuard(); setLoading(true); setError(null); setRefreshedAt(Date.now());
-    const results = await Promise.allSettled([
-      getTracks({ limit: 100, sort: 'title' }), getRecentlyAdded(12), getPlayHistory(20),
-      searches.getAll(), useMixtapeStore.getState().load(), useDiscoveryStore.getState().sync(),
+    const generation = ++loadGeneration.current;
+    const sessionCurrent = sessionGuard();
+    const current = () => sessionCurrent() && loadGeneration.current === generation;
+    setLoading(true); setError(null); setRefreshedAt(Date.now());
+    await Promise.allSettled([
+      loadDiscoveryPlayback({
+        current, tracks: setTracks, albums: setAlbums, fresh: setFresh,
+        history: setHistory, recent: setRecent,
+        libraryError: () => setError('Could not refresh the library. Downloaded crates remain available in Offline.'),
+      }),
+      searches.getAll().then(rows => { if (current()) setActiveSearches(rows); }),
+      useMixtapeStore.getState().load(), useDiscoveryStore.getState().sync(),
       useTransferStore.getState().loadDownloads(),
     ]);
     if (!current()) return;
-    const [library, arrivals, plays, searchRows] = results;
-    if (library.status === 'fulfilled') setTracks(library.value.tracks);
-    if (arrivals.status === 'fulfilled') {
-      setAlbums(arrivals.value);
-      const pages = await Promise.allSettled(arrivals.value.slice(0, 3).map(album => getTracks({ limit: 20, ...albumTrackParams(album) })));
-      if (!current()) return;
-      setFresh([...new Map(pages.flatMap(page => page.status === 'fulfilled' ? page.value.tracks : []).map(track => [track.path, track])).values()]);
-    }
-    if (plays.status === 'fulfilled') {
-      setHistory(plays.value);
-      try { const resolved = await discovery.resolveTracks([...new Set(plays.value.map(play => play.path))]); if (current()) setRecent(resolved); } catch { /* History remains visible on partial failure. */ }
-    }
-    if (!current()) return;
-    if (searchRows.status === 'fulfilled') setActiveSearches(searchRows.value);
-    if (library.status === 'rejected') setError('Could not refresh the library. Downloaded crates remain available in Offline.');
     setLoading(false);
     const savedWishes = useDiscoveryStore.getState().wishes;
     if (savedWishes.length) {
@@ -119,7 +114,10 @@ export default function DiscoveryScreen() {
     const sub = AppState.addEventListener('change', state => { if (state === 'active') void useDiscoveryStore.getState().sync(); });
     return () => sub.remove();
   }, []);
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    void load();
+    return () => { loadGeneration.current++; };
+  }, [load]));
   useEffect(() => { if (connection === 'connected') void useDiscoveryStore.getState().sync(); }, [connection]);
   useEffect(() => {
     if (!route.params?.track) return;

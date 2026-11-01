@@ -129,3 +129,23 @@ Simulator QA: iPhone 17 portrait and landscape, direct playlist chooser and Stud
 Chatrooms and private messages use one `KeyboardAvoidingView` around the message list and composer. Its offset includes the navigation header and the visible mini-player height. Keep that explicit header offset: automatic position detection on the current Android build left the composer behind the keyboard. Avoid combining a moving composer with a separately animated spacer in the inverted list. The latest-message follower handles arrivals and layout changes.
 
 Link previews are warmed from joined-room histories and recent private conversations before their screens open. The client warms the four most recent private histories once per last-message revision, without acknowledging messages. Each warming batch examines the newest 20 messages, queues at most 24 URLs and fetches two previews concurrently. Resolved metadata is available synchronously to cards; image prefetching uses the native image cache. Metadata cache entries are account-scoped, limited to 128, expire after five minutes, and retry failures after 30 seconds. Network availability still determines whether a new preview can be ready in advance.
+
+## First-play startup (1 November 2026)
+
+Discover publishes library tracks, new albums and resolved history independently.
+Slow notes, searches, transfers or playlist requests no longer hold back playable
+sections. Refresh generations prevent an older or blurred-screen request from
+overwriting the active refresh. `tests/discoveryPlayback.test.cjs` covers pending
+requests, partial failures and cancelled refreshes.
+
+Android starts after buffering 0.5 seconds of audio; its forward-buffer targets
+remain 30–120 seconds. iOS keeps its existing settings. The native Android player
+also derives its rebuffer threshold from this startup value, so slower links may
+resume sooner after a stall. Do not interpret the threshold as guaranteed wall-clock
+startup time: connection setup, file reads and decoding still contribute.
+
+Laptop verification: 194 mobile tests, TypeScript checking, lint and Android/iOS
+bundle exports passed. On the Pixel, the checked first play reached Android's
+playing state in about 1.0 second (earlier baseline about 1.2 seconds); these small
+samples do not establish a consistent speedup across files or networks. The
+unchanged dependency tree's security audit reports 27 findings (2 low, 25 moderate).

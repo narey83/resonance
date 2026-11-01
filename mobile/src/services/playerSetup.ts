@@ -50,7 +50,8 @@ export function buildPlayerSetupOptions(platform: string) {
     maxCacheSize: 1024 * 256,
     minBuffer: platform === 'ios' ? 5 : 30,
     maxBuffer: 120,
-    playBuffer: 1,
+    // Start Android after half a second of audio; keep filling the forward buffer.
+    playBuffer: platform === 'android' ? 0.5 : 1,
     backBuffer: 30,
   };
 }
