@@ -681,6 +681,22 @@ const Analysis = () => {
   const [inspectedTrack, setInspectedTrack] = useState(null);
   const [preparation, setPreparation] = useState(null);
   const [preparationBusy, setPreparationBusy] = useState('');
+  const [stopRequested, setStopRequested] = useState(false);
+  useEffect(() => {
+    if (
+      stopRequested &&
+      !preparationBusy &&
+      !scanState?.scanning &&
+      !(preparation?.counts?.running > 0)
+    ) {
+      setStopRequested(false);
+    }
+  }, [
+    stopRequested,
+    preparationBusy,
+    scanState?.scanning,
+    preparation?.counts?.running,
+  ]);
   useEffect(() => {
     if (scanState?.scanning && scanState.enhancedTotal > 0) setEnhanced(true);
   }, [scanState?.scanning, scanState?.enhancedTotal]);
@@ -1009,7 +1025,7 @@ const Analysis = () => {
   // paths, not masked filenames: the backend resolves them against the share in one query
   // rather than the page doing a lookup per row before it can ask for anything.
   const startScan = async (request, paths) => {
-    if (preparationBusy) return;
+    if (preparationBusy || stopRequested) return;
     if (!paths?.length) {
       toast.info('Select tracks or folders before starting analysis.');
       return;
@@ -1064,21 +1080,17 @@ const Analysis = () => {
   };
 
   const handlePreparationAction = async (action) => {
-    if (preparationBusy) return;
+    if (preparationBusy || stopRequested) return;
     setPreparationBusy(action);
+    if (action === 'stop') setStopRequested(true);
+    let schedulingPaused = false;
     try {
-      // Pause scheduling before cancelling so the automatic queue cannot restart work.
+      // Let the entire current scan finish; prevent automatic scheduling of another scan.
       const paused = action !== 'resume';
       await pausePreparation(paused);
+      schedulingPaused = paused;
       if (mountedRef.current)
         setPreparation((previous) => ({ ...previous, paused }));
-      if (action === 'stop') {
-        try {
-          await analysisApi.cancelScan();
-        } catch (cancelError) {
-          if (cancelError?.response?.status !== 404) throw cancelError;
-        }
-      }
 
       const [nextPreparation, state] = await Promise.all([
         getPreparationStatus(),
@@ -1089,7 +1101,13 @@ const Analysis = () => {
         setScanState(state);
       }
     } catch {
-      toast.error('Could not update analysis. Please retry.');
+      if (action === 'stop' && !schedulingPaused && mountedRef.current)
+        setStopRequested(false);
+      toast.error(
+        action === 'stop' && schedulingPaused
+          ? 'Automatic scheduling is stopped. Could not refresh scan status; updates will retry.'
+          : 'Could not update analysis. Please retry.',
+      );
     } finally {
       if (mountedRef.current) setPreparationBusy('');
     }
@@ -1487,7 +1505,9 @@ const Analysis = () => {
                   : 'Pause after active tracks'
               }
               className="ka-btn ka-btn--sm hover-fx"
-              disabled={!preparation || Boolean(preparationBusy)}
+              disabled={
+                !preparation || Boolean(preparationBusy) || stopRequested
+              }
               onClick={() =>
                 handlePreparationAction(preparation.paused ? 'resume' : 'pause')
               }
@@ -1505,19 +1525,6 @@ const Analysis = () => {
                   : preparation?.paused
                     ? 'Resume'
                     : 'Pause'}
-            </button>
-            <button
-              aria-label="Stop analysis"
-              className="ka-btn ka-btn--sm hover-fx"
-              disabled={
-                Boolean(preparationBusy) ||
-                (!scanning && !(preparation?.counts?.running > 0))
-              }
-              onClick={() => handlePreparationAction('stop')}
-              title="Stop current analysis and pause automatic preparation. Queued tracks are kept."
-              type="button"
-            >
-              {preparationBusy === 'stop' ? 'Stopping…' : 'Stop'}
             </button>
           </div>
           <span>
@@ -1678,6 +1685,20 @@ const Analysis = () => {
           </section>
         )}
         <div className="ka-scan-progress">
+          <button
+            aria-label="Stop analysis"
+            className="ka-btn ka-btn--stop hover-fx"
+            disabled={
+              Boolean(preparationBusy) ||
+              stopRequested ||
+              (!scanning && !(preparation?.counts?.running > 0))
+            }
+            onClick={() => handlePreparationAction('stop')}
+            title="Finish every remaining track in the current scan, then stop. No further automatic scans will start."
+            type="button"
+          >
+            {stopRequested ? 'Finishing scan…' : 'Stop analysis'}
+          </button>
           {/* inline scan progress */}
           {scanState?.total > 0 && (
             <div
@@ -1687,13 +1708,15 @@ const Analysis = () => {
               <strong>
                 {scanState.enhancedTotal > 0 ? 'Basic + Enhanced' : 'Basic'}{' '}
                 scan ·{' '}
-                {scanning
-                  ? 'Running'
-                  : scanState.cancelled
-                    ? 'Stopped'
-                    : scanState.completed
-                      ? 'Finished'
-                      : 'Stopped with an error'}
+                {stopRequested
+                  ? 'Finishing current scan…'
+                  : scanning
+                    ? 'Running'
+                    : scanState.cancelled
+                      ? 'Stopped'
+                      : scanState.completed
+                        ? 'Finished'
+                        : 'Stopped with an error'}
               </strong>
               <div className="ka-progress-bar">
                 <div
@@ -1732,7 +1755,9 @@ const Analysis = () => {
       <ScanSettings
         enhanced={enhanced}
         onStart={handleStartScan}
-        scanning={scanning || selecting || Boolean(preparationBusy)}
+        scanning={
+          scanning || selecting || Boolean(preparationBusy) || stopRequested
+        }
         selectedCount={selected.size}
       />
 
@@ -1960,7 +1985,10 @@ const Analysis = () => {
                       collapsed={!expandedFolders.has(g.dir)}
                       dir={g.dir}
                       globalScanning={
-                        scanning || selecting || Boolean(preparationBusy)
+                        scanning ||
+                        selecting ||
+                        Boolean(preparationBusy) ||
+                        stopRequested
                       }
                       inFlight={inFlight}
                       name={g.name}
@@ -1975,7 +2003,10 @@ const Analysis = () => {
                     <TrackRow
                       fmtKey={fmtKey}
                       globalScanning={
-                        scanning || selecting || Boolean(preparationBusy)
+                        scanning ||
+                        selecting ||
+                        Boolean(preparationBusy) ||
+                        stopRequested
                       }
                       key={track.path}
                       onClearBpm={handleClearBpm}

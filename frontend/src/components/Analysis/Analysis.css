@@ -1108,7 +1108,7 @@
 .ka-coverage-pending { margin: 4px 0 0; font-size: 11px; color: var(--text-muted); }
 .ka-scan-progress, .ka-overview > [role="alert"], .ka-overview > .ka-enhanced-status { grid-column: 1 / -1; }
 .ka-scan-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 12px; }
-.ka-scan-progress:empty { display: none; }
+.ka-scan-progress .ka-btn--stop { color: var(--danger, #c62828); border-color: currentColor; flex-shrink: 0; }
 .ka-root > .ka-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; margin: 0 var(--page-gutter) 10px; }
 .ka-root > .ka-panel .ka-panel-header { grid-column: 1 / -1; padding: 6px 12px; background: var(--bg-surface); }
 .ka-root > .ka-panel .ka-panel-body { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 10px 12px; }

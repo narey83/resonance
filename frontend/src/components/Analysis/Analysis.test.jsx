@@ -701,7 +701,7 @@ describe('analysis folder loading', () => {
       container.querySelector('[aria-label="Stop analysis"]').disabled,
     ).toBe(false);
   });
-  it('stops active analysis only after pausing automatic scheduling', async () => {
+  it('stops future scheduling when the current scan finishes during the request', async () => {
     expect.hasAssertions();
     analysisApi.getScanState.mockResolvedValue({ scanning: true });
     getPreparationStatus.mockResolvedValue({
@@ -718,16 +718,147 @@ describe('analysis folder loading', () => {
       container.querySelector('[aria-label="Stop analysis"]').click(),
     );
     expect(pausePreparation).toHaveBeenCalledWith(true);
-    expect(analysisApi.cancelScan).toHaveBeenCalledTimes(1);
-    expect(pausePreparation.mock.invocationCallOrder[0]).toBeLessThan(
-      analysisApi.cancelScan.mock.invocationCallOrder[0],
-    );
+    expect(analysisApi.cancelScan).not.toHaveBeenCalled();
+    expect(analysisApi.startScan).not.toHaveBeenCalled();
     expect(
       container.querySelector('[aria-label="Stop analysis"]').disabled,
     ).toBe(true);
     expect(
       container.querySelector('[aria-label="Resume automatic preparation"]'),
     ).not.toBeNull();
+  });
+  it('finishes every remaining track in the current scan before stopping', async () => {
+    expect.hasAssertions();
+    jest.useFakeTimers();
+    try {
+      analysisApi.getScanState.mockResolvedValue({
+        scanning: true,
+        total: 3,
+        analysed: 1,
+        inFlight: 2,
+      });
+      await render();
+      const stop = container.querySelector(
+        '.ka-scan-progress [aria-label="Stop analysis"]',
+      );
+      expect(stop.textContent).toBe('Stop analysis');
+      await act(async () => stop.click());
+      expect(analysisApi.cancelScan).not.toHaveBeenCalled();
+      expect(stop.disabled).toBe(true);
+      expect(stop.textContent).toBe('Finishing scan…');
+      expect(
+        container.querySelector('[aria-label="Resume automatic preparation"]')
+          .disabled,
+      ).toBe(true);
+      expect(
+        container.querySelector('[aria-label="Current scan progress"]')
+          .textContent,
+      ).toContain('Finishing current scan…');
+      await act(async () => stop.click());
+      expect(analysisApi.cancelScan).not.toHaveBeenCalled();
+      analysisApi.getScanState.mockResolvedValue({
+        scanning: true,
+        total: 3,
+        analysed: 2,
+        inFlight: 1,
+      });
+      await act(async () => jest.advanceTimersByTime(2_000));
+      expect(stop.textContent).toBe('Finishing scan…');
+      expect(
+        container.querySelector('[aria-label="Current scan progress"]')
+          .textContent,
+      ).toContain('Succeeded: 2');
+      analysisApi.getScanState.mockResolvedValue({
+        scanning: false,
+        completed: true,
+        total: 3,
+        analysed: 3,
+        inFlight: 0,
+      });
+      await act(async () => jest.advanceTimersByTime(2_000));
+      expect(stop.textContent).toBe('Stop analysis');
+      expect(stop.disabled).toBe(true);
+      expect(
+        container.querySelector('[aria-label="Current scan progress"]')
+          .textContent,
+      ).toContain('Finished');
+      expect(
+        container.querySelector('[aria-label="Current scan progress"]')
+          .textContent,
+      ).toContain('Succeeded: 3');
+      expect(
+        container.querySelector('[aria-label="Resume automatic preparation"]')
+          .disabled,
+      ).toBe(false);
+      expect(analysisApi.startScan).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+  it('keeps the stop request when scheduling is paused but refreshing status fails', async () => {
+    expect.hasAssertions();
+    jest.useFakeTimers();
+    try {
+      analysisApi.getScanState.mockResolvedValue({
+        scanning: true,
+        total: 3,
+        inFlight: 2,
+      });
+      await render();
+      getPreparationStatus.mockRejectedValueOnce(new Error('offline'));
+      const stop = container.querySelector('[aria-label="Stop analysis"]');
+      await act(async () => stop.click());
+      expect(pausePreparation).toHaveBeenCalledWith(true);
+      expect(analysisApi.cancelScan).not.toHaveBeenCalled();
+      expect(stop.disabled).toBe(true);
+      expect(stop.textContent).toBe('Finishing scan…');
+      getPreparationStatus.mockResolvedValue({
+        paused: true,
+        counts: { running: 0 },
+      });
+      analysisApi.getScanState.mockResolvedValue({
+        scanning: false,
+        completed: true,
+        total: 3,
+        analysed: 3,
+      });
+      await act(async () => jest.advanceTimersByTime(2_000));
+      expect(stop.textContent).toBe('Stop analysis');
+      expect(stop.disabled).toBe(true);
+      expect(
+        container.querySelector('[aria-label="Current scan progress"]')
+          .textContent,
+      ).toContain('Finished');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+  it('handles a scan that finishes just before Stop is pressed', async () => {
+    expect.hasAssertions();
+    analysisApi.getScanState.mockResolvedValue({
+      scanning: true,
+      total: 3,
+      inFlight: 2,
+    });
+    await render();
+    analysisApi.getScanState.mockResolvedValue({
+      scanning: false,
+      completed: true,
+      total: 3,
+      analysed: 3,
+    });
+    const stop = container.querySelector('[aria-label="Stop analysis"]');
+    await act(async () => stop.click());
+    expect(stop.disabled).toBe(true);
+    expect(stop.textContent).toBe('Stop analysis');
+    expect(
+      container.querySelector('[aria-label="Current scan progress"]')
+        .textContent,
+    ).toContain('Finished');
+    expect(
+      container.querySelector('[aria-label="Resume automatic preparation"]')
+        .disabled,
+    ).toBe(false);
   });
   it('keeps controls usable after a pause failure and does not cancel while scheduling remains enabled', async () => {
     expect.hasAssertions();
