@@ -419,7 +419,7 @@ namespace resonance.MusicLibrary
             string genre, int? year, string folder,
             bool missingKey, bool missingBpm, bool missingTitle, bool missingArtist, bool missingArtwork,
             int limit, int offset, string sort = null, bool descending = false, string startsWith = null,
-            string key = null, string analysis = null, DjLibraryFilters dj = null)
+            string key = null, string analysis = null, DjLibraryFilters dj = null, bool recursive = true)
         {
             using var conn = OpenConnection();
 
@@ -459,7 +459,7 @@ namespace resonance.MusicLibrary
 
             if (hasFolder)
             {
-                conditions.Add("(directory = @folder OR directory LIKE @folderPrefix ESCAPE '\\')");
+                conditions.Add(recursive ? "(directory = @folder OR directory LIKE @folderPrefix ESCAPE '\\')" : "directory = @folder");
             }
 
             if (missingKey)
@@ -550,22 +550,10 @@ namespace resonance.MusicLibrary
             // The analysis page filters on "has all four metrics" rather than on one of them, which
             // no missing* flag can express. Same predicate the stats count uses, so the list and the
             // headline number can't disagree.
-            var analysed = analysis?.Trim().ToLowerInvariant();
-            if (analysed == "enhanced")
+            var readiness = AnalysisCondition(analysis);
+            if (readiness != null)
             {
-                conditions.Add(UsePostgres ? $"({summary})::jsonb->>'complete' = 'true'" : $"json_extract({summary},'$.complete') = 1");
-            }
-            else if (analysed == "pending")
-            {
-                conditions.Add($"{summary} IS NULL");
-            }
-            else if (analysed == "complete")
-            {
-                conditions.Add(FullyAnalysedExists);
-            }
-            else if (analysed == "incomplete")
-            {
-                conditions.Add($"NOT {FullyAnalysedExists}");
+                conditions.Add(readiness);
             }
 
             // A-Z rail: narrow to one letter bucket of the column the list is sorted by, so a
@@ -886,17 +874,31 @@ namespace resonance.MusicLibrary
             return results;
         }
 
-        public IReadOnlyList<MusicFolder> GetFolders()
+        public IReadOnlyList<MusicFolder> GetFolders(string search = null, string analysis = null)
         {
             using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
+            var conditions = new List<string>();
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                conditions.Add($"(title {Like} @s OR artist {Like} @s OR album {Like} @s OR {CachedKey} {Like} @s)");
+                AddParam(cmd, "@s", $"%{search.Trim()}%");
+            }
+
+            var readiness = AnalysisCondition(analysis);
+            if (readiness != null)
+            {
+                conditions.Add(readiness);
+            }
+
+            var where = conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : string.Empty;
             cmd.CommandText = $@"
                 SELECT directory,
                        COUNT(*) AS track_count,
                        MIN(CASE WHEN has_artwork = 1 THEN path ELSE NULL END) AS cover_path,
                        MAX(has_artwork) AS has_art,
                        MIN(indexed_at) AS indexed_at
-                FROM {T}
+                FROM {T} {where}
                 GROUP BY directory
                 ORDER BY directory";
             var results = new List<MusicFolder>();
@@ -1421,6 +1423,19 @@ namespace resonance.MusicLibrary
             BitRate: r.IsDBNull(21) ? null : r.GetInt32(21),
             SampleRate: r.IsDBNull(22) ? null : r.GetInt32(22),
             BitDepth: r.IsDBNull(23) ? null : r.GetInt32(23));
+
+        private string AnalysisCondition(string analysis)
+        {
+            var summary = $"(SELECT c.dj_summary FROM {TA} c WHERE {CacheMatch("c")})";
+            return analysis?.Trim().ToLowerInvariant() switch
+            {
+                "enhanced" => UsePostgres ? $"({summary})::jsonb->>'complete' = 'true'" : $"json_extract({summary},'$.complete') = 1",
+                "pending" => $"{summary} IS NULL",
+                "complete" => FullyAnalysedExists,
+                "incomplete" => $"NOT {FullyAnalysedExists}",
+                _ => null,
+            };
+        }
 
         // Joins an analysis-cache row to its track. The file_size guard is what makes a stale
         // cache entry (file replaced since it was analysed) not count as analysed.

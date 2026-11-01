@@ -36,6 +36,7 @@ jest.mock('../../lib/analysis', () => ({
 }));
 jest.mock('../../lib/musicLibrary', () => ({
   getAnalysisStats: jest.fn(),
+  getFolders: jest.fn(),
   getKeys: jest.fn(() => Promise.resolve([])),
   getTrackPage: jest.fn(),
 }));
@@ -49,6 +50,11 @@ jest.mock('../Shared/PageInfo', () => ({
 jest.mock('./RowWaveform', () => ({ __esModule: true, default: () => null }));
 
 const row = (path) => ({ path, directory: '/music/Album', filename: path });
+const folder = (trackCount = 3) => ({
+  path: '/music/Album',
+  name: 'Album',
+  trackCount,
+});
 
 describe('analysis folder loading', () => {
   let container;
@@ -86,7 +92,7 @@ describe('analysis folder loading', () => {
     container = document.createElement('div');
     document.body.append(container);
     page = {
-      items: [row('one')],
+      items: [folder()],
       total: 3,
       loading: false,
       loadingMore: false,
@@ -95,8 +101,8 @@ describe('analysis folder loading', () => {
     };
     usePagedList.mockImplementation(() => page);
     musicLibraryApi.getTrackPage.mockImplementation(async () => ({
-      items: page.items,
-      total: page.total,
+      items: [row('one'), row('two'), row('three')],
+      total: 3,
     }));
   });
 
@@ -140,7 +146,7 @@ describe('analysis folder loading', () => {
       page = { ...page, items: [], loading: true };
       await render();
       expect(global.ResizeObserver).not.toHaveBeenCalled();
-      page = { ...page, items: [row('one')], loading: false };
+      page = { ...page, items: [folder()], loading: false };
       await render();
       let top = 550;
       Object.defineProperty(
@@ -292,30 +298,39 @@ describe('analysis folder loading', () => {
     expect(enhanced.textContent).toContain('2 older saved results');
   });
 
-  it('loads every page automatically and counts the complete folder', async () => {
+  it('shows complete folder totals without downloading any tracks', async () => {
     expect.hasAssertions();
+    page = {
+      ...page,
+      items: [
+        folder(25_330),
+        { path: '/music/Other', name: 'Other', trackCount: 34_083 },
+      ],
+    };
     await render();
-    expect(page.loadMore).toHaveBeenCalledTimes(1);
-    page = { ...page, items: [row('one'), row('two')] };
-    await render();
-    expect(page.loadMore).toHaveBeenCalledTimes(2);
-    page = { ...page, items: [...page.items, row('three')] };
-    await render();
-    expect(page.loadMore).toHaveBeenCalledTimes(2);
-    expect(container.querySelector('.ka-folder-badge').textContent).toBe(
-      '3 tracks',
+    expect(container.querySelector('.ka-count').textContent).toContain(
+      '59,413 tracks',
     );
-    expect(container.textContent).toContain('Loaded 3 of 3 tracks');
+    expect(container.querySelectorAll('.ka-folder-badge')[0].textContent).toBe(
+      '25,330 tracks',
+    );
+    expect(container.querySelectorAll('.ka-folder-badge')[1].textContent).toBe(
+      '34,083 tracks',
+    );
+    expect(musicLibraryApi.getTrackPage).not.toHaveBeenCalled();
+    expect(page.loadMore).not.toHaveBeenCalled();
   });
 
-  it('stops on failure and offers a manual retry', async () => {
+  it('keeps folder metadata errors visible and retries without fetching track dumps', async () => {
     expect.hasAssertions();
     page.error = new Error('network unavailable');
     await render();
-    expect(page.loadMore).not.toHaveBeenCalled();
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
-    act(() => container.querySelector('.ka-page-btn').click());
-    expect(page.loadMore).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      container.querySelector('.ka-load-error .ka-btn').click(),
+    );
+    expect(usePagedList.mock.calls.at(-1)[2].refreshToken).toBe(1);
+    expect(musicLibraryApi.getTrackPage).not.toHaveBeenCalled();
   });
 
   it('keeps a missing-package scan failure visible after the scan has stopped', async () => {
@@ -338,29 +353,118 @@ describe('analysis folder loading', () => {
     expect(container.textContent).not.toContain('Scan complete');
   });
 
-  it('does not loop if a page returns no additional tracks', async () => {
+  it('does not loop when a folder changes before its track window arrives', async () => {
     expect.hasAssertions();
+    musicLibraryApi.getTrackPage.mockResolvedValue({ items: [], total: 0 });
     await render();
-    page = { ...page, loadingMore: true };
-    await render();
-    page = { ...page, loadingMore: false };
-    await render();
-    expect(page.loadMore).toHaveBeenCalledTimes(1);
+    await act(async () => container.querySelector('.ka-folder-expand').click());
+    expect(musicLibraryApi.getTrackPage).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('This folder changed');
   });
+
+  it('retries a failed visible track window without hiding the folder totals', async () => {
+    expect.hasAssertions();
+    musicLibraryApi.getTrackPage.mockRejectedValueOnce(new Error('offline'));
+    await render();
+    await act(async () => container.querySelector('.ka-folder-expand').click());
+    expect(container.querySelector('.ka-folder-badge').textContent).toBe(
+      '3 tracks',
+    );
+    expect(container.querySelector('[role="alert"]').textContent).toContain(
+      'Could not load these tracks',
+    );
+    await act(async () =>
+      container.querySelector('.ka-track-placeholder .ka-btn').click(),
+    );
+    expect(musicLibraryApi.getTrackPage).toHaveBeenCalledTimes(2);
+    expect(container.querySelectorAll('.ka-track')).toHaveLength(3);
+  });
+
+  it('discards a pending old track window when the readiness filter changes', async () => {
+    expect.hasAssertions();
+    const pending = [];
+    musicLibraryApi.getTrackPage.mockImplementation(
+      (query, { signal }) =>
+        new Promise((resolve) => {
+          pending.push({ query, signal, resolve });
+        }),
+    );
+    await render();
+    await act(async () => container.querySelector('.ka-folder-expand').click());
+    await act(async () =>
+      [...container.querySelectorAll('.ka-filter-btn')]
+        .find((button) => button.textContent === 'Basic incomplete')
+        .click(),
+    );
+    expect(pending[0].signal.aborted).toBe(true);
+    expect(pending[1].query.analysis).toBe('incomplete');
+    await act(async () => {
+      pending[0].resolve({ items: [row('stale')], total: 3 });
+      pending[1].resolve({
+        items: [row('fresh'), row('two'), row('three')],
+        total: 3,
+      });
+    });
+    expect(container.textContent).toContain('fresh');
+    expect(container.textContent).not.toContain('stale');
+  });
+
+  it('refreshes only the visible track window while keeping full folder counts', async () => {
+    expect.hasAssertions();
+    page = { ...page, items: [folder(25_330)] };
+    musicLibraryApi.getTrackPage.mockResolvedValue({
+      items: Array.from({ length: 200 }, (_, index) => row(String(index))),
+      total: 25_330,
+    });
+    await render();
+    await act(async () => container.querySelector('.ka-folder-expand').click());
+    await act(async () => container.querySelector('[title="Refresh"]').click());
+    expect(musicLibraryApi.getTrackPage).toHaveBeenCalledTimes(2);
+    expect(
+      musicLibraryApi.getTrackPage.mock.calls.map(([query]) => ({
+        folder: query.folder,
+        limit: query.limit,
+      })),
+    ).toEqual([
+      { folder: '/music/Album', limit: 200 },
+      { folder: '/music/Album', limit: 200 },
+    ]);
+    expect(container.querySelector('.ka-folder-badge').textContent).toBe(
+      '25,330 tracks',
+    );
+    expect(container.querySelectorAll('.ka-track')).toHaveLength(19);
+  });
+
   it('keeps a 5000-track folder bounded to visible rows and selects the whole folder', async () => {
     expect.hasAssertions();
-    page = {
-      ...page,
-      items: Array.from({ length: 5_000 }, (_, index) => row(String(index))),
-      total: 5_000,
-    };
+    page = { ...page, items: [folder(5_000)] };
+    musicLibraryApi.getTrackPage.mockImplementation(
+      async ({ limit, offset }) => ({
+        items: Array.from(
+          { length: Math.min(limit, 5_000 - offset) },
+          (_, index) => row(String(offset + index)),
+        ),
+        total: 5_000,
+      }),
+    );
     await render();
-    act(() => container.querySelector('.ka-folder-expand').click());
+    await act(async () => container.querySelector('.ka-folder-expand').click());
     expect(container.querySelectorAll('.ka-track')).toHaveLength(19);
+    expect(musicLibraryApi.getTrackPage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        folder: '/music/Album',
+        recursive: false,
+        limit: 200,
+        offset: 0,
+      }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     expect(container.querySelector('.ka-folder-badge').textContent).toBe(
       '5,000 tracks',
     );
-    act(() => container.querySelector('.ka-folder-check input').click());
+    await act(async () =>
+      container.querySelector('.ka-folder-check input').click(),
+    );
     expect(container.querySelector('.ka-col-check input').title).toBe(
       '5000 selected',
     );
@@ -386,9 +490,32 @@ describe('analysis folder loading', () => {
       10_001,
     );
   });
+  it('clears an old selection when switching between Basic and Enhanced readiness results', async () => {
+    expect.hasAssertions();
+    await render();
+    await act(async () =>
+      [...container.querySelectorAll('.ka-filter-btn')]
+        .find((button) => button.textContent === 'Basic ready')
+        .click(),
+    );
+    await act(async () =>
+      container.querySelector('.ka-folder-check input').click(),
+    );
+    expect(container.querySelector('.ka-col-check input').title).toBe(
+      '3 selected',
+    );
+    await act(async () =>
+      container.querySelector('input[value="enhanced"]').click(),
+    );
+    expect(container.querySelector('.ka-col-check input').title).toBe(
+      'Select all visible',
+    );
+    expect(usePagedList.mock.calls.at(-1)[1].analysis).toBe('enhanced');
+  });
+
   it('uses one mode selector for the overview and scan settings', async () => {
     expect.hasAssertions();
-    page = { ...page, items: [row('one'), row('two'), row('three')] };
+    page = { ...page, items: [folder()] };
     await render();
     const scanButton = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent.trim() === 'Scan',
@@ -466,7 +593,7 @@ describe('analysis folder loading', () => {
   });
   it('uses the visible enhanced option for folder scans and enhanced readiness filters', async () => {
     expect.hasAssertions();
-    page = { ...page, items: [row('one'), row('two'), row('three')] };
+    page = { ...page, items: [folder()] };
     await render();
     expect(container.querySelector('input[value="basic"]').checked).toBe(true);
     act(() => container.querySelector('input[value="enhanced"]').click());
@@ -488,29 +615,30 @@ describe('analysis folder loading', () => {
   });
   it('opens details on demand and keeps saved and enhanced BPM/key separate', async () => {
     expect.hasAssertions();
-    page = {
-      ...page,
+    const detailedTracks = [
+      {
+        ...row('one'),
+        title: 'Test track',
+        bpm: 130,
+        key: 'G',
+        hasWaveform: true,
+        lufs: -8,
+        djSummary: JSON.stringify({
+          complete: true,
+          bpm: 129.8,
+          key: 'Gm',
+          analysisId: 'full-job',
+        }),
+      },
+    ];
+    page = { ...page, items: [folder(1)] };
+    musicLibraryApi.getTrackPage.mockResolvedValue({
+      items: detailedTracks,
       total: 1,
-      items: [
-        {
-          ...row('one'),
-          title: 'Test track',
-          bpm: 130,
-          key: 'G',
-          hasWaveform: true,
-          lufs: -8,
-          djSummary: JSON.stringify({
-            complete: true,
-            bpm: 129.8,
-            key: 'Gm',
-            analysisId: 'full-job',
-          }),
-        },
-      ],
-    };
+    });
     await render();
     expect(container.textContent).not.toContain('Result details:');
-    act(() => container.querySelector('.ka-folder-expand').click());
+    await act(async () => container.querySelector('.ka-folder-expand').click());
     act(() =>
       container
         .querySelector('[aria-label="Analysis details for Test track"]')

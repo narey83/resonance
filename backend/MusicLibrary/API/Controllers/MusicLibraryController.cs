@@ -236,11 +236,11 @@ namespace resonance.MusicLibrary.API
             [FromQuery] string key = null,
             [FromQuery] string analysis = null,
             [FromQuery] double? bpmMin = null, [FromQuery] double? bpmMax = null,
-            [FromQuery] string keys = null, [FromQuery] string energy = null, [FromQuery] string vocals = null)
+            [FromQuery] string keys = null, [FromQuery] string energy = null, [FromQuery] string vocals = null, [FromQuery] bool recursive = true)
         {
             limit = Math.Clamp(limit, 1, 10000);
             offset = Math.Max(0, offset);
-            var result = Service.QueryTracks(search, artist, album, genre, year, folder, missingKey, missingBpm, missingTitle, missingArtist, missingArtwork, limit, offset, sort, descending, startsWith, key, analysis, new DjLibraryFilters(bpmMin, bpmMax, keys?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), energy, vocals));
+            var result = Service.QueryTracks(search, artist, album, genre, year, folder, missingKey, missingBpm, missingTitle, missingArtist, missingArtwork, limit, offset, sort, descending, startsWith, key, analysis, new DjLibraryFilters(bpmMin, bpmMax, keys?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), energy, vocals), recursive);
             return Ok(result with { Tracks = result.Tracks.Select(SignTrack).ToList() });
         }
 
@@ -307,8 +307,13 @@ namespace resonance.MusicLibrary.API
         [HttpGet("folders")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(typeof(System.Collections.Generic.IReadOnlyList<MusicFolder>), 200)]
-        public IActionResult GetFolders()
+        public IActionResult GetFolders([FromQuery] string search = null, [FromQuery] string analysis = null)
         {
+            if (!string.IsNullOrWhiteSpace(search) || !string.IsNullOrWhiteSpace(analysis))
+            {
+                return Ok(Service.GetFolders(search, analysis).Select(SignFolder).ToList());
+            }
+
             var (list, etag) = GetCachedListWithETag("folders", () => Service.GetFolders());
             return NotModifiedOrNull(etag) ?? Ok(list.Select(SignFolder).ToList());
         }

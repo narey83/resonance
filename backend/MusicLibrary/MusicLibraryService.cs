@@ -205,8 +205,8 @@ namespace resonance.MusicLibrary
         }
 
         // ── Public API ────────────────────────────────────────────────────────
-        public MusicLibraryQueryResult QueryTracks(string search, string artist, string album, string genre, int? year, string folder, bool missingKey, bool missingBpm, bool missingTitle, bool missingArtist, bool missingArtwork, int limit, int offset, string sort = null, bool descending = false, string startsWith = null, string key = null, string analysis = null, DjLibraryFilters dj = null)
-            => Repository.Query(search, artist, album, genre, year, folder, missingKey, missingBpm, missingTitle, missingArtist, missingArtwork, limit, offset, sort, descending, startsWith, key, analysis, dj);
+        public MusicLibraryQueryResult QueryTracks(string search, string artist, string album, string genre, int? year, string folder, bool missingKey, bool missingBpm, bool missingTitle, bool missingArtist, bool missingArtwork, int limit, int offset, string sort = null, bool descending = false, string startsWith = null, string key = null, string analysis = null, DjLibraryFilters dj = null, bool recursive = true)
+            => Repository.Query(search, artist, album, genre, year, folder, missingKey, missingBpm, missingTitle, missingArtist, missingArtwork, limit, offset, sort, descending, startsWith, key, analysis, dj, recursive);
 
         public System.Collections.Generic.IReadOnlyList<MusicExportTrack> GetExportTracks(System.Collections.Generic.IReadOnlyList<string> paths = null) => Repository.GetExportTracks(paths);
 
@@ -216,7 +216,7 @@ namespace resonance.MusicLibrary
 
         public System.Collections.Generic.IReadOnlyList<MusicYear> GetYears() => Repository.GetYears();
 
-        public System.Collections.Generic.IReadOnlyList<MusicFolder> GetFolders() => Repository.GetFolders();
+        public System.Collections.Generic.IReadOnlyList<MusicFolder> GetFolders(string search = null, string analysis = null) => Repository.GetFolders(search, analysis);
 
         public MusicTrack GetTrack(string path) => Repository.GetByPath(path);
 

@@ -58,6 +58,35 @@ public class WorkspaceTests : IDisposable
         Assert.False(File.Exists(Path.Combine(root, valid.Path)));
     }
 
+    [Fact]
+    public void FolderTotalsMatchFilteredTrackQueriesWithoutLoadingTracks()
+    {
+        var ready = Add("parent/ready.mp3");
+        Add("parent/incomplete.mp3", bpm: 0);
+        Add("parent/child/other.mp3");
+        Complete(ready.Path);
+        Assert.Equal(3, repository.GetFolders().Sum(folder => folder.TrackCount));
+        Assert.Equal(1, repository.GetFolders(analysis: "complete").Single().TrackCount);
+        Assert.Equal(2, repository.GetFolders(analysis: "incomplete").Sum(folder => folder.TrackCount));
+        Assert.Equal(1, repository.GetFolders(analysis: "enhanced").Sum(folder => folder.TrackCount));
+        Assert.Equal(2, repository.GetFolders(analysis: "pending").Sum(folder => folder.TrackCount));
+        Assert.EndsWith("parent/child", repository.GetFolders(search: "other.mp3").Single().Path.Replace('\\', '/'));
+        Assert.Empty(repository.GetFolders(search: "' OR 1=1 --"));
+    }
+
+    [Fact]
+    public void ExactFolderWindowsExcludeDescendantsWhileExistingRecursiveQueriesArePreserved()
+    {
+        Add("parent/one.mp3");
+        Add("parent/child/two.mp3");
+        var directory = Path.Combine(root, "parent");
+        var recursive = repository.Query(null!, null!, null!, null!, null, directory, false, false, false, false, false, 100, 0);
+        var direct = repository.Query(null!, null!, null!, null!, null, directory, false, false, false, false, false, 100, 0, recursive: false);
+        Assert.Equal(2, recursive.Total);
+        Assert.Equal(1, direct.Total);
+        Assert.EndsWith("one.mp3", direct.Tracks.Single().Path);
+    }
+
     private DbConnection Db() { DbConnection db = postgres ? new Npgsql.NpgsqlConnection(connection) : new SqliteConnection(connection); db.Open(); return db; }
     private MusicTrack Add(string path="nested/a.mp3", int bpm=128, long? added=null)
     {

@@ -37,6 +37,10 @@ import { CAMELOT_KEYS, camelotColour, toCamelot } from '../../lib/camelot';
 import { djSummary } from '../../lib/libraryWorkbench';
 import { getPreparationStatus } from '../../lib/libraryWorkspace';
 import * as musicLibraryApi from '../../lib/musicLibrary';
+import {
+  ANALYSIS_TRACK_PAGE_SIZE,
+  useAnalysisPages,
+} from '../../lib/useAnalysisPages';
 import { useKeyFormat } from '../../lib/useKeyFormat';
 import { usePagedList } from '../../lib/usePagedList';
 import AnalysisDetails from './AnalysisDetails';
@@ -74,6 +78,10 @@ import { toast } from 'react-toastify';
 
 // Fill the folder view in bounded batches.
 const PAGE_SIZE = 10_000;
+const fetchFolderPage = async ({ analysis, search }) => {
+  const items = await musicLibraryApi.getFolders({ search, analysis });
+  return { items, total: items.length };
+};
 
 // A library row carries everything this page shows, but names it the way the library does.
 // Rows are identified by path from here on: the paged query has no masked filenames, and one
@@ -389,7 +397,7 @@ const TrackRow = ({
             checked={selected}
             className="ka-checkbox"
             disabled={globalScanning}
-            onChange={() => onToggleSelect(track.path)}
+            onChange={() => onToggleSelect(track)}
             type="checkbox"
           />
         </div>
@@ -585,18 +593,22 @@ const FolderGroup = ({
   onScanFolder,
   onSelectFolder,
   onToggle,
-  selected,
+  selectedCount,
   selectionReady,
-  tracks,
+  trackCount,
 }) => {
-  const trackIds = tracks.map((t) => t.path);
-  const allSelected =
-    trackIds.length > 0 && trackIds.every((id) => selected.has(id));
-  const someSelected = trackIds.some((id) => selected.has(id));
+  const allSelected = trackCount > 0 && selectedCount === trackCount;
+  const someSelected = selectedCount > 0;
 
   // A collapsed folder still shows that something inside it is being decoded right now —
   // otherwise the only sign of a running scan on a folder-grouped list is the global counter.
-  const folderScanning = trackIds.some((id) => inFlight.has(id));
+  const folderScanning = [...inFlight].some(
+    (path) =>
+      path
+        .replaceAll('\\', '/')
+        .slice(0, path.replaceAll('\\', '/').lastIndexOf('/')) ===
+      dir.replaceAll('\\', '/'),
+  );
 
   return (
     <div className="ka-folder-group">
@@ -606,7 +618,7 @@ const FolderGroup = ({
             checked={allSelected}
             className="ka-checkbox"
             disabled={globalScanning || !selectionReady}
-            onChange={() => onSelectFolder(trackIds, allSelected)}
+            onChange={() => onSelectFolder(dir, allSelected)}
             ref={(element) => {
               if (element)
                 element.indeterminate =
@@ -631,7 +643,8 @@ const FolderGroup = ({
           />
           <span className="ka-folder-name">{name}</span>
           <span className="ka-folder-badge">
-            {tracks.length.toLocaleString()} tracks
+            {trackCount.toLocaleString()}{' '}
+            {trackCount === 1 ? 'track' : 'tracks'}
           </span>
         </button>
         <button
@@ -678,7 +691,8 @@ const Analysis = () => {
   const [sortKey, setSortKey] = useState('title');
   const [sortDirection, setSortDirection] = useState('asc');
   const [showSettings, setShowSettings] = useState(false);
-  const [selected, setSelected] = useState(new Set());
+  const [selected, setSelected] = useState(new Map());
+  const [selecting, setSelecting] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState(new Set());
   const [recentlyUpdated, setRecentlyUpdated] = useState(new Set());
   const [stats, setStats] = useState(null);
@@ -736,38 +750,24 @@ const Analysis = () => {
     [debouncedSearch, enhanced, filter, sortDirection, sortKey],
   );
 
+  const folderQuery = useMemo(
+    () => ({ analysis: query.analysis, search: query.search }),
+    [query.analysis, query.search],
+  );
   const {
     error,
-    items,
-    loadMore,
+    items: folders,
     loading,
-    loadingMore,
-    total: matching,
-  } = usePagedList(musicLibraryApi.getTrackPage, query, {
-    pageSize: PAGE_SIZE,
+  } = usePagedList(fetchFolderPage, folderQuery, {
     refreshToken: idleRevisionRef.current + refreshNonce,
   });
-
-  // Fill the folder view sequentially; stop on errors or an empty page.
-  const autoLoadRef = useRef(null);
-  useEffect(() => {
-    if (loading) autoLoadRef.current = null;
-    const cursor = JSON.stringify([query, items.length]);
-    if (loading || loadingMore || error || items.length >= matching) return;
-    if (autoLoadRef.current === cursor) return;
-    autoLoadRef.current = cursor;
-    loadMore();
-  }, [error, items.length, loadMore, loading, loadingMore, matching, query]);
-
-  const tracks = useMemo(
-    () =>
-      items.map((t) => {
-        const row = toRow(t);
-        const edit = edits.get(row.path);
-        return edit ? { ...row, ...edit } : row;
-      }),
-    [edits, items],
+  const matching = folders.reduce(
+    (total, folder) => total + folder.trackCount,
+    0,
   );
+  const { cache: trackPages, version: pageVersion } = useAnalysisPages(query);
+  const queryRef = useRef(query);
+  queryRef.current = query;
 
   // Which rows are being decoded at this instant, straight from the scan state the page
   // already polls. The backend reports absolute paths, the same form the library rows carry,
@@ -811,7 +811,6 @@ const Analysis = () => {
 
   // Explicit "show me what the server has" — drops the optimistic overrides with it.
   const hardRefresh = useCallback(() => {
-    autoLoadRef.current = null;
     setEdits(new Map());
     refresh();
   }, [refresh]);
@@ -837,7 +836,7 @@ const Analysis = () => {
 
   // finalize scan: pull the fresh values into the rows on screen and report the outcome
   const finalizeScan = useCallback(() => {
-    setSelected(new Set());
+    setSelected(new Map());
     setScanState((previous) =>
       previous?.scanning ? { ...previous, scanning: false } : previous,
     );
@@ -921,7 +920,7 @@ const Analysis = () => {
 
   const handleStartScan = async (request) => {
     setShowSettings(false);
-    const paths = selected.size > 0 ? Array.from(selected) : undefined;
+    const paths = selected.size > 0 ? Array.from(selected.keys()) : undefined;
     await startScan(request, paths);
   };
 
@@ -932,7 +931,9 @@ const Analysis = () => {
     }
 
     const paths =
-      selected.size > 0 ? Array.from(new Set([path, ...selected])) : [path];
+      selected.size > 0
+        ? Array.from(new Set([path, ...selected.keys()]))
+        : [path];
     await startScan(
       {
         metrics: METRICS.join(', '),
@@ -1022,24 +1023,26 @@ const Analysis = () => {
   };
 
   useEffect(() => {
-    setSelected(new Set());
-  }, [debouncedSearch, filter, sortDirection, sortKey]);
+    setSelected(new Map());
+  }, [debouncedSearch, filter, query.analysis, sortDirection, sortKey]);
 
-  const groups = useMemo(() => {
-    const map = new Map();
-    for (const t of tracks) {
-      if (!map.has(t.directory)) map.set(t.directory, []);
-      map.get(t.directory).push(t);
-    }
-
-    return Array.from(map.entries())
-      .map(([directory, directoryTracks]) => ({
-        dir: directory,
-        name: directory.split(/[/\\]/u).filter(Boolean).pop() ?? directory,
-        tracks: directoryTracks,
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [tracks]);
+  const groups = useMemo(
+    () =>
+      folders
+        .map((folder) => ({
+          dir: folder.path,
+          name: folder.name,
+          trackCount: folder.trackCount,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [folders],
+  );
+  const selectedCounts = useMemo(() => {
+    const counts = new Map();
+    for (const directory of selected.values())
+      counts.set(directory, (counts.get(directory) ?? 0) + 1);
+    return counts;
+  }, [selected]);
 
   const scrollRef = useRef(null);
   const listRef = useRef(null);
@@ -1066,7 +1069,11 @@ const Analysis = () => {
       groups.flatMap((group) => [
         { key: `folder:${group.dir}`, group },
         ...(expandedFolders.has(group.dir)
-          ? group.tracks.map((track) => ({ key: `track:${track.path}`, track }))
+          ? Array.from({ length: group.trackCount }, (_, index) => ({
+              key: `track:${group.dir}:${index}`,
+              directory: group.dir,
+              index,
+            }))
           : []),
       ]),
     [expandedFolders, groups],
@@ -1080,46 +1087,85 @@ const Analysis = () => {
     scrollMargin: listOffset,
   });
 
-  const toggleSelect = useCallback((path) => {
+  const virtualRows = virtualizer.getVirtualItems();
+  useEffect(() => {
+    trackPages.setVisible(
+      virtualRows
+        .map((virtualRow) => visibleRows[virtualRow.index])
+        .filter((row) => row && !row.group),
+      idleRevisionRef.current + refreshNonce,
+    );
+  }, [
+    libraryRevision,
+    pageVersion,
+    refreshNonce,
+    trackPages,
+    virtualRows,
+    visibleRows,
+  ]);
+
+  const toggleSelect = useCallback((track) => {
     setSelected((previous) => {
-      const next = new Set(previous);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
+      const next = new Map(previous);
+      if (next.has(track.path)) next.delete(track.path);
+      else next.set(track.path, track.directory);
       return next;
     });
   }, []);
 
-  const toggleSelectAll = useCallback(() => {
-    setSelected((previous) => {
-      const pageIds = tracks.map((t) => t.path);
-      const allSelected = pageIds.every((id) => previous.has(id));
-      if (allSelected) {
-        const deselected = new Set(previous);
-        for (const id of pageIds) deselected.delete(id);
-        return deselected;
+  // Bulk actions explicitly resolve their full matching set; browsing never does.
+  const selectMatching = async (directory, clear) => {
+    const currentQuery = queryRef.current;
+    if (clear) {
+      setSelected(
+        (previous) =>
+          new Map(
+            [...previous].filter(([, dir]) => directory && dir !== directory),
+          ),
+      );
+      return;
+    }
+
+    setSelecting(true);
+    try {
+      const chosen = new Map();
+      let offset = 0;
+      let total = 1;
+      while (offset < total) {
+        const page = await musicLibraryApi.getTrackPage({
+          ...currentQuery,
+          folder: directory,
+          recursive: false,
+          limit: PAGE_SIZE,
+          offset,
+        });
+        if (!mountedRef.current || queryRef.current !== currentQuery) return;
+        if (!page.items.length && offset < page.total)
+          throw new Error('Incomplete folder listing');
+        for (const track of page.items) chosen.set(track.path, track.directory);
+        offset += page.items.length;
+        total = page.total;
       }
 
-      const allAdded = new Set(previous);
-      for (const id of pageIds) allAdded.add(id);
-      return allAdded;
-    });
-  }, [tracks]);
+      setSelected((previous) => new Map([...previous, ...chosen]));
+    } catch {
+      toast.error('Could not select all matching tracks. Please retry.');
+    } finally {
+      if (mountedRef.current) setSelecting(false);
+    }
+  };
+
+  const toggleSelectAll = () =>
+    selectMatching(undefined, selected.size === matching);
+  const handleSelectFolder = (directory, clear) =>
+    selectMatching(directory, clear);
 
   const toggleFolder = useCallback((folderPath) => {
     setExpandedFolders((previous) => {
-      const expanded = new Set(previous);
-      if (expanded.has(folderPath)) expanded.delete(folderPath);
-      else expanded.add(folderPath);
-      return expanded;
-    });
-  }, []);
-
-  const handleSelectFolder = useCallback((trackIds, allSelected) => {
-    setSelected((previous) => {
-      const folderSelected = new Set(previous);
-      if (allSelected) for (const id of trackIds) folderSelected.delete(id);
-      else for (const id of trackIds) folderSelected.add(id);
-      return folderSelected;
+      const next = new Set(previous);
+      if (next.has(folderPath)) next.delete(folderPath);
+      else next.add(folderPath);
+      return next;
     });
   }, []);
 
@@ -1137,6 +1183,7 @@ const Analysis = () => {
       while (paths.length < total) {
         const page = await musicLibraryApi.getTrackPage({
           folder: folderPath,
+          recursive: false,
           limit: PAGE_SIZE,
           offset: paths.length,
         });
@@ -1195,7 +1242,7 @@ const Analysis = () => {
     );
   };
 
-  if (loading && tracks.length === 0) {
+  if (loading && folders.length === 0) {
     return (
       <div className="ka-state-center">
         <div className="ka-spinner" />
@@ -1265,7 +1312,7 @@ const Analysis = () => {
             </button>
             <button
               className={`ka-btn hover-fx${showSettings ? ' ka-btn--active' : ''}`}
-              disabled={scanning}
+              disabled={scanning || selecting}
               onClick={() => setShowSettings((v) => !v)}
               type="button"
             >
@@ -1480,7 +1527,7 @@ const Analysis = () => {
           enhanced={enhanced}
           onClose={() => setShowSettings(false)}
           onStart={handleStartScan}
-          scanning={scanning}
+          scanning={scanning || selecting}
           selectedCount={selected.size}
         />
       )}
@@ -1542,7 +1589,7 @@ const Analysis = () => {
         </div>
 
         <span className="ka-count">
-          {tracks.length} of {matching} track{matching === 1 ? '' : 's'} ·{' '}
+          {matching.toLocaleString()} track{matching === 1 ? '' : 's'} ·{' '}
           {groups.length} folder{groups.length === 1 ? '' : 's'}
         </span>
 
@@ -1562,18 +1609,14 @@ const Analysis = () => {
       <div className="ka-header-row">
         <div className="ka-col-check">
           <input
-            checked={
-              tracks.length > 0 && tracks.every((t) => selected.has(t.path))
-            }
+            checked={matching > 0 && selected.size === matching}
             className="ka-checkbox"
-            disabled={scanning || tracks.length < matching}
+            disabled={scanning || selecting || matching === 0}
             onChange={toggleSelectAll}
             ref={(element) => {
               if (element)
                 element.indeterminate =
-                  !scanning &&
-                  tracks.some((t) => selected.has(t.path)) &&
-                  !tracks.every((t) => selected.has(t.path));
+                  !scanning && selected.size > 0 && selected.size < matching;
             }}
             title={
               selected.size > 0
@@ -1627,7 +1670,7 @@ const Analysis = () => {
           className="ka-load-error"
           role="alert"
         >
-          <AlertCircle size={14} /> Could not load all tracks.
+          <AlertCircle size={14} /> Could not load folders.
           <button
             className="ka-btn"
             onClick={hardRefresh}
@@ -1642,7 +1685,7 @@ const Analysis = () => {
         className="ka-track-list"
         ref={listRef}
       >
-        {tracks.length === 0 ? (
+        {groups.length === 0 ? (
           <div className="ka-state-center">
             <Music
               size={36}
@@ -1658,8 +1701,15 @@ const Analysis = () => {
           <div
             style={{ height: virtualizer.getTotalSize(), position: 'relative' }}
           >
-            {virtualizer.getVirtualItems().map((virtualRow) => {
-              const { group: g, track } = visibleRows[virtualRow.index];
+            {virtualRows.map((virtualRow) => {
+              const row = visibleRows[virtualRow.index];
+              const g = row.group;
+              const page = g ? null : trackPages.get(row.directory, row.index);
+              const rawTrack =
+                page?.items?.[row.index % ANALYSIS_TRACK_PAGE_SIZE];
+              const track = rawTrack
+                ? { ...toRow(rawTrack), ...edits.get(rawTrack.path) }
+                : null;
               return (
                 <div
                   data-index={virtualRow.index}
@@ -1677,20 +1727,21 @@ const Analysis = () => {
                     <FolderGroup
                       collapsed={!expandedFolders.has(g.dir)}
                       dir={g.dir}
-                      globalScanning={scanning}
+                      globalScanning={scanning || selecting}
                       inFlight={inFlight}
                       name={g.name}
                       onScanFolder={handleScanFolder}
                       onSelectFolder={handleSelectFolder}
                       onToggle={toggleFolder}
-                      selected={selected}
-                      selectionReady={tracks.length === matching}
-                      tracks={g.tracks}
+                      selectedCount={selectedCounts.get(g.dir) ?? 0}
+                      selectionReady={!selecting}
+                      trackCount={g.trackCount}
                     />
-                  ) : (
+                  ) : track ? (
                     <TrackRow
                       fmtKey={fmtKey}
-                      globalScanning={scanning}
+                      globalScanning={scanning || selecting}
+                      key={track.path}
                       onClearBpm={handleClearBpm}
                       onClearKey={handleClearKey}
                       onInspect={setInspectedTrack}
@@ -1703,6 +1754,41 @@ const Analysis = () => {
                       selected={selected.has(track.path)}
                       track={track}
                     />
+                  ) : (
+                    <div
+                      className="ka-track-placeholder"
+                      role={page?.error ? 'alert' : undefined}
+                    >
+                      {page?.error
+                        ? 'Could not load these tracks.'
+                        : page?.items && !page.loading
+                          ? 'This folder changed. Refresh to update its tracks.'
+                          : 'Loading tracks…'}
+                      {page?.error && (
+                        <button
+                          className="ka-btn"
+                          onClick={() =>
+                            trackPages.retry(
+                              row.directory,
+                              row.index,
+                              idleRevisionRef.current + refreshNonce,
+                            )
+                          }
+                          type="button"
+                        >
+                          Retry
+                        </button>
+                      )}
+                      {page?.items && !page.loading && !page.error && (
+                        <button
+                          className="ka-btn"
+                          onClick={hardRefresh}
+                          type="button"
+                        >
+                          Refresh
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               );
@@ -1710,36 +1796,6 @@ const Analysis = () => {
           </div>
         )}
       </div>
-
-      {/* Automatic loading progress and manual batch retry. */}
-      {tracks.length > 0 && (
-        <div className="ka-pagination">
-          <span className="ka-page-info">
-            {tracks.length < matching ? 'Loading' : 'Loaded'} {tracks.length} of{' '}
-            {matching} tracks
-          </span>
-          {tracks.length < matching && (
-            <button
-              className="ka-page-btn hover-fx"
-              disabled={loadingMore}
-              onClick={loadMore}
-              type="button"
-            >
-              {loadingMore ? (
-                <>
-                  <Loader2
-                    className="ka-spin-icon"
-                    size={12}
-                  />{' '}
-                  Loading…
-                </>
-              ) : (
-                `Load ${Math.min(PAGE_SIZE, matching - tracks.length)} more ›`
-              )}
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 };

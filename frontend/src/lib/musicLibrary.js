@@ -49,17 +49,20 @@ export const triggerSync = async () => api.post('/musiclibrary/sync');
 
 export const cancelSync = async () => api.post('/musiclibrary/sync/cancel');
 
-export const getTracks = async (queryParameters) => {
+export const getTracks = async (queryParameters, { signal } = {}) => {
   const data = (
-    await api.get('/musiclibrary/tracks', { params: queryParameters })
+    await api.get('/musiclibrary/tracks', {
+      params: queryParameters,
+      ...(signal ? { signal } : {}),
+    })
   ).data;
   seedSignatures(data.tracks ?? []);
   return data;
 };
 
 // One window of tracks, shaped for usePagedList. `total` is the whole matching set, not the page.
-export const getTrackPage = async (queryParameters) => {
-  const data = await getTracks(queryParameters);
+export const getTrackPage = async (queryParameters, options) => {
+  const data = await getTracks(queryParameters, options);
   return { items: data.tracks ?? [], total: data.total ?? 0 };
 };
 
@@ -156,8 +159,12 @@ export const getKeys = async () => (await api.get('/musiclibrary/keys')).data;
 
 export const getYears = async () => (await api.get('/musiclibrary/years')).data;
 
-export const getFolders = async () => {
-  const data = (await api.get('/musiclibrary/folders')).data;
+export const getFolders = async (queryParameters) => {
+  const data = (
+    await (queryParameters
+      ? api.get('/musiclibrary/folders', { params: queryParameters })
+      : api.get('/musiclibrary/folders'))
+  ).data;
   seedSignatures(data, 'coverPath');
   return data;
 };
