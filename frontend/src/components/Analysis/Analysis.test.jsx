@@ -541,11 +541,27 @@ describe('analysis folder loading', () => {
     expect(
       container.querySelector('.ka-panel .ka-btn--primary').textContent,
     ).toContain('Start Basic analysis');
+    expect(container.querySelector('.ka-panel .ka-btn--primary').disabled).toBe(
+      true,
+    );
+    await act(async () =>
+      container.querySelector('.ka-panel .ka-btn--primary').click(),
+    );
+    expect(analysisApi.startScan).not.toHaveBeenCalled();
+    await act(async () =>
+      container.querySelector('.ka-folder-check input').click(),
+    );
+    expect(container.querySelector('.ka-panel .ka-btn--primary').disabled).toBe(
+      false,
+    );
     await act(async () => {
       container.querySelector('.ka-panel .ka-btn--primary').click();
     });
     expect(analysisApi.startScan).toHaveBeenLastCalledWith(
-      expect.objectContaining({ enhanced: false }),
+      expect.objectContaining({
+        enhanced: false,
+        onlyPaths: ['one', 'two', 'three'],
+      }),
     );
 
     expect(
@@ -558,22 +574,60 @@ describe('analysis folder loading', () => {
     );
     expect(
       container.querySelector('.ka-panel .ka-btn--primary').textContent,
-    ).toContain('Start Enhanced analysis');
+    ).toContain('Analyse 3 selected');
     await act(async () => {
       container.querySelector('.ka-panel .ka-btn--primary').click();
     });
     expect(analysisApi.startScan).toHaveBeenLastCalledWith(
-      expect.objectContaining({ enhanced: true }),
+      expect.objectContaining({
+        enhanced: true,
+        onlyPaths: ['one', 'two', 'three'],
+      }),
     );
+  });
+  it('blocks empty selections in both modes including reset and after deselecting', async () => {
+    expect.hasAssertions();
+    await render();
+    const expectEmptySelectionBlocked = async () => {
+      const button = container.querySelector('.ka-panel .ka-btn--primary');
+      expect(button.disabled).toBe(true);
+      await act(async () => button.click());
+      expect(analysisApi.startScan).not.toHaveBeenCalled();
+    };
+
+    await expectEmptySelectionBlocked();
+    act(() => container.querySelector('input[value="enhanced"]').click());
+    await expectEmptySelectionBlocked();
+    await act(async () =>
+      container.querySelector('.ka-folder-check input').click(),
+    );
+    expect(container.querySelector('.ka-panel .ka-btn--primary').disabled).toBe(
+      false,
+    );
+    act(() =>
+      container
+        .querySelector('[aria-label="Reset & reanalyse selected tracks"]')
+        .click(),
+    );
+    await act(async () =>
+      container.querySelector('.ka-folder-check input').click(),
+    );
+    const start = container.querySelector('.ka-panel .ka-btn--primary');
+    expect(start.disabled).toBe(true);
+    await act(async () => start.click());
+    expect(analysisApi.startScan).not.toHaveBeenCalled();
   });
   it('preserves scan options when changing the shared analysis mode', async () => {
     expect.hasAssertions();
     await render();
+    await act(async () =>
+      container.querySelector('.ka-folder-check input').click(),
+    );
     const skip = container.querySelector(
       '[role="switch"][aria-label="Skip already-analysed tracks"]',
     );
     const reset = container.querySelector(
-      '[role="switch"][aria-label="Reset & reanalyse all tracks"]',
+      '[role="switch"][aria-label="Reset & reanalyse selected tracks"]',
     );
     expect(skip.getAttribute('aria-checked')).toBe('true');
     expect(reset.getAttribute('aria-checked')).toBe('false');

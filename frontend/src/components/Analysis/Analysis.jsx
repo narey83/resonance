@@ -185,10 +185,12 @@ const ScanSettings = ({ enhanced, onStart, scanning, selectedCount = 0 }) => {
           className="ka-toggle-row"
           htmlFor="analysis-reset-all"
         >
-          <span className="ka-field-label">Reset & reanalyse all tracks</span>
+          <span className="ka-field-label">
+            Reset & reanalyse selected tracks
+          </span>
           <button
             aria-checked={resetAll}
-            aria-label="Reset & reanalyse all tracks"
+            aria-label="Reset & reanalyse selected tracks"
             className={`ka-toggle hover-fx${resetAll ? ' on' : ''}`}
             id="analysis-reset-all"
             onClick={() => {
@@ -204,15 +206,18 @@ const ScanSettings = ({ enhanced, onStart, scanning, selectedCount = 0 }) => {
         {resetAll && (
           <p className="ka-warn">
             <AlertCircle size={13} /> This will clear the selected metrics on
-            every matching track and re-detect them.
+            every selected track and re-detect them.
           </p>
         )}
       </div>
 
       <div className="ka-panel-footer">
+        {selectedCount === 0 && (
+          <span>Select tracks or folders below to start analysis.</span>
+        )}
         <button
           className="ka-btn ka-btn--primary hover-fx"
-          disabled={scanning}
+          disabled={scanning || selectedCount === 0}
           onClick={() =>
             onStart({
               metrics: METRICS.join(', '),
@@ -873,12 +878,17 @@ const Analysis = () => {
   // paths, not masked filenames: the backend resolves them against the share in one query
   // rather than the page doing a lookup per row before it can ask for anything.
   const startScan = async (request, paths) => {
+    if (!paths?.length) {
+      toast.info('Select tracks or folders before starting analysis.');
+      return;
+    }
+
     finalizingRef.current = false;
     setRecentlyUpdated(new Set());
     inFlightRef.current = new Set();
     setScanState(null);
     try {
-      await analysisApi.startScan({ ...request, onlyPaths: paths ?? null });
+      await analysisApi.startScan({ ...request, onlyPaths: paths });
       const state = await analysisApi.getScanState();
       if (!mountedRef.current) return;
       wasScanningRef.current = Boolean(state?.scanning);
@@ -896,7 +906,7 @@ const Analysis = () => {
   };
 
   const handleStartScan = async (request) => {
-    const paths = selected.size > 0 ? Array.from(selected.keys()) : undefined;
+    const paths = Array.from(selected.keys());
     await startScan(request, paths);
   };
 
