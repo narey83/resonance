@@ -12,7 +12,8 @@ for current behaviour and configuration requirements.
 
 ## Local development
 
-Use Node.js 20 or newer and npm. Start the .NET backend from the repository root:
+Use Node.js 22 or newer and npm 11 (required for the local dependency overrides).
+Start the .NET backend from the repository root:
 
 ```sh
 dotnet run --project backend/resonance.csproj
@@ -62,8 +63,14 @@ package overrides select fixed transitive releases while retaining the existing
 build and test commands. `deepmerge` has a small, MIT-licensed local security
 backport because upstream has not published a patched release; see
 [`vendor/deepmerge/README.md`](vendor/deepmerge/README.md) for the exact change,
-regression checks and removal criteria. Keep `vendor/` available when installing
-from the lockfile, including in container dependency layers.
+regression checks and removal criteria. Legacy minimatch consumers use the same
+security backport as the mobile application, retaining the callable interface and
+`makeRe`; TypeScript ESLint uses upstream minimatch 11. See
+[`vendor/minimatch-engine/README.md`](vendor/minimatch-engine/README.md) and
+[`vendor/minimatch-compat/README.md`](vendor/minimatch-compat/README.md). The dependency
+security checks exercise both module formats, expansion limits and real consumers.
+Keep `vendor/` available when installing from the lockfile, including in container
+dependency layers.
 
 ## Themes and player window
 

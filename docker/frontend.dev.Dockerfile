@@ -6,7 +6,7 @@ WORKDIR /src/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 COPY frontend/vendor/ ./vendor/
 COPY frontend/scripts/apply-node-compat.cjs ./scripts/apply-node-compat.cjs
-RUN npm ci && sha256sum package-lock.json > node_modules/.resonance-package-lock \
+RUN npm install --global npm@11 && npm ci && sha256sum package-lock.json > node_modules/.resonance-package-lock \
     && mkdir -p /home/dev /cache/npm \
     && chown -R $DEV_UID:$DEV_GID /src/frontend /home/dev /cache/npm
 COPY docker/scripts/frontend-dev.sh /usr/local/bin/resonance-frontend-dev

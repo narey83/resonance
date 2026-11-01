@@ -8,7 +8,7 @@ WORKDIR /web
 COPY frontend/package.json frontend/package-lock.json ./
 COPY frontend/vendor/ ./vendor/
 COPY frontend/scripts/apply-node-compat.cjs ./scripts/apply-node-compat.cjs
-RUN npm ci
+RUN npm install --global npm@11 && npm ci
 COPY frontend/ .
 RUN npm run build
 

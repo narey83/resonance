@@ -48,6 +48,7 @@
     "deepmerge": "file:vendor/deepmerge",
     "eslint": "^8.56.0",
     "eslint-config-canonical": "^42.8.3",
+    "minimatch": "file:vendor/minimatch-compat",
     "playwright": "^1.62.1",
     "react-scripts": "^5.0.0"
   },
@@ -59,11 +60,13 @@
     "@graphql-tools/utils": "^13.2.0",
     "@svgr/webpack": "^8.1.0",
     "@tootallnate/once": "^2.0.1",
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.3"
+    },
     "css-select": "^3.1.0",
     "css-what": "^5.0.1",
     "deepmerge": "$deepmerge",
-    "minimatch@^4.0.0": "^4.2.5",
-    "minimatch@^9.0.0": "^9.0.7",
+    "minimatch": "$minimatch",
     "resolve-url-loader": "^5.0.0",
     "serialize-javascript": "^7.1.4",
     "svgo@^2.0.0": "^2.8.4",

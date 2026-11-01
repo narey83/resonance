@@ -1,0 +1,30 @@
+{
+  "description": "a glob matcher in javascript",
+  "main": "./dist/commonjs/index.js",
+  "types": "./dist/commonjs/index.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/commonjs/index.d.ts",
+        "default": "./dist/commonjs/index.js"
+      }
+    }
+  },
+  "engines": {
+    "node": "18 || 20 || >=22"
+  },
+  "license": "BlueOak-1.0.0",
+  "type": "module",
+  "module": "./dist/esm/index.js",
+  "dependencies": {
+    "brace-expansion": "^5.0.8"
+  },
+  "name": "minimatch-engine",
+  "version": "10.2.6-resonance.1",
+  "private": true
+}
