@@ -413,8 +413,8 @@
 /* ── Track list ──────────────────────────────────────────────────────────── */
 
 .ka-track-list {
-  flex: 1;
-  overflow-y: auto;
+  flex: 0 0 auto;
+  overflow: visible;
   background: var(--bg-primary);
 }
 
@@ -719,9 +719,9 @@
 
 .ka-folder-name {
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .ka-folder-badge {
@@ -1014,7 +1014,7 @@
 }
 
 /* One analysis workspace, with explicit mode coverage and on-demand results. */
-.ka-root { overflow-y: auto; }
+.ka-root { position: relative; overflow-y: auto; scrollbar-gutter: stable; }
 .ka-analysis-modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 20px; padding: 0; border: 0; }
 .ka-analysis-modes legend { margin-bottom: 8px; font-weight: 600; }
 .ka-analysis-modes label { display: grid; grid-template-columns: auto 1fr; align-content: start; gap: 8px; padding: 14px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }

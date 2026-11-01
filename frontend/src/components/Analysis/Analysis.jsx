@@ -71,6 +71,7 @@ import {
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -1015,7 +1016,26 @@ const Analysis = () => {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [tracks]);
 
+  const scrollRef = useRef(null);
   const listRef = useRef(null);
+  const [listOffset, setListOffset] = useState(0);
+
+  // Results share the page scroll area. Keep their virtual coordinates aligned
+  // when settings, details, progress or responsive wrapping move the list.
+  useLayoutEffect(() => {
+    const root = scrollRef.current;
+    if (!root) return undefined;
+    const updateOffset = () => setListOffset(listRef.current?.offsetTop ?? 0);
+    updateOffset();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(updateOffset);
+    observer.observe(root);
+    for (const child of root.children) {
+      if (child !== listRef.current) observer.observe(child);
+    }
+
+    return () => observer.disconnect();
+  }, [error, inspectedTrack, loading, showSettings]);
   const visibleRows = useMemo(
     () =>
       groups.flatMap((group) => [
@@ -1028,10 +1048,11 @@ const Analysis = () => {
   );
   const virtualizer = useVirtualizer({
     count: visibleRows.length,
-    getScrollElement: () => listRef.current,
+    getScrollElement: () => scrollRef.current,
     getItemKey: (index) => visibleRows[index].key,
     estimateSize: (index) => (visibleRows[index].group ? 59 : 44),
     overscan: 12,
+    scrollMargin: listOffset,
   });
 
   const toggleSelect = useCallback((path) => {
@@ -1178,6 +1199,7 @@ const Analysis = () => {
   return (
     <div
       className={`ka-root${expandedFolders.size > 0 ? ' ka-root--expanded' : ''}`}
+      ref={scrollRef}
     >
       <section className="ka-overview">
         <div className="ka-view-heading">
@@ -1625,7 +1647,7 @@ const Analysis = () => {
                     top: 0,
                     left: 0,
                     width: '100%',
-                    transform: `translateY(${virtualRow.start}px)`,
+                    transform: `translateY(${virtualRow.start - listOffset}px)`,
                   }}
                 >
                   {g ? (

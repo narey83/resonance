@@ -2,22 +2,12 @@ import * as analysisApi from '../../lib/analysis';
 import * as musicLibraryApi from '../../lib/musicLibrary';
 import { usePagedList } from '../../lib/usePagedList';
 import Analysis from './Analysis';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { act } from 'react-dom/test-utils';
 
-jest.mock('@tanstack/react-virtual', () => ({
-  useVirtualizer: ({ count, getItemKey }) => ({
-    getTotalSize: () => count * 44,
-    getVirtualItems: () =>
-      Array.from({ length: Math.min(count, 20) }, (_, index) => ({
-        index,
-        key: getItemKey(index),
-        start: index * 44,
-      })),
-    measureElement: () => {},
-  }),
-}));
+jest.mock('@tanstack/react-virtual', () => ({ useVirtualizer: jest.fn() }));
 jest.mock('../../context/PlayerContext', () => ({
   usePlayer: () => ({ play: jest.fn(), track: null }),
 }));
@@ -78,6 +68,18 @@ describe('analysis folder loading', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    useVirtualizer.mockImplementation(
+      ({ count, getItemKey, scrollMargin }) => ({
+        getTotalSize: () => count * 44,
+        getVirtualItems: () =>
+          Array.from({ length: Math.min(count, 20) }, (_, index) => ({
+            index,
+            key: getItemKey(index),
+            start: scrollMargin + index * 44,
+          })),
+        measureElement: () => {},
+      }),
+    );
     analysisApi.getScanState.mockResolvedValue({ scanning: false });
     container = document.createElement('div');
     document.body.append(container);
@@ -101,6 +103,75 @@ describe('analysis folder loading', () => {
       ReactDOM.unmountComponentAtNode(container);
     });
     container.remove();
+  });
+
+  it('virtualizes results against the page instead of an inner scroll window', async () => {
+    expect.hasAssertions();
+    await render();
+    const options = useVirtualizer.mock.calls.at(-1)[0];
+    expect(options.getScrollElement()).toBe(
+      container.querySelector('.ka-root'),
+    );
+    expect(options.getScrollElement()).not.toBe(
+      container.querySelector('.ka-track-list'),
+    );
+    expect(options.scrollMargin).toBe(0);
+    expect(
+      container.querySelector('.ka-track-list [data-index="0"]').style
+        .transform,
+    ).toBe('translateY(0px)');
+  });
+
+  it('waits for initial loading and keeps results aligned when settings move them', async () => {
+    expect.hasAssertions();
+    const previousObserver = global.ResizeObserver;
+    let resize;
+    Object.defineProperty(global, 'ResizeObserver', {
+      configurable: true,
+      writable: true,
+      value: jest.fn((callback) => {
+        resize = callback;
+        return { observe: jest.fn(), disconnect: jest.fn() };
+      }),
+    });
+    try {
+      page = { ...page, items: [], loading: true };
+      await render();
+      expect(global.ResizeObserver).not.toHaveBeenCalled();
+      page = { ...page, items: [row('one')], loading: false };
+      await render();
+      let top = 550;
+      Object.defineProperty(
+        container.querySelector('.ka-track-list'),
+        'offsetTop',
+        {
+          configurable: true,
+          get: () => top,
+        },
+      );
+      act(() => resize());
+      expect(useVirtualizer.mock.calls.at(-1)[0].scrollMargin).toBe(550);
+      top = 900;
+      act(() =>
+        [...container.querySelectorAll('button')]
+          .find((button) => button.textContent.trim() === 'Scan')
+          .click(),
+      );
+      expect(useVirtualizer.mock.calls.at(-1)[0].scrollMargin).toBe(900);
+      expect(
+        container.querySelector('.ka-track-list [data-index="0"]').style
+          .transform,
+      ).toBe('translateY(0px)');
+      top = 550;
+      act(() => container.querySelector('.ka-panel .ka-btn').click());
+      expect(useVirtualizer.mock.calls.at(-1)[0].scrollMargin).toBe(550);
+    } finally {
+      Object.defineProperty(global, 'ResizeObserver', {
+        configurable: true,
+        writable: true,
+        value: previousObserver,
+      });
+    }
   });
 
   it('loads every page automatically and counts the complete folder', async () => {
