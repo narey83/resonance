@@ -39,7 +39,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-visible-69f74ae/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-scope-5422f9d/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -495,6 +495,42 @@ source-map/bundle-size warnings and punycode deprecation remain.
 Snapshot: `/home/narey/resonance-builds/precommit-upload-paging-2387050bad`.
 Rollback: `/home/narey/resonance-backups/analysis-visible-69f74ae`.
 Private checks/screenshots: `.dev/analysis-visible/`.
+
+## Explicit analysis selection — 1 November 2026
+
+Live web/gateway: `analysis-scope-5422f9d`, source
+`5422f9d112be267e0386095771ddca4184cbdba6`. The prior main Start action passed
+`onlyPaths: null` when no selection existed; the backend intentionally interprets
+that as the entire library. This unsafe UI default was missed in the previous
+release. Stopped the unintended running manual analysis through its Cancel action
+and verified it stopped. Completed analysis results were not rolled back.
+
+The main Start button is now disabled without selected tracks, with an instruction
+to select tracks/folders. A second guard refuses empty paths before any scan state
+or API mutation; this page always sends explicit nonempty `onlyPaths` arrays.
+Reset wording explicitly says selected tracks. Explicit track/folder actions and
+select-all remain supported. No backend API contract or automatic worker changes.
+
+Dev-laptop checks passed: clean dependency installation, ESLint/Prettier, 34
+frontend regressions (empty Basic/Enhanced selection, deselection with reset,
+selected paths/options and existing folder behavior), five dependency-security
+tests and production build. Browser fixtures at 1440/1100/800/390 confirmed the
+disabled empty Start action, visible instruction, list refresh, complete virtual
+browsing and no page errors/horizontal overflow; screenshots inspected. Actual
+Mac Brave verified no manual analysis running after deployment, disabled Start
+without selection, enabled **Analyse 40 selected** after selecting the first
+folder, and disabled Start again after clearing it. No live analysis started in QA.
+
+Web-only activation verified public/current and retained assets plus readiness;
+117 old assets retained. Backend PID 476721 and Caddy PID 3992646 unchanged.
+Backend remains `analysis-folder-first-1164c3c`; HTTP/1/2/3, disabled early data
+and 16 KiB headers preserved. No database, environment or queue changes during
+deployment. Backend tests not rerun for this frontend-only fix. Existing 79
+moderate npm findings and source-map/bundle-size/deprecation warnings remain.
+
+Snapshot: `/home/narey/resonance-builds/precommit-upload-paging-f415a1c49d`.
+Rollback: `/home/narey/resonance-backups/analysis-scope-5422f9d`.
+Private checks/live screenshots: `.dev/analysis-scope/`.
 
 ## Native enhanced analysis
 
