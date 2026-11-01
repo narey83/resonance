@@ -1425,8 +1425,6 @@ const Analysis = () => {
 
   const scanning = scanState?.scanning;
   const scanRunning = scanning ? scanState.inFlight ?? inFlight.size : 0;
-  // Automatic reservations and scan workers have different lifecycles and scopes.
-  const runningCount = preparation ? preparation.counts?.running ?? 0 : '—';
   const processed = scanState
     ? (scanState.analysed ?? 0) +
       (scanState.skipped ?? 0) +
@@ -1481,6 +1479,47 @@ const Analysis = () => {
                 : 'Enabled'
               : 'Checking…'}
           </span>
+          <div className="ka-preparation-actions">
+            <button
+              aria-label={
+                preparation?.paused
+                  ? 'Resume automatic preparation'
+                  : 'Pause after active tracks'
+              }
+              className="ka-btn ka-btn--sm hover-fx"
+              disabled={!preparation || Boolean(preparationBusy)}
+              onClick={() =>
+                handlePreparationAction(preparation.paused ? 'resume' : 'pause')
+              }
+              title={
+                preparation?.paused
+                  ? 'Resume all automatic jobs, regardless of the selected scan mode.'
+                  : 'Pause after active tracks finish. Queued tracks are kept.'
+              }
+              type="button"
+            >
+              {preparationBusy === 'resume'
+                ? 'Resuming…'
+                : preparationBusy === 'pause'
+                  ? 'Pausing…'
+                  : preparation?.paused
+                    ? 'Resume'
+                    : 'Pause'}
+            </button>
+            <button
+              aria-label="Stop analysis"
+              className="ka-btn ka-btn--sm hover-fx"
+              disabled={
+                Boolean(preparationBusy) ||
+                (!scanning && !(preparation?.counts?.running > 0))
+              }
+              onClick={() => handlePreparationAction('stop')}
+              title="Stop current analysis and pause automatic preparation. Queued tracks are kept."
+              type="button"
+            >
+              {preparationBusy === 'stop' ? 'Stopping…' : 'Stop'}
+            </button>
+          </div>
           <span>
             <strong>Enhanced worker:</strong>{' '}
             {preparation
@@ -1596,74 +1635,6 @@ const Analysis = () => {
                 saved results.
               </p>
             )}
-          </section>
-          <section
-            aria-label="Preparation queue status"
-            className={`ka-summary-queue${preparation?.counts?.running > 0 ? ' ka-summary-queue--running' : ''}`}
-          >
-            <h3>Automatic preparation queue</h3>
-            <div className="ka-metric-grid">
-              {['queued', 'running', 'retrying', 'failed'].map((state) => (
-                <MetricCard
-                  key={state}
-                  label={state}
-                  title="Automatic preparation jobs only. Current scan workers and outcomes are shown separately below."
-                  value={
-                    state === 'running'
-                      ? runningCount
-                      : preparation
-                        ? preparation.counts?.[state] ?? 0
-                        : '—'
-                  }
-                />
-              ))}
-            </div>
-            <div className="ka-queue-actions">
-              <button
-                aria-label={
-                  preparation?.paused
-                    ? 'Resume automatic preparation'
-                    : 'Pause after active tracks'
-                }
-                className="ka-btn ka-btn--sm hover-fx"
-                disabled={!preparation || Boolean(preparationBusy)}
-                onClick={() =>
-                  handlePreparationAction(
-                    preparation.paused ? 'resume' : 'pause',
-                  )
-                }
-                type="button"
-              >
-                {preparationBusy === 'resume'
-                  ? 'Resuming…'
-                  : preparationBusy === 'pause'
-                    ? 'Pausing…'
-                    : preparation?.paused
-                      ? 'Resume'
-                      : 'Pause'}
-              </button>
-              <button
-                aria-label="Stop analysis"
-                className="ka-btn ka-btn--sm hover-fx"
-                disabled={
-                  Boolean(preparationBusy) ||
-                  (!scanning && !(preparation?.counts?.running > 0))
-                }
-                onClick={() => handlePreparationAction('stop')}
-                title="Stop current analysis and pause automatic preparation. Queued tracks are kept."
-                type="button"
-              >
-                {preparationBusy === 'stop' ? 'Stopping…' : 'Stop'}
-              </button>
-            </div>
-            <p className="ka-queue-help">
-              {preparation
-                ? `Target: ${preparation.enhancedEnabled ? 'Basic + Enhanced' : 'Basic'} readiness. `
-                : ''}
-              {preparation?.paused
-                ? 'Resume processes all automatic jobs, regardless of the selected scan mode.'
-                : 'Pause finishes active tracks. Stop keeps queued tracks.'}
-            </p>
           </section>
         </div>
         {scanState?.enhancedTotal > 0 && (

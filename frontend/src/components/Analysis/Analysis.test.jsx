@@ -187,7 +187,7 @@ describe('analysis folder loading', () => {
     }
   });
 
-  it('separates basic coverage, enhanced features and preparation queue counts', async () => {
+  it('shows coverage without the removed automatic queue card', async () => {
     expect.hasAssertions();
     musicLibraryApi.getAnalysisStats.mockResolvedValue({
       total: 100,
@@ -235,9 +235,11 @@ describe('analysis folder loading', () => {
     expect(enhanced.textContent).toContain('19Beat grids');
     expect(enhanced.textContent).toContain('17Vocals');
     expect(enhanced.textContent).toContain('12 ready · 88 incomplete');
-    expect(queue.textContent).toContain('7queued');
-    expect(queue.textContent).toContain('2running');
-    expect(queue.textContent).toContain('4failed');
+    expect(queue).toBeNull();
+    expect(container.textContent).not.toContain('Automatic preparation queue');
+    expect(
+      container.querySelector('[aria-label="Resume automatic preparation"]'),
+    ).not.toBeNull();
     expect(container.querySelector('details.ka-analysis-help').open).toBe(
       false,
     );
@@ -262,9 +264,7 @@ describe('analysis folder loading', () => {
     expect(progress.textContent).toContain('Skipped: 3');
     expect(progress.textContent).toContain('Failed: 1');
     expect(progress.textContent).toContain('Processed: 24 / 100');
-    expect(container.textContent).toContain(
-      'Target: Basic + Enhanced readiness.',
-    );
+    expect(container.textContent).toContain('Enhanced worker: Available');
   });
   it('shows unknown coverage while loading and retains values with a stale warning on failure', async () => {
     expect.hasAssertions();
@@ -320,12 +320,13 @@ describe('analysis folder loading', () => {
         counts: { queued: 9 },
       });
       await act(async () => jest.advanceTimersByTime(2_000));
+      expect(container.textContent).toContain('Automatic preparation: Enabled');
+      expect(container.textContent).toContain(
+        'Enhanced worker: Not configured',
+      );
       expect(
-        container.querySelector('.ka-summary-queue').textContent,
-      ).toContain('9queued');
-      expect(
-        container.querySelector('.ka-summary-queue').textContent,
-      ).toContain('Target: Basic readiness.');
+        container.querySelector('[aria-label="Pause after active tracks"]'),
+      ).not.toBeNull();
       expect(
         container.querySelector('[aria-label="Data freshness"]').textContent,
       ).toContain('Scan: Stale');
@@ -409,30 +410,31 @@ describe('analysis folder loading', () => {
       inFlight: 8,
     });
     await render();
-    expect(container.querySelector('.ka-summary-queue').textContent).toContain(
-      '0running',
-    );
+    expect(
+      container.querySelector('[aria-label="Stop analysis"]').disabled,
+    ).toBe(false);
     expect(
       container.querySelector('.ka-progress-chip--active').textContent,
     ).toContain('Analysing: 8');
-    expect(container.querySelector('.ka-summary-queue').textContent).toContain(
-      '59,378queued',
-    );
+    expect(
+      container.querySelector('.ka-progress-chip--queued').textContent,
+    ).toContain('Remaining: 72');
   });
-  it('reports automatic reservations separately from active workers', async () => {
+  it('does not add automatic reservations to the scan worker count', async () => {
     expect.hasAssertions();
     getPreparationStatus.mockResolvedValue({
       paused: false,
       counts: { running: 8 },
     });
-    analysisApi.getScanState.mockResolvedValue({ scanning: true, inFlight: 8 });
+    analysisApi.getScanState.mockResolvedValue({
+      scanning: true,
+      total: 100,
+      inFlight: 8,
+    });
     await render();
-    expect(container.querySelector('.ka-summary-queue').textContent).toContain(
-      '8running',
-    );
     expect(
-      container.querySelector('.ka-summary-queue').textContent,
-    ).not.toContain('16running');
+      container.querySelector('.ka-progress-chip--active').textContent,
+    ).toBe('Analysing: 8');
     getPreparationStatus.mockResolvedValue({
       paused: false,
       counts: { running: 16 },
@@ -440,9 +442,12 @@ describe('analysis folder loading', () => {
     await act(async () =>
       container.querySelector('.ka-toolbar [title="Refresh tracks"]').click(),
     );
-    expect(container.querySelector('.ka-summary-queue').textContent).toContain(
-      '16running',
-    );
+    expect(
+      container.querySelector('.ka-progress-chip--active').textContent,
+    ).toBe('Analysing: 8');
+    expect(
+      container.querySelector('[aria-label="Stop analysis"]').disabled,
+    ).toBe(false);
   });
   it('updates scan workers independently and ignores stale in-flight counts after stopping', async () => {
     expect.hasAssertions();
@@ -498,9 +503,9 @@ describe('analysis folder loading', () => {
       inFlightPaths: ['one', 'two'],
     });
     await render();
-    expect(container.querySelector('.ka-summary-queue').textContent).toContain(
-      '0running',
-    );
+    expect(
+      container.querySelector('[aria-label="Stop analysis"]').disabled,
+    ).toBe(false);
     expect(
       container.querySelector('.ka-progress-chip--active').textContent,
     ).toContain('Analysing: 2');
@@ -659,9 +664,7 @@ describe('analysis folder loading', () => {
     );
     expect(resume.disabled).toBe(false);
     expect(pausePreparation).not.toHaveBeenCalled();
-    expect(container.querySelector('.ka-queue-help').textContent).toContain(
-      'all automatic jobs',
-    );
+    expect(resume.title).toContain('all automatic jobs');
     getPreparationStatus.mockResolvedValue({
       paused: false,
       counts: { queued: 3 },
@@ -695,8 +698,8 @@ describe('analysis folder loading', () => {
       container.querySelector('[aria-label="Resume automatic preparation"]'),
     ).not.toBeNull();
     expect(
-      container.querySelector('.ka-summary-queue--running'),
-    ).not.toBeNull();
+      container.querySelector('[aria-label="Stop analysis"]').disabled,
+    ).toBe(false);
   });
   it('stops active analysis only after pausing automatic scheduling', async () => {
     expect.hasAssertions();
@@ -810,23 +813,23 @@ describe('analysis folder loading', () => {
     expect(pausePreparation).not.toHaveBeenCalled();
     expect(analysisApi.startScan).not.toHaveBeenCalled();
   });
-  it('only highlights the preparation queue while work is running, not merely queued', async () => {
+  it('keeps automatic preparation controls without queue metrics while workers run', async () => {
     expect.hasAssertions();
     getPreparationStatus.mockResolvedValue({
-      counts: { queued: 59_376, running: 0 },
-    });
-    await render();
-    expect(container.querySelector('.ka-summary-queue--running')).toBeNull();
-    act(() => {
-      ReactDOM.unmountComponentAtNode(container);
-    });
-    getPreparationStatus.mockResolvedValue({
+      paused: false,
+      enhancedEnabled: true,
       counts: { queued: 7, running: 2 },
     });
     await render();
     expect(
-      container.querySelector('.ka-summary-queue--running'),
+      container.querySelector('[aria-label="Preparation queue status"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[aria-label="Pause after active tracks"]'),
     ).not.toBeNull();
+    expect(
+      container.querySelector('[aria-label="Stop analysis"]').disabled,
+    ).toBe(false);
   });
   it('shows manual progress separately and retains its final outcome', async () => {
     expect.hasAssertions();
@@ -844,14 +847,26 @@ describe('analysis folder loading', () => {
       expect(
         container.querySelector('[aria-label="Current scan progress"]'),
       ).not.toBeNull();
-      analysisApi.getScanState.mockResolvedValue({ scanning: false });
+      analysisApi.getScanState.mockResolvedValue({
+        scanning: false,
+        completed: true,
+        total: 3,
+        analysed: 3,
+        inFlight: 0,
+      });
       await act(async () => jest.advanceTimersByTime(2_000));
-      expect(container.querySelector('.ka-summary-queue--running')).toBeNull();
+      expect(
+        container.querySelector('.ka-progress-chip--active').textContent,
+      ).toBe('Analysing: 0');
+      expect(
+        container.querySelector('[aria-label="Current scan progress"]')
+          .textContent,
+      ).toContain('Succeeded: 3');
     } finally {
       jest.useRealTimers();
     }
   });
-  it('formats large coverage and queue counts consistently', async () => {
+  it('formats large coverage counts consistently without queue metrics', async () => {
     expect.hasAssertions();
     musicLibraryApi.getAnalysisStats.mockResolvedValue({
       total: 59_413,
@@ -869,9 +884,9 @@ describe('analysis folder loading', () => {
     expect(
       container.querySelector('.ka-summary-enhanced').textContent,
     ).toContain('35 ready · 59,378 incomplete');
-    expect(container.querySelector('.ka-summary-queue').textContent).toContain(
-      '59,376queued',
-    );
+    expect(
+      container.querySelector('[aria-label="Preparation queue status"]'),
+    ).toBeNull();
   });
 
   it('shows unknown feature coverage while older saved results are being indexed', async () => {
