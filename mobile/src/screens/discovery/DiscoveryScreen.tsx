@@ -86,6 +86,7 @@ export default function DiscoveryScreen() {
     finally { if (current()) setWorking(false); }
   };
   const loadGeneration = useRef(0);
+  const focused = useRef(false);
   const load = useCallback(async () => {
     const generation = ++loadGeneration.current;
     const sessionCurrent = sessionGuard();
@@ -111,12 +112,13 @@ export default function DiscoveryScreen() {
   }, []);
   useEffect(() => {
     useDiscoveryStore.getState().hydrate(); useOfflineCrates.getState().hydrate();
-    const sub = AppState.addEventListener('change', state => { if (state === 'active') void useDiscoveryStore.getState().sync(); });
+    const sub = AppState.addEventListener('change', state => { if (state === 'active' && focused.current) void load(); });
     return () => sub.remove();
-  }, []);
+  }, [load]);
   useFocusEffect(useCallback(() => {
+    focused.current = true;
     void load();
-    return () => { loadGeneration.current++; };
+    return () => { focused.current = false; loadGeneration.current++; };
   }, [load]));
   useEffect(() => { if (connection === 'connected') void useDiscoveryStore.getState().sync(); }, [connection]);
   useEffect(() => {
@@ -195,7 +197,7 @@ export default function DiscoveryScreen() {
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}><Text numberOfLines={2} style={[s.featureTitle, { flexShrink: 1 }]}>{getTrackTitle(featured)}</Text>{!featured.hasArtwork && <NewLibraryBadge indexedAt={featured.indexedAt} />}</View>
           <View style={s.featureFooter}><Text numberOfLines={1} style={s.featureArtist}>{featured.artist || 'Unknown artist'}</Text><Pressable accessibilityRole="button" onPress={() => { setSource(featured); setSection('Matches'); }} hitSlop={10}><Text style={s.matchLink}>FIND A MATCH ↗</Text></Pressable></View>
-        </View> : <View style={s.welcome}><Text style={s.h2}>Your collection starts here.</Text><Text style={s.muted}>Browse your library or search for a record.</Text>{button('Open library', () => openServerLibrary())}</View>}
+        </View> : <View style={s.welcome}><Text style={s.h2}>{loading ? 'Loading your library…' : error ? 'Library unavailable' : 'Your collection starts here.'}</Text><Text style={s.muted}>{loading ? 'Checking your saved server connection.' : error ? 'Pull to refresh and try again. Your downloaded music is still available offline.' : 'Browse your library or search for a record.'}</Text>{button('Open library', () => openServerLibrary())}</View>}
         {heading('New arrivals')}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.shelf}>{albums.map((album, index) => <Pressable key={`${album.directory}-${index}`} accessibilityRole="button" accessibilityLabel={`Play ${album.album} by ${album.artist}`} style={s.album} onPress={() => void perform(async () => { const tracks = await getAlbumTracks(album); if (!tracks.length) throw new Error('No tracks are available for this album. Refresh your library.'); await player.playQueue(tracks); })}>
           <Text style={s.sleeveIndex}>{String(index + 1).padStart(2, '0')} / {album.year ?? '—'}</Text><View style={s.albumArt}>{album.hasArtwork ? <Image source={{ uri: getArtworkUrl(album.coverPath, 384) ?? undefined, cacheKey: album.coverPath ? getArtworkCacheKey(album.coverPath, 384) : undefined }} style={StyleSheet.absoluteFill} transition={180} /> : <Text style={s.albumNote}>♫</Text>}{album.hasArtwork && <NewLibraryBadge indexedAt={album.indexedAt} overlay />}</View><View style={{ flexDirection: 'row', alignItems: 'center' }}><Text numberOfLines={1} style={[s.trackTitle, { flexShrink: 1 }]}>{album.album}</Text>{!album.hasArtwork && <NewLibraryBadge indexedAt={album.indexedAt} />}</View><Text numberOfLines={1} style={s.muted}>{album.artist}</Text>

@@ -38,6 +38,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import TrackPlayer from 'react-native-track-player';
 import { useAuthStore } from '../store/auth';
+import { startSessionHealth } from '../services/sessionHealth';
 import { useAppSettings } from '../store/appSettingsStore';
 import { useMixtapesHub } from '../store/mixtapeStore';
 import { useLibraryActivityHub } from '../store/libraryActivityStore';
@@ -58,6 +59,7 @@ import { useAppMode } from '../store/appModeStore';
 import { useLibrarySettings } from '../store/librarySettingsStore';
 
 function RemoteServices() {
+  useEffect(() => startSessionHealth(), []);
   useEffect(() => { void initNotifications(); }, []);
   useMixtapesHub();
   useLibraryActivityHub();

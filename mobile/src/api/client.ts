@@ -91,13 +91,16 @@ function recordNetwork(
 // Refreshes are shared only within the login that started them.
 let pendingRefresh: { generation: number; promise: Promise<string | null> } | null = null;
 
-const doRefresh = (): Promise<string | null> => {
+const doRefresh = (rejected = false): Promise<string | null> => {
   if (useAppMode.getState().mode !== 'remote') return Promise.resolve(null);
   const generation = getSessionGeneration();
   if (pendingRefresh?.generation === generation) return pendingRefresh.promise;
 
-  const { refreshToken, serverUrl, setTokens, clearTokens } = useAuthStore.getState();
-  if (!refreshToken || !serverUrl) return Promise.resolve(null);
+  const { refreshToken, serverUrl, setTokens, expireSession } = useAuthStore.getState();
+  if (!refreshToken || !serverUrl) {
+    if (rejected && isCurrentSession(generation)) return expireSession().catch(() => {}).then(() => null);
+    return Promise.resolve(null);
+  }
   const stillCurrent = () => isCurrentSession(generation) &&
     useAuthStore.getState().refreshToken === refreshToken;
 
@@ -111,7 +114,7 @@ const doRefresh = (): Promise<string | null> => {
     .catch(async (err: unknown) => {
       const status = (err as AxiosError)?.response?.status;
       if (stillCurrent() && (status === 401 || status === 403)) {
-        await clearTokens().catch(() => {});
+        await expireSession().catch(() => {});
       }
       return null;
     })
@@ -139,7 +142,7 @@ export const getValidToken = async (): Promise<string> => {
   const { refreshToken } = useAuthStore.getState();
   if (!refreshToken) {
     if (exp !== null && exp * 1000 < Date.now()) {
-      await useAuthStore.getState().clearTokens();
+      await useAuthStore.getState().expireSession();
       return '';
     }
     return accessToken;
@@ -203,13 +206,20 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    if (!original || error.response?.status !== 401 || original._retry) {
+    if (!original || error.response?.status !== 401) return Promise.reject(error);
+    if (original._retry) {
+      if (original.metadata && isCurrentSession(original.metadata.generation) &&
+          original.headers.Authorization === `Bearer ${useAuthStore.getState().accessToken}`) {
+        await useAuthStore.getState().expireSession().catch(() => {});
+      }
       return Promise.reject(error);
     }
-
     original._retry = true;
-
-    const newToken = await doRefresh();
+    // A late rejection of the old token must reuse a refresh that already succeeded.
+    const currentToken = useAuthStore.getState().accessToken;
+    const sentToken = original.headers.Authorization;
+    const newToken = currentToken && sentToken !== `Bearer ${currentToken}`
+      ? currentToken : await doRefresh(true);
     if (!newToken || !original.metadata || !isCurrentSession(original.metadata.generation)) {
       return Promise.reject(error);
     }

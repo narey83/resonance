@@ -131,3 +131,15 @@ test('CarPlay session restoration migrates session keys for locked-phone use aft
   assert.ok(writes.some(([key]) => key === 'resonance_access_token'));
   for (const [, options] of writes) assert.equal(options.keychainAccessible, 7);
 });
+
+test('session expiry preserves server identity and a subsequent login clears the notice', async () => {
+  const { auth, storage } = setup();
+  await auth.getState().setServerUrl('https://one');
+  await auth.getState().setTokens(jwt('alice'), 'refresh', 'session');
+  await auth.getState().expireSession();
+  assert.equal(auth.getState().sessionExpired, true);
+  assert.equal(auth.getState().serverUrl, 'https://one');
+  assert.equal(storage.values.get('resonance_server_url'), 'https://one');
+  await auth.getState().setTokens(jwt('alice'), 'new-refresh', 'new-session');
+  assert.equal(auth.getState().sessionExpired, false);
+});

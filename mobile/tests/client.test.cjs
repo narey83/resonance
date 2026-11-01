@@ -150,3 +150,59 @@ for (const modeName of ['choose', 'local']) {
     assert.equal(requests, 0);
   });
 }
+
+test('a rejected API token without renewal credentials exits to sign-in', async () => {
+  const { client, auth } = await setup(async config => { throw unauthorized(config); });
+  auth.setState({ refreshToken: null });
+  await assert.rejects(client.apiClient.get('/musiclibrary/tracks'));
+  assert.equal(auth.getState().accessToken, null);
+  assert.equal(auth.getState().sessionExpired, true);
+  assert.equal(auth.getState().serverUrl, 'https://one');
+});
+
+test('a refreshed token rejected on replay exits instead of leaving the library stuck', async () => {
+  let refreshes = 0;
+  const { client, auth } = await setup(async config => {
+    if (config.url.endsWith('/session/refresh')) { refreshes++; return response(config, { token: jwt('alice'), refreshToken: 'rotated' }); }
+    throw unauthorized(config);
+  });
+  await assert.rejects(client.apiClient.get('/session'));
+  assert.equal(refreshes, 1);
+  assert.equal(auth.getState().accessToken, null);
+  assert.equal(auth.getState().sessionExpired, true);
+});
+
+for (const status of [401, 403, 503]) {
+  test(`refresh HTTP ${status} ${status === 503 ? 'preserves credentials for retry' : 'shows sign-in again'}`, async () => {
+    const { client, auth } = await setup(async config => { throw unauthorized(config, status); });
+    await client.getValidToken();
+    assert.equal(auth.getState().sessionExpired, status !== 503);
+    assert.equal(auth.getState().accessToken === null, status !== 503);
+  });
+}
+
+test('expired access-only sessions show a reason without waiting for an API request', async () => {
+  const { client, auth } = await setup(async () => { throw new Error('No network expected'); });
+  auth.setState({ refreshToken: null });
+  assert.equal(await client.getValidToken(), '');
+  assert.equal(auth.getState().sessionExpired, true);
+});
+
+test('a late 401 from a pre-refresh token reuses the current token without rotating again', async () => {
+  const gate = deferred();
+  let calls = 0;
+  const newToken = jwt('alice', Math.floor(Date.now() / 1000) + 7200);
+  const { client, auth, load } = await setup(async config => {
+    calls++;
+    if (calls === 1) { await gate.promise; throw unauthorized(config); }
+    assert.equal(config.headers.Authorization, `Bearer ${newToken}`);
+    return response(config, { ok: true });
+  });
+  const pending = client.apiClient.get('/session');
+  await tick();
+  await auth.getState().setTokens(newToken, 'rotated', undefined, { generation: load('src/lib/sessionScope.ts').getSessionGeneration(), refresh: true });
+  gate.resolve();
+  assert.deepEqual((await pending).data, { ok: true });
+  assert.equal(calls, 2);
+  assert.equal(auth.getState().sessionExpired, false);
+});

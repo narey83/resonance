@@ -62,6 +62,7 @@ export default function LoginScreen({ navigation }: Props) {
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const sessionExpired = useAuthStore(state => state.sessionExpired);
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
   const [saveBiometric, setSaveBiometric] = useState(false);
@@ -108,7 +109,8 @@ export default function LoginScreen({ navigation }: Props) {
       </View>
 
       <View>
-        <Text style={s.title}>Sign in</Text>
+        <Text style={s.title}>{sessionExpired ? 'Sign in again' : 'Sign in'}</Text>
+        {sessionExpired && <Text accessibilityRole="alert" style={s.error}>Your session has expired or was revoked. Sign in again to reconnect. Your saved server and downloaded music are still available.</Text>}
         <Text style={s.sub}>{serverUrl}</Text>
 
         <View style={s.form}>

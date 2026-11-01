@@ -75,11 +75,13 @@ interface AuthState {
   tokenExpiresAt: number | null; // ms epoch, decoded from the JWT `exp` claim
   isReady:      boolean; // true once SecureStore has been read on startup
   hydrationError: string | null;
+  sessionExpired: boolean;
 
   hydrate: ()                                                                    => Promise<void>;
   setServerUrl: (url: string)                                                    => Promise<void>;
   setTokens: (access: string, refresh: string, sessionId?: string | null,
     options?: { generation: number; refresh?: boolean }) => Promise<void>;
+  expireSession: () => Promise<void>;
   clearTokens: ()                                                                => Promise<void>;
   clearAll: ()                                                                   => Promise<void>;
 }
@@ -105,7 +107,7 @@ const SESSION_STORAGE = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THI
 let hydration: Promise<void> | null = null;
 const signedOut = {
   accessToken: null, refreshToken: null, sessionId: null,
-  role: null, isAdmin: false, tokenExpiresAt: null,
+  role: null, isAdmin: false, tokenExpiresAt: null, sessionExpired: false,
 };
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -202,7 +204,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!isCurrentSession(started)) return;
     const { role, expiresAt } = decodeToken(access);
     set({ accessToken: access, refreshToken: refresh, sessionId: nextSessionId,
-      role, isAdmin: role === 'Administrator', tokenExpiresAt: expiresAt, isReady: true, hydrationError: null });
+      role, isAdmin: role === 'Administrator', tokenExpiresAt: expiresAt, isReady: true, hydrationError: null, sessionExpired: false });
+  },
+
+  expireSession: async () => {
+    const clearing = get().clearTokens();
+    set({ sessionExpired: true });
+    await clearing;
   },
 
   clearTokens: async () => {
