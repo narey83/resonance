@@ -49,7 +49,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/finish-scan-1486de4/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-redesign-d07a9ca/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -986,3 +986,41 @@ Rollback: `/home/narey/resonance-backups/finish-scan-1486de4`, preserving
 release contains `deployment.json`; the snapshot contains source/asset manifests,
 checks and public fixture results. Private Mac proof and activation helper:
 `.dev/deploy-finish-scan/`.
+
+
+## Analysis page hierarchy — 1 November 2026
+
+Active web/gateway: `analysis-redesign-d07a9ca`, frontend source
+`d07a9cac67cee7585c52cb94eae9e1a218fffd2b`, frontend tree
+`74b4b62685676e06cc7322a16a7fcb5441d155f3`. Activated at 22:32 GMT.
+
+The main flow is Library readiness, Current analysis, then Choose music to
+analyse. Three readiness cards show total tracks, Basic ready and Enhanced ready.
+Individual metrics, freshness timestamps and automatic-preparation controls are
+collapsed by default. Scan issues are disclosed beside the current outcome.
+Basic/Enhanced mode selection now sits with scan options and Start above folders.
+The visible Stop label is **Stop after this scan**; the finish-current-scan behavior,
+queued work, saved analysis and polling remain intact.
+
+On the dev laptop: fresh npm 11 clean install; all 47 analysis tests, 11 dependency
+security checks, four Node compatibility checks, full ESLint, zero-finding audit
+and production build passed. Isolated and public-build fixtures passed at
+1440/1100/800/390, covering collapsed defaults, coverage expansion, relocated mode
+selection, continuing progress and completion without cancellation. Actual signed-in
+Brave checks at 1440/390 confirmed real counts (59,413 total, 15,213 Basic ready,
+35 Enhanced ready), coverage disclosure, mode selection and no phone overflow.
+Screenshots inspected. The temporary viewport was reset and separate QA tab closed;
+the user's original Rooms tab was preserved. No real scan was started and no
+analysis settings, queue records or saved results were changed during QA.
+
+Public HTML, entrypoint and retained-asset hashes passed; 148 older static files
+retained. Backend/public/browser-monitor readiness passed. Backend PID 476721 /
+`analysis-folder-first-1164c3c` and Caddy PID 3992646 were preserved, with HTTP/1/2/3,
+disabled early data and 16 KiB headers unchanged. No backend restart or database
+replacement. Existing source-map, bundle-size and deprecation warnings remain.
+
+Clean snapshot: `/home/narey/resonance-builds/deploy-analysis-redesign-d07a9ca`.
+Rollback: `/home/narey/resonance-backups/analysis-redesign-d07a9ca`, preserving
+`finish-scan-1486de4`. The gateway's `deployment.json` and snapshot's source/asset
+manifests, checks and public browser results record verification. Private Mac proof:
+`.dev/deploy-analysis-redesign/`.
