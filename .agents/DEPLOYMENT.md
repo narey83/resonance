@@ -39,7 +39,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-actions-c6cd575/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-visible-69f74ae/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -465,6 +465,36 @@ source-map/bundle-size warnings and punycode deprecation remain.
 Snapshot: `/home/narey/resonance-builds/precommit-upload-paging-e508b98cd6`.
 Rollback: `/home/narey/resonance-backups/analysis-actions-c6cd575`.
 Private verification and live screenshot: `.dev/analysis-actions/`.
+
+## Always-visible analysis settings — 1 November 2026
+
+Live web/gateway: `analysis-visible-69f74ae`, source
+`69f74aef608573d325363cb09720b3bba88a5e10`. Analysis settings now render on initial
+load and remain visible after starting analysis. Removed the top Analyse button
+and the settings close/Cancel controls. The explicit Start Basic/Enhanced analysis
+button remains in the settings; running-analysis cancellation is preserved.
+Refresh tracks remains beside the list. No analysis starts automatically.
+
+Dev-laptop clean dependency installation, ESLint/Prettier, 33 frontend tests,
+five dependency-security tests and production build passed. Four browser widths
+(1440/1100/800/390) verified immediate settings visibility, no top Analyse/close
+controls, working option labels, list refresh and complete virtual folder/track
+browsing with no page errors or horizontal overflow. Desktop/phone screenshots
+were inspected. Actual Mac Brave confirmed settings and Start Basic analysis
+visible on initial load, no top Analyse or settings close button, and full
+59,413-track / 75-folder totals. No live analysis or playback was started.
+
+Web-only activation verified public assets, retained asset hashes and
+backend/public/monitor readiness. 114 older assets retained. Backend PID 476721
+and Caddy PID 3992646 unchanged; backend release remains
+`analysis-folder-first-1164c3c`. HTTP/1/2/3, disabled early data and explicit 16 KiB
+headers preserved. No database, queue or environment changes. Backend tests not
+rerun for this frontend-only change. Existing 79 moderate npm audit findings,
+source-map/bundle-size warnings and punycode deprecation remain.
+
+Snapshot: `/home/narey/resonance-builds/precommit-upload-paging-2387050bad`.
+Rollback: `/home/narey/resonance-backups/analysis-visible-69f74ae`.
+Private checks/screenshots: `.dev/analysis-visible/`.
 
 ## Native enhanced analysis
 
