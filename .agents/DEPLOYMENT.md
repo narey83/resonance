@@ -312,10 +312,11 @@ The backend stopped gracefully. All 41,379 captured pending upload IDs and reque
 metadata survived shutdown and startup, with no terminal changes at reconciliation.
 Both SQLite databases received consistent backups including committed WAL data,
 passed quick/foreign-key checks, and were fully copied and SHA-256 verified on
-the Mac before activation. The restart triggered a share scan; uploads wait for
-share readiness through the existing recovery mechanism. Public/backend/browser
-readiness and current HTML/JS/CSS hashes passed after activation. Do not confuse
-application readiness with completion of that background share scan.
+the Mac before activation. The restart-triggered share scan subsequently finished
+and Mac Brave showed Connected to Soulseek with no scan indicator. A follow-up
+reconciliation still verified all 41,379 original upload IDs and request metadata,
+with zero shutdown failures or recovery scheduling warnings. Public/backend/browser
+readiness and current HTML/JS/CSS hashes passed after activation.
 
 Checked snapshot: `/home/narey/resonance-builds/precommit-upload-paging-80f4a33fff`.
 Rollback/backups: `/home/narey/resonance-backups/analysis-overview-8b411e1`.
