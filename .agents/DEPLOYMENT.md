@@ -39,7 +39,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-scope-5422f9d/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-ring-1cdb0a6/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -531,6 +531,37 @@ moderate npm findings and source-map/bundle-size/deprecation warnings remain.
 Snapshot: `/home/narey/resonance-builds/precommit-upload-paging-f415a1c49d`.
 Rollback: `/home/narey/resonance-backups/analysis-scope-5422f9d`.
 Private checks/live screenshots: `.dev/analysis-scope/`.
+
+## Preparation queue activity ring — 1 November 2026
+
+Live web/gateway: `analysis-ring-1cdb0a6`, source
+`1cdb0a62e96633ebd46b00c49ce4ff9c2132d06f`. The Preparation queue card gains a
+moving accent-colour border when a manual scan is running or automatic preparation
+reports running work. Backlog alone does not activate it. A masked decorative
+pseudo-element animates a registered angle; it has no pointer events or layout
+impact. Reduced motion keeps a static highlight. Existing polling supplies state;
+no new requests, timers or dependencies.
+
+Dev-laptop checks passed: clean dependency installation, ESLint/Prettier, 36
+frontend regressions, five dependency-security tests and production build. Browser
+checks at 1440/1100/800/390 verified a changing animation angle, automatic start/
+stop as running counts change, reduced-motion animation suppression, selection
+protection, list refresh and complete virtual browsing without errors or horizontal
+overflow. Desktop and phone active-state screenshots inspected. Actual Mac Brave
+verified the deployed idle card has no animation with zero running work, a disabled
+Start action without selection, and 59,413 tracks / 75 folders. No live analysis
+or playback was started for QA; active animation used isolated fixtures.
+
+Web-only activation verified current and retained asset hashes and readiness;
+122 older assets retained. Backend PID 476721 and Caddy PID 3992646 unchanged.
+Backend remains `analysis-folder-first-1164c3c`; HTTP/1/2/3, disabled early data
+and 16 KiB headers preserved. No database, queue or environment changes. Backend
+tests not rerun for this frontend-only change. Existing 79 moderate npm findings,
+source-map/bundle-size warnings and deprecations remain.
+
+Snapshot: `/home/narey/resonance-builds/precommit-upload-paging-1851affbc9`.
+Rollback: `/home/narey/resonance-backups/analysis-ring-1cdb0a6`.
+Private checks and active-state/live-idle screenshots: `.dev/analysis-ring/`.
 
 ## Native enhanced analysis
 
