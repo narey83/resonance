@@ -169,3 +169,19 @@ above replaces those affected dependencies.
 Security verification (1 November 2026): a clean npm 11 install, all 200 mobile
 tests, TypeScript, lint and Android/iOS bundle exports passed on the dev laptop.
 The full audit, including low-severity findings, reports zero vulnerabilities.
+
+## Album identity in Discover (1 November 2026)
+
+New arrivals, unheard-track prefetching and Library album details share
+`services/albumTracks.ts`. Matching requires the album title and album artist;
+when a track lacks an album-artist tag, its artist must match the card, except
+that Various Artists compilations retain untagged performers. This prevents
+different artists with the same album title and folder from sharing a queue.
+Single-track cards resolve their exact cover-track path; larger results are
+paged before filtering so a matching artist beyond the first page is retained.
+An empty result never starts another artist's tracks.
+
+The regression fixtures include the four HYS007 arrival cards, mixed tags,
+compilations, tagged guest performers, pagination and account changes. All 206
+mobile tests, TypeScript, lint with zero warnings, the dependency audit and
+Android/iOS bundle exports passed on the dev laptop.

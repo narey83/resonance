@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { getAlbumTracks } from '../../services/albumTracks';
 import { Text, TextInput } from '../../components/Typography';
 import SmartCratesTab from './SmartCratesTab';
 import NewLibraryBadge from '../../components/NewLibraryBadge';
@@ -3310,16 +3311,9 @@ function AlbumDetail({ route }: AlbumProps) {
         .finally(() => setLoading(false));
       return;
     }
-    // Scope by folder when the grouped album carries its source directory — for Various-Artists
-    // albums `artist` is the literal "Various Artists" and matches no track. Falls back to artist
-    // only when directory is absent. Mirrors albumTrackParams() on the web.
-    getTracks({
-      album: album.album,
-      ...(album.directory ? { folder: album.directory } : { artist: album.artist }),
-      limit: 500,
-    })
+    getAlbumTracks(album, 500)
       .then((result) => {
-        const sorted = [...(result.tracks ?? [])].sort((a, b) => {
+        const sorted = [...result].sort((a, b) => {
           if ((a.discNumber ?? 1) !== (b.discNumber ?? 1))
             return (a.discNumber ?? 1) - (b.discNumber ?? 1);
           return (a.trackNumber ?? 999) - (b.trackNumber ?? 999);
@@ -3330,10 +3324,10 @@ function AlbumDetail({ route }: AlbumProps) {
       .finally(() => setLoading(false));
   // Deliberately field-scoped, not `album` itself: the object comes from a route param and its
   // identity isn't stable across re-renders, but which album it names is fully pinned down by
-  // these three fields (see albumGroupKey in localMusicLibrary.ts) — re-running on every
+  // the fields below (see albumGroupKey in localMusicLibrary.ts) — re-running on every
   // re-render would refetch on every navigation focus change for no reason.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [album.album, album.artist, album.directory, localAlbumTitle]);
+  }, [album.album, album.artist, album.albumArtist, album.directory, album.coverPath, album.trackCount, localAlbumTitle]);
 
   // Album tracks are all loaded up front (limit 500), so the full list already lives in tracksRef.
   // Kept for parity with the paginated detail views so the shared play handlers can await it.

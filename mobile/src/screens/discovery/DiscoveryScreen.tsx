@@ -27,7 +27,7 @@ import { newSearchId, refreshWantedSearches } from '../../services/wantedSearche
 import { useConnectionStore } from '../../services/connectionMonitor';
 import { ARTWORK_THUMB_SIZE, PLAYER_ART_SIZE, getArtworkCacheKey } from '../../services/artworkCache';
 import { haptics } from '../../lib/haptics';
-import { albumTrackParams } from '../../lib/albumTracks';
+import { getAlbumTracks } from '../../services/albumTracks';
 import { loadDiscoveryPlayback } from '../../services/discoveryPlayback';
 import { sessionGuard } from '../../lib/sessionScope';
 import { Typography, type ThemeColors } from '../../theme';
@@ -197,7 +197,7 @@ export default function DiscoveryScreen() {
           <View style={s.featureFooter}><Text numberOfLines={1} style={s.featureArtist}>{featured.artist || 'Unknown artist'}</Text><Pressable accessibilityRole="button" onPress={() => { setSource(featured); setSection('Matches'); }} hitSlop={10}><Text style={s.matchLink}>FIND A MATCH ↗</Text></Pressable></View>
         </View> : <View style={s.welcome}><Text style={s.h2}>Your collection starts here.</Text><Text style={s.muted}>Browse your library or search for a record.</Text>{button('Open library', () => openServerLibrary())}</View>}
         {heading('New arrivals')}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.shelf}>{albums.map((album, index) => <Pressable key={`${album.directory}-${index}`} style={s.album} onPress={() => void perform(async () => { const page = await getTracks({ limit: 200, ...albumTrackParams(album) }); await player.playQueue(page.tracks); })}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.shelf}>{albums.map((album, index) => <Pressable key={`${album.directory}-${index}`} accessibilityRole="button" accessibilityLabel={`Play ${album.album} by ${album.artist}`} style={s.album} onPress={() => void perform(async () => { const tracks = await getAlbumTracks(album); if (!tracks.length) throw new Error('No tracks are available for this album. Refresh your library.'); await player.playQueue(tracks); })}>
           <Text style={s.sleeveIndex}>{String(index + 1).padStart(2, '0')} / {album.year ?? '—'}</Text><View style={s.albumArt}>{album.hasArtwork ? <Image source={{ uri: getArtworkUrl(album.coverPath, 384) ?? undefined, cacheKey: album.coverPath ? getArtworkCacheKey(album.coverPath, 384) : undefined }} style={StyleSheet.absoluteFill} transition={180} /> : <Text style={s.albumNote}>♫</Text>}{album.hasArtwork && <NewLibraryBadge indexedAt={album.indexedAt} overlay />}</View><View style={{ flexDirection: 'row', alignItems: 'center' }}><Text numberOfLines={1} style={[s.trackTitle, { flexShrink: 1 }]}>{album.album}</Text>{!album.hasArtwork && <NewLibraryBadge indexedAt={album.indexedAt} />}</View><Text numberOfLines={1} style={s.muted}>{album.artist}</Text>
         </Pressable>)}</ScrollView>
         {!albums.length && empty('New albums will appear here as your library grows.')}

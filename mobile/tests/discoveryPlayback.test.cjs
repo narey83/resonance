@@ -23,7 +23,7 @@ function setup(overrides = {}) {
   sections.libraryError = () => { published.error = true; };
   const done = load('src/services/discoveryPlayback.ts').loadDiscoveryPlayback(sections);
   const finish = async () => {
-    library.resolve({ tracks: [] }); arrivals.resolve([]); history.resolve([]); resolved.resolve([]); albumTracks.resolve({ tracks: [] });
+    library.resolve({ tracks: [] }); arrivals.resolve([]); history.resolve([]); resolved.resolve([]); albumTracks.resolve({ tracks: [], total: 0 });
     await done;
   };
   return { library, arrivals, history, resolved, albumTracks, published, requests, done, finish, cancel: () => { active = false; } };
@@ -45,8 +45,8 @@ test('new album tracks start loading immediately and partial failures preserve p
   ui.arrivals.resolve(albums); await tick();
   assert.equal(ui.published.albums, albums);
   assert.equal(ui.requests[1].album, 'Album');
-  const track = { path: 'new.flac' };
-  ui.albumTracks.resolve({ tracks: [track, track] }); await tick();
+  const track = { path: 'new.flac', album: 'Album', artist: 'Artist' };
+  ui.albumTracks.resolve({ tracks: [track, track], total: 2 }); await tick();
   assert.deepEqual(ui.published.fresh, [track]);
   ui.history.reject(new Error('history unavailable'));
   ui.library.reject(new Error('library unavailable')); await ui.done;

@@ -19,3 +19,11 @@ test('albums without a directory are scoped by album and artist', () => {
     album: 'Atlantis', artist: 'Sean Tyas + Peter Steele', sort: 'track',
   });
 });
+
+test('album membership distinguishes artists, normalizes Unicode and rejects other releases', () => {
+  const { belongsToAlbum } = mobileModules()('src/lib/albumTracks.ts');
+  const album = { album: 'HYS007', artist: 'Uväll', albumArtist: 'Uväll' };
+  assert.equal(belongsToAlbum({ album: 'HYS007', artist: 'Uva\u0308ll', albumArtist: null }, album), true);
+  assert.equal(belongsToAlbum({ album: 'HYS007', artist: 'Brusca', albumArtist: null }, album), false);
+  assert.equal(belongsToAlbum({ album: 'Another release', albumArtist: 'Uväll' }, album), false);
+});

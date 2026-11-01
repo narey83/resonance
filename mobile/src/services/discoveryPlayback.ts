@@ -1,7 +1,7 @@
 import { getTracks, getRecentlyAdded, type MusicAlbum, type MusicTrack } from '../api/musicLibrary';
 import { getPlayHistory, type PlayRecord } from '../api/libraryActivity';
 import { resolveTracks } from '../api/discovery';
-import { albumTrackParams } from '../lib/albumTracks';
+import { getAlbumTracks } from './albumTracks';
 
 interface PlaybackSections {
   current: () => boolean;
@@ -30,9 +30,9 @@ export async function loadDiscoveryPlayback(sections: PlaybackSections): Promise
       if (!sections.current()) return;
       sections.albums(albums);
       const pages = await Promise.allSettled(albums.slice(0, 3).map(album =>
-        getTracks({ limit: 20, ...albumTrackParams(album) })));
+        getAlbumTracks(album, 20)));
       if (sections.current()) sections.fresh([...new Map(pages.flatMap(page =>
-        page.status === 'fulfilled' ? page.value.tracks : []).map(track => [track.path, track])).values()]);
+        page.status === 'fulfilled' ? page.value : []).map(track => [track.path, track])).values()]);
     })(),
     (async () => {
       const plays = await getPlayHistory(20);
