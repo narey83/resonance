@@ -56,6 +56,8 @@
 .dj-workspace .media-player-scrub-wrap { background: var(--wave-bg); }
 
 .dj-workspace .status-strip { height: 40px; min-height: 40px; background: var(--bg-surface); backdrop-filter: none; font-size: 11px; }
+/* A wrapped mobile status bar must reserve its full height above the page title. */
+@media (max-width: 480px) { .dj-workspace .status-strip { height: auto; } }
 
 
 .dj-workspace .status-strip-item { width: auto; padding: 0 14px; }
