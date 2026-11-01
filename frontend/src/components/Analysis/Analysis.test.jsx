@@ -130,7 +130,7 @@ describe('analysis folder loading', () => {
     ).toBe('translateY(0px)');
   });
 
-  it('waits for initial loading and keeps results aligned when settings move them', async () => {
+  it('waits for initial loading and keeps results aligned when the analysis controls resize', async () => {
     expect.hasAssertions();
     const previousObserver = global.ResizeObserver;
     let resize;
@@ -160,18 +160,14 @@ describe('analysis folder loading', () => {
       act(() => resize());
       expect(useVirtualizer.mock.calls.at(-1)[0].scrollMargin).toBe(550);
       top = 900;
-      act(() =>
-        [...container.querySelectorAll('button')]
-          .find((button) => button.textContent.trim() === 'Analyse')
-          .click(),
-      );
+      act(() => resize());
       expect(useVirtualizer.mock.calls.at(-1)[0].scrollMargin).toBe(900);
       expect(
         container.querySelector('.ka-track-list [data-index="0"]').style
           .transform,
       ).toBe('translateY(0px)');
       top = 550;
-      act(() => container.querySelector('.ka-panel .ka-btn').click());
+      act(() => resize());
       expect(useVirtualizer.mock.calls.at(-1)[0].scrollMargin).toBe(550);
     } finally {
       Object.defineProperty(global, 'ResizeObserver', {
@@ -424,9 +420,7 @@ describe('analysis folder loading', () => {
     expect(
       container.querySelector('.ka-analysis-actions [title="Refresh tracks"]'),
     ).toBeNull();
-    expect(
-      container.querySelector('.ka-analysis-actions').textContent,
-    ).toContain('Analyse');
+    expect(container.querySelector('.ka-analysis-actions')).toBeNull();
     await act(async () => container.querySelector('.ka-folder-expand').click());
     await act(async () => refreshTracks.click());
     expect(analysisApi.startScan).not.toHaveBeenCalled();
@@ -524,14 +518,10 @@ describe('analysis folder loading', () => {
     expect(usePagedList.mock.calls.at(-1)[1].analysis).toBe('enhanced');
   });
 
-  it('uses one mode selector for the overview and scan settings', async () => {
+  it('always shows analysis settings with no top Analyse or close button and shares one mode selector', async () => {
     expect.hasAssertions();
     page = { ...page, items: [folder()] };
     await render();
-    const scanButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent.trim() === 'Analyse',
-    );
-    act(() => scanButton.click());
     expect(analysisApi.startScan).not.toHaveBeenCalled();
     expect(
       container.querySelector('[aria-label="Analysis settings"]'),
@@ -540,6 +530,10 @@ describe('analysis folder loading', () => {
       2,
     );
     expect(container.querySelector('input[value="basic"]').checked).toBe(true);
+    expect(container.querySelector('.ka-analysis-actions')).toBeNull();
+    expect(
+      container.querySelector('[aria-label="Close analysis settings"]'),
+    ).toBeNull();
     expect(container.querySelector('.ka-panel select')).toBeNull();
     expect(container.querySelector('.ka-panel').textContent).toContain(
       'Selected mode: Basic',
@@ -554,7 +548,9 @@ describe('analysis folder loading', () => {
       expect.objectContaining({ enhanced: false }),
     );
 
-    act(() => scanButton.click());
+    expect(
+      container.querySelector('[aria-label="Analysis settings"]'),
+    ).not.toBeNull();
     act(() => container.querySelector('input[value="enhanced"]').click());
     expect(container.querySelector('.ka-panel select')).toBeNull();
     expect(container.querySelector('.ka-panel').textContent).toContain(
@@ -573,11 +569,6 @@ describe('analysis folder loading', () => {
   it('preserves scan options when changing the shared analysis mode', async () => {
     expect.hasAssertions();
     await render();
-    act(() =>
-      [...container.querySelectorAll('button')]
-        .find((button) => button.textContent.trim() === 'Analyse')
-        .click(),
-    );
     const skip = container.querySelector(
       '[role="switch"][aria-label="Skip already-analysed tracks"]',
     );

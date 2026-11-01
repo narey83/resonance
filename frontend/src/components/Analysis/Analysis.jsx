@@ -140,13 +140,7 @@ const MetricCard = ({ label, title, value }) => (
 
 // ── Analysis settings panel ───────────────────────────────────────────────────────
 
-const ScanSettings = ({
-  enhanced,
-  onClose,
-  onStart,
-  scanning,
-  selectedCount = 0,
-}) => {
+const ScanSettings = ({ enhanced, onStart, scanning, selectedCount = 0 }) => {
   const [skipTagged, setSkipTagged] = useState(true);
   const [resetAll, setResetAll] = useState(false);
 
@@ -157,14 +151,6 @@ const ScanSettings = ({
     >
       <div className="ka-panel-header">
         <span>Analysis settings</span>
-        <button
-          aria-label="Close analysis settings"
-          className="ka-icon-btn hover-fx"
-          onClick={onClose}
-          type="button"
-        >
-          <X size={14} />
-        </button>
       </div>
 
       <div className="ka-panel-body">
@@ -224,13 +210,6 @@ const ScanSettings = ({
       </div>
 
       <div className="ka-panel-footer">
-        <button
-          className="ka-btn hover-fx"
-          onClick={onClose}
-          type="button"
-        >
-          Cancel
-        </button>
         <button
           className="ka-btn ka-btn--primary hover-fx"
           disabled={scanning}
@@ -689,7 +668,6 @@ const Analysis = () => {
   const [filter, setFilter] = useState('all');
   const [sortKey, setSortKey] = useState('title');
   const [sortDirection, setSortDirection] = useState('asc');
-  const [showSettings, setShowSettings] = useState(false);
   const [selected, setSelected] = useState(new Map());
   const [selecting, setSelecting] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState(new Set());
@@ -918,7 +896,6 @@ const Analysis = () => {
   };
 
   const handleStartScan = async (request) => {
-    setShowSettings(false);
     const paths = selected.size > 0 ? Array.from(selected.keys()) : undefined;
     await startScan(request, paths);
   };
@@ -1062,7 +1039,7 @@ const Analysis = () => {
     }
 
     return () => observer.disconnect();
-  }, [error, inspectedTrack, loading, showSettings]);
+  }, [error, inspectedTrack, loading]);
   const visibleRows = useMemo(
     () =>
       groups.flatMap((group) => [
@@ -1300,16 +1277,6 @@ const Analysis = () => {
               <span>Basic + grids, vocals, structure and genre</span>
             </label>
           </fieldset>
-          <div className="ka-analysis-actions">
-            <button
-              className={`ka-btn hover-fx${showSettings ? ' ka-btn--active' : ''}`}
-              disabled={scanning || selecting}
-              onClick={() => setShowSettings((v) => !v)}
-              type="button"
-            >
-              <ScanLine size={13} /> Analyse
-            </button>
-          </div>
         </div>
         <div className="ka-analysis-context">
           <span>
@@ -1513,15 +1480,12 @@ const Analysis = () => {
         </div>
       </section>
 
-      {showSettings && (
-        <ScanSettings
-          enhanced={enhanced}
-          onClose={() => setShowSettings(false)}
-          onStart={handleStartScan}
-          scanning={scanning || selecting}
-          selectedCount={selected.size}
-        />
-      )}
+      <ScanSettings
+        enhanced={enhanced}
+        onStart={handleStartScan}
+        scanning={scanning || selecting}
+        selectedCount={selected.size}
+      />
 
       {inspectedTrack && (
         <AnalysisDetails
