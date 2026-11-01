@@ -432,7 +432,7 @@ describe('analysis folder loading', () => {
     );
     expect(skip.getAttribute('aria-checked')).toBe('true');
     expect(reset.getAttribute('aria-checked')).toBe('false');
-    act(() => reset.click());
+    act(() => reset.closest('label').querySelector('.ka-field-label').click());
     expect(skip.getAttribute('aria-checked')).toBe('false');
     expect(reset.getAttribute('aria-checked')).toBe('true');
     act(() => container.querySelector('input[value="enhanced"]').click());

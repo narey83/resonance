@@ -173,12 +173,16 @@ const ScanSettings = ({
           </p>
         </div>
 
-        <div className="ka-toggle-row">
+        <label
+          className="ka-toggle-row"
+          htmlFor="analysis-skip-analysed"
+        >
           <span className="ka-field-label">Skip already-analysed tracks</span>
           <button
             aria-checked={skipTagged}
             aria-label="Skip already-analysed tracks"
             className={`ka-toggle hover-fx${skipTagged ? ' on' : ''}`}
+            id="analysis-skip-analysed"
             onClick={() => {
               setSkipTagged((v) => !v);
               if (!skipTagged) setResetAll(false);
@@ -188,14 +192,18 @@ const ScanSettings = ({
           >
             <span className="ka-toggle-thumb" />
           </button>
-        </div>
+        </label>
 
-        <div className="ka-toggle-row">
+        <label
+          className="ka-toggle-row"
+          htmlFor="analysis-reset-all"
+        >
           <span className="ka-field-label">Reset & re-scan all tracks</span>
           <button
             aria-checked={resetAll}
             aria-label="Reset & re-scan all tracks"
             className={`ka-toggle hover-fx${resetAll ? ' on' : ''}`}
+            id="analysis-reset-all"
             onClick={() => {
               setResetAll((v) => !v);
               if (!resetAll) setSkipTagged(false);
@@ -205,7 +213,7 @@ const ScanSettings = ({
           >
             <span className="ka-toggle-thumb" />
           </button>
-        </div>
+        </label>
         {resetAll && (
           <p className="ka-warn">
             <AlertCircle size={13} /> This will clear the selected metrics on
