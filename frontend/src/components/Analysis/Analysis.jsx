@@ -1346,6 +1346,17 @@ const Analysis = () => {
   }
 
   const scanning = scanState?.scanning;
+  const scanRunning = scanning ? scanState.inFlight ?? inFlight.size : 0;
+  // Live scan workers are authoritative. The automatic queue can reserve an
+  // entire batch or report the same work, so do not add its count to the scan.
+  const runningCount =
+    scanRunning > 0
+      ? scanRunning
+      : preparation
+        ? preparation.counts?.running ?? 0
+        : scanState
+          ? 0
+          : '—';
   const processed = scanState
     ? scanState.analysed + scanState.skipped + scanState.failed
     : 0;
@@ -1503,8 +1514,18 @@ const Analysis = () => {
                 <MetricCard
                   key={state}
                   label={state}
-                  title="Automatic preparation runs Basic, then Enhanced when configured. Manual scan progress is shown separately."
-                  value={preparation ? preparation.counts?.[state] ?? 0 : '—'}
+                  title={
+                    state === 'running'
+                      ? 'Tracks running in active analysis or automatic preparation. Shared work is counted once.'
+                      : 'Automatic preparation totals. The active scan has separate queued and completed progress below.'
+                  }
+                  value={
+                    state === 'running'
+                      ? runningCount
+                      : preparation
+                        ? preparation.counts?.[state] ?? 0
+                        : '—'
+                  }
                 />
               ))}
             </div>
@@ -1606,13 +1627,10 @@ const Analysis = () => {
               <div className="ka-progress-stats">
                 <span className="ka-progress-chip ka-progress-chip--queued">
                   Queued:{' '}
-                  {Math.max(
-                    0,
-                    scanState.total - processed - (scanState.inFlight ?? 0),
-                  )}
+                  {Math.max(0, scanState.total - processed - scanRunning)}
                 </span>
                 <span className="ka-progress-chip ka-progress-chip--active">
-                  Analysing: {scanState.inFlight ?? 0}
+                  Analysing: {scanRunning}
                 </span>
                 <span className="ka-progress-chip ka-progress-chip--done">
                   Done: {processed}

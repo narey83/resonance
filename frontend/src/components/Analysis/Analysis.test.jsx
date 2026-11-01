@@ -259,6 +259,114 @@ describe('analysis folder loading', () => {
     );
   });
 
+  it('includes eight active manual Basic workers in the Running card when the automatic queue reports zero', async () => {
+    expect.hasAssertions();
+    getPreparationStatus.mockResolvedValue({
+      paused: false,
+      counts: { queued: 59_378, running: 0 },
+    });
+    analysisApi.getScanState.mockResolvedValue({
+      scanning: true,
+      total: 100,
+      analysed: 20,
+      skipped: 0,
+      failed: 0,
+      inFlight: 8,
+    });
+    await render();
+    expect(container.querySelector('.ka-summary-queue').textContent).toContain(
+      '8running',
+    );
+    expect(
+      container.querySelector('.ka-progress-chip--active').textContent,
+    ).toContain('Analysing: 8');
+    expect(container.querySelector('.ka-summary-queue').textContent).toContain(
+      '59,378queued',
+    );
+  });
+  it('does not double-count the same workers reported by automatic preparation and scan state', async () => {
+    expect.hasAssertions();
+    getPreparationStatus.mockResolvedValue({
+      paused: false,
+      counts: { running: 8 },
+    });
+    analysisApi.getScanState.mockResolvedValue({ scanning: true, inFlight: 8 });
+    await render();
+    expect(container.querySelector('.ka-summary-queue').textContent).toContain(
+      '8running',
+    );
+    expect(
+      container.querySelector('.ka-summary-queue').textContent,
+    ).not.toContain('16running');
+    getPreparationStatus.mockResolvedValue({
+      paused: false,
+      counts: { running: 16 },
+    });
+    await act(async () =>
+      container.querySelector('.ka-toolbar [title="Refresh tracks"]').click(),
+    );
+    expect(container.querySelector('.ka-summary-queue').textContent).toContain(
+      '8running',
+    );
+  });
+  it('updates the Running card as scan workers change and ignores stale in-flight counts after stopping', async () => {
+    expect.hasAssertions();
+    jest.useFakeTimers();
+    try {
+      getPreparationStatus.mockResolvedValue({
+        paused: true,
+        counts: { running: 0 },
+      });
+      analysisApi.getScanState.mockResolvedValue({
+        scanning: true,
+        inFlight: 8,
+      });
+      await render();
+      expect(
+        container.querySelector('.ka-summary-queue').textContent,
+      ).toContain('8running');
+      analysisApi.getScanState.mockResolvedValue({
+        scanning: true,
+        inFlight: 4,
+      });
+      await act(async () => jest.advanceTimersByTime(2_000));
+      expect(
+        container.querySelector('.ka-summary-queue').textContent,
+      ).toContain('4running');
+      analysisApi.getScanState.mockResolvedValue({
+        scanning: false,
+        inFlight: 8,
+      });
+      await act(async () => jest.advanceTimersByTime(2_000));
+      expect(
+        container.querySelector('.ka-summary-queue').textContent,
+      ).toContain('0running');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+  it('uses active paths when older scan responses omit the worker count', async () => {
+    expect.hasAssertions();
+    getPreparationStatus.mockResolvedValue({
+      paused: true,
+      counts: { running: 0 },
+    });
+    analysisApi.getScanState.mockResolvedValue({
+      scanning: true,
+      total: 3,
+      analysed: 0,
+      skipped: 0,
+      failed: 0,
+      inFlightPaths: ['one', 'two'],
+    });
+    await render();
+    expect(container.querySelector('.ka-summary-queue').textContent).toContain(
+      '2running',
+    );
+    expect(
+      container.querySelector('.ka-progress-chip--active').textContent,
+    ).toContain('Analysing: 2');
+  });
   it('refreshes Basic cards during a scan without library notifications or track-list reloads, then refreshes on completion', async () => {
     expect.hasAssertions();
     jest.useFakeTimers();
