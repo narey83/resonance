@@ -1,6 +1,6 @@
 # Resonance deployment destinations and runbook
 
-Last confirmed: 31 October 2026. Read this file before any deployment.
+Last confirmed: 1 November 2026. Read this file before any deployment.
 
 **Standing user rule: use only the dev laptop for builds, tests, application and
 development servers, including temporary web QA and Metro, until the user explicitly
@@ -39,7 +39,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-ui-6f76a83/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-layout-8f377fe/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -159,7 +159,7 @@ generic deployment command.
 ## Browser performance and storage link — 31 October 2026
 
 The active backend is `8d2ccbf` (`media-path-8d2ccbf`) and web release is
-`6f76a83` (`analysis-ui-6f76a83`). Transfer screens use paginated queues;
+`8f377fe` (`analysis-layout-8f377fe`). Transfer screens use paginated queues;
 the global header and Overview share compact status samples. Do not restore
 full transfer-list polling on every page. See `docs/upload-queue-paging.md`.
 
@@ -247,6 +247,34 @@ Rollback backup: `/home/narey/resonance-backups/analysis-ui-6f76a83`.
 The gateway's `deployment.json` records activation and the prior web release;
 `target-config.json` in the backup is the reviewed active configuration. Private
 Mac proof and deployment scripts are under `.dev/analysis-mode-cleanup/deployment/`.
+
+## Analysis results layout — 1 November 2026
+
+Deployed web and gateway `analysis-layout-8f377fe`. The results list grows with
+its virtual content and shares the analysis page's scroll area; it has no separate
+inner scrollbar. Folder names wrap in full. The virtualizer uses the page scroll
+position and observes changes to the controls above the results, including
+initial loading and opening/closing scan settings. Keep virtualization enabled:
+expanding a large library must not create every track row in the browser at once.
+
+A clean npm 11 install, lint/formatting, 14 focused tests, five dependency-security
+tests, production build and desktop/phone browser checks passed. Synthetic checks
+used 1,000 folders / 6,000 tracks, verified the last folder and track fit inside
+the page viewport, and kept the number of rendered rows below 100. Results height
+matched its content height, with zero inner scroll offset. Actual Mac Brave
+verified page scrolling and an expanded live folder; the results also matched its
+content height and retained a bounded set of track rows. No real scan was started.
+Existing dependency audit/source-map warnings remain as recorded above.
+
+Backend PID 359197 / release `8d2ccbf` and Caddy PID 3992646 stayed running.
+The explicit HTTP/3 early-data/header-limit policy was preserved. Public HTML,
+current JS/CSS and an older JS file matched their release hashes; 85 older static
+files were retained. Readiness passed for the public site, backend and continuous
+browser monitor.
+
+Clean snapshot: `/home/narey/resonance-builds/analysis-layout-clean-8d1801afe1`.
+Rollback backup: `/home/narey/resonance-backups/analysis-layout-8f377fe`.
+Private Mac proof and scripts: `.dev/analysis-layout/deployment/`.
 
 ## Native enhanced analysis
 
