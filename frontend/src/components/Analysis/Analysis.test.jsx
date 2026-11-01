@@ -162,7 +162,7 @@ describe('analysis folder loading', () => {
       top = 900;
       act(() =>
         [...container.querySelectorAll('button')]
-          .find((button) => button.textContent.trim() === 'Scan')
+          .find((button) => button.textContent.trim() === 'Analyse')
           .click(),
       );
       expect(useVirtualizer.mock.calls.at(-1)[0].scrollMargin).toBe(900);
@@ -417,8 +417,19 @@ describe('analysis folder loading', () => {
       total: 25_330,
     });
     await render();
+    const refreshTracks = container.querySelector(
+      '.ka-toolbar [title="Refresh tracks"]',
+    );
+    expect(refreshTracks.textContent).toContain('Refresh tracks');
+    expect(
+      container.querySelector('.ka-analysis-actions [title="Refresh tracks"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('.ka-analysis-actions').textContent,
+    ).toContain('Analyse');
     await act(async () => container.querySelector('.ka-folder-expand').click());
-    await act(async () => container.querySelector('[title="Refresh"]').click());
+    await act(async () => refreshTracks.click());
+    expect(analysisApi.startScan).not.toHaveBeenCalled();
     expect(musicLibraryApi.getTrackPage).toHaveBeenCalledTimes(2);
     expect(
       musicLibraryApi.getTrackPage.mock.calls.map(([query]) => ({
@@ -518,9 +529,13 @@ describe('analysis folder loading', () => {
     page = { ...page, items: [folder()] };
     await render();
     const scanButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent.trim() === 'Scan',
+      (button) => button.textContent.trim() === 'Analyse',
     );
     act(() => scanButton.click());
+    expect(analysisApi.startScan).not.toHaveBeenCalled();
+    expect(
+      container.querySelector('[aria-label="Analysis settings"]'),
+    ).not.toBeNull();
     expect(container.querySelectorAll('[name="analysis-mode"]')).toHaveLength(
       2,
     );
@@ -531,7 +546,7 @@ describe('analysis folder loading', () => {
     );
     expect(
       container.querySelector('.ka-panel .ka-btn--primary').textContent,
-    ).toContain('Start Basic Scan');
+    ).toContain('Start Basic analysis');
     await act(async () => {
       container.querySelector('.ka-panel .ka-btn--primary').click();
     });
@@ -547,7 +562,7 @@ describe('analysis folder loading', () => {
     );
     expect(
       container.querySelector('.ka-panel .ka-btn--primary').textContent,
-    ).toContain('Start Enhanced Scan');
+    ).toContain('Start Enhanced analysis');
     await act(async () => {
       container.querySelector('.ka-panel .ka-btn--primary').click();
     });
@@ -560,14 +575,14 @@ describe('analysis folder loading', () => {
     await render();
     act(() =>
       [...container.querySelectorAll('button')]
-        .find((button) => button.textContent.trim() === 'Scan')
+        .find((button) => button.textContent.trim() === 'Analyse')
         .click(),
     );
     const skip = container.querySelector(
       '[role="switch"][aria-label="Skip already-analysed tracks"]',
     );
     const reset = container.querySelector(
-      '[role="switch"][aria-label="Reset & re-scan all tracks"]',
+      '[role="switch"][aria-label="Reset & reanalyse all tracks"]',
     );
     expect(skip.getAttribute('aria-checked')).toBe('true');
     expect(reset.getAttribute('aria-checked')).toBe('false');

@@ -62,7 +62,6 @@ import {
   RotateCcw,
   ScanLine,
   Search,
-  Settings2,
   X,
   XCircle,
 } from 'lucide-react';
@@ -139,7 +138,7 @@ const MetricCard = ({ label, title, value }) => (
   </div>
 );
 
-// ── Scan settings panel ───────────────────────────────────────────────────────
+// ── Analysis settings panel ───────────────────────────────────────────────────────
 
 const ScanSettings = ({
   enhanced,
@@ -153,13 +152,13 @@ const ScanSettings = ({
 
   return (
     <section
-      aria-label="Scan settings"
+      aria-label="Analysis settings"
       className="ka-panel"
     >
       <div className="ka-panel-header">
-        <span>Scan settings</span>
+        <span>Analysis settings</span>
         <button
-          aria-label="Close scan settings"
+          aria-label="Close analysis settings"
           className="ka-icon-btn hover-fx"
           onClick={onClose}
           type="button"
@@ -200,10 +199,10 @@ const ScanSettings = ({
           className="ka-toggle-row"
           htmlFor="analysis-reset-all"
         >
-          <span className="ka-field-label">Reset & re-scan all tracks</span>
+          <span className="ka-field-label">Reset & reanalyse all tracks</span>
           <button
             aria-checked={resetAll}
-            aria-label="Reset & re-scan all tracks"
+            aria-label="Reset & reanalyse all tracks"
             className={`ka-toggle hover-fx${resetAll ? ' on' : ''}`}
             id="analysis-reset-all"
             onClick={() => {
@@ -247,10 +246,10 @@ const ScanSettings = ({
         >
           <ScanLine size={13} />
           {selectedCount > 0
-            ? `Scan ${selectedCount} selected`
+            ? `Analyse ${selectedCount} selected`
             : enhanced
-              ? 'Start Enhanced Scan'
-              : 'Start Basic Scan'}
+              ? 'Start Enhanced analysis'
+              : 'Start Basic analysis'}
         </button>
       </div>
     </section>
@@ -1303,20 +1302,12 @@ const Analysis = () => {
           </fieldset>
           <div className="ka-analysis-actions">
             <button
-              className="ka-btn hover-fx"
-              onClick={hardRefresh}
-              title="Refresh"
-              type="button"
-            >
-              <RefreshCw size={13} />
-            </button>
-            <button
               className={`ka-btn hover-fx${showSettings ? ' ka-btn--active' : ''}`}
               disabled={scanning || selecting}
               onClick={() => setShowSettings((v) => !v)}
               type="button"
             >
-              <Settings2 size={13} /> Scan
+              <ScanLine size={13} /> Analyse
             </button>
           </div>
         </div>
@@ -1493,7 +1484,7 @@ const Analysis = () => {
                   )}
                 </span>
                 <span className="ka-progress-chip ka-progress-chip--active">
-                  Scanning: {scanState.inFlight ?? 0}
+                  Analysing: {scanState.inFlight ?? 0}
                 </span>
                 <span className="ka-progress-chip ka-progress-chip--done">
                   Done: {processed}
@@ -1516,7 +1507,7 @@ const Analysis = () => {
                 className="ka-spin-icon"
                 size={13}
               />{' '}
-              Scanning… Cancel
+              Analysing… Cancel
             </button>
           )}
         </div>
@@ -1592,6 +1583,15 @@ const Analysis = () => {
           {matching.toLocaleString()} track{matching === 1 ? '' : 's'} ·{' '}
           {groups.length} folder{groups.length === 1 ? '' : 's'}
         </span>
+
+        <button
+          className="ka-btn ka-btn--sm hover-fx"
+          onClick={hardRefresh}
+          title="Refresh tracks"
+          type="button"
+        >
+          <RefreshCw size={13} /> Refresh tracks
+        </button>
 
         {groups.length > 0 && (
           <button
