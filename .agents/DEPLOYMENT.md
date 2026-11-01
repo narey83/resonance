@@ -49,7 +49,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-data-6a3cddd/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/finish-scan-1486de4/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -940,3 +940,49 @@ checks/helpers/screenshots: `.dev/analysis-data/`. The snapshot holds activation
 authenticated/public result logs and hash manifests. Temporary QA credentials and
 the loopback sign-in transport were removed after verification; do not assume a
 saved QA session is available for future checks.
+
+
+## Finish-current-scan controls and dependency fixes — 1 November 2026
+
+Active web/gateway: `finish-scan-1486de4`, frontend source
+`1486de490324575e52d7af4a5377ee96b613f5f7`, frontend tree
+`b424ca0c1ccd820cd81ccf8578eab80405f89f91`. Activated at 22:13 GMT.
+This includes the frontend dependency fixes from `7a1b740` and removal of the
+Automatic preparation queue card from `2c4b231`.
+
+Basic and Enhanced coverage fill the overview. A labelled **Stop analysis**
+button sits beside scan progress. Per the user's clarified requirement, Stop
+finishes **every remaining track in the current scan**, including its selected
+analysis mode, then starts no further automatic scans. It persists automatic
+scheduling as paused through the existing API and does not send cancellation.
+The button shows **Finishing scan…**, counts keep updating, and Resume/new scans
+remain disabled until the current scan and automatic reservations have finished.
+A failed status refresh retains an acknowledged stop request and polling retries.
+Explicit Resume can subsequently enable automatic preparation again.
+
+Deployment verification used a fresh isolated npm 11 clean install, all 46
+analysis component tests, 11 dependency-security tests, four Node compatibility
+checks, full ESLint, a zero-finding dependency audit and production build on the
+dev laptop. Both isolated-build and published-build browser fixtures passed at
+1440/1100/800/390, proving that Stop never cancels, progress continues through all
+remaining tracks, saved outcomes remain visible and scheduling stays paused.
+Actual signed-in Mac Brave checks at 1440/390 confirmed real library counts,
+two coverage panels, removed queue card, correct idle Stop label/description and
+no horizontal overflow. Screenshots inspected; temporary viewport reset.
+No real scan was started or analysis setting changed during deployment QA.
+Existing source-map, bundle-size and Node deprecation warnings remain.
+
+Public HTML, entrypoint assets and retained old JavaScript matched release hashes;
+143 older static files were retained. Backend, public and browser-monitor readiness
+passed. Backend PID 476721 / `analysis-folder-first-1164c3c` and Caddy PID 3992646
+were preserved. HTTP/1/2/3, disabled early data and 16 KiB headers were preserved.
+No backend restart, database replacement or queue rewrite. The previously stopped
+scan's 1,122 successful and one failed outcome remained visible; its existing error
+was present before activation. Automatic preparation stayed paused.
+
+Clean snapshot: `/home/narey/resonance-builds/deploy-finish-scan-1486de4`.
+Rollback: `/home/narey/resonance-backups/finish-scan-1486de4`, preserving
+`analysis-data-6a3cddd` configuration, web root and deployment record. The gateway
+release contains `deployment.json`; the snapshot contains source/asset manifests,
+checks and public fixture results. Private Mac proof and activation helper:
+`.dev/deploy-finish-scan/`.
