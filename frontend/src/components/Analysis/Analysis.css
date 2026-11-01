@@ -1080,7 +1080,35 @@
 }
 .ka-summary-basic { grid-area: basic; }
 .ka-summary-enhanced { grid-area: enhanced; }
-.ka-summary-queue { grid-area: queue; }
+.ka-summary-queue { grid-area: queue; position: relative; }
+
+@property --ka-queue-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.ka-summary-queue--running::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  padding: 2px;
+  border-radius: inherit;
+  background: conic-gradient(from var(--ka-queue-angle), transparent 0deg, var(--accent) 90deg, color-mix(in srgb, var(--accent) 35%, white) 135deg, transparent 180deg);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  animation: ka-queue-orbit 2.5s linear infinite;
+}
+
+@keyframes ka-queue-orbit {
+  to { --ka-queue-angle: 360deg; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ka-summary-queue--running::before { animation: none; }
+}
+
 .ka-analysis-summary h3 {
   display: flex;
   flex-wrap: wrap;

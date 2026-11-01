@@ -250,6 +250,45 @@ describe('analysis folder loading', () => {
     );
   });
 
+  it('only highlights the preparation queue while work is running, not merely queued', async () => {
+    expect.hasAssertions();
+    getPreparationStatus.mockResolvedValue({
+      counts: { queued: 59_376, running: 0 },
+    });
+    await render();
+    expect(container.querySelector('.ka-summary-queue--running')).toBeNull();
+    act(() => ReactDOM.unmountComponentAtNode(container));
+    getPreparationStatus.mockResolvedValue({
+      counts: { queued: 7, running: 2 },
+    });
+    await render();
+    expect(
+      container.querySelector('.ka-summary-queue--running'),
+    ).not.toBeNull();
+  });
+  it('highlights manual analysis and stops highlighting when polling reports completion', async () => {
+    expect.hasAssertions();
+    jest.useFakeTimers();
+    try {
+      analysisApi.getScanState.mockResolvedValue({
+        scanning: true,
+        total: 3,
+        analysed: 0,
+        skipped: 0,
+        failed: 0,
+        progress: 0,
+      });
+      await render();
+      expect(
+        container.querySelector('.ka-summary-queue--running'),
+      ).not.toBeNull();
+      analysisApi.getScanState.mockResolvedValue({ scanning: false });
+      await act(async () => jest.advanceTimersByTime(2_000));
+      expect(container.querySelector('.ka-summary-queue--running')).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
   it('formats large coverage and queue counts consistently', async () => {
     expect.hasAssertions();
     musicLibraryApi.getAnalysisStats.mockResolvedValue({

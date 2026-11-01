@@ -1387,7 +1387,7 @@ const Analysis = () => {
           </section>
           <section
             aria-label="Preparation queue status"
-            className="ka-summary-queue"
+            className={`ka-summary-queue${scanning || preparation?.counts?.running > 0 ? ' ka-summary-queue--running' : ''}`}
           >
             <h3>Preparation queue</h3>
             <div className="ka-metric-grid">
