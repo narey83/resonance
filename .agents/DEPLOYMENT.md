@@ -872,11 +872,16 @@ return and distinguishes loading/failure from an empty collection.
 
 Dev-laptop verification: clean npm 11 install; all 218 mobile tests, TypeScript,
 ESLint with zero warnings, zero dependency-audit findings, Android and iOS bundle
-exports passed. The Pixel retained login and displayed music. Its network log
-confirmed the new authenticated `GET /session` returning 200. Expiry/revocation
-failure cases used automated fixtures; the real phone's working session was not
-revoked for testing. Private evidence: Mac `.dev/mobile-session/` and the laptop
-snapshot above. Unrelated live link-preview 404s remain outside this change.
+exports passed. The Pixel initially retained login and displayed music. Its
+network log confirmed authenticated `GET /session` returning 200. On the final
+background/foreground check it transitioned to the new explicit **Sign in again**
+screen, with the saved server, username and biometric sign-in available. The user
+was asked to authenticate on the phone; do not claim it is currently signed in
+until verified. No session was deliberately revoked and no app data was cleared.
+Automated fixtures cover renewal rejection, access-only expiry, retry rejection,
+network failures and session races. Private evidence: Mac `.dev/mobile-session/`
+and the laptop snapshot above. Unrelated live link-preview 404s remain outside
+this change.
 
 The web analysis-card release `17a15e8` is committed and pushed but **not activated**.
 Its 62 regressions, five dependency-security tests, lint/formatting, production
