@@ -39,7 +39,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-tidy-0c339e1/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-flush-add95b8/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -356,6 +356,36 @@ early-data-off and explicit 16 KiB headers were preserved.
 Checked snapshot: `/home/narey/resonance-builds/precommit-upload-paging-44fdc1e4a4`.
 Web rollback/config backup: `/home/narey/resonance-backups/analysis-tidy-0c339e1`.
 Private verification and Mac screenshot: `.dev/analysis-tidy/`.
+
+## Analysis tab alignment — 1 November 2026
+
+Live web/gateway: `analysis-flush-add95b8`, source
+`add95b8282bc0623333bbcbbbd4e129fd8b66f45`. The Analysis panel now shares the tabs'
+white surface and horizontal gutter. Its nested grey inset, top margin and outer
+summary border were removed. Mode controls, coverage panels, scan settings and
+folder results align with the Track Analysis / Waveform Inspector tabs.
+Camelot/Musical display buttons and the All Keys filter were removed from this
+page, along with the unused key-summary request and filter/focus state. Actual
+key measurements and per-track editing remain available.
+
+Exact staged source passed a clean npm 11 install, ESLint/Prettier, 18 frontend
+tests, five dependency-security tests and production build on the dev laptop.
+Browser checks at widths 1440, 1100, 800 and 390 verified the matching surfaces,
+zero inset top margin/border, tab-aligned edges, absent key controls and no key
+summary request. Existing panel/label/count, clickable-switch, virtualization,
+last-folder/track reachability and single-scroll checks also passed. Actual Mac
+Brave confirmed all five left edges equal, white analysis/tab surfaces, zero key
+controls and zero inner results scroll offset. No scan was started. Existing
+79 moderate audit findings and source-map warnings remain; dependencies unchanged.
+
+This was web-only. Backend PID 404591 and Caddy PID 3992646 stayed running;
+private state/queues were not modified. Public HTML, current JS/CSS and an older
+JS asset matched release hashes. 103 older static files were retained, readiness
+passed, and HTTP/3, early-data-off and 16 KiB headers were preserved.
+
+Checked snapshot: `/home/narey/resonance-builds/precommit-upload-paging-59df872c11`.
+Rollback/config backup: `/home/narey/resonance-backups/analysis-flush-add95b8`.
+Private checks and Mac screenshot: `.dev/analysis-flush/`.
 
 ## Native enhanced analysis
 
