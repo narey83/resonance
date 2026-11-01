@@ -630,7 +630,7 @@ class AST {
                 !this.#parts.some(s => typeof s !== 'string');
             const src = this.#parts
                 .map(p => {
-                const [re, _, hasMagic, uflag] = typeof p === 'string' ?
+                const [re, , hasMagic, uflag] = typeof p === 'string' ?
                     _a.#parseGlob(p, this.#hasMagic, noEmpty)
                     : p.toRegExpSource(allowDot);
                 this.#hasMagic = this.#hasMagic || hasMagic;
@@ -780,7 +780,7 @@ class AST {
             }
             /* c8 ignore stop */
             // can ignore hasMagic, because extglobs are already always magic
-            const [re, _, _hasMagic, uflag] = p.toRegExpSource(dot);
+            const [re, , , uflag] = p.toRegExpSource(dot);
             this.#uflag = this.#uflag || uflag;
             return re;
         })

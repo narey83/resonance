@@ -107,6 +107,8 @@ test('legacy ESLint consumers use the patched matcher through a callable API', (
   assert.equal(minimatch.defaults({ nocase: true })('SONG.TS', '*.ts'), true);
   assert.equal(minimatch.defaults({ nocase: true }).defaults({ dot: true })('.SONG.TS', '*.ts'), true);
   assert.equal(minimatch.makeRe('**/*.ts').test('src/song.ts'), true);
+  assert.equal(minimatch.makeRe('*.@(ts|tsx)').test('song.tsx'), true);
+  assert.equal(minimatch.makeRe('*.!(js)').test('song.ts'), true);
   assert.deepEqual(minimatch.braceExpand('*.{ts,tsx}'), ['*.ts', '*.tsx']);
 });
 
@@ -127,9 +129,11 @@ test('cancelled glob traversal stops before reading directories', async t => {
 });
 
 test('modern ESM consumers retain named matcher exports', async () => {
-  const { minimatch, Minimatch } = await import('minimatch');
+  const { minimatch, Minimatch, makeRe } = await import('minimatch');
   assert.equal(minimatch('src/song.ts', '**/*.ts'), true);
   assert.equal(new Minimatch('**/*.ts').match('src/song.ts'), true);
+  assert.equal(makeRe('*.@(ts|tsx)').test('song.tsx'), true);
+  assert.equal(makeRe('*.!(js)').test('song.ts'), true);
 });
 
 test('glob cancellation during traversal prevents further directory reads', async t => {

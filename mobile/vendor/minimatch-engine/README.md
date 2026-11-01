@@ -11,8 +11,9 @@ ESLint's import plugin still calls and minimatch 11 removed.
 The local version identifies the backport; no advisory is suppressed. Source
 maps are omitted to avoid referring to unpatched sources; trailing whitespace
 on four expression-continuation lines is normalized. Module-level generated
-`var` declarations use `let` to meet the project lint rules. Original distribution
-SHA-256 values before the backport:
+`var` declarations use `let` to meet the project lint rules. Unused tuple slots
+use destructuring elisions, and ES module imports precede declarations.
+Original distribution SHA-256 values before the backport:
 
 commonjs/index.js: d224f71f20d7c206fcc5b7e9f747324c7698345a0b2c28d717dd9cf698306783
 esm/index.js: 59821ec2ce0d3df968292036e5c831ad322b33e9c33a949ecbc9dfe125d165be

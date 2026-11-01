@@ -1,7 +1,7 @@
-// parse a single path portion
-let _a;
 import { parseClass } from './brace-expressions.js';
 import { unescape } from './unescape.js';
+// parse a single path portion
+let _a;
 const types = new Set(['!', '?', '+', '*', '@']);
 const isExtglobType = (c) => types.has(c);
 const isExtglobAST = (c) => isExtglobType(c.type);
@@ -627,7 +627,7 @@ export class AST {
                 !this.#parts.some(s => typeof s !== 'string');
             const src = this.#parts
                 .map(p => {
-                const [re, _, hasMagic, uflag] = typeof p === 'string' ?
+                const [re, , hasMagic, uflag] = typeof p === 'string' ?
                     _a.#parseGlob(p, this.#hasMagic, noEmpty)
                     : p.toRegExpSource(allowDot);
                 this.#hasMagic = this.#hasMagic || hasMagic;
@@ -777,7 +777,7 @@ export class AST {
             }
             /* c8 ignore stop */
             // can ignore hasMagic, because extglobs are already always magic
-            const [re, _, _hasMagic, uflag] = p.toRegExpSource(dot);
+            const [re, , , uflag] = p.toRegExpSource(dot);
             this.#uflag = this.#uflag || uflag;
             return re;
         })
