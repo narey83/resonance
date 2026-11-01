@@ -35,7 +35,10 @@ import * as analysisApi from '../../lib/analysis';
 import { METRICS } from '../../lib/analysis';
 import { CAMELOT_KEYS, camelotColour, toCamelot } from '../../lib/camelot';
 import { djSummary } from '../../lib/libraryWorkbench';
-import { getPreparationStatus } from '../../lib/libraryWorkspace';
+import {
+  getPreparationStatus,
+  pausePreparation,
+} from '../../lib/libraryWorkspace';
 import * as musicLibraryApi from '../../lib/musicLibrary';
 import {
   ANALYSIS_TRACK_PAGE_SIZE,
@@ -665,6 +668,7 @@ const Analysis = () => {
   const [enhanced, setEnhanced] = useState(false);
   const [inspectedTrack, setInspectedTrack] = useState(null);
   const [preparation, setPreparation] = useState(null);
+  const [preparationBusy, setPreparationBusy] = useState('');
   useEffect(() => {
     if (scanState?.scanning && scanState.enhancedTotal > 0) setEnhanced(true);
   }, [scanState?.scanning, scanState?.enhancedTotal]);
@@ -675,6 +679,8 @@ const Analysis = () => {
   const [sortDirection, setSortDirection] = useState('asc');
   const [selected, setSelected] = useState(new Map());
   const [selecting, setSelecting] = useState(false);
+  const [selectionProgress, setSelectionProgress] = useState(null);
+  const selectionRequestRef = useRef(null);
   const [expandedFolders, setExpandedFolders] = useState(new Set());
   const [recentlyUpdated, setRecentlyUpdated] = useState(new Set());
   const [stats, setStats] = useState(null);
@@ -705,6 +711,7 @@ const Analysis = () => {
   useEffect(
     () => () => {
       mountedRef.current = false;
+      selectionRequestRef.current?.abort();
     },
     [],
   );
@@ -878,6 +885,7 @@ const Analysis = () => {
   // paths, not masked filenames: the backend resolves them against the share in one query
   // rather than the page doing a lookup per row before it can ask for anything.
   const startScan = async (request, paths) => {
+    if (preparationBusy) return;
     if (!paths?.length) {
       toast.info('Select tracks or folders before starting analysis.');
       return;
@@ -931,20 +939,35 @@ const Analysis = () => {
     );
   };
 
-  const handleCancelScan = async () => {
+  const handlePreparationAction = async (action) => {
+    if (preparationBusy) return;
+    setPreparationBusy(action);
     try {
-      await analysisApi.cancelScan();
-    } catch (caughtError) {
-      if (caughtError?.response?.status !== 404) {
-        toast.error('Failed to cancel scan.');
+      // Pause scheduling before cancelling so the automatic queue cannot restart work.
+      const paused = action !== 'resume';
+      await pausePreparation(paused);
+      if (mountedRef.current)
+        setPreparation((previous) => ({ ...previous, paused }));
+      if (action === 'stop') {
+        try {
+          await analysisApi.cancelScan();
+        } catch (cancelError) {
+          if (cancelError?.response?.status !== 404) throw cancelError;
+        }
       }
-    }
 
-    try {
-      const state = await analysisApi.getScanState();
-      if (mountedRef.current) setScanState(state);
+      const [nextPreparation, state] = await Promise.all([
+        getPreparationStatus(),
+        analysisApi.getScanState(),
+      ]);
+      if (mountedRef.current) {
+        setPreparation(nextPreparation);
+        setScanState(state);
+      }
     } catch {
-      /* ignore */
+      toast.error('Could not update analysis. Please retry.');
+    } finally {
+      if (mountedRef.current) setPreparationBusy('');
     }
   };
 
@@ -1008,9 +1031,24 @@ const Analysis = () => {
     }
   };
 
+  const cancelSelection = useCallback(() => {
+    selectionRequestRef.current?.abort();
+    selectionRequestRef.current = null;
+    setSelecting(false);
+    setSelectionProgress(null);
+  }, []);
+
   useEffect(() => {
+    cancelSelection();
     setSelected(new Map());
-  }, [debouncedSearch, filter, query.analysis, sortDirection, sortKey]);
+  }, [
+    cancelSelection,
+    debouncedSearch,
+    filter,
+    query.analysis,
+    sortDirection,
+    sortKey,
+  ]);
 
   const groups = useMemo(
     () =>
@@ -1049,7 +1087,7 @@ const Analysis = () => {
     }
 
     return () => observer.disconnect();
-  }, [error, inspectedTrack, loading]);
+  }, [error, inspectedTrack, loading, selectionProgress]);
   const visibleRows = useMemo(
     () =>
       groups.flatMap((group) => [
@@ -1112,32 +1150,55 @@ const Analysis = () => {
       return;
     }
 
+    if (selectionRequestRef.current) return;
+    const controller = new AbortController();
+    selectionRequestRef.current = controller;
     setSelecting(true);
+    setSelectionProgress({
+      done: 0,
+      total: directory
+        ? groups.find((group) => group.dir === directory)?.trackCount ?? 0
+        : matching,
+    });
     try {
       const chosen = new Map();
       let offset = 0;
       let total = 1;
       while (offset < total) {
-        const page = await musicLibraryApi.getTrackPage({
-          ...currentQuery,
-          folder: directory,
-          recursive: false,
-          limit: PAGE_SIZE,
-          offset,
-        });
-        if (!mountedRef.current || queryRef.current !== currentQuery) return;
+        const page = await musicLibraryApi.getTrackPage(
+          {
+            ...currentQuery,
+            folder: directory,
+            recursive: false,
+            limit: PAGE_SIZE,
+            offset,
+          },
+          { signal: controller.signal },
+        );
+        if (
+          !mountedRef.current ||
+          controller.signal.aborted ||
+          queryRef.current !== currentQuery
+        )
+          return;
         if (!page.items.length && offset < page.total)
           throw new Error('Incomplete folder listing');
         for (const track of page.items) chosen.set(track.path, track.directory);
         offset += page.items.length;
         total = page.total;
+        setSelectionProgress({ done: offset, total });
       }
 
       setSelected((previous) => new Map([...previous, ...chosen]));
     } catch {
-      toast.error('Could not select all matching tracks. Please retry.');
+      if (!controller.signal.aborted)
+        toast.error('Could not select all matching tracks. Please retry.');
     } finally {
-      if (mountedRef.current) setSelecting(false);
+      if (mountedRef.current && selectionRequestRef.current === controller) {
+        selectionRequestRef.current = null;
+        setSelecting(false);
+        setSelectionProgress(null);
+      }
     }
   };
 
@@ -1400,6 +1461,49 @@ const Analysis = () => {
                 />
               ))}
             </div>
+            <div className="ka-queue-actions">
+              <button
+                aria-label={
+                  preparation?.paused
+                    ? 'Resume automatic preparation'
+                    : 'Pause after active tracks'
+                }
+                className="ka-btn ka-btn--sm hover-fx"
+                disabled={!preparation || Boolean(preparationBusy)}
+                onClick={() =>
+                  handlePreparationAction(
+                    preparation.paused ? 'resume' : 'pause',
+                  )
+                }
+                type="button"
+              >
+                {preparationBusy === 'resume'
+                  ? 'Resuming…'
+                  : preparationBusy === 'pause'
+                    ? 'Pausing…'
+                    : preparation?.paused
+                      ? 'Resume'
+                      : 'Pause'}
+              </button>
+              <button
+                aria-label="Stop analysis"
+                className="ka-btn ka-btn--sm hover-fx"
+                disabled={
+                  Boolean(preparationBusy) ||
+                  (!scanning && !(preparation?.counts?.running > 0))
+                }
+                onClick={() => handlePreparationAction('stop')}
+                title="Stop current analysis and pause automatic preparation. Queued tracks are kept."
+                type="button"
+              >
+                {preparationBusy === 'stop' ? 'Stopping…' : 'Stop'}
+              </button>
+            </div>
+            <p className="ka-queue-help">
+              {preparation?.paused
+                ? 'Resume processes all queued tracks.'
+                : 'Pause finishes active tracks. Stop keeps queued tracks.'}
+            </p>
           </section>
         </div>
         {scanState?.enhancedTotal > 0 && (
@@ -1474,26 +1578,13 @@ const Analysis = () => {
               </div>
             </div>
           )}
-          {scanning && (
-            <button
-              className="ka-btn ka-btn--scanning hover-fx"
-              onClick={handleCancelScan}
-              type="button"
-            >
-              <Loader2
-                className="ka-spin-icon"
-                size={13}
-              />{' '}
-              Analysing… Cancel
-            </button>
-          )}
         </div>
       </section>
 
       <ScanSettings
         enhanced={enhanced}
         onStart={handleStartScan}
-        scanning={scanning || selecting}
+        scanning={scanning || selecting || Boolean(preparationBusy)}
         selectedCount={selected.size}
       />
 
@@ -1579,6 +1670,25 @@ const Analysis = () => {
         )}
       </div>
 
+      {selectionProgress && (
+        <div className="ka-selection-status">
+          <span role="status">
+            <Loader2
+              className="ka-spin-icon"
+              size={13}
+            />{' '}
+            Selecting tracks… {selectionProgress.done.toLocaleString()} /{' '}
+            {selectionProgress.total.toLocaleString()}
+          </span>
+          <button
+            className="ka-btn ka-btn--sm hover-fx"
+            onClick={cancelSelection}
+            type="button"
+          >
+            Cancel selection
+          </button>
+        </div>
+      )}
       {/* ── Column headers ── */}
       <div className="ka-header-row">
         <div className="ka-col-check">
@@ -1701,7 +1811,9 @@ const Analysis = () => {
                     <FolderGroup
                       collapsed={!expandedFolders.has(g.dir)}
                       dir={g.dir}
-                      globalScanning={scanning || selecting}
+                      globalScanning={
+                        scanning || selecting || Boolean(preparationBusy)
+                      }
                       inFlight={inFlight}
                       name={g.name}
                       onScanFolder={handleScanFolder}
@@ -1714,7 +1826,9 @@ const Analysis = () => {
                   ) : track ? (
                     <TrackRow
                       fmtKey={fmtKey}
-                      globalScanning={scanning || selecting}
+                      globalScanning={
+                        scanning || selecting || Boolean(preparationBusy)
+                      }
                       key={track.path}
                       onClearBpm={handleClearBpm}
                       onClearKey={handleClearKey}

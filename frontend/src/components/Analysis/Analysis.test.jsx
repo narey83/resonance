@@ -1,5 +1,8 @@
 import * as analysisApi from '../../lib/analysis';
-import { getPreparationStatus } from '../../lib/libraryWorkspace';
+import {
+  getPreparationStatus,
+  pausePreparation,
+} from '../../lib/libraryWorkspace';
 import * as musicLibraryApi from '../../lib/musicLibrary';
 import { usePagedList } from '../../lib/usePagedList';
 import Analysis from './Analysis';
@@ -14,6 +17,7 @@ jest.mock('../../context/PlayerContext', () => ({
 }));
 jest.mock('../../lib/libraryWorkspace', () => ({
   getPreparationStatus: jest.fn(),
+  pausePreparation: jest.fn(),
 }));
 
 jest.mock(
@@ -32,6 +36,7 @@ jest.mock('../../context/LibraryActivityContext', () => ({
 jest.mock('../../lib/analysis', () => ({
   METRICS: ['Key', 'Bpm'],
   startScan: jest.fn(),
+  cancelScan: jest.fn(),
   getScanState: jest.fn(() => Promise.resolve({ scanning: false })),
 }));
 jest.mock('../../lib/musicLibrary', () => ({
@@ -67,6 +72,8 @@ describe('analysis folder loading', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    pausePreparation.mockResolvedValue({});
+    analysisApi.cancelScan.mockResolvedValue({});
     musicLibraryApi.getAnalysisStats.mockResolvedValue({
       total: 3,
       complete: 0,
@@ -250,6 +257,165 @@ describe('analysis folder loading', () => {
     );
   });
 
+  it('resumes automatic preparation explicitly without starting a manual library scan', async () => {
+    expect.hasAssertions();
+    await render();
+    const resume = container.querySelector(
+      '[aria-label="Resume automatic preparation"]',
+    );
+    expect(resume.disabled).toBe(false);
+    expect(pausePreparation).not.toHaveBeenCalled();
+    expect(container.querySelector('.ka-queue-help').textContent).toContain(
+      'all queued tracks',
+    );
+    getPreparationStatus.mockResolvedValue({
+      paused: false,
+      counts: { queued: 3 },
+    });
+    await act(async () => resume.click());
+    expect(pausePreparation).toHaveBeenCalledWith(false);
+    expect(
+      container.querySelector('[aria-label="Pause after active tracks"]'),
+    ).not.toBeNull();
+    expect(analysisApi.startScan).not.toHaveBeenCalled();
+  });
+  it('pauses after active tracks without cancelling them', async () => {
+    expect.hasAssertions();
+    getPreparationStatus.mockResolvedValue({
+      paused: false,
+      counts: { running: 2 },
+    });
+    await render();
+    getPreparationStatus.mockResolvedValue({
+      paused: true,
+      counts: { running: 2 },
+    });
+    await act(async () =>
+      container
+        .querySelector('[aria-label="Pause after active tracks"]')
+        .click(),
+    );
+    expect(pausePreparation).toHaveBeenCalledWith(true);
+    expect(analysisApi.cancelScan).not.toHaveBeenCalled();
+    expect(
+      container.querySelector('[aria-label="Resume automatic preparation"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('.ka-summary-queue--running'),
+    ).not.toBeNull();
+  });
+  it('stops active analysis only after pausing automatic scheduling', async () => {
+    expect.hasAssertions();
+    analysisApi.getScanState.mockResolvedValue({ scanning: true });
+    getPreparationStatus.mockResolvedValue({
+      paused: false,
+      counts: { running: 2 },
+    });
+    await render();
+    analysisApi.getScanState.mockResolvedValue({ scanning: false });
+    getPreparationStatus.mockResolvedValue({
+      paused: true,
+      counts: { queued: 3, running: 0 },
+    });
+    await act(async () =>
+      container.querySelector('[aria-label="Stop analysis"]').click(),
+    );
+    expect(pausePreparation).toHaveBeenCalledWith(true);
+    expect(analysisApi.cancelScan).toHaveBeenCalledTimes(1);
+    expect(pausePreparation.mock.invocationCallOrder[0]).toBeLessThan(
+      analysisApi.cancelScan.mock.invocationCallOrder[0],
+    );
+    expect(
+      container.querySelector('[aria-label="Stop analysis"]').disabled,
+    ).toBe(true);
+    expect(
+      container.querySelector('[aria-label="Resume automatic preparation"]'),
+    ).not.toBeNull();
+  });
+  it('keeps controls usable after a pause failure and does not cancel while scheduling remains enabled', async () => {
+    expect.hasAssertions();
+    analysisApi.getScanState.mockResolvedValue({ scanning: true });
+    getPreparationStatus.mockResolvedValue({
+      paused: false,
+      counts: { running: 2 },
+    });
+    await render();
+    pausePreparation.mockRejectedValueOnce(new Error('offline'));
+    await act(async () =>
+      container.querySelector('[aria-label="Stop analysis"]').click(),
+    );
+    expect(analysisApi.cancelScan).not.toHaveBeenCalled();
+    expect(
+      container.querySelector('[aria-label="Stop analysis"]').disabled,
+    ).toBe(false);
+    expect(
+      container.querySelector('[aria-label="Pause after active tracks"]')
+        .disabled,
+    ).toBe(false);
+  });
+  it('shows select-all progress and allows cancellation without committing a partial selection', async () => {
+    expect.hasAssertions();
+    let finish;
+    let signal;
+    musicLibraryApi.getTrackPage
+      .mockResolvedValueOnce({ items: [row('one'), row('two')], total: 3 })
+      .mockImplementationOnce((query, options) => {
+        signal = options.signal;
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      });
+    await render();
+    let top = 550;
+    Object.defineProperty(
+      container.querySelector('.ka-track-list'),
+      'offsetTop',
+      {
+        configurable: true,
+        get: () => top,
+      },
+    );
+    top = 900;
+    await act(async () =>
+      container.querySelector('.ka-col-check input').click(),
+    );
+    expect(
+      container.querySelector('.ka-selection-status').textContent,
+    ).toContain('Selecting tracks… 2 / 3');
+    expect(container.querySelector('.ka-col-check input').disabled).toBe(true);
+    expect(useVirtualizer.mock.calls.at(-1)[0].scrollMargin).toBe(900);
+    top = 550;
+    act(() => container.querySelector('.ka-selection-status button').click());
+    expect(signal.aborted).toBe(true);
+    expect(container.querySelector('.ka-col-check input').disabled).toBe(false);
+    expect(useVirtualizer.mock.calls.at(-1)[0].scrollMargin).toBe(550);
+    await act(async () => finish({ items: [row('three')], total: 3 }));
+    expect(container.querySelector('.ka-col-check input').checked).toBe(false);
+    expect(container.querySelector('.ka-panel .ka-btn--primary').disabled).toBe(
+      true,
+    );
+    expect(container.querySelector('.ka-selection-status')).toBeNull();
+    expect(analysisApi.startScan).not.toHaveBeenCalled();
+  });
+  it('selects all matching tracks while automatic preparation is paused', async () => {
+    expect.hasAssertions();
+    await render();
+    await act(async () =>
+      container.querySelector('.ka-col-check input').click(),
+    );
+    expect(container.querySelector('.ka-col-check input').checked).toBe(true);
+    expect(container.querySelector('.ka-folder-check input').checked).toBe(
+      true,
+    );
+    expect(
+      container.querySelector('.ka-panel .ka-btn--primary').textContent,
+    ).toContain('Analyse 3 selected');
+    expect(container.querySelector('.ka-panel .ka-btn--primary').disabled).toBe(
+      false,
+    );
+    expect(pausePreparation).not.toHaveBeenCalled();
+    expect(analysisApi.startScan).not.toHaveBeenCalled();
+  });
   it('only highlights the preparation queue while work is running, not merely queued', async () => {
     expect.hasAssertions();
     getPreparationStatus.mockResolvedValue({
@@ -257,7 +423,9 @@ describe('analysis folder loading', () => {
     });
     await render();
     expect(container.querySelector('.ka-summary-queue--running')).toBeNull();
-    act(() => ReactDOM.unmountComponentAtNode(container));
+    act(() => {
+      ReactDOM.unmountComponentAtNode(container);
+    });
     getPreparationStatus.mockResolvedValue({
       counts: { queued: 7, running: 2 },
     });

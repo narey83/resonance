@@ -1192,3 +1192,9 @@
 .ta-panel > .ka-root .ka-analysis-help { padding-right: 0; }
 
 .ka-track-placeholder { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 16px; color: var(--text-muted); font-size: 12px; border-bottom: 1px solid var(--border); }
+
+.ka-queue-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.ka-queue-actions .ka-btn { white-space: normal; text-align: left; }
+.ka-queue-help { margin: 6px 0 0; font-size: 11px; line-height: 1.4; color: var(--text-muted); }
+.ka-selection-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px var(--page-gutter); }
+.ka-selection-status [role="status"] { display: flex; align-items: center; gap: 6px; }
