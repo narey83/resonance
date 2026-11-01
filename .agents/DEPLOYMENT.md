@@ -726,7 +726,8 @@ user clarified this rule on 30 October 2026.
   process before starting another server. Its working directory must be the
   requested source snapshot's `mobile/`, with the matching dependency lockfile.
   The active snapshot verified on 1 November is
-  `/home/narey/resonance-builds/security-20261101/mobile`; its parent contains
+  `/home/narey/resonance-builds/lint-20261101/mobile` (mobile source `3e5b721`);
+  its parent contains
   `mobile-metro.json` and `mobile-metro.log`. Verify the PID/cwd before reuse.
 - Reapply `adb -s PIXEL_TARGET reverse tcp:8081 tcp:8082` after a disconnect or
   reboot, and verify it with `adb -s PIXEL_TARGET reverse --list`. Device port
