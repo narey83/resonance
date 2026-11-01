@@ -9,6 +9,16 @@ forwarding and artifact transfer are transport, not Mac application runtimes.
 
 ## User intent and defaults
 
+The user expects whole-stack ownership: diagnose issues across the UI, API,
+analysis workers, SQLite, networking and deployment; make routine engineering
+choices and finish the necessary implementation, verification and authorized
+deployment. Preserve the standing host restrictions and private application state.
+On 1 November 2026 the user also authorized stopping a running Basic job before
+further development, builds or runtime investigation, rather than competing with
+it. Stop automatic scheduling before cancelling active analysis; retain queued
+work and completed results. The already-verified live-card release was left running
+while its deployment record was completed.
+
 When the user says **deploy**, deploy the requested changes to the existing
 Resonance instance below. Do not ask them to repeat these established destinations.
 When they say **everything**, include every changed application component, including
@@ -39,7 +49,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-controls-2bb4430/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-live-cards-405d46c/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -606,6 +616,49 @@ Snapshot: `/home/narey/resonance-builds/precommit-upload-paging-9fed55c50f`.
 Rollback: `/home/narey/resonance-backups/analysis-controls-2bb4430`.
 Private checks and live screenshots: `.dev/analysis-controls/`.
 
+## Live analysis coverage cards — 1 November 2026
+
+Live web/gateway: `analysis-live-cards-405d46c`, source
+`405d46c3d872629b8b69d6906d5bb58dfd3c7048`. Coverage cards previously depended
+on library-revision notifications or explicit/completion refreshes, while the
+2-second activity poll fetched only scan/preparation status. Counts now refresh
+independently during manual or automatic analysis, at most once per four seconds.
+Only one summary request can run; dirty notifications and retries are coalesced.
+Slow summary requests do not delay activity polling, whose requests are also
+serialized. Failed summary reads retain the last counts and retry later. Explicit
+and completion refreshes remain supported. Idle queued libraries do not repeatedly
+fetch coverage. Count refreshes do not invalidate folders or track windows.
+
+Backend inspection confirmed saved results re-index their changed track before
+broadcasting; the stats endpoint reads current SQLite analysis/index data. No
+backend changes or restart were needed. Preparation queue cards retain their
+automatic-queue meaning; manual scan activity has separate progress.
+
+Dev-laptop clean dependency installation, ESLint/Prettier, 47 frontend tests,
+five dependency-security tests and production build passed. Tests cover Basic
+updates without notifications, automatic preparation, completion, idle behavior,
+slow/concurrent refreshes and failure/retry. Browser fixtures at 1440/1100/800/390
+changed Basic coverage twice without library broadcasts and verified no folder/
+track-window requests accompanied those changes. Existing controls, selection,
+ring/reduced-motion and virtual browsing checks passed; screenshots inspected.
+
+Actual Mac Brave observed the existing Basic run continue across web activation.
+Without clicking Refresh, Ready increased 2,295 → 2,301, BPM 2,771 → 2,777, Key
+2,386 → 2,392, Waveform 2,397 → 2,403 and Loudness 2,382 → 2,388; manual Done
+advanced 607 → 614. No pause, stop, resume or start API mutation was made in live QA.
+
+Public/current and retained asset hashes and readiness passed; 130 old assets
+retained. Backend PID 476721 and Caddy PID 3992646 preserved. Backend remains
+`analysis-folder-first-1164c3c`; HTTP/1/2/3, disabled early data and 16 KiB headers
+preserved. No database, queue or environment changes. Backend tests not rerun for
+this frontend-only fix. Existing 79 moderate npm findings and source-map/bundle-
+size/deprecation warnings remain. Concurrent mobile work was preserved and was
+not included in this web-only activation.
+
+Snapshot: `/home/narey/resonance-builds/precommit-upload-paging-d6f67e6daa`.
+Rollback: `/home/narey/resonance-backups/analysis-live-cards-405d46c`.
+Private checks and live before/after proof: `.dev/analysis-live-cards/`.
+
 ## Native enhanced analysis
 
 The enhanced worker is installed separately from basic BPM/key analysis on the dev
@@ -673,7 +726,7 @@ user clarified this rule on 30 October 2026.
   process before starting another server. Its working directory must be the
   requested source snapshot's `mobile/`, with the matching dependency lockfile.
   The active snapshot verified on 1 November is
-  `/home/narey/resonance-builds/startup-20261101/mobile`; its parent contains
+  `/home/narey/resonance-builds/security-20261101/mobile`; its parent contains
   `mobile-metro.json` and `mobile-metro.log`. Verify the PID/cwd before reuse.
 - Reapply `adb -s PIXEL_TARGET reverse tcp:8081 tcp:8082` after a disconnect or
   reboot, and verify it with `adb -s PIXEL_TARGET reverse --list`. Device port
