@@ -49,7 +49,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/queue-running-d42fed2/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-data-6a3cddd/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -876,21 +876,67 @@ exports passed. The Pixel initially retained login and displayed music. Its
 network log confirmed authenticated `GET /session` returning 200. On the final
 background/foreground check it transitioned to the new explicit **Sign in again**
 screen, with the saved server, username and biometric sign-in available. The user
-was asked to authenticate on the phone; do not claim it is currently signed in
-until verified. No session was deliberately revoked and no app data was cleared.
+subsequently signed in; direct Pixel inspection confirmed library artwork and
+new arrivals loaded again without the spinner. Evidence is
+`.dev/mobile-session/signed-in.png`. No session was deliberately revoked and no
+app data was cleared.
 Automated fixtures cover renewal rejection, access-only expiry, retry rejection,
 network failures and session races. Private evidence: Mac `.dev/mobile-session/`
 and the laptop snapshot above. Unrelated live link-preview 404s remain outside
 this change.
 
-The web analysis-card release `17a15e8` is committed and pushed but **not activated**.
-Its 62 regressions, five dependency-security tests, lint/formatting, production
-build and fixture browser checks at 1440/1100/800/390 passed on the laptop. Real
-authenticated laptop browser verification remains pending a valid QA sign-in;
-the old saved credential expired on 30 October and refresh returned 401. The live
-web root remains `queue-running-d42fed2`. The candidate web snapshot is
-`/home/narey/resonance-builds/precommit-upload-paging-f441495cae`; private manifests,
-checks, screenshots and prepared activation helper are in Mac `.dev/analysis-data/`.
-Leave automatic preparation paused and the Basic scan stopped; queued work and
-saved results were retained. Resume this release from its existing verified
-snapshot rather than rebuilding or treating the Git push as a deployment.
+The initially pending analysis-card work from `17a15e8` is now activated together
+with the narrow-header correction from `6a3cddd`; the final verification and
+rollback details are recorded below.
+
+## Analysis counts and dynamic refresh — 1 November 2026
+
+Active web/gateway: `analysis-data-6a3cddd`, frontend source commit
+`6a3cdddd1350cc6135f00673a8bd3aea2342bfbe`, frontend tree
+`7fb89f344a3c85981cb9ee798f43543a423c5f09`. Activated at 20:37 GMT. The default
+native site import in the table above points to this release.
+
+Library coverage, automatic preparation reservations and current scan outcomes
+are labelled separately. Automatic Running now consistently reports automatic
+jobs; live scan workers appear in scan progress. Succeeded, Skipped and Failed
+are separate, with their sum labelled Processed. Transfer waiting counts are
+explicitly labelled transfers. The automatic readiness target is shown regardless
+of the selected manual scan mode. Saved coverage definitions and database records
+were not rewritten.
+
+Scan/automatic status poll every two seconds. Coverage refreshes are single-flight,
+at least four seconds apart during work, with 30-second idle reconciliation.
+Real response latency determines the delivered cadence (one measured live
+coverage request took 8.4 seconds). Sources show separate update times and stale
+warnings; initial unavailable counts use placeholders. Timeouts permit recovery.
+Visible track windows and filtered folder totals refresh in bounded batches,
+preserving browsing position and selection during processing. Completion/error
+exits and focus/reconnection refresh results. Unfiltered folder totals reconcile
+periodically. Wrapped mobile header controls reserve their full height above
+the page title.
+
+Verification on the dev laptop: clean npm 11 install; lint/formatting; 62 frontend
+regressions; five dependency-security checks; production build; fixture browser
+checks at 1440/1100/800/390, covering active workers, stale/recovery transitions,
+visible row updates, preserved selection/scroll and bounded paging. Actual
+authenticated backend checks at 1440/390 confirmed every coverage and automatic
+queue card, periodic activity and idle coverage refresh; screenshots inspected.
+The final header correction repeated regressions/security/build and authenticated
+layout checks. Active worker/error cases used fixtures; no real analysis job was
+started for QA. Existing 79 moderate frontend dependency findings and normal
+source-map/bundle-size/deprecation warnings remain; dependencies were unchanged.
+
+Public activation verified HTML and entrypoint hashes, retained 138 prior static
+assets, readiness and authenticated desktop/phone checks with backend counts,
+activity refresh and header geometry. Backend PID 476721 and Caddy PID 3992646
+were preserved. HTTP/1/2/3, disabled early data and 16 KiB headers were retained.
+Automatic preparation remains paused, the Basic scan is stopped, and saved
+results and queued work are retained. No backend restart or database replacement.
+
+Snapshot: `/home/narey/resonance-builds/precommit-upload-paging-f441495cae`.
+Rollback: `/home/narey/resonance-backups/analysis-data-6a3cddd`, preserving previous
+`queue-running-d42fed2` roots/configuration and deployment record. Private Mac
+checks/helpers/screenshots: `.dev/analysis-data/`. The snapshot holds activation,
+authenticated/public result logs and hash manifests. Temporary QA credentials and
+the loopback sign-in transport were removed after verification; do not assume a
+saved QA session is available for future checks.
