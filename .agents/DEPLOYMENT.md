@@ -39,7 +39,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-overview-8b411e1/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-tidy-0c339e1/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -322,6 +322,40 @@ Checked snapshot: `/home/narey/resonance-builds/precommit-upload-paging-80f4a33f
 Rollback/backups: `/home/narey/resonance-backups/analysis-overview-8b411e1`.
 Mac full backups: `.dev/analysis-compact/backups/8b411e1/`.
 Private checks, screenshot and deployment proof: `.dev/analysis-compact/`.
+
+## Analysis visual tidy — 1 November 2026
+
+Live web/gateway: `analysis-tidy-0c339e1`, source
+`0c339e14defc4c44c27be5c1f071480f82840691`. Basic, Enhanced and Preparation queue
+now use individually bordered panels with aligned desktop edges and responsive
+metric grids. Large counts use thousands separators and labels use normal casing.
+Scan settings align with the overview/results gutters; each switch sits beside
+its label, exposes its checked state, and can be toggled by clicking its text.
+The skip/reset mutual exclusion and single Basic/Enhanced selection are preserved.
+
+The exact staged source passed clean npm 11 installation, ESLint/Prettier,
+17 frontend regressions, five dependency-security tests and a production build
+on the dev laptop. Production-build browser QA passed at widths 1440, 1100, 800
+and 390: all labels/counts fit, panel boundaries and desktop alignment, adjacent
+switches, clickable labels and mutual exclusion, settings open/close, last
+folder/track fully reachable, bounded rendered rows and one page scroll area.
+The fixture used 1,000 folders / 6,000 tracks and started no scans. Actual Mac Brave
+confirmed panel alignment, label clicks, checked-state changes and restored default
+options; the live results had zero inner scroll offset. No live scan was started.
+The desktop scan-settings strip measured 89 px high versus 122 px previously.
+Stacked phone panels use more height than the earlier unbordered summaries.
+Existing 79 moderate dependency audit findings and source-map warnings remain;
+no dependencies were changed.
+
+This was web-only: backend PID 404591 / `analysis-overview-8b411e1` and Caddy
+PID 3992646 stayed running. Private state and queues were not modified. Public
+HTML/current JS/CSS and an older JS asset matched their hashes; 98 older static
+files were retained. Public/backend/browser readiness passed. Existing HTTP/3,
+early-data-off and explicit 16 KiB headers were preserved.
+
+Checked snapshot: `/home/narey/resonance-builds/precommit-upload-paging-44fdc1e4a4`.
+Web rollback/config backup: `/home/narey/resonance-backups/analysis-tidy-0c339e1`.
+Private verification and Mac screenshot: `.dev/analysis-tidy/`.
 
 ## Native enhanced analysis
 
