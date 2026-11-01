@@ -39,7 +39,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-folder-first-1164c3c/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-actions-c6cd575/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -436,6 +436,35 @@ missing. Existing 79 moderate npm audit findings/source-map warnings remain.
 Snapshot: `/home/narey/resonance-builds/precommit-upload-paging-dda9727715`.
 Rollback/backups: `/home/narey/resonance-backups/analysis-folder-first-1164c3c`.
 Mac full backups/proof: `.dev/analysis-folder-first/`.
+
+## Analysis actions and list refresh — 1 November 2026
+
+Live web/gateway: `analysis-actions-c6cd575`, source
+`c6cd575f38e5c38019c0ecb4fe587ba03c12bff0`. Backend remains
+`analysis-folder-first-1164c3c` (PID 476721); Caddy PID 3992646 was retained.
+The top action is now **Analyse**, opening **Analysis settings** with an explicit
+**Start Basic analysis** / **Start Enhanced analysis** action. **Refresh tracks**
+is beside the track count and Expand all. It reloads folder totals, coverage and
+visible track windows without starting analysis or downloading the whole library.
+
+On the dev laptop: clean npm 11 installation, ESLint/Prettier, 33 frontend tests,
+five dependency-security tests and production build passed. Browser fixtures at
+1440/1100/800/390 verified labels, placement, Basic/Enhanced start parameters,
+refreshing only the visible 200-track window, complete folder totals and existing
+virtual browsing behavior. Actual Mac Brave confirmed Analyse/settings/primary
+labels and refreshed an expanded 40-track folder while preserving the full
+59,413-track / 75-folder total. No analysis or playback was started during QA.
+
+Web-only activation verified public HTML/JS/CSS and retained asset hashes,
+backend/public readiness and monitor health. 111 older assets were retained.
+HTTP/1/2/3, disabled early data and explicit 16 KiB headers remain intact.
+No backend restart, database, queue or environment changes. Backend tests were
+not rerun for this frontend-only change. Existing 79 moderate npm audit findings,
+source-map/bundle-size warnings and punycode deprecation remain.
+
+Snapshot: `/home/narey/resonance-builds/precommit-upload-paging-e508b98cd6`.
+Rollback: `/home/narey/resonance-backups/analysis-actions-c6cd575`.
+Private verification and live screenshot: `.dev/analysis-actions/`.
 
 ## Native enhanced analysis
 
