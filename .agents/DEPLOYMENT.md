@@ -39,7 +39,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-flush-add95b8/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-folder-first-1164c3c/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -386,6 +386,56 @@ passed, and HTTP/3, early-data-off and 16 KiB headers were preserved.
 Checked snapshot: `/home/narey/resonance-builds/precommit-upload-paging-59df872c11`.
 Rollback/config backup: `/home/narey/resonance-backups/analysis-flush-add95b8`.
 Private checks and Mac screenshot: `.dev/analysis-flush/`.
+
+## Folder-first analysis browsing — 1 November 2026
+
+Live backend/web/gateway: `analysis-folder-first-1164c3c`, source
+`1164c3c91b61e758ee3885965dfc55279cd9c2ab`. Backend PID 476721 uses the original
+application directory/private environment; Caddy PID 3992646 was retained.
+The former page downloaded all 59,413 track records before its folder counts
+settled. It now fetches complete directory totals first, and requests 200-track
+windows only as expanded rows enter the viewport. Two requests run concurrently;
+32 completed windows are cached, and obsolete/off-screen requests are cancelled.
+See [the browser design](../docs/analysis-folder-browsing.md).
+
+Filtered folder totals and track windows share the repository's readiness/search
+rules. `recursive=false` requests a direct folder, while existing recursive callers
+retain their default behavior. Explicit folder/all selection and folder scans
+still resolve their full scope; bulk selection disables scan actions until ready.
+Readiness-result changes clear obsolete selections. No schema/dependency changes.
+
+Clean npm 11 installation, ESLint/Prettier, 33 frontend regressions, five dependency-
+security tests, Release/StyleCop compilation (zero compiler/analyzer warnings/errors)
+and 132 backend regressions passed on the dev laptop. The final frontend-only
+selection refinement reused backend checks only after verifying every backend/test
+source hash and dependency-install input was unchanged in the same clean snapshot.
+Browser checks at 1440/1100/800/390 used 1,000 folders / 31,324 tracks with a
+25,330-track folder: zero initial track requests, one 200-track request on opening
+that folder, six or seven track requests to traverse/jump to the library end,
+<100 rendered rows, complete last-folder/track visibility and one scroll area.
+Existing white/tab alignment, mode controls and clickable-label checks passed.
+
+Read-only production SQL returned 75 folders / 59,413 tracks in a median 37.2 ms
+across five reads (SQL timing, not browser latency). Actual Mac Brave showed all
+75 complete folder totals on reload. All 40 rows of the Marshall Jefferson folder
+were traversed and matched SQLite titles/artists/order. The 25,330-track HATE folder
+opened successfully, and Basic ready filtering returned 1,679 tracks / 46 folders;
+All restored the full 59,413 / 75. No scan or playback was started.
+
+Before activation, both SQLite databases received consistent backups including
+committed WAL data, passed quick/foreign-key checks, and were fully copied and
+SHA-256 verified on the Mac. All 41,586 captured pending upload IDs/request metadata
+survived shutdown/startup and the follow-up recovery check, with zero shutdown
+failures or recovery scheduling warnings. Soulseek was connected. Automatic
+preparation remains paused. Public/backend/browser readiness and public HTML/
+JS/CSS hashes passed. 108 older assets were retained. HTTP/1/2/3, disabled early
+data and explicit 16 KiB headers were preserved. Native BPM/key and managed
+FFmpeg/ffprobe preflight passed; the optional legacy download script is still
+missing. Existing 79 moderate npm audit findings/source-map warnings remain.
+
+Snapshot: `/home/narey/resonance-builds/precommit-upload-paging-dda9727715`.
+Rollback/backups: `/home/narey/resonance-backups/analysis-folder-first-1164c3c`.
+Mac full backups/proof: `.dev/analysis-folder-first/`.
 
 ## Native enhanced analysis
 
