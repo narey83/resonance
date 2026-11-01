@@ -805,12 +805,16 @@ const UploadsTable = ({
      hence the per-section key prefix. */
   const rows = useMemo(() => {
     const result = [];
-    if (activeGroups.length > 0) {
+    if (activeGroups.length > 0 || totalPending > 0) {
       result.push({
         key: 'section-active',
         label: 'Uploading',
         type: 'section',
       });
+      if (Number.isInteger(totalPending)) {
+        result.push({ key: 'pending-pagination', type: 'pending-pagination' });
+      }
+
       for (const user of activeGroups) {
         result.push({
           defaultCollapsed: false,
@@ -851,12 +855,16 @@ const UploadsTable = ({
     completedPage,
     completedPageGroups,
     totalCompletedPages,
+    totalPending,
   ]);
 
   const scrollRef = useRef(null);
   const virtualizer = useVirtualizer({
     count: rows.length,
-    estimateSize: (index) => (rows[index].type === 'group' ? 64 : 36),
+    estimateSize: (index) => {
+      if (rows[index].type === 'pending-pagination') return 90;
+      return rows[index].type === 'group' ? 64 : 36;
+    },
     getItemKey: (index) => rows[index].key,
     getScrollElement: () => scrollRef.current,
     overscan: 6,
@@ -924,6 +932,14 @@ const UploadsTable = ({
 
   const renderRow = (row) => {
     switch (row.type) {
+      case 'pending-pagination':
+        return (
+          <UploadQueuePagination
+            onPageChange={onPendingPageChange}
+            page={pendingPage}
+            total={totalPending}
+          />
+        );
       case 'section':
         return (
           <SectionHeader>
@@ -952,13 +968,6 @@ const UploadsTable = ({
 
   return (
     <div className="dl-root">
-      {Number.isInteger(totalPending) && (
-        <UploadQueuePagination
-          onPageChange={onPendingPageChange}
-          page={pendingPage}
-          total={totalPending}
-        />
-      )}
       <Toolbar
         allFiles={allFiles}
         onCancel={onCancel}
