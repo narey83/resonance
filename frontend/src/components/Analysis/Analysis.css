@@ -1165,3 +1165,30 @@
 .ka-selection-status [role="status"] { display: flex; align-items: center; gap: 6px; }
 
 .ka-data-stale { color: var(--danger, #b42318); font-weight: 600; }
+
+/* Analysis follows readiness, current work, then selection. */
+.ka-section-title { margin: 0 0 10px; font-size: 15px; font-weight: 650; }
+.ka-overview > .ka-section-title, .ka-readiness, .ka-freshness-details, .ka-coverage-details, .ka-current-analysis { grid-column: 1 / -1; }
+.ka-readiness { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ka-readiness .ka-stat { min-width: 0; padding: 12px; border-radius: 8px; }
+.ka-readiness .ka-stat-value { font-size: 24px; }
+.ka-readiness .ka-stat-label { font-size: 12px; text-transform: none; }
+.ka-freshness-details { font-size: 11px; color: var(--text-muted); padding: 8px 0; }
+.ka-freshness-details > span { display: inline-block; margin: 8px 16px 0 0; }
+.ka-coverage-details > summary, .ka-automatic-details > summary, .ka-scan-errors > summary { cursor: pointer; font-size: 12px; color: var(--text-muted); }
+.ka-coverage-details .ka-analysis-summary { padding: 10px 0; }
+.ka-current-analysis { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+.ka-current-analysis .ka-scan-progress { padding: 0; }
+.ka-current-analysis .ka-progress-bar-wrap { max-width: none; min-width: 200px; }
+.ka-automatic-details { margin-top: 14px; }
+.ka-automatic-details .ka-analysis-context { padding-top: 10px; }
+.ka-scan-errors { margin-bottom: 12px; color: var(--danger); }
+.ka-idle-status, .ka-stop-status { font-size: 12px; color: var(--text-muted); margin: 8px 0; }
+.ka-root > .ka-panel .ka-analysis-toolbar { padding: 0; }
+@media (max-width: 600px) {
+  .ka-readiness { gap: 6px; }
+  .ka-readiness .ka-stat { padding: 8px; }
+  .ka-readiness .ka-stat-value { font-size: 20px; }
+  .ka-current-analysis .ka-scan-progress { align-items: flex-start; }
+  .ka-current-analysis .ka-progress-bar-wrap { flex-basis: 100%; order: -1; }
+}

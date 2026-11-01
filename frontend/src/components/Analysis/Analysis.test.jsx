@@ -187,6 +187,40 @@ describe('analysis folder loading', () => {
     }
   });
 
+  it('organises readiness, current work and selection with secondary details collapsed', async () => {
+    expect.hasAssertions();
+    await render();
+    expect(
+      [...container.querySelectorAll('.ka-section-title')].map(
+        (e) => e.textContent,
+      ),
+    ).toEqual(['Library readiness', 'Current analysis']);
+    expect(container.querySelector('.ka-readiness').textContent).toContain(
+      'Basic ready',
+    );
+    expect(container.querySelector('.ka-readiness').textContent).toContain(
+      'Enhanced ready',
+    );
+    expect(container.querySelector('.ka-coverage-details').open).toBe(false);
+    expect(container.querySelector('.ka-automatic-details').open).toBe(false);
+    expect(container.querySelector('[aria-label="Data freshness"]').open).toBe(
+      false,
+    );
+    expect(
+      container.querySelector(
+        '.ka-current-analysis [aria-label="Stop analysis"]',
+      ).textContent,
+    ).toBe('Stop after this scan');
+    expect(
+      container.querySelector('.ka-panel .ka-analysis-modes'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('.ka-overview .ka-analysis-modes'),
+    ).toBeNull();
+    expect(container.querySelector('.ka-panel-header').textContent).toBe(
+      'Choose music to analyse',
+    );
+  });
   it('shows coverage without the removed automatic queue card', async () => {
     expect.hasAssertions();
     musicLibraryApi.getAnalysisStats.mockResolvedValue({
@@ -741,7 +775,7 @@ describe('analysis folder loading', () => {
       const stop = container.querySelector(
         '.ka-scan-progress [aria-label="Stop analysis"]',
       );
-      expect(stop.textContent).toBe('Stop analysis');
+      expect(stop.textContent).toBe('Stop after this scan');
       await act(async () => stop.click());
       expect(analysisApi.cancelScan).not.toHaveBeenCalled();
       expect(stop.disabled).toBe(true);
@@ -776,7 +810,7 @@ describe('analysis folder loading', () => {
         inFlight: 0,
       });
       await act(async () => jest.advanceTimersByTime(2_000));
-      expect(stop.textContent).toBe('Stop analysis');
+      expect(stop.textContent).toBe('Stop after this scan');
       expect(stop.disabled).toBe(true);
       expect(
         container.querySelector('[aria-label="Current scan progress"]')
@@ -823,7 +857,7 @@ describe('analysis folder loading', () => {
         analysed: 3,
       });
       await act(async () => jest.advanceTimersByTime(2_000));
-      expect(stop.textContent).toBe('Stop analysis');
+      expect(stop.textContent).toBe('Stop after this scan');
       expect(stop.disabled).toBe(true);
       expect(
         container.querySelector('[aria-label="Current scan progress"]')
@@ -850,7 +884,7 @@ describe('analysis folder loading', () => {
     const stop = container.querySelector('[aria-label="Stop analysis"]');
     await act(async () => stop.click());
     expect(stop.disabled).toBe(true);
-    expect(stop.textContent).toBe('Stop analysis');
+    expect(stop.textContent).toBe('Stop after this scan');
     expect(
       container.querySelector('[aria-label="Current scan progress"]')
         .textContent,
@@ -1282,9 +1316,9 @@ describe('analysis folder loading', () => {
       container.querySelector('[aria-label="Close analysis settings"]'),
     ).toBeNull();
     expect(container.querySelector('.ka-panel select')).toBeNull();
-    expect(container.querySelector('.ka-panel').textContent).toContain(
-      'Selected mode: Basic',
-    );
+    expect(
+      container.querySelector('.ka-panel input[value="basic"]').checked,
+    ).toBe(true);
     expect(
       container.querySelector('.ka-panel .ka-btn--primary').textContent,
     ).toContain('Start Basic analysis');
@@ -1316,9 +1350,9 @@ describe('analysis folder loading', () => {
     ).not.toBeNull();
     act(() => container.querySelector('input[value="enhanced"]').click());
     expect(container.querySelector('.ka-panel select')).toBeNull();
-    expect(container.querySelector('.ka-panel').textContent).toContain(
-      'Selected mode: Enhanced',
-    );
+    expect(
+      container.querySelector('.ka-panel input[value="enhanced"]').checked,
+    ).toBe(true);
     expect(
       container.querySelector('.ka-panel .ka-btn--primary').textContent,
     ).toContain('Analyse 3 selected');
@@ -1383,9 +1417,9 @@ describe('analysis folder loading', () => {
     expect(reset.getAttribute('aria-checked')).toBe('true');
     act(() => container.querySelector('input[value="enhanced"]').click());
     act(() => container.querySelector('input[value="basic"]').click());
-    expect(container.querySelector('.ka-panel').textContent).toContain(
-      'Selected mode: Basic',
-    );
+    expect(
+      container.querySelector('.ka-panel input[value="basic"]').checked,
+    ).toBe(true);
     expect(container.querySelector('.ka-warn')).not.toBeNull();
     await act(async () =>
       container.querySelector('.ka-panel .ka-btn--primary').click(),
