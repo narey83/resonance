@@ -33,18 +33,12 @@ import { usePlayer } from '../../context/PlayerContext';
 import useDebounce from '../../hooks/useDebounce';
 import * as analysisApi from '../../lib/analysis';
 import { METRICS } from '../../lib/analysis';
-import {
-  CAMELOT_KEYS,
-  camelotColour,
-  harmonicNeighbours,
-  toCamelot,
-} from '../../lib/camelot';
+import { CAMELOT_KEYS, camelotColour, toCamelot } from '../../lib/camelot';
 import { djSummary } from '../../lib/libraryWorkbench';
 import { getPreparationStatus } from '../../lib/libraryWorkspace';
 import * as musicLibraryApi from '../../lib/musicLibrary';
 import { useKeyFormat } from '../../lib/useKeyFormat';
 import { usePagedList } from '../../lib/usePagedList';
-import KeyFormatToggle from '../Shared/KeyFormatToggle';
 import AnalysisDetails from './AnalysisDetails';
 import RowWaveform from './RowWaveform';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -307,17 +301,16 @@ const CacheDots = ({ scanning, track }) => (
   </span>
 );
 
-const KeyBadge = ({ compatible, fmtKey, keyValue, scanning }) => {
+const KeyBadge = ({ fmtKey, keyValue, scanning }) => {
   if (scanning) return <LoadingBadge />;
   if (!keyValue) return <span className="ka-badge ka-badge--empty">—</span>;
   const code = toCamelot(keyValue);
   const colour = camelotColour(code);
   const minor = code?.endsWith('A');
-  const dim = compatible != null && !compatible;
   const display = fmtKey ? fmtKey(keyValue) : code ?? keyValue;
   return (
     <span
-      className={`ka-badge${minor ? ' ka-badge--minor' : ''}${dim ? ' ka-badge--dim' : ''}`}
+      className={`ka-badge${minor ? ' ka-badge--minor' : ''}`}
       style={{ '--key-colour': colour ?? 'var(--border)' }}
       title={fmtKey ? `${code ?? keyValue} · ${keyValue}` : keyValue}
     >
@@ -331,7 +324,6 @@ const KeyBadge = ({ compatible, fmtKey, keyValue, scanning }) => {
 // eslint-disable-next-line complexity
 const TrackRow = ({
   fmtKey,
-  focusKey,
   globalScanning,
   onClearBpm,
   onClearKey,
@@ -350,9 +342,6 @@ const TrackRow = ({
   const [editingBpm, setEditingBpm] = useState(false);
   const [bpmInput, setBpmInput] = useState(track.bpm?.toString() ?? '');
   const [keyInput, setKeyInput] = useState(track.key ?? '');
-  const compatible = focusKey
-    ? harmonicNeighbours(focusKey).has(track.key) || track.key === focusKey
-    : null;
   const summary = djSummary(track) || {};
   const basicReady =
     track.hasBpm && track.hasKey && track.hasWaveform && track.hasLoudness;
@@ -457,7 +446,6 @@ const TrackRow = ({
               type="button"
             >
               <KeyBadge
-                compatible={compatible}
                 fmtKey={fmtKey}
                 keyValue={track.key}
                 scanning={scanning}
@@ -684,19 +672,16 @@ const Analysis = () => {
   useEffect(() => {
     if (scanState?.scanning && scanState.enhancedTotal > 0) setEnhanced(true);
   }, [scanState?.scanning, scanState?.enhancedTotal]);
-  const { fmtKey, format, setFormat } = useKeyFormat();
+  const { fmtKey } = useKeyFormat();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [sortKey, setSortKey] = useState('title');
   const [sortDirection, setSortDirection] = useState('asc');
   const [showSettings, setShowSettings] = useState(false);
-  const [keyFilter, setKeyFilter] = useState('');
-  const [focusKey, setFocusKey] = useState(null);
   const [selected, setSelected] = useState(new Set());
   const [expandedFolders, setExpandedFolders] = useState(new Set());
   const [recentlyUpdated, setRecentlyUpdated] = useState(new Set());
   const [stats, setStats] = useState(null);
-  const [keyOptions, setKeyOptions] = useState([]);
 
   // A manual key/BPM edit is written to the file's tags; the library index only picks it up on
   // the next (debounced) sync, so refetching straight after an edit would still hand back the
@@ -745,11 +730,10 @@ const Analysis = () => {
               : 'pending'
             : filter,
       descending: sortDirection === 'desc',
-      key: keyFilter || undefined,
       search: debouncedSearch.trim() || undefined,
       sort: sortKey,
     }),
-    [debouncedSearch, enhanced, filter, keyFilter, sortDirection, sortKey],
+    [debouncedSearch, enhanced, filter, sortDirection, sortKey],
   );
 
   const {
@@ -807,15 +791,13 @@ const Analysis = () => {
 
   const loadSummary = useCallback(async () => {
     try {
-      const [nextStats, keys, nextPreparation] = await Promise.all([
+      const [nextStats, nextPreparation] = await Promise.all([
         musicLibraryApi.getAnalysisStats(),
-        musicLibraryApi.getKeys().catch(() => []),
         getPreparationStatus().catch(() => null),
       ]);
       if (!mountedRef.current) return;
       setStats(nextStats);
       setPreparation(nextPreparation);
-      setKeyOptions(keys ?? []);
     } catch {
       /* the counts are a headline, not the page — the list still renders without them */
     }
@@ -1041,7 +1023,7 @@ const Analysis = () => {
 
   useEffect(() => {
     setSelected(new Set());
-  }, [debouncedSearch, filter, keyFilter, sortDirection, sortKey]);
+  }, [debouncedSearch, filter, sortDirection, sortKey]);
 
   const groups = useMemo(() => {
     const map = new Map();
@@ -1273,10 +1255,6 @@ const Analysis = () => {
             </label>
           </fieldset>
           <div className="ka-analysis-actions">
-            <KeyFormatToggle
-              format={format}
-              onChange={setFormat}
-            />
             <button
               className="ka-btn hover-fx"
               onClick={hardRefresh}
@@ -1563,38 +1541,6 @@ const Analysis = () => {
           ))}
         </div>
 
-        {keyOptions.length > 0 && (
-          <select
-            className="ka-select ka-select--sm"
-            onChange={({ target }) => {
-              setKeyFilter(target.value);
-              setFocusKey(target.value || null);
-            }}
-            value={keyFilter}
-          >
-            <option value="">All Keys</option>
-            {keyOptions.map(({ key: k, trackCount }) => {
-              const c = toCamelot(k);
-              const label =
-                format === 'camelot'
-                  ? c
-                    ? `${c} — ${k}`
-                    : k
-                  : c
-                    ? `${k} — ${c}`
-                    : k;
-              return (
-                <option
-                  key={k}
-                  value={k}
-                >
-                  {label} ({trackCount})
-                </option>
-              );
-            })}
-          </select>
-        )}
-
         <span className="ka-count">
           {tracks.length} of {matching} track{matching === 1 ? '' : 's'} ·{' '}
           {groups.length} folder{groups.length === 1 ? '' : 's'}
@@ -1744,7 +1690,6 @@ const Analysis = () => {
                   ) : (
                     <TrackRow
                       fmtKey={fmtKey}
-                      focusKey={focusKey}
                       globalScanning={scanning}
                       onClearBpm={handleClearBpm}
                       onClearKey={handleClearKey}

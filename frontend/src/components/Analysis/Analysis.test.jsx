@@ -36,17 +36,13 @@ jest.mock('../../lib/analysis', () => ({
 }));
 jest.mock('../../lib/musicLibrary', () => ({
   getAnalysisStats: jest.fn(),
-  getKeys: () => Promise.resolve([]),
+  getKeys: jest.fn(() => Promise.resolve([])),
   getTrackPage: jest.fn(),
 }));
 jest.mock('../../lib/useKeyFormat', () => ({
   useKeyFormat: () => ({ format: 'camelot', fmtKey: (key) => key }),
 }));
 jest.mock('../Shared/PageInfo', () => ({
-  __esModule: true,
-  default: () => null,
-}));
-jest.mock('../Shared/KeyFormatToggle', () => ({
   __esModule: true,
   default: () => null,
 }));
@@ -233,6 +229,22 @@ describe('analysis folder loading', () => {
     expect(queue.textContent).toContain('4failed');
     expect(container.querySelector('details.ka-analysis-help').open).toBe(
       false,
+    );
+  });
+
+  it('omits the key display controls, key filter and their unused summary request', async () => {
+    expect.hasAssertions();
+    musicLibraryApi.getKeys.mockResolvedValue([{ key: 'Am', trackCount: 42 }]);
+    await render();
+    expect(musicLibraryApi.getKeys).not.toHaveBeenCalled();
+    expect(container.querySelector('.ka-toolbar select')).toBeNull();
+    expect(
+      container.querySelector('[aria-label="Key display format"]'),
+    ).toBeNull();
+    expect(container.textContent).not.toContain('Camelot');
+    expect(container.textContent).not.toContain('Musical');
+    expect(container.querySelector('.ka-summary-basic').textContent).toContain(
+      'Key',
     );
   });
 

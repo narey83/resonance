@@ -1153,3 +1153,12 @@
   .ka-root > .ka-panel .ka-panel-body { gap: 10px 16px; }
   .ka-root > .ka-panel .ka-field { flex-basis: 100%; }
 }
+
+/* The analysis content shares the tabs' white surface and horizontal gutter. */
+.ta-panel > .ka-root { padding-inline: var(--page-gutter); background: var(--bg-surface); }
+.ta-panel > .ka-root > :is(.ka-overview, .ka-panel, .ka-toolbar, .ka-header-row, .ka-track-list, .ka-pagination, .ka-load-error, .ka-analysis-details) { margin-inline: 0; }
+.ta-panel > .ka-root > .ka-overview { margin-top: 0; border: 0; border-radius: 0; }
+.ta-panel > .ka-root .ka-analysis-toolbar { padding-inline: 0; }
+.ta-panel > .ka-root .ka-analysis-summary { padding-inline: 0; }
+.ta-panel > .ka-root .ka-analysis-context { padding-inline: 0; }
+.ta-panel > .ka-root .ka-analysis-help { padding-right: 0; }
