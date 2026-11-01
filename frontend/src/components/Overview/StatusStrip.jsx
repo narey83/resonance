@@ -620,7 +620,7 @@ const StatusStrip = ({
       )}
       <div className="status-strip-spacer" />
       {queuedCount > 0 && (
-        <span className="status-chip">{queuedCount} queued</span>
+        <span className="status-chip">{queuedCount} transfers queued</span>
       )}
       {(dlSpeed > 0 || ulSpeed > 0) && (
         <span className="status-live-rates">

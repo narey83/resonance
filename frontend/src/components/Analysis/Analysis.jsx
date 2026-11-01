@@ -124,6 +124,18 @@ const ENHANCED_FEATURES = [
 const formatCount = (value) =>
   typeof value === 'number' ? value.toLocaleString('en-GB') : value;
 
+// Each source refreshes independently; retained values must never look current after a failure.
+const Freshness = ({ label, maxAge, now, status }) => {
+  const stale = status.failed || (status.at && now - status.at > maxAge);
+  return (
+    <span className={stale ? 'ka-data-stale' : ''}>
+      {label}:{' '}
+      {stale ? 'Stale · retrying' : status.at ? 'Updated' : 'Checking…'}
+      {status.at ? ` ${new Date(status.at).toLocaleTimeString()}` : ''}
+    </span>
+  );
+};
+
 const enhancedFeatureValue = (coverage, feature) => {
   const count = coverage?.features?.[feature];
   if (count == null) return '—';
@@ -684,6 +696,15 @@ const Analysis = () => {
   const [expandedFolders, setExpandedFolders] = useState(new Set());
   const [recentlyUpdated, setRecentlyUpdated] = useState(new Set());
   const [stats, setStats] = useState(null);
+  const [dataRevision, setDataRevision] = useState(0);
+  const [folderRevision, setFolderRevision] = useState(0);
+  const [now, setNow] = useState(Date.now);
+  const [coverageStatus, setCoverageStatus] = useState({
+    at: null,
+    failed: false,
+  });
+  const [scanStatus, setScanStatus] = useState({ at: null, failed: false });
+  const [queueStatus, setQueueStatus] = useState({ at: null, failed: false });
 
   // A manual key/BPM edit is written to the file's tags; the library index only picks it up on
   // the next (debounced) sync, so refetching straight after an edit would still hand back the
@@ -754,7 +775,11 @@ const Analysis = () => {
     items: folders,
     loading,
   } = usePagedList(fetchFolderPage, folderQuery, {
-    refreshToken: idleRevisionRef.current + refreshNonce,
+    refreshToken:
+      idleRevisionRef.current +
+      refreshNonce +
+      folderRevision +
+      (query.analysis ? dataRevision : 0),
   });
   const matching = folders.reduce(
     (total, folder) => total + folder.trackCount,
@@ -804,11 +829,33 @@ const Analysis = () => {
               : Promise.resolve(null),
           ]);
           if (!mountedRef.current) return;
+          if (
+            summary.total != null &&
+            (summary.total !== nextStats.total ||
+              Date.now() - summary.foldersAt >= 30_000)
+          ) {
+            setFolderRevision((revision) => revision + 1);
+            summary.foldersAt = Date.now();
+          }
+
+          summary.total = nextStats.total;
+          summary.foldersAt ??= Date.now();
           setStats(nextStats);
-          if (nextPreparation) setPreparation(nextPreparation);
+          setCoverageStatus({ at: Date.now(), failed: false });
+          setDataRevision((revision) => revision + 1);
+          if (includePreparation) {
+            if (nextPreparation) setPreparation(nextPreparation);
+            setQueueStatus((previous) =>
+              nextPreparation
+                ? { at: Date.now(), failed: false }
+                : { ...previous, failed: true },
+            );
+          }
         } catch {
           // Retain the last counts and retry on a later poll instead of displaying zeroes.
           summary.dirty = true;
+          if (mountedRef.current)
+            setCoverageStatus((previous) => ({ ...previous, failed: true }));
         }
       })().finally(() => {
         summary.request = null;
@@ -843,12 +890,14 @@ const Analysis = () => {
       .then((state) => {
         if (cancelled || !mountedRef.current) return;
         setScanState(state);
+        setScanStatus({ at: Date.now(), failed: false });
         wasScanningRef.current = Boolean(state?.scanning);
         // A scan already running when the page opens still needs finalizing when it ends.
         if (state?.scanning) finalizingRef.current = false;
       })
       .catch(() => {
-        /* the scan bar simply stays hidden */
+        if (!cancelled && mountedRef.current)
+          setScanStatus((previous) => ({ ...previous, failed: true }));
       });
     return () => {
       cancelled = true;
@@ -885,49 +934,77 @@ const Analysis = () => {
   // shows up — completion is detected separately, above.
   useEffect(() => {
     let pending = null;
-    pollRef.current = setInterval(() => {
+    const poll = () => {
+      if (!mountedRef.current) return;
+      setNow(Date.now());
       if (pending) return;
       pending = (async () => {
-        try {
-          const [state, nextPreparation] = await Promise.all([
-            analysisApi.getScanState(),
-            getPreparationStatus().catch(() => null),
-          ]);
-          if (!mountedRef.current) {
-            clearInterval(pollRef.current);
-            return;
-          }
-
-          if (nextPreparation) setPreparation(nextPreparation);
-
-          // A scan that started without this page's own startScan() (i.e. the automatic
-          // check) still needs finalizing when it ends.
-          if (state.scanning && !wasScanningRef.current) {
+        const [scanResult, queueResult] = await Promise.allSettled([
+          analysisApi.getScanState(),
+          getPreparationStatus(),
+        ]);
+        if (!mountedRef.current) return;
+        const state =
+          scanResult.status === 'fulfilled' ? scanResult.value : null;
+        const nextPreparation =
+          queueResult.status === 'fulfilled' ? queueResult.value : null;
+        setScanStatus((previous) =>
+          state
+            ? { at: Date.now(), failed: false }
+            : { ...previous, failed: true },
+        );
+        setQueueStatus((previous) =>
+          nextPreparation
+            ? { at: Date.now(), failed: false }
+            : { ...previous, failed: true },
+        );
+        if (nextPreparation) setPreparation(nextPreparation);
+        const ended = state && !state.scanning && wasScanningRef.current;
+        if (state) {
+          if (state.scanning && !wasScanningRef.current)
             finalizingRef.current = false;
-          }
-
           wasScanningRef.current = state.scanning;
-
           setScanState(state);
-          if (
-            state.scanning ||
-            nextPreparation?.counts?.running > 0 ||
-            summaryRef.current.dirty
-          ) {
-            // Headline counts have their own bounded, single-flight refresh. Never reload
-            // folders or track windows just to update the cards, or delay activity polling.
-            void loadSummary(false);
-          }
-        } catch {
-          /* ignore */
+        }
+
+        // Refresh on every exit, including errors without a completed/cancelled flag.
+        // Idle reconciliation catches missed notifications without a full library dump.
+        if (ended) {
+          finalizingRef.current = true;
+          finalizeScan();
+        }
+
+        if (
+          ended ||
+          state?.scanning ||
+          nextPreparation?.counts?.running > 0 ||
+          summaryRef.current.dirty ||
+          Date.now() - summaryRef.current.lastStarted >= 30_000
+        ) {
+          void loadSummary(false, Boolean(ended));
         }
       })().finally(() => {
         pending = null;
       });
-    }, 2_000);
+    };
 
-    return () => clearInterval(pollRef.current);
-  }, [loadSummary]);
+    pollRef.current = setInterval(poll, 2_000);
+    const reconnect = () => {
+      if (document.hidden) return;
+      void loadSummary(true, true);
+      poll();
+    };
+
+    window.addEventListener('online', reconnect);
+    window.addEventListener('focus', reconnect);
+    document.addEventListener('visibilitychange', reconnect);
+    return () => {
+      clearInterval(pollRef.current);
+      window.removeEventListener('online', reconnect);
+      window.removeEventListener('focus', reconnect);
+      document.removeEventListener('visibilitychange', reconnect);
+    };
+  }, [finalizeScan, loadSummary]);
 
   // paths, not masked filenames: the backend resolves them against the share in one query
   // rather than the page doing a lookup per row before it can ask for anything.
@@ -1164,9 +1241,10 @@ const Analysis = () => {
       virtualRows
         .map((virtualRow) => visibleRows[virtualRow.index])
         .filter((row) => row && !row.group),
-      idleRevisionRef.current + refreshNonce,
+      dataRevision,
     );
   }, [
+    dataRevision,
     libraryRevision,
     pageVersion,
     refreshNonce,
@@ -1347,27 +1425,14 @@ const Analysis = () => {
 
   const scanning = scanState?.scanning;
   const scanRunning = scanning ? scanState.inFlight ?? inFlight.size : 0;
-  // Live scan workers are authoritative. The automatic queue can reserve an
-  // entire batch or report the same work, so do not add its count to the scan.
-  const runningCount =
-    scanRunning > 0
-      ? scanRunning
-      : preparation
-        ? preparation.counts?.running ?? 0
-        : scanState
-          ? 0
-          : '—';
+  // Automatic reservations and scan workers have different lifecycles and scopes.
+  const runningCount = preparation ? preparation.counts?.running ?? 0 : '—';
   const processed = scanState
-    ? scanState.analysed + scanState.skipped + scanState.failed
+    ? (scanState.analysed ?? 0) +
+      (scanState.skipped ?? 0) +
+      (scanState.failed ?? 0)
     : 0;
-  const coverage = stats ?? {
-    bpmed: 0,
-    complete: 0,
-    keyed: 0,
-    loudness: 0,
-    total: 0,
-    waveformed: 0,
-  };
+  const coverage = stats ?? {};
 
   return (
     <div
@@ -1444,6 +1509,29 @@ const Analysis = () => {
             results are preserved unless reset is selected.
           </p>
         </details>
+        <div
+          aria-label="Data freshness"
+          className="ka-analysis-context"
+        >
+          <Freshness
+            label="Coverage"
+            maxAge={scanning ? 10_000 : 45_000}
+            now={now}
+            status={coverageStatus}
+          />
+          <Freshness
+            label="Scan"
+            maxAge={10_000}
+            now={now}
+            status={scanStatus}
+          />
+          <Freshness
+            label="Automatic queue"
+            maxAge={10_000}
+            now={now}
+            status={queueStatus}
+          />
+        </div>
         <div className="ka-analysis-summary">
           <section
             aria-label="Basic analysis coverage"
@@ -1458,7 +1546,12 @@ const Analysis = () => {
                 ['Waveform', coverage.waveformed],
                 ['Loudness', coverage.loudness],
                 ['Ready', coverage.complete],
-                ['Incomplete', Math.max(0, coverage.total - coverage.complete)],
+                [
+                  'Incomplete',
+                  stats
+                    ? Math.max(0, coverage.total - coverage.complete)
+                    : null,
+                ],
               ].map(([label, value]) => (
                 <MetricCard
                   key={label}
@@ -1506,19 +1599,15 @@ const Analysis = () => {
           </section>
           <section
             aria-label="Preparation queue status"
-            className={`ka-summary-queue${scanning || preparation?.counts?.running > 0 ? ' ka-summary-queue--running' : ''}`}
+            className={`ka-summary-queue${preparation?.counts?.running > 0 ? ' ka-summary-queue--running' : ''}`}
           >
-            <h3>Preparation queue</h3>
+            <h3>Automatic preparation queue</h3>
             <div className="ka-metric-grid">
               {['queued', 'running', 'retrying', 'failed'].map((state) => (
                 <MetricCard
                   key={state}
                   label={state}
-                  title={
-                    state === 'running'
-                      ? 'Tracks running in active analysis or automatic preparation. Shared work is counted once.'
-                      : 'Automatic preparation totals. The active scan has separate queued and completed progress below.'
-                  }
+                  title="Automatic preparation jobs only. Current scan workers and outcomes are shown separately below."
                   value={
                     state === 'running'
                       ? runningCount
@@ -1568,8 +1657,11 @@ const Analysis = () => {
               </button>
             </div>
             <p className="ka-queue-help">
+              {preparation
+                ? `Target: ${preparation.enhancedEnabled ? 'Basic + Enhanced' : 'Basic'} readiness. `
+                : ''}
               {preparation?.paused
-                ? 'Resume processes all queued tracks.'
+                ? 'Resume processes all automatic jobs, regardless of the selected scan mode.'
                 : 'Pause finishes active tracks. Stop keeps queued tracks.'}
             </p>
           </section>
@@ -1616,8 +1708,22 @@ const Analysis = () => {
         )}
         <div className="ka-scan-progress">
           {/* inline scan progress */}
-          {scanning && scanState.total > 0 && (
-            <div className="ka-progress-bar-wrap">
+          {scanState?.total > 0 && (
+            <div
+              aria-label="Current scan progress"
+              className="ka-progress-bar-wrap"
+            >
+              <strong>
+                {scanState.enhancedTotal > 0 ? 'Basic + Enhanced' : 'Basic'}{' '}
+                scan ·{' '}
+                {scanning
+                  ? 'Running'
+                  : scanState.cancelled
+                    ? 'Stopped'
+                    : scanState.completed
+                      ? 'Finished'
+                      : 'Stopped with an error'}
+              </strong>
               <div className="ka-progress-bar">
                 <div
                   className="ka-progress-fill"
@@ -1626,14 +1732,20 @@ const Analysis = () => {
               </div>
               <div className="ka-progress-stats">
                 <span className="ka-progress-chip ka-progress-chip--queued">
-                  Queued:{' '}
+                  Remaining:{' '}
                   {Math.max(0, scanState.total - processed - scanRunning)}
                 </span>
                 <span className="ka-progress-chip ka-progress-chip--active">
                   Analysing: {scanRunning}
                 </span>
                 <span className="ka-progress-chip ka-progress-chip--done">
-                  Done: {processed}
+                  Succeeded: {scanState.analysed ?? 0}
+                </span>
+                <span className="ka-progress-chip">
+                  Skipped: {scanState.skipped ?? 0}
+                </span>
+                <span className="ka-progress-chip">
+                  Processed: {processed} / {scanState.total}
                 </span>
                 {scanState.failed > 0 && (
                   <span className="ka-progress-chip ka-progress-chip--failed">
@@ -1924,7 +2036,7 @@ const Analysis = () => {
                             trackPages.retry(
                               row.directory,
                               row.index,
-                              idleRevisionRef.current + refreshNonce,
+                              dataRevision,
                             )
                           }
                           type="button"

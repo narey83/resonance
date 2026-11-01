@@ -1198,3 +1198,5 @@
 .ka-queue-help { margin: 6px 0 0; font-size: 11px; line-height: 1.4; color: var(--text-muted); }
 .ka-selection-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px var(--page-gutter); }
 .ka-selection-status [role="status"] { display: flex; align-items: center; gap: 6px; }
+
+.ka-data-stale { color: var(--danger, #b42318); font-weight: 600; }

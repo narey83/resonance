@@ -151,7 +151,7 @@ export const getGenres = async () =>
 // Per-metric coverage over the whole library, answered by one join. The analysis page's headline
 // numbers; it used to derive them by counting a dump of every track.
 export const getAnalysisStats = async () =>
-  (await api.get('/musiclibrary/analysis-stats')).data;
+  (await api.get('/musiclibrary/analysis-stats', { timeout: 30_000 })).data;
 
 // The distinct key values actually stored, for the analysis page's key filter (which matches a
 // stored value exactly, so a fixed list of the 24 canonical spellings would miss the rest).

@@ -26,7 +26,7 @@ export const deleteCrate = async (crate) =>
     params: { revision: crate.revision },
   });
 export const getPreparationStatus = async () =>
-  (await api.get('/musiclibrary/preparation/status')).data;
+  (await api.get('/musiclibrary/preparation/status', { timeout: 10_000 })).data;
 export const getPreparationPage = async (params) => {
   const { data } = await api.get('/musiclibrary/preparation', { params });
   seedSignatures(data.items.map((item) => item.track));

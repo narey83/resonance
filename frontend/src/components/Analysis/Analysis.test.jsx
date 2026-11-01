@@ -243,6 +243,141 @@ describe('analysis folder loading', () => {
     );
   });
 
+  it('separates successful, skipped and failed scan outcomes', async () => {
+    expect.hasAssertions();
+    analysisApi.getScanState.mockResolvedValue({
+      scanning: true,
+      total: 100,
+      analysed: 20,
+      skipped: 3,
+      failed: 1,
+      inFlight: 8,
+    });
+    await render();
+    const progress = container.querySelector(
+      '[aria-label="Current scan progress"]',
+    );
+    expect(progress.textContent).toContain('Remaining: 68');
+    expect(progress.textContent).toContain('Succeeded: 20');
+    expect(progress.textContent).toContain('Skipped: 3');
+    expect(progress.textContent).toContain('Failed: 1');
+    expect(progress.textContent).toContain('Processed: 24 / 100');
+    expect(container.textContent).toContain(
+      'Target: Basic + Enhanced readiness.',
+    );
+  });
+  it('shows unknown coverage while loading and retains values with a stale warning on failure', async () => {
+    expect.hasAssertions();
+    jest.useFakeTimers();
+    try {
+      let finish;
+      musicLibraryApi.getAnalysisStats.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      await render();
+      expect(
+        container.querySelector('.ka-summary-basic').textContent,
+      ).toContain('—Ready');
+      await act(async () => finish({ total: 3, complete: 2 }));
+      musicLibraryApi.getAnalysisStats.mockRejectedValueOnce(
+        new Error('offline'),
+      );
+      analysisApi.getScanState.mockResolvedValue({ scanning: true });
+      await act(async () => jest.advanceTimersByTime(4_000));
+      expect(
+        container.querySelector('.ka-summary-basic').textContent,
+      ).toContain('2Ready');
+      expect(
+        container.querySelector('[aria-label="Data freshness"]').textContent,
+      ).toContain('Coverage: Stale');
+      musicLibraryApi.getAnalysisStats.mockResolvedValue({
+        total: 3,
+        complete: 3,
+      });
+      await act(async () => jest.advanceTimersByTime(4_000));
+      expect(
+        container.querySelector('.ka-summary-basic').textContent,
+      ).toContain('3Ready');
+      expect(
+        container.querySelector('[aria-label="Data freshness"]').textContent,
+      ).not.toContain('Stale');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+  it('updates automatic status even if scan polling fails and recovers on reconnect', async () => {
+    expect.hasAssertions();
+    jest.useFakeTimers();
+    try {
+      await render();
+      analysisApi.getScanState.mockRejectedValueOnce(new Error('offline'));
+      getPreparationStatus.mockResolvedValue({
+        paused: false,
+        enhancedEnabled: false,
+        counts: { queued: 9 },
+      });
+      await act(async () => jest.advanceTimersByTime(2_000));
+      expect(
+        container.querySelector('.ka-summary-queue').textContent,
+      ).toContain('9queued');
+      expect(
+        container.querySelector('.ka-summary-queue').textContent,
+      ).toContain('Target: Basic readiness.');
+      expect(
+        container.querySelector('[aria-label="Data freshness"]').textContent,
+      ).toContain('Scan: Stale');
+      analysisApi.getScanState.mockResolvedValue({ scanning: false });
+      await act(async () => window.dispatchEvent(new Event('online')));
+      expect(
+        container.querySelector('[aria-label="Data freshness"]').textContent,
+      ).not.toContain('Stale');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+  it('refreshes visible rows and filtered folder totals during a scan without clearing selection', async () => {
+    expect.hasAssertions();
+    jest.useFakeTimers();
+    try {
+      await render();
+      await act(async () =>
+        container.querySelector('.ka-folder-expand').click(),
+      );
+      await act(async () =>
+        container.querySelector('.ka-folder-check input').click(),
+      );
+      const reads = musicLibraryApi.getTrackPage.mock.calls.length;
+      analysisApi.getScanState.mockResolvedValue({ scanning: true, total: 3 });
+      musicLibraryApi.getTrackPage.mockResolvedValue({
+        items: [{ ...row('one'), bpm: 128 }, row('two'), row('three')],
+        total: 3,
+      });
+      await act(async () => jest.advanceTimersByTime(4_000));
+      expect(musicLibraryApi.getTrackPage.mock.calls.length).toBeGreaterThan(
+        reads,
+      );
+      expect(container.querySelector('.ka-folder-check input').checked).toBe(
+        true,
+      );
+      expect(container.textContent).toContain('128');
+      await act(async () =>
+        [...container.querySelectorAll('button')]
+          .find((button) => button.textContent === 'Basic ready')
+          .click(),
+      );
+      const token = usePagedList.mock.calls.at(-1)[2].refreshToken;
+      await act(async () => jest.advanceTimersByTime(4_000));
+      expect(usePagedList.mock.calls.at(-1)[2].refreshToken).toBeGreaterThan(
+        token,
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('omits the key display controls, key filter and their unused summary request', async () => {
     expect.hasAssertions();
     musicLibraryApi.getKeys.mockResolvedValue([{ key: 'Am', trackCount: 42 }]);
@@ -259,7 +394,7 @@ describe('analysis folder loading', () => {
     );
   });
 
-  it('includes eight active manual Basic workers in the Running card when the automatic queue reports zero', async () => {
+  it('keeps manual workers separate from automatic queue totals', async () => {
     expect.hasAssertions();
     getPreparationStatus.mockResolvedValue({
       paused: false,
@@ -275,7 +410,7 @@ describe('analysis folder loading', () => {
     });
     await render();
     expect(container.querySelector('.ka-summary-queue').textContent).toContain(
-      '8running',
+      '0running',
     );
     expect(
       container.querySelector('.ka-progress-chip--active').textContent,
@@ -284,7 +419,7 @@ describe('analysis folder loading', () => {
       '59,378queued',
     );
   });
-  it('does not double-count the same workers reported by automatic preparation and scan state', async () => {
+  it('reports automatic reservations separately from active workers', async () => {
     expect.hasAssertions();
     getPreparationStatus.mockResolvedValue({
       paused: false,
@@ -306,10 +441,10 @@ describe('analysis folder loading', () => {
       container.querySelector('.ka-toolbar [title="Refresh tracks"]').click(),
     );
     expect(container.querySelector('.ka-summary-queue').textContent).toContain(
-      '8running',
+      '16running',
     );
   });
-  it('updates the Running card as scan workers change and ignores stale in-flight counts after stopping', async () => {
+  it('updates scan workers independently and ignores stale in-flight counts after stopping', async () => {
     expect.hasAssertions();
     jest.useFakeTimers();
     try {
@@ -319,28 +454,31 @@ describe('analysis folder loading', () => {
       });
       analysisApi.getScanState.mockResolvedValue({
         scanning: true,
+        total: 100,
         inFlight: 8,
       });
       await render();
       expect(
-        container.querySelector('.ka-summary-queue').textContent,
-      ).toContain('8running');
+        container.querySelector('.ka-progress-chip--active').textContent,
+      ).toContain('Analysing: 8');
       analysisApi.getScanState.mockResolvedValue({
         scanning: true,
+        total: 100,
         inFlight: 4,
       });
       await act(async () => jest.advanceTimersByTime(2_000));
       expect(
-        container.querySelector('.ka-summary-queue').textContent,
-      ).toContain('4running');
+        container.querySelector('.ka-progress-chip--active').textContent,
+      ).toContain('Analysing: 4');
       analysisApi.getScanState.mockResolvedValue({
         scanning: false,
+        total: 100,
         inFlight: 8,
       });
       await act(async () => jest.advanceTimersByTime(2_000));
       expect(
-        container.querySelector('.ka-summary-queue').textContent,
-      ).toContain('0running');
+        container.querySelector('.ka-progress-chip--active').textContent,
+      ).toContain('Analysing: 0');
     } finally {
       jest.useRealTimers();
     }
@@ -361,7 +499,7 @@ describe('analysis folder loading', () => {
     });
     await render();
     expect(container.querySelector('.ka-summary-queue').textContent).toContain(
-      '2running',
+      '0running',
     );
     expect(
       container.querySelector('.ka-progress-chip--active').textContent,
@@ -522,7 +660,7 @@ describe('analysis folder loading', () => {
     expect(resume.disabled).toBe(false);
     expect(pausePreparation).not.toHaveBeenCalled();
     expect(container.querySelector('.ka-queue-help').textContent).toContain(
-      'all queued tracks',
+      'all automatic jobs',
     );
     getPreparationStatus.mockResolvedValue({
       paused: false,
@@ -690,7 +828,7 @@ describe('analysis folder loading', () => {
       container.querySelector('.ka-summary-queue--running'),
     ).not.toBeNull();
   });
-  it('highlights manual analysis and stops highlighting when polling reports completion', async () => {
+  it('shows manual progress separately and retains its final outcome', async () => {
     expect.hasAssertions();
     jest.useFakeTimers();
     try {
@@ -704,7 +842,7 @@ describe('analysis folder loading', () => {
       });
       await render();
       expect(
-        container.querySelector('.ka-summary-queue--running'),
+        container.querySelector('[aria-label="Current scan progress"]'),
       ).not.toBeNull();
       analysisApi.getScanState.mockResolvedValue({ scanning: false });
       await act(async () => jest.advanceTimersByTime(2_000));

@@ -37,7 +37,8 @@ export const METRICS = ['Bpm', 'Key', 'Waveform', 'Loudness'];
 // 27 seconds on a 50k-track library. Anything wanting rows takes them from the paged, indexed
 // /musiclibrary/tracks query instead (see musicLibrary.getTrackPage).
 
-export const getScanState = async () => (await api.get('/analysis/scan')).data;
+export const getScanState = async () =>
+  (await api.get('/analysis/scan', { timeout: 10_000 })).data;
 
 // The tag-editing endpoints below key on a masked filename, but the paged library query only
 // knows paths. Resolved one row at a time, when someone actually edits that row — resolving the

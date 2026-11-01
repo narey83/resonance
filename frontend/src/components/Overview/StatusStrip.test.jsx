@@ -47,6 +47,13 @@ describe('Status and controls explanations', () => {
     expect(panel.textContent).toContain('3 folders');
   });
 
+  it('labels the top-bar count as file transfers', () => {
+    const panel = renderPanel({ queuedTransferCount: 42 });
+    expect(
+      panel.closest('.status-strip').querySelector('.status-chip').textContent,
+    ).toContain('42 transfers queued');
+  });
+
   it('uses the whole-queue counter with only active byte samples', () => {
     const panel = renderPanel({
       queuedTransferCount: 35_007,
