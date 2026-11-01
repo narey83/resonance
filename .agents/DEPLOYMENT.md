@@ -39,7 +39,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-layout-8f377fe/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-overview-8b411e1/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -275,6 +275,52 @@ browser monitor.
 Clean snapshot: `/home/narey/resonance-builds/analysis-layout-clean-8d1801afe1`.
 Rollback backup: `/home/narey/resonance-backups/analysis-layout-8f377fe`.
 Private Mac proof and scripts: `.dev/analysis-layout/deployment/`.
+
+## Compact analysis overview — 1 November 2026
+
+Deployed backend, web and gateway `analysis-overview-8b411e1` from source
+`8b411e176533b68b670d6972fdcbc268da09e353`. Backend PID 404591 uses the original
+application directory, arguments and private environment. Caddy PID 3992646 was
+reloaded in place; HTTP/1, HTTP/2 and HTTP/3, disabled early data, explicit 16 KiB
+headers, browser monitoring and existing routes were preserved. The published
+executable retains the queue recovery and native media-path corrections.
+
+Basic coverage, enhanced feature coverage and the shared preparation queue have
+their own sections. One Basic/Enhanced selection controls scan settings. Eleven
+enhanced cards count usable saved results; missing legacy coverage is shown as
+unknown/minimums until indexed. Vocals and cue/loop analysis may have no detections;
+stem analysis counts processing rather than retained audio. Full explanations
+are under Analysis details. All 35 existing complete enhanced summaries were
+backfilled with feature coverage without rerunning models. Automatic preparation
+remains paused. Dashboard reads use compact, path/size-guarded SQLite summaries,
+not audio or report files (35 rows; median 17 ms over five pre-deployment reads).
+
+A clean npm 11 install, ESLint/Prettier, 16 frontend tests, five dependency-security
+tests, production build, Release/StyleCop build (zero warnings/errors), and 130
+backend regression tests passed on the dev laptop. Desktop/phone production-build
+checks used 1,000 folders and 6,000 tracks: separate sections, fitting labels,
+settings interactions, final folder/track reachability, one scroll area, bounded
+rendered rows and no page errors. Results start 203 px earlier on desktop and
+153 px earlier on phone; with settings open, 340 px and 240 px earlier. Actual
+Mac Brave verified live counts, Basic/Enhanced scan labels, expandable details,
+page scrolling and an expanded folder with zero inner scroll offset. No scan or
+playback was started. Existing 79 moderate npm findings and source-map warnings
+remain. The optional legacy MSBuild FFmpeg download script is missing; the actual
+managed FFmpeg/ffprobe binaries and real native BPM/key detector passed preflight.
+
+The backend stopped gracefully. All 41,379 captured pending upload IDs and request
+metadata survived shutdown and startup, with no terminal changes at reconciliation.
+Both SQLite databases received consistent backups including committed WAL data,
+passed quick/foreign-key checks, and were fully copied and SHA-256 verified on
+the Mac before activation. The restart triggered a share scan; uploads wait for
+share readiness through the existing recovery mechanism. Public/backend/browser
+readiness and current HTML/JS/CSS hashes passed after activation. Do not confuse
+application readiness with completion of that background share scan.
+
+Checked snapshot: `/home/narey/resonance-builds/precommit-upload-paging-80f4a33fff`.
+Rollback/backups: `/home/narey/resonance-backups/analysis-overview-8b411e1`.
+Mac full backups: `.dev/analysis-compact/backups/8b411e1/`.
+Private checks, screenshot and deployment proof: `.dev/analysis-compact/`.
 
 ## Native enhanced analysis
 
