@@ -69,12 +69,30 @@
     "eslint-config-expo": "~57.0.2",
     "patch-package": "^8.0.1",
     "postinstall-postinstall": "^2.1.0",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "deepmerge": "file:vendor/deepmerge",
+    "minimatch": "file:vendor/minimatch-compat"
   },
   "private": true,
   "overrides": {
     "@expo/cli": {
       "zod": "^4.6.7"
+    },
+    "deepmerge": "$deepmerge",
+    "glob": {
+      ".": "^14.0.3",
+      "minimatch": "^11.0.3"
+    },
+    "minimatch": "$minimatch",
+    "@expo/fingerprint": {
+      "minimatch": "^11.0.3"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.3"
     }
+  },
+  "engines": {
+    "node": ">=22.13.0",
+    "npm": ">=11.0.0"
   }
 }

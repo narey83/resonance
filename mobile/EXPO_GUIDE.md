@@ -10,7 +10,7 @@ Resonance uses React Native Track Player, Google Cast, keyboard control and cust
 
 ## Requirements
 
-- Node.js **22.13 or newer** for Expo SDK 57, and npm.
+- Node.js **22.13 or newer** and **npm 11 or newer** for Expo SDK 57.
 - Android: Android SDK platform/build tools 36, a compatible Java toolchain and an emulator or USB-debugging device. The repository's Android CI uses JDK 17; generated native builds can also require the NDK and CMake.
 - iOS: macOS, a compatible Xcode installation with an iOS simulator runtime, and CocoaPods. SDK 57 documents Xcode 26.4+ and iOS 16.4+; physical-device and distribution builds require signing.
 - A running Resonance backend reachable from the test device.
@@ -80,7 +80,22 @@ Dependency security maintenance (30 October 2026): the lockfile updates `shell-q
 
 The scoped `@expo/cli` Zod override selects 4.6.7 or newer. Regression tests exercise Expo's plugin descriptors, command schemas and output validation against that major version. Keep the override until Expo's declared dependency accepts a patched Zod release.
 
-`deepmerge` 4.3.1 has no published patched version for [GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4). `patches/deepmerge+4.3.1.patch` uses own data properties when merging, preventing `__proto__` from changing the result's prototype. Tests cover poisoned source/target objects, nested values and both runtime entry points. `postinstall` must apply this patch. npm audit still reports seven low findings through Expo's dependency chain because it checks versions rather than local patches. No advisory is suppressed; the CI audit fails on moderate or higher findings. Replace the patch with an upstream release when one becomes available.
+Security maintenance (1 November 2026): `glob` is overridden to 14.0.3 for
+[GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4).
+Modern Glob, Expo fingerprint and TypeScript ESLint consumers use minimatch 11.0.3
+for [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+ESLint's legacy callable/regex API uses `vendor/minimatch-compat` with the narrow
+upstream preprocessing-limit fix backported to minimatch 10.2.6 in
+`vendor/minimatch-engine`. Its README records provenance and the upstream fix;
+regression tests exercise both module formats and the actual ESLint rule.
+
+`deepmerge` still has no published patched release for
+[GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4).
+`vendor/deepmerge` reuses the repository's audited security backport, defining own
+data properties so `__proto__` cannot change merged objects' prototypes. The root
+override routes all consumers to that explicit local version, replacing the old
+postinstall patch. Keep these backports until compatible upstream fixes exist;
+no advisories are suppressed. npm 11+ is required to resolve the local overrides.
 
 Then build and exercise the affected platform. Type checks cannot validate native linking, background playback, notification delivery, device permissions, casting or Android Auto. Screenshots are visual evidence for the displayed screens, not a substitute for those integration tests.
 
@@ -148,4 +163,9 @@ Laptop verification: 194 mobile tests, TypeScript checking, lint and Android/iOS
 bundle exports passed. On the Pixel, the checked first play reached Android's
 playing state in about 1.0 second (earlier baseline about 1.2 seconds); these small
 samples do not establish a consistent speedup across files or networks. The
-unchanged dependency tree's security audit reports 27 findings (2 low, 25 moderate).
+dependency audit at that point reported 27 findings; the security maintenance
+above replaces those affected dependencies.
+
+Security verification (1 November 2026): a clean npm 11 install, all 200 mobile
+tests, TypeScript, lint and Android/iOS bundle exports passed on the dev laptop.
+The full audit, including low-severity findings, reports zero vulnerabilities.

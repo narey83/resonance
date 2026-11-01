@@ -95,3 +95,88 @@ test('updated Xcode project parser preserves project data and generates valid ID
   reparsed.parseSync();
   assert.equal(reparsed.getFirstProject().uuid, project.getFirstProject().uuid);
 });
+
+test('legacy ESLint consumers use the patched matcher through a callable API', () => {
+  const eslintRequire = createRequire(require.resolve('eslint/package.json'));
+  const minimatch = eslintRequire('minimatch');
+  assert.equal(typeof minimatch, 'function');
+  assert.equal(minimatch('src/song.ts', '**/*.ts'), true);
+  assert.equal(minimatch('src/song.ts', '**/*.js'), false);
+  assert.deepEqual(['src/song.ts', 'src/song.js'].filter(minimatch.filter('**/*.ts')), ['src/song.ts']);
+  assert.equal(new minimatch.Minimatch('**/*.ts').match('src/song.ts'), true);
+  assert.equal(minimatch.defaults({ nocase: true })('SONG.TS', '*.ts'), true);
+  assert.equal(minimatch.defaults({ nocase: true }).defaults({ dot: true })('.SONG.TS', '*.ts'), true);
+  assert.equal(minimatch.makeRe('**/*.ts').test('src/song.ts'), true);
+  assert.deepEqual(minimatch.braceExpand('*.{ts,tsx}'), ['*.ts', '*.tsx']);
+});
+
+test('cancelled glob traversal stops before reading directories', async t => {
+  const { glob } = cliRequire('glob');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'resonance-glob-security-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(directory, 'nested'));
+  fs.writeFileSync(path.join(directory, 'nested', 'song.ts'), 'test');
+  assert.deepEqual(await glob('**/*.ts', { cwd: directory }), ['nested/song.ts']);
+  const controller = new AbortController();
+  const reason = new Error('cancelled'); controller.abort(reason);
+  let reads = 0;
+  const trackedFs = { ...fs, readdir: (...args) => { reads++; return fs.readdir(...args); } };
+  await assert.rejects(glob('**/*', { cwd: directory, signal: controller.signal, fs: trackedFs }), /cancelled/);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(reads, 0);
+});
+
+test('modern ESM consumers retain named matcher exports', async () => {
+  const { minimatch, Minimatch } = await import('minimatch');
+  assert.equal(minimatch('src/song.ts', '**/*.ts'), true);
+  assert.equal(new Minimatch('**/*.ts').match('src/song.ts'), true);
+});
+
+test('glob cancellation during traversal prevents further directory reads', async t => {
+  const { glob } = cliRequire('glob');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'resonance-glob-midwalk-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  for (let i = 0; i < 8; i++) fs.mkdirSync(path.join(directory, `child-${i}`, 'nested'), { recursive: true });
+  const controller = new AbortController(); let reads = 0;
+  const trackedFs = { ...fs, readdir: (name, options, callback) => {
+    reads++;
+    fs.readdir(name, options, (...result) => {
+      controller.abort(new Error('cancelled during read'));
+      callback(...result);
+    });
+  } };
+  await assert.rejects(glob('**/*', { cwd: directory, signal: controller.signal, fs: trackedFs }), /cancelled during read/);
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(reads, 1);
+});
+
+test('both legacy engine formats bound adversarial preprocessing', () => {
+  const { execFileSync } = require('node:child_process');
+  const script = `
+    const assert = require('node:assert/strict');
+    const { createRequire } = require('node:module');
+    const engineRequire = createRequire(require.resolve('minimatch'));
+    const esm = require('node:path').join(require('node:path').dirname(engineRequire.resolve('minimatch-engine/package.json')), 'dist/esm/index.js');
+    (async () => {
+      for (const engine of [engineRequire('minimatch-engine'), await import(require('node:url').pathToFileURL(esm).href)]) {
+        const pattern = Array(30).fill('**/../a/b').join('/');
+        const matcher = new engine.Minimatch(pattern, { optimizationLevel: 2, braceExpandMax: 64 });
+        assert.equal(matcher.set.length, 64);
+      }
+    })();
+  `;
+  execFileSync(process.execPath, ['--max-old-space-size=64', '-e', script], {
+    cwd: path.resolve(__dirname, '..'), timeout: 5000, stdio: 'pipe',
+  });
+});
+
+test('the ESLint internal-modules rule retains its regex-generation API', () => {
+  const { Linter } = require('eslint');
+  const plugin = require('eslint-plugin-import');
+  const linter = new Linter();
+  const messages = linter.verify('import value from "example/allowed/file";', [{
+    plugins: { import: plugin },
+    rules: { 'import/no-internal-modules': ['error', { allow: ['**/allowed/*'] }] },
+  }], { filename: 'example.js' });
+  assert.deepEqual(messages, []);
+});

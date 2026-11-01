@@ -42,3 +42,7 @@ yarn-error.*
 
 # Firebase credentials — per-environment, generated from the user's own Firebase project
 /google-services.json
+
+# Reviewed upstream distributions required by the security backport.
+!vendor/minimatch-engine/dist/
+!vendor/minimatch-engine/dist/**
