@@ -695,6 +695,12 @@ const Analysis = () => {
   // from anywhere else refreshes the window too.
   const [refreshNonce, setRefreshNonce] = useState(0);
   const libraryRevision = useLibraryActivity()?.libraryRevision ?? 0;
+  const summaryRef = useRef({
+    request: null,
+    lastStarted: Number.NEGATIVE_INFINITY,
+    dirty: false,
+    revision: libraryRevision,
+  });
   // Tag writes during a scan can broadcast every second. Keep the complete folder
   // listing in place, then refresh its values when the scan finishes.
   const idleRevisionRef = useRef(libraryRevision);
@@ -778,23 +784,49 @@ const Analysis = () => {
     setRecentlyUpdated((current) => new Set([...current, ...finished]));
   }, [inFlight]);
 
-  const loadSummary = useCallback(async () => {
-    try {
-      const [nextStats, nextPreparation] = await Promise.all([
-        musicLibraryApi.getAnalysisStats(),
-        getPreparationStatus().catch(() => null),
-      ]);
-      if (!mountedRef.current) return;
-      setStats(nextStats);
-      setPreparation(nextPreparation);
-    } catch {
-      /* the counts are a headline, not the page — the list still renders without them */
-    }
-  }, []);
+  const loadSummary = useCallback(
+    (includePreparation = true, force = false) => {
+      const summary = summaryRef.current;
+      summary.dirty = true;
+      if (
+        summary.request ||
+        (!force && Date.now() - summary.lastStarted < 4_000)
+      )
+        return summary.request;
+      summary.dirty = false;
+      summary.lastStarted = Date.now();
+      summary.request = (async () => {
+        try {
+          const [nextStats, nextPreparation] = await Promise.all([
+            musicLibraryApi.getAnalysisStats(),
+            includePreparation
+              ? getPreparationStatus().catch(() => null)
+              : Promise.resolve(null),
+          ]);
+          if (!mountedRef.current) return;
+          setStats(nextStats);
+          if (nextPreparation) setPreparation(nextPreparation);
+        } catch {
+          // Retain the last counts and retry on a later poll instead of displaying zeroes.
+          summary.dirty = true;
+        }
+      })().finally(() => {
+        summary.request = null;
+      });
+      return summary.request;
+    },
+    [],
+  );
 
   useEffect(() => {
-    void loadSummary();
-  }, [libraryRevision, loadSummary, refreshNonce]);
+    void loadSummary(true, true);
+  }, [loadSummary, refreshNonce]);
+
+  useEffect(() => {
+    if (summaryRef.current.revision === libraryRevision) return;
+    summaryRef.current.revision = libraryRevision;
+    void loadSummary(false);
+  }, [libraryRevision, loadSummary]);
 
   const refresh = useCallback(() => setRefreshNonce((n) => n + 1), []);
 
@@ -852,35 +884,50 @@ const Analysis = () => {
   // automatic post-download check starts while this page is just sitting open still
   // shows up — completion is detected separately, above.
   useEffect(() => {
-    pollRef.current = setInterval(async () => {
-      try {
-        const [state, nextPreparation] = await Promise.all([
-          analysisApi.getScanState(),
-          getPreparationStatus().catch(() => null),
-        ]);
-        if (!mountedRef.current) {
-          clearInterval(pollRef.current);
-          return;
+    let pending = null;
+    pollRef.current = setInterval(() => {
+      if (pending) return;
+      pending = (async () => {
+        try {
+          const [state, nextPreparation] = await Promise.all([
+            analysisApi.getScanState(),
+            getPreparationStatus().catch(() => null),
+          ]);
+          if (!mountedRef.current) {
+            clearInterval(pollRef.current);
+            return;
+          }
+
+          if (nextPreparation) setPreparation(nextPreparation);
+
+          // A scan that started without this page's own startScan() (i.e. the automatic
+          // check) still needs finalizing when it ends.
+          if (state.scanning && !wasScanningRef.current) {
+            finalizingRef.current = false;
+          }
+
+          wasScanningRef.current = state.scanning;
+
+          setScanState(state);
+          if (
+            state.scanning ||
+            nextPreparation?.counts?.running > 0 ||
+            summaryRef.current.dirty
+          ) {
+            // Headline counts have their own bounded, single-flight refresh. Never reload
+            // folders or track windows just to update the cards, or delay activity polling.
+            void loadSummary(false);
+          }
+        } catch {
+          /* ignore */
         }
-
-        if (nextPreparation) setPreparation(nextPreparation);
-
-        // A scan that started without this page's own startScan() (i.e. the automatic
-        // check) still needs finalizing when it ends.
-        if (state.scanning && !wasScanningRef.current) {
-          finalizingRef.current = false;
-        }
-
-        wasScanningRef.current = state.scanning;
-
-        setScanState(state);
-      } catch {
-        /* ignore */
-      }
+      })().finally(() => {
+        pending = null;
+      });
     }, 2_000);
 
     return () => clearInterval(pollRef.current);
-  }, []);
+  }, [loadSummary]);
 
   // paths, not masked filenames: the backend resolves them against the share in one query
   // rather than the page doing a lookup per row before it can ask for anything.

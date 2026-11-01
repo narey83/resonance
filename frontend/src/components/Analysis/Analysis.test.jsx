@@ -1,3 +1,4 @@
+import { useLibraryActivity } from '../../context/LibraryActivityContext';
 import * as analysisApi from '../../lib/analysis';
 import {
   getPreparationStatus,
@@ -31,7 +32,7 @@ jest.mock(
 );
 jest.mock('../../lib/usePagedList', () => ({ usePagedList: jest.fn() }));
 jest.mock('../../context/LibraryActivityContext', () => ({
-  useLibraryActivity: () => ({ libraryRevision: 0 }),
+  useLibraryActivity: jest.fn(() => ({ libraryRevision: 0 })),
 }));
 jest.mock('../../lib/analysis', () => ({
   METRICS: ['Key', 'Bpm'],
@@ -72,6 +73,7 @@ describe('analysis folder loading', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    useLibraryActivity.mockReturnValue({ libraryRevision: 0 });
     pausePreparation.mockResolvedValue({});
     analysisApi.cancelScan.mockResolvedValue({});
     musicLibraryApi.getAnalysisStats.mockResolvedValue({
@@ -257,6 +259,152 @@ describe('analysis folder loading', () => {
     );
   });
 
+  it('refreshes Basic cards during a scan without library notifications or track-list reloads, then refreshes on completion', async () => {
+    expect.hasAssertions();
+    jest.useFakeTimers();
+    try {
+      analysisApi.getScanState.mockResolvedValue({ scanning: true });
+      await render();
+      expect(musicLibraryApi.getAnalysisStats).toHaveBeenCalledTimes(1);
+      musicLibraryApi.getAnalysisStats.mockResolvedValue({
+        total: 3,
+        complete: 1,
+        keyed: 1,
+        bpmed: 1,
+        waveformed: 1,
+        loudness: 1,
+      });
+      await act(async () => jest.advanceTimersByTime(2_000));
+      expect(musicLibraryApi.getAnalysisStats).toHaveBeenCalledTimes(1);
+      await act(async () => jest.advanceTimersByTime(2_000));
+      expect(
+        container.querySelector('.ka-summary-basic').textContent,
+      ).toContain('1Ready');
+      expect(musicLibraryApi.getAnalysisStats).toHaveBeenCalledTimes(2);
+      expect(musicLibraryApi.getTrackPage).not.toHaveBeenCalled();
+      expect(usePagedList.mock.calls.at(-1)[2].refreshToken).toBe(0);
+      analysisApi.getScanState.mockResolvedValue({
+        scanning: false,
+        completed: true,
+      });
+      musicLibraryApi.getAnalysisStats.mockResolvedValue({
+        total: 3,
+        complete: 3,
+      });
+      await act(async () => jest.advanceTimersByTime(2_000));
+      expect(
+        container.querySelector('.ka-summary-basic').textContent,
+      ).toContain('3Ready');
+      expect(musicLibraryApi.getAnalysisStats).toHaveBeenCalledTimes(3);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+  it('refreshes coverage for automatic preparation even without a manual scan', async () => {
+    expect.hasAssertions();
+    jest.useFakeTimers();
+    try {
+      getPreparationStatus.mockResolvedValue({
+        paused: false,
+        counts: { running: 2 },
+      });
+      await render();
+      musicLibraryApi.getAnalysisStats.mockResolvedValue({
+        total: 3,
+        complete: 2,
+      });
+      await act(async () => jest.advanceTimersByTime(4_000));
+      expect(
+        container.querySelector('.ka-summary-basic').textContent,
+      ).toContain('2Ready');
+      expect(musicLibraryApi.getAnalysisStats).toHaveBeenCalledTimes(2);
+      expect(analysisApi.startScan).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+  it('does not repeatedly fetch headline counts for an idle queued library', async () => {
+    expect.hasAssertions();
+    jest.useFakeTimers();
+    try {
+      getPreparationStatus.mockResolvedValue({
+        paused: true,
+        counts: { queued: 59_376, running: 0 },
+      });
+      await render();
+      await act(async () => jest.advanceTimersByTime(12_000));
+      expect(musicLibraryApi.getAnalysisStats).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+  it('coalesces slow summary requests, library notifications and manual refreshes without delaying activity polling', async () => {
+    expect.hasAssertions();
+    jest.useFakeTimers();
+    try {
+      analysisApi.getScanState.mockResolvedValue({ scanning: true });
+      await render();
+      let finish;
+      musicLibraryApi.getAnalysisStats.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      await act(async () => jest.advanceTimersByTime(4_000));
+      await act(async () => jest.advanceTimersByTime(4_000));
+      useLibraryActivity.mockReturnValue({ libraryRevision: 1 });
+      await render();
+      await act(async () =>
+        container.querySelector('.ka-toolbar [title="Refresh tracks"]').click(),
+      );
+      expect(musicLibraryApi.getAnalysisStats).toHaveBeenCalledTimes(2);
+      expect(analysisApi.getScanState.mock.calls.length).toBeGreaterThan(2);
+      await act(async () => finish({ total: 3, complete: 1 }));
+      expect(
+        container.querySelector('.ka-summary-basic').textContent,
+      ).toContain('1Ready');
+      musicLibraryApi.getAnalysisStats.mockResolvedValue({
+        total: 3,
+        complete: 2,
+      });
+      await act(async () => jest.advanceTimersByTime(4_000));
+      expect(
+        container.querySelector('.ka-summary-basic').textContent,
+      ).toContain('2Ready');
+      expect(musicLibraryApi.getAnalysisStats).toHaveBeenCalledTimes(3);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+  it('retains the last card values on a failed refresh and retries at the bounded interval', async () => {
+    expect.hasAssertions();
+    jest.useFakeTimers();
+    try {
+      analysisApi.getScanState.mockResolvedValue({ scanning: true });
+      musicLibraryApi.getAnalysisStats.mockResolvedValue({
+        total: 3,
+        complete: 1,
+      });
+      await render();
+      musicLibraryApi.getAnalysisStats
+        .mockRejectedValueOnce(new Error('temporarily busy'))
+        .mockResolvedValue({ total: 3, complete: 2 });
+      await act(async () => jest.advanceTimersByTime(4_000));
+      expect(
+        container.querySelector('.ka-summary-basic').textContent,
+      ).toContain('1Ready');
+      await act(async () => jest.advanceTimersByTime(2_000));
+      expect(musicLibraryApi.getAnalysisStats).toHaveBeenCalledTimes(2);
+      await act(async () => jest.advanceTimersByTime(2_000));
+      expect(
+        container.querySelector('.ka-summary-basic').textContent,
+      ).toContain('2Ready');
+      expect(musicLibraryApi.getAnalysisStats).toHaveBeenCalledTimes(3);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
   it('resumes automatic preparation explicitly without starting a manual library scan', async () => {
     expect.hasAssertions();
     await render();
