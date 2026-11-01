@@ -39,7 +39,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-ring-1cdb0a6/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-controls-2bb4430/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -562,6 +562,49 @@ source-map/bundle-size warnings and deprecations remain.
 Snapshot: `/home/narey/resonance-builds/precommit-upload-paging-1851affbc9`.
 Rollback: `/home/narey/resonance-backups/analysis-ring-1cdb0a6`.
 Private checks and active-state/live-idle screenshots: `.dev/analysis-ring/`.
+
+## Visible preparation controls and selection progress — 1 November 2026
+
+Live web/gateway: `analysis-controls-2bb4430`, source
+`2bb44304dbbecff21180a1ac7d303388753ee567`. The unified analysis page previously
+showed automatic preparation as Paused but omitted the existing resume/pause action.
+Preparation queue now contains **Resume** / **Pause** and **Stop**. Resume processes
+the automatic queue, independently of the manual selected-track action. Pause lets
+active tracks finish. Stop pauses scheduling before cancelling current analysis,
+so automatic work cannot immediately restart; queued work is retained. Busy/error
+handling preserves usable controls. There is one Stop control, replacing the old
+separate manual Cancel button. No backend endpoint or worker changes.
+
+Explicit Select all/folder selection now shows loaded/total progress and a
+**Cancel selection** action. AbortSignal reaches the track-page request; query
+changes/unmount also cancel outstanding selection work. Cancelled/obsolete results
+cannot commit a partial selection or overwrite a newer operation. Results offsets
+are recalculated when progress appears/disappears. Empty manual selections remain
+blocked. Browsing still fetches only visible track windows; bulk track listing
+happens only after explicit selection.
+
+On the dev laptop: clean dependency installation, ESLint/Prettier, 42 frontend
+regressions, five dependency-security tests and production build passed. Browser
+fixtures at 1440/1100/800/390 exercised Resume → Pause → Stop with pause-before-
+cancel ordering, all 31,324 matching tracks across 1,000 folders, selection progress,
+manual-start protection, ring/reduced-motion behavior, refresh and virtual browsing.
+No page errors, clipping or horizontal overflow; desktop/phone screenshots inspected.
+Actual Mac Brave verified Resume visible/enabled while paused, idle Stop disabled,
+selection progress/cancellation with controls immediately re-enabled, and successful
+selection of all 59,413 tracks / 75 folders with the explicit manual Start enabled.
+The test selection was cleared. No live Resume/Start/Stop mutation was made during
+QA; automatic preparation was left paused. Queue mutations were tested in fixtures.
+
+Web-only activation verified current/retained asset hashes and readiness; 127 old
+assets retained. Backend PID 476721 and Caddy PID 3992646 unchanged. Backend remains
+`analysis-folder-first-1164c3c`; HTTP/1/2/3, disabled early data and explicit 16 KiB
+headers preserved. No database, environment or queue changes during deployment.
+Backend tests not rerun for this frontend-only change. Existing 79 moderate npm
+findings and source-map/bundle-size/deprecation warnings remain.
+
+Snapshot: `/home/narey/resonance-builds/precommit-upload-paging-9fed55c50f`.
+Rollback: `/home/narey/resonance-backups/analysis-controls-2bb4430`.
+Private checks and live screenshots: `.dev/analysis-controls/`.
 
 ## Native enhanced analysis
 
