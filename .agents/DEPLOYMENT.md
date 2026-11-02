@@ -1497,3 +1497,32 @@ state were preserved. Backend code and dependencies did not change.
 Evidence/logs: `trackanalysis-*` and `trackanalysis-review/` within the active source
 snapshot. Private Mac review/browser/staged-source helpers: `.dev/trackanalysis-review/`.
 See `docs/analysis-folder-browsing.md` for the updated workflow.
+
+
+## Prepared pause/resume/end controls — awaiting activation, 2 November 2026
+
+Source `6ee41f2` adds primary Pause after current tracks / Resume scan and a
+secondary End scan, selected explicitly by the user. Native artifact is prepared,
+**not active**, at `/home/narey/resonance-releases/analysis-controls-6ee41f2`.
+Its `SHA256SUMS.json` and `deployment.prepared.json` are verified. Tests/build/
+publish/audit/detector/browser evidence is in
+`/home/narey/resonance-builds/analysis-controls-20261102` (153 backend tests,
+55 frontend tests, zero compiler warnings/advisories; browser previews use controlled
+scan fixtures and make no live scan-control requests). An artifact-manifest path
+mistake was corrected before final package hash verification.
+
+The frontend is hot-reloaded and capability-gated; the active old backend does
+not advertise supportsPause, so the running scan still has its prior control.
+The native backend remains `upload-people-1ce4e09-retry1`, PID 1206121. No backend
+restart or scan mutation has been performed. Native activation needs a restart,
+which ends the current pre-feature manual scan; completed results remain saved.
+Get the user's timing decision before interrupting that scan. Do not claim the
+new queue controls are live before native activation and validation. The user
+questioned the distinction between frontend hot reload and the native backend;
+only the frontend has been switched to a watcher so far. Preserve the dev frontend
+service and gateway when performing a backend-only activation, and follow the
+existing upload ID/metadata reconciliation workflow without a database backup.
+
+Frontend runtime source in the backend record is `6ee41f2`; previous static fallback
+metadata is unchanged. Review helpers: `.dev/analysis-controls/`. The temporary
+isolated preview server was stopped; the persistent dev frontend remains running.
