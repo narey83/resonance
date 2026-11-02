@@ -1083,3 +1083,8 @@
   .ul-complete-header { gap: 8px; }
   .ul-complete-count { font-size: 11px; }
 }
+
+.ul-folder-toggle { align-items: center; background: transparent; border: 0; color: inherit; cursor: pointer; display: flex; flex: 1; flex-wrap: wrap; font: inherit; gap: 8px; min-width: 0; padding: 0; text-align: left; }
+.ul-folder-toggle > svg { flex-shrink: 0; }
+.ul-folder-toggle > span { color: var(--text-muted); font-size: 11px; }
+.ul-folder-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }

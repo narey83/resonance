@@ -30,8 +30,8 @@ import { isStateCancellable } from '../../lib/transfers';
 import { formatBitrate, formatBytes, getFileName } from '../../lib/util';
 import { UsernameLink } from '../Shared';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Folder, X } from 'lucide-react';
-import React, { useEffect, useMemo, useRef } from 'react';
+import { ChevronDown, ChevronRight, Folder, X } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const isSending = (file) => ['InProgress', 'Initializing'].includes(file.state);
 const isPending = (file) =>
@@ -156,17 +156,36 @@ const UploadsTable = ({
     }),
     [selectedUsername, transfers],
   );
+  const [expanded, setExpanded] = useState({
+    username: null,
+    folders: new Set(),
+  });
+  const toggleFolder = (directory) => {
+    setExpanded((previous) => {
+      const folders = new Set(
+        previous.username === selectedUsername ? previous.folders : [],
+      );
+      if (folders.has(directory)) folders.delete(directory);
+      else folders.add(directory);
+      return { username: selectedUsername, folders };
+    });
+  };
+
   const rows = useMemo(
     () =>
       user.directories.flatMap((directory) => [
         { key: `folder-${directory.directory}`, type: 'folder', directory },
-        ...directory.files.map((file) => ({
+        ...(expanded.username === selectedUsername &&
+        expanded.folders.has(directory.directory)
+          ? directory.files
+          : []
+        ).map((file) => ({
           key: file.id,
           type: 'file',
           file,
         })),
       ]),
-    [user],
+    [expanded, selectedUsername, user],
   );
   const fileCount = user.directories.reduce(
     (sum, directory) => sum + directory.files.length,
@@ -182,6 +201,7 @@ const UploadsTable = ({
   });
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    setExpanded({ username: selectedUsername, folders: new Set() });
   }, [selectedUsername]);
   return (
     <div
@@ -314,17 +334,42 @@ const UploadsTable = ({
                             className="ul-folder-content"
                             role="cell"
                           >
-                            <Folder size={15} />
-                            <strong>
-                              {row.directory.directory
-                                .split(/[/\\]/u)
-                                .filter(Boolean)
-                                .at(-1) ?? row.directory.directory}
-                            </strong>
-                            <span>
-                              {row.directory.files.length.toLocaleString()}{' '}
-                              tracks
-                            </span>
+                            <button
+                              aria-expanded={
+                                expanded.username === selectedUsername &&
+                                expanded.folders.has(row.directory.directory)
+                              }
+                              className="ul-folder-toggle"
+                              onClick={() =>
+                                toggleFolder(row.directory.directory)
+                              }
+                              title={row.directory.directory}
+                              type="button"
+                            >
+                              {expanded.username === selectedUsername &&
+                              expanded.folders.has(row.directory.directory) ? (
+                                <ChevronDown size={15} />
+                              ) : (
+                                <ChevronRight size={15} />
+                              )}
+                              <Folder size={15} />
+                              <strong>
+                                {row.directory.directory
+                                  .split(/[/\\]/u)
+                                  .filter(Boolean)
+                                  .at(-1) ?? row.directory.directory}
+                              </strong>
+                              <span>
+                                {row.directory.files.length.toLocaleString()}{' '}
+                                tracks
+                              </span>
+                              {row.directory.files.some(isSending) && (
+                                <span>
+                                  {row.directory.files.filter(isSending).length}{' '}
+                                  sending/connecting
+                                </span>
+                              )}
+                            </button>
                             <button
                               className="ul-folder-block"
                               onClick={() =>

@@ -65,6 +65,9 @@ describe('One complete upload list and one user header', () => {
     });
   };
 
+  const expandFirst = () =>
+    act(() => Simulate.click(container.querySelector('.ul-folder-toggle')));
+
   beforeEach(() => {
     container = document.createElement('div');
     document.body.append(container);
@@ -75,13 +78,28 @@ describe('One complete upload list and one user header', () => {
     });
     container.remove();
   });
-  it('shows every track without pagination, show-more or repeated user headings', async () => {
+  it('defaults to closed folders and expands every track without pagination or duplicate headings', async () => {
     expect.hasAssertions();
     await render({
       transfers: transfers(
         Array.from({ length: 45 }, (_, i) => file(String(i))),
       ),
     });
+    expect(container.querySelectorAll('[data-file-id]')).toHaveLength(0);
+    expect(
+      container
+        .querySelector('.ul-folder-toggle')
+        .getAttribute('aria-expanded'),
+    ).toBe('false');
+    expect(container.querySelector('.ul-folder-toggle').textContent).toContain(
+      '45 tracks',
+    );
+    expandFirst();
+    expect(
+      container
+        .querySelector('.ul-folder-toggle')
+        .getAttribute('aria-expanded'),
+    ).toBe('true');
     expect(container.querySelectorAll('[data-file-id]')).toHaveLength(45);
     expect(
       container.querySelector('[data-file-id="44"]').textContent,
@@ -127,6 +145,7 @@ describe('One complete upload list and one user header', () => {
     expect.hasAssertions();
     const files = transfers([file('one')]);
     await render({ transfers: files });
+    expandFirst();
     await render({
       transfers: files,
       queueUsers: [
@@ -174,6 +193,7 @@ describe('One complete upload list and one user header', () => {
       onCancelDirectory,
       transfers: transfers([track]),
     });
+    expandFirst();
     act(() =>
       Simulate.click(
         container.querySelector('[aria-label="Cancel Track one.flac"]'),
@@ -200,11 +220,61 @@ describe('One complete upload list and one user header', () => {
         file('old', 'Completed, Succeeded'),
       ]),
     });
+    expect(container.querySelector('.ul-folder-toggle').textContent).toContain(
+      '1 sending/connecting',
+    );
+    expandFirst();
     expect(container.querySelectorAll('[data-file-id]')).toHaveLength(2);
     expect(
       container.querySelector('[data-file-id="active"]').textContent,
     ).toContain('25%');
     expect(container.textContent).not.toContain('Track old.flac');
+  });
+  it('collapses independently and defaults closed when switching recipients', async () => {
+    expect.hasAssertions();
+    const props = {
+      transfers: [
+        {
+          username: 'listener',
+          directories: [
+            { directory: 'Music/Album', files: [file('one')] },
+            { directory: 'Music/Other', files: [file('two')] },
+          ],
+        },
+      ],
+    };
+    await render(props);
+    expandFirst();
+    expect(container.querySelectorAll('[data-file-id]')).toHaveLength(1);
+    expect(container.querySelector('[data-file-id="two"]')).toBeNull();
+    expandFirst();
+    expect(container.querySelectorAll('[data-file-id]')).toHaveLength(0);
+    expandFirst();
+    await render({
+      selectedUsername: 'other',
+      transfers: [
+        {
+          username: 'other',
+          directories: [
+            {
+              directory: 'Music/Album',
+              files: [{ ...file('other'), username: 'other' }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(
+      container
+        .querySelector('.ul-folder-toggle')
+        .getAttribute('aria-expanded'),
+    ).toBe('false');
+    expect(container.querySelectorAll('[data-file-id]')).toHaveLength(0);
+    expect(container.querySelector('.ul-complete').dataset.totalTracks).toBe(
+      '1',
+    );
+    await render(props);
+    expect(container.querySelectorAll('[data-file-id]')).toHaveLength(0);
   });
   it('handles an empty recipient queue', async () => {
     expect.hasAssertions();
