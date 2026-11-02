@@ -1,22 +1,17 @@
 import { usePlayer } from '../../../context/PlayerContext';
-import usePreparationStatus from '../../../hooks/usePreparationStatus';
-import {
-  pausePreparation,
-  retryPreparation,
-} from '../../../lib/libraryWorkspace';
+import { retryPreparation } from '../../../lib/libraryWorkspace';
 import { usePagedList } from '../../../lib/usePagedList';
-import PreparationView, { PreparationHomeCard } from './PreparationView';
+import AppContext from '../../AppContext';
+import PreparationView from './BackgroundAnalysisQueue';
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { act, Simulate } from 'react-dom/test-utils';
 import { MemoryRouter } from 'react-router-dom';
 
 jest.mock('../../../context/PlayerContext', () => ({ usePlayer: jest.fn() }));
-jest.mock('../../../hooks/usePreparationStatus', () => jest.fn());
 jest.mock('../../../lib/usePagedList', () => ({ usePagedList: jest.fn() }));
 jest.mock('../../../lib/libraryWorkspace', () => ({
   ...jest.requireActual('../../../lib/libraryWorkspace'),
-  pausePreparation: jest.fn(),
   retryPreparation: jest.fn(),
 }));
 jest.mock('./AlbumArt', () => () => <span>Artwork</span>);
@@ -33,21 +28,19 @@ describe('Preparation workspace', () => {
   let container;
   let playQueue;
   const refresh = jest.fn();
+  let status;
   beforeEach(() => {
     jest.clearAllMocks();
     playQueue = jest.fn();
     usePlayer.mockReturnValue({ playQueue });
-    usePreparationStatus.mockReturnValue({
-      status: {
-        total: 15,
-        counts: { complete: 13, basic: 1, retrying: 1 },
-        paused: false,
-        enhancedEnabled: true,
-        lastCheckedAt: 1,
-        enrichment: { enabled: false },
-      },
-      refresh,
-    });
+    status = {
+      total: 15,
+      counts: { complete: 13, basic: 1, retrying: 1 },
+      paused: false,
+      enhancedEnabled: true,
+      lastCheckedAt: 1,
+      enrichment: { enabled: false },
+    };
     usePagedList.mockReturnValue({
       items: [
         {
@@ -65,7 +58,6 @@ describe('Preparation workspace', () => {
       total: 1,
       loading: false,
     });
-    pausePreparation.mockResolvedValue({});
     retryPreparation.mockResolvedValue({});
     container = document.createElement('div');
     document.body.append(container);
@@ -80,7 +72,10 @@ describe('Preparation workspace', () => {
     act(async () => {
       ReactDOM.render(
         <MemoryRouter>
-          <PreparationView />
+          <PreparationView
+            onRefresh={refresh}
+            status={status}
+          />
         </MemoryRouter>,
         container,
       );
@@ -88,11 +83,10 @@ describe('Preparation workspace', () => {
   it('uses existing enrichment settings and groups the stages consistently', async () => {
     expect.hasAssertions();
     await render();
-    expect(container.textContent).toContain('14 of 15 tracks analysed');
+    expect(container.textContent).not.toContain('14 of 15 tracks analysed');
+    expect(container.textContent).toContain('Background analysis queue');
     expect(container.textContent).toContain('Automatic enrichment is off');
-    await click(container, 'Analysed');
-    expect(usePagedList.mock.calls.at(-1)[1].state).toBe('analysed');
-    await click(container, 'Waiting');
+    await click(container, 'Background waiting');
     expect(usePagedList.mock.calls.at(-1)[1].state).toBe('waiting');
   });
   it('queues playback with the current BPM and key intact', async () => {
@@ -114,51 +108,102 @@ describe('Preparation workspace', () => {
     );
   });
 
-  it('shows the missing-package stop reason on Home and in Preparation', async () => {
+  it('shows background failures without describing the whole library as stopped', async () => {
     expect.hasAssertions();
-    const analysisError =
-      'Basic analysis stopped: required Essentia packages are missing.';
-    usePreparationStatus.mockReturnValue({
-      status: { total: 1, paused: true, counts: { failed: 1 }, analysisError },
-      refresh,
-    });
+    status = {
+      total: 59_413,
+      paused: true,
+      counts: { complete: 36, queued: 59_377, failed: 1 },
+      analysisError: 'Background worker unavailable',
+    };
     await render();
+    expect(container.textContent).toContain('Background scheduling off');
+    expect(container.textContent).toContain('59377');
+    expect(container.textContent).not.toContain('36 of 59413');
     expect(container.querySelector('[role="alert"]').textContent).toBe(
-      analysisError,
+      'Background worker unavailable',
     );
-    act(() => {
-      ReactDOM.render(<PreparationHomeCard />, container);
-    });
-    expect(container.textContent).toContain('Analysis stopped');
-    expect(container.querySelector('[role="alert"]').textContent).toBe(
-      analysisError,
-    );
+    expect(container.textContent).not.toContain('Resume preparation');
   });
-  it('shows an analysed library as up to date during playback', async () => {
+  it('retains all stage filters, refresh and pagination', async () => {
     expect.hasAssertions();
-    usePreparationStatus.mockReturnValue({
-      status: {
-        total: 15,
-        counts: { complete: 15 },
-        enhancedEnabled: true,
-        lastCheckedAt: 1,
-        waitingReason: 'Waiting for playback to go idle',
-        enrichment: { enabled: true },
-      },
-      refresh,
+    const loadMore = jest.fn();
+    usePagedList.mockReturnValue({
+      items: [],
+      total: 100,
+      loading: false,
+      loadMore,
     });
     await render();
-    expect(container.textContent).toContain('Up to date');
-    expect(container.textContent).not.toContain(
-      'Waiting for playback to go idle',
+    const select = container.querySelector('select');
+    expect([...select.options].map((option) => option.value)).toEqual([
+      '',
+      'analysed',
+      'waiting',
+      'complete',
+      'basic',
+      'queued',
+      'running',
+      'retrying',
+      'failed',
+    ]);
+    await act(async () =>
+      Simulate.change(select, { target: { value: 'failed' } }),
     );
-  });
-  it('pauses automatic preparation without changing enrichment', async () => {
-    expect.hasAssertions();
-    await render();
-    await click(container, 'Pause after active tracks');
-    expect(pausePreparation).toHaveBeenCalledWith(true);
+    expect(usePagedList.mock.calls.at(-1)[1].state).toBe('failed');
+    await click(container, 'Load more');
+    expect(loadMore).toHaveBeenCalledWith();
+    await act(async () =>
+      Simulate.click(
+        container.querySelector('[aria-label="Refresh background queue"]'),
+      ),
+    );
     expect(refresh).toHaveBeenCalledWith();
+  });
+  it('shows retry failures instead of reporting success', async () => {
+    expect.hasAssertions();
+    retryPreparation.mockRejectedValueOnce(new Error('offline'));
+    usePagedList.mockReturnValue({
+      items: [
+        { state: 'failed', track: { path: '/failed.mp3', title: 'Failed' } },
+      ],
+      total: 1,
+    });
+    await render();
+    await click(container, 'Retry analysis');
+    expect(container.querySelector('[role="alert"]').textContent).toContain(
+      'Could not reach the library',
+    );
+    expect(refresh).not.toHaveBeenCalled();
+  });
+  it('preserves the enrichment settings link for administrators', async () => {
+    expect.hasAssertions();
+    await act(async () => {
+      ReactDOM.render(
+        <MemoryRouter>
+          <AppContext.Provider value={{ isAdmin: true }}>
+            <PreparationView
+              onRefresh={refresh}
+              status={status}
+            />
+          </AppContext.Provider>
+        </MemoryRouter>,
+        container,
+      );
+    });
+    expect(container.querySelector('a').getAttribute('href')).toBe(
+      '/system/options',
+    );
+  });
+  it('shows unknown queue counts as unavailable instead of zero', async () => {
+    expect.hasAssertions();
+    status = null;
+    await render();
+    expect(
+      [...container.querySelectorAll('.preparation-metrics strong')].map(
+        (el) => el.textContent,
+      ),
+    ).toEqual(['—', '—', '—']);
   });
   it('retries only the requested failed track', async () => {
     expect.hasAssertions();

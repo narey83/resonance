@@ -1833,3 +1833,37 @@ Only NotificationCentre was hot-reloaded, with existing source-map warnings;
 backend, analysis and services were not restarted. Evidence: `show-all-test.log`
 and `show-all-*.png` in the notification-history snapshot; helper:
 `.dev/unread-persistence-test/show-all.cjs`.
+
+## Consolidate Preparation into Track Analysis — 2 November 2026
+
+The existing development frontend now has one analysis workspace. Library Home
+shows a compact readiness card linked to Track Analysis; the separate Preparation
+menu entry is removed. An already-open Preparation view falls back to that card
+during hot reload. Track Analysis retains manual Basic/Enhanced scans, coverage,
+results and Waveform Inspector, and now includes the background queue's search,
+stage filters, pagination, playback, failed-track retries, enrichment status and
+administrator settings link. Queue rows are fetched only when its section opens.
+There is one background scheduling control, separate from manual scan controls.
+
+Library Home and Track Analysis use the same saved coverage endpoint for Basic
+ready, Enhanced ready and total tracks. Background waiting/running/failure counts
+are explicitly scoped to background jobs. Home separately reports manual scan
+activity/failures and background scheduling; delayed coverage retains its last
+known values with a visible stale-data message instead of substituting zeroes.
+
+Dev-laptop verification: 69 focused regression tests, staged-source ESLint with
+formatting checks, 11 dependency-security tests and npm audit (zero vulnerabilities).
+Authenticated public desktop (1440px) and phone (390px) browser checks verified
+coverage against the real API, navigation, queue filters/search/pagination and
+Waveform Inspector, with no analysis-control requests or final page errors.
+Screenshots were inspected. Initial validation caught and corrected an empty-state
+icon import and a stale Library tools menu reference; initial browser helper
+selector failures were also corrected before the final passing checks.
+Development compilation succeeded with the existing react-simple-maps source-map
+warnings. Source was hot-loaded into the existing frontend service; backend,
+manual scan, background scheduling and private state were not restarted or changed.
+
+Evidence and isolated checks: `/home/narey/resonance-builds/analysis-consolidation-20261102`,
+including `tests-final.log`, `security.log`, `audit.log`, `staged-lint.sha256`,
+`browser-final.log` and desktop/phone screenshots. Private QA helpers and the
+remote staged-source Git hook are in `.dev/analysis-consolidation/`.

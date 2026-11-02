@@ -90,9 +90,7 @@ import {
 import MixtapeDeleteDialog from './components/MixtapeDeleteDialog';
 import PlayHistoryView from './components/PlayHistoryView';
 import { MixtapeDropTarget } from './components/PlaylistTools';
-import PreparationView, {
-  PreparationHomeCard,
-} from './components/PreparationView';
+import PreparationHomeCard from './components/PreparationHomeCard';
 import ResetViewButton from './components/ResetViewButton';
 import SetPlannerView from './components/SetPlannerView';
 import SmartCratesView from './components/SmartCratesView';
@@ -172,7 +170,6 @@ const VIEWS = {
   SEARCH: 'search',
   ISSUES: 'issues',
   CRATES: 'crates',
-  PREPARATION: 'preparation',
   PLANNER: 'planner',
 };
 
@@ -183,7 +180,6 @@ const NAV_ITEMS = [
   { id: VIEWS.TRACKS, label: 'Tracks', icon: List },
   { id: VIEWS.CRATES, label: 'Smart crates', icon: Layers3 },
   { id: VIEWS.PLANNER, label: 'Set Planner', icon: Route },
-  { id: VIEWS.PREPARATION, label: 'Preparation', icon: AudioWaveform },
   { id: VIEWS.FOLDERS, label: 'Folders', icon: Folder },
   { id: VIEWS.RECENT, label: 'Recently Added', icon: Sparkles },
   { id: VIEWS.GENRES, label: 'Genres', icon: Tag },
@@ -2744,10 +2740,7 @@ const HomeView = ({
         )}
       </div>
 
-      <PreparationHomeCard
-        onCrates={() => onNavigate(VIEWS.CRATES)}
-        onOpen={() => onNavigate(VIEWS.PREPARATION)}
-      />
+      <PreparationHomeCard onCrates={() => onNavigate(VIEWS.CRATES)} />
       {/* Recently Added */}
       {recentlyAdded.length > 0 && (
         <HomeRow
@@ -3892,8 +3885,9 @@ const LibraryContent = () => {
             onExportTracks={handleExportTracks}
           />
         );
-      case VIEWS.PREPARATION:
-        return <PreparationView />;
+      // Keep an already-open Preparation view useful during hot reload.
+      case 'preparation':
+        return <PreparationHomeCard onCrates={() => navTo(VIEWS.CRATES)} />;
       case VIEWS.HOME:
         return (
           <HomeView
@@ -4216,12 +4210,7 @@ const LibraryContent = () => {
               label="Library tools"
               summary="Library tools"
             >
-              {[
-                VIEWS.CRATES,
-                VIEWS.PLANNER,
-                VIEWS.PREPARATION,
-                VIEWS.ISSUES,
-              ].map((view) => {
+              {[VIEWS.CRATES, VIEWS.PLANNER, VIEWS.ISSUES].map((view) => {
                 const { icon: Icon, label } = NAV_ITEMS.find(
                   ({ id }) => id === view,
                 );

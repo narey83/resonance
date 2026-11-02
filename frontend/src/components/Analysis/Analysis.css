@@ -1204,3 +1204,7 @@
 
 .ka-scan-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
 .ka-scan-actions .ka-btn--end { background: transparent; color: var(--danger, #c62828); }
+
+.ka-background-queue { flex-shrink:0; margin:16px 0; border:1px solid var(--border); border-radius:10px; background:var(--bg-surface); }
+.ka-background-queue > summary { cursor:pointer; padding:14px 18px; font-weight:600; color:var(--text-primary); }
+.ka-background-queue .preparation-view { padding:18px; }

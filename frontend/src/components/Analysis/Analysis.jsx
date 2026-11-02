@@ -47,6 +47,7 @@ import {
 } from '../../lib/useAnalysisPages';
 import { useKeyFormat } from '../../lib/useKeyFormat';
 import { usePagedList } from '../../lib/usePagedList';
+import BackgroundAnalysisQueue from '../Library/components/BackgroundAnalysisQueue';
 import AnalysisDetails from './AnalysisDetails';
 import RowWaveform from './RowWaveform';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -689,6 +690,7 @@ const FolderGroup = ({
 // eslint-disable-next-line complexity
 const Analysis = ({ viewState }) => {
   const [scanState, setScanState] = useState(null);
+  const [backgroundQueueOpen, setBackgroundQueueOpen] = useState(false);
   const [enhanced, setEnhanced] = useState(
     viewState?.current?.enhanced ?? false,
   );
@@ -1983,6 +1985,24 @@ const Analysis = ({ viewState }) => {
               : 'Checking…'}
           </span>
         </div>
+      </details>
+
+      <details
+        className="ka-background-queue"
+        onToggle={(event) => setBackgroundQueueOpen(event.currentTarget.open)}
+      >
+        <summary>Background queue and metadata enrichment</summary>
+        {backgroundQueueOpen && (
+          <BackgroundAnalysisQueue
+            onRefresh={() => loadSummary(true, true)}
+            status={preparation}
+            statusError={
+              queueStatus.failed
+                ? 'Background queue updates are delayed. Retrying automatically…'
+                : ''
+            }
+          />
+        )}
       </details>
 
       {inspectedTrack && (

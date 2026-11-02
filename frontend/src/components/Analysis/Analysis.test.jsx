@@ -12,6 +12,10 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import { act } from 'react-dom/test-utils';
 
+jest.mock('../Library/components/BackgroundAnalysisQueue', () => () => (
+  <p>Background queue tools</p>
+));
+
 jest.mock('@tanstack/react-virtual', () => ({ useVirtualizer: jest.fn() }));
 jest.mock('../../context/PlayerContext', () => ({
   usePlayer: () => ({ play: jest.fn(), track: null }),
@@ -126,6 +130,19 @@ describe('analysis folder loading', () => {
       ReactDOM.unmountComponentAtNode(container);
     });
     container.remove();
+  });
+
+  it('opens the consolidated queue tools only on demand', async () => {
+    expect.hasAssertions();
+    await render();
+    expect(container.textContent).not.toContain('Background queue tools');
+    const details = container.querySelector('.ka-background-queue');
+    await act(async () => {
+      details.open = true;
+      details.dispatchEvent(new Event('toggle', { bubbles: true }));
+    });
+    expect(container.textContent).toContain('Background queue tools');
+    expect(container.querySelectorAll('.ka-automatic-details')).toHaveLength(1);
   });
 
   it('virtualizes results against the page instead of an inner scroll window', async () => {
