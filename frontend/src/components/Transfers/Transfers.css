@@ -1096,3 +1096,31 @@
 .ul-current-file { background: var(--bg-surface); }
 .ul-current-file .ul-complete-name { overflow-wrap: anywhere; white-space: normal; }
 .ul-current-source { color: var(--text-muted); display: block; font-size: 11px; margin-top: 5px; overflow-wrap: anywhere; }
+
+/* Centre the initial uploads state within the available page, including narrow screens. */
+.transfers-loading {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  justify-content: center;
+  min-height: 240px;
+  padding: 32px;
+  text-align: center;
+}
+
+.transfers-loading__spinner {
+  animation: transfers-loading-spin 1s linear infinite;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+@keyframes transfers-loading-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .transfers-loading__spinner { animation: none; }
+}

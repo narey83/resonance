@@ -1602,3 +1602,24 @@ Snapshot/evidence: `/home/narey/resonance-builds/analysis-cpu-20261102`, includi
 `cpu-eight-workers-steady.json`, `foreground-transfers-check.json`, `browser/`,
 `backend-tests.log`, `backend-build.log`, `backend-publish.log`, `format.log` and
 `security.log`. Private operational helpers: `.dev/analysis-cpu/`.
+
+
+## Centred upload loading graphic — 2 November 2026
+
+Hot-reloaded `Transfers.jsx` and `Transfers.css` into the existing development
+frontend. Initial upload loading now uses one centred, theme-coloured spinner and
+label in the available page area, replacing the separate loader/text layout.
+The status is announced accessibly and stops animating for reduced-motion users.
+Download loading and upload queue fetching behavior are unchanged.
+
+Dev-laptop checks: 27 tests across loading, upload table, complete-queue assembly
+and queue API validation; ESLint and Prettier; 11 dependency-security checks.
+Authenticated desktop/phone browser QA delayed only the QA browser's real queue
+requests, verified centred graphic geometry and reduced-motion behavior, then
+released the requests and verified the real queue loaded with folders closed.
+Screenshots inspected; no page errors or transfer mutations. The backend, running
+analysis and transfers were not restarted or paused. Persistent dev frontend and
+existing gateway were retained; no production build.
+
+Evidence: `/home/narey/resonance-builds/upload-loading-20261102`, including tests.log,
+security.log, browser.log and evidence/. Private helpers: `.dev/upload-loading/`.
