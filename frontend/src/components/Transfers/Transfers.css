@@ -1018,3 +1018,28 @@
 .ul-queue-pagination { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 12px; font-size: 12px; }
 .ul-queue-pagination .ul-pagination { margin: 0; }
 .ul-queue-pagination strong { display: block; margin-bottom: 4px; }
+
+.ul-user-queue {
+  background: var(--bg-surface);
+  flex-wrap: wrap;
+  padding: 8px 14px;
+}
+
+.ul-user-queue-note {
+  color: var(--text-muted);
+  flex-basis: 100%;
+  font-size: 11px;
+}
+
+.ul-track-toggle {
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.ul-user-queue + .dl-user-body {
+  overflow-x: auto;
+}
+
+.ul-user-queue + .dl-user-body .dl-table {
+  min-width: 720px;
+}

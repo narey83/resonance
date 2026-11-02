@@ -1,10 +1,15 @@
+import { getStatus } from '../../lib/users';
 import UploadsTable from './UploadsTable';
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { act, Simulate } from 'react-dom/test-utils';
 
-jest.mock('../Shared', () => ({ UsernameLink: () => null }));
-jest.mock('../../lib/users', () => ({ getStatus: jest.fn() }));
+jest.mock('../Shared', () => ({
+  UsernameLink: ({ username }) => <span>{username}</span>,
+}));
+jest.mock('../../lib/users', () => ({
+  getStatus: jest.fn().mockResolvedValue('Online'),
+}));
 jest.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count, getItemKey }) => ({
     getTotalSize: () => count * 100,
@@ -21,6 +26,7 @@ jest.mock('@tanstack/react-virtual', () => ({
 describe('Uploads queue header placement', () => {
   let container;
   beforeEach(() => {
+    getStatus.mockResolvedValue({ data: { presence: 'Online' } });
     container = document.createElement('div');
     document.body.append(container);
   });
@@ -31,15 +37,33 @@ describe('Uploads queue header placement', () => {
     container.remove();
   });
 
-  it('places pending pagination in the scrolling uploading section', () => {
+  it('places overall pagination below users with queue information under each user', async () => {
     expect.hasAssertions();
     const onPageChange = jest.fn();
-    act(() => {
+    await act(async () => {
       ReactDOM.render(
         <UploadsTable
           onPendingPageChange={onPageChange}
           totalPending={501}
-          transfers={[]}
+          transfers={[
+            {
+              username: 'queue-user',
+              directories: [
+                {
+                  directory: 'Music/Trance Classics',
+                  files: [
+                    {
+                      id: 'queued-track',
+                      filename: 'Music/Trance Classics/Example.flac',
+                      direction: 'Upload',
+                      state: 'Queued',
+                      size: 1_024,
+                    },
+                  ],
+                },
+              ],
+            },
+          ]}
         />,
         container,
       );
@@ -47,7 +71,26 @@ describe('Uploads queue header placement', () => {
     const scrollArea = container.querySelector('.dl-groups');
     const rows = scrollArea.querySelectorAll('.dl-virtual-row');
     expect(rows[0].textContent).toBe('Uploading');
-    expect(rows[1].textContent).toContain('Pending uploads: 1–250 of 501');
+    expect(rows[1].textContent).toContain('queue-user');
+    const user = rows[1].querySelector('.dl-user-group');
+    const summary = user.querySelector('.ul-user-queue');
+    expect(summary.textContent).toContain('1 queued track on this page');
+    expect(user.querySelector('.dl-user-header').nextElementSibling).toBe(
+      summary,
+    );
+    expect(rows[2].textContent).toContain(
+      'All users — pending tracks: 1–250 of 501',
+    );
+    const folder = user.querySelector('.dl-dir-toggle');
+    expect(folder.textContent).toContain('Show tracks');
+    expect(user.querySelector('.dl-file-row')).toBeNull();
+    act(() => {
+      Simulate.click(folder);
+    });
+    expect(folder.getAttribute('aria-expanded')).toBe('true');
+    expect(user.querySelector('.dl-file-row').textContent).toContain(
+      'Example.flac',
+    );
     expect(
       container.querySelector('.ul-queue-pagination').closest('.dl-groups'),
     ).toBe(scrollArea);

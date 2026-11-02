@@ -16,13 +16,10 @@ const UploadQueuePagination = ({
     >
       <div>
         <strong>
-          Pending uploads: {first.toLocaleString()}–{last.toLocaleString()} of{' '}
-          {total.toLocaleString()}
+          All users — pending tracks: {first.toLocaleString()}–
+          {last.toLocaleString()} of {total.toLocaleString()}
         </strong>
-        <div>
-          User and folder counts refer to this page. Cancelling a user or folder
-          applies to their whole queue.
-        </div>
+        <div>Browse the remaining queue across all users.</div>
       </div>
       <div className="ul-pagination">
         <button

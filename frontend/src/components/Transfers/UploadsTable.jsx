@@ -360,6 +360,7 @@ const DirectoryGroup = ({
       <tr className="dl-dir-row">
         <td className="dl-cell dl-cell--file dl-dir-name">
           <button
+            aria-expanded={!collapsed}
             className="dl-dir-toggle"
             onClick={toggleCollapsed}
             type="button"
@@ -378,6 +379,9 @@ const DirectoryGroup = ({
               />
             )}
             <span className="dl-dir-label">{directoryName}</span>
+            <span className="ul-track-toggle">
+              {collapsed ? 'Show tracks' : 'Hide tracks'}
+            </span>
             <span className="dl-dir-count">
               {files.length} file{files.length === 1 ? '' : 's'}
             </span>
@@ -593,35 +597,6 @@ const UserGroup = ({
             </div>
           )}
         </div>
-        <div className="dl-user-stats">
-          {inProgressCount > 0 && (
-            <span className="dl-user-stat dl-user-stat--active">
-              <span className="dl-user-stat-dot" />
-              {inProgressCount} uploading
-            </span>
-          )}
-          {queuedCount > 0 && (
-            <span className="dl-user-stat dl-user-stat--queued">
-              {queuedCount} queued
-            </span>
-          )}
-          {succeededCount > 0 && (
-            <span
-              className="dl-user-stat"
-              style={{ color: 'var(--success)' }}
-            >
-              {succeededCount} sent
-            </span>
-          )}
-          {totalSpeed > 0 && (
-            <span className="dl-user-stat dl-user-stat--speed">
-              {formatBitrate(totalSpeed)}
-            </span>
-          )}
-          <span className="dl-user-stat">
-            {allFiles.length} file{allFiles.length === 1 ? '' : 's'}
-          </span>
-        </div>
         {activeCount > 0 && (
           <button
             className="dl-action-btn dl-action-btn--cancel"
@@ -640,6 +615,43 @@ const UserGroup = ({
               strokeWidth={2}
             />
           </button>
+        )}
+      </div>
+
+      <div className="dl-user-stats ul-user-queue">
+        {inProgressCount > 0 && (
+          <span className="dl-user-stat dl-user-stat--active">
+            <span className="dl-user-stat-dot" />
+            {inProgressCount} uploading
+          </span>
+        )}
+        {queuedCount > 0 && (
+          <span className="dl-user-stat dl-user-stat--queued">
+            {queuedCount} queued track{queuedCount === 1 ? '' : 's'} on this
+            page
+          </span>
+        )}
+        {succeededCount > 0 && (
+          <span
+            className="dl-user-stat"
+            style={{ color: 'var(--success)' }}
+          >
+            {succeededCount} sent
+          </span>
+        )}
+        {totalSpeed > 0 && (
+          <span className="dl-user-stat dl-user-stat--speed">
+            {formatBitrate(totalSpeed)}
+          </span>
+        )}
+        <span className="dl-user-stat">
+          {allFiles.length} file{allFiles.length === 1 ? '' : 's'}
+        </span>
+        {activeCount > 0 && (
+          <span className="ul-user-queue-note">
+            Expand a folder to see its tracks. Counts cover this queue page;
+            cancelling this user or a folder includes their other queue pages.
+          </span>
         )}
       </div>
 
@@ -811,10 +823,6 @@ const UploadsTable = ({
         label: 'Uploading',
         type: 'section',
       });
-      if (Number.isInteger(totalPending)) {
-        result.push({ key: 'pending-pagination', type: 'pending-pagination' });
-      }
-
       for (const user of activeGroups) {
         result.push({
           defaultCollapsed: false,
@@ -822,6 +830,10 @@ const UploadsTable = ({
           type: 'group',
           user,
         });
+      }
+
+      if (Number.isInteger(totalPending)) {
+        result.push({ key: 'pending-pagination', type: 'pending-pagination' });
       }
     }
 
