@@ -1162,6 +1162,44 @@ const Analysis = ({
     );
   };
 
+  const handleRetryFailures = async ({ enhanced: retryEnhanced, paths }) => {
+    if (!paths?.length || preparationBusy || stopRequested)
+      throw new Error('Analysis controls are busy. Try again shortly.');
+    const state = await analysisApi.getScanState();
+    if (!mountedRef.current)
+      throw new Error('Retry cancelled after leaving analysis.');
+    if (typeof state?.scanning !== 'boolean')
+      throw new Error('Scan status is unavailable. Try again shortly.');
+    if (state.scanning) {
+      setScanState(state);
+      throw new Error('A scan is already running. Retry when it has finished.');
+    }
+
+    if (retryEnhanced && !preparation?.enhancedEnabled)
+      throw new Error('The Enhanced analysis worker is not available.');
+    await analysisApi.startScan({
+      metrics: METRICS.join(', '),
+      onlyPaths: paths,
+      enhanced: retryEnhanced,
+      skipAnalysed: true,
+      resetAll: false,
+    });
+    finalizingRef.current = false;
+    wasScanningRef.current = true;
+    inFlightRef.current = new Set();
+    setRecentlyUpdated(new Set());
+    setScanState({
+      scanning: true,
+      supportsPause: state.supportsPause,
+      total: paths.length,
+      analysed: 0,
+      skipped: 0,
+      failed: 0,
+      inFlight: 0,
+      progress: 0,
+    });
+  };
+
   const handlePreparationAction = async (action) => {
     if (preparationBusy || stopRequested) return;
     setPreparationBusy(action);
@@ -2099,7 +2137,24 @@ const Analysis = ({
         </>
       )}
       {(activeView === 'all' || activeView === 'failures') && (
-        <AnalysisFailures standalone={activeView !== 'all'} />
+        <AnalysisFailures
+          enhancedAvailable={preparation?.enhancedEnabled === true}
+          onRetry={handleRetryFailures}
+          retryDisabled={
+            !scanState ||
+            Boolean(
+              scanning || preparationBusy || stopRequested || scanControlBusy,
+            )
+          }
+          retryReason={
+            !scanState
+              ? 'Checking scan status before enabling retry…'
+              : scanning
+                ? 'Retry is available when the current scan has finished.'
+                : ''
+          }
+          standalone={activeView !== 'all'}
+        />
       )}
       {(activeView === 'all' || activeView === 'analysis') && (
         <>

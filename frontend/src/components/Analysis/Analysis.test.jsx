@@ -1,17 +1,24 @@
 import { useLibraryActivity } from '../../context/LibraryActivityContext';
 import * as analysisApi from '../../lib/analysis';
+import { resolveFailedTrackPaths } from '../../lib/analysisRetry';
 import {
   getPreparationStatus,
   pausePreparation,
 } from '../../lib/libraryWorkspace';
+import { getLogs } from '../../lib/logs';
 import * as musicLibraryApi from '../../lib/musicLibrary';
 import { usePagedList } from '../../lib/usePagedList';
+import AppContext from '../AppContext';
 import Analysis from './Analysis';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { act } from 'react-dom/test-utils';
 
+jest.mock('../../lib/logs', () => ({ getLogs: jest.fn() }));
+jest.mock('../../lib/analysisRetry', () => ({
+  resolveFailedTrackPaths: jest.fn(),
+}));
 jest.mock('../Library/components/BackgroundAnalysisQueue', () => () => (
   <p>Background queue tools</p>
 ));
@@ -72,9 +79,14 @@ const folder = (trackCount = 3) => ({
 describe('analysis folder loading', () => {
   let container;
   let page;
-  const render = async (props = {}) => {
+  const render = async (props = {}, admin = false) => {
     await act(async () => {
-      ReactDOM.render(<Analysis {...props} />, container);
+      ReactDOM.render(
+        <AppContext.Provider value={{ isAdmin: admin }}>
+          <Analysis {...props} />
+        </AppContext.Provider>,
+        container,
+      );
     });
   };
 
@@ -130,6 +142,71 @@ describe('analysis folder loading', () => {
       ReactDOM.unmountComponentAtNode(container);
     });
     container.remove();
+  });
+
+  it.each([
+    ['Basic', false, 'Music / Analysis'],
+    ['Enhanced', true, 'Music / Enhanced Analysis'],
+  ])(
+    'retries only the chosen %s failed track and preserves existing results',
+    async (mode, enhanced, context) => {
+      expect.hasAssertions();
+      getLogs.mockResolvedValue({
+        logs: [
+          {
+            message: 'Analysis failed',
+            context,
+            properties: { File: 'song.mp3', Metrics: 'Loudness' },
+            timestamp: '2026-11-02T12:00:00Z',
+          },
+        ],
+        totalCount: 1,
+      });
+      resolveFailedTrackPaths.mockResolvedValue(['/music/Album/song.mp3']);
+      await render({ activeView: 'failures' }, true);
+      await act(async () =>
+        container
+          .querySelector(`[aria-label="Retry ${mode} analysis for song.mp3"]`)
+          .click(),
+      );
+      expect(analysisApi.startScan).toHaveBeenCalledWith({
+        metrics: 'Key, Bpm',
+        onlyPaths: ['/music/Album/song.mp3'],
+        enhanced,
+        skipAnalysed: true,
+        resetAll: false,
+      });
+      expect(container.textContent).toContain(
+        'Retry scan requested for 1 track',
+      );
+      expect(container.textContent).toContain('Basic scan · Running');
+    },
+  );
+  it('rechecks queue occupancy before retry and surfaces a newly running scan', async () => {
+    expect.hasAssertions();
+    getLogs.mockResolvedValue({
+      logs: [
+        {
+          message: 'Analysis failed',
+          context: 'Music / Analysis',
+          properties: { File: 'song.mp3', Metrics: 'Loudness' },
+          timestamp: '2026-11-02T12:00:00Z',
+        },
+      ],
+      totalCount: 1,
+    });
+    resolveFailedTrackPaths.mockResolvedValue(['/music/Album/song.mp3']);
+    await render({ activeView: 'failures' }, true);
+    analysisApi.getScanState.mockResolvedValue({ scanning: true, total: 100 });
+    await act(async () =>
+      container
+        .querySelector('[aria-label="Retry Basic analysis for song.mp3"]')
+        .click(),
+    );
+    expect(analysisApi.startScan).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]').textContent).toContain(
+      'already running',
+    );
   });
 
   it('shows measured coverage and opens track selection from the overview', async () => {

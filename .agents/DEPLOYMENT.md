@@ -2060,3 +2060,40 @@ analysis mutations.
 Final verification: changed-file ESLint passed; all 117 regression tests and 11
 dependency-security tests passed on the dev laptop; npm audit reported zero
 vulnerabilities. Existing player waveform and shared waveform helper tests passed.
+
+## Retry failed tracks and compact history — 2 November 2026
+
+Added per-row Retry and mode-specific “Retry failures shown” actions for the
+currently loaded history page. Retries use the original Basic/Enhanced mode and
+explicit library paths with `skipAnalysed: true`, `resetAll: false`; the backend
+computes missing Basic measurements and reuses complete Enhanced work. They require
+an idle scan queue, check fresh scan state before admission, and surface the existing
+atomic API conflict response if another scan starts. Enhanced retry requires an
+available worker. The UI reports a requested scan, never completed work.
+
+Old Basic logs can contain only filenames. The resolver loads directory names and
+checks exact candidate paths through the existing 200-path resolve endpoint. It
+batches requests, deduplicates paths, refuses missing/ambiguous names (including
+case-distinct paths), and cancels unresolved work on leaving the view. No whole
+library track dump or unreliable title-search matching. Bulk requests fail before
+starting any scan if their selection cannot be resolved safely. Existing
+Administrator log permissions are preserved.
+
+History now uses compact rows: track/mode/time, a two-line measurement/reason
+summary, and Retry. Details retains full paths, unabridged reasons and original
+messages. Current history persists after a retry; an old log is not deleted or
+presented as a new failure. The retry toolbar also wraps compactly on phones.
+
+Delivered the frontend through the existing HMR watcher, without backend/service
+restart, new dependencies, backups or changes to the running scan. Changed-file
+ESLint and 82 tests passed on the dev laptop; 11 dependency-security tests passed
+and npm audit reported zero vulnerabilities. Compilation completed with the
+existing 14 source-map warnings.
+
+Headless desktop/390px fixture checks exercised busy-queue blocking, ambiguous
+name rejection, recovery from a 409 race, single and bulk Basic requests, Enhanced
+mode, preserved history, retained full details and no horizontal overflow. These
+mutation tests were fully mocked. The real Administrator browser verified the
+compact live history and disabled retry controls while the existing scan advanced;
+no real retry was submitted during that scan. Live phone rows measured about
+70–83px high; the temporary viewport override was reset.
