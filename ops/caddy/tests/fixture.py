@@ -33,6 +33,15 @@ class Upstream(BaseHTTPRequestHandler):
     def reply(self):
         fixture = self.server.fixture
         if self.path.split('?')[0] == '/health/ready':
+            fixture.backend_probe_count += 1
+            if fixture.backend_probe_failures:
+                fixture.backend_probe_failures -= 1
+                self.connection.shutdown(socket.SHUT_RDWR)
+                self.connection.close()
+                return
+            if fixture.backend_probe_delay:
+                delay, fixture.backend_probe_delay = fixture.backend_probe_delay, 0
+                time.sleep(delay)
             fixture.last_probe = {'path': self.path, 'authorization': self.headers.get('Authorization'), 'cookie': self.headers.get('Cookie'), 'apiKey': self.headers.get('X-Api-Key'), 'linkToken': self.headers.get('X-Resonance-Link-Token'), 'upgrade': self.headers.get('Upgrade')}
             mode = json.loads(fixture.mode.read_text())
             if mode['state'] == 'offline':
@@ -44,7 +53,10 @@ class Upstream(BaseHTTPRequestHandler):
                 self.send_header('X-Resonance-Site-State', mode['state'])
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
-            self.wfile.write(json.dumps({'state': mode['state']}).encode())
+            try:
+                self.wfile.write(json.dumps({'state': mode['state']}).encode())
+            except (BrokenPipeError, ConnectionResetError):
+                pass  # The slow-probe test deliberately times out this connection.
             return
         if self.path == '/api/v0/session/initialized':
             session = json.loads(fixture.mode.read_text()).get('session', 'normal')
@@ -84,6 +96,8 @@ class Upstream(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b'data: connected\n\n')
             return
+        if self.command == 'POST':
+            fixture.application_post_count += 1
         if self.path.startswith('/api/reset'):
             self.connection.shutdown(socket.SHUT_RDWR)
             self.connection.close()
@@ -135,6 +149,11 @@ class SiteFixture:
             (self.web / 'index.html').write_text('<!doctype html><title>App ready</title><h1>APP_READY</h1>')
         self.mode = self.root / 'upstream.json'
         self.set_mode('available')
+        self.application_post_count = 0
+        self.backend_probe_count = 0
+        self.backend_probe_failures = 0
+        self.backend_probe_delay = 0
+        self.frontend_probe_failures = 0
         self.last_probe = None
         self.frontend_mode = 'ready'
         self.last_frontend_probe = None
@@ -164,8 +183,9 @@ class SiteFixture:
         with socket.socket() as listener:
             listener.bind(('127.0.0.1', 0))
             self.admin = f'127.0.0.1:{listener.getsockname()[1]}'
+        self.access_log = self.root / 'access.jsonl'
         self.config = self.root / 'Caddyfile'
-        self.config.write_text('{\n admin ' + (self.admin if tls else 'off') + '\n auto_https off\n import "' + str(ROOT / 'ops/caddy/http-transport.caddy') + '"\n}\nimport "' + str(ROOT / 'ops/caddy/site.caddy') + '"\n' + self.origin + ' {\n' + tls_config + ' import resonance_site\n}\n' + self.probe_origin + ' {\n import resonance_site_probe\n}\n')
+        self.config.write_text('{\n admin ' + (self.admin if tls else 'off') + '\n auto_https off\n import "' + str(ROOT / 'ops/caddy/http-transport.caddy') + '"\n}\nimport "' + str(ROOT / 'ops/caddy/site.caddy') + '"\nimport "' + str(ROOT / 'ops/caddy/access-log.caddy') + '"\n' + self.origin + ' {\n' + tls_config + ' import resonance_access_log "' + str(self.access_log) + '"\n import resonance_site\n}\n' + self.probe_origin + ' {\n import resonance_site_probe\n}\n')
         environment = dict(os.environ, RESONANCE_STATUS_ROOT=str(ROOT / 'ops/caddy/status'), RESONANCE_WEB_ROOT=str(self.web), RESONANCE_SITE_STATE_ROOT=str(self.state), RESONANCE_BACKEND_UPSTREAM=f'127.0.0.1:{self.backend.server_port}', RESONANCE_FRONTEND_HEALTH_UPSTREAM=frontend_health_upstream or f'127.0.0.1:{self.frontend_health.server_port}')
         self.log = (self.root / 'caddy.log').open('wb')
         self.process = subprocess.Popen([str(caddy), 'run', '--config', str(self.config), '--adapter', 'caddyfile'], env=environment, stdout=self.log, stderr=self.log)
@@ -221,6 +241,11 @@ class FrontendHealth(BaseHTTPRequestHandler):
     def do_GET(self):
         fixture = self.server.fixture
         fixture.last_frontend_probe = {key: self.headers.get(key) for key in ['Authorization', 'Cookie', 'X-Api-Key', 'X-Resonance-Link-Token']}
+        if fixture.frontend_probe_failures:
+            fixture.frontend_probe_failures -= 1
+            self.connection.shutdown(socket.SHUT_RDWR)
+            self.connection.close()
+            return
         if fixture.frontend_mode == 'offline':
             self.connection.shutdown(socket.SHUT_RDWR)
             self.connection.close()

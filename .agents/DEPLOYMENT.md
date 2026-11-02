@@ -56,7 +56,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/web-development-20261102/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/gateway-reliability-20261102/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -83,7 +83,7 @@ The usual public URL now proxies the web frontend to the persistent user service
 `/home/narey/resonance-builds/upload-folder-label-20261102/frontend`; it runs
 `npm start` (CRACO/webpack development mode), bound only to loopback. Explicit
 allowed hosts are localhost, 127.0.0.1 and the established public hostname.
-The current gateway is `web-development-20261102`. API, hub, health, backend routes
+The current gateway is `gateway-reliability-20261102`. API, hub, health, backend routes
 and private runtime state remain unchanged. `/ws` reaches the dev server for HMR.
 
 For routine UI edits: edit in the Mac source of truth; deliberately copy only the
@@ -1867,3 +1867,42 @@ Evidence and isolated checks: `/home/narey/resonance-builds/analysis-consolidati
 including `tests-final.log`, `security.log`, `audit.log`, `staged-lint.sha256`,
 `browser-final.log` and desktop/phone screenshots. Private QA helpers and the
 remote staged-source Git hook are in `.dev/analysis-consolidation/`.
+
+## Bound retries for transient gateway readiness failures — 2 November 2026
+
+Reloaded native Caddy with
+`/home/narey/resonance-gateway/releases/gateway-reliability-20261102/Caddyfile`;
+the persistent main Caddyfile imports that release. Development frontend delivery,
+backend, browser monitor, application data and analysis controls were retained.
+Only the credential-free backend and browser-monitor GET prechecks retry one
+transport failure, with a 100 ms interval and their existing per-attempt timeouts.
+Explicit unhealthy/startup/shutdown responses still fail closed immediately;
+application requests, including POST bodies, are forwarded once.
+
+The original live 503 was not captured and its initiating event remains unknown.
+The confirmed reliability defect was reproduced with real Caddy in isolation:
+one dropped backend check, a backend check delayed beyond three seconds, or one
+dropped monitor check produced a full-page 503 despite subsequent healthy replies.
+Those three regression tests failed against the old config and pass with the fix.
+Twenty-nine gateway/coordinator tests and five monitor tests passed, as did Caddy
+formatting/config validation and Python compilation. Tests cover persistent outages,
+explicit failures, POST preservation, credentials, websocket/media handling and
+sanitized diagnostics. An initial coordinator test setup was missing its imported
+source module; the complete isolated setup passed on rerun.
+
+Enabled bounded access logging through `ops/caddy/access-log.caddy`: status,
+duration, readiness state, backend probe response status and allowlisted page paths
+only; no request/response headers, query strings or user IDs. The 10 MiB rotating
+log (two retained files) is
+`/home/narey/resonance-builds/gateway-reliability-20261102/access.jsonl`.
+Use this to identify any recurrence rather than inferring a timeout from the 503
+screen alone. The current public TCP HTTP/2 and UDP HTTP/3 paths both responded
+normally during investigation; no old-host administration was performed.
+
+After activation, 100 public Track Analysis page requests returned 200. Authenticated
+1440px/390px browser checks passed for Library navigation, real readiness counts,
+queue filters/search/pagination and Waveform Inspector with no page errors or
+analysis-control requests. The user also confirmed the page loads successfully.
+Evidence: `reproduce.log`, `tests-final.log`, `health-tests.log`,
+`requests-after.json`, `browser-after.log` and `activation.json` in the isolated
+`/home/narey/resonance-builds/gateway-reliability-20261102` snapshot.

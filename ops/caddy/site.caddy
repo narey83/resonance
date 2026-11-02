@@ -69,6 +69,10 @@
 		# Pre-check a cloned GET. The original method, URI and request body are
 		# preserved for the API/hub handler after a successful readiness response.
 		reverse_proxy {$RESONANCE_BACKEND_UPSTREAM:127.0.0.1:55450} {
+			# Retry a single failed read-only probe, never the application operation.
+			lb_retries 1
+			lb_try_duration 4s
+			lb_try_interval 100ms
 			method GET
 			rewrite /health/ready?
 			header_up -Authorization
@@ -86,6 +90,7 @@
 				header X-Resonance-Site-State available
 			}
 			handle_response @ready {
+				vars backend_probe_status {http.reverse_proxy.status_code}
 				vars site_state available
 			}
 			@degraded {
@@ -93,6 +98,7 @@
 				header X-Resonance-Site-State degraded
 			}
 			handle_response @degraded {
+				vars backend_probe_status {http.reverse_proxy.status_code}
 				vars site_state degraded
 			}
 			@starting {
@@ -100,6 +106,7 @@
 				header X-Resonance-Site-State starting
 			}
 			handle_response @starting {
+				vars backend_probe_status {http.reverse_proxy.status_code}
 				import site_failure starting
 			}
 			@shutdown {
@@ -107,9 +114,11 @@
 				header X-Resonance-Site-State restarting
 			}
 			handle_response @shutdown {
+				vars backend_probe_status {http.reverse_proxy.status_code}
 				import site_failure restarting
 			}
 			handle_response {
+				vars backend_probe_status {http.reverse_proxy.status_code}
 				import site_failure unavailable
 			}
 		}
@@ -137,6 +146,9 @@
 			# Preserve this classification if the monitor itself times out or stops.
 			vars site_state frontend-unavailable
 			reverse_proxy {$RESONANCE_FRONTEND_HEALTH_UPSTREAM:127.0.0.1:8091} {
+				lb_retries 1
+				lb_try_duration 3s
+				lb_try_interval 100ms
 				method GET
 				rewrite /health/ready?
 				header_up -Authorization

@@ -1,0 +1,22 @@
+# Optional per-site logging: import resonance_access_log /absolute/path/access.jsonl
+# Record only fixed safe paths, status, timing and readiness classification.
+(resonance_access_log) {
+	log {
+		output file {args[0]} {
+			roll_size 10MiB
+			roll_keep 2
+		}
+		format filter {
+			wrap json
+			fields {
+				request delete
+				resp_headers delete
+				user_id delete
+			}
+		}
+	}
+	@diagnostic_route path /trackanalysis /library /health/ready /__site/status /__site/readiness
+	log_append @diagnostic_route <page_path {http.request.uri.path}
+	log_append backend_probe_status {http.vars.backend_probe_status}
+	log_append site_state {http.vars.site_state}
+}

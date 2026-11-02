@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import socket
 import unittest
+import time
 import urllib.request
 
 from fixture import ROOT, SiteFixture
@@ -31,6 +32,9 @@ class CaddySiteTests(unittest.TestCase):
     def setUp(self):
         self.fixture.set_mode('available')
         self.fixture.frontend_mode = 'ready'
+        self.fixture.backend_probe_failures = 0
+        self.fixture.backend_probe_delay = 0
+        self.fixture.frontend_probe_failures = 0
         self.control.set_state(self.fixture.state, 'normal')
 
     def assert_unavailable(self, state):
@@ -49,6 +53,67 @@ class CaddySiteTests(unittest.TestCase):
                 self.assertEqual(state, json.loads(body)['state'])
         self.assertEqual(200, self.fixture.request('/__site/live')[0])
         self.assertEqual(200, self.fixture.request('/__site/assets/recovery.js')[0])
+
+    def test_one_dropped_backend_probe_does_not_close_a_healthy_page(self):
+        self.fixture.backend_probe_failures = 1
+        before = self.fixture.backend_probe_count
+        status, _, body = self.fixture.request('/trackanalysis')
+        self.assertEqual(200, status)
+        self.assertIn(b'APP_READY', body)
+        self.assertEqual(2, self.fixture.backend_probe_count - before)
+
+    def test_one_slow_backend_probe_recovers_within_a_bounded_wait(self):
+        self.fixture.backend_probe_delay = 4
+        started = time.monotonic()
+        status, _, body = self.fixture.request('/trackanalysis')
+        self.assertEqual(200, status)
+        self.assertIn(b'APP_READY', body)
+        self.assertLess(time.monotonic() - started, 7)
+
+    def test_one_dropped_frontend_probe_does_not_close_a_healthy_page(self):
+        self.fixture.frontend_probe_failures = 1
+        self.assertEqual(200, self.fixture.request('/trackanalysis')[0])
+
+    def test_probe_retry_preserves_post_body_and_sends_application_request_once(self):
+        self.fixture.backend_probe_failures = 1
+        before = self.fixture.application_post_count
+        status, _, body = self.fixture.request('/api/echo', method='POST', body=b'preserve original body', headers={'Content-Type': 'text/plain'})
+        self.assertEqual(200, status)
+        self.assertIn(b'preserve original body', body)
+        self.assertEqual(before + 1, self.fixture.application_post_count)
+
+    def test_persistent_transport_failure_still_closes_the_site_promptly(self):
+        self.fixture.backend_probe_failures = 10
+        before = self.fixture.backend_probe_count
+        started = time.monotonic()
+        status, headers, _ = self.fixture.request('/trackanalysis')
+        self.assertEqual(503, status)
+        self.assertEqual('unavailable', headers['X-Resonance-Site-State'])
+        self.assertEqual(2, self.fixture.backend_probe_count - before)
+        self.assertLess(time.monotonic() - started, 2)
+
+    def test_diagnostics_capture_failed_probe_without_private_request_data(self):
+        self.fixture.set_mode('unavailable')
+        self.fixture.request('/library?access_token=secret-diagnostic-test', headers={'Authorization': 'Bearer secret-diagnostic-test', 'Cookie': 'secret-diagnostic-test'})
+        for _ in range(100):
+            lines = self.fixture.access_log.read_text().splitlines()
+            rows = [json.loads(line) for line in lines]
+            if any(row.get('backend_probe_status') == '503' for row in rows):
+                break
+            time.sleep(.01)
+        failed = [row for row in rows if row.get('backend_probe_status') == '503'][-1]
+        self.assertEqual(503, failed['status'])
+        self.assertEqual('/library', failed['page_path'])
+        self.assertEqual('unavailable', failed['site_state'])
+        self.assertNotIn('secret-diagnostic-test', self.fixture.access_log.read_text())
+        self.assertNotIn('request', failed)
+        self.assertNotIn('resp_headers', failed)
+
+    def test_explicit_backend_failure_is_not_retried(self):
+        self.fixture.set_mode('unavailable')
+        before = self.fixture.backend_probe_count
+        self.assertEqual(503, self.fixture.request('/trackanalysis')[0])
+        self.assertEqual(1, self.fixture.backend_probe_count - before)
 
     def test_ready_pages_status_and_streams(self):
         self.assertIn(b'APP_READY', self.fixture.request('/library')[2])

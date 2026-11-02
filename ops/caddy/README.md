@@ -128,3 +128,23 @@ it changes the header budget from 1 MiB to 16 KiB across a gateway reload, then
 checks playback, seeking, byte ranges, new connection IDs and the browser NetLog.
 Only the generated loopback certificate's public-key fingerprint is trusted by
 that isolated test browser. Production certificate validation is unchanged.
+
+### Transient probe failures and diagnostics
+
+The per-request backend and browser-monitor checks retry one transport failure
+(connection refusal/reset or response-header timeout), with a 100 ms interval.
+The existing per-attempt deadlines remain unchanged. These are rewritten,
+credential-free GET probes; application operations are not retried. Explicit
+starting, restarting, unhealthy or invalid readiness responses still close the
+site immediately. A permanently unreachable service still fails closed after at
+most two attempts. A one-off probe transport failure no longer forces a healthy
+application into its full-page 503 recovery flow.
+
+For bounded, credential-free access diagnostics, import `access-log.caddy` beside
+`site.caddy`, then add `import resonance_access_log /absolute/path/access.jsonl`
+to the public site block. The log keeps status, timing, readiness classification
+and backend probe response status, with 10 MiB rotation and two retained files.
+Only fixed public page/readiness paths are recorded; request headers, query
+strings, response headers and user IDs are removed. Do not enable credential
+logging or replace this filter with raw access logs. A transport failure has no
+probe response status; use its classification and duration alongside runtime logs.
