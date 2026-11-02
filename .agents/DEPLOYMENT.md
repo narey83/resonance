@@ -1559,3 +1559,46 @@ analysis mutations; the real scan continued running. Existing frontend service P
 `/home/narey/resonance-builds/analysis-controls-20261102/background-settings/`
 and `background-settings-tests.log` / `background-settings-security.log` in its
 parent. Development source remains the existing upload-folder-label snapshot.
+
+
+## Full available CPU analysis with foreground priority — 2 November 2026
+
+Activated native backend `analysis-cpu-b1d0e3c`, source
+`b1d0e3c6b4e29bf8d234dede708d1eba2b2448d7`, PID 1266297, at 18:24:46 GMT.
+Basic analysis uses eight workers on this eight-processor laptop. Decoder and
+Essentia processes use one numerical/decoder thread each at BelowNormal priority
+(Linux nice 10). Waveform calculations use dedicated low-priority threads, not the
+request pool. The backend remains at normal priority (nice 0). Enhanced automatic
+allocation uses two model jobs with four threads each, retaining its model-memory
+budget and explicit override behavior.
+
+The previous scan was paused, allowed to drain to zero active tracks, then ended
+before native shutdown. Captured 15,589 incomplete whole-library paths privately;
+the restarted missing-only Basic scan admitted 15,588 after skipping an already
+complete track. Existing results were not reset. The new scan was verified running
+with eight active tracks and successful completions; automatic background analysis
+remains Off. All 12,559 captured queued upload identities were verified across
+restart with zero terminal changes during recovery. No database copy, backup or
+schema change. Frontend dev PID 1228101, monitor PID 192555 and Caddy configuration
+were retained. The frontend remains hot-reloadable, source `f9c1cf8`.
+
+Verification: 157 Analysis/Workspace tests; warning-free Release build and native
+publish; whitespace formatting verification; no vulnerable NuGet packages; all 418
+native artifact hashes verified after startup. Actual child processes showed nice
+10, the backend nice 0, and no priority-setting warnings. Authenticated desktop and
+phone checks showed eight active tracks, working tabs and the separated background
+settings, with inspected screenshots and no browser errors or analysis mutations.
+
+Local API samples under the earlier two-worker scan versus the eight-worker scan:
+health median 1.5 ms vs 4.6 ms; scan state 1.6 ms vs 3.0 ms; coverage 127.9 ms vs
+203.4 ms (10 sequential requests per endpoint; maximum eight-worker coverage latency
+328.7 ms). Transfer status median 33.8 ms and recipient queue median 92.6 ms under
+eight-worker load (five requests each, maxima 53.7/94.8 ms). Queue totals reconciled.
+These are short responsiveness samples, not a throughput benchmark or a guarantee
+under future storage/memory contention. Continued scan completions were observed.
+
+Snapshot/evidence: `/home/narey/resonance-builds/analysis-cpu-20261102`, including
+`activation/`, `runtime-cpu-check.json`, `cpu-baseline.json`,
+`cpu-eight-workers-steady.json`, `foreground-transfers-check.json`, `browser/`,
+`backend-tests.log`, `backend-build.log`, `backend-publish.log`, `format.log` and
+`security.log`. Private operational helpers: `.dev/analysis-cpu/`.
