@@ -34,6 +34,7 @@
 // </copyright>
 
 import './Transfers.css';
+import { getCompleteUploadsQueue } from '../../lib/completeUploadQueue';
 import * as filesLibrary from '../../lib/files';
 import * as transfersLibrary from '../../lib/transfers';
 import AppContext from '../AppContext';
@@ -41,7 +42,13 @@ import { LoaderSegment } from '../Shared';
 import DownloadsTable from './DownloadsTable';
 import FindAlternateModal from './FindAlternateModal';
 import UploadsTable from './UploadsTable';
-import React, { useContext, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { toast } from 'react-toastify';
 
 const findTransferByFilename = (transfers, username, filename) => {
@@ -209,15 +216,16 @@ const Transfers = ({ direction }) => {
 
   const [connecting, setConnecting] = useState(true);
   const [transfers, setTransfers] = useState([]);
-  const [uploadPage, setUploadPage] = useState(0);
-  const [totalPending, setTotalPending] = useState(0);
   const [queueUsers, setQueueUsers] = useState([]);
   const [requestedUploadUser, setRequestedUploadUser] = useState(null);
   const [selectedUploadUser, setSelectedUploadUser] = useState(null);
-  const [userTotalPending, setUserTotalPending] = useState(0);
   const [loadError, setLoadError] = useState(false);
   const [findAlternate, setFindAlternate] = useState(null);
   const replacementsRef = useRef([]);
+  const completeUploadRef = useRef(null);
+  const rememberCompleteUpload = useCallback((snapshot) => {
+    completeUploadRef.current = snapshot;
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -242,22 +250,20 @@ const Transfers = ({ direction }) => {
       try {
         let response;
         if (direction === 'upload') {
-          const result = await transfersLibrary.getUploadsQueue({
-            username: requestedUploadUser,
-            page: uploadPage,
-            pageSize: 250,
+          const result = await getCompleteUploadsQueue({
+            username:
+              requestedUploadUser ?? completeUploadRef.current?.username,
+            previous: completeUploadRef.current,
             signal: controller.signal,
           });
           response = result.transfers;
           if (mounted) {
-            setTotalPending(result.totalPending);
+            rememberCompleteUpload(result);
             setQueueUsers(result.users);
             setUploadQueueCount?.(
               result.users.reduce((sum, user) => sum + user.waitingCount, 0),
             );
             setSelectedUploadUser(result.username);
-            setUserTotalPending(result.userTotalPending);
-            setUploadPage(result.page);
           }
         } else {
           response = await transfersLibrary.getAll({
@@ -334,7 +340,7 @@ const Transfers = ({ direction }) => {
       scheduled.clear();
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [direction, requestedUploadUser, uploadPage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [direction, requestedUploadUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFindAlternate = ({ directory, files, folderName, username }) => {
     setFindAlternate({ directory, files, folderName, username });
@@ -368,10 +374,23 @@ const Transfers = ({ direction }) => {
   };
 
   if (connecting) {
-    return <LoaderSegment />;
+    return (
+      <>
+        <LoaderSegment />
+        {direction === 'upload' && (
+          <p role="status">Loading the complete upload queue…</p>
+        )}
+      </>
+    );
   }
 
   if (direction === 'upload') {
+    if (loadError && transfers.length === 0)
+      return (
+        <p role="status">
+          Unable to load the complete upload queue. Retrying automatically.
+        </p>
+      );
     return (
       <>
         {loadError && (
@@ -383,19 +402,13 @@ const Transfers = ({ direction }) => {
           onCancel={cancel}
           onCancelDirectory={cancelUploadDirectory}
           onCancelUser={cancelUserUploads}
-          onClearCompleted={clearCompleted}
-          onPendingPageChange={setUploadPage}
           onRemove={remove}
           onSelectUploadUser={(username) => {
             setRequestedUploadUser(username);
-            setUploadPage(0);
           }}
-          pendingPage={uploadPage}
           queueUsers={queueUsers}
           selectedUsername={selectedUploadUser}
-          totalPending={totalPending}
           transfers={transfers}
-          userTotalPending={userTotalPending}
         />
       </>
     );

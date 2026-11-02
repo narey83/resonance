@@ -1,11 +1,26 @@
-# Upload queue pages
+# Upload queue and complete recipient lists
 
-The web uploads screen requests a bounded pending page instead of transferring the
-entire backlog on every refresh. It displays the full pending count and allows
-navigation through all pending records. Paging does not cancel, remove, or modify
-uploads. Active transfers sort first, followed by waiting records; request time
-and ID make ordering deterministic within each priority. Counts and pages are live
-and can change as transfers complete or new requests arrive.
+**User instruction, 2 November 2026:** every unfinished track going to the selected
+person must be available in one scrollable list, with no Next page or Show more
+controls. The recipient name and their existing user controls appear once in a
+compact top bar. Change user selects another recipient; folders label the tracks
+without adding more person headers. History remains on the existing History page.
+
+The frontend automatically assembles the selected recipient's complete queue from
+500-record transport pages, with at most two requests in flight. No partial list is
+published: IDs are deduplicated, the final count and leading identities are checked,
+and a moving queue is retried once. A failed reconciliation keeps the last complete
+view with a retry notice. The UI virtualizes individual track rows, so all records
+are scrollable without mounting thousands of DOM elements.
+
+Unchanged membership is reused for up to 30 seconds while the leading sample
+refreshes active progress. Changed counts, new sampled IDs or a previously active
+ID missing from the sample force a complete reload. Periodic reconciliation catches
+membership changes whose total stayed the same. Recipient changes and navigation
+abort unfinished requests; hidden tabs pause polling. Only the selected recipient's
+full files are loaded; other recipients still use compact aggregate counts.
+
+Legacy API contracts remain available:
 
 `GET /api/v0/transfers/uploads?page=0&pageSize=250` preserves the grouped response
 shape and adds `X-Uploads-Total-Pending`. `page` is zero based. Page size must be
@@ -14,11 +29,9 @@ completed history retains its independent 500-record cap. `activeOnly=true` omit
 that history. Calls without `page` retain the existing unpaged contract for other
 clients.
 
-The uploads page shows every recipient's full waiting and sending counts. Its
-upload waiting total equals the sum of the waiting counts in this recipient list;
-active uploads are counted separately. Selecting a person loads only that person's
-bounded pending track page. Track pages never determine the full person count.
-History is available on the existing History page, with no separate Uploads tab.
+The header still distinguishes upload and download waiting counts. While Uploads is
+open, its complete snapshot supplies the upload header count so it stays consistent
+with the selected snapshot's recipient totals. Active transfers are separate.
 
 `GET /api/v0/transfers/upload-queue?username=peer&page=0&pageSize=250` returns
 `users` (username, pendingCount, activeCount, waitingCount), `username`, `page`,
@@ -33,13 +46,12 @@ Uploads is open, its full recipient summary supplies the top-bar upload count so
 the page and header cannot disagree due to separate polling intervals. Leaving
 the page returns the header to its normal compact-status source.
 
-Track details separate sending/connecting from waiting. Folders open with 20
-track names and bounded Show more. Person totals cover their entire queue;
-folder/loaded track counts and navigation describe that person's current page.
-Person cancellation still covers every matching request across their pages.
-Block folder cancels and permanently denies future requests for that folder.
-Individual actions affect one ID; Cancel requests on this page affects only the
-selected person's loaded unfinished page, including collapsed folders.
+All pending tracks share one list, with their individual Waiting, Connecting or
+Uploading status and live progress. Cancel all uploads cancels every unfinished
+request for the selected recipient in one existing user-scoped operation. Individual
+actions still affect only one ID. Block folder retains its existing cancellation
+and permanent-denial confirmation. No upload/history records are modified by loading
+or scrolling the complete list.
 
 The web screen serializes refreshes, aborts obsolete requests when changing pages
 or leaving, and pauses polling in hidden tabs. No new dependency or SQLite schema
@@ -61,7 +73,8 @@ Browser performance boundaries:
 
 - Process queues and analysis on the server; opening a page must not fetch a queue
   proportional to its entire backlog just to display totals.
-- Fetch a bounded page for detailed rows; preserve totals and explicit navigation.
+- Fetch transport pages with bounded concurrency for the selected recipient; render
+  individual virtual rows for the complete list.
 - Share small status samples, serialize polls, pause hidden tabs, and cancel
   obsolete requests so background UI refreshes cannot pile up.
 - Start audio from the user's playback request independently of transfer refreshes
