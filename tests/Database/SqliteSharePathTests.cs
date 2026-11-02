@@ -25,9 +25,13 @@ public class SqliteSharePathTests
                 new[] {
                     new { masked = "absolute", original = Path.Combine(directory, "scanned.mp3"), date = DateTime.UtcNow.ToString("O") },
                     new { masked = "relative", original = "migrated.mp3", date = DateTime.UtcNow.ToString("O") },
+                    new { masked = @"share\album\song.mp3", original = Path.Combine(directory, "album", "song.mp3"), date = DateTime.UtcNow.ToString("O") },
+                    new { masked = @"share\Album\Song.mp3", original = Path.Combine(directory, "Album", "Song.mp3"), date = DateTime.UtcNow.ToString("O") },
                 });
             Assert.Equal(new[] { "absolute" }, repository.FindMaskedFilenames(new[] { "scanned.mp3" }));
+            Assert.Equal(Path.Combine(directory, "scanned.mp3"), Assert.Single(repository.FindFiles(new[] { "absolute" })).OriginalFilename);
             Assert.Equal(new[] { "relative" }, repository.FindMaskedFilenames(new[] { Path.Combine(directory, "migrated.mp3") }));
+            Assert.Equal(new[] { @"share\Album\Song.mp3" }, repository.FindMaskedFilenames(new[] { "Album/Song.mp3" }).Distinct(StringComparer.OrdinalIgnoreCase));
         }
         finally
         {

@@ -423,7 +423,7 @@ namespace resonance.Shares
             // from migrations. Resolve both representations of the same library file.
             return originalFilenames.SelectMany(path => new[] { path, resonance.Common.MusicPath.ToAbsolute(path), resonance.Common.MusicPath.ToRelative(path) })
                 .Distinct(StringComparer.OrdinalIgnoreCase).Chunk(200)
-                .SelectMany(paths => connection.Query<string>("SELECT maskedFilename FROM files WHERE originalFilename COLLATE NOCASE IN @paths", new { paths })).ToList();
+                .SelectMany(paths => connection.Query<string>("SELECT maskedFilename FROM files WHERE originalFilename COLLATE NOCASE IN @paths ORDER BY CASE WHEN originalFilename COLLATE BINARY IN @paths THEN 0 ELSE 1 END", new { paths })).ToList();
         }
 
         public IEnumerable<(string MaskedFilename, string OriginalFilename, FileTags Tags)> FindFiles(IEnumerable<string> maskedFilenames)
