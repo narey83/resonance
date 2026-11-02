@@ -652,12 +652,6 @@ const StatusStrip = ({
           <span className="status-chip">{queuedCount} transfers queued</span>
         )
       )}
-      {(dlSpeed > 0 || ulSpeed > 0) && (
-        <span className="status-live-rates">
-          <ArrowDown size={12} /> {formatBitrate(dlSpeed)}
-          <ArrowUp size={12} /> {formatBitrate(ulSpeed)}
-        </span>
-      )}
       {isLoggedIn && <MetadataLookupWatcher />}
       {viewControls && (
         <div className="status-strip-view-controls">

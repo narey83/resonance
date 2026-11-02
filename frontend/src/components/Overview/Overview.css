@@ -3446,7 +3446,7 @@ html.amoled {
 .status-strip > .status-user-wrap .privilege { display: none; }
 .status-strip > .status-user-wrap .status-strip-username-btn { max-width: 220px; }
 .status-strip > .status-user-wrap .status-strip-text { overflow: hidden; text-overflow: ellipsis; }
-.status-scan-summary, .status-live-rates { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.status-scan-summary { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
 .status-strip > .enrichment-status > span:last-child:not(:first-of-type) { display: none; }
 .status-details { flex-shrink: 0; }
 .status-details > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; color: var(--text-primary); background: var(--bg-surface); }
@@ -3469,7 +3469,6 @@ html.amoled {
   .status-strip { height: auto; min-height: 48px; flex-wrap: wrap; padding-block: 8px; }
   .status-strip > .status-strip-spacer { min-width: 0; }
   .status-scan-summary { font-size: 10px; }
-  .status-strip > .status-live-rates { display: none; }
 }
 
 /* A transient status panel must remain usable over the floating startup card. */

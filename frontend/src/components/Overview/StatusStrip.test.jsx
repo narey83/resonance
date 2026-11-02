@@ -4,6 +4,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 /* eslint-disable unicorn/consistent-function-scoping -- Jest mock factories must be self-contained. */
 jest.mock('../MetadataLookup/MetadataLookupWatcher', () => () => null);
+jest.mock('../../lib/useTransferRates', () => () => ({
+  down: 125_000,
+  up: 250_000,
+}));
 /* eslint-enable unicorn/consistent-function-scoping */
 
 const renderPanel = (props = {}) => {
@@ -126,6 +130,18 @@ describe('Status and controls explanations', () => {
       }
     },
   );
+
+  it('keeps transfer speeds inside Options rather than the top bar', () => {
+    const panel = renderPanel({
+      downloads: [{ state: 'InProgress', averageSpeed: 125_000 }],
+      uploads: [{ state: 'InProgress', averageSpeed: 250_000 }],
+    });
+    const bar = panel.closest('.status-strip');
+    expect(bar.querySelector('.status-live-rates')).toBeNull();
+    expect(panel.textContent).toContain('Current transfer speed');
+    expect(panel.textContent).toContain('Download:');
+    expect(panel.textContent).toContain('Upload:');
+  });
 
   it('uses the whole-queue counter with only active byte samples', () => {
     const panel = renderPanel({
