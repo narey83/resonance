@@ -60,12 +60,18 @@ describe('Status and controls explanations', () => {
       queuedTransferCounts: { uploads: 13_143, downloads: 7 },
     });
     const bar = panel.closest('.status-strip');
-    expect(bar.querySelector('a[href="/uploads"]').textContent).toBe(
-      '13,143 uploads waiting',
+    expect(
+      bar.querySelector('a[href="/uploads"]').getAttribute('aria-label'),
+    ).toBe('13,143 uploads waiting');
+    expect(
+      bar.querySelector('a[href="/downloads"]').getAttribute('aria-label'),
+    ).toBe('7 downloads waiting');
+    expect(bar.querySelectorAll('.status-transfer-link strong')).toHaveLength(
+      2,
     );
-    expect(bar.querySelector('a[href="/downloads"]').textContent).toBe(
-      '7 downloads waiting',
-    );
+    expect(
+      bar.querySelector('[aria-label="Waiting transfers"]'),
+    ).not.toBeNull();
     expect(bar.textContent).not.toContain('13150 transfers queued');
   });
 

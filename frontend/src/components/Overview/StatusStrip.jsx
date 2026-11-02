@@ -53,6 +53,7 @@ import {
   Plug,
   PlugZap,
   RefreshCw,
+  Settings2,
   Star,
   Trash2,
   Wifi,
@@ -345,6 +346,8 @@ const StatusStrip = ({
       {isLoggedIn && (
         <div className="status-user-wrap">
           <button
+            aria-expanded={menuOpen}
+            aria-label="Soulseek account and connection options"
             className="status-strip-item status-strip-username-btn"
             onClick={() => {
               if (menuOpen) {
@@ -365,6 +368,7 @@ const StatusStrip = ({
             }
             type="button"
           >
+            <span className="status-account-label">Soulseek</span>
             {/* Connection status indicator */}
             {connBusy ? (
               <Loader2
@@ -431,6 +435,10 @@ const StatusStrip = ({
                 {connPhase}
               </span>
             )}
+            <ChevronDown
+              className="status-account-chevron"
+              size={12}
+            />
           </button>
 
           {menuOpen &&
@@ -622,20 +630,27 @@ const StatusStrip = ({
       )}
       <div className="status-strip-spacer" />
       {queuedTransferCounts ? (
-        <>
-          <a
-            className="status-chip"
-            href={`${urlBase}/uploads`}
-          >
-            {queuedTransferCounts.uploads.toLocaleString()} uploads waiting
-          </a>
-          <a
-            className="status-chip"
-            href={`${urlBase}/downloads`}
-          >
-            {queuedTransferCounts.downloads.toLocaleString()} downloads waiting
-          </a>
-        </>
+        <nav
+          aria-label="Waiting transfers"
+          className="status-transfer-group"
+        >
+          {[
+            { key: 'uploads', label: 'Uploads', Icon: ArrowUp },
+            { key: 'downloads', label: 'Downloads', Icon: ArrowDown },
+          ].map(({ Icon, key, label }) => (
+            <a
+              aria-label={`${queuedTransferCounts[key].toLocaleString()} ${key} waiting`}
+              className="status-transfer-link"
+              href={`${urlBase}/${key}`}
+              key={key}
+            >
+              <Icon size={14} />
+              <span className="status-transfer-label">{label}</span>
+              <strong>{queuedTransferCounts[key].toLocaleString()}</strong>
+              <span className="status-transfer-waiting">waiting</span>
+            </a>
+          ))}
+        </nav>
       ) : (
         queuedCount > 0 && (
           <span className="status-chip">{queuedCount} transfers queued</span>
@@ -658,8 +673,9 @@ const StatusStrip = ({
         className="status-details"
         ref={detailsRef}
       >
-        <summary>
-          Status & controls <ChevronDown size={13} />
+        <summary aria-label="Status and controls options">
+          <Settings2 size={14} />
+          <span>Options</span> <ChevronDown size={13} />
         </summary>
         <div className="status-details-panel">
           <div className="status-details-heading">Server status</div>

@@ -3483,3 +3483,37 @@ html.amoled {
 .status-details-panel .status-strip-text { white-space: normal; overflow: visible; }
 .status-details-panel .status-strip-speed { width: auto; min-width: 0; }
 .status-details-panel > .status-strip-btn--label { justify-content: flex-start; align-self: flex-start; }
+
+/* Header controls share a quiet surface and consistent hit area. */
+.status-strip > .status-user-wrap .status-strip-username-btn {
+  height: 34px;
+  max-width: 270px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 10px;
+  gap: 8px;
+  background: var(--bg-surface);
+}
+.status-account-label { color: var(--text-muted); font-size: 11px; }
+.status-account-chevron { flex-shrink: 0; color: var(--text-muted); }
+.status-strip-username-btn[aria-expanded="true"] { border-color: var(--accent); }
+.status-strip-username-btn:focus-visible,
+.status-transfer-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.status-transfer-group { display: flex; align-items: center; flex-shrink: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); overflow: hidden; }
+.status-transfer-link { display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px; color: var(--text-primary); font-size: 12px; }
+.status-transfer-link + .status-transfer-link { border-left: 1px solid var(--border); }
+.status-transfer-link:hover { background: var(--surface-hover); color: var(--accent); }
+.status-transfer-link svg { color: var(--accent); flex-shrink: 0; }
+.status-transfer-link strong { font-variant-numeric: tabular-nums; font-weight: 600; }
+.status-transfer-waiting { color: var(--text-muted); font-size: 10px; }
+.status-details > summary { min-height: 34px; border-radius: 8px; padding: 0 10px; }
+.status-details[open] > summary svg:first-child { transform: none; }
+@media (max-width: 1100px) {
+  .status-transfer-waiting, .status-account-label { display: none; }
+}
+@media (max-width: 700px) {
+  .status-strip { height: auto; flex-wrap: wrap; padding-block: 8px; }
+  .status-transfer-group { order: 5; flex: 1 0 100%; }
+  .status-transfer-link { flex: 1; justify-content: center; }
+  .status-strip-view-label { display: none; }
+}
