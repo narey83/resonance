@@ -149,7 +149,7 @@ describe('player startup and playback intent', () => {
     expect(container.querySelector('.media-player')).not.toBeNull();
     await act(async () => {
       await new Promise((resolve) => {
-        setTimeout(resolve, 350);
+        setTimeout(resolve, 550);
       });
     });
     expect(container.querySelector('.media-player')).toBeNull();
