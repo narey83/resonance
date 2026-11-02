@@ -947,17 +947,24 @@ namespace resonance.MusicLibrary
             using var conn = OpenConnection();
             using var cmd = conn.CreateCommand();
 
-            // SUM(CASE ...) rather than COUNT(*) FILTER: the same statement has to run on SQLite,
-            // where FILTER is a recent addition.
+            // Reuse the matched row. Correlated cache lookups here repeatedly read the
+            // same (potentially large) waveform row for each missing tag in the library.
+            var summaryKey = UsePostgres ? "a.dj_summary::jsonb->>'key'" : "json_extract(a.dj_summary,'$.key')";
+            var summaryBpm = UsePostgres ? "a.dj_summary::jsonb->>'bpm'" : "json_extract(a.dj_summary,'$.bpm')";
+            var key = $"COALESCE(NULLIF({T}.key_sig, ''), a.detected_key, {summaryKey})";
+            var bpm = $"COALESCE(NULLIF({T}.bpm, 0), a.detected_bpm, CAST(ROUND(CAST({summaryBpm} AS DOUBLE PRECISION)) AS INTEGER))";
+            var cacheTable = UsePostgres ? $"{TA} a" : $"{TA} a INDEXED BY IX_TrackAnalysis_Coverage";
+            var hasWaveform = HasWaveform("a");
             cmd.CommandText = $@"
                 SELECT COUNT(*),
-                       SUM(CASE WHEN {CachedKey} IS NOT NULL AND {CachedKey} <> '' THEN 1 ELSE 0 END),
-                       SUM(CASE WHEN {CachedBpm} IS NOT NULL THEN 1 ELSE 0 END),
-                       SUM(CASE WHEN a.overall_peaks IS NOT NULL THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN {key} IS NOT NULL AND {key} <> '' THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN {bpm} IS NOT NULL THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN {hasWaveform} THEN 1 ELSE 0 END),
                        SUM(CASE WHEN a.lufs IS NOT NULL THEN 1 ELSE 0 END),
-                       SUM(CASE WHEN {FullyAnalysed("a")} THEN 1 ELSE 0 END)
+                       SUM(CASE WHEN {key} IS NOT NULL AND {key} <> '' AND {bpm} IS NOT NULL
+                           AND {hasWaveform} AND a.lufs IS NOT NULL THEN 1 ELSE 0 END)
                 FROM {T}
-                LEFT JOIN {TA} a ON {CacheMatch("a")}";
+                LEFT JOIN {cacheTable} ON {CacheMatch("a")}";
 
             MusicAnalysisStats basic;
             using (var r = cmd.ExecuteReader())
@@ -1442,10 +1449,14 @@ namespace resonance.MusicLibrary
         private string CacheMatch(string cache) =>
             $"{cache}.masked_filename = {T}.path AND {cache}.file_size = {T}.file_size";
 
+        private string HasWaveform(string cache) => UsePostgres
+            ? $"{cache}.overall_peaks IS NOT NULL"
+            : $"({cache}.overall_peaks IS NOT NULL) = 1";
+
         // See FullyAnalysedExists. `cache` names an analysis row already matched by CacheMatch.
         private string FullyAnalysed(string cache) =>
             $"({CachedKey} IS NOT NULL AND {CachedKey} <> '' AND {CachedBpm} IS NOT NULL "
-            + $"AND {cache}.overall_peaks IS NOT NULL AND {cache}.lufs IS NOT NULL)";
+            + $"AND {HasWaveform(cache)} AND {cache}.lufs IS NOT NULL)";
 
         // Case-insensitive equality (used in WHERE)
         private string IEq(string col) => UsePostgres ? $"{col} ILIKE" : $"{col} =";

@@ -39,6 +39,26 @@ public class WorkspaceTests : IDisposable
         db.Execute($"CREATE TABLE {(postgres ? "library_activity." : "")}\"PlayHistory\" (\"Id\" TEXT,\"Path\" TEXT,\"Username\" TEXT,\"PlayedAt\" BIGINT); CREATE TABLE {(postgres ? "library_activity." : "")}\"LovedTracks\" (\"Path\" TEXT,\"Username\" TEXT)");
     }
     [Fact]
+    public void CoverageKeepsTagPrecedenceAndRejectsStaleCacheFallbacks()
+    {
+        var tagged = Add("coverage/tagged.mp3");
+        var fallback = Add("coverage/fallback.mp3", bpm: 0);
+        var stale = Add("coverage/stale.mp3", bpm: 0);
+        using var db = Db();
+        db.Execute("UPDATE " + (postgres ? "music.tracks" : "tracks") + " SET key_sig = NULL WHERE path <> @path", new { path = tagged.Path });
+        foreach (var track in new[] { tagged, fallback, stale })
+        {
+            db.Execute($"INSERT INTO {CacheTable} (masked_filename,file_size,analysed_at,overall_peaks,lufs,dj_summary) VALUES(@path,@size,0,@peaks,-9,@summary)",
+                new { path = track.Path, size = track == stale ? 99 : 100, peaks = new byte[] { 1 }, summary = "{\"bpm\":128,\"key\":\"Am\"}" });
+        }
+        var stats = repository.GetAnalysisStats();
+        Assert.Equal(3, stats.Total);
+        Assert.Equal(2, stats.Keyed);
+        Assert.Equal(2, stats.Bpmed);
+        Assert.Equal(2, stats.Complete);
+    }
+
+    [Fact]
     public void EnhancedCoverageUsesCurrentIndexedTracksWithoutOpeningAudioFiles()
     {
         var valid = Add("coverage/current.mp3");

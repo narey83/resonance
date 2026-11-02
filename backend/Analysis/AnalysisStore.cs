@@ -475,23 +475,39 @@ namespace resonance.Analysis
                     downbeat_offset_seconds REAL, downbeat_confidence REAL, analysed_at INTEGER NOT NULL, detected_bpm INTEGER, detected_key TEXT, dj_summary TEXT)";
                 sqliteCommand.ExecuteNonQuery();
                 sqliteCommand.CommandText = "PRAGMA table_info(track_analysis)";
-                var hasDjSummary = false;
+                var existingColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 using (var columns = sqliteCommand.ExecuteReader())
                 {
                     while (columns.Read())
                     {
-                        hasDjSummary |= columns.GetString(1) == "dj_summary";
+                        existingColumns.Add(columns.GetString(1));
                     }
                 }
 
-                if (!hasDjSummary)
+                foreach (var (name, type) in new[]
                 {
-                    sqliteCommand.CommandText = "ALTER TABLE track_analysis ADD COLUMN dj_summary TEXT";
-                    sqliteCommand.ExecuteNonQuery();
+                    ("dj_summary", "TEXT"), ("detected_key", "TEXT"),
+                    ("detected_bpm", "INTEGER"), ("lufs", "REAL"), ("overall_peaks", "BLOB"),
+                })
+                {
+                    if (!existingColumns.Contains(name))
+                    {
+                        sqliteCommand.CommandText = $"ALTER TABLE track_analysis ADD COLUMN {name} {type}";
+                        sqliteCommand.ExecuteNonQuery();
+                    }
                 }
 
                 sqliteCommand.CommandText = "CREATE INDEX IF NOT EXISTS IX_TrackAnalysis_ExportReady ON track_analysis(masked_filename) WHERE dj_summary IS NOT NULL";
                 sqliteCommand.ExecuteNonQuery();
+
+                // Coverage must not revisit large waveform blobs for every indexed track.
+                // A compact covering index keeps routine readiness refreshes off those rows.
+                sqliteCommand.CommandTimeout = 1200;
+                sqliteCommand.CommandText = @"CREATE INDEX IF NOT EXISTS IX_TrackAnalysis_Coverage
+                    ON track_analysis(masked_filename, file_size, detected_key, detected_bpm,
+                        lufs, dj_summary, (overall_peaks IS NOT NULL))";
+                sqliteCommand.ExecuteNonQuery();
+                sqliteCommand.CommandTimeout = 30;
                 sqliteCommand.CommandText = @"CREATE TABLE IF NOT EXISTS imported_track_analysis (
                     collection_sha256 TEXT NOT NULL, source_xml_sha256 TEXT NOT NULL,
                     library_path TEXT NOT NULL, source_kind TEXT NOT NULL CHECK(source_kind='rekordbox'),

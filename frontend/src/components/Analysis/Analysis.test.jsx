@@ -300,6 +300,36 @@ describe('analysis folder loading', () => {
     expect(progress.textContent).toContain('Processed: 24 / 100');
     expect(container.textContent).toContain('Enhanced worker: Available');
   });
+  it('shows coverage without waiting for automatic preparation status', async () => {
+    expect.hasAssertions();
+    let finish;
+    getPreparationStatus.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await render();
+    expect(container.querySelector('.ka-summary-basic').textContent).toContain(
+      '0Ready',
+    );
+    await act(async () => finish({ paused: true }));
+  });
+
+  it('explains unavailable initial coverage while continuing other status updates', async () => {
+    expect.hasAssertions();
+    musicLibraryApi.getAnalysisStats.mockRejectedValueOnce(
+      new Error('timeout'),
+    );
+    await render();
+    expect(container.textContent).toContain(
+      'Library coverage is unavailable. Retrying automatically',
+    );
+    expect(container.querySelector('.ka-summary-basic').textContent).toContain(
+      '—Ready',
+    );
+  });
+
   it('shows unknown coverage while loading and retains values with a stale warning on failure', async () => {
     expect.hasAssertions();
     jest.useFakeTimers();

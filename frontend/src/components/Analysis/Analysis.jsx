@@ -840,12 +840,22 @@ const Analysis = () => {
       summary.lastStarted = Date.now();
       summary.request = (async () => {
         try {
-          const [nextStats, nextPreparation] = await Promise.all([
-            musicLibraryApi.getAnalysisStats(),
-            includePreparation
-              ? getPreparationStatus().catch(() => null)
-              : Promise.resolve(null),
-          ]);
+          void (includePreparation
+            ? getPreparationStatus()
+                .then((nextPreparation) => {
+                  if (!mountedRef.current) return;
+                  setPreparation(nextPreparation);
+                  setQueueStatus({ at: Date.now(), failed: false });
+                })
+                .catch(() => {
+                  if (mountedRef.current)
+                    setQueueStatus((previous) => ({
+                      ...previous,
+                      failed: true,
+                    }));
+                })
+            : Promise.resolve());
+          const nextStats = await musicLibraryApi.getAnalysisStats();
           if (!mountedRef.current) return;
           if (
             summary.total != null &&
@@ -861,14 +871,6 @@ const Analysis = () => {
           setStats(nextStats);
           setCoverageStatus({ at: Date.now(), failed: false });
           setDataRevision((revision) => revision + 1);
-          if (includePreparation) {
-            if (nextPreparation) setPreparation(nextPreparation);
-            setQueueStatus((previous) =>
-              nextPreparation
-                ? { at: Date.now(), failed: false }
-                : { ...previous, failed: true },
-            );
-          }
         } catch {
           // Retain the last counts and retry on a later poll instead of displaying zeroes.
           summary.dirty = true;
@@ -1501,6 +1503,11 @@ const Analysis = () => {
             status={queueStatus}
           />
         </details>
+        {coverageStatus.failed && !stats && (
+          <p role="status">
+            Library coverage is unavailable. Retrying automatically…
+          </p>
+        )}
         <details className="ka-coverage-details">
           <summary>View coverage details</summary>
           <div className="ka-analysis-summary">
