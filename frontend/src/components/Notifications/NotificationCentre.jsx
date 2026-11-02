@@ -342,7 +342,7 @@ const NotificationCentre = ({
                       onClick={() => {
                         setQuery('');
                         setCategory('all');
-                        changeUnreadOnly(false);
+                        setUnreadOnly(false);
                       }}
                       type="button"
                     >

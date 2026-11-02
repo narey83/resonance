@@ -109,7 +109,7 @@ describe('notification activity inbox', () => {
     }
   });
 
-  it('restores the saved filter on reopen and saves Show all activity', () => {
+  it('shows all activity temporarily without changing the saved unread filter', () => {
     act(() => {
       ReactDOM.unmountComponentAtNode(container);
     });
@@ -123,11 +123,42 @@ describe('notification activity inbox', () => {
     expect(container.querySelector('.nc-filter-line input').checked).toBe(true);
     expect(container.querySelectorAll('.nc-item')).toHaveLength(0);
     click(button('Show all activity'));
+    expect(prefs.set).not.toHaveBeenCalled();
+    expect(container.querySelector('.nc-filter-line input').checked).toBe(
+      false,
+    );
+    expect(container.querySelectorAll('.nc-item')).toHaveLength(2);
+    act(() => {
+      ReactDOM.unmountComponentAtNode(container);
+    });
+    render();
+    expect(container.querySelector('.nc-filter-line input').checked).toBe(true);
+    expect(container.querySelectorAll('.nc-item')).toHaveLength(0);
+    act(() =>
+      Simulate.change(container.querySelector('.nc-filter-line input'), {
+        target: { checked: false },
+      }),
+    );
     expect(prefs.set).toHaveBeenLastCalledWith(
       'resonance-notifications-unread-only',
       false,
     );
-    expect(container.querySelectorAll('.nc-item')).toHaveLength(2);
+  });
+
+  it('clears other filters without saving when unread only is already off', () => {
+    const search = container.querySelector(
+      '[aria-label="Search notifications"]',
+    );
+    act(() =>
+      Simulate.change(search, { target: { value: 'no matching notice' } }),
+    );
+    click(button('Show all activity'));
+    expect(prefs.set).not.toHaveBeenCalled();
+    expect(search.value).toBe('');
+    expect(container.querySelector('.nc-filter-line input').checked).toBe(
+      false,
+    );
+    expect(container.querySelectorAll('.nc-item')).toHaveLength(3);
   });
 
   it('groups history and handles unknown events or missing timestamps', () => {
