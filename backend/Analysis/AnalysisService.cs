@@ -157,13 +157,14 @@ namespace resonance.Analysis
         /// <returns>The analysis info for those of them that are in the share.</returns>
         public IEnumerable<TrackAnalysisInfo> GetTracks(IEnumerable<string> maskedFilenames)
         {
-            var status = Store.GetStatusMap();
-            var detected = Store.GetDetectedTags();
+            var files = ShareService.FindFiles(maskedFilenames).Where(f => AudioExtensions.Contains(f.Extension)).ToList();
+            var paths = files.Select(file => file.OriginalFilename).ToArray();
+            var status = Store.GetStatusMap(paths);
+            var detected = Store.GetDetectedTags(paths);
             uint? Bpm(string path, uint? tag) => tag.HasValue && tag.Value > 0 ? tag : detected.GetValueOrDefault(MusicPath.ToRelative(path)).Bpm;
             string Key(string path, string tag) => !string.IsNullOrEmpty(tag) ? tag : detected.GetValueOrDefault(MusicPath.ToRelative(path)).Key;
 
-            return ShareService.FindFiles(maskedFilenames)
-                .Where(f => AudioExtensions.Contains(f.Extension))
+            return files
                 .Select(f =>
                 {
                     var (hasWaveform, lufs) = status.TryGetValue(MusicPath.ToRelative(f.OriginalFilename), out var s)

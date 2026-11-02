@@ -39,6 +39,26 @@ public class WorkspaceTests : IDisposable
         db.Execute($"CREATE TABLE {(postgres ? "library_activity." : "")}\"PlayHistory\" (\"Id\" TEXT,\"Path\" TEXT,\"Username\" TEXT,\"PlayedAt\" BIGINT); CREATE TABLE {(postgres ? "library_activity." : "")}\"LovedTracks\" (\"Path\" TEXT,\"Username\" TEXT)");
     }
     [Fact]
+    public void SelectedScanMetadataIsBoundedAndHandlesEmptyAndBatchedSelections()
+    {
+        var selected = Add("selected.mp3");
+        var other = Add("other.mp3");
+        using var db = Db();
+        db.Execute($"INSERT INTO {CacheTable}(masked_filename,file_size,num_bars,lufs,detected_bpm,detected_key,analysed_at) VALUES(@path,100,1,-9,128,'Am',0)", new { path = selected.Path });
+        db.Execute($"INSERT INTO {CacheTable}(masked_filename,file_size,detected_bpm,analysed_at) VALUES(@path,100,-1,0)", new { path = other.Path });
+        var analysisStore = new AnalysisStore(connection, postgres);
+        var paths = Enumerable.Range(0, 201).Select(index => $"missing-{index}.mp3").Append(selected.Path).Append(selected.Path).ToArray();
+        var status = analysisStore.GetStatusMap(paths);
+        Assert.True(Assert.Single(status).Value.HasWaveform);
+        Assert.Equal(-9, status[selected.Path].Lufs);
+        var tags = Assert.Single(analysisStore.GetDetectedTags(paths)).Value;
+        Assert.Equal(128u, tags.Bpm);
+        Assert.Equal("Am", tags.Key);
+        Assert.Empty(analysisStore.GetStatusMap([]));
+        Assert.Empty(analysisStore.GetDetectedTags([]));
+    }
+
+    [Fact]
     public void CoverageKeepsTagPrecedenceAndRejectsStaleCacheFallbacks()
     {
         var tagged = Add("coverage/tagged.mp3");

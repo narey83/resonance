@@ -59,6 +59,7 @@ namespace resonance.Analysis
 
         private bool UsePostgres { get; }
         private string Table => UsePostgres ? "analysis.track_analysis" : "track_analysis";
+        private string MetadataIndex => UsePostgres ? string.Empty : " INDEXED BY IX_TrackAnalysis_Coverage";
         private string ConnectionString { get; }
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Analysis);
 
@@ -199,19 +200,24 @@ namespace resonance.Analysis
         ///     filename. One query rather than a per-track round trip, because the library listing
         ///     needs this for every row at once.
         /// </summary>
+        /// <param name="paths">Optional library paths; an empty selection reads no rows.</param>
         /// <returns>A map of masked filename to its cached waveform and loudness state.</returns>
-        public Dictionary<string, (bool HasWaveform, double? Lufs)> GetStatusMap()
+        public Dictionary<string, (bool HasWaveform, double? Lufs)> GetStatusMap(IEnumerable<string> paths = null)
         {
             var map = new Dictionary<string, (bool, double?)>(StringComparer.OrdinalIgnoreCase);
             using var conn = OpenConnection();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = $"SELECT masked_filename, num_bars IS NOT NULL, lufs FROM {Table}";
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
+            foreach (var batch in paths?.Select(Key).Distinct(StringComparer.OrdinalIgnoreCase).Chunk(200) ?? new string[][] { null })
             {
-                map[reader.GetString(0)] = (
-                    reader.GetBoolean(1),
-                    reader.IsDBNull(2) ? null : reader.GetDouble(2));
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = $"SELECT masked_filename, num_bars IS NOT NULL, lufs FROM {Table}{MetadataIndex}";
+                RestrictPaths(cmd, "masked_filename", batch);
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    map[reader.GetString(0)] = (
+                        reader.GetBoolean(1),
+                        reader.IsDBNull(2) ? null : reader.GetDouble(2));
+                }
             }
 
             return map;
@@ -288,20 +294,24 @@ namespace resonance.Analysis
             cmd.ExecuteNonQuery();
         }
 
-        public Dictionary<string, (uint? Bpm, string Key)> GetDetectedTags()
+        public Dictionary<string, (uint? Bpm, string Key)> GetDetectedTags(IEnumerable<string> paths = null)
         {
             var values = new Dictionary<string, (uint?, string)>(StringComparer.OrdinalIgnoreCase);
             using var conn = OpenConnection();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = $@"SELECT a.masked_filename, a.detected_bpm, a.detected_key
-                FROM {Table} a JOIN {(UsePostgres ? "music.tracks" : "tracks")} t
-                ON a.masked_filename = t.path AND a.file_size = t.file_size";
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
+            foreach (var batch in paths?.Select(Key).Distinct(StringComparer.OrdinalIgnoreCase).Chunk(200) ?? new string[][] { null })
             {
-                values[reader.GetString(0)] = (
-                    reader.IsDBNull(1) ? null : Convert.ToUInt32(reader.GetValue(1)),
-                    reader.IsDBNull(2) ? null : reader.GetString(2));
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = $@"SELECT a.masked_filename, a.detected_bpm, a.detected_key
+                    FROM {Table} a{MetadataIndex} JOIN {(UsePostgres ? "music.tracks" : "tracks")} t
+                    ON a.masked_filename = t.path AND a.file_size = t.file_size";
+                RestrictPaths(cmd, "a.masked_filename", batch);
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    values[reader.GetString(0)] = (
+                        reader.IsDBNull(1) ? null : Convert.ToUInt32(reader.GetValue(1)),
+                        reader.IsDBNull(2) ? null : reader.GetString(2));
+                }
             }
 
             return values;
@@ -384,6 +394,21 @@ namespace resonance.Analysis
             catch (Exception exception) when (exception is JsonException or InvalidOperationException)
             {
                 return null;
+            }
+        }
+
+        private static void RestrictPaths(DbCommand command, string column, string[] paths)
+        {
+            if (paths == null)
+            {
+                return;
+            }
+
+            var names = Enumerable.Range(0, paths.Length).Select(index => $"@path{index}").ToArray();
+            command.CommandText += $" WHERE {column} IN ({string.Join(",", names)})";
+            for (var index = 0; index < paths.Length; index++)
+            {
+                AddParam(command, names[index], paths[index]);
             }
         }
 
