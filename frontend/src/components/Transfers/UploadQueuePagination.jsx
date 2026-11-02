@@ -5,6 +5,7 @@ const UploadQueuePagination = ({
   page,
   pageSize = 250,
   total,
+  username,
 }) => {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const first = total === 0 ? 0 : page * pageSize + 1;
@@ -16,7 +17,7 @@ const UploadQueuePagination = ({
     >
       <div>
         <strong>
-          Queue page {page + 1} of {pages}
+          {username ? `${username} · ` : ''}Queue page {page + 1} of {pages}
         </strong>
         <div>
           {total === 0

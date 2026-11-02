@@ -264,6 +264,57 @@ public class TransferListQueryTests
         Assert.Contains(">", plan);
     }
 
+    [Fact]
+    public void Recipient_Directory_Covers_The_Whole_Queue_While_Details_Are_Paged_Per_Person()
+    {
+        var sql = new List<string>();
+        using var connection = Connect();
+        using var context = Context(connection, sql);
+        Seed(context, completed: 30, inFlight: 200);
+        Seed(context, completed: 0, inFlight: 1001, prefix: "bob", username: "bob");
+        Seed(context, completed: 0, inFlight: 3, removed: true, prefix: "removed");
+        Seed(context, completed: 0, inFlight: 7, direction: TransferDirection.Download, prefix: "download");
+        var pending = context.Transfers.Where(t => t.Direction == TransferDirection.Upload && !t.Removed && t.EndedAt == null).OrderBy(t => t.Filename).ToList();
+        for (var i = 0; i < pending.Count; i++)
+        {
+            pending[i].State = TransferStates.Queued | TransferStates.Locally;
+        }
+
+        pending[0].State = TransferStates.InProgress;
+        context.SaveChanges();
+        TransferListQuery.EnsureSqliteIndexes(context);
+        var page = TransferListQuery.UploadQueuePage(context, "alice", 1, 50);
+        Assert.Equal(1201, page.TotalPending);
+        Assert.Equal(200, page.UserTotalPending);
+        Assert.Equal(2, page.Users.Count);
+        Assert.Equal(1001, page.Users.Single(u => u.Username == "bob").PendingCount);
+        Assert.Equal(1000, page.Users.Single(u => u.Username == "bob").WaitingCount);
+        Assert.Equal(1, page.Users.Single(u => u.Username == "bob").ActiveCount);
+        Assert.Equal(50, page.Transfers.Count);
+        Assert.All(page.Transfers, transfer => Assert.Equal("alice", transfer.Username));
+        Assert.DoesNotContain(page.Transfers, transfer => global::resonance.Transfers.TransferStateCategories.Completed.Contains(transfer.State));
+        Assert.Contains(sql, statement => statement.Contains("GROUP BY", StringComparison.Ordinal));
+        Assert.Equal("bob", TransferListQuery.UploadQueuePage(context, null!, 0, 50).Username);
+        Assert.Equal(3, TransferListQuery.UploadQueuePage(context, "alice", 999, 50).Page);
+        var missing = TransferListQuery.UploadQueuePage(context, "alice' OR 1=1 --", 0, 50);
+        Assert.Empty(missing.Transfers);
+        Assert.Equal(0, missing.UserTotalPending);
+        Assert.Equal(1201, missing.TotalPending);
+    }
+
+    [Fact]
+    public void Empty_Recipient_Directory_Does_Not_Load_History()
+    {
+        using var connection = Connect();
+        using var context = Context(connection);
+        Seed(context, completed: 20, inFlight: 0);
+        var page = TransferListQuery.UploadQueuePage(context, null!, 0, 250);
+        Assert.Null(page.Username);
+        Assert.Empty(page.Users);
+        Assert.Empty(page.Transfers);
+        Assert.Equal(0, page.TotalPending);
+    }
+
     private static SqliteConnection Connect()
     {
         var connection = new SqliteConnection("Data Source=:memory:");
@@ -291,7 +342,8 @@ public class TransferListQueryTests
         int inFlight,
         TransferDirection direction = TransferDirection.Upload,
         bool removed = false,
-        string prefix = "up")
+        string prefix = "up",
+        string username = "alice")
     {
         var start = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
@@ -300,7 +352,7 @@ public class TransferListQueryTests
             context.Add(new Transfer
             {
                 Id = Guid.NewGuid(),
-                Username = "alice",
+                Username = username,
                 Direction = direction,
                 Filename = $"{prefix}-{i}.mp3",
                 RequestedAt = start,
@@ -317,7 +369,7 @@ public class TransferListQueryTests
             context.Add(new Transfer
             {
                 Id = Guid.NewGuid(),
-                Username = "alice",
+                Username = username,
                 Direction = direction,
                 Filename = $"{prefix}-live-{i}.mp3",
                 RequestedAt = start,

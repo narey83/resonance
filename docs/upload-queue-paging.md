@@ -14,25 +14,32 @@ completed history retains its independent 500-record cap. `activeOnly=true` omit
 that history. Calls without `page` retain the existing unpaged contract for other
 clients.
 
-The uploads page has separate Queue and History tabs. Queue groups unfinished
-tracks into Uploading now (sending/connecting) and Waiting to upload, then by
-person and folder. A mixed-state folder can appear in both sections; finished
-tracks from it appear only in History. Pending folders open by default with 20
-track names and a bounded Show more control. Waiting tracks have no sent-progress
-bar or zero-sent counter. History includes successful, failed and cancelled
-requests from the independent recent 500-record sample.
+The uploads page shows every recipient's full waiting and sending counts. Its
+upload waiting total equals the sum of the waiting counts in this recipient list;
+active uploads are counted separately. Selecting a person loads only that person's
+bounded pending track page. Track pages never determine the full person count.
+History is available on the existing History page, with no separate Uploads tab.
 
-The header's tracks-left-to-send count covers the entire unfinished queue. Person
-and folder counts cover the current queue page. The persistent queue footer labels
-the page number, request range and 250-record limit; it is separate from History's
-people-per-page control. Empty sections describe only the current queue page.
+`GET /api/v0/transfers/upload-queue?username=peer&page=0&pageSize=250` returns
+`users` (username, pendingCount, activeCount, waitingCount), `username`, `page`,
+`totalPending`, `userTotalPending` and grouped `transfers`. The recipient summary is
+aggregated in the database without materializing every pending file. Unspecified
+recipients default to the largest waiting queue. Removed and completed requests
+are excluded, and an obsolete page clamps to the selected recipient's last page.
+The endpoint returns no completed history and preserves the older upload APIs.
 
-Person cancellation still applies to every matching unfinished request across all
-pages. Block folder cancels and permanently denies that folder for that person;
-its confirmation describes this existing behavior. Individual track actions affect
-only the selected ID. Cancel requests on this page asks for confirmation and affects
-only the displayed page's unfinished records, including collapsed folders. History
-clearing retains its existing whole-history scope.
+The top bar links separate upload/download waiting counts to their pages. While
+Uploads is open, its full recipient summary supplies the top-bar upload count so
+the page and header cannot disagree due to separate polling intervals. Leaving
+the page returns the header to its normal compact-status source.
+
+Track details separate sending/connecting from waiting. Folders open with 20
+track names and bounded Show more. Person totals cover their entire queue;
+folder/loaded track counts and navigation describe that person's current page.
+Person cancellation still covers every matching request across their pages.
+Block folder cancels and permanently denies future requests for that folder.
+Individual actions affect one ID; Cancel requests on this page affects only the
+selected person's loaded unfinished page, including collapsed folders.
 
 The web screen serializes refreshes, aborts obsolete requests when changing pages
 or leaving, and pauses polling in hidden tabs. No new dependency or SQLite schema

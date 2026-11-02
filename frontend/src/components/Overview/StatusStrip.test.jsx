@@ -54,6 +54,21 @@ describe('Status and controls explanations', () => {
     ).toContain('42 transfers queued');
   });
 
+  it('links separate upload and download waiting counts to their queues', () => {
+    const panel = renderPanel({
+      queuedTransferCount: 13_150,
+      queuedTransferCounts: { uploads: 13_143, downloads: 7 },
+    });
+    const bar = panel.closest('.status-strip');
+    expect(bar.querySelector('a[href="/uploads"]').textContent).toBe(
+      '13,143 uploads waiting',
+    );
+    expect(bar.querySelector('a[href="/downloads"]').textContent).toBe(
+      '7 downloads waiting',
+    );
+    expect(bar.textContent).not.toContain('13150 transfers queued');
+  });
+
   it('uses the whole-queue counter with only active byte samples', () => {
     const panel = renderPanel({
       queuedTransferCount: 35_007,

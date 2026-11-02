@@ -703,6 +703,50 @@ namespace resonance.Transfers.API
             }
         }
 
+        /// <summary>Gets all upload recipients and a selected recipient's bounded track page.</summary>
+        /// <returns>Full queue counts by recipient and the selected recipient's tracks.</returns>
+        [HttpGet("upload-queue")]
+        [Authorize(Policy = AuthPolicy.Any)]
+        [ProducesResponseType(200)]
+        public async Task<IActionResult> GetUploadQueue([FromQuery] string username = null, [FromQuery] int page = 0, [FromQuery] int pageSize = 250)
+        {
+            if (Program.IsRelayAgent)
+            {
+                return Forbid();
+            }
+
+            if (!ModelState.IsValid || page < 0 || pageSize < 1 || pageSize > 500 || page > int.MaxValue / pageSize)
+            {
+                return BadRequest(new { code = "invalid_pagination", message = "Page must be nonnegative and page size must be between 1 and 500." });
+            }
+
+            if (!await ListRequestLimiter.WaitAsync(TimeSpan.FromMilliseconds(500), HttpContext?.RequestAborted ?? CancellationToken.None))
+            {
+                Response.Headers.RetryAfter = "2";
+                return StatusCode(503, new { code = "server_busy", message = "Transfer status is busy; retry shortly." });
+            }
+
+            try
+            {
+                var result = Transfers.Uploads.ListQueuePage(username, page, pageSize);
+                var transfers = result.Transfers.GroupBy(t => t.Username).Select(group => new UserResponse
+                {
+                    Username = group.Key,
+                    Directories = group.GroupBy(t => t.Filename.DirectoryName()).Select(directory => new DirectoryResponse
+                    {
+                        Directory = directory.Key,
+                        FileCount = directory.Count(),
+                        Files = directory.ToList(),
+                    }),
+                });
+                return Ok(new { result.Users, result.Username, result.Page, result.TotalPending, result.UserTotalPending, Transfers = transfers });
+            }
+            finally
+            {
+                ListRequestLimiter.Release();
+            }
+        }
+
         /// <summary>
         ///     Gets all uploads for the specified username.
         /// </summary>

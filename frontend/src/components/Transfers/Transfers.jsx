@@ -36,11 +36,12 @@
 import './Transfers.css';
 import * as filesLibrary from '../../lib/files';
 import * as transfersLibrary from '../../lib/transfers';
+import AppContext from '../AppContext';
 import { LoaderSegment } from '../Shared';
 import DownloadsTable from './DownloadsTable';
 import FindAlternateModal from './FindAlternateModal';
 import UploadsTable from './UploadsTable';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 
 const findTransferByFilename = (transfers, username, filename) => {
@@ -175,6 +176,11 @@ const cancelUserUploads = async ({ directories, username }) => {
 };
 
 const Transfers = ({ direction }) => {
+  const { setUploadQueueCount } = useContext(AppContext) ?? {};
+  useEffect(() => {
+    if (direction !== 'upload') return undefined;
+    return () => setUploadQueueCount?.(null);
+  }, [direction, setUploadQueueCount]);
   const cancel = async ({ file }) => {
     const { id, username } = file;
     try {
@@ -205,6 +211,10 @@ const Transfers = ({ direction }) => {
   const [transfers, setTransfers] = useState([]);
   const [uploadPage, setUploadPage] = useState(0);
   const [totalPending, setTotalPending] = useState(0);
+  const [queueUsers, setQueueUsers] = useState([]);
+  const [requestedUploadUser, setRequestedUploadUser] = useState(null);
+  const [selectedUploadUser, setSelectedUploadUser] = useState(null);
+  const [userTotalPending, setUserTotalPending] = useState(0);
   const [loadError, setLoadError] = useState(false);
   const [findAlternate, setFindAlternate] = useState(null);
   const replacementsRef = useRef([]);
@@ -232,7 +242,8 @@ const Transfers = ({ direction }) => {
       try {
         let response;
         if (direction === 'upload') {
-          const result = await transfersLibrary.getUploadsPage({
+          const result = await transfersLibrary.getUploadsQueue({
+            username: requestedUploadUser,
             page: uploadPage,
             pageSize: 250,
             signal: controller.signal,
@@ -240,12 +251,13 @@ const Transfers = ({ direction }) => {
           response = result.transfers;
           if (mounted) {
             setTotalPending(result.totalPending);
-            setUploadPage((page) =>
-              Math.min(
-                page,
-                Math.max(0, Math.ceil(result.totalPending / 250) - 1),
-              ),
+            setQueueUsers(result.users);
+            setUploadQueueCount?.(
+              result.users.reduce((sum, user) => sum + user.waitingCount, 0),
             );
+            setSelectedUploadUser(result.username);
+            setUserTotalPending(result.userTotalPending);
+            setUploadPage(result.page);
           }
         } else {
           response = await transfersLibrary.getAll({
@@ -322,7 +334,7 @@ const Transfers = ({ direction }) => {
       scheduled.clear();
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [direction, uploadPage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [direction, requestedUploadUser, uploadPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFindAlternate = ({ directory, files, folderName, username }) => {
     setFindAlternate({ directory, files, folderName, username });
@@ -374,9 +386,16 @@ const Transfers = ({ direction }) => {
           onClearCompleted={clearCompleted}
           onPendingPageChange={setUploadPage}
           onRemove={remove}
+          onSelectUploadUser={(username) => {
+            setRequestedUploadUser(username);
+            setUploadPage(0);
+          }}
           pendingPage={uploadPage}
+          queueUsers={queueUsers}
+          selectedUsername={selectedUploadUser}
           totalPending={totalPending}
           transfers={transfers}
+          userTotalPending={userTotalPending}
         />
       </>
     );

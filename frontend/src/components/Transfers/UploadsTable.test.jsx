@@ -31,14 +31,30 @@ const file = (id, state) => ({
 const transfers = (files) => [
   { username: 'listener', directories: [{ directory: 'Music/Album', files }] },
 ];
-describe('Upload queue views', () => {
+const users = [
+  {
+    username: 'listener',
+    waitingCount: 249,
+    activeCount: 1,
+    pendingCount: 250,
+  },
+  {
+    username: 'large-queue',
+    waitingCount: 12_894,
+    activeCount: 0,
+    pendingCount: 12_894,
+  },
+];
+describe('Complete upload recipient counts', () => {
   let container;
   const render = async (props = {}) => {
     await act(async () => {
       ReactDOM.render(
         <UploadsTable
-          totalPending={501}
+          queueUsers={users}
+          selectedUsername="listener"
           transfers={[]}
+          userTotalPending={250}
           {...props}
         />,
         container,
@@ -58,33 +74,81 @@ describe('Upload queue views', () => {
     container.remove();
     jest.restoreAllMocks();
   });
-  it('separates sending, waiting and finished tracks from the same folder', async () => {
+  it('reconciles the visible recipient waiting counts with the upload total', async () => {
+    expect.hasAssertions();
+    const onSelectUploadUser = jest.fn();
+    await render({
+      onSelectUploadUser,
+      transfers: transfers([
+        file('now', 'InProgress'),
+        file('waiting', 'Queued'),
+      ]),
+    });
+    expect(container.querySelector('.ul-queue-total strong').textContent).toBe(
+      '13,143',
+    );
+    const counts = [...container.querySelectorAll('.ul-person-choice b')].map(
+      (node) => Number(node.textContent.replaceAll(',', '')),
+    );
+    expect(counts.reduce((a, b) => a + b, 0)).toBe(13_143);
+    expect(container.querySelector('.ul-people').textContent).toContain(
+      'large-queue',
+    );
+    expect(container.querySelector('.ul-person-summary').textContent).toContain(
+      '1 uploading or connecting',
+    );
+    expect(
+      container.querySelectorAll('.ul-person-summary')[1].textContent,
+    ).toContain('249 waiting in total');
+    act(() =>
+      Simulate.click(container.querySelectorAll('.ul-person-choice')[1]),
+    );
+    expect(onSelectUploadUser).toHaveBeenCalledWith('large-queue');
+  });
+  it('has no History tab or mixed completed records', async () => {
     expect.hasAssertions();
     await render({
       transfers: transfers([
-        file('sending', 'InProgress'),
+        file('now', 'InProgress'),
         file('waiting', 'Queued'),
         file('sent', 'Completed, Succeeded'),
-        file('failed', 'Completed, Errored'),
       ]),
     });
-    const groups = container.querySelectorAll('.dl-user-group');
-    expect(groups).toHaveLength(2);
-    expect(groups[0].textContent).toContain('sending.flac');
-    expect(groups[0].textContent).not.toContain('waiting.flac');
-    expect(groups[1].textContent).toContain('waiting.flac');
-    expect(groups[1].textContent).not.toContain('sent.flac');
-    expect(groups[1].textContent).not.toContain('0 of');
-    expect(groups[1].querySelector('.mini-progress')).toBeNull();
-    act(() => Simulate.click(container.querySelectorAll('[role="tab"]')[1]));
-    expect(container.textContent).toContain('Recent history');
-    expect(container.textContent).not.toContain('Waiting to upload');
-    act(() => Simulate.click(container.querySelector('.dl-user-toggle')));
-    expect(container.textContent).toContain('sent.flac');
-    expect(container.textContent).toContain('failed.flac');
-    expect(container.textContent).not.toContain('sending.flac');
+    expect(container.querySelector('[role="tab"]')).toBeNull();
+    expect(container.textContent).not.toContain('History');
+    expect(container.textContent).not.toContain('sent.flac');
+    expect(
+      container.querySelector('.ul-tracks--sending').textContent,
+    ).toContain('now.flac');
+    expect(
+      container.querySelector('.ul-tracks--waiting').textContent,
+    ).toContain('waiting.flac');
+    expect(
+      container.querySelector('.ul-tracks--waiting .mini-progress'),
+    ).toBeNull();
   });
-  it('shows waiting track names immediately and reveals more in bounded batches', async () => {
+  it('pages only the selected recipient while retaining all recipient counts', async () => {
+    expect.hasAssertions();
+    const onPendingPageChange = jest.fn();
+    await render({
+      selectedUsername: 'large-queue',
+      userTotalPending: 12_894,
+      onPendingPageChange,
+    });
+    expect(container.querySelector('.ul-view-footer').textContent).toContain(
+      'large-queue · Queue page 1 of 52',
+    );
+    act(() =>
+      Simulate.click(
+        container.querySelector('[aria-label="Next pending uploads page"]'),
+      ),
+    );
+    expect(onPendingPageChange).toHaveBeenCalledWith(1);
+    expect(container.querySelector('.ul-queue-total strong').textContent).toBe(
+      '13,143',
+    );
+  });
+  it('shows tracks immediately and expands them in bounded batches', async () => {
     expect.hasAssertions();
     await render({
       transfers: transfers(
@@ -92,33 +156,10 @@ describe('Upload queue views', () => {
       ),
     });
     expect(container.querySelectorAll('.dl-file-row')).toHaveLength(20);
-    expect(container.textContent).toContain('45 waiting');
     act(() => Simulate.click(container.querySelector('.dl-show-more-btn')));
     expect(container.querySelectorAll('.dl-file-row')).toHaveLength(40);
-    act(() => Simulate.click(container.querySelector('.dl-dir-toggle')));
-    expect(container.querySelectorAll('.dl-file-row')).toHaveLength(0);
-    act(() => Simulate.click(container.querySelector('.dl-dir-toggle')));
-    expect(container.querySelectorAll('.dl-file-row')).toHaveLength(40);
   });
-  it('keeps queue navigation separate from history page size', async () => {
-    expect.hasAssertions();
-    const onPendingPageChange = jest.fn();
-    await render({ onPendingPageChange });
-    expect(container.textContent).toContain('Queue page 1 of 3');
-    expect(container.querySelector('select')).toBeNull();
-    act(() =>
-      Simulate.click(
-        container.querySelector('[aria-label="Next pending uploads page"]'),
-      ),
-    );
-    expect(onPendingPageChange).toHaveBeenCalledWith(1);
-    act(() => Simulate.click(container.querySelectorAll('[role="tab"]')[1]));
-    expect(container.textContent).toContain('People per history page');
-    expect(
-      container.querySelector('[aria-label="Pending uploads pages"]'),
-    ).toBeNull();
-  });
-  it('cancels only unfinished requests on the displayed page after confirmation', async () => {
+  it('cancels only displayed-page unfinished requests after confirmation', async () => {
     expect.hasAssertions();
     const onCancel = jest.fn();
     const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
@@ -136,50 +177,18 @@ describe('Upload queue views', () => {
     act(() => Simulate.click(container.querySelector('.ul-quick-btn--cancel')));
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onCancel).toHaveBeenCalledWith({ file: queued });
-    expect(confirm).toHaveBeenCalledWith(
-      expect.stringContaining('other pages will stay queued'),
-    );
   });
-  it('moves tracks between queue sections and history when polling updates their state', async () => {
+  it('shows an empty queue with zero reconciled counts', async () => {
     expect.hasAssertions();
-    await render({ transfers: transfers([file('changing', 'Queued')]) });
-    expect(
-      container.querySelector('.ul-tracks--waiting').textContent,
-    ).toContain('changing.flac');
-    await render({ transfers: transfers([file('changing', 'InProgress')]) });
-    expect(container.querySelector('.ul-tracks--waiting')).toBeNull();
-    expect(
-      container.querySelector('.ul-tracks--sending').textContent,
-    ).toContain('changing.flac');
     await render({
-      totalPending: 0,
-      transfers: transfers([file('changing', 'Completed, Succeeded')]),
+      queueUsers: [],
+      selectedUsername: null,
+      userTotalPending: 0,
     });
-    expect(container.querySelector('.ul-tracks--sending')).toBeNull();
-    act(() => Simulate.click(container.querySelectorAll('[role="tab"]')[1]));
-    expect(container.querySelector('.ul-person-summary').textContent).toContain(
-      '1 finished',
+    expect(container.querySelector('.ul-queue-total strong').textContent).toBe(
+      '0',
     );
-  });
-  it('supports keyboard switching between queue and history', async () => {
-    expect.hasAssertions();
-    await render();
-    const tabs = container.querySelector('[role="tablist"]');
-    act(() => Simulate.keyDown(tabs, { key: 'ArrowRight' }));
-    expect(
-      container.querySelector('#ul-history-tab').getAttribute('aria-selected'),
-    ).toBe('true');
-    expect(document.activeElement.id).toBe('ul-history-tab');
-    act(() => Simulate.keyDown(tabs, { key: 'Home' }));
-    expect(
-      container.querySelector('#ul-queue-tab').getAttribute('aria-selected'),
-    ).toBe('true');
-  });
-  it('shows empty queue messages without reporting sent progress', async () => {
-    expect.hasAssertions();
-    await render({ totalPending: 0 });
-    expect(container.textContent).toContain('No tracks left to send');
-    expect(container.textContent).toContain('No waiting tracks on this page.');
+    expect(container.textContent).toContain('No queued uploads.');
     expect(
       container.querySelector('[aria-label="Next pending uploads page"]')
         .disabled,

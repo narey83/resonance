@@ -354,6 +354,12 @@ const App = () => {
         : 'light'),
   );
   const [queuedTransferCount, setQueuedTransferCount] = useState(null);
+  const [queuedTransferCounts, setQueuedTransferCounts] = useState(null);
+  const [uploadQueueCount, setUploadQueueCount] = useState(null);
+  const displayQueueCounts = queuedTransferCounts && {
+    ...queuedTransferCounts,
+    uploads: uploadQueueCount ?? queuedTransferCounts.uploads,
+  };
   const [uploadCount, setUploadCount] = useState(0);
   const [uploads, setUploads] = useState([]);
   const [ytdlpCount, setYtdlpCount] = useState(0);
@@ -365,6 +371,7 @@ const App = () => {
       options: applicationOptions,
       state: applicationState,
       transferProgress: { downloads, uploads },
+      setUploadQueueCount,
     }),
     [applicationOptions, applicationState, downloads, uploads],
   );
@@ -834,6 +841,10 @@ const App = () => {
             setDownloads(transferStatus.downloads.transfers);
             setUploadCount(transferStatus.uploads.activeCount);
             setUploads(transferStatus.uploads.transfers);
+            setQueuedTransferCounts({
+              uploads: transferStatus.uploads.queuedCount,
+              downloads: transferStatus.downloads.queuedCount,
+            });
             setQueuedTransferCount(
               transferStatus.downloads.queuedCount +
                 transferStatus.uploads.queuedCount,
@@ -1104,7 +1115,12 @@ const App = () => {
               onConnect={connect}
               onDisconnect={disconnect}
               onLogout={handleLogout}
-              queuedTransferCount={queuedTransferCount}
+              queuedTransferCount={
+                displayQueueCounts
+                  ? displayQueueCounts.uploads + displayQueueCounts.downloads
+                  : queuedTransferCount
+              }
+              queuedTransferCounts={displayQueueCounts}
               server={server}
               shares={shares}
               system={system}
@@ -1143,7 +1159,12 @@ const App = () => {
                 onConnect={connect}
                 onDisconnect={disconnect}
                 onLogout={handleLogout}
-                queuedTransferCount={queuedTransferCount}
+                queuedTransferCount={
+                  displayQueueCounts
+                    ? displayQueueCounts.uploads + displayQueueCounts.downloads
+                    : queuedTransferCount
+                }
+                queuedTransferCounts={displayQueueCounts}
                 server={server}
                 shares={shares}
                 system={system}

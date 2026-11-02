@@ -80,6 +80,44 @@ export const getUploadsPage = async ({
   return { totalPending: total, transfers: response.data };
 };
 
+const isQueueCount = (value) => Number.isSafeInteger(value) && value >= 0;
+
+export const getUploadsQueue = async ({
+  username,
+  page = 0,
+  pageSize = 250,
+  signal,
+} = {}) => {
+  const { data } = await api.get('/transfers/upload-queue', {
+    params: { username: username ?? undefined, page, pageSize },
+    signal,
+    timeout: 10_000,
+  });
+  if (
+    !data ||
+    !Array.isArray(data.users) ||
+    !Array.isArray(data.transfers) ||
+    !isQueueCount(data.totalPending) ||
+    !isQueueCount(data.userTotalPending) ||
+    !isQueueCount(data.page) ||
+    (data.username !== null && typeof data.username !== 'string') ||
+    data.users.some(
+      (user) =>
+        typeof user.username !== 'string' ||
+        !isQueueCount(user.pendingCount) ||
+        !isQueueCount(user.activeCount) ||
+        !isQueueCount(user.waitingCount) ||
+        user.pendingCount !== user.activeCount + user.waitingCount,
+    ) ||
+    data.users.reduce((total, user) => total + user.pendingCount, 0) !==
+      data.totalPending
+  ) {
+    throw new Error('Invalid upload recipient queue response');
+  }
+
+  return data;
+};
+
 export const getAll = async ({ direction, activeOnly = false, signal }) => {
   const qs = activeOnly ? '?activeOnly=true' : '';
   const response = (

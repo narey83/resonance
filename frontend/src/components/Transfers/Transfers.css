@@ -1095,3 +1095,23 @@
   min-height: 0;
   padding-bottom: 12px;
 }
+
+.ul-queue-workspace { display: grid; flex: 1; gap: 20px; grid-template-columns: minmax(210px, 26%) minmax(0, 1fr); min-height: 0; }
+.ul-history-workspace { grid-template-columns: minmax(0, 1fr); }
+.ul-people { display: flex; flex-direction: column; min-height: 0; }
+.ul-people h2, .ul-selected-heading h2 { font-size: 15px; margin: 4px 0 6px; }
+.ul-people p, .ul-selected-heading p { color: var(--text-muted); font-size: 12px; margin: 0 0 10px; }
+.ul-people-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+.ul-person-choice { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text-primary); cursor: pointer; display: flex; flex-direction: column; gap: 5px; padding: 12px; text-align: left; width: 100%; overflow-wrap: anywhere; }
+.ul-person-choice[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 3px 0 var(--accent); }
+.ul-person-choice span { color: var(--text-muted); font-size: 12px; }
+.ul-person-choice .ul-person-open { color: var(--accent); font-size: 11px; }
+.ul-person-tracks { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.ul-selected-heading { flex-shrink: 0; padding: 4px 0 8px; }
+@media (max-width: 850px) {
+  .ul-queue-workspace { gap: 10px; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .ul-history-workspace { grid-template-rows: minmax(0, 1fr); }
+  .ul-people-list { max-height: 150px; }
+  .ul-person-choice { padding: 8px; }
+  .ul-person-choice .ul-person-open { display: none; }
+}

@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { urlBase } from '../../config';
 import { connectionStatus } from '../../lib/connectionStatus';
 import * as serverAPI from '../../lib/server';
 import * as session from '../../lib/session';
@@ -88,6 +89,7 @@ const StatusStrip = ({
   onDisconnect,
   onLogout,
   queuedTransferCount,
+  queuedTransferCounts,
   server,
   shares,
   system,
@@ -619,8 +621,25 @@ const StatusStrip = ({
         </span>
       )}
       <div className="status-strip-spacer" />
-      {queuedCount > 0 && (
-        <span className="status-chip">{queuedCount} transfers queued</span>
+      {queuedTransferCounts ? (
+        <>
+          <a
+            className="status-chip"
+            href={`${urlBase}/uploads`}
+          >
+            {queuedTransferCounts.uploads.toLocaleString()} uploads waiting
+          </a>
+          <a
+            className="status-chip"
+            href={`${urlBase}/downloads`}
+          >
+            {queuedTransferCounts.downloads.toLocaleString()} downloads waiting
+          </a>
+        </>
+      ) : (
+        queuedCount > 0 && (
+          <span className="status-chip">{queuedCount} transfers queued</span>
+        )
       )}
       {(dlSpeed > 0 || ulSpeed > 0) && (
         <span className="status-live-rates">

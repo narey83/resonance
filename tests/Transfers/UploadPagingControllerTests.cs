@@ -33,6 +33,25 @@ public sealed partial class UploadEnqueueTests
     }
 
     [Fact]
+    public async Task Recipient_Queue_Returns_All_Counts_And_Only_Selected_Tracks()
+    {
+        await using var service = CreateService([]);
+        for (var i = 0; i < 13; i++) QueueTransfer("peer", $"album/{i}.mp3");
+        for (var i = 0; i < 3; i++) QueueTransfer("other", $"album/{i}.mp3");
+        var controller = new TransfersController(new TransferService(service), null!, null!, null!, null!)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
+        };
+        var result = Assert.IsType<OkObjectResult>(await controller.GetUploadQueue(username: "peer", pageSize: 5));
+        using var json = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(result.Value, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)));
+        Assert.Equal(16, json.RootElement.GetProperty("totalPending").GetInt32());
+        Assert.Equal(13, json.RootElement.GetProperty("userTotalPending").GetInt32());
+        Assert.Equal(2, json.RootElement.GetProperty("users").GetArrayLength());
+        Assert.All(json.RootElement.GetProperty("transfers").EnumerateArray(), user => Assert.Equal("peer", user.GetProperty("username").GetString()));
+        Assert.Equal(5, json.RootElement.GetProperty("transfers").EnumerateArray().SelectMany(user => user.GetProperty("directories").EnumerateArray()).Sum(directory => directory.GetProperty("files").GetArrayLength()));
+    }
+
+    [Fact]
     public async Task Malformed_Page_Does_Not_Fall_Back_To_An_Unbounded_Query()
     {
         var controller = new TransfersController(null!, null!, null!, null!, null!);
@@ -67,5 +86,6 @@ public sealed partial class UploadEnqueueTests
     {
         var controller = new TransfersController(null!, null!, null!, null!, null!);
         Assert.IsType<BadRequestObjectResult>(await controller.GetUploads(page: page, pageSize: pageSize));
+        Assert.IsType<BadRequestObjectResult>(await controller.GetUploadQueue(page: page, pageSize: pageSize));
     }
 }

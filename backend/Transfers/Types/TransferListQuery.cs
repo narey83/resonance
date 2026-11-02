@@ -158,7 +158,7 @@ internal static class TransferListQuery
     /// <returns>The matching files and the total pending count before pagination.</returns>
     internal static (List<Transfer> Transfers, int TotalPending) ListPage(
         TransfersDbContext context, TransferDirection direction, bool includeRemoved,
-        bool activeOnly, int maxCompleted, int page, int pageSize)
+        bool activeOnly, int maxCompleted, int page, int pageSize, string username = null)
     {
         if (page < 0 || pageSize < 1 || pageSize > 500 || page > int.MaxValue / pageSize)
         {
@@ -174,6 +174,11 @@ internal static class TransferListQuery
                 (includeRemoved ? string.Empty : "\"Removed\"=0 AND ") + $"({CompletedFlagSql})=0",
                 new SqliteParameter("@direction", direction.ToString())).AsNoTracking()
             : scoped.Where(t => !completed.Contains(t.State));
+        if (username is not null)
+        {
+            pending = pending.Where(t => t.Username == username);
+        }
+
         var total = pending.Count();
         var files = pending.OrderBy(t => t.State == TransferStates.InProgress ? 0
                 : t.State == TransferStates.Initializing ? 1 : 2)
@@ -193,6 +198,31 @@ internal static class TransferListQuery
         }
 
         return (files, total);
+    }
+
+    /// <summary>Returns every recipient's full queue counts and one recipient's bounded files.</summary>
+    /// <returns>The recipient directory, selected page and recent history.</returns>
+    internal static UploadQueueSnapshot UploadQueuePage(TransfersDbContext context, string username, int page, int pageSize)
+    {
+        if (page < 0 || pageSize < 1 || pageSize > 500 || page > int.MaxValue / pageSize)
+        {
+            throw new ArgumentOutOfRangeException(nameof(page));
+        }
+
+        var completed = TransferStateCategories.Completed;
+        var pending = context.Database.IsSqlite()
+            ? context.Transfers.FromSqlRaw("SELECT * FROM \"Transfers\" WHERE \"Direction\"='Upload' AND \"Removed\"=0 AND (" + CompletedFlagSql + ")=0").AsNoTracking()
+            : context.Transfers.AsNoTracking().Where(t => t.Direction == TransferDirection.Upload && !t.Removed && !completed.Contains(t.State));
+        var users = pending.GroupBy(t => t.Username)
+            .Select(g => new UploadQueueUser(g.Key, g.Count(), g.Count(t => t.State == TransferStates.InProgress || t.State == TransferStates.Initializing)))
+            .ToList().OrderByDescending(u => u.WaitingCount).ThenByDescending(u => u.ActiveCount).ThenBy(u => u.Username, StringComparer.Ordinal).ToList();
+        username ??= users.FirstOrDefault()?.Username;
+        var total = users.FirstOrDefault(u => u.Username == username)?.PendingCount ?? 0;
+        page = Math.Min(page, Math.Max(0, (total - 1) / pageSize));
+
+        // An empty queue uses an impossible recipient predicate; completed history has its own page.
+        var files = ListPage(context, TransferDirection.Upload, false, true, 0, page, pageSize, username ?? string.Empty);
+        return new UploadQueueSnapshot(users, username, page, users.Sum(u => u.PendingCount), total, files.Transfers);
     }
 
     /// <summary>Reads aggregate counts without materializing the queued files.</summary>

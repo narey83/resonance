@@ -43,8 +43,6 @@ import {
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-const pageSize_OPTIONS = [15, 30, 50, 100, 150];
-
 /* Cap file rows rendered per expanded directory — a single directory can hold
    thousands of files and rendering them all freezes the page on every poll. */
 const FILE_RENDER_CHUNK = 20;
@@ -344,7 +342,7 @@ const DirectoryGroup = ({
               <Folder size={15} />
               <span className="ul-folder-name">{directoryName}</span>
               <span className="ul-folder-count">
-                {files.length} track{files.length === 1 ? '' : 's'}
+                {files.length} track{files.length === 1 ? '' : 's'} on this page
               </span>
               <span className="ul-track-toggle">
                 {collapsed ? 'Show tracks' : 'Hide tracks'}
@@ -406,6 +404,7 @@ const UserGroup = ({
   onCancelDirectory,
   onCancelUser,
   onRemove,
+  queueUser,
   user,
 }) => {
   const [collapsed, setCollapsed] = useState(
@@ -420,6 +419,10 @@ const UserGroup = ({
     presenceCache[user.username] ?? null,
   );
   const allFiles = user.directories.flatMap((directory) => directory.files);
+  const totalCount =
+    mode === 'waiting'
+      ? queueUser?.waitingCount ?? allFiles.length
+      : queueUser?.activeCount ?? allFiles.length;
 
   const totalSpeed = allFiles.reduce(
     (sum, file) =>
@@ -519,15 +522,11 @@ const UserGroup = ({
 
       <div className="ul-person-summary">
         <strong>
-          {allFiles.length}{' '}
-          {mode === 'waiting'
-            ? 'waiting'
-            : mode === 'sending'
-              ? 'uploading or connecting'
-              : 'finished'}
+          {totalCount.toLocaleString()}{' '}
+          {mode === 'waiting' ? 'waiting in total' : 'uploading or connecting'}
         </strong>
         <span>
-          {mode === 'history' ? 'in recent history' : 'on this queue page'}
+          {allFiles.length} track{allFiles.length === 1 ? '' : 's'} on this page
         </span>
         {totalSpeed > 0 && <span>{formatBitrate(totalSpeed)}</span>}
       </div>
@@ -572,51 +571,48 @@ const UserGroup = ({
   );
 };
 
-/* Queue pages contain unfinished requests; recent history is independent. */
+/* Full recipient counts reconcile the whole queue; details remain bounded. */
 const UploadsTable = ({
   onCancel,
   onCancelDirectory,
   onCancelUser,
-  onClearCompleted,
   onPendingPageChange,
   onRemove,
+  onSelectUploadUser,
   pendingPage = 0,
-  totalPending,
+  queueUsers = [],
+  selectedUsername,
   transfers,
+  userTotalPending = 0,
 }) => {
-  const [view, setView] = useState('queue');
-  const [completedPage, setCompletedPage] = useState(0);
-  const [pageSize, setPageSize] = useState(15);
   const sending = useMemo(() => buildGroups(transfers, isSending), [transfers]);
   const waiting = useMemo(() => buildGroups(transfers, isWaiting), [transfers]);
-  const history = useMemo(
-    () => buildGroups(transfers, (file) => isCompletedState(file.state)),
-    [transfers],
-  );
   const pendingFiles = [...sending, ...waiting].flatMap((user) =>
     user.directories.flatMap((directory) => directory.files),
   );
-  const historyFiles = history.flatMap((user) =>
-    user.directories.flatMap((directory) => directory.files),
+  const totalWaiting = queueUsers.reduce(
+    (sum, user) => sum + user.waitingCount,
+    0,
   );
-  const historyPages = Math.max(1, Math.ceil(history.length / pageSize));
-  useEffect(() => {
-    setCompletedPage((page) => Math.min(page, historyPages - 1));
-  }, [historyPages]);
+  const totalActive = queueUsers.reduce(
+    (sum, user) => sum + user.activeCount,
+    0,
+  );
   const rows = useMemo(() => {
     const result = [];
-    const section = (groups, mode, title, description) => {
-      result.push({ key: mode, type: 'section', title, description });
-      if (groups.length === 0)
+    for (const [groups, mode, title] of [
+      [sending, 'sending', 'Uploading now'],
+      [waiting, 'waiting', 'Waiting to upload'],
+    ]) {
+      result.push({ key: mode, type: 'section', title });
+      if (!groups.length)
         result.push({
           key: `${mode}-empty`,
           type: 'empty',
           title:
             mode === 'sending'
               ? 'No tracks uploading on this page.'
-              : mode === 'waiting'
-                ? 'No waiting tracks on this page.'
-                : 'No recent upload history.',
+              : 'No waiting tracks on this page.',
         });
       for (const user of groups)
         result.push({
@@ -625,108 +621,73 @@ const UploadsTable = ({
           mode,
           user,
         });
-    };
-
-    if (view === 'queue') {
-      section(
-        sending,
-        'sending',
-        'Uploading now',
-        'Tracks currently sending or connecting on this queue page.',
-      );
-      section(
-        waiting,
-        'waiting',
-        'Waiting to upload',
-        'These requested tracks have not started sending yet.',
-      );
-    } else {
-      section(
-        history.slice(completedPage * pageSize, (completedPage + 1) * pageSize),
-        'history',
-        'Recent history',
-        'The most recent 500 finished requests, including sent, failed and cancelled tracks.',
-      );
     }
 
     return result;
-  }, [completedPage, history, pageSize, sending, view, waiting]);
+  }, [sending, waiting]);
   const scrollRef = useRef(null);
   const virtualizer = useVirtualizer({
     count: rows.length,
     getItemKey: (index) => rows[index].key,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (index) => (rows[index].type === 'person' ? 240 : 76),
+    estimateSize: (index) => (rows[index].type === 'person' ? 240 : 60),
     overscan: 3,
   });
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [completedPage, pendingPage, view]);
+  }, [pendingPage, selectedUsername]);
   return (
     <div className="dl-root ul-redesign">
       <header className="ul-page-heading">
         <div>
           <h1>Uploads</h1>
-          <p>Tracks you share with other people.</p>
+          <p>Choose a person to see the tracks they requested.</p>
         </div>
         <div className="ul-queue-total">
-          <strong>
-            {(totalPending ?? pendingFiles.length).toLocaleString()}
-          </strong>
-          <span>tracks left to send</span>
+          <strong>{totalWaiting.toLocaleString()}</strong>
+          <span>uploads waiting</span>
+          <span>{totalActive} uploading or connecting</span>
         </div>
       </header>
-      <div
-        aria-label="Upload views"
-        className="ul-view-tabs"
-        onKeyDown={(event) => {
-          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key))
-            return;
-          event.preventDefault();
-          const nextView =
-            event.key === 'Home'
-              ? 'queue'
-              : event.key === 'End'
-                ? 'history'
-                : view === 'queue'
-                  ? 'history'
-                  : 'queue';
-          setView(nextView);
-          event.currentTarget.querySelector(`#ul-${nextView}-tab`).focus();
-        }}
-        role="tablist"
-        tabIndex={-1}
-      >
-        <button
-          aria-controls="ul-upload-panel"
-          aria-selected={view === 'queue'}
-          id="ul-queue-tab"
-          onClick={() => setView('queue')}
-          role="tab"
-          tabIndex={view === 'queue' ? 0 : -1}
-          type="button"
+      <div className="ul-queue-workspace">
+        <aside
+          aria-label="Everyone in the upload queue"
+          className="ul-people"
         >
-          Upload queue
-        </button>
-        <button
-          aria-controls="ul-upload-panel"
-          aria-selected={view === 'history'}
-          id="ul-history-tab"
-          onClick={() => setView('history')}
-          role="tab"
-          tabIndex={view === 'history' ? 0 : -1}
-          type="button"
-        >
-          History
-        </button>
-      </div>
-      <div className="ul-view-tools">
-        {view === 'queue' ? (
-          <>
-            <p>
-              Track counts below belong to the person and folder shown. Larger
-              queues continue on the next page.
-            </p>
+          <h2>Waiting by person</h2>
+          <p>
+            {queueUsers.length} people · {totalWaiting.toLocaleString()} waiting
+            in total
+          </p>
+          {queueUsers.length === 0 && <p>No queued uploads.</p>}
+          <div className="ul-people-list">
+            {queueUsers.map((user) => (
+              <button
+                aria-pressed={user.username === selectedUsername}
+                className="ul-person-choice"
+                key={user.username}
+                onClick={() => onSelectUploadUser(user.username)}
+                type="button"
+              >
+                <strong>{user.username}</strong>
+                <span>
+                  <b>{user.waitingCount.toLocaleString()}</b> waiting
+                  {user.activeCount > 0
+                    ? ` · ${user.activeCount} sending/connecting`
+                    : ''}
+                </span>
+                <span className="ul-person-open">View tracks →</span>
+              </button>
+            ))}
+          </div>
+        </aside>
+        <div className="ul-person-tracks">
+          <div className="ul-selected-heading">
+            <h2>
+              {selectedUsername
+                ? `${selectedUsername}’s tracks`
+                : 'Upload queue is empty'}
+            </h2>
             {pendingFiles.length > 0 && (
               <button
                 className="ul-quick-btn ul-quick-btn--cancel"
@@ -744,129 +705,69 @@ const UploadsTable = ({
                 Cancel requests on this page
               </button>
             )}
-          </>
-        ) : (
-          <>
-            <label>
-              People per history page{' '}
-              <select
-                onChange={(event) => {
-                  setPageSize(Number(event.target.value));
-                  setCompletedPage(0);
-                }}
-                value={pageSize}
-              >
-                {pageSize_OPTIONS.map((size) => (
-                  <option
-                    key={size}
-                    value={size}
+          </div>
+          <div
+            className="dl-groups"
+            ref={scrollRef}
+          >
+            <div
+              style={{
+                height: virtualizer.getTotalSize(),
+                position: 'relative',
+                width: '100%',
+              }}
+            >
+              {virtualizer.getVirtualItems().map((item) => {
+                const row = rows[item.index];
+                return (
+                  <div
+                    className="dl-virtual-row"
+                    data-index={item.index}
+                    key={item.key}
+                    ref={virtualizer.measureElement}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${item.start}px)`,
+                    }}
                   >
-                    {size}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {historyFiles.length > 0 && (
-              <button
-                className="ul-quick-btn ul-quick-btn--remove"
-                onClick={onClearCompleted}
-                type="button"
-              >
-                Clear all finished history
-              </button>
-            )}
-          </>
-        )}
-      </div>
-      <div
-        aria-labelledby={`ul-${view}-tab`}
-        className="dl-groups"
-        id="ul-upload-panel"
-        ref={scrollRef}
-        role="tabpanel"
-        tabIndex={0}
-      >
-        <div
-          style={{
-            height: virtualizer.getTotalSize(),
-            position: 'relative',
-            width: '100%',
-          }}
-        >
-          {virtualizer.getVirtualItems().map((item) => {
-            const row = rows[item.index];
-            return (
-              <div
-                className="dl-virtual-row"
-                data-index={item.index}
-                key={item.key}
-                ref={virtualizer.measureElement}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  transform: `translateY(${item.start}px)`,
-                }}
-              >
-                {row.type === 'section' ? (
-                  <div className="ul-section-heading">
-                    <h2>{row.title}</h2>
-                    <p>{row.description}</p>
+                    {row.type === 'section' ? (
+                      <div className="ul-section-heading">
+                        <h2>{row.title}</h2>
+                      </div>
+                    ) : row.type === 'empty' ? (
+                      <p className="ul-section-empty">{row.title}</p>
+                    ) : (
+                      <UserGroup
+                        cacheKey={row.key}
+                        mode={row.mode}
+                        onCancel={onCancel}
+                        onCancelDirectory={onCancelDirectory}
+                        onCancelUser={onCancelUser}
+                        onRemove={onRemove}
+                        queueUser={queueUsers.find(
+                          (user) => user.username === row.user.username,
+                        )}
+                        user={row.user}
+                      />
+                    )}
                   </div>
-                ) : row.type === 'empty' ? (
-                  <p className="ul-section-empty">{row.title}</p>
-                ) : (
-                  <UserGroup
-                    cacheKey={row.key}
-                    defaultCollapsed={row.mode === 'history'}
-                    mode={row.mode}
-                    onCancel={onCancel}
-                    onCancelDirectory={onCancelDirectory}
-                    onCancelUser={onCancelUser}
-                    onRemove={onRemove}
-                    user={row.user}
-                  />
-                )}
-              </div>
-            );
-          })}
+                );
+              })}
+            </div>
+          </div>
+          <footer className="ul-view-footer">
+            <UploadQueuePagination
+              onPageChange={onPendingPageChange}
+              page={pendingPage}
+              total={userTotalPending}
+              username={selectedUsername}
+            />
+          </footer>
         </div>
       </div>
-      <footer className="ul-view-footer">
-        {view === 'queue' && Number.isInteger(totalPending) ? (
-          <UploadQueuePagination
-            onPageChange={onPendingPageChange}
-            page={pendingPage}
-            total={totalPending}
-          />
-        ) : view === 'history' ? (
-          <nav
-            aria-label="History pages"
-            className="ul-pagination"
-          >
-            <button
-              className="ul-page-btn"
-              disabled={completedPage === 0}
-              onClick={() => setCompletedPage((page) => page - 1)}
-              type="button"
-            >
-              Previous
-            </button>
-            <span>
-              History page {completedPage + 1} of {historyPages}
-            </span>
-            <button
-              className="ul-page-btn"
-              disabled={completedPage + 1 >= historyPages}
-              onClick={() => setCompletedPage((page) => page + 1)}
-              type="button"
-            >
-              Next
-            </button>
-          </nav>
-        ) : null}
-      </footer>
     </div>
   );
 };

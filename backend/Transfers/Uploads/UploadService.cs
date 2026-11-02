@@ -163,6 +163,10 @@ namespace resonance.Transfers.Uploads
         /// <returns>The files and total pending count.</returns>
         (List<Transfer> Transfers, int TotalPending) ListPage(bool includeRemoved, bool activeOnly, int maxCompleted, int page, int pageSize);
 
+        /// <summary>Lists every recipient's queue totals and a selected recipient's track page.</summary>
+        /// <returns>Full recipient counts and bounded transfer details.</returns>
+        UploadQueueSnapshot ListQueuePage(string username, int page, int pageSize);
+
         /// <summary>Lists dangling transfers, including removed records, for startup recovery.</summary>
         /// <returns>Transfers that are unfinished or lack a completed state, including removed records.</returns>
         List<Transfer> ListForRecovery() => List(t => t.EndedAt == null || !TransferStateCategories.Completed.Contains(t.State), includeRemoved: true);
@@ -831,6 +835,13 @@ namespace resonance.Transfers.Uploads
         {
             using var context = ContextFactory.CreateDbContext();
             return TransferListQuery.ListForRecovery(context, TransferDirection.Upload);
+        }
+
+        /// <inheritdoc/>
+        public UploadQueueSnapshot ListQueuePage(string username, int page, int pageSize)
+        {
+            using var context = ContextFactory.CreateDbContext();
+            return TransferListQuery.UploadQueuePage(context, username, page, pageSize);
         }
 
         /// <inheritdoc/>
