@@ -65,9 +65,9 @@ const folder = (trackCount = 3) => ({
 describe('analysis folder loading', () => {
   let container;
   let page;
-  const render = async () => {
+  const render = async (props = {}) => {
     await act(async () => {
-      ReactDOM.render(<Analysis />, container);
+      ReactDOM.render(<Analysis {...props} />, container);
     });
   };
 
@@ -209,8 +209,8 @@ describe('analysis folder loading', () => {
     expect(
       container.querySelector(
         '.ka-current-analysis [aria-label="Stop analysis"]',
-      ).textContent,
-    ).toBe('Stop after this scan');
+      ),
+    ).toBeNull();
     expect(
       container.querySelector('.ka-panel .ka-analysis-modes'),
     ).not.toBeNull();
@@ -220,6 +220,51 @@ describe('analysis folder loading', () => {
     expect(container.querySelector('.ka-panel-header').textContent).toBe(
       'Choose music to analyse',
     );
+  });
+  it('restores selection, expanded folders, mode and options after leaving the view', async () => {
+    expect.hasAssertions();
+    const viewState = {
+      current: {
+        search: 'Album',
+        filter: 'all',
+        sortKey: 'title',
+        sortDirection: 'asc',
+        selected: new Map([['one', '/music/Album']]),
+        expandedFolders: new Set(['/music/Album']),
+        enhanced: true,
+        skipTagged: false,
+        resetAll: true,
+      },
+    };
+    await render({ viewState });
+    expect(container.querySelector('.ka-search').value).toBe('Album');
+    expect(container.querySelector('[value="enhanced"]').checked).toBe(true);
+    expect(
+      container
+        .querySelector('[aria-label="Reset & reanalyse selected tracks"]')
+        .getAttribute('aria-checked'),
+    ).toBe('true');
+    expect(
+      container.querySelector('.ka-panel-footer button').textContent,
+    ).toContain('Analyse 1 selected');
+    expect(
+      container
+        .querySelector('.ka-folder-expand')
+        .getAttribute('aria-expanded'),
+    ).toBe('true');
+    act(() => {
+      ReactDOM.render(<div>Other view</div>, container);
+    });
+    await render({ viewState });
+    expect(container.querySelector('.ka-search').value).toBe('Album');
+    expect(
+      container.querySelector('.ka-panel-footer button').textContent,
+    ).toContain('Analyse 1 selected');
+    expect(
+      container
+        .querySelector('.ka-folder-expand')
+        .getAttribute('aria-expanded'),
+    ).toBe('true');
   });
   it('shows coverage without the removed automatic queue card', async () => {
     expect.hasAssertions();
@@ -784,9 +829,7 @@ describe('analysis folder loading', () => {
     expect(pausePreparation).toHaveBeenCalledWith(true);
     expect(analysisApi.cancelScan).not.toHaveBeenCalled();
     expect(analysisApi.startScan).not.toHaveBeenCalled();
-    expect(
-      container.querySelector('[aria-label="Stop analysis"]').disabled,
-    ).toBe(true);
+    expect(container.querySelector('[aria-label="Stop analysis"]')).toBeNull();
     expect(
       container.querySelector('[aria-label="Resume automatic preparation"]'),
     ).not.toBeNull();
@@ -840,8 +883,10 @@ describe('analysis folder loading', () => {
         inFlight: 0,
       });
       await act(async () => jest.advanceTimersByTime(2_000));
-      expect(stop.textContent).toBe('Stop after this scan');
-      expect(stop.disabled).toBe(true);
+      expect(
+        container.querySelector('[aria-label="Stop analysis"]'),
+      ).toBeNull();
+      expect(stop.isConnected).toBe(false);
       expect(
         container.querySelector('[aria-label="Current scan progress"]')
           .textContent,
@@ -887,8 +932,10 @@ describe('analysis folder loading', () => {
         analysed: 3,
       });
       await act(async () => jest.advanceTimersByTime(2_000));
-      expect(stop.textContent).toBe('Stop after this scan');
-      expect(stop.disabled).toBe(true);
+      expect(
+        container.querySelector('[aria-label="Stop analysis"]'),
+      ).toBeNull();
+      expect(stop.isConnected).toBe(false);
       expect(
         container.querySelector('[aria-label="Current scan progress"]')
           .textContent,
@@ -913,8 +960,8 @@ describe('analysis folder loading', () => {
     });
     const stop = container.querySelector('[aria-label="Stop analysis"]');
     await act(async () => stop.click());
-    expect(stop.disabled).toBe(true);
-    expect(stop.textContent).toBe('Stop after this scan');
+    expect(container.querySelector('[aria-label="Stop analysis"]')).toBeNull();
+    expect(stop.isConnected).toBe(false);
     expect(
       container.querySelector('[aria-label="Current scan progress"]')
         .textContent,
@@ -1324,7 +1371,7 @@ describe('analysis folder loading', () => {
       container.querySelector('input[value="enhanced"]').click(),
     );
     expect(container.querySelector('.ka-col-check input').title).toBe(
-      'Select all visible',
+      'Select all matching tracks',
     );
     expect(usePagedList.mock.calls.at(-1)[1].analysis).toBe('enhanced');
   });

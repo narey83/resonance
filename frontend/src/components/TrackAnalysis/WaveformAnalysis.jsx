@@ -36,14 +36,12 @@ import {
 } from '../../lib/analysisTimeline';
 import api from '../../lib/api';
 import { getLocalStreamUrl } from '../../lib/files';
-import { fuzzyFilter } from '../../lib/fuzzy';
-import { getTracks } from '../../lib/musicLibrary';
 import {
   beatGridPhase,
   beatGridSeconds,
   visibleBeats,
 } from '../../lib/waveform';
-import { analyseTrack } from '../Shared/WaveformPreview';
+import AnalysisTrackPicker from './AnalysisTrackPicker';
 import CandidateAnalysisPanel from './CandidateAnalysisPanel';
 import ImportedAnalysisPanel from './ImportedAnalysisPanel';
 import {
@@ -53,20 +51,11 @@ import {
   Download,
   Grid3x3,
   Mountain,
-  Music,
-  Search,
   Tag,
-  X,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 // eslint-disable-next-line import/no-extraneous-dependencies
 import WaveSurfer from 'wavesurfer.js';
 
@@ -521,93 +510,6 @@ const drawBeatOverlay = (
   }
 };
 
-const getTrackLabel = (track) =>
-  [
-    track.title || track.filename?.split(/[/\\]/u).pop(),
-    track.artist,
-    track.album,
-  ]
-    .filter(Boolean)
-    .join(' — ');
-
-// ── TrackPicker ───────────────────────────────────────────────────────────────
-
-const TrackPicker = ({ libraryTracks, onSelect, selectedTrack }) => {
-  const [query, setQuery] = useState('');
-  const [open, setOpen] = useState(false);
-  const inputRef = useRef(null);
-
-  const suggestions = useMemo(
-    () =>
-      query.trim()
-        ? fuzzyFilter(query, libraryTracks, getTrackLabel).slice(0, 8)
-        : [],
-    [libraryTracks, query],
-  );
-
-  const handleSelect = (track) => {
-    onSelect(track);
-    setQuery('');
-    setOpen(false);
-  };
-
-  return (
-    <div className="wa-picker">
-      <div className="wa-picker-input-wrap">
-        <Search
-          color="var(--text-muted)"
-          size={13}
-        />
-        <input
-          className="wa-picker-input"
-          onChange={({ target }) => {
-            setQuery(target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          placeholder={
-            selectedTrack ? getTrackLabel(selectedTrack) : 'Search tracks…'
-          }
-          ref={inputRef}
-          type="text"
-          value={query}
-        />
-        {selectedTrack && !query && (
-          <button
-            className="wa-picker-clear hover-fx"
-            onClick={() => onSelect(null)}
-            title="Clear selection"
-            type="button"
-          >
-            <X size={13} />
-          </button>
-        )}
-      </div>
-      {open && suggestions.length > 0 && (
-        <ul className="wa-picker-dropdown">
-          {suggestions.map((track) => (
-            <li key={track.path}>
-              <button
-                className="wa-picker-option"
-                onClick={() => handleSelect(track)}
-                type="button"
-              >
-                <Music
-                  size={12}
-                  style={{ flexShrink: 0 }}
-                />
-                <span className="wa-picker-option-label">
-                  {getTrackLabel(track)}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-};
-
 // ── WaveformAnalysis ──────────────────────────────────────────────────────────
 
 const ZOOM_LEVELS = [1, 2, 4, 8];
@@ -622,12 +524,18 @@ const MODE_META = {
 };
 
 // eslint-disable-next-line complexity
-const WaveformAnalysis = () => {
+const WaveformAnalysis = ({ viewState }) => {
   const { track: playerTrack } = usePlayer();
 
-  const [libraryTracks, setLibraryTracks] = useState([]);
-  const [selectedTrack, setSelectedTrack] = useState(null);
+  const [selectedTrack, setSelectedTrack] = useState(
+    viewState?.current?.selectedTrack ?? playerTrack ?? null,
+  );
+  const lastPlayerPath = useRef(playerTrack?.path);
+  useEffect(() => {
+    if (viewState) viewState.current = { selectedTrack };
+  }, [selectedTrack, viewState]);
   const [mode, setMode] = useState('amplitude');
+  const [showAnalysisOptions, setShowAnalysisOptions] = useState(false);
   const [showGhostGrid, setShowGhostGrid] = useState(false);
   const [showDetectedBeats, setShowDetectedBeats] = useState(false);
   const [showDownbeats, setShowDownbeats] = useState(false);
@@ -662,23 +570,10 @@ const WaveformAnalysis = () => {
   }, [mode]);
 
   useEffect(() => {
-    const loadTracks = async () => {
-      try {
-        const result = await getTracks({ limit: 5_000 });
-        setLibraryTracks(result?.tracks ?? []);
-      } catch {
-        /* ignore */
-      }
-    };
-
-    loadTracks();
-  }, []);
-
-  useEffect(() => {
-    if (!playerTrack?.path || libraryTracks.length === 0) return;
-    const match = libraryTracks.find((t) => t.path === playerTrack.path);
-    if (match) setSelectedTrack(match);
-  }, [libraryTracks, playerTrack]);
+    if (playerTrack?.path && playerTrack.path !== lastPlayerPath.current)
+      setSelectedTrack(playerTrack);
+    lastPlayerPath.current = playerTrack?.path;
+  }, [playerTrack]);
 
   const drawCanvas = useCallback(() => {
     const data = frequencyDataRef.current;
@@ -869,9 +764,6 @@ const WaveformAnalysis = () => {
           let downbeatOffsetSeconds = null;
           let downbeatConfidence = null;
           try {
-            await analyseTrack(selectedTrack.path);
-            if (abortController.signal.aborted) return;
-
             const res = await api.get('/analysis/waveform', {
               params: { cachedOnly: true, path: selectedTrack.path },
               signal: abortController.signal,
@@ -1046,16 +938,13 @@ const WaveformAnalysis = () => {
 
   return (
     <div className="wa-root">
-      <TrackPicker
-        libraryTracks={libraryTracks}
+      <AnalysisTrackPicker
         onSelect={setSelectedTrack}
         selectedTrack={selectedTrack}
       />
 
       {selectedTrack && (
         <>
-          <ImportedAnalysisPanel path={selectedTrack.path} />
-          <CandidateAnalysisPanel path={selectedTrack.path} />
           <div className="wa-toolbar">
             <div className="wa-mode-group">
               {Object.entries(MODE_META).map(([key, { icon: Icon, label }]) => (
@@ -1195,6 +1084,21 @@ const WaveformAnalysis = () => {
               <div className="wa-duration-badge">{durationLabel}</div>
             )}
           </div>
+          <details
+            className="wa-analysis-options"
+            onToggle={(event) =>
+              setShowAnalysisOptions(event.currentTarget.open)
+            }
+            open={showAnalysisOptions}
+          >
+            <summary>Saved analysis and independent analysis options</summary>
+            {showAnalysisOptions && (
+              <>
+                <ImportedAnalysisPanel path={selectedTrack.path} />
+                <CandidateAnalysisPanel path={selectedTrack.path} />
+              </>
+            )}
+          </details>
         </>
       )}
 

@@ -17,7 +17,10 @@ describe('single analysis page', () => {
       ReactDOM.render(<TrackAnalysis />, container);
     });
     expect(container.textContent).not.toContain('Advanced analysis');
-    expect(container.querySelectorAll('.ta-tab')).toHaveLength(2);
+    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(2);
+    expect(
+      container.querySelector('[role="tab"][aria-selected="true"]').textContent,
+    ).toContain('Track Analysis');
     expect(container.textContent).toContain('Unified analysis workspace');
     act(() => container.querySelectorAll('.ta-tab')[1].click());
     expect(container.textContent).toContain('Waveform inspection');

@@ -63,3 +63,35 @@ A read-only five-run check of the production SQLite folder-summary SQL returned
 end-to-end browser loading. PostgreSQL was not exercised during this deployment.
 Existing dependency audit and source-map warnings remain; no dependencies or
 database schema were changed.
+
+
+## Analysis workspace review — 2 November 2026
+
+Switching between Track Analysis and Waveform Inspector retains the analysis
+search, readiness filter, sorting, selected tracks, expanded folders and scan
+options in the current page session. The inspector also retains its chosen track.
+Inactive views unmount their requests and audio resources; this state is local to
+the page, not a second copy of the library or a persistent user setting.
+
+Waveform search queries the entire indexed library with a debounced, cancellable
+eight-result request. It no longer preloads or searches only the first 5,000
+tracks. Loading, no matches and failed requests are visible, with retry and keyboard
+selection. Obsolete replies cannot replace a newer search. Tabs expose selected
+state and support arrow, Home and End navigation; folders expose expanded state.
+
+The waveform and display controls appear before the optional saved/independent
+analysis forms. Those forms start collapsed and load on demand. Changing waveform
+style first reads cached frequency data, falling back to browser-only decoding;
+it no longer starts a new Basic scan just to inspect a track. Explicit generation
+and scan actions remain available. Idle scans omit the unusable Stop button;
+running scans and their stop/completion behaviour remain covered by tests.
+The activity lifecycle re-arms after component hot refresh so live scan polling
+continues while preserving the current selection.
+
+Dev-laptop verification: 136 frontend tests across 15 suites, lint, 11 dependency
+security checks and zero dependency advisories. Authenticated desktop and phone
+checks reconciled 59,413 total / 43,041 Basic-ready / 35 Enhanced-ready tracks,
+searched beyond the old window, retained selection and search through tab changes,
+opened track details, decoded the waveform and displayed frequency bars without
+starting analysis or changing settings. Screenshots were inspected. Development
+compilation/hot reload was used; no production build or backend restart was needed.

@@ -31,7 +31,7 @@ import './TrackAnalysis.css';
 import Analysis from '../Analysis/Analysis';
 import WaveformAnalysis from './WaveformAnalysis';
 import { AudioWaveform, SlidersHorizontal } from 'lucide-react';
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 
 // Key, BPM, waveform and loudness are one scan over one queue, so they are one
 // page. The waveform tab is a different job — inspecting a single track — not a
@@ -43,18 +43,52 @@ const TABS = [
 
 const TrackAnalysis = () => {
   const [activeTab, setActiveTab] = useState('analysis');
+  const analysisView = useRef(null);
+  const waveformView = useRef(null);
 
   const renderPanel = () =>
-    activeTab === 'analysis' ? <Analysis /> : <WaveformAnalysis />;
+    activeTab === 'analysis' ? (
+      <Analysis viewState={analysisView} />
+    ) : (
+      <WaveformAnalysis viewState={waveformView} />
+    );
 
   return (
     <div className="ta-root">
-      <div className="ta-tabs">
+      <div
+        aria-label="Track analysis views"
+        className="ta-tabs"
+        role="tablist"
+      >
         {TABS.map(({ icon: Icon, id, label }) => (
           <button
+            aria-controls={`track-analysis-panel-${id}`}
+            aria-selected={activeTab === id}
             className={`ta-tab hover-fx${activeTab === id ? ' ta-tab--active' : ''}`}
+            id={`track-analysis-tab-${id}`}
             key={id}
             onClick={() => setActiveTab(id)}
+            onKeyDown={(event) => {
+              const index = TABS.findIndex((tab) => tab.id === id);
+              const next =
+                event.key === 'Home'
+                  ? 0
+                  : event.key === 'End'
+                    ? TABS.length - 1
+                    : event.key === 'ArrowRight'
+                      ? (index + 1) % TABS.length
+                      : event.key === 'ArrowLeft'
+                        ? (index + TABS.length - 1) % TABS.length
+                        : -1;
+              if (next < 0) return;
+              event.preventDefault();
+              setActiveTab(TABS[next].id);
+              event.currentTarget.parentElement
+                .querySelectorAll('[role="tab"]')
+                [next].focus();
+            }}
+            role="tab"
+            tabIndex={activeTab === id ? 0 : -1}
             type="button"
           >
             <Icon
@@ -65,7 +99,14 @@ const TrackAnalysis = () => {
           </button>
         ))}
       </div>
-      <div className="ta-panel">{renderPanel()}</div>
+      <div
+        aria-labelledby={`track-analysis-tab-${activeTab}`}
+        className="ta-panel"
+        id={`track-analysis-panel-${activeTab}`}
+        role="tabpanel"
+      >
+        {renderPanel()}
+      </div>
     </div>
   );
 };

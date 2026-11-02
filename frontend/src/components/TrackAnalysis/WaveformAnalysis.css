@@ -427,3 +427,16 @@
   font-size: 13px;
   margin: 0;
 }
+
+.wa-picker-dropdown > ul { list-style: none; margin: 0; padding: 0; }
+.wa-picker-dropdown [aria-selected="true"] { background: var(--bg-hover); border-radius: 4px; }
+.wa-picker-status { align-items: center; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; margin: 0; padding: 10px; }
+.wa-picker-status button { background: none; border: 0; color: var(--accent); cursor: pointer; text-decoration: underline; }
+.wa-picker-option-label { overflow-wrap: anywhere; white-space: normal; }
+.wa-root { min-height: 0; overflow-y: auto; }
+
+.wa-analysis-options { border-top: 1px solid var(--border); color: var(--text-primary); padding-top: 12px; font-size: 12px; }
+.wa-analysis-options > summary { color: var(--text-muted); cursor: pointer; }
+.wa-analysis-options .candidate-analysis { border-color: var(--border); font-size: 12px; }
+.wa-analysis-options .candidate-analysis h3 { font-size: 14px; }
+.wa-analysis-options .candidate-analysis-settings label { flex-direction: row; flex-wrap: wrap; }

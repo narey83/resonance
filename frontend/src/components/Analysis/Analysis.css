@@ -1192,3 +1192,8 @@
   .ka-current-analysis .ka-scan-progress { align-items: flex-start; }
   .ka-current-analysis .ka-progress-bar-wrap { flex-basis: 100%; order: -1; }
 }
+
+.ka-current-analysis { margin-top: 10px; padding-top: 10px; }
+.ka-current-analysis .ka-section-title { font-size: 13px; margin-bottom: 6px; }
+.ka-current-analysis .ka-scan-progress:empty { display: none; }
+.ka-current-analysis .ka-automatic-details { margin-top: 8px; }

@@ -161,9 +161,18 @@ const ScanSettings = ({
   onStart,
   scanning,
   selectedCount = 0,
+  viewState,
 }) => {
-  const [skipTagged, setSkipTagged] = useState(true);
-  const [resetAll, setResetAll] = useState(false);
+  const [skipTagged, setSkipTagged] = useState(
+    viewState?.current?.skipTagged ?? true,
+  );
+  const [resetAll, setResetAll] = useState(
+    viewState?.current?.resetAll ?? false,
+  );
+  useEffect(() => {
+    if (viewState)
+      viewState.current = { ...viewState.current, skipTagged, resetAll };
+  }, [resetAll, skipTagged, viewState]);
 
   return (
     <section
@@ -629,6 +638,7 @@ const FolderGroup = ({
           />
         </div>
         <button
+          aria-expanded={!collapsed}
           className="ka-folder-expand"
           onClick={() => onToggle(dir)}
           title={dir}
@@ -677,9 +687,11 @@ const FolderGroup = ({
 // ── Main component ────────────────────────────────────────────────────────────
 
 // eslint-disable-next-line complexity
-const Analysis = () => {
+const Analysis = ({ viewState }) => {
   const [scanState, setScanState] = useState(null);
-  const [enhanced, setEnhanced] = useState(false);
+  const [enhanced, setEnhanced] = useState(
+    viewState?.current?.enhanced ?? false,
+  );
   const [inspectedTrack, setInspectedTrack] = useState(null);
   const [preparation, setPreparation] = useState(null);
   const [preparationBusy, setPreparationBusy] = useState('');
@@ -703,15 +715,45 @@ const Analysis = () => {
     if (scanState?.scanning && scanState.enhancedTotal > 0) setEnhanced(true);
   }, [scanState?.scanning, scanState?.enhancedTotal]);
   const { fmtKey } = useKeyFormat();
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('all');
-  const [sortKey, setSortKey] = useState('title');
-  const [sortDirection, setSortDirection] = useState('asc');
-  const [selected, setSelected] = useState(new Map());
+  const [search, setSearch] = useState(viewState?.current?.search ?? '');
+  const [filter, setFilter] = useState(viewState?.current?.filter ?? 'all');
+  const [sortKey, setSortKey] = useState(
+    viewState?.current?.sortKey ?? 'title',
+  );
+  const [sortDirection, setSortDirection] = useState(
+    viewState?.current?.sortDirection ?? 'asc',
+  );
+  const [selected, setSelected] = useState(
+    viewState?.current?.selected ?? new Map(),
+  );
   const [selecting, setSelecting] = useState(false);
   const [selectionProgress, setSelectionProgress] = useState(null);
   const selectionRequestRef = useRef(null);
-  const [expandedFolders, setExpandedFolders] = useState(new Set());
+  const [expandedFolders, setExpandedFolders] = useState(
+    viewState?.current?.expandedFolders ?? new Set(),
+  );
+  useEffect(() => {
+    if (viewState)
+      viewState.current = {
+        ...viewState.current,
+        enhanced,
+        search,
+        filter,
+        sortKey,
+        sortDirection,
+        selected,
+        expandedFolders,
+      };
+  }, [
+    enhanced,
+    expandedFolders,
+    filter,
+    search,
+    selected,
+    sortDirection,
+    sortKey,
+    viewState,
+  ]);
   const [recentlyUpdated, setRecentlyUpdated] = useState(new Set());
   const [stats, setStats] = useState(null);
   const [dataRevision, setDataRevision] = useState(0);
@@ -753,13 +795,13 @@ const Analysis = () => {
   const finalizingRef = useRef(true);
   const mountedRef = useRef(true);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
       selectionRequestRef.current?.abort();
-    },
-    [],
-  );
+    };
+  }, []);
 
   // Typing shouldn't fire a query per keystroke — the search runs server-side now.
   const debouncedSearch = useDebounce(search, 250);
@@ -955,7 +997,7 @@ const Analysis = () => {
   useEffect(() => {
     let pending = null;
     const poll = () => {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || document.hidden) return;
       setNow(Date.now());
       if (pending) return;
       pending = (async () => {
@@ -1184,7 +1226,17 @@ const Analysis = () => {
     setSelectionProgress(null);
   }, []);
 
+  const selectionQuery = JSON.stringify([
+    debouncedSearch,
+    filter,
+    query.analysis,
+    sortDirection,
+    sortKey,
+  ]);
+  const previousSelectionQuery = useRef(selectionQuery);
   useEffect(() => {
+    if (previousSelectionQuery.current === selectionQuery) return;
+    previousSelectionQuery.current = selectionQuery;
     cancelSelection();
     setSelected(new Map());
   }, [
@@ -1194,6 +1246,7 @@ const Analysis = () => {
     query.analysis,
     sortDirection,
     sortKey,
+    selectionQuery,
   ]);
 
   const groups = useMemo(
@@ -1648,20 +1701,24 @@ const Analysis = () => {
             </details>
           )}
           <div className="ka-scan-progress">
-            <button
-              aria-label="Stop analysis"
-              className="ka-btn ka-btn--stop hover-fx"
-              disabled={
-                Boolean(preparationBusy) ||
-                stopRequested ||
-                (!scanning && !(preparation?.counts?.running > 0))
-              }
-              onClick={() => handlePreparationAction('stop')}
-              title="Finish every remaining track in the current scan, then stop. No further automatic scans will start."
-              type="button"
-            >
-              {stopRequested ? 'Finishing scan…' : 'Stop after this scan'}
-            </button>
+            {(scanning ||
+              stopRequested ||
+              preparation?.counts?.running > 0) && (
+              <button
+                aria-label="Stop analysis"
+                className="ka-btn ka-btn--stop hover-fx"
+                disabled={
+                  Boolean(preparationBusy) ||
+                  stopRequested ||
+                  (!scanning && !(preparation?.counts?.running > 0))
+                }
+                onClick={() => handlePreparationAction('stop')}
+                title="Finish every remaining track in the current scan, then stop. No further automatic scans will start."
+                type="button"
+              >
+                {stopRequested ? 'Finishing scan…' : 'Stop after this scan'}
+              </button>
+            )}
             {/* inline scan progress */}
             {scanState?.total > 0 && (
               <div
@@ -1826,6 +1883,7 @@ const Analysis = () => {
           scanning || selecting || Boolean(preparationBusy) || stopRequested
         }
         selectedCount={selected.size}
+        viewState={viewState}
       />
 
       {inspectedTrack && (
@@ -1846,6 +1904,7 @@ const Analysis = () => {
             size={13}
           />
           <input
+            aria-label="Search analysis tracks, artists or keys"
             className="ka-search"
             onChange={({ target }) => setSearch(target.value)}
             placeholder="Search tracks, artists, keys..."
@@ -1854,6 +1913,7 @@ const Analysis = () => {
           />
           {search && (
             <button
+              aria-label="Clear analysis search"
               className="ka-search-clear hover-fx"
               onClick={() => setSearch('')}
               type="button"
@@ -1945,7 +2005,7 @@ const Analysis = () => {
             title={
               selected.size > 0
                 ? `${selected.size} selected`
-                : 'Select all visible'
+                : 'Select all matching tracks'
             }
             type="checkbox"
           />
