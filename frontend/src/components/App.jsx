@@ -64,7 +64,7 @@ import * as roomsAPI from '../lib/rooms';
 import { connect, disconnect } from '../lib/server';
 import * as session from '../lib/session';
 import { siteAvailability } from '../lib/siteAvailability';
-import { playMessageReceived } from '../lib/sound';
+import { enableNotificationAudio, playNotificationSound } from '../lib/sound';
 import { getSessionId, isAdmin, isPassthroughEnabled } from '../lib/token';
 import { emitTransferComplete } from '../lib/transferEvents';
 import * as transfersAPI from '../lib/transfers';
@@ -381,6 +381,8 @@ const App = () => {
   const notifSettingsRef = useRef(notificationSettings);
   notifSettingsRef.current = notificationSettings;
 
+  useEffect(() => enableNotificationAudio(), []);
+
   // ── addNotification (stable ref pattern) ────────────────────────────────────
   // Hub events and action feedback share the notification centre and preferences.
   const addNotification = useCallback(
@@ -415,7 +417,8 @@ const App = () => {
           ...previous.filter((n) => n.id !== notification.id),
         ].slice(0, 100),
       );
-      if (sound) playMessageReceived();
+      if (notifSettingsRef.current.soundsEnabled !== false)
+        playNotificationSound(type, { fallback: sound });
     },
     [],
   );
@@ -646,7 +649,15 @@ const App = () => {
     });
 
     hub.on('CONVERSATION_CHANGED', (detail) => emitPrivateMessage(detail));
-    hub.on('ROOM_MESSAGE', (detail) => emitRoomMessage(detail));
+    hub.on('ROOM_MESSAGE', (detail) => {
+      emitRoomMessage(detail);
+      if (
+        notifSettingsRef.current.RoomMessageReceived &&
+        notifSettingsRef.current.soundsEnabled !== false &&
+        (document.hidden || readRoomRef.current !== detail.roomName)
+      )
+        playNotificationSound('RoomMessageReceived');
+    });
 
     hub.on('PRIVATE_MESSAGE', ({ message, username }) => {
       emitPrivateMessage({ message, username });
@@ -879,6 +890,17 @@ const App = () => {
   useEffect(() => {
     if (!isLoggedIn) return undefined;
 
+    const roomReadKey = `resonance-room-read-counts:${getSessionId()}`;
+    roomBaselines.current = {};
+    try {
+      Object.assign(
+        roomBaselines.current,
+        JSON.parse(sessionStorage.getItem(roomReadKey) || '{}'),
+      );
+    } catch {
+      /* Ignore invalid stored counts. */
+    }
+
     const sync = createMessageBadgeSync({
       getConversations: chatAPI.getAll,
       getRoomCounts: roomsAPI.getMessageCounts,
@@ -886,6 +908,13 @@ const App = () => {
       getPage,
       isVisible: () => !document.hidden,
       baselines: roomBaselines.current,
+      saveBaselines: (value) => {
+        try {
+          sessionStorage.setItem(roomReadKey, JSON.stringify(value));
+        } catch {
+          /* Storage may be unavailable. */
+        }
+      },
       update: ({ chats, roomUnreadCounts: counts, rooms }) =>
         unstable_batchedUpdates(() => {
           if (chats !== undefined) setChatUnread(chats);

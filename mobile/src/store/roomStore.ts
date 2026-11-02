@@ -71,6 +71,10 @@ interface RoomStore {
   messages: Record<string, RoomMessage[]>;
   // Mention badges remain separate from ordinary room traffic.
   mentions: Record<string, number>;
+  unread: Record<string, number>;
+  readCounts: Record<string, number>;
+  loadUnread: () => Promise<void>;
+  markRead: (roomName: string) => void;
   isLoadingJoined: boolean;
   isLoadingAvailable: boolean;
 
@@ -84,14 +88,34 @@ interface RoomStore {
   clearMentions: (roomName: string) => void;
 }
 
-export const totalMentions = (s: RoomStore) =>
-  Object.values(s.mentions).reduce((n, v) => n + v, 0);
+export const totalRoomUnread = (s: RoomStore) =>
+  Object.values(s.unread).reduce((n, v) => n + v, 0);
 
 export const useRoomStore = create<RoomStore>((set, get) => ({
   joined: [],
   available: [],
   messages: {},
   mentions: {},
+  unread: {},
+  readCounts: {},
+  loadUnread: async () => {
+    const current = sessionGuard();
+    const counts = await roomsAPI.getMessageCounts();
+    if (!current()) return;
+    set((s) => {
+      const readCounts: Record<string, number> = {};
+      const unread: Record<string, number> = {};
+      for (const { room, count } of counts) {
+        readCounts[room] = Math.min(s.readCounts[room] ?? count, count);
+        unread[room] = count - readCounts[room];
+      }
+      return { readCounts, unread };
+    });
+  },
+  markRead: (roomName) => set((s) => ({
+    readCounts: { ...s.readCounts, [roomName]: (s.readCounts[roomName] ?? 0) + (s.unread[roomName] ?? 0) },
+    unread: { ...s.unread, [roomName]: 0 },
+  })),
   isLoadingJoined: false,
   isLoadingAvailable: false,
 

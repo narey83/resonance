@@ -89,8 +89,8 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
-  const { joined, messages, loadMessages, sendMessage, clearMentions, leave } = useRoomStore();
-  const mentionCount = useRoomStore((s) => s.mentions[roomName] ?? 0);
+  const { joined, messages, loadMessages, sendMessage, clearMentions, markRead, leave } = useRoomStore();
+  const mentionCount = useRoomStore((s) => s.unread[roomName] ?? 0);
   const room = joined.find((r) => r.name === roomName);
   const thread = useMemo(() => messages[roomName] ?? [], [messages, roomName]);
 
@@ -196,13 +196,17 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
       setShowUsers(false);
       void loadMessages(roomName).catch(() => {});
       clearMentions(roomName);
+      markRead(roomName);
       return () => setShowUsers(false);
-    }, [roomName, loadMessages, clearMentions])
+    }, [roomName, loadMessages, clearMentions, markRead])
   );
 
   React.useEffect(() => {
-    if (focused && AppState.currentState === 'active' && mentionCount) clearMentions(roomName);
-  }, [focused, mentionCount, roomName, clearMentions]);
+    if (focused && AppState.currentState === 'active' && mentionCount) {
+      clearMentions(roomName);
+      markRead(roomName);
+    }
+  }, [focused, mentionCount, roomName, clearMentions, markRead]);
 
   React.useEffect(() => {
     loadTranslationStatus();

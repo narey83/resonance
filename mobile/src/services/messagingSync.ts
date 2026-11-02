@@ -32,12 +32,14 @@ export function startMessagingSync(hub: HubConnection, current: () => boolean) {
   };
   const room = ({ roomName }: { roomName: string }) => {
     if (!roomName) return;
+    refresh('unread', () => useRoomStore.getState().loadUnread());
     // Fetch the authoritative, bounded history (also handles our own echoed sends).
     refresh(`room:${roomName}`, () => useRoomStore.getState().loadMessages(roomName));
   };
   const reconcile = () => {
     if (!alive()) return;
     refresh('conversations', () => useConversationStore.getState().loadConversations());
+    refresh('unread', () => useRoomStore.getState().loadUnread());
     refresh('joined', () => useRoomStore.getState().loadJoined(true));
     for (const username of Object.keys(useConversationStore.getState().messages)) conversation({ username });
     for (const roomName of Object.keys(useRoomStore.getState().messages)) room({ roomName });

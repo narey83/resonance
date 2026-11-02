@@ -56,14 +56,55 @@ const tone = (ctx, { delay, duration, frequency }) => {
   oscillator.stop(start + duration + 0.02);
 };
 
-export const playMessageReceived = () => {
+const patterns = {
+  RoomMessageReceived: [660],
+  PrivateMessageReceived: [880, 1_318.5],
+  RoomMention: [1_046.5, 1_318.5, 1_568],
+  DownloadDirectoryComplete: [523.25, 783.99],
+  DownloadFileComplete: [523.25, 783.99],
+  UploadFileComplete: [783.99, 523.25],
+  SoulseekClientConnected: [440, 660],
+  SoulseekClientDisconnected: [660, 440],
+};
+
+// Unlock during a gesture, before the first asynchronous hub notification.
+const unlock = () => {
   try {
     const ctx = getAudioContext();
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-
-    tone(ctx, { delay: 0, duration: 0.12, frequency: 880 });
-    tone(ctx, { delay: 0.09, duration: 0.16, frequency: 1_318.5 });
   } catch {
-    /* Web Audio unsupported or blocked (e.g. no user gesture yet) */
+    /* Web Audio is optional. */
   }
 };
+
+export const enableNotificationAudio = () => {
+  window.addEventListener('pointerdown', unlock);
+  window.addEventListener('keydown', unlock);
+  return () => {
+    window.removeEventListener('pointerdown', unlock);
+    window.removeEventListener('keydown', unlock);
+  };
+};
+
+let lastSoundAt = 0;
+export const playNotificationSound = async (
+  type,
+  { fallback = false } = {},
+) => {
+  const frequencies =
+    patterns[type] || (fallback ? patterns.PrivateMessageReceived : null);
+  if (!frequencies || Date.now() - lastSoundAt < 750) return;
+  lastSoundAt = Date.now();
+  try {
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') await ctx.resume();
+    for (const [index, frequency] of frequencies.entries()) {
+      tone(ctx, { delay: index * 0.09, duration: 0.16, frequency });
+    }
+  } catch {
+    /* Web Audio unsupported or blocked. */
+  }
+};
+
+export const playMessageReceived = () =>
+  playNotificationSound('PrivateMessageReceived');

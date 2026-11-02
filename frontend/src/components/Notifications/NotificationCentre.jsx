@@ -460,6 +460,25 @@ const NotificationCentre = ({
                 completion alerts are optional.
               </p>
             </div>
+            <label className="nc-setting-row">
+              <span className="nc-setting-body">
+                <strong>Notification sounds</strong>
+                <span>
+                  Distinct tones for rooms, PMs, mentions and transfers.
+                </span>
+              </span>
+              <span className="nc-toggle">
+                <input
+                  aria-label="Notification sounds"
+                  checked={settings.soundsEnabled !== false}
+                  onChange={(e) =>
+                    onSettingsChange('soundsEnabled', e.target.checked)
+                  }
+                  type="checkbox"
+                />
+                <span className="nc-toggle-track" />
+              </span>
+            </label>
             {categories.slice(1).map(({ key: group, label }) => (
               <section
                 className="nc-setting-group"

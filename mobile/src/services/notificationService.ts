@@ -83,6 +83,12 @@ export async function initNotifications(): Promise<boolean> {
       }),
     });
 
+    for (const [id, name] of [['messages-v2', 'Alerts'], ['private-messages-v2', 'Private messages'], ['room-mentions-v2', 'Room mentions'], ['transfers-v2', 'Transfers']]) {
+      await N.setNotificationChannelAsync(id, {
+        name, importance: N.AndroidImportance.HIGH, sound: 'default',
+      });
+    }
+
     const { status: existing } = await N.getPermissionsAsync();
     if (existing === 'granted') return true;
 
@@ -93,13 +99,13 @@ export async function initNotifications(): Promise<boolean> {
   }
 }
 
-async function send(title: string, body: string) {
+async function send(title: string, body: string, channelId = 'messages-v2') {
   const N = await getModule();
   if (!N) return;
   try {
     await N.scheduleNotificationAsync({
-      content: { title, body },
-      trigger: null,
+      content: { title, body, sound: 'default' },
+      trigger: { channelId },
     });
   } catch {}
 }
@@ -107,13 +113,13 @@ async function send(title: string, body: string) {
 export async function notifyDownloadComplete(filename: string) {
   const { notifications } = useAppSettings.getState();
   if (!notifications.downloadsComplete) return;
-  await send('Download complete', filename);
+  await send('Download complete', filename, 'transfers-v2');
 }
 
 export async function notifyUploadComplete(filename: string) {
   const { notifications } = useAppSettings.getState();
   if (!notifications.uploadComplete) return;
-  await send('Upload complete', filename);
+  await send('Upload complete', filename, 'transfers-v2');
 }
 
 export async function notifyShareScanComplete() {
@@ -125,13 +131,13 @@ export async function notifyShareScanComplete() {
 export async function notifyPrivateMessage(username: string, message: string) {
   const { notifications } = useAppSettings.getState();
   if (!notifications.privateMessage) return;
-  await send(`Message from ${username}`, message);
+  await send(`Message from ${username}`, message, 'private-messages-v2');
 }
 
 export async function notifyRoomMention(roomName: string, username: string, message: string) {
   const { notifications } = useAppSettings.getState();
   if (!notifications.roomMention) return;
-  await send(`Mentioned in ${roomName}`, `${username}: ${message}`);
+  await send(`Mentioned in ${roomName}`, `${username}: ${message}`, 'room-mentions-v2');
 }
 
 // Restart alerts are only shown to administrators.

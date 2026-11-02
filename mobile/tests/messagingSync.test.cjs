@@ -7,7 +7,7 @@ function setup() {
   const appState = { currentState: 'active' };
   const chats = { messages: { alice: [] }, loadConversations: async () => { calls.push('inbox'); },
     loadMessages: async (name) => { calls.push(`pm:${name}`); if (gate) await gate.promise; } };
-  const rooms = { messages: { music: [] }, loadJoined: async () => { calls.push('joined'); },
+  const rooms = { loadUnread: async () => { calls.push('unread'); }, messages: { music: [] }, loadJoined: async () => { calls.push('joined'); },
     loadMessages: async (name) => { calls.push(`room:${name}`); } };
   const load = mobileModules({ 'react-native': { AppState: appState },
     'src/store/conversationStore.ts': { useConversationStore: { getState: () => chats } },
@@ -29,6 +29,7 @@ test('room traffic and private changes refresh while unrelated screens are open'
   app.emit('PRIVATE_MESSAGE', { username: 'new-peer' });
   await tick();
   assert.ok(app.calls.includes('room:music'));
+  assert.ok(app.calls.includes('unread'));
   assert.ok(app.calls.includes('pm:alice'));
   assert.ok(app.calls.includes('inbox'));
   assert.ok(!app.calls.includes('pm:new-peer'));
@@ -45,11 +46,12 @@ test('a burst during an in-flight thread fetch is coalesced and fetched again', 
 test('catch-up refreshes both message types; compatibility polling pauses in background', async () => {
   const app = setup();
   app.sync.reconcile(); await tick();
-  assert.deepEqual(new Set(app.calls), new Set(['inbox', 'joined', 'pm:alice', 'room:music']));
+  assert.deepEqual(new Set(app.calls), new Set(['inbox', 'joined', 'pm:alice', 'room:music', 'unread']));
   app.calls.length = 0; app.appState.currentState = 'background'; app.poll(); await tick();
   assert.equal(app.calls.length, 0);
   app.appState.currentState = 'active'; app.poll(); await tick();
   assert.ok(app.calls.includes('room:music'));
+  assert.ok(app.calls.includes('unread'));
   app.sync.stop(); assert.equal(app.timers.size, 0);
 });
 test('signed-out sessions and disposed listeners cannot reload account data', async () => {

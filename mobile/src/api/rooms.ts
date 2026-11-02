@@ -91,3 +91,6 @@ export const sendMessage = (roomName: string, message: string) =>
   apiClient.post(`/rooms/joined/${encodeURIComponent(roomName)}/messages`, JSON.stringify(message), {
     headers: { 'Content-Type': 'application/json' },
   });
+
+export const getMessageCounts = () =>
+  apiClient.get<{ room: string; count: number }[]>('/rooms/joined/message-counts').then(r => r.data);

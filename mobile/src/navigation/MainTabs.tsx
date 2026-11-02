@@ -40,7 +40,7 @@ import { makeScreenOptions } from '../theme';
 import { PlayerMiniBar } from '../components/PlayerMiniBar';
 import { FloatingTabBar } from '../components/FloatingTabBar';
 import { useConversationStore } from '../store/conversationStore';
-import { totalMentions, useRoomStore } from '../store/roomStore';
+import { totalRoomUnread, useRoomStore } from '../store/roomStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { useRemoteAccess } from '../lib/remoteAccess';
 import { PerfProfiler } from '../lib/perfProbe';
@@ -243,7 +243,7 @@ export default function MainTabs() {
   const remote = useRemoteAccess();
   const { colors } = useTheme();
   const totalUnread  = useConversationStore((s) => s.totalUnread);
-  const roomMentions = useRoomStore(totalMentions);
+  const roomMentions = useRoomStore(totalRoomUnread);
 
   return (
     <Tab.Navigator

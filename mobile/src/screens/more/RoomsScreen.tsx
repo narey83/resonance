@@ -82,7 +82,7 @@ export default function RoomsScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
-  const { joined, mentions, isLoadingJoined, loadJoined, join } = useRoomStore();
+  const { joined, unread: mentions, isLoadingJoined, loadJoined, join } = useRoomStore();
   const [joining, setJoining]       = useState<string | null>(null);
   const [customRoom, setCustomRoom] = useState('');
   const [showCustom, setShowCustom] = useState(false);

@@ -205,7 +205,7 @@ const Rooms = ({ history, onRoomRead, unreadCounts = {} }) => {
 
   const fetchActiveRoom = useCallback(async () => {
     const roomName = activeRef.current;
-    if (!roomName) return;
+    if (!roomName || document.hidden) return;
 
     try {
       const [messages, users] = await Promise.all([

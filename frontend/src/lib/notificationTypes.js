@@ -221,8 +221,8 @@ export const DEFAULT_NOTIFICATION_SETTINGS = Object.fromEntries(
 export const loadNotificationSettings = () => {
   const saved = prefs.get('resonance-notification-settings', null);
   if (saved && typeof saved === 'object')
-    return { ...DEFAULT_NOTIFICATION_SETTINGS, ...saved };
-  return { ...DEFAULT_NOTIFICATION_SETTINGS };
+    return { soundsEnabled: true, ...DEFAULT_NOTIFICATION_SETTINGS, ...saved };
+  return { soundsEnabled: true, ...DEFAULT_NOTIFICATION_SETTINGS };
 };
 
 // Format a notification's { type, data } into display fields, tolerating

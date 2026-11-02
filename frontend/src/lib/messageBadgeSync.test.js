@@ -139,3 +139,31 @@ describe('message badge reconciliation', () => {
     sync.stop();
   });
 });
+
+describe('stored room baselines', () => {
+  it('retains unread room counts across synchronizer restarts', async () => {
+    expect.hasAssertions();
+    jest.useFakeTimers();
+    const update = jest.fn();
+    const saveBaselines = jest.fn();
+    const sync = createMessageBadgeSync({
+      getConversations: async () => [],
+      getRoomCounts: async () => [{ room: 'music', count: 108 }],
+      getPage: () => 'library',
+      isVisible: () => true,
+      baselines: { music: 100 },
+      saveBaselines,
+      update,
+    });
+    sync.refresh();
+    await flush();
+    expect(update).toHaveBeenLastCalledWith({
+      chats: 0,
+      rooms: 8,
+      roomUnreadCounts: { music: 8 },
+    });
+    expect(saveBaselines).toHaveBeenCalledWith({ music: 100 });
+    sync.stop();
+    jest.useRealTimers();
+  });
+});

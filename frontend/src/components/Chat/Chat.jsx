@@ -234,7 +234,7 @@ const Chat = ({ history, location, onConversationRead }) => {
       const currentActive = activeRef.current;
       const activeConv = convMap[currentActive];
 
-      if (activeConv) {
+      if (activeConv && !document.hidden) {
         if (activeConv.hasUnAcknowledgedMessages) {
           await chat.acknowledge({ username: currentActive });
           onConversationRead?.();
@@ -311,6 +311,7 @@ const Chat = ({ history, location, onConversationRead }) => {
         if (
           mountedRef.current &&
           activeRef.current === username &&
+          !document.hidden &&
           full.hasUnAcknowledgedMessages
         ) {
           await chat.acknowledge({ username });

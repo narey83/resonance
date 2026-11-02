@@ -8,6 +8,7 @@ export const createMessageBadgeSync = ({
   isVisible,
   baselines,
   update,
+  saveBaselines = () => {},
 }) => {
   let stopped = false;
   let pending = false;
@@ -55,6 +56,7 @@ export const createMessageBadgeSync = ({
 
         for (const room of Object.keys(baselines))
           if (!joined.has(room)) delete baselines[room];
+        saveBaselines({ ...baselines });
         result.rooms = rooms;
         result.roomUnreadCounts = roomUnreadCounts;
       }
