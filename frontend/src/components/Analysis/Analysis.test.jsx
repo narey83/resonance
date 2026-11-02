@@ -266,6 +266,33 @@ describe('analysis folder loading', () => {
         .getAttribute('aria-expanded'),
     ).toBe('true');
   });
+  it('keeps the running scan stop action in the section header above progress', async () => {
+    expect.hasAssertions();
+    analysisApi.getScanState.mockResolvedValue({
+      scanning: true,
+      total: 100,
+      analysed: 10,
+      progress: 0.1,
+    });
+    await render();
+    const header = container.querySelector('.ka-current-header');
+    const progress = container.querySelector('.ka-scan-progress');
+    expect(header.querySelector('h2').textContent).toBe('Current analysis');
+    expect(
+      header.querySelector('[aria-label="Stop analysis"]').textContent,
+    ).toBe('Stop after this scan');
+    expect(header.querySelector('[aria-label="Stop analysis"]').disabled).toBe(
+      false,
+    );
+    expect(progress.querySelector('[aria-label="Stop analysis"]')).toBeNull();
+    expect(header.compareDocumentPosition(progress)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(
+      container.querySelectorAll('[aria-label="Stop analysis"]'),
+    ).toHaveLength(1);
+    expect(analysisApi.cancelScan).not.toHaveBeenCalled();
+  });
   it('shows coverage without the removed automatic queue card', async () => {
     expect.hasAssertions();
     musicLibraryApi.getAnalysisStats.mockResolvedValue({
@@ -846,7 +873,7 @@ describe('analysis folder loading', () => {
       });
       await render();
       const stop = container.querySelector(
-        '.ka-scan-progress [aria-label="Stop analysis"]',
+        '.ka-current-header [aria-label="Stop analysis"]',
       );
       expect(stop.textContent).toBe('Stop after this scan');
       await act(async () => stop.click());

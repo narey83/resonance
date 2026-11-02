@@ -1650,7 +1650,27 @@ const Analysis = ({ viewState }) => {
           </details>
         </details>
         <div className="ka-current-analysis">
-          <h2 className="ka-section-title">Current analysis</h2>
+          <header className="ka-current-header">
+            <h2 className="ka-section-title">Current analysis</h2>
+            {(scanning ||
+              stopRequested ||
+              preparation?.counts?.running > 0) && (
+              <button
+                aria-label="Stop analysis"
+                className="ka-btn ka-btn--stop hover-fx"
+                disabled={
+                  Boolean(preparationBusy) ||
+                  stopRequested ||
+                  (!scanning && !(preparation?.counts?.running > 0))
+                }
+                onClick={() => handlePreparationAction('stop')}
+                title="Finish every remaining track in the current scan, then stop. No further automatic scans will start."
+                type="button"
+              >
+                {stopRequested ? 'Finishing scan…' : 'Stop after this scan'}
+              </button>
+            )}
+          </header>
           {scanState?.enhancedTotal > 0 && (
             <section
               aria-label="Enhanced analysis progress"
@@ -1701,24 +1721,6 @@ const Analysis = ({ viewState }) => {
             </details>
           )}
           <div className="ka-scan-progress">
-            {(scanning ||
-              stopRequested ||
-              preparation?.counts?.running > 0) && (
-              <button
-                aria-label="Stop analysis"
-                className="ka-btn ka-btn--stop hover-fx"
-                disabled={
-                  Boolean(preparationBusy) ||
-                  stopRequested ||
-                  (!scanning && !(preparation?.counts?.running > 0))
-                }
-                onClick={() => handlePreparationAction('stop')}
-                title="Finish every remaining track in the current scan, then stop. No further automatic scans will start."
-                type="button"
-              >
-                {stopRequested ? 'Finishing scan…' : 'Stop after this scan'}
-              </button>
-            )}
             {/* inline scan progress */}
             {scanState?.total > 0 && (
               <div
