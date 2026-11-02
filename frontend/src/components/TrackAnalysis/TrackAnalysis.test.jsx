@@ -9,19 +9,19 @@ jest.mock('../Analysis/Analysis', () => ({ activeView, onScanState }) => {
   }, [onScanState]);
   return <p>Analysis view: {activeView}</p>;
 });
-jest.mock('./WaveformAnalysis', () => () => <p>Waveform inspection</p>);
 
 describe('analysis workspace tabs', () => {
-  it('defaults to Overview and remembers tabs with keyboard navigation', () => {
+  it('falls back from the removed inspector to Overview and keeps three keyboard-accessible tabs', () => {
     expect.hasAssertions();
     localStorage.clear();
+    localStorage.setItem('resonance-analysis-tab', 'waveform');
     const container = document.createElement('div');
     document.body.append(container);
     act(() => {
       ReactDOM.render(<TrackAnalysis />, container);
     });
     expect(container.textContent).not.toContain('Advanced analysis');
-    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(4);
+    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(3);
     expect(
       container.querySelector('[role="tab"][aria-selected="true"]').textContent,
     ).toContain('Overview');
@@ -29,8 +29,7 @@ describe('analysis workspace tabs', () => {
     expect(
       container.querySelector('#track-analysis-tab-failures').textContent,
     ).toBe('Failures');
-    act(() => container.querySelectorAll('.ta-tab')[3].click());
-    expect(container.textContent).toContain('Waveform inspection');
+    expect(container.textContent).not.toContain('Waveform Inspector');
     act(() => container.querySelectorAll('.ta-tab')[1].click());
     expect(container.textContent).toContain('Analysis view: analysis');
     expect(localStorage.getItem('resonance-analysis-tab')).toBe('analysis');

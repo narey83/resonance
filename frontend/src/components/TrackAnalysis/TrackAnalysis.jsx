@@ -29,10 +29,8 @@
 
 import './TrackAnalysis.css';
 import Analysis from '../Analysis/Analysis';
-import WaveformAnalysis from './WaveformAnalysis';
 import {
   AlertTriangle,
-  AudioWaveform,
   LayoutDashboard,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -43,21 +41,23 @@ const TABS = [
   { icon: LayoutDashboard, id: 'overview', label: 'Overview' },
   { icon: SlidersHorizontal, id: 'analysis', label: 'Analyse tracks' },
   { icon: AlertTriangle, id: 'failures', label: 'Failures' },
-  { icon: AudioWaveform, id: 'waveform', label: 'Waveform Inspector' },
 ];
 
 const TrackAnalysis = () => {
-  const [activeTab, setActiveTab] = useState(() => {
+  const [preferredTab, setPreferredTab] = useState(() => {
     try {
-      const saved = localStorage.getItem(TAB_KEY);
-      return TABS.some((tab) => tab.id === saved) ? saved : 'overview';
+      return localStorage.getItem(TAB_KEY) || 'overview';
     } catch {
       return 'overview';
     }
   });
+  // A removed tab can remain in saved preferences or a hot-reloaded session.
+  const activeTab = TABS.some((tab) => tab.id === preferredTab)
+    ? preferredTab
+    : 'overview';
   const [statusHost, setStatusHost] = useState(null);
   const selectTab = (id) => {
-    setActiveTab(id);
+    setPreferredTab(id);
     try {
       localStorage.setItem(TAB_KEY, id);
     } catch {
@@ -66,7 +66,6 @@ const TrackAnalysis = () => {
   };
 
   const analysisView = useRef(null);
-  const waveformView = useRef(null);
 
   return (
     <div className="ta-root">
@@ -124,10 +123,7 @@ const TrackAnalysis = () => {
         id={`track-analysis-panel-${activeTab}`}
         role="tabpanel"
       >
-        <div
-          className="ta-analysis-workspace"
-          hidden={activeTab === 'waveform'}
-        >
+        <div className="ta-analysis-workspace">
           <Analysis
             activeView={activeTab}
             onNavigate={selectTab}
@@ -135,9 +131,6 @@ const TrackAnalysis = () => {
             viewState={analysisView}
           />
         </div>
-        {activeTab === 'waveform' && (
-          <WaveformAnalysis viewState={waveformView} />
-        )}
       </div>
     </div>
   );

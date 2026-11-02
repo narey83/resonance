@@ -2037,3 +2037,26 @@ queries or permission changes; delivered through the existing frontend HMR watch
 Validation: changed-file ESLint and five focused tests passed on the laptop;
 desktop/390px fixture interactions and the real Administrator tab/scan labels
 verified the scope distinction. Existing service and running scan were preserved.
+
+## Remove Waveform Inspector — 2 November 2026
+
+Removed the inspector tab, renderer/styles, its track picker, inspector-only imported
+analysis UI/helpers and their obsolete tests. Shared player/library waveforms and
+analysis measurement code remain in use. Removed the now-unused `wavesurfer.js`
+direct dependency using a laptop-generated lockfile-only update; lockfile review
+confirmed no unrelated dependency changes. Existing installed dependencies/private
+state were preserved. There are now three tabs: Overview, Analyse tracks and
+Failures. Mobile navigation uses three equal columns. A saved or hot-reloaded
+selection of the removed tab resolves to Overview.
+
+Delivered changed source/styles/manifests and removed only the explicitly obsolete
+source files from the existing laptop development snapshot after checking their
+pre-change hashes against Git. No backend or service restart, database backup or
+scan-control request. The web watcher compiled with its existing 14 source-map
+warnings; the real signed-in page showed the three tabs while the scan advanced.
+Headless desktop/390px checks cover the missing inspector, legacy-tab fallback,
+keyboard navigation, preserved search, shared scan controls and no overflow or
+analysis mutations.
+Final verification: changed-file ESLint passed; all 117 regression tests and 11
+dependency-security tests passed on the dev laptop; npm audit reported zero
+vulnerabilities. Existing player waveform and shared waveform helper tests passed.

@@ -37,7 +37,6 @@
     "semantic-ui-react": "^2.1.0",
     "signalr": "^2.4.1",
     "uuid": "^11.1.1",
-    "wavesurfer.js": "^7.12.7",
     "yaml": "^1.10.3"
   },
   "devDependencies": {
