@@ -56,7 +56,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/upload-people-1ce4e09/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/upload-full-5c6bb67/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -1223,3 +1223,51 @@ Backend activation/queue audits: `backend-deployment` and
 `analysis-metadata-54c933e`; preserve its current deployment record/PID when using
 rollback helpers. New gateway `rollback` preserves previous web configuration/link
 for `upload-redesign-01ae5ee`. Private Mac helpers: `.dev/upload-people/`.
+
+
+## Complete per-user upload list and one header — 2 November 2026
+
+Active web/gateway: `upload-full-5c6bb67`, frontend source
+`5c6bb67cd21b3aa3672d4548930a6edfac0d6ce4`, tree
+`3406c50fde6e0200d4fa60e0fa376a5320a74a7d`. Activated at 15:53 GMT.
+Backend remains `upload-people-1ce4e09-retry1`, PID 1206121.
+
+The user's explicit instruction removes the UI's 250-track page limit and Show
+more truncation: every unfinished track for the selected recipient is available
+in one continuous list. The recipient's name and unchanged UsernameLink controls
+appear once in the top bar, beside Change user and their totals. Duplicate person
+cards/headings, waiting/uploading section headings, empty uploading panels and
+pagination controls were removed. Folder labels and individual statuses remain.
+Whole-user cancellation uses the existing single user-scoped action; individual
+cancel and permanent folder-block behavior remain unchanged.
+
+This is frontend-only. It assembles the existing API's 500-record transport pages
+with concurrency limited to two, deduplicates IDs and validates completeness before
+publishing the list. A moving queue is retried once; persistent inconsistency keeps
+the last complete view with a retry notice. Stable count/leading-ID snapshots reuse
+membership for up to 30 seconds while refreshing active progress. Count/sample-ID
+changes force full reloads; periodic refresh catches unchanged-count replacements.
+Leaving/changing recipient aborts outstanding requests. Individual row virtualization
+keeps the complete list scrollable without mounting all DOM rows simultaneously.
+
+Dev-laptop gates: clean npm 11 install, 27 frontend tests, changed-file lint and
+formatting, 11 dependency-security tests, zero audit findings, production build and
+remote pre-commit checks matching exact staged files. Isolated and public-build
+browser fixtures at 1440/390 loaded all 8,053 tracks, reached the last track without
+manual pagination, verified fewer than 100 mounted rows, a single recipient name
+and controls, no Next/Show more/duplicate section headers, selection changes and live
+progress updates. Unit failures cover moving/inconsistent queues, cancellation,
+cross-recipient isolation and cache refresh. Desktop/phone top-and-bottom screenshots
+were inspected. Authenticated live-account QA remains blocked by the expired saved
+QA sign-in; browser verification used sample queues. Existing dependency source-map,
+bundle-size and deprecation warnings remain.
+
+Public HTML/entrypoint and retained-asset hashes, public/direct readiness and browser
+monitor health passed. Retained 174 previous static assets. Backend PID 1206121 and
+Caddy PID 3992646 were preserved. No backend restart, database copy, schema change,
+queue rewrite or slot-allocation change. Protocol/security configuration and private
+runtime state were retained.
+
+Snapshot/logs: `/home/narey/resonance-builds/upload-full-20261102`.
+Rollback config/link/record: new gateway release's `rollback` directory, pointing to
+`upload-people-1ce4e09`. Private Mac helpers: `.dev/upload-full/`.
