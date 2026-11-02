@@ -1,0 +1,50 @@
+.ka-failures {
+  margin: 14px 0;
+  border: 1px solid var(--border-color, #d9e2e8);
+  border-radius: 8px;
+  padding: 12px;
+}
+.ka-failures > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.ka-failures button {
+  cursor: pointer;
+  padding: 6px 10px;
+}
+.ka-failures button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.ka-failure-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.ka-failure-list > li {
+  padding: 12px;
+  border: 1px solid var(--border-color, #d9e2e8);
+  border-radius: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ka-failure-list > li > span {
+  display: block;
+  font-size: 0.9em;
+  opacity: 0.75;
+  margin-top: 4px;
+}
+.ka-failure-path {
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+.ka-failure-list ul {
+  padding-left: 20px;
+}
+.ka-failure-pages {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}

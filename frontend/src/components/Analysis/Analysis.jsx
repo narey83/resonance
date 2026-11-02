@@ -49,6 +49,7 @@ import { useKeyFormat } from '../../lib/useKeyFormat';
 import { usePagedList } from '../../lib/usePagedList';
 import BackgroundAnalysisQueue from '../Library/components/BackgroundAnalysisQueue';
 import AnalysisDetails from './AnalysisDetails';
+import AnalysisFailures from './AnalysisFailures';
 import RowWaveform from './RowWaveform';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -1801,6 +1802,7 @@ const Analysis = ({ viewState }) => {
               <p role="alert">{scanState.error}</p>
             </details>
           )}
+          <AnalysisFailures />
           <div className="ka-scan-progress">
             {/* inline scan progress */}
             {scanState?.total > 0 && (
