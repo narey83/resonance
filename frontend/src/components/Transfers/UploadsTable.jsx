@@ -188,160 +188,173 @@ const UploadsTable = ({
       className="ul-complete"
       data-total-tracks={fileCount}
     >
-      <header className="ul-complete-header">
-        <h1>Uploads</h1>
-        {selectedUsername && (
-          <div className="ul-recipient-controls">
-            <UsernameLink username={selectedUsername} />
-          </div>
-        )}
-        {queueUsers.length > 1 && (
-          <select
-            aria-label="Change upload recipient"
-            className="ul-change-recipient"
-            onChange={(event) => {
-              if (event.target.value) onSelectUploadUser(event.target.value);
-            }}
-            value=""
-          >
-            <option value="">Change user…</option>
-            {queueUsers
-              .filter((recipient) => recipient.username !== selectedUsername)
-              .map((recipient) => (
-                <option
-                  key={recipient.username}
-                  value={recipient.username}
-                >
-                  {recipient.username} ·{' '}
-                  {recipient.waitingCount.toLocaleString()} waiting
-                </option>
-              ))}
-          </select>
-        )}
-        {selectedUsername && (
-          <span className="ul-complete-count">
-            <strong>
-              {(selected?.waitingCount ?? fileCount).toLocaleString()} waiting
-            </strong>
-            {selected?.activeCount > 0
-              ? ` · ${selected.activeCount} sending/connecting`
-              : ''}
-          </span>
-        )}
-        {fileCount > 0 && (
-          <button
-            className="ul-quick-btn ul-quick-btn--cancel"
-            onClick={() => onCancelUser(user)}
-            type="button"
-          >
-            Cancel all uploads
-          </button>
-        )}
-      </header>
-      {fileCount === 0 ? (
-        <p className="ul-complete-empty">
-          {selectedUsername
-            ? 'No unfinished uploads for this user.'
-            : 'No queued uploads.'}
-        </p>
-      ) : (
-        <div
-          aria-colcount={6}
-          aria-label="Complete upload queue"
-          aria-rowcount={rows.length + 1}
-          className="ul-complete-table"
-          role="table"
+      <div className="ul-live-workspace">
+        <aside
+          aria-label="Users requesting uploads"
+          className="ul-live-users"
         >
-          <div
-            className="ul-complete-columns"
-            role="row"
-          >
-            <div role="columnheader">Track</div>
-            <div role="columnheader">Status</div>
-            <div role="columnheader">Progress</div>
-            <div role="columnheader">Size</div>
-            <div role="columnheader">Speed</div>
-            <div
-              aria-label="Actions"
-              role="columnheader"
-            />
+          <h2>
+            Users <span>{queueUsers.length}</span>
+          </h2>
+          {queueUsers.length === 0 && <p>No queued uploads.</p>}
+          <div className="ul-live-user-list">
+            {queueUsers.map((recipient) => (
+              <button
+                aria-pressed={recipient.username === selectedUsername}
+                className="ul-live-user"
+                key={recipient.username}
+                onClick={() => onSelectUploadUser(recipient.username)}
+                type="button"
+              >
+                <strong>{recipient.username}</strong>
+                <span>
+                  {recipient.waitingCount.toLocaleString()} waiting
+                  {recipient.activeCount > 0
+                    ? ` · ${recipient.activeCount} sending/connecting`
+                    : ''}
+                </span>
+              </button>
+            ))}
           </div>
-          <div
-            aria-label="All requested tracks"
-            className="ul-complete-scroll"
-            ref={scrollRef}
-            role="rowgroup"
-          >
+        </aside>
+        <div className="ul-live-track-pane">
+          <header className="ul-complete-header">
+            <h1>Uploads</h1>
+            {selectedUsername && (
+              <div className="ul-recipient-controls">
+                <UsernameLink username={selectedUsername} />
+              </div>
+            )}
+            {selectedUsername && (
+              <span className="ul-complete-count">
+                <strong>
+                  {(selected?.waitingCount ?? fileCount).toLocaleString()}{' '}
+                  waiting
+                </strong>
+                {selected?.activeCount > 0
+                  ? ` · ${selected.activeCount} sending/connecting`
+                  : ''}
+              </span>
+            )}
+            {fileCount > 0 && (
+              <button
+                className="ul-quick-btn ul-quick-btn--cancel"
+                onClick={() => onCancelUser(user)}
+                type="button"
+              >
+                Cancel all uploads
+              </button>
+            )}
+          </header>
+          {fileCount === 0 ? (
+            <p className="ul-complete-empty">
+              {selectedUsername
+                ? 'No unfinished uploads for this user.'
+                : 'No queued uploads.'}
+            </p>
+          ) : (
             <div
-              style={{
-                height: virtualizer.getTotalSize(),
-                position: 'relative',
-                width: '100%',
-              }}
+              aria-colcount={6}
+              aria-label="Complete upload queue"
+              aria-rowcount={rows.length + 1}
+              className="ul-complete-table"
+              role="table"
             >
-              {virtualizer.getVirtualItems().map((item) => {
-                const row = rows[item.index];
-                return (
-                  <div
-                    aria-rowindex={item.index + 2}
-                    className={`ul-flat-row ${row.type === 'folder' ? 'ul-complete-folder' : `ul-complete-file ${isSending(row.file) ? '' : 'ul-complete-file--waiting'}`}`}
-                    data-file-id={row.type === 'file' ? row.file.id : undefined}
-                    data-index={item.index}
-                    key={item.key}
-                    ref={virtualizer.measureElement}
-                    role="row"
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      transform: `translateY(${item.start}px)`,
-                    }}
-                  >
-                    {row.type === 'folder' ? (
+              <div
+                className="ul-complete-columns"
+                role="row"
+              >
+                <div role="columnheader">Track</div>
+                <div role="columnheader">Status</div>
+                <div role="columnheader">Progress</div>
+                <div role="columnheader">Size</div>
+                <div role="columnheader">Speed</div>
+                <div
+                  aria-label="Actions"
+                  role="columnheader"
+                />
+              </div>
+              <div
+                aria-label="All requested tracks"
+                className="ul-complete-scroll"
+                ref={scrollRef}
+                role="rowgroup"
+              >
+                <div
+                  style={{
+                    height: virtualizer.getTotalSize(),
+                    position: 'relative',
+                    width: '100%',
+                  }}
+                >
+                  {virtualizer.getVirtualItems().map((item) => {
+                    const row = rows[item.index];
+                    return (
                       <div
-                        aria-colspan={6}
-                        className="ul-folder-content"
-                        role="cell"
+                        aria-rowindex={item.index + 2}
+                        className={`ul-flat-row ${row.type === 'folder' ? 'ul-complete-folder' : `ul-complete-file ${isSending(row.file) ? '' : 'ul-complete-file--waiting'}`}`}
+                        data-file-id={
+                          row.type === 'file' ? row.file.id : undefined
+                        }
+                        data-index={item.index}
+                        key={item.key}
+                        ref={virtualizer.measureElement}
+                        role="row"
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          transform: `translateY(${item.start}px)`,
+                        }}
                       >
-                        <Folder size={15} />
-                        <strong>
-                          {row.directory.directory
-                            .split(/[/\\]/u)
-                            .filter(Boolean)
-                            .at(-1) ?? row.directory.directory}
-                        </strong>
-                        <span>
-                          {row.directory.files.length.toLocaleString()} tracks
-                        </span>
-                        <button
-                          className="ul-folder-block"
-                          onClick={() =>
-                            onCancelDirectory({
-                              directory: row.directory.directory,
-                              files: row.directory.files,
-                              username: selectedUsername,
-                            })
-                          }
-                          title="Cancel all requests for this folder and permanently block it for this person"
-                          type="button"
-                        >
-                          Block folder
-                        </button>
+                        {row.type === 'folder' ? (
+                          <div
+                            aria-colspan={6}
+                            className="ul-folder-content"
+                            role="cell"
+                          >
+                            <Folder size={15} />
+                            <strong>
+                              {row.directory.directory
+                                .split(/[/\\]/u)
+                                .filter(Boolean)
+                                .at(-1) ?? row.directory.directory}
+                            </strong>
+                            <span>
+                              {row.directory.files.length.toLocaleString()}{' '}
+                              tracks
+                            </span>
+                            <button
+                              className="ul-folder-block"
+                              onClick={() =>
+                                onCancelDirectory({
+                                  directory: row.directory.directory,
+                                  files: row.directory.files,
+                                  username: selectedUsername,
+                                })
+                              }
+                              title="Cancel all requests for this folder and permanently block it for this person"
+                              type="button"
+                            >
+                              Block folder
+                            </button>
+                          </div>
+                        ) : (
+                          <FileCells
+                            file={row.file}
+                            onCancel={onCancel}
+                          />
+                        )}
                       </div>
-                    ) : (
-                      <FileCells
-                        file={row.file}
-                        onCancel={onCancel}
-                      />
-                    )}
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 };

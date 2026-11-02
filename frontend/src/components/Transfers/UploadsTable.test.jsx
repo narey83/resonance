@@ -90,7 +90,11 @@ describe('One complete upload list and one user header', () => {
       '45',
     );
     expect(container.querySelectorAll('.test-user-controls')).toHaveLength(1);
-    expect(container.textContent.match(/listener/gu)).toHaveLength(1);
+    expect(
+      container
+        .querySelector('.ul-complete-header')
+        .textContent.match(/listener/gu),
+    ).toHaveLength(1);
     expect(
       container.querySelector('.ul-complete-header [title="Chat"]'),
     ).not.toBeNull();
@@ -107,17 +111,43 @@ describe('One complete upload list and one user header', () => {
     ])
       expect(container.textContent).not.toContain(phrase);
   });
-  it('switches users without duplicating the selected name in the menu', async () => {
+  it('shows users on the side without a dropdown and switches by clicking a user', async () => {
     expect.hasAssertions();
     const onSelectUploadUser = jest.fn();
     await render({ onSelectUploadUser });
-    const select = container.querySelector('select');
-    expect([...select.options].map((option) => option.value)).toEqual([
-      '',
-      'other',
-    ]);
-    act(() => Simulate.change(select, { target: { value: 'other' } }));
+    expect(container.querySelector('select')).toBeNull();
+    expect(container.querySelectorAll('.ul-live-user')).toHaveLength(2);
+    expect(
+      container.querySelector('.ul-live-user[aria-pressed="true"]').textContent,
+    ).toContain('listener');
+    act(() => Simulate.click(container.querySelectorAll('.ul-live-user')[1]));
     expect(onSelectUploadUser).toHaveBeenCalledWith('other');
+  });
+  it('adds new users to the live side list while retaining the selected user and tracks', async () => {
+    expect.hasAssertions();
+    const files = transfers([file('one')]);
+    await render({ transfers: files });
+    await render({
+      transfers: files,
+      queueUsers: [
+        ...users,
+        {
+          username: 'new-arrival',
+          waitingCount: 3,
+          activeCount: 0,
+          pendingCount: 3,
+        },
+      ],
+    });
+    expect(container.querySelectorAll('.ul-live-user')).toHaveLength(3);
+    expect(
+      container.querySelectorAll('.ul-live-user')[2].textContent,
+    ).toContain('new-arrival');
+    expect(
+      container.querySelector('.ul-recipient-controls').textContent,
+    ).toContain('listener');
+    expect(container.querySelector('[data-file-id="one"]')).not.toBeNull();
+    expect(container.querySelectorAll('.test-user-controls')).toHaveLength(1);
   });
   it('keeps whole-user cancellation beside the single header', async () => {
     expect.hasAssertions();

@@ -3,8 +3,10 @@
 **User instruction, 2 November 2026:** every unfinished track going to the selected
 person must be available in one scrollable list, with no Next page or Show more
 controls. The recipient name and their existing user controls appear once in a
-compact top bar. Change user selects another recipient; folders label the tracks
-without adding more person headers. History remains on the existing History page.
+compact top bar. A live side list shows every recipient and their waiting count;
+new recipients appear automatically without replacing the current selection.
+Selecting a side-list row opens that person’s complete queue. There is no user
+dropdown. Folders label the tracks without adding more person headers. History remains on the existing History page.
 
 The frontend automatically assembles the selected recipient's complete queue from
 500-record transport pages, with at most two requests in flight. No partial list is
