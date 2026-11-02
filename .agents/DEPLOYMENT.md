@@ -1,6 +1,6 @@
 # Resonance deployment destinations and runbook
 
-Last confirmed: 1 November 2026. Read this file before any deployment.
+Last confirmed: 2 November 2026. Read this file before any deployment.
 
 **Standing user rule: use only the dev laptop for builds, tests, application and
 development servers, including temporary web QA and Metro, until the user explicitly
@@ -8,6 +8,13 @@ says Mac runtime use is OK.** Keep source editing and Git on the Mac; SSH/ADB
 forwarding and artifact transfer are transport, not Mac application runtimes.
 
 ## User intent and defaults
+
+**User instruction, 2 November 2026:** stop creating backups for this development
+application. Routine dev deployments must not create new database backups or
+require off-server database copies unless the user explicitly requests them.
+Preserve existing backups, private state and queued work. Continue graceful
+shutdown and upload-ID/metadata reconciliation; this instruction supersedes the
+older automatic database-backup gates below for this dev instance.
 
 The user expects whole-stack ownership: diagnose issues across the UI, API,
 analysis workers, SQLite, networking and deployment; make routine engineering
@@ -49,7 +56,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-redesign-d07a9ca/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-responsive-3d38748/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -141,11 +148,13 @@ database files, cookies, signing material and application state outside artifact
 Use `/home/narey/.dotnet/dotnet` for the installed .NET 10 SDK (verify its version);
 the dev laptop's `/usr/bin/dotnet` currently selects SDK 9 and cannot build net10.0.
 
-For a backend restart, follow `docs/upload-peer-cooldown.md`: take a verified,
-consistent SQLite backup including committed WAL data, record queued upload IDs
-before shutdown, reconcile their final state, and verify those IDs and metadata
-again after recovery. Preserve genuine completions and explicit cancellations.
-Keep a verified off-server backup. Abort if backup or reconciliation fails.
+For a backend restart, follow the queue-preservation checks in
+`docs/upload-peer-cooldown.md`: record queued upload IDs before shutdown, reconcile
+their final state, and verify those IDs and metadata again after recovery.
+Preserve genuine completions and explicit cancellations. Per the user's
+2 November instruction, routine deployments of this dev instance do not create
+new database backups or wait for off-server copies. Preserve backups already
+present; take a new backup only if the user explicitly requests it.
 
 Do not roll back to a binary that clears unfinished uploads. The queue-preserving
 connection-failure correction was deployed as backend commit `53053c7`; inspect
@@ -1024,3 +1033,70 @@ Rollback: `/home/narey/resonance-backups/analysis-redesign-d07a9ca`, preserving
 `finish-scan-1486de4`. The gateway's `deployment.json` and snapshot's source/asset
 manifests, checks and public browser results record verification. Private Mac proof:
 `.dev/deploy-analysis-redesign/`.
+
+
+## Responsive analysis and exact selected paths — 2 November 2026
+
+Active backend: `analysis-metadata-54c933e`, source
+`54c933e9bdb6290a3cf539e4e2fa695be54dc13a`, PID 1169989.
+Active web/gateway: `analysis-responsive-3d38748`, frontend source
+`3d38748014a7f2ba33918131b7f098497cd48a36`. Later backend-only releases
+retained that web release and the Caddy configuration.
+
+Basic scans use at most two workers. Automatic Enhanced allocation reserves half
+the available CPU capacity and caps model jobs at two; the eight-processor laptop
+reports two jobs with two threads each. Explicit resource overrides retain their
+existing behavior. Automatic preparation remains paused and the test scan is finished.
+
+The SQLite coverage index stores compact analysis metadata separately from large
+waveform rows. Coverage, readiness filters, row lookups and preparation metadata
+explicitly use it. Selected scans load metadata only for their selected files,
+in parameterized batches of 200. Empty selections read no rows; legacy schema
+compatibility, waveform definitions and content-size guards are preserved.
+Initial index creation scans the existing database once; subsequent starts reuse it.
+The readiness UI receives coverage independently of preparation status and explains
+an unavailable initial response while retrying.
+
+The shared-path lookup now prioritizes exact spelling before legacy case aliases.
+Previously, case-insensitive deduplication could retain the wrong cached alias and
+report an empty scan for selected incomplete tracks. An actual three-track test
+with normal `onlyPaths`, `skipAnalysed: true`, `resetAll: false` completed all three
+with zero failures. Basic readiness increased from 43,038 to 43,041 of 59,413 tracks;
+Enhanced readiness remains 35. An independent forced three-track run observed a
+maximum of two simultaneous workers, with coverage responses of 0.10–0.20 seconds
+during decoding. The previous coverage request timed out after 45 seconds and a
+filtered track request exceeded 20 seconds; post-fix measurements were approximately
+0.17 and 0.22 seconds respectively.
+
+Dev-laptop verification: clean npm 11 install, 68 frontend tests, 612 backend tests,
+Release/StyleCop with zero warnings, full frontend lint, changed-file formatting,
+11 dependency-security tests, four Node compatibility checks, frontend/NuGet
+advisory checks and both production builds passed. One optional PostgreSQL provider
+test was skipped because no dedicated PostgreSQL test database was configured.
+Public-build browser fixtures passed at 1440/1100/800/390. Actual authenticated
+public checks at 1440/390 verified readiness figures, both readiness filters,
+expanded folder loading, no horizontal overflow and no page errors; screenshots
+were inspected. Final public coverage timings were 167 ms and 114 ms.
+Existing source-map/bundle-size/deprecation warnings remain. The historical missing
+FFmpeg download-helper warning remains; published native detector preflights and
+real analysis used the existing persistent runtime tools successfully.
+
+Final activation verified 13,150 queued upload IDs and metadata, retained the web
+release and Caddy configuration, and passed direct/public readiness and asset
+checks. Saved analysis and application databases were preserved. A premature web
+health check in an intermediate activation safely rolled back; the activation
+wait now allows the browser monitor to recover while retaining its checks.
+
+The user explicitly stopped database backups during this work. The initial server
+backups had already passed integrity checks; the incomplete Mac transfer was
+stopped and is not recorded as a verified off-server backup. Subsequent backend
+updates created no database backups. Routine dev deployments must follow the
+2 November no-automatic-backups instruction above.
+
+Source/check snapshot: `/home/narey/resonance-builds/precommit-upload-paging-ca685f5938`.
+Final activation evidence: `path-case-deployment/result.json` in that snapshot;
+real-scan results and authenticated public screenshots are alongside it. Private
+Mac orchestration/check evidence: `.dev/analysis-repair/`. The QA address on Mac
+port 18096 now uses SSH transport directly to the existing laptop Caddy listener
+on loopback 8092; the temporary Python QA proxy is stopped. No Mac application
+server, backend/Metro runtime or old-server administration was used.
