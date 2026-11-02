@@ -1797,3 +1797,22 @@ exactly once with no page errors or popup toasts. Both screenshots were inspecte
 Evidence and private operational helpers are in
 `/home/narey/resonance-builds/notification-history-20261102` and
 `.dev/notification-history-deploy/` respectively.
+
+## Unread-only persistence timing correction — 2 November 2026
+
+Live desktop and phone tests confirmed the filter survives panel reopening, view
+changes, marking all read, normal refresh and a clean browser session; explicit
+unticking also persists. A separate immediate-refresh check exposed the 600 ms
+preference debounce losing an unacknowledged change. Commit `d4dda50` keeps pending
+preferences locally until acknowledged, overlays them on stale server values after
+reload, retries them, and serializes saves without discarding newer edits.
+
+Hot-reloaded only `frontend/src/lib/prefs.js`; no backend/service restart or analysis
+control changes. All live checks then passed, including immediate refresh after
+both checking and unchecking, followed by clean-browser confirmation of each saved
+database value. Restored the original checked setting. Sixteen preference/inbox
+unit tests, changed-file lint, eleven dependency-security checks and the npm audit
+passed. Development compilation retained its existing source-map warnings.
+Desktop/phone screenshots were inspected. Evidence: `unread-test-fixed.log` in
+`/home/narey/resonance-builds/notification-history-20261102`; private browser helper
+and screenshots: `.dev/unread-persistence-test/`.
