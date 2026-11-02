@@ -1816,3 +1816,20 @@ passed. Development compilation retained its existing source-map warnings.
 Desktop/phone screenshots were inspected. Evidence: `unread-test-fixed.log` in
 `/home/narey/resonance-builds/notification-history-20261102`; private browser helper
 and screenshots: `.dev/unread-persistence-test/`.
+
+## Show all activity preserves the saved filter — 2 November 2026
+
+Hot-reloaded `ebbc75d`: Show all activity clears the current panel filters only.
+The saved unread-only preference changes exclusively through its checkbox.
+Reopening the panel or refreshing restores the saved choice. This supersedes the
+previous Show all activity behavior that saved the filter as off.
+
+Seventeen notification/preference tests, lint, eleven dependency-security tests
+and npm audit passed. Public desktop/phone checks confirmed no preference PATCH
+from Show all activity, unchanged database values for both saved states,
+restoration on reopen/refresh, and persistence after explicit unticking. The
+original checked setting was restored. No page errors; screenshots inspected.
+Only NotificationCentre was hot-reloaded, with existing source-map warnings;
+backend, analysis and services were not restarted. Evidence: `show-all-test.log`
+and `show-all-*.png` in the notification-history snapshot; helper:
+`.dev/unread-persistence-test/show-all.cjs`.
