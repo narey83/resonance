@@ -310,4 +310,27 @@ describe('failed tracks disclosure', () => {
     );
     expect(details.textContent).toContain('Original log entries');
   });
+  it('keeps loading inside the existing refresh control and retains the empty result message', async () => {
+    expect.hasAssertions();
+    await render(true, { standalone: true });
+    expect(container.textContent).toContain('No failed tracks in this page');
+    let finish;
+    getLogs.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    act(() => container.querySelector('.ka-failure-refresh').click());
+    const button = container.querySelector('.ka-failure-refresh');
+    expect(button.getAttribute('aria-busy')).toBe('true');
+    expect(button.querySelector('[role="status"]').textContent).toBe(
+      'Loading…',
+    );
+    expect(button.querySelector('span').style.visibility).toBe('hidden');
+    expect(container.querySelector('p[role="status"]')).toBeNull();
+    expect(container.textContent).toContain('No failed tracks in this page');
+    await act(async () => finish({ logs: [], totalCount: 0 }));
+    expect(button.getAttribute('aria-busy')).toBe('false');
+  });
 });

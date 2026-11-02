@@ -100,3 +100,6 @@
 .ka-failure-retry-controls > p:first-child { flex: 1; min-width: 180px; margin: 0; }
 .ka-failure-retry-controls > button { margin: 0; }
 .ka-failure-retry-controls > p[role] { flex-basis: 100%; margin: 0; }
+
+.ka-failure-refresh { position: relative; }
+.ka-failure-refresh-status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }

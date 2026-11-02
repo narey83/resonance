@@ -2097,3 +2097,21 @@ mutation tests were fully mocked. The real Administrator browser verified the
 compact live history and disabled retry controls while the existing scan advanced;
 no real retry was submitted during that scan. Live phone rows measured about
 70–83px high; the temporary viewport override was reset.
+
+## Stable failure-history refresh indicator — 2 November 2026
+
+Moved the loading status from an inserted paragraph into an absolutely positioned
+status inside Refresh failures. The original button label stays in layout with
+hidden visibility, keeping its width/height stable. Its accessible name remains
+Refresh failures and `aria-busy` identifies the refresh. Retained empty-result text
+also stays present during subsequent refreshes. Rows and details remain in place.
+Delivered through the existing frontend HMR watcher; no backend/service restart,
+scan-control operation, dependency or private-state change.
+
+Changed-file ESLint and all 12 failure-history tests passed on the dev laptop.
+Development compilation retained the existing 14 source-map warnings. Browser
+checks hold automatic/manual refresh responses open and compare row positions and
+button dimensions at desktop and 390px widths, then verify positions after the
+response completes.
+All four fixture cases (automatic/manual at 1440px/390px) measured zero row movement
+and zero button width/height change while loading and after completion.

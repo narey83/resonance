@@ -153,20 +153,33 @@ const FailureHistory = ({
             />
           </label>{' '}
           <button
+            aria-busy={loading}
+            aria-label="Refresh failures"
+            className="ka-failure-refresh"
             disabled={loading || retrying}
             onClick={() => setRevision((value) => value + 1)}
             type="button"
           >
-            Refresh failures
+            <span style={loading ? { visibility: 'hidden' } : undefined}>
+              Refresh failures
+            </span>
+            {loading && (
+              <span
+                aria-label="Loading failure details"
+                className="ka-failure-refresh-status"
+                role="status"
+              >
+                Loading…
+              </span>
+            )}
           </button>
-          {loading && <p role="status">Loading failure details…</p>}
           {error && (
             <p role="alert">
               Could not refresh failed tracks. Previously loaded details are
               retained; try Refresh failures.
             </p>
           )}
-          {!loading && !error && tracks.length === 0 && (
+          {!error && data?.offset === offset && tracks.length === 0 && (
             <p>No failed tracks in this page of analysis logs.</p>
           )}
           {onRetry && (
