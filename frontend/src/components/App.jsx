@@ -383,18 +383,42 @@ const App = () => {
 
   // ── addNotification (stable ref pattern) ────────────────────────────────────
   // Hub events and action feedback share the notification centre and preferences.
-  const addNotification = useCallback((type, data, { sound = false } = {}) => {
-    if (!notifSettingsRef.current[type]) return;
-    const notification = {
-      id: `${Date.now()}-${Math.random()}`,
-      type,
-      data,
-      timestamp: new Date(),
-      read: false,
-    };
-    setNotifications((previous) => [notification, ...previous].slice(0, 100));
-    if (sound) playMessageReceived();
-  }, []);
+  const addNotification = useCallback(
+    async (type, data, { sound = false } = {}) => {
+      if (!notifSettingsRef.current[type]) return;
+      let notification = {
+        id: `${Date.now()}-${Math.random()}`,
+        type,
+        data,
+        timestamp: new Date(),
+        read: false,
+      };
+      if (type.startsWith('Action') || type === 'ServerStatus') {
+        try {
+          const record = await eventsAPI.saveNotification({
+            type,
+            message: data.message,
+          });
+          notification = {
+            ...notification,
+            id: record.id,
+            timestamp: record.timestamp,
+          };
+        } catch {
+          notification.saveFailed = true;
+        }
+      }
+
+      setNotifications((previous) =>
+        [
+          notification,
+          ...previous.filter((n) => n.id !== notification.id),
+        ].slice(0, 100),
+      );
+      if (sound) playMessageReceived();
+    },
+    [],
+  );
 
   useEffect(
     () =>
@@ -726,10 +750,15 @@ const App = () => {
           // Keep action feedback received while the event history was loading.
           setNotifications((previous) =>
             [
-              ...previous.filter(
-                (n) => n.type.startsWith('Action') || n.type === 'ServerStatus',
-              ),
-              ...loaded,
+              ...new Map(
+                [
+                  ...previous.filter(
+                    (n) =>
+                      n.type.startsWith('Action') || n.type === 'ServerStatus',
+                  ),
+                  ...loaded,
+                ].map((n) => [n.id, n]),
+              ).values(),
             ].slice(0, 100),
           );
         }

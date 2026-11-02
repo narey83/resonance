@@ -407,6 +407,12 @@ const NotificationCentre = ({
                                 </div>
                                 <h4>{text}</h4>
                                 {sub && <p>{sub}</p>}
+                                {n.saveFailed && (
+                                  <p role="status">
+                                    Could not save this notice. It may disappear
+                                    after a refresh.
+                                  </p>
+                                )}
                                 {action && (
                                   <Link
                                     className="nc-item-action"

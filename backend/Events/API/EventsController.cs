@@ -123,6 +123,36 @@ public class EventsController : ControllerBase
     }
 
     /// <summary>
+    ///     Saves web action feedback to the event history without raising application events.
+    /// </summary>
+    /// <param name="request">The notification to save.</param>
+    /// <returns>The saved event record.</returns>
+    [HttpPost("notifications")]
+    [Authorize(Policy = AuthPolicy.Any)]
+    [RequestSizeLimit(32768)]
+    [ProducesResponseType(typeof(EventRecord), 201)]
+    [ProducesResponseType(typeof(string), 400)]
+    public IActionResult SaveNotification([FromBody] NotificationRequest request)
+    {
+        if (request is null ||
+            !Enum.TryParse<EventType>(request.Type, out var type) ||
+            type.ToString() != request.Type ||
+            type is not (EventType.ActionSuccess or EventType.ActionInfo or EventType.ActionWarning or EventType.ActionError or EventType.ServerStatus))
+        {
+            return BadRequest("Unsupported notification type");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Message) || request.Message.Length > 4096)
+        {
+            return BadRequest("Notification text must contain between 1 and 4096 characters");
+        }
+
+        var record = EventRecord.From<NotificationEvent>(new NotificationEvent(type, request.Message));
+        Events.Add(record);
+        return StatusCode(201, record);
+    }
+
+    /// <summary>
     ///     Raises a sample event of the specified type.
     /// </summary>
     /// <param name="type">The type of event to raise.</param>
@@ -180,3 +210,10 @@ public class EventsController : ControllerBase
         }
     }
 }
+
+/// <summary>
+///     A web action notice to persist in event history.
+/// </summary>
+/// <param name="Type">An allowed notification type.</param>
+/// <param name="Message">The plain text action feedback.</param>
+public sealed record NotificationRequest(string Type, string Message);

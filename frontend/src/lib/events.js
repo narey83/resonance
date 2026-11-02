@@ -48,3 +48,8 @@ export const list = async ({ offset, limit, type, from, to }) => {
 
   return { events, totalCount };
 };
+
+export const saveNotification = async ({ type, message }) => {
+  const response = await api.post('/events/notifications', { type, message });
+  return response.data;
+};

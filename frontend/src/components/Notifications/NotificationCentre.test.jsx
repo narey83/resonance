@@ -176,6 +176,14 @@ describe('notification activity inbox', () => {
     }
   });
 
+  it('makes a failed database save visible', () => {
+    props.notifications = [{ ...events[0], saveFailed: true }];
+    render();
+    expect(container.querySelector('[role="status"]').textContent).toContain(
+      'Could not save this notice',
+    );
+  });
+
   it('traps keyboard focus and closes with Escape', () => {
     const close = container.querySelector('[aria-label="Close notifications"]');
     expect(document.activeElement).toBe(close);

@@ -56,6 +56,12 @@ public enum EventType
     SoulseekClientConnected = 50,
     SoulseekClientDisconnected = 51,
 
+    ActionSuccess = 100,
+    ActionInfo = 101,
+    ActionWarning = 102,
+    ActionError = 103,
+    ServerStatus = 104,
+
     Noop = int.MaxValue,
 }
 
@@ -142,4 +148,15 @@ public sealed record NoopEvent : Event
 {
     public override EventType Type => EventType.Noop;
     public override int Version { get; } = 0;
+}
+
+/// <summary>
+///     Feedback from an action in the web notification centre.
+/// </summary>
+/// <param name="NotificationType">The notification severity or server status.</param>
+/// <param name="Message">The text displayed in the notification centre.</param>
+public sealed record NotificationEvent(EventType NotificationType, string Message) : Event
+{
+    public override EventType Type => NotificationType;
+    public override int Version => 0;
 }
