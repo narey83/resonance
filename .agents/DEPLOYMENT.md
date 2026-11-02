@@ -56,7 +56,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/analysis-responsive-3d38748/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/upload-user-queue-d78a746/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -1100,3 +1100,34 @@ Mac orchestration/check evidence: `.dev/analysis-repair/`. The QA address on Mac
 port 18096 now uses SSH transport directly to the existing laptop Caddy listener
 on loopback 8092; the temporary Python QA proxy is stopped. No Mac application
 server, backend/Metro runtime or old-server administration was used.
+
+
+## Upload queue details beneath users — 2 November 2026
+
+Active web/gateway: `upload-user-queue-d78a746`, frontend source
+`d78a74607baac63e000136ad7ec2455d6497f099`, tree
+`a08193b083c6fc33f73dcc142cb28d2746f80904`. Activated at 13:41 GMT.
+Each user's queue summary sits beneath their name; folders expose Show tracks;
+the all-users pending pagination follows the active user groups. Narrow track
+tables scroll horizontally to keep folder names readable.
+
+Dev-laptop verification used a clean npm 11 install, two upload component tests,
+changed-file lint, 11 dependency-security tests, a zero-finding dependency audit
+and production build. Isolated and public-build headless checks at 1440/390
+expanded 249 tracks, exercised Show more and next-page requests, checked summary
+placement and readable narrow folder labels; screenshots were inspected. Public
+browser checks used sample queue data. Existing saved QA credentials were expired
+and could not be refreshed, so real authenticated queue verification was blocked.
+Dependency source-map, bundle-size and Node deprecation warnings remain.
+
+Public HTML/entrypoint hashes and retained assets passed; 159 older static files
+were retained. Direct/public readiness and the browser-health monitor passed.
+Backend PID 1169989 and Caddy PID 3992646 were preserved. No backend restart,
+database backup/replacement or queue rewrite was performed. Existing state and
+previous releases remain intact. HTTP/1/2/3, disabled early data and 16 KiB headers
+were preserved.
+
+Snapshot and verification logs: `/home/narey/resonance-builds/upload-user-queue-20261102`.
+The gateway release's `rollback` directory preserves the previous configuration,
+web link and deployment record for `analysis-responsive-3d38748`; this contains no
+database copy. Private Mac packaging/helper evidence: `.dev/upload-user-queue/`.
