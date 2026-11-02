@@ -56,7 +56,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/upload-user-queue-d78a746/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/upload-redesign-01ae5ee/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -1131,3 +1131,41 @@ Snapshot and verification logs: `/home/narey/resonance-builds/upload-user-queue-
 The gateway release's `rollback` directory preserves the previous configuration,
 web link and deployment record for `analysis-responsive-3d38748`; this contains no
 database copy. Private Mac packaging/helper evidence: `.dev/upload-user-queue/`.
+
+
+## Upload queue redesign — 2 November 2026
+
+Active web/gateway: `upload-redesign-01ae5ee`, frontend source
+`01ae5ee98a55a415a9d4f9e3c221313f3155a86a`, tree
+`a027f9b547c0eea8086e1a2669a0e776aa0dd2ef`. Activated at 13:55 GMT.
+Queue now separates currently sending/connecting tracks from waiting tracks by
+person and folder. Finished records from mixed folders appear only in History.
+Queue folders open with 20 track names and bounded Show more. Waiting rows have
+no sent-progress bar or zero-sent count. The page total is labelled tracks left
+to send; per-person counts describe the queue page. History's people-per-page
+control is independent. Queue navigation remains visible while the track list
+scrolls. Narrow layouts use stacked track details. Block folder explicitly names
+the existing permanent folder-denial action.
+
+Dev-laptop gates: clean npm 11 install, seven upload tests (state transitions,
+mixed folders, bounded expansion, keyboard tabs, navigation and cancellation),
+changed-file lint/formatting, 11 dependency-security tests, zero audit findings
+and production build. The exact staged snapshot passed remote pre-commit lint and
+verification receipts; no Mac lint/build/runtime was used for this redesign.
+Isolated and public-build browser checks at 1440/390 passed track visibility,
+separate history/outcomes, Show more, next-page API requests, dismissed folder-block
+confirmation, no page errors, no page overflow and viewport-visible navigation.
+Desktop, phone and history screenshots were inspected. Browser checks used sample
+queue data; real authenticated queue QA remains blocked by unavailable saved
+QA credentials. Existing dependency source-map/bundle-size/deprecation warnings remain.
+
+Public HTML/entrypoint and retained-asset hashes, direct/public readiness and the
+browser monitor passed. Retained 164 previous static files. Backend PID 1169989
+and Caddy PID 3992646 remained running. No database copy, backend restart or queue
+rewrite. HTTP/1/2/3, disabled early data and 16 KiB headers were preserved.
+
+Snapshot, source manifest and verification logs:
+`/home/narey/resonance-builds/upload-redesign-20261102`. The new gateway release's
+`rollback` directory preserves the previous web configuration/link/record for
+`upload-user-queue-d78a746`; no database is included. Mac helper evidence is under
+`.dev/upload-user-queue/`. Source behavior is documented in `docs/upload-queue-paging.md`.
