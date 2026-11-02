@@ -45,9 +45,6 @@ import PeerUploadSlots from './PeerUploadSlots';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Ban,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Download,
   Folder,
   FolderOpen,
@@ -91,6 +88,8 @@ const STATE_META = {
 const getMeta = (state) =>
   STATE_META[state] ?? { cls: 'error', dot: '#f85149', label: state };
 
+const isReceiving = (file) =>
+  ['InProgress', 'Initializing'].includes(file.state);
 const isQueued = (state) =>
   Boolean(state?.includes('Queued') || state === 'Requested');
 
@@ -117,11 +116,6 @@ const byStateThenTime = (a, b) => {
   return p !== 0 ? p : getTime(a) - getTime(b);
 };
 
-const isDirectoryActive = (files) =>
-  files.some((f) => !f.state?.startsWith('Completed'));
-const isDirectoryCompleted = (files) =>
-  files.every((f) => f.state?.startsWith('Completed'));
-
 const buildGroups = (transfers, directoryFilter) =>
   (transfers ?? [])
     .map((user) => ({
@@ -143,18 +137,6 @@ const buildGroups = (transfers, directoryFilter) =>
       const bMax = maxTime(b.directories.flatMap((d) => d.files));
       return bMax - aMax;
     });
-
-const PAGE_SIZE_OPTIONS = [15, 30, 50, 100, 150];
-
-/* Cap file rows rendered per expanded directory — a single directory can hold
-   thousands of files (e.g. bulk-errored downloads) and rendering them all
-   freezes the page on every poll. */
-const FILE_RENDER_CHUNK = 200;
-
-/* Collapse state lives outside the components so virtualized rows keep their
-   expanded/collapsed state when they scroll out of view and unmount. */
-const userCollapsedCache = {};
-const directoryCollapsedCache = {};
 
 /* ─── Sub-components ─────────────────────────────────────────────────────── */
 
@@ -219,41 +201,58 @@ const FileProgress = ({ file }) => {
   );
 };
 
-const FileRow = ({ file, onCancel, onRemove, onRetry }) => {
+const FileRow = ({ file, onCancel, onRemove, onRetry, sourceFolder }) => {
   const meta = getMeta(file.state);
   const canRetry = isStateRetryable(file.state);
   const canCancel = isStateCancellable(file.state);
   const canRemove = isStateRemovable(file.state);
 
   return (
-    <tr className={`dl-file-row dl-file-row--${meta.cls}`}>
+    <tr
+      className={`dl-file-row dl-file-row--${meta.cls}`}
+      data-download-id={file.id}
+    >
       <td
         className="dl-cell dl-cell--file"
         title={file.filename}
       >
         <span className="dl-filename">{getFileName(file.filename)}</span>
-        <span
-          className="dl-filepath"
-          title={file.filename}
-        >
-          {file.filename}
-        </span>
+        {sourceFolder && (
+          <span className="dl-filepath">
+            From: {getFileName(sourceFolder.replace(/[/\\]+$/u, ''))}
+          </span>
+        )}
       </td>
-      <td className="dl-cell dl-cell--state">
+      <td
+        className="dl-cell dl-cell--state"
+        data-label="Status"
+      >
         <StateBadge file={file} />
       </td>
-      <td className="dl-cell dl-cell--progress">
+      <td
+        className="dl-cell dl-cell--progress"
+        data-label="Progress"
+      >
         <FileProgress file={file} />
       </td>
-      <td className="dl-cell dl-cell--size">
+      <td
+        className="dl-cell dl-cell--size"
+        data-label="Size"
+      >
         {file.state === 'InProgress'
           ? `${formatBytes(file.bytesTransferred)} / ${formatBytes(file.size)}`
           : formatBytes(file.size)}
       </td>
-      <td className="dl-cell dl-cell--speed">
+      <td
+        className="dl-cell dl-cell--speed"
+        data-label="Speed"
+      >
         {file.averageSpeed > 0 ? formatBitrate(file.averageSpeed) : '—'}
       </td>
-      <td className="dl-cell dl-cell--eta">
+      <td
+        className="dl-cell dl-cell--eta"
+        data-label="ETA"
+      >
         {file.remainingTime > 0
           ? formatSeconds(file.remainingTime / 1_000)
           : '—'}
@@ -304,26 +303,14 @@ const FileRow = ({ file, onCancel, onRemove, onRetry }) => {
 };
 
 const DirectoryGroup = ({
-  cacheKey,
+  collapsed,
   directory,
-  onCancel,
   onCancelDirectory,
   onFindAlternate,
-  onRemove,
-  onRetry,
   onRetryBatch,
+  onToggle,
   username,
 }) => {
-  const collapseKey = `${cacheKey}|${directory.directory}`;
-  const [collapsed, setCollapsed] = useState(
-    directoryCollapsedCache[collapseKey] ?? true,
-  );
-  const toggleCollapsed = () =>
-    setCollapsed((c) => {
-      directoryCollapsedCache[collapseKey] = !c;
-      return !c;
-    });
-  const [visibleCount, setVisibleCount] = useState(FILE_RENDER_CHUNK);
   const { files } = directory;
   const directoryName =
     directory.directory.split(/[/\\]/u).filter(Boolean).at(-1) ??
@@ -338,6 +325,9 @@ const DirectoryGroup = ({
     totalSize > 0 ? Math.round((totalTransferred / totalSize) * 100) : 0;
   const completedCount = files.filter((f) =>
     f.state?.startsWith('Completed'),
+  ).length;
+  const succeededCount = files.filter(
+    (file) => file.state === 'Completed, Succeeded',
   ).length;
 
   // Track folder-level speed from byte progress between polls rather than per-file averageSpeed,
@@ -385,8 +375,9 @@ const DirectoryGroup = ({
       <tr className="dl-dir-row">
         <td className="dl-cell dl-cell--file dl-dir-name">
           <button
+            aria-expanded={!collapsed}
             className="dl-dir-toggle"
-            onClick={toggleCollapsed}
+            onClick={onToggle}
             type="button"
           >
             {collapsed ? (
@@ -408,26 +399,44 @@ const DirectoryGroup = ({
             </span>
           </button>
         </td>
-        <td className="dl-cell dl-cell--state">
+        <td
+          className="dl-cell dl-cell--state"
+          data-label="Status"
+        >
           <span className="dl-dir-stat">
-            {completedCount} / {files.length} done
+            {succeededCount} / {files.length} received
+            {retryableFiles.length > 0
+              ? ` · ${retryableFiles.length} failed`
+              : ''}
           </span>
         </td>
-        <td className="dl-cell dl-cell--progress">
+        <td
+          className="dl-cell dl-cell--progress"
+          data-label="Progress"
+        >
           <ProgressBar
             background={progressColor}
             percent={overallPercent}
           />
         </td>
-        <td className="dl-cell dl-cell--size">
+        <td
+          className="dl-cell dl-cell--size"
+          data-label="Size"
+        >
           {allCompleted
             ? formatBytes(totalSize)
             : `${formatBytes(totalTransferred)} / ${formatBytes(totalSize)}`}
         </td>
-        <td className="dl-cell dl-cell--speed">
+        <td
+          className="dl-cell dl-cell--speed"
+          data-label="Speed"
+        >
           {folderSpeed > 0 ? formatBitrate(folderSpeed) : '—'}
         </td>
-        <td className="dl-cell dl-cell--eta">
+        <td
+          className="dl-cell dl-cell--eta"
+          data-label="ETA"
+        >
           {folderEta > 0 ? formatSeconds(folderEta / 1_000) : '—'}
         </td>
         <td className="dl-cell dl-cell--actions">
@@ -490,30 +499,6 @@ const DirectoryGroup = ({
           </button>
         </td>
       </tr>
-      {!collapsed &&
-        files.slice(0, visibleCount).map((file) => (
-          <FileRow
-            file={file}
-            key={file.id}
-            onCancel={onCancel}
-            onRemove={onRemove}
-            onRetry={onRetry}
-          />
-        ))}
-      {!collapsed && files.length > visibleCount && (
-        <tr className="dl-show-more-row">
-          <td colSpan={7}>
-            <button
-              className="dl-show-more-btn"
-              onClick={() => setVisibleCount((n) => n + FILE_RENDER_CHUNK)}
-              type="button"
-            >
-              Show {Math.min(FILE_RENDER_CHUNK, files.length - visibleCount)}{' '}
-              more ({files.length - visibleCount} hidden)
-            </button>
-          </td>
-        </tr>
-      )}
     </tbody>
   );
 };
@@ -537,8 +522,38 @@ const PresenceDot = ({ presence }) => {
   );
 };
 
+const TableHead = ({ visuallyHidden = false }) => (
+  <thead className={visuallyHidden ? 'dl-screenreader-head' : undefined}>
+    <tr className="dl-thead-row">
+      <th className="dl-cell dl-cell--file">Track</th>
+      <th className="dl-cell dl-cell--state">Status</th>
+      <th className="dl-cell dl-cell--progress">Progress</th>
+      <th className="dl-cell dl-cell--size">Size</th>
+      <th className="dl-cell dl-cell--speed">Speed</th>
+      <th className="dl-cell dl-cell--eta">ETA</th>
+      <th
+        aria-label="Actions"
+        className="dl-cell dl-cell--actions"
+      />
+    </tr>
+  </thead>
+);
+
+const TableColumns = () => (
+  <colgroup>
+    {['file', 'state', 'progress', 'size', 'speed', 'eta', 'actions'].map(
+      (name) => (
+        <col
+          className={`dl-cell--${name}`}
+          key={name}
+        />
+      ),
+    )}
+  </colgroup>
+);
+
 const UserGroup = ({
-  cacheKey,
+  filters,
   onCancel,
   onCancelDirectory,
   onCancelUser,
@@ -546,35 +561,53 @@ const UserGroup = ({
   onRemove,
   onRetry,
   onRetryBatch,
-  startCollapsed = true,
+  presence,
   user,
+  visibleDirectories,
 }) => {
-  const [collapsed, setCollapsed] = useState(
-    userCollapsedCache[cacheKey] ?? startCollapsed,
-  );
-  const toggleCollapsed = () =>
-    setCollapsed((c) => {
-      userCollapsedCache[cacheKey] = !c;
-      return !c;
-    });
   const [netInfo, setNetInfo] = useState(netInfoCache[user.username] ?? null);
-  const [presence, setPresence] = useState(
-    presenceCache[user.username] ?? null,
-  );
+  const [expandedFolders, setExpandedFolders] = useState(() => new Set());
   const allFiles = user.directories.flatMap((d) => d.files);
-
-  const inProgressCount = allFiles.filter(
-    (f) => f.state === 'InProgress',
-  ).length;
-  const queuedCount = allFiles.filter((f) => isQueued(f.state)).length;
-  const totalSpeed = allFiles
-    .filter((f) => f.state === 'InProgress')
-    .reduce((s, f) => s + (f.averageSpeed ?? 0), 0);
+  const activeFiles = user.directories.flatMap((d) =>
+    d.files.filter(isReceiving).map((file) => ({ file, folder: d.directory })),
+  );
+  const inProgressCount = activeFiles.length;
+  const queuedCount = user.summary.waiting;
+  const totalSpeed = activeFiles.reduce(
+    (sum, { file }) => sum + (file.averageSpeed ?? 0),
+    0,
+  );
   const retryableFiles = allFiles.filter((f) => isStateRetryable(f.state));
-  const activeCount = allFiles.filter(
-    (f) => !f.state?.startsWith('Completed'),
-  ).length;
-
+  const activeCount = user.summary.pending;
+  const scrollRef = useRef(null);
+  const rows = useMemo(
+    () =>
+      visibleDirectories.flatMap((directory) => [
+        { key: `folder-${directory.directory}`, type: 'folder', directory },
+        ...(expandedFolders.has(directory.directory)
+          ? directory.files.map((file) => ({
+              key: `file-${file.id}`,
+              type: 'file',
+              file,
+            }))
+          : []),
+      ]),
+    [expandedFolders, visibleDirectories],
+  );
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getItemKey: (index) => rows[index].key,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (index) => (rows[index].type === 'folder' ? 44 : 56),
+    overscan: 6,
+  });
+  const toggleFolder = (folder) =>
+    setExpandedFolders((previous) => {
+      const next = new Set(previous);
+      if (next.has(folder)) next.delete(folder);
+      else next.add(folder);
+      return next;
+    });
   useEffect(() => {
     const ip = user.peerAddress;
     if (!ip) return undefined;
@@ -597,55 +630,9 @@ const UserGroup = ({
     };
   }, [user.username, user.peerAddress]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (presenceCache[user.username]) {
-      setPresence(presenceCache[user.username]);
-      return undefined;
-    }
-
-    let cancelled = false;
-    getStatus({ username: user.username })
-      .then(({ data }) => {
-        const p = data?.presence ?? 'Unknown';
-        if (!cancelled) {
-          presenceCache[user.username] = p;
-          setPresence(p);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [user.username]); // eslint-disable-line react-hooks/exhaustive-deps
-
   return (
-    <div className="dl-user-group">
-      <div
-        className="dl-user-header"
-        onClick={toggleCollapsed}
-      >
-        <button
-          className="dl-user-toggle"
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleCollapsed();
-          }}
-          type="button"
-        >
-          {collapsed ? (
-            <ChevronRight
-              size={13}
-              strokeWidth={2}
-              style={{ opacity: 0.5 }}
-            />
-          ) : (
-            <ChevronDown
-              size={13}
-              strokeWidth={2}
-              style={{ opacity: 0.5 }}
-            />
-          )}
-        </button>
+    <div className="dl-user-group dl-selected-user">
+      <div className="dl-user-header">
         <User
           color="var(--accent)"
           size={15}
@@ -732,51 +719,137 @@ const UserGroup = ({
         )}
       </div>
 
-      {!collapsed && (
-        <div className="dl-user-body">
-          <table className="dl-table">
-            <thead>
-              <tr className="dl-thead-row">
-                <th className="dl-cell dl-cell--file">File</th>
-                <th className="dl-cell dl-cell--state">State</th>
-                <th className="dl-cell dl-cell--progress">Progress</th>
-                <th className="dl-cell dl-cell--size">Size</th>
-                <th className="dl-cell dl-cell--speed">Speed</th>
-                <th className="dl-cell dl-cell--eta">ETA</th>
-                <th className="dl-cell dl-cell--actions" />
-              </tr>
-            </thead>
-            {user.directories.map((directory) => (
-              <DirectoryGroup
-                cacheKey={cacheKey}
-                directory={directory}
-                key={directory.directory}
-                onCancel={onCancel}
-                onCancelDirectory={onCancelDirectory}
-                onFindAlternate={onFindAlternate}
-                onRemove={onRemove}
-                onRetry={onRetry}
-                onRetryBatch={onRetryBatch}
-                username={user.username}
-              />
-            ))}
-          </table>
+      <section
+        aria-label="Downloading now"
+        className="ul-current-uploads"
+      >
+        <h2>
+          Downloading now
+          {activeFiles.length > 0 ? ` · ${activeFiles.length}` : ''}
+        </h2>
+        {activeFiles.length === 0 ? (
+          <p>Nothing downloading from this user right now.</p>
+        ) : (
+          <div className="ul-current-list dl-current-list">
+            <table
+              aria-label="Current downloads"
+              className="dl-table"
+            >
+              <TableColumns />
+              <TableHead />
+              <tbody>
+                {activeFiles.map(({ file, folder }) => (
+                  <FileRow
+                    file={file}
+                    key={file.id}
+                    onCancel={onCancel}
+                    onRemove={onRemove}
+                    onRetry={onRetry}
+                    sourceFolder={folder}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      <div className="dl-folders-heading">
+        <h2>Folders</h2>
+        <span>
+          {visibleDirectories.length.toLocaleString()} folders ·{' '}
+          {visibleDirectories
+            .reduce((sum, d) => sum + d.files.length, 0)
+            .toLocaleString()}{' '}
+          tracks
+        </span>
+      </div>
+      {filters}
+      <div className="dl-folder-list">
+        <table
+          aria-hidden="true"
+          className="dl-table dl-folder-columns"
+        >
+          <TableColumns />
+          <TableHead />
+        </table>
+        <div
+          aria-label="Download folders"
+          className="dl-folder-scroll"
+          ref={scrollRef}
+        >
+          {visibleDirectories.length === 0 ? (
+            <p className="dl-filter-empty">No folders match this filter.</p>
+          ) : (
+            <div
+              style={{
+                height: virtualizer.getTotalSize(),
+                position: 'relative',
+                width: '100%',
+              }}
+            >
+              {virtualizer.getVirtualItems().map((item) => {
+                const row = rows[item.index];
+                return (
+                  <div
+                    className="dl-folder-virtual-row"
+                    data-index={item.index}
+                    key={item.key}
+                    ref={virtualizer.measureElement}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${item.start}px)`,
+                    }}
+                  >
+                    <table
+                      aria-label={
+                        row.type === 'folder'
+                          ? `${getFileName(row.directory.directory)} downloads`
+                          : getFileName(row.file.filename)
+                      }
+                      className="dl-table"
+                    >
+                      <TableColumns />
+                      <TableHead visuallyHidden />
+                      {row.type === 'folder' ? (
+                        <DirectoryGroup
+                          collapsed={
+                            !expandedFolders.has(row.directory.directory)
+                          }
+                          directory={row.directory}
+                          onCancelDirectory={onCancelDirectory}
+                          onFindAlternate={onFindAlternate}
+                          onRetryBatch={onRetryBatch}
+                          onToggle={() => toggleFolder(row.directory.directory)}
+                          username={user.username}
+                        />
+                      ) : (
+                        <tbody>
+                          <FileRow
+                            file={row.file}
+                            onCancel={onCancel}
+                            onRemove={onRemove}
+                            onRetry={onRetry}
+                          />
+                        </tbody>
+                      )}
+                    </table>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 };
 
 /* ─── Toolbar ────────────────────────────────────────────────────────────── */
 
-const Toolbar = ({
-  allFiles,
-  onCancel,
-  onClearCompleted,
-  onPageSizeChange,
-  onRetryBatch,
-  pageSize,
-}) => {
+const Toolbar = ({ allFiles, onCancel, onClearCompleted, onRetryBatch }) => {
   const cancellableFiles = allFiles.filter((f) => isStateCancellable(f.state));
   const retryableFiles = allFiles.filter((f) => isStateRetryable(f.state));
   const succeededFiles = allFiles.filter(
@@ -786,26 +859,9 @@ const Toolbar = ({
   return (
     <div className="ul-toolbar">
       <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-        {allFiles.length} file{allFiles.length === 1 ? '' : 's'}
+        All downloads: {allFiles.length.toLocaleString()} tracks
       </span>
       <div className="ul-toolbar-actions">
-        <label className="ul-page-size-label">
-          Per page
-          <select
-            className="ul-page-size-select"
-            onChange={(e) => onPageSizeChange(Number(e.target.value))}
-            value={pageSize}
-          >
-            {PAGE_SIZE_OPTIONS.map((n) => (
-              <option
-                key={n}
-                value={n}
-              >
-                {n}
-              </option>
-            ))}
-          </select>
-        </label>
         {retryableFiles.length > 0 && (
           <button
             className="ul-quick-btn ul-quick-btn--retry"
@@ -816,7 +872,7 @@ const Toolbar = ({
               size={12}
               strokeWidth={2}
             />{' '}
-            Retry failed
+            Retry all failed
           </button>
         )}
         {cancellableFiles.length > 0 && (
@@ -831,7 +887,7 @@ const Toolbar = ({
               size={12}
               strokeWidth={2}
             />{' '}
-            Cancel active
+            Cancel all unfinished
           </button>
         )}
         {succeededFiles.length > 0 && (
@@ -844,7 +900,7 @@ const Toolbar = ({
               size={12}
               strokeWidth={2}
             />{' '}
-            Clear done
+            Clear finished
           </button>
         )}
       </div>
@@ -894,9 +950,13 @@ const matchesFilter = (directory, username, presences, filterId) => {
 };
 
 const FilterPills = ({ activeFilter, counts, onChange }) => (
-  <div className="dl-filter-pills">
+  <div
+    aria-label="Filter folders for selected user"
+    className="dl-filter-pills"
+  >
     {FILTERS.map(({ id, label }) => (
       <button
+        aria-pressed={activeFilter === id}
         className={`dl-filter-pill dl-filter-pill--${id}${activeFilter === id ? ' dl-filter-pill--active' : ''}`}
         key={id}
         onClick={() => onChange(id)}
@@ -911,9 +971,32 @@ const FilterPills = ({ activeFilter, counts, onChange }) => (
 
 /* ─── Main component ─────────────────────────────────────────────────────── */
 
-const SectionHeader = ({ children }) => (
-  <div className="transfer-section-header">{children}</div>
-);
+const summarizeFiles = (files) => {
+  const active = files.filter(isReceiving).length;
+  const pending = files.filter(
+    (file) => !file.state?.startsWith('Completed'),
+  ).length;
+  const failed = files.filter((file) => isStateRetryable(file.state)).length;
+  return {
+    active,
+    pending,
+    waiting: pending - active,
+    failed,
+    finished: files.length - pending - failed,
+    total: files.length,
+  };
+};
+
+const summaryText = (summary) =>
+  [
+    summary.waiting > 0 && `${summary.waiting.toLocaleString()} waiting`,
+    summary.active > 0 &&
+      `${summary.active.toLocaleString()} downloading/connecting`,
+    summary.failed > 0 && `${summary.failed.toLocaleString()} failed`,
+    summary.finished > 0 && `${summary.finished.toLocaleString()} finished`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
 const DownloadsTable = ({
   onCancel,
@@ -926,325 +1009,149 @@ const DownloadsTable = ({
   onRetryBatch,
   transfers,
 }) => {
-  const [completedPage, setCompletedPage] = useState(0);
-  const [pageSize, setPageSize] = useState(15);
+  const [selectedUsername, setSelectedUsername] = useState(null);
   const [activeFilter, setActiveFilter] = useState('all');
   const [presences, setPresences] = useState({});
   const fetchedRef = useRef(new Set());
-
+  const mountedRef = useRef(false);
   useEffect(() => {
-    let isMounted = true;
-    const applyPresence = (username, data) => {
-      if (!isMounted) return;
-      const p = data?.presence ?? 'Unknown';
-      presenceCache[username] = p;
-      setPresences((previous) => ({ ...previous, [username]: p }));
-    };
-
-    for (const user of transfers ?? []) {
-      const { username } = user;
-      if (fetchedRef.current.has(username)) continue;
-      fetchedRef.current.add(username);
-      if (presenceCache[username]) {
-        setPresences((p) => ({ ...p, [username]: presenceCache[username] }));
-        continue;
-      }
-
-      getStatus({ username })
-        .then(({ data }) => applyPresence(username, data))
-        .catch(() => {});
-    }
-
+    mountedRef.current = true;
     return () => {
-      isMounted = false;
+      mountedRef.current = false;
     };
-  }, [transfers]);
-
-  const activeGroups = useMemo(
-    () => buildGroups(transfers, isDirectoryActive),
-    [transfers],
-  );
-  const completedGroups = useMemo(() => {
-    const activeUsernames = new Set(activeGroups.map((u) => u.username));
-    return buildGroups(transfers, isDirectoryCompleted).filter(
-      (u) => !activeUsernames.has(u.username),
-    );
-  }, [activeGroups, transfers]);
-
+  }, []);
   const allGroups = useMemo(
-    () => buildGroups(transfers, () => true),
+    () =>
+      buildGroups(transfers, () => true)
+        .map((source) => ({
+          ...source,
+          summary: summarizeFiles(source.directories.flatMap((d) => d.files)),
+        }))
+        .sort(
+          (a, b) =>
+            Number(b.summary.active > 0) - Number(a.summary.active > 0) ||
+            Number(b.summary.pending > 0) - Number(a.summary.pending > 0),
+        ),
     [transfers],
   );
-
-  const counts = useMemo(() => {
-    const result = {};
-    for (const { id } of FILTERS) {
-      result[id] = allGroups.reduce(
-        (n, user) =>
-          n +
-          user.directories.filter((d) =>
-            matchesFilter(d, user.username, presences, id),
-          ).length,
-        0,
-      );
-    }
-
-    return result;
-  }, [allGroups, presences]);
-
-  const filteredGroups = useMemo(() => {
-    if (activeFilter === 'all') return null;
-    return allGroups
-      .map((user) => ({
-        ...user,
-        directories: user.directories.filter((d) =>
-          matchesFilter(d, user.username, presences, activeFilter),
-        ),
-      }))
-      .filter((user) => user.directories.length > 0);
-  }, [activeFilter, allGroups, presences]);
-
-  const totalCompletedPages = Math.ceil(completedGroups.length / pageSize);
-
+  const user =
+    allGroups.find((group) => group.username === selectedUsername) ??
+    allGroups[0];
   useEffect(() => {
-    if (totalCompletedPages > 0 && completedPage >= totalCompletedPages) {
-      setCompletedPage(totalCompletedPages - 1);
+    if (!allGroups.some((group) => group.username === selectedUsername)) {
+      setSelectedUsername(allGroups[0]?.username ?? null);
+      setActiveFilter('all');
     }
-  }, [completedPage, totalCompletedPages]);
-
-  const completedPageGroups = useMemo(
-    () =>
-      completedGroups.slice(
-        completedPage * pageSize,
-        completedPage * pageSize + pageSize,
-      ),
-    [completedGroups, completedPage, pageSize],
-  );
-
+  }, [allGroups, selectedUsername]);
+  useEffect(() => {
+    for (const group of allGroups) {
+      const name = group.username;
+      if (fetchedRef.current.has(name)) continue;
+      fetchedRef.current.add(name);
+      getStatus({ username: name })
+        .then(({ data }) => {
+          const presence = data?.presence ?? 'Unknown';
+          presenceCache[name] = presence;
+          if (mountedRef.current)
+            setPresences((previous) => ({ ...previous, [name]: presence }));
+        })
+        .catch(() => {
+          fetchedRef.current.delete(name);
+        });
+    }
+  }, [allGroups]);
   const allFiles = useMemo(
     () =>
-      [...activeGroups, ...completedGroups].flatMap((user) =>
-        user.directories.flatMap((d) => d.files),
-      ),
-    [activeGroups, completedGroups],
+      allGroups.flatMap((group) => group.directories.flatMap((d) => d.files)),
+    [allGroups],
   );
-
-  /* Flatten sections, groups, and pagination into one list so the whole
-     scroll area can be virtualized. */
-  const rows = useMemo(() => {
-    if (filteredGroups) {
-      if (filteredGroups.length === 0)
-        return [{ key: 'filter-empty', type: 'empty' }];
-      return filteredGroups.map((user) => ({
-        key: `group-${user.username}`,
-        startCollapsed: false,
-        type: 'group',
-        user,
-      }));
-    }
-
-    const result = [];
-    if (activeGroups.length > 0) {
-      result.push({
-        key: 'section-active',
-        label: 'Downloading',
-        type: 'section',
-      });
-      for (const user of activeGroups)
-        result.push({
-          key: `group-${user.username}`,
-          startCollapsed: false,
-          type: 'group',
-          user,
-        });
-    }
-
-    if (completedGroups.length > 0) {
-      result.push({
-        key: 'section-done',
-        label: 'Downloaded',
-        pageInfo:
-          totalCompletedPages > 1
-            ? `${completedPage + 1} / ${totalCompletedPages}`
-            : null,
-        type: 'section',
-      });
-      for (const user of completedPageGroups)
-        result.push({
-          key: `group-${user.username}`,
-          startCollapsed: true,
-          type: 'group',
-          user,
-        });
-      if (totalCompletedPages > 1)
-        result.push({ key: 'pagination', type: 'pagination' });
-    }
-
-    return result;
-  }, [
-    activeGroups,
-    completedGroups,
-    completedPage,
-    completedPageGroups,
-    filteredGroups,
-    totalCompletedPages,
-  ]);
-
-  const scrollRef = useRef(null);
-  const virtualizer = useVirtualizer({
-    count: rows.length,
-    estimateSize: (index) => (rows[index].type === 'group' ? 64 : 36),
-    getItemKey: (index) => rows[index].key,
-    getScrollElement: () => scrollRef.current,
-    overscan: 6,
-  });
-
-  if (activeGroups.length === 0 && completedGroups.length === 0) {
-    return (
-      <div className="dl-empty">
-        <Download
-          opacity={0.15}
-          size={40}
-          strokeWidth={1.25}
-        />
-        <p style={{ color: 'var(--text-muted)', marginTop: 12 }}>
-          No downloads
-        </p>
-      </div>
-    );
-  }
-
-  const handlePageSizeChange = (n) => {
-    setPageSize(n);
-    setCompletedPage(0);
-  };
-
-  const handleFilterChange = (f) => {
-    setActiveFilter(f);
-    setCompletedPage(0);
-  };
-
-  const renderPagination = () => (
-    <div className="ul-pagination">
-      <button
-        className="ul-page-btn"
-        disabled={completedPage === 0}
-        onClick={() => setCompletedPage((p) => p - 1)}
-        type="button"
-      >
-        <ChevronLeft
-          size={14}
-          strokeWidth={2}
-        />{' '}
-        Prev
-      </button>
-      {totalCompletedPages <= 10 && (
-        <div className="ul-page-numbers">
-          {Array.from({ length: totalCompletedPages }, (_, index) => (
-            <button
-              className={`ul-page-num${index === completedPage ? ' ul-page-num--active' : ''}`}
-              key={index}
-              onClick={() => setCompletedPage(index)}
-              type="button"
-            >
-              {index + 1}
-            </button>
-          ))}
-        </div>
-      )}
-      <button
-        className="ul-page-btn"
-        disabled={completedPage === totalCompletedPages - 1}
-        onClick={() => setCompletedPage((p) => p + 1)}
-        type="button"
-      >
-        Next{' '}
-        <ChevronRight
-          size={14}
-          strokeWidth={2}
-        />
-      </button>
-    </div>
+  const counts = Object.fromEntries(
+    FILTERS.map(({ id }) => [
+      id,
+      (user?.directories ?? []).filter((d) =>
+        matchesFilter(d, user.username, presences, id),
+      ).length,
+    ]),
   );
-
-  const renderRow = (row) => {
-    switch (row.type) {
-      case 'section':
-        return (
-          <SectionHeader>
-            {row.label}
-            {row.pageInfo && (
-              <span className="ul-page-info">{row.pageInfo}</span>
-            )}
-          </SectionHeader>
-        );
-      case 'group':
-        return (
-          <UserGroup
-            cacheKey={row.user.username}
-            onCancel={onCancel}
-            onCancelDirectory={onCancelDirectory}
-            onCancelUser={onCancelUser}
-            onFindAlternate={onFindAlternate}
-            onRemove={onRemove}
-            onRetry={onRetry}
-            onRetryBatch={onRetryBatch}
-            startCollapsed={row.startCollapsed}
-            user={row.user}
-          />
-        );
-      case 'pagination':
-        return renderPagination();
-      default:
-        return <p className="dl-filter-empty">No folders match this filter.</p>;
-    }
-  };
-
+  const directories = (user?.directories ?? []).filter((d) =>
+    matchesFilter(d, user.username, presences, activeFilter),
+  );
   return (
-    <div className="dl-root">
-      <Toolbar
-        allFiles={allFiles}
-        onCancel={onCancel}
-        onClearCompleted={onClearCompleted}
-        onPageSizeChange={handlePageSizeChange}
-        onRemove={onRemove}
-        onRetry={onRetry}
-        onRetryBatch={onRetryBatch}
-        pageSize={pageSize}
-      />
-      <FilterPills
-        activeFilter={activeFilter}
-        counts={counts}
-        onChange={handleFilterChange}
-      />
-      <div
-        className="dl-groups"
-        ref={scrollRef}
-      >
-        <div
-          style={{
-            height: virtualizer.getTotalSize(),
-            position: 'relative',
-            width: '100%',
-          }}
+    <div className="ul-complete dl-workspace-root">
+      <header className="ul-complete-header">
+        <h1>Downloads</h1>
+        <Toolbar
+          allFiles={allFiles}
+          onCancel={onCancel}
+          onClearCompleted={onClearCompleted}
+          onRetryBatch={onRetryBatch}
+        />
+      </header>
+      <div className="ul-live-workspace">
+        <aside
+          aria-label="Download users"
+          className="ul-live-users"
         >
-          {virtualizer.getVirtualItems().map((vi) => (
-            <div
-              className="dl-virtual-row"
-              data-index={vi.index}
-              key={vi.key}
-              ref={virtualizer.measureElement}
-              style={{
-                left: 0,
-                position: 'absolute',
-                top: 0,
-                transform: `translateY(${vi.start}px)`,
-                width: '100%',
-              }}
-            >
-              {renderRow(rows[vi.index])}
+          <h2>
+            Users <span>{allGroups.length}</span>
+          </h2>
+          {allGroups.length === 0 && <p>No downloads.</p>}
+          <div className="ul-live-user-list">
+            {allGroups.map((group) => (
+              <button
+                aria-pressed={user?.username === group.username}
+                className="ul-live-user"
+                key={group.username}
+                onClick={() => {
+                  setSelectedUsername(group.username);
+                  setActiveFilter('all');
+                }}
+                type="button"
+              >
+                <strong>{group.username}</strong>
+                <span>
+                  {group.summary.total.toLocaleString()} tracks ·{' '}
+                  {summaryText(group.summary)}
+                </span>
+              </button>
+            ))}
+          </div>
+        </aside>
+        <div className="ul-live-track-pane">
+          {user ? (
+            <UserGroup
+              filters={
+                <FilterPills
+                  activeFilter={activeFilter}
+                  counts={counts}
+                  onChange={setActiveFilter}
+                />
+              }
+              key={user.username}
+              onCancel={onCancel}
+              onCancelDirectory={onCancelDirectory}
+              onCancelUser={onCancelUser}
+              onFindAlternate={onFindAlternate}
+              onRemove={onRemove}
+              onRetry={onRetry}
+              onRetryBatch={onRetryBatch}
+              presence={
+                presences[user.username] ?? presenceCache[user.username]
+              }
+              user={user}
+              visibleDirectories={directories}
+            />
+          ) : (
+            <div className="dl-empty">
+              <Download
+                opacity={0.3}
+                size={40}
+              />
+              <p>
+                No downloads. New users will appear here when you queue music.
+              </p>
             </div>
-          ))}
+          )}
         </div>
       </div>
     </div>

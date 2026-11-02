@@ -1692,3 +1692,43 @@ The backend, Basic queue and private state were not restarted or paused. Evidenc
 and the browser helper are in
 `/home/narey/resonance-builds/beatgrid-full-20261102/grid-refresh/`; source remains
 `/home/narey/resonance-builds/upload-folder-label-20261102/frontend`.
+
+
+## Downloads recipient workspace — 2 November 2026
+
+The user clarified that downloads should adopt the complete uploads look and feel,
+including the user sidebar and closed folders, rather than only its loading graphic.
+Hot-reloaded DownloadsTable, Transfers and their shared styles into the existing
+development frontend. Users appear at the side as downloads arrive; selection is
+retained during polls and new arrivals. The selected name has one control group.
+Current downloads appear above folders with the source folder basename. Folders
+start closed, reopen with keyboard or pointer, and use a flat virtual list for all
+folder/file rows. There is no user/track pagination or load-more cap. Changing users
+resets folder expansion. Filters count folders for the selected user; total track
+counts include finished folders belonging to users with active downloads.
+
+Existing retry, cancel, remove, global clear and alternative-source callbacks and
+peer slot information are retained. Global batch controls explicitly apply to all
+downloads; selected-user/folder/file controls keep their respective scopes. Downloads
+also use the shared centred loading graphic, accessible status and reduced-motion
+behavior. No backend API, transfer scheduling, private state or history page changes.
+
+Dev-laptop validation: 36 tests across recipient layout/actions, both loading states,
+upload regression and complete upload queue logic; changed-file ESLint/Prettier;
+11 dependency-security checks. Authenticated public desktop/phone QA used controlled
+queue responses only in the QA browser because the live downloads list was empty.
+It verified defaults, filters, keyboard expansion, stable selection/new arrivals,
+last-folder access across 2,003 folders and all 1,200 expanded tracks with bounded
+DOM rows. It then removed the response override and verified the actual empty page.
+Separate delayed real-request checks verified loader centring and reduced motion.
+No browser page errors or actual transfer mutations in the final checks. Screenshots
+were inspected. Earlier QA encountered an expired test login and concurrent Library
+compile overlays; normal login renewal and subsequent clean browser runs resolved
+those blockers. The real development frontend remains hot-reloading; no native
+restart, production build or analysis/transfer control action was performed.
+
+Snapshot/evidence: `/home/narey/resonance-builds/download-loading-20261102`, including
+`tests.log`, `security.log`, `workspace-browser.log`, `loading-browser.log` and
+`evidence/`. Private helpers: `.dev/download-loading/`. Frontend provenance records
+this change as a file-hash-verified patch so concurrent unrelated frontend work is
+preserved.

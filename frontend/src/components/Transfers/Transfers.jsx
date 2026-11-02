@@ -38,7 +38,6 @@ import { getCompleteUploadsQueue } from '../../lib/completeUploadQueue';
 import * as filesLibrary from '../../lib/files';
 import * as transfersLibrary from '../../lib/transfers';
 import AppContext from '../AppContext';
-import { LoaderSegment } from '../Shared';
 import DownloadsTable from './DownloadsTable';
 import FindAlternateModal from './FindAlternateModal';
 import UploadsTable from './UploadsTable';
@@ -375,25 +374,23 @@ const Transfers = ({ direction }) => {
   };
 
   if (connecting) {
-    if (direction === 'upload') {
-      return (
-        <div
-          aria-busy="true"
-          aria-live="polite"
-          className="transfers-loading"
-          role="status"
-        >
-          <Loader2
-            aria-hidden="true"
-            className="transfers-loading__spinner"
-            size={40}
-          />
-          <span>Loading uploads…</span>
-        </div>
-      );
-    }
-
-    return <LoaderSegment />;
+    return (
+      <div
+        aria-busy="true"
+        aria-live="polite"
+        className="transfers-loading"
+        role="status"
+      >
+        <Loader2
+          aria-hidden="true"
+          className="transfers-loading__spinner"
+          size={40}
+        />
+        <span>
+          {direction === 'upload' ? 'Loading uploads…' : 'Loading downloads…'}
+        </span>
+      </div>
+    );
   }
 
   if (direction === 'upload') {

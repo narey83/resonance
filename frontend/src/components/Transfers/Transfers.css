@@ -1097,7 +1097,7 @@
 .ul-current-file .ul-complete-name { overflow-wrap: anywhere; white-space: normal; }
 .ul-current-source { color: var(--text-muted); display: block; font-size: 11px; margin-top: 5px; overflow-wrap: anywhere; }
 
-/* Centre the initial uploads state within the available page, including narrow screens. */
+/* Centre the initial transfer state within the available page, including narrow screens. */
 .transfers-loading {
   align-items: center;
   color: var(--text-muted);
@@ -1123,4 +1123,62 @@
 
 @media (prefers-reduced-motion: reduce) {
   .transfers-loading__spinner { animation: none; }
+}
+
+/* Downloads use the same recipient workspace as uploads. */
+.dl-workspace-root > .ul-complete-header .ul-toolbar { border: 0; flex-wrap: wrap; gap: 12px; margin-left: auto; padding: 0; }
+.dl-workspace-root .ul-toolbar-actions { flex-wrap: wrap; }
+.dl-workspace-root .dl-selected-user { background: transparent; border: 0; display: flex; flex: 1; flex-direction: column; margin: 0; min-height: 0; overflow: hidden; }
+.dl-workspace-root .dl-user-header { background: transparent; border: 0; cursor: default; flex-shrink: 0; flex-wrap: wrap; padding: 8px 0 16px; }
+.dl-workspace-root .dl-user-header:hover { background: transparent; }
+.dl-workspace-root .dl-user-info { min-width: 0; }
+.dl-workspace-root .dl-user-name-row { flex-wrap: wrap; }
+.dl-workspace-root .dl-user-stats { flex-wrap: wrap; margin-left: 0; }
+.dl-workspace-root .dl-table { table-layout: fixed; }
+.dl-workspace-root .dl-cell--file { width: 32%; }
+.dl-workspace-root .dl-cell--state { width: 16%; white-space: normal; }
+.dl-workspace-root .dl-cell--progress { width: 15%; }
+.dl-workspace-root .dl-cell--size { width: 14%; white-space: normal; }
+.dl-workspace-root .dl-cell--speed { width: 8%; white-space: normal; }
+.dl-workspace-root .dl-cell--eta { width: 7%; white-space: normal; }
+.dl-workspace-root .dl-cell--actions { width: 8%; white-space: normal; }
+.dl-workspace-root .dl-filename { overflow-wrap: anywhere; white-space: normal; }
+.dl-workspace-root .dl-dir-label { overflow-wrap: anywhere; white-space: normal; }
+.dl-workspace-root .dl-current-list { background: var(--bg-surface); }
+.dl-folders-heading { align-items: baseline; display: flex; flex-shrink: 0; flex-wrap: wrap; gap: 12px; }
+.dl-folders-heading h2 { font-size: 13px; margin: 0; }
+.dl-folders-heading > span { color: var(--text-muted); font-size: 11px; }
+.dl-folder-list { border: 1px solid var(--border); border-radius: 8px; display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
+.dl-folder-columns { flex-shrink: 0; }
+.dl-folder-scroll { flex: 1; min-height: 0; overflow: auto; }
+.dl-screenreader-head { clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; width: 1px; }
+.dl-workspace-root .dl-empty { color: var(--text-muted); flex: 1; min-height: 180px; padding: 24px; text-align: center; }
+.dl-workspace-root .dl-dir-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 1100px) {
+  .dl-workspace-root .dl-folder-columns, .dl-workspace-root .dl-current-list thead { display: none; }
+  .dl-workspace-root .dl-file-row, .dl-workspace-root .dl-dir-row { border-bottom: 1px solid var(--border); display: grid; gap: 6px 12px; grid-template-columns: minmax(0, 1fr) auto; padding: 12px; }
+  .dl-workspace-root .dl-cell { border: 0; grid-column: 1 / -1; max-width: none; padding: 0; width: auto; }
+  .dl-workspace-root .dl-cell--file { grid-column: 1; grid-row: 1; }
+  .dl-workspace-root .dl-cell--actions { grid-column: 2; grid-row: 1; }
+  .dl-workspace-root .dl-file-row > [data-label] { align-items: center; display: flex; gap: 10px; }
+  .dl-workspace-root .dl-file-row > [data-label]::before { color: var(--text-muted); content: attr(data-label); font-size: 11px; min-width: 48px; }
+  .dl-workspace-root .dl-file-row .mini-progress { flex: 1; }
+  .dl-workspace-root .dl-dir-row > :is(.dl-cell--progress, .dl-cell--size, .dl-cell--speed, .dl-cell--eta) { display: none; }
+  .dl-workspace-root .dl-dir-toggle { flex-wrap: wrap; line-height: 1.4; }
+}
+.dl-workspace-root .dl-current-list .dl-filepath { display: block; overflow-wrap: anywhere; margin-top: 4px; }
+.dl-workspace-root > .ul-complete-header .ul-toolbar { max-width: 100%; min-width: 0; flex-shrink: 1; }
+.dl-workspace-root .ul-toolbar-actions { max-width: 100%; min-width: 0; margin-left: 0; }
+.dl-workspace-root .dl-user-name-row > span { max-width: 100%; min-width: 0; }
+.dl-workspace-root .ulink-root { flex-wrap: wrap; max-width: 100%; }
+
+@media (max-width: 1100px) {
+  .dl-workspace-root colgroup { display: none; }
+}
+@media (max-width: 1100px) {
+  .dl-workspace-root .dl-user-header { align-items: start; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; }
+  .dl-workspace-root .dl-user-header > svg { display: none; }
+  .dl-workspace-root .dl-user-info { grid-column: 1 / -1; }
+  .dl-workspace-root .dl-user-stats { grid-column: 1; grid-row: 2; }
+  .dl-workspace-root .dl-user-header > .dl-action-btn { grid-row: 2; }
 }
