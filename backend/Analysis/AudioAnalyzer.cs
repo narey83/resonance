@@ -99,15 +99,15 @@ namespace resonance.Analysis
 
             raw = sys.stdin.buffer.read()
             audio = np.frombuffer(raw, dtype=np.float32).copy()
+            # The key estimate can use a sample; beat timestamps must cover every sample.
             limit = int(max_secs * 44100)
-            if limit and len(audio) > limit:
-                audio = audio[:limit]
+            key_audio = audio[:limit] if limit else audio
 
             out = {}
             if len(audio) >= 44100:
                 if 'key' in want:
                     try:
-                        k, scale, _ = es.KeyExtractor(profileType=profile)(audio)
+                        k, scale, _ = es.KeyExtractor(profileType=profile)(key_audio)
                         out['key'] = SHARP.get(k, k) + ('m' if scale == 'minor' else '')
                     except Exception as e:
                         out['keyError'] = str(e)
@@ -346,9 +346,10 @@ namespace resonance.Analysis
                 return new AnalysisResult();
             }
 
-            // A full decode is only required by waveform and loudness; a BPM/key-only pass can
-            // stop at the window those two actually examine.
-            var decodeSeconds = metrics.HasFlag(AnalysisMetrics.Waveform) ? 0 : options.AnalysisSeconds;
+            // BPM detection also produces the beat timeline, so it needs the entire track.
+            // Only a key-only PCM decode may stop at the configured sample window.
+            var decodeSeconds = metrics.HasFlag(AnalysisMetrics.Waveform) || metrics.HasFlag(AnalysisMetrics.Bpm)
+                ? 0 : options.AnalysisSeconds;
 
             var (pcm, stderr) = await DecodeAsync(filePath, ffmpegPath, wantPcm, wantLoudness, decodeSeconds, ct);
 
@@ -532,9 +533,8 @@ namespace resonance.Analysis
 
             if (wantPcm)
             {
-                // Only BPM and key were asked for, and they read at most AnalysisSeconds — so
-                // decode that much rather than the whole file. Waveform and loudness are the
-                // only metrics that need every sample, and both took the branch above.
+                // A positive limit is used only for key-only analysis. Beat detection and
+                // waveform generation require a full decode even without loudness.
                 var limit = seconds > 0 ? $"-t {seconds.ToString(CultureInfo.InvariantCulture)} " : string.Empty;
                 return $"-loglevel quiet -i \"{filePath}\" -vn -c:a pcm_f32le -ar {SampleRate} -ac 1 {limit}-f f32le pipe:1";
             }
@@ -759,9 +759,10 @@ namespace resonance.Analysis
                     $"Basic analysis stopped: the BPM/key detector is unavailable at '{options.EssentiaPython}'. Repair the native analysis packages.", ex);
             }
 
-            // Only the leading AnalysisSeconds are needed; sending the whole track would
-            // move tens of megabytes through the pipe for samples Essentia discards anyway.
-            var limit = (int)Math.Min(pcm.Length, (long)(options.AnalysisSeconds * SampleRate));
+            // Beat tracking must receive the full PCM, including BPM-only rescans.
+            var limit = want.Contains("bpm", StringComparison.Ordinal)
+                ? pcm.Length
+                : (int)Math.Min(pcm.Length, (long)(options.AnalysisSeconds * SampleRate));
 
             var stdoutTask = proc.StandardOutput.ReadToEndAsync(linked.Token);
             var stderrTask = proc.StandardError.ReadToEndAsync(linked.Token);

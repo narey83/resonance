@@ -1426,10 +1426,9 @@ namespace resonance
             public bool WriteToTags { get; init; } = true;
 
             /// <summary>
-            ///     Gets the leading portion of each track, in seconds, that BPM and key detection
-            ///     examine. Waveform and loudness always cover the whole file. Long tracks rarely
-            ///     change key or tempo after the first couple of minutes, and the cost of both
-            ///     detectors scales with the length analysed.
+            ///     Gets the leading portion of each track, in seconds, used for key detection.
+            ///     Beat/BPM detection, waveform and loudness always cover the whole file so
+            ///     the saved beat timeline is not truncated to this sample window.
             /// </summary>
             [Range(15, 3600)]
             public double AnalysisSeconds { get; init; } = 120;

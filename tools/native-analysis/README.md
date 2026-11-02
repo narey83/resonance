@@ -56,3 +56,10 @@ Regression checks, using the provisioned interpreter:
 "$HOME/resonance-analysis/keyenv/bin/python" -m unittest discover \
   -s tools/native-analysis -p 'test_*.py'
 ```
+
+The source-tree regression suite also runs the exact embedded Basic detector on
+150 seconds of synthetic kicks. It checks beat coverage past the old 120-second
+cutoff and timing against those known transients. `analysis.analysis_seconds` now
+limits key estimation only; BPM/beat detection reads the full track, including
+BPM-only rescans. Existing sampled beat grids need reanalysis; this does not
+extend old timestamps by extrapolating a constant BPM.
