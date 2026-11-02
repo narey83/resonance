@@ -32,19 +32,64 @@ import api from './api';
 // In-memory cache of all preferences. null = not yet loaded from server.
 let cache = null;
 
-// Accumulated writes waiting to be flushed to the server.
-let pending = {};
-let flushTimer = null;
+// Keep unacknowledged changes across reloads, separately from cached server values.
+const pendingPrefix = 'resonance-pending-preference:';
+const pending = Object.create(null);
+try {
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (!key?.startsWith(pendingPrefix)) continue;
+    try {
+      pending[key.slice(pendingPrefix.length)] = JSON.parse(
+        localStorage.getItem(key),
+      );
+    } catch {
+      /* Ignore malformed local entries. */
+    }
+  }
+} catch {
+  /* Storage may be unavailable; retain in-memory saving. */
+}
 
-const flush = () => {
-  const patch = { ...pending };
-  pending = {};
-  api.patch('/preferences', patch).catch(() => {});
+let flushTimer = null;
+let flushing = false;
+let revision = 0;
+
+const scheduleFlush = (save) => {
+  clearTimeout(flushTimer);
+  flushTimer = setTimeout(save, 600);
 };
 
-const schedulFlush = () => {
-  clearTimeout(flushTimer);
-  flushTimer = setTimeout(flush, 600);
+const flush = () => {
+  if (flushing || !Object.keys(pending).length) return;
+  const patch = { ...pending };
+  const sentRevision = revision;
+  flushing = true;
+  api
+    .patch('/preferences', patch)
+    .then(() => {
+      for (const [key, value] of Object.entries(patch)) {
+        if (pending[key] === value) delete pending[key];
+        try {
+          // A newer change from this or another tab must remain queued.
+          if (
+            localStorage.getItem(pendingPrefix + key) === JSON.stringify(value)
+          ) {
+            localStorage.removeItem(pendingPrefix + key);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    })
+    .catch(() => {
+      // Keep the pending values for the next load or edit to retry.
+    })
+    .finally(() => {
+      flushing = false;
+      if (revision !== sentRevision && Object.keys(pending).length)
+        scheduleFlush(flush);
+    });
 };
 
 // Load all preferences from the server and populate the in-memory cache.
@@ -53,7 +98,7 @@ const schedulFlush = () => {
 export const load = async () => {
   try {
     const { data } = await api.get('/preferences');
-    cache = data ?? {};
+    cache = { ...data, ...pending };
     for (const [key, value] of Object.entries(cache)) {
       try {
         localStorage.setItem(
@@ -65,15 +110,17 @@ export const load = async () => {
       }
     }
   } catch {
-    cache = {};
+    cache = { ...pending };
   }
 
+  if (Object.keys(pending).length) scheduleFlush(flush);
   return cache;
 };
 
 // Read a preference.  Falls back to localStorage then `defaultValue` until
 // the server load completes.
 export const get = (key, defaultValue = null) => {
+  if (Object.prototype.hasOwnProperty.call(pending, key)) return pending[key];
   if (cache !== null && Object.prototype.hasOwnProperty.call(cache, key)) {
     return cache[key];
   }
@@ -96,6 +143,7 @@ export const set = (key, value) => {
   if (cache === null) cache = {};
   cache[key] = value;
   try {
+    localStorage.setItem(pendingPrefix + key, JSON.stringify(value));
     localStorage.setItem(
       key,
       typeof value === 'string' ? value : JSON.stringify(value),
@@ -105,5 +153,6 @@ export const set = (key, value) => {
   }
 
   pending[key] = value;
-  schedulFlush();
+  revision += 1;
+  scheduleFlush(flush);
 };
