@@ -369,26 +369,21 @@ const StatusStrip = ({
             type="button"
           >
             <span className="status-account-label">Soulseek</span>
-            {/* Connection status indicator */}
-            {connBusy ? (
-              <Loader2
-                className="status-icon status-spin"
-                size={13}
-                strokeWidth={2}
-              />
-            ) : isConnected ? (
-              <Wifi
-                className="status-icon connected"
-                size={13}
-                strokeWidth={1.75}
-              />
-            ) : (
-              <WifiOff
-                className="status-icon disconnected"
-                size={13}
-                strokeWidth={1.75}
-              />
-            )}
+            <span
+              className={`status-account-presence${isConnected ? (presence === 'Away' ? ' away' : ' online') : ' offline'}`}
+            >
+              {connBusy && (
+                <Loader2
+                  className="status-spin"
+                  size={12}
+                />
+              )}
+              {isConnected
+                ? presence === 'Away'
+                  ? 'Away'
+                  : 'Online'
+                : connPhase}
+            </span>
 
             {isConnected && username ? (
               <>
@@ -430,11 +425,7 @@ const StatusStrip = ({
                   </span>
                 )}
               </>
-            ) : (
-              <span className="status-strip-text status-strip-muted">
-                {connPhase}
-              </span>
-            )}
+            ) : null}
             <ChevronDown
               className="status-account-chevron"
               size={12}

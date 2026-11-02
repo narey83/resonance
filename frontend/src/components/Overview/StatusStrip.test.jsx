@@ -96,6 +96,33 @@ describe('Status and controls explanations', () => {
     }
   });
 
+  it.each([
+    [true, 'Online', 'Online'],
+    [true, 'Away', 'Away'],
+    [false, 'Away', 'Offline'],
+  ])(
+    'shows connection %s and presence %s as %s',
+    (connected, presence, expected) => {
+      localStorage.setItem(
+        'resonance-status-profile',
+        JSON.stringify({ presence }),
+      );
+      try {
+        const panel = renderPanel({
+          isLoggedIn: true,
+          server: { isLoggedIn: connected },
+          user: { username: 'MusicFan' },
+        });
+        const status = panel
+          .closest('.status-strip')
+          .querySelector('.status-account-presence');
+        expect(status.textContent).toBe(expected);
+      } finally {
+        localStorage.removeItem('resonance-status-profile');
+      }
+    },
+  );
+
   it('uses the whole-queue counter with only active byte samples', () => {
     const panel = renderPanel({
       queuedTransferCount: 35_007,
