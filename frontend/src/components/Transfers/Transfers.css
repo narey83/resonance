@@ -1088,3 +1088,11 @@
 .ul-folder-toggle > svg { flex-shrink: 0; }
 .ul-folder-toggle > span { color: var(--text-muted); font-size: 11px; }
 .ul-folder-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+
+.ul-current-uploads { flex-shrink: 0; margin-bottom: 14px; min-width: 0; }
+.ul-current-uploads h2 { color: var(--text-primary); font-size: 12px; margin: 0 0 8px; }
+.ul-current-uploads > p { color: var(--text-muted); font-size: 12px; margin: 0; }
+.ul-current-list { border: 1px solid var(--border); border-radius: 6px; max-height: 28vh; overflow: auto; }
+.ul-current-file { background: var(--bg-surface); }
+.ul-current-file .ul-complete-name { overflow-wrap: anywhere; white-space: normal; }
+.ul-current-source { color: var(--text-muted); display: block; font-size: 11px; margin-top: 5px; overflow-wrap: anywhere; }

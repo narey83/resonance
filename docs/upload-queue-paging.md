@@ -11,6 +11,11 @@ active transfer counts when present. Click a folder name to expand or collapse a
 Refreshes retain the current expansion; selecting another recipient starts closed.
 History remains on the existing History page.
 
+Above the folders, Uploading now shows only the selected recipient's sending or
+connecting tracks, including their source folder path, progress, size and speed.
+It stays visible with folders closed and updates with the queue snapshot. An idle
+recipient gets a compact “Nothing uploading to this user right now” message.
+
 The frontend automatically assembles the selected recipient's complete queue from
 500-record transport pages, with at most two requests in flight. No partial list is
 published: IDs are deduplicated, the final count and leading identities are checked,

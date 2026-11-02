@@ -42,7 +42,7 @@ const byStateThenTime = (a, b) =>
   new Date(a.requestedAt ?? 0).getTime() -
     new Date(b.requestedAt ?? 0).getTime();
 
-const FileCells = ({ file, onCancel }) => {
+const FileCells = ({ file, onCancel, sourceFolder }) => {
   const sending = isSending(file);
   const percent = Math.max(
     0,
@@ -56,6 +56,9 @@ const FileCells = ({ file, onCancel }) => {
         title={file.filename}
       >
         {getFileName(file.filename)}
+        {sourceFolder && (
+          <span className="ul-current-source">From: {sourceFolder}</span>
+        )}
       </div>
       <div
         className="ul-complete-state"
@@ -155,6 +158,11 @@ const UploadsTable = ({
         .filter((directory) => directory.files.length > 0),
     }),
     [selectedUsername, transfers],
+  );
+  const activeFiles = user.directories.flatMap((directory) =>
+    directory.files
+      .filter(isSending)
+      .map((file) => ({ file, sourceFolder: directory.directory })),
   );
   const [expanded, setExpanded] = useState({
     username: null,
@@ -266,6 +274,42 @@ const UploadsTable = ({
               </button>
             )}
           </header>
+          {selectedUsername && (
+            <section
+              aria-label="Uploading now"
+              className="ul-current-uploads"
+            >
+              <h2>
+                Uploading now
+                {activeFiles.length > 0 ? ` · ${activeFiles.length}` : ''}
+              </h2>
+              {activeFiles.length === 0 ? (
+                <p>Nothing uploading to this user right now.</p>
+              ) : (
+                <div
+                  aria-colcount={6}
+                  aria-label="Current uploads"
+                  className="ul-current-list"
+                  role="table"
+                >
+                  {activeFiles.map(({ file, sourceFolder }) => (
+                    <div
+                      className="ul-complete-file ul-current-file"
+                      data-current-upload-id={file.id}
+                      key={file.id}
+                      role="row"
+                    >
+                      <FileCells
+                        file={file}
+                        onCancel={onCancel}
+                        sourceFolder={sourceFolder}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
           {fileCount === 0 ? (
             <p className="ul-complete-empty">
               {selectedUsername

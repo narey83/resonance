@@ -122,7 +122,6 @@ describe('One complete upload list and one user header', () => {
     for (const phrase of [
       'on this page',
       'Show more',
-      'Uploading now',
       'Waiting to upload',
       'History',
       'Next',
@@ -275,6 +274,62 @@ describe('One complete upload list and one user header', () => {
     );
     await render(props);
     expect(container.querySelectorAll('[data-file-id]')).toHaveLength(0);
+  });
+  it('shows active tracks and their source above closed folders, isolated to the selected user', async () => {
+    expect.hasAssertions();
+    await render({
+      transfers: [
+        ...transfers([
+          { ...file('sending', 'InProgress'), percentComplete: 42 },
+          file('connecting', 'Initializing'),
+          file('waiting'),
+          file('finished', 'Completed, Succeeded'),
+        ]),
+        {
+          username: 'other',
+          directories: [
+            {
+              directory: 'Other/Private',
+              files: [
+                { ...file('other-active', 'InProgress'), username: 'other' },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    expect(container.querySelectorAll('[data-file-id]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-current-upload-id]')).toHaveLength(
+      2,
+    );
+    const current = container.querySelector('.ul-current-uploads');
+    expect(current.textContent).toContain('Track sending.flac');
+    expect(current.textContent).toContain('From: Music/Album');
+    expect(current.textContent).toContain('42%');
+    expect(current.textContent).toContain('Connecting');
+    expect(current.textContent).not.toContain('Track waiting.flac');
+    expect(current.textContent).not.toContain('Track finished.flac');
+    expect(current.textContent).not.toContain('Other/Private');
+    expect(
+      current.compareDocumentPosition(
+        container.querySelector('.ul-complete-table'),
+      ),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    await render({
+      transfers: transfers([
+        { ...file('sending', 'InProgress'), percentComplete: 71 },
+      ]),
+    });
+    expect(
+      container.querySelector('.ul-current-uploads').textContent,
+    ).toContain('71%');
+    await render({ transfers: transfers([file('waiting')]) });
+    expect(container.querySelectorAll('[data-current-upload-id]')).toHaveLength(
+      0,
+    );
+    expect(
+      container.querySelector('.ul-current-uploads').textContent,
+    ).toContain('Nothing uploading to this user right now.');
   });
   it('handles an empty recipient queue', async () => {
     expect.hasAssertions();
