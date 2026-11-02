@@ -118,18 +118,23 @@ const AlbumDetail = ({
       playQueue([...tracks].sort(() => Math.random() - 0.5).map(toQueue), 0);
   };
 
-  const artists = useMemo(() => {
-    const unique = new Map();
+  const artistLabel = useMemo(() => {
+    const isVarious = (name) =>
+      name?.trim().toLowerCase() === 'various artists';
+    if (isVarious(album.albumArtist) || isVarious(album.artist))
+      return 'Various Artists';
+    let firstArtist = null;
     for (const track of tracks) {
       const name = track.artist?.trim();
-      if (name && name.toLowerCase() !== 'various artists') {
-        const key = name.toLowerCase();
-        if (!unique.has(key)) unique.set(key, name);
-      }
+      if (!name) continue;
+      if (isVarious(name)) return 'Various Artists';
+      if (firstArtist && name.toLowerCase() !== firstArtist.toLowerCase())
+        return 'Various Artists';
+      firstArtist ??= name;
     }
 
-    return [...unique.values()].sort((a, b) => a.localeCompare(b));
-  }, [tracks]);
+    return firstArtist;
+  }, [album.albumArtist, album.artist, tracks]);
 
   const totalDuration = useMemo(
     () => tracks.reduce((sum, t) => sum + (t.duration ?? 0), 0),
@@ -166,24 +171,20 @@ const AlbumDetail = ({
           <div className="jb-album-hero-title">
             {album.album || '(Untitled)'}
           </div>
-          {artists.length > 0 && (
-            <div className="jb-album-hero-artists">
-              <span>Artists</span>
-              <ul aria-label="Album artists">
-                {artists.map((artist) => (
-                  <li key={artist}>
-                    <button
-                      className="jb-album-hero-artist"
-                      onClick={() => onArtist?.({ artist })}
-                      type="button"
-                    >
-                      {artist}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {artistLabel &&
+            (artistLabel === 'Various Artists' ? (
+              <div className="jb-album-hero-artist-summary">
+                Various Artists
+              </div>
+            ) : (
+              <button
+                className="jb-album-hero-artist"
+                onClick={() => onArtist?.({ artist: artistLabel })}
+                type="button"
+              >
+                {artistLabel}
+              </button>
+            ))}
           {meta && <div className="jb-album-hero-meta">{meta}</div>}
           <div className="jb-album-hero-actions">
             <button

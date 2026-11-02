@@ -30,50 +30,65 @@ describe('album contributing artists', () => {
     jest.clearAllMocks();
   });
 
-  it('keeps the album title and lists unique track artists with navigation', async () => {
+  it('summarizes thousands of artists without rendering individual links', async () => {
     expect.hasAssertions();
     getTracks.mockResolvedValue({
-      tracks: [
-        { artist: ' Zed ' },
-        { artist: 'Alpha' },
-        { artist: 'alpha' },
-        { artist: 'Various Artists' },
-        { artist: '' },
-        {},
-      ],
+      tracks: Array.from({ length: 3_000 }, (_, index) => ({
+        artist: `Artist ${index}`,
+      })),
     });
-    const onArtist = jest.fn();
     await act(async () => {
       ReactDOM.render(
-        <AlbumDetail
-          album={{
-            album: 'Compilation',
-            artist: 'Summary artist',
-            directory: '/album',
-          }}
-          onArtist={onArtist}
-        />,
+        <AlbumDetail album={{ album: 'Compilation' }} />,
         container,
       );
     });
     expect(container.querySelector('.jb-album-hero-title').textContent).toBe(
       'Compilation',
     );
-    const artists = [
-      ...container.querySelectorAll('[aria-label="Album artists"] button'),
-    ];
-    expect(artists.map((artist) => artist.textContent)).toEqual([
-      'Alpha',
-      'Zed',
-    ]);
-    expect(container.textContent).not.toContain('Summary artist');
-    act(() => Simulate.click(artists[1]));
-    expect(onArtist).toHaveBeenCalledWith({ artist: 'Zed' });
-    expect(getTracks).toHaveBeenCalledWith({
-      album: 'Compilation',
-      folder: '/album',
-      limit: 5_000,
+    expect(
+      container.querySelector('.jb-album-hero-artist-summary').textContent,
+    ).toBe('Various Artists');
+    expect(container.querySelectorAll('.jb-album-hero-artist')).toHaveLength(0);
+    expect(container.textContent).not.toContain('Artist 0');
+  });
+
+  it('keeps a single artist clickable and ignores duplicate casing and whitespace', async () => {
+    expect.hasAssertions();
+    getTracks.mockResolvedValue({
+      tracks: [{ artist: ' Zed ' }, { artist: 'zed' }, {}],
     });
+    const onArtist = jest.fn();
+    await act(async () => {
+      ReactDOM.render(
+        <AlbumDetail
+          album={{ album: 'Solo album' }}
+          onArtist={onArtist}
+        />,
+        container,
+      );
+    });
+    const artist = container.querySelector('.jb-album-hero-artist');
+    expect(artist.textContent).toBe('Zed');
+    act(() => Simulate.click(artist));
+    expect(onArtist).toHaveBeenCalledWith({ artist: 'Zed' });
+  });
+
+  it('honours Various Artists album metadata even when only one artist is loaded', async () => {
+    expect.hasAssertions();
+    getTracks.mockResolvedValue({ tracks: [{ artist: 'Zed' }] });
+    await act(async () => {
+      ReactDOM.render(
+        <AlbumDetail
+          album={{ album: 'Compilation', albumArtist: 'Various Artists' }}
+        />,
+        container,
+      );
+    });
+    expect(
+      container.querySelector('.jb-album-hero-artist-summary').textContent,
+    ).toBe('Various Artists');
+    expect(container.querySelector('.jb-album-hero-artist')).toBeNull();
   });
 
   it('does not invent artists when tracks have no artist metadata', async () => {
@@ -85,7 +100,8 @@ describe('album contributing artists', () => {
         container,
       );
     });
-    expect(container.querySelector('[aria-label="Album artists"]')).toBeNull();
+    expect(container.querySelector('.jb-album-hero-artist')).toBeNull();
+    expect(container.querySelector('.jb-album-hero-artist-summary')).toBeNull();
     expect(container.querySelector('.jb-album-hero-title').textContent).toBe(
       'Untitled release',
     );
