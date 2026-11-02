@@ -1906,3 +1906,42 @@ analysis-control requests. The user also confirmed the page loads successfully.
 Evidence: `reproduce.log`, `tests-final.log`, `health-tests.log`,
 `requests-after.json`, `browser-after.log` and `activation.json` in the isolated
 `/home/narey/resonance-builds/gateway-reliability-20261102` snapshot.
+
+
+## Every requested measurement determines track success — 2 November 2026
+
+Deployed backend `1f1cdd0` to
+`/home/narey/resonance-releases/measurement-failure-1f1cdd0` (PID 1391077).
+A failure or unavailable result in any requested Enhanced measurement now fails
+the track, including measurements outside the previous minimum feature set.
+New candidate jobs use `measurement-failed`; their successful partial results
+remain readable. Explicitly disabled and unselected measurements are excluded.
+Enhanced readiness uses the same strict policy. Existing saved results and
+historical jobs were not rewritten. Basic already counted missing requested
+measurements as failures; its log wording now explicitly says failed.
+
+Each failed Enhanced measurement logs the track path, measurement name, reason
+and job ID. Worker-process failures log the track and exit code. Scan failure
+counters and existing background retry handling receive the failed outcome.
+Regression coverage verifies optional measurement failures, missing-model results,
+disabled/unselected exclusions and the exact structured failure log fields.
+
+Verification: warning-free Release build and 657 passing backend tests; one
+optional PostgreSQL provider test skipped. Native publish and the configured
+real BPM/key detector preflight passed. All 17 native artifact hashes verified
+after startup. The existing optional FFmpeg download-helper warning remains.
+NuGet advisory output is retained with the isolated source/check evidence.
+
+Paused and drained the running Basic scan, retained its original remaining scope,
+then resumed 11,029 still-incomplete tracks with completed results preserved.
+Verified the existing eight-worker/background-nice-10 behavior and normal backend
+priority; no analysis resource settings were changed. Background preparation
+remains off. All 23,237 captured unfinished upload identities/metadata were
+verified across shutdown and recovery. Direct/public/browser-monitor readiness,
+Caddy configuration, frontend development PID and monitor PID were preserved.
+No database backup, copy, schema change or frontend production build.
+
+Evidence and source: `/home/narey/resonance-builds/measurement-failure-20261102`,
+including `build-verified.log`, `tests-verified.log`, `detector-preflight.log`,
+`activation/result.json`, `runtime-cpu-check.json` and `audit.json`.
+Private Mac orchestration: `.dev/measurement-failure/`.
