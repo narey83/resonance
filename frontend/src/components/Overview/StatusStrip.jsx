@@ -368,7 +368,27 @@ const StatusStrip = ({
             }
             type="button"
           >
-            <span className="status-account-label">Soulseek</span>
+            {isConnected && username ? (
+              <>
+                <span className="status-avatar">
+                  {hasPicture ? (
+                    <img
+                      alt=""
+                      className="status-avatar-img"
+                      src={serverAPI.pictureUrl(pictureVersion)}
+                    />
+                  ) : (
+                    <ResonanceMark size={16} />
+                  )}
+                  <span
+                    className={`status-avatar-presence${presence === 'Away' ? ' away' : presenceColor ? ' online' : ' offline'}`}
+                  />
+                </span>
+                <span className="status-strip-text">{username}</span>
+              </>
+            ) : (
+              <span className="status-account-label">Soulseek</span>
+            )}
             <span
               className={`status-account-presence${isConnected ? (presence === 'Away' ? ' away' : ' online') : ' offline'}`}
             >
@@ -387,21 +407,6 @@ const StatusStrip = ({
 
             {isConnected && username ? (
               <>
-                <span className="status-avatar">
-                  {hasPicture ? (
-                    <img
-                      alt=""
-                      className="status-avatar-img"
-                      src={serverAPI.pictureUrl(pictureVersion)}
-                    />
-                  ) : (
-                    <ResonanceMark size={16} />
-                  )}
-                  <span
-                    className={`status-avatar-presence${presence === 'Away' ? ' away' : presenceColor ? ' online' : ' offline'}`}
-                  />
-                </span>
-                <span className="status-strip-text">{username}</span>
                 {description && (
                   <span
                     className="status-chip status-comment-chip"

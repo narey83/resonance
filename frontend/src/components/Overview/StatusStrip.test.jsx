@@ -91,6 +91,10 @@ describe('Status and controls explanations', () => {
         .querySelector('.status-comment-chip');
       expect(tag.textContent).toBe('Sharing good music');
       expect(tag.title).toBe('Sharing good music');
+      const button = panel
+        .closest('.status-strip')
+        .querySelector('.status-strip-username-btn');
+      expect(button.textContent).toBe('MusicFanOnlineSharing good music');
     } finally {
       localStorage.removeItem('resonance-status-profile');
     }
