@@ -17,6 +17,28 @@ hot reload for changes to the development delivery path. Dependency/configuratio
 changes may need a deliberate dev-service restart. A production build is required
 only when the user explicitly requests production/release delivery.
 
+## Authenticated browser QA — confirmed working 2 November 2026
+
+The QA session has been repaired. Do not carry forward earlier expired-session
+reports as a current blocker: retry authenticated browser checks on the dev laptop.
+The private renewable session is
+`/home/narey/.config/resonance-qa/session.json`. If it expires, use the existing
+normal-login helper on that laptop:
+
+```sh
+python3 /home/narey/resonance-maintenance/qa-account/sign-in.py
+```
+
+Never print credentials or tokens, recreate the QA account, or reset its state.
+The full account/renewal procedure is in [DEPLOYMENT.md](DEPLOYMENT.md), under
+“Live upload recipient side list and authenticated QA”. Only report a new
+authentication blocker after retrying the established renewal procedure.
+
+Latest notification checks passed at 1440px and 390px: controlled unread counters
+displayed room number bubbles, the sound switch worked, and screenshots were
+inspected. Evidence: `/home/narey/resonance-builds/message-badges-20261102`.
+Actual audible playback remains unverified.
+
 ## Current workflow — updated 30 October 2026
 
 - The Mac checkout at `/Users/narey/Projects/resonance` is the source of truth.
