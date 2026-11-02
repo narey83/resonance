@@ -594,7 +594,7 @@ namespace resonance.Analysis.Candidates
             var terminationFailed = false;
             try
             {
-                process.Start();
+                BackgroundAnalysisWork.Start(process);
                 var outputTask = Drain(process.StandardOutput, linked.Token);
                 var errorTask = Drain(process.StandardError, linked.Token);
                 try

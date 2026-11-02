@@ -362,7 +362,8 @@ namespace resonance.Analysis
             WaveformData waveform = null;
             if (metrics.HasFlag(AnalysisMetrics.Waveform))
             {
-                waveform = ComputeBands(pcm, SampleRate, BarsForDuration(pcm.Length, SampleRate))
+                waveform = (await BackgroundAnalysisWork.RunCpuAsync(
+                    () => ComputeBands(pcm, SampleRate, BarsForDuration(pcm.Length, SampleRate)), ct))
                     with
                 {
                     DurationSeconds = pcm.Length / (double)SampleRate,
@@ -478,7 +479,7 @@ namespace resonance.Analysis
             using var process = new Process { StartInfo = psi };
             try
             {
-                process.Start();
+                BackgroundAnalysisWork.Start(process);
             }
             catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or InvalidOperationException)
             {
@@ -557,7 +558,7 @@ namespace resonance.Analysis
             using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
             using var proc = new Process { StartInfo = psi };
-            proc.Start();
+            BackgroundAnalysisWork.Start(proc);
 
             using var ms = new MemoryStream();
 
@@ -750,7 +751,7 @@ namespace resonance.Analysis
             using var proc = new Process { StartInfo = psi };
             try
             {
-                proc.Start();
+                BackgroundAnalysisWork.Start(proc);
             }
             catch (Exception ex)
             {

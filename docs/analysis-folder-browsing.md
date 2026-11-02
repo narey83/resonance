@@ -139,3 +139,14 @@ Background auto-analysis has its own collapsed settings panel below the manual
 scan setup, separate from Current analysis. Its On/Off status and Turn on/Turn off
 controls apply to automatic background jobs; they do not pause or resume a manual
 scan. The current scan retains its separate Pause/Resume and End scan controls.
+
+Analysis resource scheduling uses one Basic worker per available logical processor,
+with single-threaded decoder and detector subprocesses to avoid nested thread pools.
+Enhanced automatic allocation divides all available processors across at most two
+model jobs, within the existing memory budget. Explicit model overrides retain their
+behavior. Decoder/detector/model processes run below normal CPU priority; waveform
+calculations use dedicated background threads rather than request-pool threads.
+On Linux these calculation threads use nice 10 without changing pooled threads or
+the backend process priority. This permits use of idle CPU capacity while foreground
+work receives normal scheduling priority; it does not guarantee latency under
+storage contention or memory pressure.

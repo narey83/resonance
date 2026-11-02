@@ -56,7 +56,7 @@ namespace resonance.Analysis.Candidates
 
         /// <summary>
         ///     Divides the CPUs actually available to this process between concurrent
-        ///     model jobs within half the CPU capacity and available memory. Explicit positive settings override the automatic
+        ///     model jobs within the available CPU capacity and memory. Explicit positive settings override the automatic
         ///     choices, while zero retains portable resource detection.
         /// </summary>
         /// <returns>The bounded parallel-job and per-job thread allocation.</returns>
@@ -87,19 +87,17 @@ namespace resonance.Analysis.Candidates
             }
             else
             {
-                // Reserve half the CPU capacity and cap concurrent models for foreground responsiveness.
-                var backgroundProcessors = Math.Max(1, processors / 2);
-
+                // Low-priority model jobs may use all idle CPUs. Keep the memory/job cap.
                 // Prefer an exact division so automatic mode neither leaves CPUs idle nor
                 // oversubscribes every PyTorch/OpenMP worker. When memory is the tighter
                 // resource, fewer wider jobs are safer than swapping several large models.
-                jobs = Math.Min(2, Math.Min(backgroundProcessors, memoryJobs));
-                while (jobs > 1 && backgroundProcessors % jobs != 0)
+                jobs = Math.Min(2, Math.Min(processors, memoryJobs));
+                while (jobs > 1 && processors % jobs != 0)
                 {
                     jobs--;
                 }
 
-                threads = Math.Max(1, backgroundProcessors / jobs);
+                threads = Math.Max(1, processors / jobs);
             }
 
             return new(processors, jobs, threads, availableMemoryBytes, memoryPerJob);

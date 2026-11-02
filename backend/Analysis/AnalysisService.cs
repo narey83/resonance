@@ -595,10 +595,9 @@ namespace resonance.Analysis
                 var failed = 0;
                 var inFlight = 0;
 
-                // Keep foreground requests responsive while background analysis is running.
-                // Decoding also competes for database and storage bandwidth, so cap the
-                // default pool even on hosts with many processors.
-                var workers = Math.Clamp(Environment.ProcessorCount / 2, 1, 2);
+                // One single-threaded decoder/detector per available CPU. Expensive work
+                // runs at background priority, with waveform calculations off the request pool.
+                var workers = Math.Max(1, Environment.ProcessorCount);
 
                 SetState(true, false, false, total, 0, 0, 0, metrics: request.Metrics.ToString());
                 Log.Information(

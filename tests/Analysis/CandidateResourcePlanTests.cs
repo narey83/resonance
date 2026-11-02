@@ -11,18 +11,19 @@ public class CandidateResourcePlanTests
         new(string.Empty, string.Empty, string.Empty, string.Empty, MaxParallelJobs: jobs, ThreadsPerJob: threads, MemoryPerJobBytes: memoryPerJob);
 
     [Theory]
-    [InlineData(8, 30, 2, 2)]
-    [InlineData(8, 16, 2, 2)]
-    [InlineData(4, 64, 2, 1)]
-    [InlineData(2, 4, 1, 1)]
+    [InlineData(8, 30, 2, 4)]
+    [InlineData(8, 16, 2, 4)]
+    [InlineData(4, 64, 2, 2)]
+    [InlineData(2, 4, 1, 2)]
     [InlineData(1, 4, 1, 1)]
-    [InlineData(7, 30, 1, 3)]
-    public void AutomaticPlanReservesCpuWithoutExceedingMemory(int processors, int memoryGiB, int jobs, int threads)
+    [InlineData(7, 30, 1, 7)]
+    [InlineData(0, 0, 1, 1)]
+    public void AutomaticPlanUsesAllCpuWithinModelMemoryLimit(int processors, int memoryGiB, int jobs, int threads)
     {
         var plan = Options().ResolveResources(processors, memoryGiB * (1L << 30));
         Assert.Equal(jobs, plan.ParallelJobs);
         Assert.Equal(threads, plan.ThreadsPerJob);
-        Assert.Equal(Math.Max(1, processors / 2), plan.ParallelJobs * plan.ThreadsPerJob);
+        Assert.Equal(Math.Max(1, processors), plan.ParallelJobs * plan.ThreadsPerJob);
     }
 
     [Fact]
