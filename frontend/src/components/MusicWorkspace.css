@@ -90,7 +90,7 @@
   .dj-workspace .status-strip-item--shares { display: none; }
 }
 
-.dj-workspace .jb-root { min-height: 320px; }
+.dj-workspace .jb-root { min-height: 0; }
 .dj-workspace .jb-content, .dj-workspace .jb-search-wrap { min-width: 0; }
 .dj-workspace .jb-search-wrap input { min-width: 0; width: 100%; }
 

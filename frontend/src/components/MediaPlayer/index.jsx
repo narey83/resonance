@@ -295,6 +295,21 @@ const MediaPlayer = () => {
   const auditionTempoRef = useRef(ORIGINAL_AUDITION_TEMPO);
   const playbackPausedRef = useRef(true);
   const playerRef = useRef(null);
+  const dockContentRef = useRef(null);
+  const [retainDock, setRetainDock] = useState(false);
+  useEffect(() => {
+    if (track) {
+      setRetainDock(true);
+      return undefined;
+    }
+
+    // Keep the last frame mounted while the layout gives its space back.
+    const timeout = setTimeout(() => {
+      dockContentRef.current = null;
+      setRetainDock(false);
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [track]);
   const repeatRef = useRef(false);
 
   // Consume each explicit selection once. Restoring a track, remounting this
@@ -1059,7 +1074,25 @@ const MediaPlayer = () => {
     if (queuePanelOpen) toggleQueuePanel();
   };
 
-  if (!track) return null;
+  const renderDock = (content) => (
+    <div
+      aria-hidden={!track}
+      className={`media-player-dock${track ? ' media-player-dock--open' : ''}`}
+      inert={track ? undefined : ''}
+    >
+      {/* The audio owner unmounts immediately; only the visual frame exits. */}
+      {track && (
+        // eslint-disable-next-line jsx-a11y/media-has-caption
+        <audio
+          crossOrigin="anonymous"
+          ref={audioRef}
+        />
+      )}
+      <div className="media-player-dock-clip">{content}</div>
+    </div>
+  );
+
+  if (!track) return renderDock(retainDock ? dockContentRef.current : null);
 
   const effectiveTime = googleCast.connected
     ? googleCast.castCurrentTime
@@ -1094,20 +1127,11 @@ const MediaPlayer = () => {
     ? trackLoudness.integratedLufs.toFixed(1)
     : '—';
 
-  return (
+  const dockContent = (
     <div
       className="media-player"
       ref={playerRef}
     >
-      {/* crossOrigin is required for the Web Audio API (loudness meter) to read
-          samples from this element without a tainted-canvas-style security
-          error — safe here since the stream URL is same-origin. */}
-      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <audio
-        crossOrigin="anonymous"
-        ref={audioRef}
-      />
-
       {/* ── Separate player window ──────────────────────────── */}
       {popout.container &&
         createPortal(
@@ -1856,6 +1880,8 @@ const MediaPlayer = () => {
       </div>
     </div>
   );
+  dockContentRef.current = dockContent;
+  return renderDock(dockContent);
 };
 
 // Rendered by App with no props and no context, but App re-renders on every

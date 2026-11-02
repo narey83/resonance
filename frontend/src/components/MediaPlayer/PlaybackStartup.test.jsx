@@ -137,6 +137,25 @@ describe('player startup and playback intent', () => {
     jest.restoreAllMocks();
   });
 
+  it('keeps the closing frame briefly, then unmounts it without playback', async () => {
+    expect.hasAssertions();
+    await restore();
+    expect(container.querySelector('.media-player-dock--open')).not.toBeNull();
+    await click('Close player');
+    expect(container.querySelector('.media-player-dock--open')).toBeNull();
+    expect(
+      container.querySelector('.media-player-dock').getAttribute('aria-hidden'),
+    ).toBe('true');
+    expect(container.querySelector('.media-player')).not.toBeNull();
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 350);
+      });
+    });
+    expect(container.querySelector('.media-player')).toBeNull();
+    expect(play).not.toHaveBeenCalled();
+  });
+
   it('stays paused when a saved queue arrives after asynchronous validation', async () => {
     expect.hasAssertions();
     await restore();
