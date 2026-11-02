@@ -75,7 +75,7 @@ namespace resonance.Analysis
         // Ticks (DateTime.UtcNow.Ticks), not a DateTime — a plain field can't be updated
         // atomically from the stream endpoint's request threads while a background analysis
         // task reads it, so this goes through Interlocked instead of a lock.
-        private readonly object enhancedStateLock = new();
+        private readonly object analysisStateLock = new();
         private long lastPlaybackActivityTicks;
         private long lastAnalysisBroadcastTicks;
 
@@ -97,7 +97,21 @@ namespace resonance.Analysis
             Services = services;
         }
 
-        public AnalysisScanState ScanState => CurrentState;
+        public AnalysisScanState ScanState
+        {
+            get
+            {
+                var controls = ScanControl?.State ?? (Paused: false, Ending: false);
+                var state = CurrentState;
+                return state with
+                {
+                    PauseRequested = state.Scanning && controls.Paused,
+                    Paused = state.Scanning && controls.Paused && state.InFlight + state.EnhancedInFlight == 0,
+                    Ending = state.Scanning && controls.Ending,
+                };
+            }
+        }
+
         public bool PlaybackActive => IsPlaybackActive();
 
         private IServiceProvider Services { get; }
@@ -114,6 +128,7 @@ namespace resonance.Analysis
         private SemaphoreSlim SyncRoot { get; } = new(1, 1);
         private CancellationTokenSource Cts { get; set; }
         private Task ScanTask { get; set; }
+        private AnalysisScanControl ScanControl { get; set; }
 
         // ── IHostedService ────────────────────────────────────────────────────
         public Task StartAsync(CancellationToken cancellationToken)
@@ -235,16 +250,18 @@ namespace resonance.Analysis
 
             // Mark as scanning immediately so GET /scan reports it as soon as the POST response
             // lands, rather than only once the background task has spun up.
-            CurrentState = CurrentState with { EnhancedTotal = 0, EnhancedCompleted = 0, EnhancedFailed = 0, EnhancedPath = null };
+            var controls = new AnalysisScanControl();
+            ScanControl = controls;
+            CurrentState = CurrentState with { EnhancedTotal = 0, EnhancedCompleted = 0, EnhancedFailed = 0, EnhancedInFlight = 0, EnhancedPath = null };
             SetState(true, false, false, 0, 0, 0, 0, metrics: request.Metrics.ToString());
 
             Cts = CancellationTokenSource.CreateLinkedTokenSource(Program.MasterCancellationTokenSource.Token);
-            ScanTask = Task.Run(() => RunScanAsync(request, Cts.Token), Cts.Token);
+            ScanTask = Task.Run(() => RunScanAsync(request, Cts.Token, controls));
         }
 
         public bool CancelScan()
         {
-            if (Cts == null || Cts.IsCancellationRequested)
+            if (!CurrentState.Scanning || Cts == null || Cts.IsCancellationRequested)
             {
                 return false;
             }
@@ -252,6 +269,12 @@ namespace resonance.Analysis
             Cts.Cancel();
             return true;
         }
+
+        public bool PauseScan() => CurrentState.Scanning && ScanControl?.Pause() == true;
+
+        public bool ResumeScan() => CurrentState.Scanning && ScanControl?.Resume() == true;
+
+        public bool EndScan() => CurrentState.Scanning && ScanControl?.End() == true;
 
         public Task<WaveformData> GetWaveformAsync(string path, CancellationToken ct, bool cachedOnly = false) =>
             Task.FromResult(Store.GetWaveform(path));
@@ -462,12 +485,16 @@ namespace resonance.Analysis
             return missing;
         }
 
-        private async Task RunScanAsync(AnalysisScanRequest request, CancellationToken ct)
+        private async Task RunScanAsync(AnalysisScanRequest request, CancellationToken ct, AnalysisScanControl controls)
         {
+            using var dispatch = CancellationTokenSource.CreateLinkedTokenSource(ct, controls.EndToken);
+            var dispatchToken = dispatch.Token;
             var queueRegistered = false;
             string dependencyError = null;
             try
             {
+                await controls.AdmitAsync(() => { }, dispatchToken);
+
                 // null  → scan all files
                 // []    → scan nothing (explicit empty selection)
                 // [...] → restrict to the named files
@@ -491,12 +518,12 @@ namespace resonance.Analysis
                     SetState(true, false, false, tracks.Count, 0, 0, 0, metrics: request.Metrics.ToString());
                     if ((required & (AnalysisMetrics.Bpm | AnalysisMetrics.Key)) != 0)
                     {
-                        await Analyzer.CheckEssentiaAsync(options, ct);
+                        await Analyzer.CheckEssentiaAsync(options, dispatchToken);
                     }
 
                     try
                     {
-                        ffmpegPath = await Ffmpeg.GetFfmpegPathAsync(ct);
+                        ffmpegPath = await Ffmpeg.GetFfmpegPathAsync(dispatchToken);
                     }
                     catch (Exception exception) when (exception is not OperationCanceledException)
                     {
@@ -506,6 +533,7 @@ namespace resonance.Analysis
 
                 if (request.ResetAll)
                 {
+                    await controls.AdmitAsync(() => { }, dispatchToken);
                     Log.Information("Resetting existing analysis for {Count} track(s)...", tracks.Count);
 
                     if (request.Metrics.HasFlag(AnalysisMetrics.Waveform) || request.Metrics.HasFlag(AnalysisMetrics.Loudness))
@@ -524,6 +552,8 @@ namespace resonance.Analysis
 
                     foreach (var t in tracks)
                     {
+                        await controls.AdmitAsync(() => { }, dispatchToken);
+
                         // A file mid-upload to a Soulseek peer can hold a lock that briefly denies
                         // this a write handle — on a full-library reset that's not a rare edge
                         // case, it's expected to happen at least once. One inaccessible file
@@ -579,7 +609,7 @@ namespace resonance.Analysis
                 {
                     if (request.Enhanced)
                     {
-                        await RunEnhanced(tracks, ct, !request.SkipAnalysed || request.ResetAll);
+                        await RunEnhanced(tracks, ct, dispatchToken, controls, !request.SkipAnalysed || request.ResetAll);
                     }
 
                     SetState(false, true, false, 0, 0, 0, 0, 1.0);
@@ -608,7 +638,7 @@ namespace resonance.Analysis
 
                 var tasks = Enumerable.Range(0, workers).Select(_ => Task.Run(async () =>
                 {
-                    await foreach (var (track, metrics) in channel.Reader.ReadAllAsync(ct))
+                    await foreach (var (track, metrics) in channel.Reader.ReadAllAsync(dispatchToken))
                     {
                         ct.ThrowIfCancellationRequested();
 
@@ -616,10 +646,16 @@ namespace resonance.Analysis
                         // relative to the music root; ffmpeg needs the real one.
                         var path = MusicPath.ToAbsolute(track.OriginalFilename);
 
-                        Interlocked.Increment(ref inFlight);
-                        inFlightFiles.TryAdd(path, 0);
-                        SetState(true, false, false, total, analysed, skipped, failed,
-                            (double)(analysed + skipped + failed) / total, inFlight, request.Metrics.ToString(), inFlightFiles.Keys.ToList());
+                        await controls.AdmitAsync(() =>
+                        {
+                            lock (analysisStateLock)
+                            {
+                                Interlocked.Increment(ref inFlight);
+                                inFlightFiles.TryAdd(path, 0);
+                                SetState(true, false, false, total, analysed, skipped, failed,
+                                    (double)(analysed + skipped + failed) / total, inFlight, request.Metrics.ToString(), inFlightFiles.Keys.ToList());
+                            }
+                        }, dispatchToken);
                         try
                         {
                             Log.Information("Analysing '{File}'; missing metrics: {Metrics}", track.OriginalFilename, metrics);
@@ -703,13 +739,16 @@ namespace resonance.Analysis
                         }
                         finally
                         {
-                            Interlocked.Decrement(ref inFlight);
-                            inFlightFiles.TryRemove(path, out var removedFromInFlight);
+                            lock (analysisStateLock)
+                            {
+                                Interlocked.Decrement(ref inFlight);
+                                inFlightFiles.TryRemove(path, out var removedFromInFlight);
+                                SetState(true, false, false, total, analysed, skipped, failed,
+                                    (double)(analysed + skipped + failed) / total, inFlight, request.Metrics.ToString(), inFlightFiles.Keys.ToList());
+                            }
                         }
 
                         var done = analysed + skipped + failed;
-                        SetState(true, false, false, total, analysed, skipped, failed,
-                            (double)done / total, inFlight, request.Metrics.ToString(), inFlightFiles.Keys.ToList());
 
                         if (done % Math.Max(1, total / 10) == 0)
                         {
@@ -723,15 +762,15 @@ namespace resonance.Analysis
                 {
                     foreach (var item in queue)
                     {
-                        if (ct.IsCancellationRequested)
+                        if (dispatchToken.IsCancellationRequested)
                         {
                             break;
                         }
 
-                        await channel.Writer.WriteAsync(item, ct);
+                        await channel.Writer.WriteAsync(item, dispatchToken);
                     }
                 }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                catch (OperationCanceledException) when (dispatchToken.IsCancellationRequested)
                 { /* Wait for every worker below before releasing the scan lock. */
                 }
                 finally
@@ -754,12 +793,12 @@ namespace resonance.Analysis
                     return;
                 }
 
-                if (!ct.IsCancellationRequested && request.Enhanced)
+                if (!dispatchToken.IsCancellationRequested && request.Enhanced)
                 {
-                    await RunEnhanced(tracks, ct, !request.SkipAnalysed || request.ResetAll);
+                    await RunEnhanced(tracks, ct, dispatchToken, controls, !request.SkipAnalysed || request.ResetAll);
                 }
 
-                var cancelled = ct.IsCancellationRequested;
+                var cancelled = dispatchToken.IsCancellationRequested;
                 SetState(false, !cancelled, cancelled, total, analysed, skipped, failed,
                     cancelled ? CurrentState.Progress : 1.0,
                     error: failed > 0 ? $"Analysis finished with {failed} failed track(s). Required measurements were not completed; existing results were preserved. See the analysis log for details." : null);
@@ -803,11 +842,13 @@ namespace resonance.Analysis
                     MusicLibrary?.DeregisterQueue("analysis");
                 }
 
+                controls.Dispose();
+                ScanControl = null;
                 SyncRoot.Release();
             }
         }
 
-        private async Task RunEnhanced(IReadOnlyList<TrackAnalysisInfo> tracks, CancellationToken ct, bool force)
+        private async Task RunEnhanced(IReadOnlyList<TrackAnalysisInfo> tracks, CancellationToken ct, CancellationToken dispatchToken, AnalysisScanControl controls, bool force)
         {
             var enhanced = Services?.GetService<CandidateAnalysisService>();
             if (enhanced?.Enabled != true)
@@ -815,41 +856,51 @@ namespace resonance.Analysis
                 return;
             }
 
-            lock (enhancedStateLock)
+            lock (analysisStateLock)
             {
                 CurrentState = CurrentState with { Scanning = true, Completed = false, EnhancedTotal = tracks.Count, EnhancedCompleted = 0, EnhancedFailed = 0 };
             }
 
             await Parallel.ForEachAsync(
                 tracks,
-                new ParallelOptions { MaxDegreeOfParallelism = enhanced.Resources.ParallelJobs, CancellationToken = ct },
+                new ParallelOptions { MaxDegreeOfParallelism = enhanced.Resources.ParallelJobs, CancellationToken = dispatchToken },
                 async (track, token) =>
                 {
-                    lock (enhancedStateLock)
+                    await controls.AdmitAsync(() =>
                     {
-                        CurrentState = CurrentState with { EnhancedPath = track.OriginalFilename };
-                    }
+                        lock (analysisStateLock)
+                        {
+                            CurrentState = CurrentState with { EnhancedPath = track.OriginalFilename, EnhancedInFlight = CurrentState.EnhancedInFlight + 1 };
+                        }
+                    }, token);
 
                     try
                     {
-                        await enhanced.EnsureEnhanced(MusicPath.ToAbsolute(track.OriginalFilename), token, force);
-                        lock (enhancedStateLock)
+                        await enhanced.EnsureEnhanced(MusicPath.ToAbsolute(track.OriginalFilename), ct, force);
+                        lock (analysisStateLock)
                         {
                             CurrentState = CurrentState with { EnhancedCompleted = CurrentState.EnhancedCompleted + 1 };
                         }
                     }
                     catch (Exception exception) when (exception is not OperationCanceledException)
                     {
-                        lock (enhancedStateLock)
+                        lock (analysisStateLock)
                         {
                             CurrentState = CurrentState with { EnhancedFailed = CurrentState.EnhancedFailed + 1 };
                         }
 
                         Log.Warning("Enhanced analysis failed for {Path}: {Error}", track.OriginalFilename, exception.Message);
                     }
+                    finally
+                    {
+                        lock (analysisStateLock)
+                        {
+                            CurrentState = CurrentState with { EnhancedInFlight = CurrentState.EnhancedInFlight - 1 };
+                        }
+                    }
                 });
 
-            lock (enhancedStateLock)
+            lock (analysisStateLock)
             {
                 CurrentState = CurrentState with { EnhancedPath = null };
             }
@@ -866,6 +917,7 @@ namespace resonance.Analysis
                 scanning, completed, cancelled, total, analysed, skipped, failed, progress, inFlight,
                 metrics ?? CurrentState?.Metrics, inFlightPaths ?? Array.Empty<string>())
             {
+                EnhancedInFlight = CurrentState.EnhancedInFlight,
                 EnhancedTotal = CurrentState.EnhancedTotal,
                 EnhancedCompleted = CurrentState.EnhancedCompleted,
                 EnhancedFailed = CurrentState.EnhancedFailed,

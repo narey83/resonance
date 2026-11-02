@@ -560,7 +560,7 @@ public class WorkspaceTests : IDisposable
         public int Starts;public bool Reject;public bool Cancelled;public bool DependencyFailure;public Action? OnStart;
         public AnalysisScanRequest? LastRequest;
         public Task StartScanAsync(AnalysisScanRequest request) { if(Reject)throw new InvalidOperationException();Starts++;LastRequest=request;Assert.True(request.SkipAnalysed);Assert.False(request.ResetAll);OnStart?.Invoke();ScanState=new(false,!Cancelled&&!DependencyFailure,Cancelled,request.OnlyPaths?.Length??1,DependencyFailure?0:1,0,DependencyFailure?1:0,1) { DependencyUnavailable=DependencyFailure,Error=DependencyFailure?"Basic analysis stopped: Essentia is missing":string.Empty };return Task.CompletedTask; }
-        public void RecordPlaybackActivity(){} public IEnumerable<TrackAnalysisInfo> GetAllTracks()=>[];public bool CancelScan()=>false;
+        public void RecordPlaybackActivity(){} public IEnumerable<TrackAnalysisInfo> GetAllTracks()=>[];public bool CancelScan()=>false;public bool PauseScan()=>false;public bool ResumeScan()=>false;public bool EndScan()=>false;
         public Task<WaveformData> GetWaveformAsync(string path,CancellationToken ct,bool cachedOnly=false)=>throw new NotImplementedException();
         public BeatAnalysis GetBeatInfo(string path)=>throw new NotImplementedException();
         public Task<LoudnessData> GetLoudnessAsync(string path,CancellationToken ct)=>throw new NotImplementedException();

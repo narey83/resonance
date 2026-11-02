@@ -95,3 +95,42 @@ searched beyond the old window, retained selection and search through tab change
 opened track details, decoded the waveform and displayed frequency bars without
 starting analysis or changing settings. Screenshots were inspected. Development
 compilation/hot reload was used; no production build or backend restart was needed.
+
+
+## Pause, Resume and End scan
+
+The primary action is Pause after current tracks, changing to Resume scan once
+pause is requested. New admissions stop atomically; Basic and Enhanced work already
+admitted finishes and saves normally. The same server-side queue stays held, even
+if the browser reloads. Pausing a scan does not change the separate automatic
+preparation setting. A paused queue is held in memory and does not survive a
+backend restart.
+
+End scan is a secondary action. It first pauses automatic preparation, then ends
+new dispatch while active tracks finish. The remaining manual scan queue is
+abandoned; completed results stay saved, and unfinished library tracks can be
+selected again. The durable automatic-preparation queue is retained and paused.
+The immediate-cancellation API remains available for existing clients.
+
+Authenticated write-role APIs: POST `/analysis/scan/pause`, `/analysis/scan/resume`
+and `/analysis/scan/end`. They return 204 or 404 when no controllable queue remains.
+GET `/analysis/scan` adds `supportsPause`, `pauseRequested`, `paused`, `ending` and
+`enhancedInFlight`. Pause is reported as complete only after both worker types
+have drained. Resume after End is rejected. The frontend uses the new controls
+only when the server advertises support, retaining the older controls until the
+native backend is updated.
+
+The dispatch gate is independent of the active-work cancellation token. Graceful
+End cancels channel/parallel dispatch and releases paused waiters, while existing
+decodes use the original run token. Admission and pause/end serialize under one
+lock; Basic worker progress publications are serialized so simultaneous finishes
+do not leave a stale active count. Shutdown/immediate cancellation still cancels
+active work. No database schema or dependency changes are required.
+
+Prepared verification: 153 Analysis/Workspace backend tests; 55 Analysis frontend
+tests; warning-free backend build/publish; detector preflight; lint, 11 dependency
+security checks, and zero npm/NuGet advisories. Desktop/phone browser previews use
+controlled scan responses for pause/drain/resume/end, with live control endpoints
+intercepted so the current running scan is unaffected. Activation requires a
+backend restart; preparing the feature does not apply it to an already running
+native process.

@@ -122,6 +122,33 @@ namespace resonance.Analysis.API
         public IActionResult CancelScan() =>
             Analysis.CancelScan() ? NoContent() : NotFound("No scan is in progress.");
 
+        /// <summary>Pauses new track starts while active tracks finish.</summary>
+        /// <returns>No content, or not found when no controllable scan remains.</returns>
+        [HttpPost("scan/pause")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
+        [ProducesResponseType(204)]
+        [ProducesResponseType(404)]
+        public IActionResult PauseScan() =>
+            Analysis.PauseScan() ? NoContent() : NotFound("No controllable scan is in progress.");
+
+        /// <summary>Resumes the same paused scan queue.</summary>
+        /// <returns>No content, or not found when no controllable scan remains.</returns>
+        [HttpPost("scan/resume")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
+        [ProducesResponseType(204)]
+        [ProducesResponseType(404)]
+        public IActionResult ResumeScan() =>
+            Analysis.ResumeScan() ? NoContent() : NotFound("No controllable scan is in progress.");
+
+        /// <summary>Ends the scan after active tracks finish, discarding its remaining queue.</summary>
+        /// <returns>No content, or not found when no controllable scan remains.</returns>
+        [HttpPost("scan/end")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
+        [ProducesResponseType(204)]
+        [ProducesResponseType(404)]
+        public IActionResult EndScan() =>
+            Analysis.EndScan() ? NoContent() : NotFound("No controllable scan is in progress.");
+
         /// <summary>Returns cached waveform band peaks for a local file.</summary>
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         [HttpGet("waveform")]

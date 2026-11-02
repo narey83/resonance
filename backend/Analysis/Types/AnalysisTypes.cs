@@ -243,6 +243,11 @@ namespace resonance.Analysis
         string Metrics = null,
         IReadOnlyList<string> InFlightPaths = null)
     {
+        public bool SupportsPause { get; init; } = true;
+        public bool PauseRequested { get; init; }
+        public bool Paused { get; init; }
+        public bool Ending { get; init; }
+        public int EnhancedInFlight { get; init; }
         public int EnhancedTotal { get; init; }
         public int EnhancedCompleted { get; init; }
         public int EnhancedFailed { get; init; }

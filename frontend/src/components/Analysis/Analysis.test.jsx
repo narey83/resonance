@@ -38,6 +38,9 @@ jest.mock('../../lib/analysis', () => ({
   METRICS: ['Key', 'Bpm'],
   startScan: jest.fn(),
   cancelScan: jest.fn(),
+  pauseScan: jest.fn(),
+  resumeScan: jest.fn(),
+  endScan: jest.fn(),
   getScanState: jest.fn(() => Promise.resolve({ scanning: false })),
 }));
 jest.mock('../../lib/musicLibrary', () => ({
@@ -76,6 +79,9 @@ describe('analysis folder loading', () => {
     useLibraryActivity.mockReturnValue({ libraryRevision: 0 });
     pausePreparation.mockResolvedValue({});
     analysisApi.cancelScan.mockResolvedValue({});
+    analysisApi.pauseScan.mockResolvedValue({});
+    analysisApi.resumeScan.mockResolvedValue({});
+    analysisApi.endScan.mockResolvedValue({});
     musicLibraryApi.getAnalysisStats.mockResolvedValue({
       total: 3,
       complete: 0,
@@ -292,6 +298,124 @@ describe('analysis folder loading', () => {
       container.querySelectorAll('[aria-label="Stop analysis"]'),
     ).toHaveLength(1);
     expect(analysisApi.cancelScan).not.toHaveBeenCalled();
+  });
+  it('pauses after active tracks and resumes the same scan without cancelling or changing automatic settings', async () => {
+    expect.hasAssertions();
+    analysisApi.getScanState.mockResolvedValue({
+      supportsPause: true,
+      scanning: true,
+      total: 100,
+      analysed: 10,
+      inFlight: 2,
+    });
+    await render();
+    const pause = [
+      ...container.querySelectorAll('.ka-scan-actions button'),
+    ].find((button) => button.textContent === 'Pause after current tracks');
+    expect(pause).toBeDefined();
+    expect(container.querySelector('[aria-label="Stop analysis"]')).toBeNull();
+    analysisApi.getScanState.mockResolvedValue({
+      supportsPause: true,
+      scanning: true,
+      total: 100,
+      analysed: 10,
+      inFlight: 2,
+      pauseRequested: true,
+      paused: false,
+    });
+    await act(async () => pause.click());
+    expect(analysisApi.pauseScan).toHaveBeenCalledTimes(1);
+    expect(analysisApi.cancelScan).not.toHaveBeenCalled();
+    expect(pausePreparation).not.toHaveBeenCalled();
+    expect(container.querySelector('.ka-stop-status').textContent).toContain(
+      'then pausing the queue',
+    );
+    expect(container.querySelector('.ka-scan-actions button').textContent).toBe(
+      'Resume scan',
+    );
+    analysisApi.getScanState.mockResolvedValue({
+      supportsPause: true,
+      scanning: true,
+      total: 100,
+      analysed: 12,
+      inFlight: 0,
+    });
+    await act(async () =>
+      container.querySelector('.ka-scan-actions button').click(),
+    );
+    expect(analysisApi.resumeScan).toHaveBeenCalledTimes(1);
+    expect(analysisApi.startScan).not.toHaveBeenCalled();
+    expect(container.querySelector('.ka-scan-actions button').textContent).toBe(
+      'Pause after current tracks',
+    );
+  });
+  it('ends the queue only after pausing automatic scheduling and keeps current tracks running', async () => {
+    expect.hasAssertions();
+    analysisApi.getScanState.mockResolvedValue({
+      supportsPause: true,
+      scanning: true,
+      total: 100,
+      analysed: 10,
+      inFlight: 2,
+    });
+    await render();
+    analysisApi.getScanState.mockResolvedValue({
+      supportsPause: true,
+      scanning: true,
+      total: 100,
+      analysed: 10,
+      inFlight: 2,
+      ending: true,
+    });
+    await act(async () => container.querySelector('.ka-btn--end').click());
+    expect(pausePreparation).toHaveBeenCalledWith(true);
+    expect(analysisApi.endScan).toHaveBeenCalledTimes(1);
+    expect(pausePreparation.mock.invocationCallOrder[0]).toBeLessThan(
+      analysisApi.endScan.mock.invocationCallOrder[0],
+    );
+    expect(analysisApi.cancelScan).not.toHaveBeenCalled();
+    expect(container.querySelector('.ka-scan-actions button').disabled).toBe(
+      true,
+    );
+    expect(container.querySelector('.ka-stop-status').textContent).toContain(
+      'remaining scan queue will be discarded',
+    );
+  });
+  it('does not end the scan when pausing automatic scheduling fails and allows retry', async () => {
+    expect.hasAssertions();
+    analysisApi.getScanState.mockResolvedValue({
+      supportsPause: true,
+      scanning: true,
+      total: 100,
+    });
+    pausePreparation.mockRejectedValueOnce(new Error('offline'));
+    await render();
+    await act(async () => container.querySelector('.ka-btn--end').click());
+    expect(analysisApi.endScan).not.toHaveBeenCalled();
+    expect(container.querySelector('.ka-btn--end').disabled).toBe(false);
+  });
+  it('restores a paused queue from server state without relying on this browser session', async () => {
+    expect.hasAssertions();
+    analysisApi.getScanState.mockResolvedValue({
+      supportsPause: true,
+      scanning: true,
+      total: 100,
+      analysed: 12,
+      inFlight: 0,
+      pauseRequested: true,
+      paused: true,
+    });
+    await render();
+    expect(container.querySelector('.ka-scan-actions button').textContent).toBe(
+      'Resume scan',
+    );
+    expect(container.querySelector('.ka-stop-status').textContent).toContain(
+      'Queue paused',
+    );
+    expect(
+      container.querySelector('[aria-label="Current scan progress"]')
+        .textContent,
+    ).toContain('Paused');
   });
   it('shows coverage without the removed automatic queue card', async () => {
     expect.hasAssertions();

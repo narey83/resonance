@@ -51,6 +51,9 @@ export const getMaskedFilename = async (path) =>
 export const startScan = async (request) => api.post('/analysis/scan', request);
 
 export const cancelScan = async () => api.delete('/analysis/scan');
+export const pauseScan = async () => api.post('/analysis/scan/pause');
+export const resumeScan = async () => api.post('/analysis/scan/resume');
+export const endScan = async () => api.post('/analysis/scan/end');
 
 export const setAnalysis = async (maskedFilename, values) =>
   api.put(`/analysis/${encodeURIComponent(maskedFilename)}`, values);

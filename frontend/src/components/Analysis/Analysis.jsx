@@ -695,6 +695,7 @@ const Analysis = ({ viewState }) => {
   const [inspectedTrack, setInspectedTrack] = useState(null);
   const [preparation, setPreparation] = useState(null);
   const [preparationBusy, setPreparationBusy] = useState('');
+  const [scanControlBusy, setScanControlBusy] = useState('');
   const [stopRequested, setStopRequested] = useState(false);
   useEffect(() => {
     if (
@@ -1156,6 +1157,42 @@ const Analysis = ({ viewState }) => {
       );
     } finally {
       if (mountedRef.current) setPreparationBusy('');
+    }
+  };
+
+  const handleScanControl = async (action) => {
+    if (scanControlBusy || scanState?.ending) return;
+    setScanControlBusy(action);
+    let schedulingPaused = false;
+    try {
+      if (action === 'end') {
+        await pausePreparation(true);
+        schedulingPaused = true;
+        if (mountedRef.current)
+          setPreparation((previous) => ({ ...previous, paused: true }));
+      }
+
+      const request = {
+        pause: analysisApi.pauseScan,
+        resume: analysisApi.resumeScan,
+        end: analysisApi.endScan,
+      }[action];
+      try {
+        await request();
+      } catch (controlError) {
+        if (controlError?.response?.status !== 404) throw controlError;
+      }
+
+      const state = await analysisApi.getScanState();
+      if (mountedRef.current) setScanState(state);
+    } catch {
+      toast.error(
+        schedulingPaused
+          ? 'Automatic analysis is paused, but the scan end was not confirmed. Please retry.'
+          : 'Could not update this scan. Please retry.',
+      );
+    } finally {
+      if (mountedRef.current) setScanControlBusy('');
     }
   };
 
@@ -1652,23 +1689,65 @@ const Analysis = ({ viewState }) => {
         <div className="ka-current-analysis">
           <header className="ka-current-header">
             <h2 className="ka-section-title">Current analysis</h2>
-            {(scanning ||
-              stopRequested ||
-              preparation?.counts?.running > 0) && (
-              <button
-                aria-label="Stop analysis"
-                className="ka-btn ka-btn--stop hover-fx"
-                disabled={
-                  Boolean(preparationBusy) ||
-                  stopRequested ||
-                  (!scanning && !(preparation?.counts?.running > 0))
-                }
-                onClick={() => handlePreparationAction('stop')}
-                title="Finish every remaining track in the current scan, then stop. No further automatic scans will start."
-                type="button"
+            {scanState?.supportsPause && scanning ? (
+              <div
+                aria-label="Current scan controls"
+                className="ka-scan-actions"
               >
-                {stopRequested ? 'Finishing scan…' : 'Stop after this scan'}
-              </button>
+                <button
+                  className="ka-btn ka-btn--primary hover-fx"
+                  disabled={Boolean(scanControlBusy) || scanState.ending}
+                  onClick={() =>
+                    handleScanControl(
+                      scanState.pauseRequested ? 'resume' : 'pause',
+                    )
+                  }
+                  title={
+                    scanState.pauseRequested
+                      ? 'Continue the same scan queue.'
+                      : 'Finish only the tracks already being analysed, then hold the remaining queue for Resume.'
+                  }
+                  type="button"
+                >
+                  {scanState.ending
+                    ? 'Finishing current tracks…'
+                    : scanControlBusy === 'pause'
+                      ? 'Pausing…'
+                      : scanControlBusy === 'resume'
+                        ? 'Resuming…'
+                        : scanState.pauseRequested
+                          ? 'Resume scan'
+                          : 'Pause after current tracks'}
+                </button>
+                <button
+                  className="ka-btn ka-btn--end hover-fx"
+                  disabled={Boolean(scanControlBusy) || scanState.ending}
+                  onClick={() => handleScanControl('end')}
+                  title="Finish the tracks already running, then end this scan and discard its remaining queue. Completed results are kept. Automatic analysis will stay paused."
+                  type="button"
+                >
+                  End scan
+                </button>
+              </div>
+            ) : (
+              (scanning ||
+                stopRequested ||
+                preparation?.counts?.running > 0) && (
+                <button
+                  aria-label="Stop analysis"
+                  className="ka-btn ka-btn--stop hover-fx"
+                  disabled={
+                    Boolean(preparationBusy) ||
+                    stopRequested ||
+                    (!scanning && !(preparation?.counts?.running > 0))
+                  }
+                  onClick={() => handlePreparationAction('stop')}
+                  title="Finish every remaining track in the current scan, then stop. No further automatic scans will start."
+                  type="button"
+                >
+                  {stopRequested ? 'Finishing scan…' : 'Stop after this scan'}
+                </button>
+              )
             )}
           </header>
           {scanState?.enhancedTotal > 0 && (
@@ -1732,13 +1811,19 @@ const Analysis = ({ viewState }) => {
                   scan ·{' '}
                   {stopRequested
                     ? 'Finishing current scan…'
-                    : scanning
-                      ? 'Running'
-                      : scanState.cancelled
-                        ? 'Stopped'
-                        : scanState.completed
-                          ? 'Finished'
-                          : 'Stopped with an error'}
+                    : scanState.ending
+                      ? 'Ending after current tracks…'
+                      : scanState.paused
+                        ? 'Paused'
+                        : scanState.pauseRequested
+                          ? 'Pausing after current tracks…'
+                          : scanning
+                            ? 'Running'
+                            : scanState.cancelled
+                              ? 'Stopped'
+                              : scanState.completed
+                                ? 'Finished'
+                                : 'Stopped with an error'}
                 </strong>
                 <div className="ka-progress-bar">
                   <div
@@ -1781,6 +1866,20 @@ const Analysis = ({ viewState }) => {
                 : 'No scan running. Choose music below to begin.'}
             </p>
           )}
+          {scanState?.supportsPause &&
+            scanning &&
+            (scanState.pauseRequested || scanState.ending) && (
+              <p
+                className="ka-stop-status"
+                role="status"
+              >
+                {scanState.ending
+                  ? 'Finishing current tracks; the remaining scan queue will be discarded. Automatic analysis will stay paused.'
+                  : scanState.paused
+                    ? 'Queue paused. Resume to continue the remaining tracks.'
+                    : 'Finishing the tracks already being analysed, then pausing the queue.'}
+              </p>
+            )}
           {stopRequested && (
             <p
               className="ka-stop-status"

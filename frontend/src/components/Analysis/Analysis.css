@@ -1201,3 +1201,6 @@
 .ka-current-header { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; margin-bottom: 10px; }
 .ka-current-analysis .ka-current-header .ka-section-title { margin: 0; }
 .ka-current-header .ka-btn--stop { margin-left: auto; }
+
+.ka-scan-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.ka-scan-actions .ka-btn--end { background: transparent; color: var(--danger, #c62828); }

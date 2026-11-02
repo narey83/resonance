@@ -62,6 +62,18 @@ namespace resonance.Analysis
         /// <returns>True if a scan was cancelled, false if none was running.</returns>
         bool CancelScan();
 
+        /// <summary>Pauses new track starts, allowing active work to finish.</summary>
+        /// <returns>True if the current queue accepted the pause.</returns>
+        bool PauseScan();
+
+        /// <summary>Resumes the same paused scan queue.</summary>
+        /// <returns>True if the current queue accepted the resume.</returns>
+        bool ResumeScan();
+
+        /// <summary>Ends the current queue after its active tracks finish.</summary>
+        /// <returns>True if the current queue accepted the end request.</returns>
+        bool EndScan();
+
         /// <summary>
         ///     Returns cached waveform peaks. Analysis is started explicitly through
         ///     <see cref="StartScanAsync"/> so every trigger uses the same four-metric pipeline.
