@@ -132,6 +132,55 @@ describe('analysis folder loading', () => {
     container.remove();
   });
 
+  it('separates views while keeping scan controls and selected folders', async () => {
+    expect.hasAssertions();
+    analysisApi.getScanState.mockResolvedValue({
+      scanning: false,
+      total: 10,
+      analysed: 8,
+      failed: 2,
+      progress: 1,
+    });
+    const host = document.createElement('div');
+    document.body.append(host);
+    const state = { current: null };
+    await render({
+      activeView: 'overview',
+      statusHost: host,
+      viewState: state,
+    });
+    expect(container.querySelector('.ka-readiness')).not.toBeNull();
+    expect(container.querySelector('.ka-toolbar')).toBeNull();
+    expect(host.textContent).toContain('Failed: 2');
+    await render({
+      activeView: 'analysis',
+      statusHost: host,
+      viewState: state,
+    });
+    expect(container.querySelector('.ka-readiness')).toBeNull();
+    expect(container.querySelector('.ka-toolbar')).not.toBeNull();
+    await act(async () =>
+      container.querySelector('[title="Select folder"]').click(),
+    );
+    expect(state.current.selected.size).toBe(3);
+    await render({
+      activeView: 'waveform',
+      statusHost: host,
+      viewState: state,
+    });
+    expect(container.querySelector('.ka-toolbar')).toBeNull();
+    expect(host.textContent).toContain('Failed: 2');
+    await render({
+      activeView: 'analysis',
+      statusHost: host,
+      viewState: state,
+    });
+    expect(container.querySelector('[title="Deselect folder"]').checked).toBe(
+      true,
+    );
+    host.remove();
+  });
+
   it('opens the consolidated queue tools only on demand', async () => {
     expect.hasAssertions();
     await render();
@@ -217,7 +266,7 @@ describe('analysis folder loading', () => {
       [...container.querySelectorAll('.ka-section-title')].map(
         (e) => e.textContent,
       ),
-    ).toEqual(['Library readiness', 'Current analysis']);
+    ).toEqual(['Current analysis', 'Library readiness']);
     expect(container.querySelector('.ka-readiness').textContent).toContain(
       'Basic ready',
     );

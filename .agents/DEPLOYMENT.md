@@ -1975,3 +1975,31 @@ headless verification confirmed the panel makes no administrator-log requests fo
 that role. The saved QA refresh token subsequently expired (HTTP 401), so repeat
 headless authentication checks require a fresh sign-in; real signed-in browser
 verification was completed separately.
+
+## Track Analysis tabs — 2 November 2026
+
+Reorganised the development page into Overview, Analyse tracks, Failures (with the
+current scan's failure count), and Waveform Inspector. A shared scan status area
+above the tabs keeps progress and existing pause/resume/end controls accessible.
+Overview holds readiness, collapsed coverage details and background preparation
+settings/queue; Analyse tracks holds selection and scan settings; Failures shows
+its history immediately. Last tab is remembered locally; selection, search and
+mode remain in one mounted analysis workspace across tab changes. Administrator
+permissions on failure logs are unchanged. The virtual list observes tab changes
+so its scroll coordinates update when the track browser returns.
+
+Delivered the five changed application source/style files deliberately to the
+existing web development directory. Its watcher compiled with the existing 14
+source-map warnings; web service PID 1228101 remained running. No backend restart,
+scan-control operation, new backup, dependency or private configuration change.
+Backend readiness returned available and the running eight-worker Basic scan
+continued advancing during UI verification.
+
+Dev-laptop checks: ESLint passed; 65 tests across analysis, failure history and tabs
+passed; 11 dependency-security tests passed; npm audit reported zero vulnerabilities.
+Headless fixture tests passed at 1440px and 390px for all tabs, shared controls,
+failure badge, lazy history loading, search retention, remembered tab after reload,
+keyboard navigation, no horizontal overflow and no scan mutations. The real signed-in
+Administrator browser verified Overview, Analyse tracks, real failure records,
+Waveform Inspector and shared progress/controls; mobile Overview fit at 390px.
+The temporary viewport override was reset and the page left on Overview.

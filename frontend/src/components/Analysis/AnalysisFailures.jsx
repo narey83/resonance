@@ -5,7 +5,7 @@ import AppContext from '../AppContext';
 import React, { useContext, useEffect, useState } from 'react';
 
 const PAGE_SIZE = 100;
-const FailureHistory = () => {
+const FailureHistory = ({ standalone = false }) => {
   const [open, setOpen] = useState(false);
   const [offset, setOffset] = useState(0);
   const [day, setDay] = useState(() => new Date().toISOString().slice(0, 10));
@@ -14,7 +14,7 @@ const FailureHistory = () => {
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open && !standalone) return undefined;
     let disposed = false;
     let busy = false;
     const finish = () => {
@@ -55,15 +55,22 @@ const FailureHistory = () => {
       disposed = true;
       if (timer) clearInterval(timer);
     };
-  }, [day, offset, open, revision]);
+  }, [day, offset, open, revision, standalone]);
   const tracks = data?.offset === offset ? failedTracksFromLogs(data.logs) : [];
+  const Container = standalone ? 'section' : 'details';
   return (
-    <details
+    <Container
       className="ka-failures"
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      onToggle={
+        standalone ? undefined : (event) => setOpen(event.currentTarget.open)
+      }
     >
-      <summary>Failed tracks · measurements and reasons</summary>
-      {open && (
+      {standalone ? (
+        <h2 className="ka-section-title">Failed tracks</h2>
+      ) : (
+        <summary>Failed tracks · measurements and reasons</summary>
+      )}
+      {(standalone || open) && (
         <div>
           <p>
             Recorded Basic and Enhanced failures for the selected day (UTC).
@@ -150,13 +157,17 @@ const FailureHistory = () => {
           </div>
         </div>
       )}
-    </details>
+    </Container>
   );
 };
 
-const AnalysisFailures = () => {
+const AnalysisFailures = ({ standalone = false }) => {
   const { isAdmin } = useContext(AppContext) || {};
-  return isAdmin ? <FailureHistory /> : null;
+  return isAdmin ? (
+    <FailureHistory standalone={standalone} />
+  ) : standalone ? (
+    <p>Failure details are available to administrators.</p>
+  ) : null;
 };
 
 export default AnalysisFailures;

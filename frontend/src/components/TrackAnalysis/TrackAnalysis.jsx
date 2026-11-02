@@ -30,31 +30,53 @@
 import './TrackAnalysis.css';
 import Analysis from '../Analysis/Analysis';
 import WaveformAnalysis from './WaveformAnalysis';
-import { AudioWaveform, SlidersHorizontal } from 'lucide-react';
+import {
+  AlertTriangle,
+  AudioWaveform,
+  LayoutDashboard,
+  SlidersHorizontal,
+} from 'lucide-react';
 import React, { useRef, useState } from 'react';
 
-// Key, BPM, waveform and loudness are one scan over one queue, so they are one
-// page. The waveform tab is a different job — inspecting a single track — not a
-// fourth copy of the same table.
+const TAB_KEY = 'resonance-analysis-tab';
 const TABS = [
-  { icon: SlidersHorizontal, id: 'analysis', label: 'Track Analysis' },
+  { icon: LayoutDashboard, id: 'overview', label: 'Overview' },
+  { icon: SlidersHorizontal, id: 'analysis', label: 'Analyse tracks' },
+  { icon: AlertTriangle, id: 'failures', label: 'Failures' },
   { icon: AudioWaveform, id: 'waveform', label: 'Waveform Inspector' },
 ];
 
 const TrackAnalysis = () => {
-  const [activeTab, setActiveTab] = useState('analysis');
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const saved = localStorage.getItem(TAB_KEY);
+      return TABS.some((tab) => tab.id === saved) ? saved : 'overview';
+    } catch {
+      return 'overview';
+    }
+  });
+  const [statusHost, setStatusHost] = useState(null);
+  const [scanState, setScanState] = useState(null);
+  const selectTab = (id) => {
+    setActiveTab(id);
+    try {
+      localStorage.setItem(TAB_KEY, id);
+    } catch {
+      /* Storage may be unavailable. */
+    }
+  };
+
+  const failureCount =
+    (scanState?.failed || 0) + (scanState?.enhancedFailed || 0);
   const analysisView = useRef(null);
   const waveformView = useRef(null);
 
-  const renderPanel = () =>
-    activeTab === 'analysis' ? (
-      <Analysis viewState={analysisView} />
-    ) : (
-      <WaveformAnalysis viewState={waveformView} />
-    );
-
   return (
     <div className="ta-root">
+      <div
+        className="ta-scan-status"
+        ref={setStatusHost}
+      />
       <div
         aria-label="Track analysis views"
         className="ta-tabs"
@@ -67,7 +89,7 @@ const TrackAnalysis = () => {
             className={`ta-tab hover-fx${activeTab === id ? ' ta-tab--active' : ''}`}
             id={`track-analysis-tab-${id}`}
             key={id}
-            onClick={() => setActiveTab(id)}
+            onClick={() => selectTab(id)}
             onKeyDown={(event) => {
               const index = TABS.findIndex((tab) => tab.id === id);
               const next =
@@ -82,7 +104,7 @@ const TrackAnalysis = () => {
                         : -1;
               if (next < 0) return;
               event.preventDefault();
-              setActiveTab(TABS[next].id);
+              selectTab(TABS[next].id);
               event.currentTarget.parentElement
                 .querySelectorAll('[role="tab"]')
                 [next].focus();
@@ -96,6 +118,9 @@ const TrackAnalysis = () => {
               strokeWidth={1.75}
             />
             {label}
+            {id === 'failures' && failureCount > 0 && (
+              <span className="ta-failure-count">{failureCount}</span>
+            )}
           </button>
         ))}
       </div>
@@ -105,7 +130,20 @@ const TrackAnalysis = () => {
         id={`track-analysis-panel-${activeTab}`}
         role="tabpanel"
       >
-        {renderPanel()}
+        <div
+          className="ta-analysis-workspace"
+          hidden={activeTab === 'waveform'}
+        >
+          <Analysis
+            activeView={activeTab}
+            onScanState={setScanState}
+            statusHost={statusHost}
+            viewState={analysisView}
+          />
+        </div>
+        {activeTab === 'waveform' && (
+          <WaveformAnalysis viewState={waveformView} />
+        )}
       </div>
     </div>
   );

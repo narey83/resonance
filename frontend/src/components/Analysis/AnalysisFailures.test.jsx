@@ -74,6 +74,21 @@ describe('failed tracks disclosure', () => {
       expect.objectContaining({ offset: 100, limit: 100 }),
     );
   });
+  it('loads immediately as a dedicated Failures tab', async () => {
+    expect.hasAssertions();
+    await act(async () => {
+      ReactDOM.render(
+        <AppContext.Provider value={{ isAdmin: true }}>
+          <AnalysisFailures standalone />
+        </AppContext.Provider>,
+        container,
+      );
+    });
+    expect(getLogs).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('section h2').textContent).toBe(
+      'Failed tracks',
+    );
+  });
   it('preserves administrator-only log access', async () => {
     expect.hasAssertions();
     await render(false);

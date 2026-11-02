@@ -1208,3 +1208,7 @@
 .ka-background-queue { flex-shrink:0; margin:16px 0; border:1px solid var(--border); border-radius:10px; background:var(--bg-surface); }
 .ka-background-queue > summary { cursor:pointer; padding:14px 18px; font-weight:600; color:var(--text-primary); }
 .ka-background-queue .preparation-view { padding:18px; }
+
+/* Tab panels share one persistent analysis workspace and its scroll surface. */
+.ta-analysis-workspace .ka-root > :is(.ka-overview, .ka-panel, .ka-toolbar, .ka-header-row, .ka-track-list, .ka-pagination, .ka-load-error, .ka-analysis-details) { margin-inline: 0; }
+.ta-analysis-workspace .ka-root > .ka-overview { margin-top: 0; }
