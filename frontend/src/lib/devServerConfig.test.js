@@ -59,6 +59,30 @@ describe('modern dev-server middleware', () => {
     expect(raw.onBeforeSetupMiddleware).toBe(before);
   });
 
+  it('uses the configured dev host allowlist and preserves the default otherwise', () => {
+    // eslint-disable-next-line n/no-process-env -- Verify deployment environment configuration.
+    const environment = process.env;
+    const original = Object.fromEntries(
+      Object.entries(environment).filter(
+        ([key]) => key === 'RESONANCE_DEV_ALLOWED_HOSTS',
+      ),
+    );
+    try {
+      environment.RESONANCE_DEV_ALLOWED_HOSTS =
+        ' localhost, 918837500.duckdns.org ';
+      expect(devServer({ allowedHosts: 'all' }).allowedHosts).toEqual([
+        'localhost',
+        '918837500.duckdns.org',
+      ]);
+      delete environment.RESONANCE_DEV_ALLOWED_HOSTS;
+      expect(devServer({ allowedHosts: ['local.test'] }).allowedHosts).toEqual([
+        'local.test',
+      ]);
+    } finally {
+      delete environment.RESONANCE_DEV_ALLOWED_HOSTS;
+      Object.assign(environment, original);
+    }
+  });
   it('supports configurations without legacy middleware hooks', () => {
     const config = devServer({});
     const middlewares = [];

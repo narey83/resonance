@@ -57,7 +57,9 @@ const FileCells = ({ file, onCancel, sourceFolder }) => {
       >
         {getFileName(file.filename)}
         {sourceFolder && (
-          <span className="ul-current-source">From: {sourceFolder}</span>
+          <span className="ul-current-source">
+            From: {getFileName(sourceFolder.replace(/[/\\]+$/u, ''))}
+          </span>
         )}
       </div>
       <div

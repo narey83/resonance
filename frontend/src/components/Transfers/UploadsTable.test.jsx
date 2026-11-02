@@ -304,7 +304,7 @@ describe('One complete upload list and one user header', () => {
     );
     const current = container.querySelector('.ul-current-uploads');
     expect(current.textContent).toContain('Track sending.flac');
-    expect(current.textContent).toContain('From: Music/Album');
+    expect(current.textContent).toContain('From: Album');
     expect(current.textContent).toContain('42%');
     expect(current.textContent).toContain('Connecting');
     expect(current.textContent).not.toContain('Track waiting.flac');
@@ -331,6 +331,23 @@ describe('One complete upload list and one user header', () => {
       container.querySelector('.ul-current-uploads').textContent,
     ).toContain('Nothing uploading to this user right now.');
   });
+  it.each(['downloads\\Prisoner', 'downloads/Prisoner/', 'Prisoner'])(
+    'shows just the source folder name for %s',
+    async (directory) => {
+      expect.hasAssertions();
+      await render({
+        transfers: [
+          {
+            username: 'listener',
+            directories: [{ directory, files: [file('active', 'InProgress')] }],
+          },
+        ],
+      });
+      expect(container.querySelector('.ul-current-source').textContent).toBe(
+        'From: Prisoner',
+      );
+    },
+  );
   it('handles an empty recipient queue', async () => {
     expect.hasAssertions();
     await render({ queueUsers: [], selectedUsername: null });

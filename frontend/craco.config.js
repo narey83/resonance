@@ -56,6 +56,11 @@ module.exports = {
 
     return {
       ...modern,
+      allowedHosts: environment.RESONANCE_DEV_ALLOWED_HOSTS
+        ? environment.RESONANCE_DEV_ALLOWED_HOSTS.split(',')
+            .map((host) => host.trim())
+            .filter(Boolean)
+        : modern.allowedHosts,
       server:
         modern.server ||
         (https

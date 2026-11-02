@@ -12,7 +12,8 @@ Refreshes retain the current expansion; selecting another recipient starts close
 History remains on the existing History page.
 
 Above the folders, Uploading now shows only the selected recipient's sending or
-connecting tracks, including their source folder path, progress, size and speed.
+connecting tracks, including their source folder name, progress, size and speed.
+Parent path prefixes such as `downloads\` are omitted from the From line.
 It stays visible with folders closed and updates with the queue snapshot. An idle
 recipient gets a compact “Nothing uploading to this user right now” message.
 
