@@ -1623,3 +1623,46 @@ existing gateway were retained; no production build.
 
 Evidence: `/home/narey/resonance-builds/upload-loading-20261102`, including tests.log,
 security.log, browser.log and evidence/. Private helpers: `.dev/upload-loading/`.
+
+
+## Full-track Basic beat grids — 2 November 2026
+
+Activated backend `beatgrid-full-c94e5d4`, source
+`c94e5d421bdd3c80853c3d4c56172567832d252f`, PID 1288116, at 19:00:23 GMT.
+Basic beat/BPM detection now decodes and receives the entire track, including
+BPM-only rescans. The configured analysis window applies only to key estimation.
+Existing sampled grids require a later targeted beat rescan; deployment does not
+extrapolate or silently replace them.
+
+At the user's request, paused Basic and drained admitted work before replacement.
+Captured 14,736 still-incomplete paths from the original scan selection, ended the
+old in-memory scan gracefully, then started missing-only Basic against that saved
+selection. The new scan admitted 14,735 tracks after its completeness check and
+was verified running with eight workers and successful completions. No results
+were reset. Background auto-analysis remains Off. The reset progress counter
+reflects the new remaining-work scan, not loss of earlier results.
+
+Verified all 12,472 captured pending upload identities across graceful shutdown
+and recovery, with no terminal changes during the transition. Preserved the
+frontend development service, browser health monitor, Caddy configuration and
+private state. No database backup, copy or schema change. All 418 published
+artifact hashes verified after startup, and native detector preflight passed.
+
+Verification before activation: 116 backend Analysis tests, 76 Security tests,
+nine native-analysis tests (including the real embedded detector on 150 seconds
+of known kicks), 238 renderer tests, warning-free Release build/publish,
+format verification and no vulnerable NuGet packages. A direct BPM-only run on
+the actual 7:49 track produced 999 beats through 468.532 seconds. The current
+track's separate full Enhanced analysis also completed; authenticated desktop
+and narrow browsers consumed its 1,007 timestamps and displayed the grid at
+32× detail without page errors. Screenshots inspected. After resume, a newly
+completed Basic track saved 935 beats through 438.346 seconds of its 438.912-second
+duration; the restarted scan had 69 successful completions and no failures at that
+check. Desktop/narrow scan controls and tab navigation also passed without analysis
+mutations. These checks do not certify every model prediction as musically correct.
+
+Source snapshot, native publish and evidence:
+`/home/narey/resonance-builds/beatgrid-full-20261102`, including `activation/`,
+`runtime-cpu-check.json`, `browser-after.log`, desktop/phone full-grid screenshots,
+`detector-preflight.log`, tests/build/format/security logs and the private remaining
+selection. Private operational helpers are in `.dev/beatgrid-deploy/`.
