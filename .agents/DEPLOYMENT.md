@@ -2115,3 +2115,35 @@ button dimensions at desktop and 390px widths, then verify positions after the
 response completes.
 All four fixture cases (automatic/manual at 1440px/390px) measured zero row movement
 and zero button width/height change while loading and after completion.
+
+
+## yt-dlp page URL correction deployed — 2 November 2026
+
+Activated backend `aaa8be2` at 23:24 GMT from
+`/home/narey/resonance-builds/ytdlp-filter-20261102`, release
+`/home/narey/resonance-releases/ytdlp-page-aaa8be2`, PID 1453668.
+Full extraction's temporary media URL is now replaced by `webpage_url` when
+building download jobs. This preserves YouTube duration metadata for the existing
+inclusive 300–600 second filter. All five subscription limits remain unchanged.
+
+Live regression job `7e926476-4ce4-4e65-b761-f6ffabe558d9` downloaded MRD — TOOL 1
+(reported 307 seconds, measured 306), completed one track with zero failed/skipped
+tracks and no error. Existing skipped history was preserved; no bulk backfill ran.
+Actual yt-dlp boundary probes accepted 300/307/600 seconds and rejected 299/601.
+
+The analysis scan paused and drained before replacement, then resumed its 8,893
+remaining selected paths with eight Basic workers and child-process nice 10.
+All 22,970 queued upload IDs and identity metadata survived shutdown/recovery.
+No new database backup was created. Preparation remained paused. The web HMR
+service, browser monitor and gateway were preserved; web/mobile runtime application
+source already matched the Mac source and required no further deployment. The
+existing gateway timeout adjustment was confirmed already live.
+
+Verification: 663 backend tests passed, one PostgreSQL test skipped; staged Release
+build/StyleCop, changed-file whitespace check and NuGet audit passed. All 17 native
+artifact hashes and the configured real BPM/key detector preflight passed. Existing
+missing FFmpeg download-helper diagnostic remains; installed FFmpeg successfully
+converted the real regression track. Direct/public readiness and browser monitor
+passed. Authenticated desktop/390px browsers showed the completed job without page
+errors; screenshots were inspected. Existing narrow-screen job-row clipping remains.
+Evidence and private queue/scan manifests are retained in the isolated snapshot.
