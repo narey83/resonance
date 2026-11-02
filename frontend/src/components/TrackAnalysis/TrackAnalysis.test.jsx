@@ -3,9 +3,12 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import { act } from 'react-dom/test-utils';
 
-jest.mock('../Analysis/Analysis', () => ({ activeView }) => (
-  <p>Analysis view: {activeView}</p>
-));
+jest.mock('../Analysis/Analysis', () => ({ activeView, onScanState }) => {
+  jest.requireActual('react').useEffect(() => {
+    onScanState?.({ failed: 3 });
+  }, [onScanState]);
+  return <p>Analysis view: {activeView}</p>;
+});
 jest.mock('./WaveformAnalysis', () => () => <p>Waveform inspection</p>);
 
 describe('analysis workspace tabs', () => {
@@ -23,6 +26,9 @@ describe('analysis workspace tabs', () => {
       container.querySelector('[role="tab"][aria-selected="true"]').textContent,
     ).toContain('Overview');
     expect(container.textContent).toContain('Analysis view: overview');
+    expect(
+      container.querySelector('#track-analysis-tab-failures').textContent,
+    ).toBe('Failures');
     act(() => container.querySelectorAll('.ta-tab')[3].click());
     expect(container.textContent).toContain('Waveform inspection');
     act(() => container.querySelectorAll('.ta-tab')[1].click());

@@ -56,7 +56,6 @@ const TrackAnalysis = () => {
     }
   });
   const [statusHost, setStatusHost] = useState(null);
-  const [scanState, setScanState] = useState(null);
   const selectTab = (id) => {
     setActiveTab(id);
     try {
@@ -66,8 +65,6 @@ const TrackAnalysis = () => {
     }
   };
 
-  const failureCount =
-    (scanState?.failed || 0) + (scanState?.enhancedFailed || 0);
   const analysisView = useRef(null);
   const waveformView = useRef(null);
 
@@ -118,9 +115,6 @@ const TrackAnalysis = () => {
               strokeWidth={1.75}
             />
             {label}
-            {id === 'failures' && failureCount > 0 && (
-              <span className="ta-failure-count">{failureCount}</span>
-            )}
           </button>
         ))}
       </div>
@@ -137,7 +131,6 @@ const TrackAnalysis = () => {
           <Analysis
             activeView={activeTab}
             onNavigate={selectTab}
-            onScanState={setScanState}
             statusHost={statusHost}
             viewState={analysisView}
           />

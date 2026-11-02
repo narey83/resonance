@@ -2026,3 +2026,14 @@ fixtures, including scan text colour, no error overlay, keyboard/tab persistence
 search retention and no analysis mutations. The signed-in Administrator browser
 also verified live readiness, real failure details, waveform search and the phone
 layout. Temporary viewport overrides were reset; the page was left on Overview.
+
+## Failure count scope clarification — 2 November 2026
+
+Removed the current-scan count from the Failures tab: it appeared to describe the
+whole dated history, which includes older scans/retries and can contain more rows.
+The scan strip retains its failed count under Current analysis. History now states
+that a track may have succeeded since its failure was logged. No additional API
+queries or permission changes; delivered through the existing frontend HMR watcher.
+Validation: changed-file ESLint and five focused tests passed on the laptop;
+desktop/390px fixture interactions and the real Administrator tab/scan labels
+verified the scope distinction. Existing service and running scan were preserved.

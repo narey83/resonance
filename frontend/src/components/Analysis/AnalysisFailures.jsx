@@ -73,8 +73,9 @@ const FailureHistory = ({ standalone = false }) => {
       {(standalone || open) && (
         <div>
           <p>
-            Recorded Basic and Enhanced failures for the selected day (UTC).
-            Older logs may not name the measurement. History follows the
+            Failure history for the selected day (UTC), including earlier scans
+            and retries. A track may have succeeded since its failure was
+            logged. Older logs may not name the measurement. History follows the
             server’s log retention settings.
           </p>
           <label>
