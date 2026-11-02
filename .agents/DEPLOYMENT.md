@@ -1451,3 +1451,49 @@ change or slot setting change. Browser health monitor remains active.
 
 Snapshot/tests/browser/HMR evidence: `/home/narey/resonance-builds/upload-folder-label-20261102`.
 Private Mac operational helpers: `.dev/web-development/`.
+
+
+## Track Analysis workflow review — 2 November 2026
+
+Active frontend source: `53390305845b8c389698bce545b16646b572f3cf`, tree
+`d2415864f0766478b5808e473766af7ee6ad5fd4`, served by the existing `resonance-web-dev.service` from
+`/home/narey/resonance-builds/upload-folder-label-20261102/frontend` through the
+unchanged `web-development-20261102` gateway. This was a hot-reloaded dev update;
+no production bundle, backend restart or Caddy reload.
+
+The user's whole-page review reproduced waveform searches missing tracks outside
+the first 5,000 and analysis view state disappearing on tab changes. The inspector
+now searches the entire indexed library with debounced, cancellable eight-result
+queries, explicit loading/empty/error/retry states and keyboard selection. Analysis
+search, filter, sorting, selection, expanded folders and scan options survive tab
+changes; the waveform's chosen track is retained. Tab/folder accessibility state
+and keyboard navigation are exposed. Idle analysis omits the unusable Stop action.
+
+Waveform display and controls now precede the optional imported/independent forms,
+which start collapsed and load on demand. Display-style changes first read cached
+waveform data and use browser decoding as a fallback; they no longer trigger a new
+Basic scan. The mounted lifecycle re-arms after hot refresh so scan polling keeps
+working. Existing generation, scan, stop and automatic-preparation semantics remain.
+
+Verification: 136 frontend tests / 15 suites, remote staged-source lint gate,
+11 dependency-security checks and zero audit advisories. Authenticated public
+browser checks at desktop and phone sizes reconciled the real 59,413 total,
+43,041 Basic-ready and 35 Enhanced-ready counts. They searched beyond the previous
+window, preserved selection/search/expanded folders, opened details, decoded audio,
+displayed cached frequency bars, navigated with the keyboard and checked empty
+results. No analysis or settings mutations, browser page errors or client warnings
+occurred in the final checks. Desktop/phone screenshots were inspected. Controlled
+request failure, retry and stale/cancelled responses have unit coverage.
+
+A component-source hot-refresh check preserved the open document and selection,
+continued scan polling and restored exact source bytes. A longer QA check's expired
+session was renewed through the established normal sign-in helper. The earlier
+stalled check is not evidence of a remaining delivery/access issue. Existing server
+compile source-map warnings and tooling deprecation notices remain.
+
+Backend PID 1206121 and Caddy PID 3992646 were retained. No analysis jobs were
+launched by the checks; automatic preparation, library tags, queued work and private
+state were preserved. Backend code and dependencies did not change.
+Evidence/logs: `trackanalysis-*` and `trackanalysis-review/` within the active source
+snapshot. Private Mac review/browser/staged-source helpers: `.dev/trackanalysis-review/`.
+See `docs/analysis-folder-browsing.md` for the updated workflow.
