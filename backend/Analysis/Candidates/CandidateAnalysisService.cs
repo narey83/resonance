@@ -209,7 +209,9 @@ namespace resonance.Analysis.Candidates
             var result = await Read(generated.JobId, ct);
             if (!result.ContentCurrent || !result.Analysis.HasValue || !HasEnhanced(result.Analysis.Value))
             {
-                throw new InvalidOperationException("Enhanced full-track analysis has missing features; inspect candidate results.");
+                throw new InvalidOperationException("Enhanced track failed; missing or failed measurements: "
+                    + (result.Analysis.HasValue ? string.Join(", ", FailedMeasurements(result.Analysis.Value).DefaultIfEmpty("required enhanced measurements or full-track result")) : "analysis result")
+                    + ". Inspect candidate results; successful measurements were preserved.");
             }
 
             CacheDjSummary(path, result.Analysis.Value, generated.JobId);
@@ -268,7 +270,7 @@ namespace resonance.Analysis.Candidates
 
             var identity = await Hash(source, ct);
             JsonElement? result = null;
-            if (job.Status is "completed" or "completed-with-gaps" or "no-features")
+            if (job.Status is "completed" or "completed-with-gaps" or "no-features" or "measurement-failed")
             {
                 result = await ReadResult(Path.Combine(directory, "result", "analysis.json"), job, ct);
             }
@@ -333,8 +335,46 @@ namespace resonance.Analysis.Candidates
                 return false;
             }
 
-            return new[] { "beats", "semanticPhrases", "vocalPresence", "genre" }.All(name =>
-                availability.TryGetProperty(name, out var value) && value.GetString() == "available");
+            return FailedMeasurements(document).Length == 0
+                && new[] { "beats", "semanticPhrases", "vocalPresence", "genre" }.All(name =>
+                    availability.TryGetProperty(name, out var value) && value.GetString() == "available");
+        }
+
+        internal static string[] FailedMeasurements(JsonElement document)
+        {
+            if (!document.TryGetProperty("featureAvailability", out var availability)
+                || availability.ValueKind != JsonValueKind.Object)
+            {
+                return ["featureAvailability"];
+            }
+
+            return availability.EnumerateObject().Where(feature =>
+            {
+                if (feature.Value.GetString() is "available" or "skipped")
+                {
+                    return false;
+                }
+
+                // A deliberately disabled measurement was not requested. Missing models,
+                // execution errors and other unavailable measurements still fail the track.
+                return !(feature.Value.GetString() == "unavailable"
+                    && document.TryGetProperty("features", out var features)
+                    && features.TryGetProperty(feature.Name, out var result)
+                    && result.TryGetProperty("reason", out var reason)
+                    && reason.GetString()?.Replace(" ", string.Empty, StringComparison.Ordinal)
+                        .Equals("Disabledinexplicitconfiguration", StringComparison.OrdinalIgnoreCase) == true);
+            }).Select(feature => feature.Name).ToArray();
+        }
+
+        internal static void LogMeasurementFailures(JsonElement result, string source, string jobId, ILogger log)
+        {
+            foreach (var measurement in FailedMeasurements(result))
+            {
+                var reason = result.TryGetProperty("features", out var features)
+                    && features.TryGetProperty(measurement, out var feature)
+                    && feature.TryGetProperty("reason", out var detail) ? detail.GetString() : "No usable result returned";
+                log.Warning("Analysis measurement failed for {Path}: {Measurement}; {Reason}; job {JobId}", source, measurement, reason, jobId);
+            }
         }
 
         internal void CacheDjSummary(string path, JsonElement analysis, string analysisId)
@@ -639,12 +679,15 @@ namespace resonance.Analysis.Candidates
                 if (process.ExitCode != 0)
                 {
                     job = job with { Status = "worker-failed" };
+                    Log.Warning("Enhanced analysis worker failed for {Path}: exit code {ExitCode}; job {JobId}", source, process.ExitCode, job.JobId);
                 }
                 else
                 {
                     var result = await ReadResult(Path.Combine(resultDirectory, "analysis.json"), job, ct);
-                    var states = result.GetProperty("featureAvailability").EnumerateObject().Select(feature => feature.Value.GetString()).ToArray();
-                    var status = !states.Contains("available") ? "no-features" : states.Any(state => state is not ("available" or "skipped")) ? "completed-with-gaps" : "completed";
+                    var failures = FailedMeasurements(result);
+                    var status = failures.Length > 0 ? "measurement-failed"
+                        : result.GetProperty("featureAvailability").EnumerateObject().Any(feature => feature.Value.GetString() == "available") ? "completed" : "no-features";
+                    LogMeasurementFailures(result, source, job.JobId, Log);
                     var after = await Hash(input, ct);
                     job = job with { Status = after == identity ? status : "input-changed" };
                 }

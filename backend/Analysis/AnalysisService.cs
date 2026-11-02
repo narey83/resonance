@@ -709,7 +709,7 @@ namespace resonance.Analysis
                             var missing = result.MissingMetrics(metrics);
                             if (missing != AnalysisMetrics.None)
                             {
-                                Log.Warning("Analysis incomplete for '{File}'; missing requested metrics: {Metrics}", track.Filename, missing);
+                                Log.Warning("Analysis failed for '{File}'; missing requested measurements: {Metrics}", track.Filename, missing);
                                 Interlocked.Increment(ref failed);
                             }
                             else if (produced)
