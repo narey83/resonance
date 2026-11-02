@@ -56,7 +56,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/upload-folders-33f4637/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/upload-current-748ee58/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -1357,3 +1357,38 @@ single recipient controls; favor coherent hierarchy and consistent spacing over
 successive competing layouts. Use desktop/narrow browser and screenshot checks.
 If tool access fails, attempt recovery and explicitly report any renewed access
 needed from the user. The working private QA login/renewal procedure is above.
+
+
+## Current uploads and source paths — 2 November 2026
+
+Active web/gateway: `upload-current-748ee58`, frontend source
+`748ee58a260041776cccf059d5b720bfe69f46c2`, tree
+`3fb17b88d3e748dafbc4b263225b5ea592b173d4`. Activated at 16:35 GMT.
+Backend PID 1206121 and Caddy PID 3992646 remain unchanged.
+
+The selected recipient now has a compact Uploading now area above their folders.
+It shows sending/connecting tracks, their source directory paths, live progress,
+size and speed, with the existing file cancellation action. Closed folders do not
+hide this area. An idle recipient sees one short status line. Original top user
+controls, side list, complete counts and default-closed folder behavior remain.
+It reuses the complete queue snapshot; no additional API polling or backend change.
+
+Dev-laptop gates: clean npm 11 install, 30 frontend tests, changed-file lint,
+11 dependency-security tests, zero audit findings, production build and exact staged
+source remote gate. A test-only no-bitwise lint failure was corrected before the
+successful lint/test run; no quality checks were disabled. Existing dependency
+source-map, bundle-size and deprecation warnings remain.
+
+Authenticated isolated and public browser checks at desktop and phone sizes used
+real queues. Verified B_Side's active transfer/source path against the actual API,
+above closed folders, plus progress/speed display, complete 8,053-track skurk-1
+queue access, folder toggles, recipient switching, one set of user controls and
+matching side/global totals. Desktop/phone screenshots were inspected. No browser
+page errors or transfer mutation requests. Tests also cover progress changes,
+completed uploads disappearing, idle state and recipient isolation.
+
+Public HTML/entrypoint/retained-asset hashes and readiness checks passed; 189 older
+static assets retained. No backend restart, database copy, schema or slot changes.
+Snapshot/logs/evidence: `/home/narey/resonance-builds/upload-current-20261102`.
+Rollback config/link/record: new gateway's `rollback` points to
+`upload-folders-33f4637`. Private Mac helpers: `.dev/upload-current/`.
