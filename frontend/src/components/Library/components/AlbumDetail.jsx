@@ -118,6 +118,19 @@ const AlbumDetail = ({
       playQueue([...tracks].sort(() => Math.random() - 0.5).map(toQueue), 0);
   };
 
+  const artists = useMemo(() => {
+    const unique = new Map();
+    for (const track of tracks) {
+      const name = track.artist?.trim();
+      if (name && name.toLowerCase() !== 'various artists') {
+        const key = name.toLowerCase();
+        if (!unique.has(key)) unique.set(key, name);
+      }
+    }
+
+    return [...unique.values()].sort((a, b) => a.localeCompare(b));
+  }, [tracks]);
+
   const totalDuration = useMemo(
     () => tracks.reduce((sum, t) => sum + (t.duration ?? 0), 0),
     [tracks],
@@ -153,16 +166,23 @@ const AlbumDetail = ({
           <div className="jb-album-hero-title">
             {album.album || '(Untitled)'}
           </div>
-          {album.artist && album.artist !== 'Various Artists' ? (
-            <button
-              className="jb-album-hero-artist"
-              onClick={() => onArtist?.({ artist: album.artist })}
-              type="button"
-            >
-              {album.artist}
-            </button>
-          ) : (
-            <div className="jb-album-hero-artist">{album.artist}</div>
+          {artists.length > 0 && (
+            <div className="jb-album-hero-artists">
+              <span>Artists</span>
+              <ul aria-label="Album artists">
+                {artists.map((artist) => (
+                  <li key={artist}>
+                    <button
+                      className="jb-album-hero-artist"
+                      onClick={() => onArtist?.({ artist })}
+                      type="button"
+                    >
+                      {artist}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           {meta && <div className="jb-album-hero-meta">{meta}</div>}
           <div className="jb-album-hero-actions">

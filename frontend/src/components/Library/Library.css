@@ -1523,6 +1523,12 @@
   margin-bottom: 6px;
 }
 
+.jb-album-hero-artists { color: var(--text-muted); font-size: 12px; }
+.jb-album-hero-artists ul { display: flex; flex-wrap: wrap; gap: 6px 16px; list-style: none; padding: 0; margin: 6px 0 0; }
+.jb-album-hero-artists li { min-width: 0; max-width: 100%; }
+.jb-album-hero-artists button { text-align: left; overflow-wrap: anywhere; }
+.jb-album-hero-title { overflow-wrap: anywhere; }
+
 .jb-album-hero-artist {
   background: none;
   border: none;
