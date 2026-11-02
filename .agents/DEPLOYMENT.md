@@ -1499,30 +1499,45 @@ snapshot. Private Mac review/browser/staged-source helpers: `.dev/trackanalysis-
 See `docs/analysis-folder-browsing.md` for the updated workflow.
 
 
-## Prepared pause/resume/end controls — awaiting activation, 2 November 2026
+## Pause/resume/end controls activated — 2 November 2026
 
-Source `6ee41f2` adds primary Pause after current tracks / Resume scan and a
-secondary End scan, selected explicitly by the user. Native artifact is prepared,
-**not active**, at `/home/narey/resonance-releases/analysis-controls-6ee41f2`.
-Its `SHA256SUMS.json` and `deployment.prepared.json` are verified. Tests/build/
-publish/audit/detector/browser evidence is in
-`/home/narey/resonance-builds/analysis-controls-20261102` (153 backend tests,
-55 frontend tests, zero compiler warnings/advisories; browser previews use controlled
-scan fixtures and make no live scan-control requests). An artifact-manifest path
-mistake was corrected before final package hash verification.
+Activated at 18:06 GMT after the user explicitly authorized immediate native
+activation, including ending the previous scan. Backend source `6ee41f2` is live
+at `/home/narey/resonance-releases/analysis-controls-6ee41f2`, PID 1258627;
+`/home/narey/resonance-releases/current` points to this release. Artifact hashes
+and source provenance were verified before and after startup.
 
-The frontend is hot-reloaded and capability-gated; the active old backend does
-not advertise supportsPause, so the running scan still has its prior control.
-The native backend remains `upload-people-1ce4e09-retry1`, PID 1206121. No backend
-restart or scan mutation has been performed. Native activation needs a restart,
-which ends the current pre-feature manual scan; completed results remain saved.
-Get the user's timing decision before interrupting that scan. Do not claim the
-new queue controls are live before native activation and validation. The user
-questioned the distinction between frontend hot reload and the native backend;
-only the frontend has been switched to a watcher so far. Preserve the dev frontend
-service and gateway when performing a backend-only activation, and follow the
-existing upload ID/metadata reconciliation workflow without a database backup.
+Primary Pause after current tracks / Resume scan now holds and resumes the same
+in-memory queue. Secondary End scan finishes admitted tracks and discards the
+remaining scan queue; automatic preparation is paused first. The previous scan
+ended during the native replacement. Completed results remain saved. Analysis
+was left idle, and automatic preparation remains paused as it was before activation.
+No new scan was launched for verification.
 
-Frontend runtime source in the backend record is `6ee41f2`; previous static fallback
-metadata is unchanged. Review helpers: `.dev/analysis-controls/`. The temporary
-isolated preview server was stopped; the persistent dev frontend remains running.
+All 12,598 captured queued upload IDs and identity metadata were verified after
+recovery, with no terminal completions during shutdown/recovery. Private application
+state was retained without a database copy, schema change or backup. The frontend
+remains in development mode with hot reload: service PID 1228101, browser health
+monitor PID 192555 and Caddy PID 3992646 were preserved. Backend restarts are still
+required for native backend changes; frontend changes use the existing watcher.
+
+Verification in `/home/narey/resonance-builds/analysis-controls-20261102`:
+153 backend tests, 55 frontend tests, warning-free backend build/publish,
+11 dependency-security checks, zero npm/NuGet audit findings, and real native
+detector checks. Controlled desktop/phone browser fixtures exercised pause,
+resume, draining and end ordering without controlling a live scan. After activation,
+the authenticated public API advertised supportsPause; idle pause/resume/end
+requests returned 404 as expected. Authenticated desktop/phone checks confirmed
+the real idle state, working tabs and no browser errors or analysis mutations.
+Direct, public and browser-monitor health checks passed; startup confirmed
+Soulseek login and share-cache loading.
+
+Activation evidence: `activation/result.json`, `activation/live-api-check.json`,
+`activation/live-browser.log`, `activation/startup-check.json` and screenshots
+within that snapshot. Private operational helpers: `.dev/analysis-controls/`.
+Frontend runtime source is `6ee41f2`; previous static fallback metadata is unchanged.
+The temporary preview server was stopped; the persistent dev frontend remains live.
+
+For future backend replacements during a scan, end the scan gracefully first and
+wait for admitted tracks to finish before restarting. The user specifically
+requested this sequencing after this activation.
