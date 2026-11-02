@@ -1049,9 +1049,9 @@ namespace resonance.MusicLibrary
                     FROM {T}{whereInner}
                 )
                 SELECT MIN(album) AS album,
-                       CASE WHEN MAX(NULLIF(album_artist,'')) IS NOT NULL THEN MAX(NULLIF(album_artist,''))
-                            WHEN COUNT(DISTINCT artist) > 1              THEN 'Various Artists'
-                            ELSE MIN(artist) END AS artist,
+                       CASE WHEN COUNT(DISTINCT LOWER(NULLIF(TRIM(artist),''))) > 1 THEN 'Various Artists'
+                            WHEN MAX(NULLIF(album_artist,'')) IS NOT NULL THEN MAX(NULLIF(album_artist,''))
+                            ELSE MIN(NULLIF(TRIM(artist),'')) END AS artist,
                        MAX(NULLIF(album_artist,'')) AS album_artist,
                        MAX(year)          AS year,
                        COUNT(*)           AS track_count,
@@ -1154,9 +1154,9 @@ namespace resonance.MusicLibrary
                     FROM {T}
                 )
                 SELECT MIN(album) AS album,
-                       CASE WHEN MAX(NULLIF(album_artist,'')) IS NOT NULL THEN MAX(NULLIF(album_artist,''))
-                            WHEN COUNT(DISTINCT artist) > 1              THEN 'Various Artists'
-                            ELSE MIN(artist) END AS artist,
+                       CASE WHEN COUNT(DISTINCT LOWER(NULLIF(TRIM(artist),''))) > 1 THEN 'Various Artists'
+                            WHEN MAX(NULLIF(album_artist,'')) IS NOT NULL THEN MAX(NULLIF(album_artist,''))
+                            ELSE MIN(NULLIF(TRIM(artist),'')) END AS artist,
                        MAX(NULLIF(album_artist,'')) AS album_artist,
                        MAX(year)        AS year,
                        COUNT(*)         AS track_count,

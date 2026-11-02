@@ -2609,9 +2609,9 @@ const RecentlyAddedView = ({ albums, onAlbum, onContextMenu, onPlay }) => (
               </div>
               <div
                 className="jb-home-album-artist"
-                title={album.albumArtist || album.artist}
+                title={album.artist || album.albumArtist}
               >
-                {album.albumArtist || album.artist}
+                {album.artist || album.albumArtist}
               </div>
             </div>
           </button>
@@ -2814,9 +2814,9 @@ const HomeView = ({
                   </div>
                   <div
                     className="jb-home-album-artist"
-                    title={album.albumArtist || album.artist}
+                    title={album.artist || album.albumArtist}
                   >
-                    {album.albumArtist || album.artist}
+                    {album.artist || album.albumArtist}
                   </div>
                 </div>
               </button>
