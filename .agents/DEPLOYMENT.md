@@ -1763,3 +1763,37 @@ with that label and no page errors. Deployment evidence is in `activation/`,
 `runtime-cpu-check.json`, `detector-preflight.log`, and `verify-live.cjs` within the
 source snapshot above. The frontend remains the existing hot-reloading development
 service, not a production bundle.
+
+## Persist notification-centre action history — 2 November 2026
+
+Deployed backend commit `80d634a` to
+`/home/narey/resonance-releases/notifications-80d634a` (activation PID `1341190`).
+Action success, information, warning, error and server-status notices now save to
+existing event records and reload with stable database IDs. Existing switches
+still apply; a failed save is labelled in the notification centre. No schema
+migration was required. Hot-reloaded only App, NotificationCentre and the events
+API client into the existing development service, with scoped file hashes and
+provenance; the frontend remains a development build.
+
+Before deployment: 12 database/controller boundary tests, 17 frontend tests,
+changed-file lint, a warning-free staged Release build, 11 dependency security
+tests and NuGet/npm vulnerability scans passed. Isolated HTTP and desktop/phone
+checks verified saved records, rejection of invalid types/oversized messages,
+refresh without duplicates and retained read status. Native self-contained publish
+succeeded with the existing optional FFmpeg download-helper path warning. The
+configured native BPM/key detector passed its real preflight; all 418 published
+artifact hashes verified after activation.
+
+Paused and drained Basic analysis, preserved its remaining selection and resumed
+12,870 still-incomplete tracks with eight workers. The first post-resume check
+recorded three analysed tracks and zero failures; preparation remains paused.
+Verified all 15,410 captured unfinished upload identities and metadata across
+graceful shutdown and recovery. Caddy configuration, frontend development service,
+browser monitor and private state were preserved. No database backup or copy.
+
+Direct and public readiness passed. Authenticated public desktop and narrow
+browsers created/read a deployment confirmation notice, refreshed and displayed it
+exactly once with no page errors or popup toasts. Both screenshots were inspected.
+Evidence and private operational helpers are in
+`/home/narey/resonance-builds/notification-history-20261102` and
+`.dev/notification-history-deploy/` respectively.
