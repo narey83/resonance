@@ -56,7 +56,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/upload-full-5c6bb67/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/upload-sidebar-26aa744/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -1271,3 +1271,53 @@ runtime state were retained.
 Snapshot/logs: `/home/narey/resonance-builds/upload-full-20261102`.
 Rollback config/link/record: new gateway release's `rollback` directory, pointing to
 `upload-people-1ce4e09`. Private Mac helpers: `.dev/upload-full/`.
+
+
+## Live upload recipient side list and authenticated QA — 2 November 2026
+
+Active web/gateway: `upload-sidebar-26aa744`, frontend source
+`26aa744daed71ebb33fcb066fa0d999b9e510f68`, tree
+`4c1014d51b897f269e976498ac5fa0441fbe18d5`. Activated at 16:19 GMT.
+Backend remains `upload-people-1ce4e09-retry1`, PID 1206121; Caddy PID 3992646.
+
+The user rejected the recipient dropdown. The live side list now shows all
+recipients and their waiting/active counts, including new arrivals on refresh,
+while retaining the selected person's full queue. The single top recipient name
+keeps the original user controls beside it. There are no duplicate user-control
+headers, upload History tab, 250-track display limit or pagination controls.
+
+On the dev laptop: clean npm 11 install, 28 frontend tests, changed-file lint,
+11 dependency-security tests, zero npm audit findings and production build passed.
+Exact staged source passed the remote pre-commit gate. A new-arrival test confirms
+that a new side-list entry preserves the selected user, tracks and single controls.
+Existing dependency source-map, bundle-size and deprecation warnings remain.
+
+The earlier expired-login limitation is resolved. At the user's explicit request,
+created `codex-qa` through the application's AppUserService, with a random password
+and standard ReadWrite role. Existing user rows were verified unchanged. Normal
+public session login, queue reads and self-account lookup succeeded; administrator
+account listing returned 403. No settings or existing account permissions changed.
+Credentials are private at `/home/narey/.config/resonance-qa/credentials.json`
+(0600, directory 0700); the matching `session.json` contains the renewable session.
+The ignored Mac copy is `.dev/qa-account/credentials.private.json`. Never print
+these files. To renew through normal login, run
+`python3 /home/narey/resonance-maintenance/qa-account/sign-in.py` on the dev laptop.
+The helper reuses its device/session identity and logs only verification results.
+Do not rerun the one-time account creator or reset this account.
+
+Authenticated headless browsers against the isolated build and public deployment
+at 1440x1000 and 390x844 loaded all 8,053 real skurk-1 track IDs, scrolled to the
+last real track with fewer than 100 mounted rows, checked one set of name controls,
+no dropdown, every API recipient in the side list, and the global waiting count
+equal to the sum of displayed recipient counts. Clicking Suwofer opened the complete
+19-track queue. Desktop/phone screenshots were inspected. No transfer mutation
+requests or browser page errors occurred during these checks; public checks used
+direct production networking, with no mocked responses.
+
+Public HTML/entrypoint/retained-asset hashes, public/direct readiness and browser
+monitor health passed. Retained 179 older static assets. Backend and Caddy processes
+were preserved: no restart, database copy, schema change, queue rewrite or slot
+setting change. Snapshot/logs and browser evidence:
+`/home/narey/resonance-builds/upload-sidebar-20261102`.
+Rollback config/link/record: new gateway release's `rollback` directory points to
+`upload-full-5c6bb67`. Private Mac deployment helpers: `.dev/upload-sidebar/`.
