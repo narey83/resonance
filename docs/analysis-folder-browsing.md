@@ -134,3 +134,8 @@ controlled scan responses for pause/drain/resume/end, with live control endpoint
 intercepted so the current running scan is unaffected. Activation requires a
 backend restart; preparing the feature does not apply it to an already running
 native process.
+
+Background auto-analysis has its own collapsed settings panel below the manual
+scan setup, separate from Current analysis. Its On/Off status and Turn on/Turn off
+controls apply to automatic background jobs; they do not pause or resume a manual
+scan. The current scan retains its separate Pause/Resume and End scan controls.

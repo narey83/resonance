@@ -468,7 +468,9 @@ describe('analysis folder loading', () => {
     expect(queue).toBeNull();
     expect(container.textContent).not.toContain('Automatic preparation queue');
     expect(
-      container.querySelector('[aria-label="Resume automatic preparation"]'),
+      container.querySelector(
+        '[aria-label="Turn on background auto-analysis"]',
+      ),
     ).not.toBeNull();
     expect(container.querySelector('details.ka-analysis-help').open).toBe(
       false,
@@ -580,12 +582,14 @@ describe('analysis folder loading', () => {
         counts: { queued: 9 },
       });
       await act(async () => jest.advanceTimersByTime(2_000));
-      expect(container.textContent).toContain('Automatic preparation: Enabled');
+      expect(container.textContent).toContain('Background auto-analysis: On');
       expect(container.textContent).toContain(
         'Enhanced worker: Not configured',
       );
       expect(
-        container.querySelector('[aria-label="Pause after active tracks"]'),
+        container.querySelector(
+          '[aria-label="Turn off background auto-analysis"]',
+        ),
       ).not.toBeNull();
       expect(
         container.querySelector('[aria-label="Data freshness"]').textContent,
@@ -920,11 +924,23 @@ describe('analysis folder loading', () => {
     expect.hasAssertions();
     await render();
     const resume = container.querySelector(
-      '[aria-label="Resume automatic preparation"]',
+      '[aria-label="Turn on background auto-analysis"]',
+    );
+    expect(
+      container.querySelector('.ka-current-analysis .ka-automatic-details'),
+    ).toBeNull();
+    expect(
+      resume
+        .closest('.ka-automatic-details')
+        .parentElement.classList.contains('ka-root'),
+    ).toBe(true);
+    expect(resume.closest('.ka-automatic-details').open).toBe(false);
+    expect(resume.closest('.ka-automatic-details').textContent).toContain(
+      'does not pause or resume a scan you start manually.',
     );
     expect(resume.disabled).toBe(false);
     expect(pausePreparation).not.toHaveBeenCalled();
-    expect(resume.title).toContain('all automatic jobs');
+    expect(resume.title).toContain('background jobs');
     getPreparationStatus.mockResolvedValue({
       paused: false,
       counts: { queued: 3 },
@@ -932,7 +948,9 @@ describe('analysis folder loading', () => {
     await act(async () => resume.click());
     expect(pausePreparation).toHaveBeenCalledWith(false);
     expect(
-      container.querySelector('[aria-label="Pause after active tracks"]'),
+      container.querySelector(
+        '[aria-label="Turn off background auto-analysis"]',
+      ),
     ).not.toBeNull();
     expect(analysisApi.startScan).not.toHaveBeenCalled();
   });
@@ -949,13 +967,15 @@ describe('analysis folder loading', () => {
     });
     await act(async () =>
       container
-        .querySelector('[aria-label="Pause after active tracks"]')
+        .querySelector('[aria-label="Turn off background auto-analysis"]')
         .click(),
     );
     expect(pausePreparation).toHaveBeenCalledWith(true);
     expect(analysisApi.cancelScan).not.toHaveBeenCalled();
     expect(
-      container.querySelector('[aria-label="Resume automatic preparation"]'),
+      container.querySelector(
+        '[aria-label="Turn on background auto-analysis"]',
+      ),
     ).not.toBeNull();
     expect(
       container.querySelector('[aria-label="Stop analysis"]').disabled,
@@ -982,7 +1002,9 @@ describe('analysis folder loading', () => {
     expect(analysisApi.startScan).not.toHaveBeenCalled();
     expect(container.querySelector('[aria-label="Stop analysis"]')).toBeNull();
     expect(
-      container.querySelector('[aria-label="Resume automatic preparation"]'),
+      container.querySelector(
+        '[aria-label="Turn on background auto-analysis"]',
+      ),
     ).not.toBeNull();
   });
   it('finishes every remaining track in the current scan before stopping', async () => {
@@ -1005,8 +1027,9 @@ describe('analysis folder loading', () => {
       expect(stop.disabled).toBe(true);
       expect(stop.textContent).toBe('Finishing scan…');
       expect(
-        container.querySelector('[aria-label="Resume automatic preparation"]')
-          .disabled,
+        container.querySelector(
+          '[aria-label="Turn on background auto-analysis"]',
+        ).disabled,
       ).toBe(true);
       expect(
         container.querySelector('[aria-label="Current scan progress"]')
@@ -1047,8 +1070,9 @@ describe('analysis folder loading', () => {
           .textContent,
       ).toContain('Succeeded: 3');
       expect(
-        container.querySelector('[aria-label="Resume automatic preparation"]')
-          .disabled,
+        container.querySelector(
+          '[aria-label="Turn on background auto-analysis"]',
+        ).disabled,
       ).toBe(false);
       expect(analysisApi.startScan).not.toHaveBeenCalled();
     } finally {
@@ -1118,7 +1142,7 @@ describe('analysis folder loading', () => {
         .textContent,
     ).toContain('Finished');
     expect(
-      container.querySelector('[aria-label="Resume automatic preparation"]')
+      container.querySelector('[aria-label="Turn on background auto-analysis"]')
         .disabled,
     ).toBe(false);
   });
@@ -1139,8 +1163,9 @@ describe('analysis folder loading', () => {
       container.querySelector('[aria-label="Stop analysis"]').disabled,
     ).toBe(false);
     expect(
-      container.querySelector('[aria-label="Pause after active tracks"]')
-        .disabled,
+      container.querySelector(
+        '[aria-label="Turn off background auto-analysis"]',
+      ).disabled,
     ).toBe(false);
   });
   it('shows select-all progress and allows cancellation without committing a partial selection', async () => {
@@ -1218,7 +1243,9 @@ describe('analysis folder loading', () => {
       container.querySelector('[aria-label="Preparation queue status"]'),
     ).toBeNull();
     expect(
-      container.querySelector('[aria-label="Pause after active tracks"]'),
+      container.querySelector(
+        '[aria-label="Turn off background auto-analysis"]',
+      ),
     ).not.toBeNull();
     expect(
       container.querySelector('[aria-label="Stop analysis"]').disabled,
@@ -1752,7 +1779,7 @@ describe('analysis folder loading', () => {
     expect(container.textContent).toContain('13 remaining');
     expect(container.textContent).toContain('Some tracks need attention');
     expect(container.textContent).toContain('beat and downbeat grids');
-    expect(container.textContent).toContain('Automatic preparation: Paused');
+    expect(container.textContent).toContain('Background auto-analysis: Off');
     expect(container.textContent).toContain('Enhanced worker: Available');
   });
 });

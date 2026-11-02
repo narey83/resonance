@@ -1541,3 +1541,21 @@ The temporary preview server was stopped; the persistent dev frontend remains li
 For future backend replacements during a scan, end the scan gracefully first and
 wait for admitted tracks to finish before restarting. The user specifically
 requested this sequencing after this activation.
+
+
+## Background auto-analysis settings separation — 2 November 2026
+
+Hot-reloaded the frontend without restarting the backend or changing the running
+scan. Background auto-analysis now has a separate collapsed panel below manual
+scan setup, outside Current analysis, with On/Off status and Turn on/Turn off
+controls. Help text distinguishes background jobs from manual scan pause/resume.
+The setting itself was not changed.
+
+Dev-laptop verification: 55 Analysis tests, ESLint, Prettier, 11 dependency-security
+checks, and authenticated desktop/phone browser interactions and inspected
+screenshots. Browser checks expanded/collapsed the panel and switched tabs without
+analysis mutations; the real scan continued running. Existing frontend service PID
+1228101 and backend PID 1258627 were retained. Evidence:
+`/home/narey/resonance-builds/analysis-controls-20261102/background-settings/`
+and `background-settings-tests.log` / `background-settings-security.log` in its
+parent. Development source remains the existing upload-folder-label snapshot.

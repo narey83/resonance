@@ -1723,7 +1723,7 @@ const Analysis = ({ viewState }) => {
                   className="ka-btn ka-btn--end hover-fx"
                   disabled={Boolean(scanControlBusy) || scanState.ending}
                   onClick={() => handleScanControl('end')}
-                  title="Finish the tracks already running, then end this scan and discard its remaining queue. Completed results are kept. Automatic analysis will stay paused."
+                  title="Finish the tracks already running, then end this scan and discard its remaining queue. Completed results are kept. Background auto-analysis will stay off."
                   type="button"
                 >
                   End scan
@@ -1874,7 +1874,7 @@ const Analysis = ({ viewState }) => {
                 role="status"
               >
                 {scanState.ending
-                  ? 'Finishing current tracks; the remaining scan queue will be discarded. Automatic analysis will stay paused.'
+                  ? 'Finishing current tracks; the remaining scan queue will be discarded. Background auto-analysis will stay off.'
                   : scanState.paused
                     ? 'Queue paused. Resume to continue the remaining tracks.'
                     : 'Finishing the tracks already being analysed, then pausing the queue.'}
@@ -1888,59 +1888,6 @@ const Analysis = ({ viewState }) => {
               Finishing this scan; automatic analysis will remain off.
             </p>
           )}
-          <details className="ka-automatic-details">
-            <summary>Automatic preparation settings</summary>
-            <div className="ka-analysis-context">
-              <span>
-                <strong>Automatic preparation:</strong>{' '}
-                {preparation
-                  ? preparation.paused
-                    ? 'Paused'
-                    : 'Enabled'
-                  : 'Checking…'}
-              </span>
-              <div className="ka-preparation-actions">
-                <button
-                  aria-label={
-                    preparation?.paused
-                      ? 'Resume automatic preparation'
-                      : 'Pause after active tracks'
-                  }
-                  className="ka-btn ka-btn--sm hover-fx"
-                  disabled={
-                    !preparation || Boolean(preparationBusy) || stopRequested
-                  }
-                  onClick={() =>
-                    handlePreparationAction(
-                      preparation.paused ? 'resume' : 'pause',
-                    )
-                  }
-                  title={
-                    preparation?.paused
-                      ? 'Resume all automatic jobs, regardless of the selected scan mode.'
-                      : 'Pause after active tracks finish. Queued tracks are kept.'
-                  }
-                  type="button"
-                >
-                  {preparationBusy === 'resume'
-                    ? 'Resuming…'
-                    : preparationBusy === 'pause'
-                      ? 'Pausing…'
-                      : preparation?.paused
-                        ? 'Resume'
-                        : 'Pause'}
-                </button>
-              </div>
-              <span>
-                <strong>Enhanced worker:</strong>{' '}
-                {preparation
-                  ? preparation.enhancedEnabled
-                    ? 'Available'
-                    : 'Not configured'
-                  : 'Checking…'}
-              </span>
-            </div>
-          </details>
         </div>
       </section>
 
@@ -1986,6 +1933,57 @@ const Analysis = ({ viewState }) => {
         selectedCount={selected.size}
         viewState={viewState}
       />
+
+      <details className="ka-automatic-details">
+        <summary>
+          <strong>Background auto-analysis:</strong>{' '}
+          {preparation ? (preparation.paused ? 'Off' : 'On') : 'Checking…'}
+        </summary>
+        <p className="ka-background-help">
+          Automatically analyses tracks in the background. This setting does not
+          pause or resume a scan you start manually.
+        </p>
+        <div className="ka-analysis-context">
+          <div className="ka-preparation-actions">
+            <button
+              aria-label={
+                preparation?.paused
+                  ? 'Turn on background auto-analysis'
+                  : 'Turn off background auto-analysis'
+              }
+              className="ka-btn ka-btn--sm hover-fx"
+              disabled={
+                !preparation || Boolean(preparationBusy) || stopRequested
+              }
+              onClick={() =>
+                handlePreparationAction(preparation.paused ? 'resume' : 'pause')
+              }
+              title={
+                preparation?.paused
+                  ? 'Turn on background jobs, regardless of the selected scan mode.'
+                  : 'Turn off background jobs after active tracks finish. Queued tracks are kept.'
+              }
+              type="button"
+            >
+              {preparationBusy === 'resume'
+                ? 'Turning on…'
+                : preparationBusy === 'pause'
+                  ? 'Turning off…'
+                  : preparation?.paused
+                    ? 'Turn on'
+                    : 'Turn off'}
+            </button>
+          </div>
+          <span>
+            <strong>Enhanced worker:</strong>{' '}
+            {preparation
+              ? preparation.enhancedEnabled
+                ? 'Available'
+                : 'Not configured'
+              : 'Checking…'}
+          </span>
+        </div>
+      </details>
 
       {inspectedTrack && (
         <AnalysisDetails

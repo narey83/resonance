@@ -1180,7 +1180,8 @@
 .ka-current-analysis { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
 .ka-current-analysis .ka-scan-progress { padding: 0; }
 .ka-current-analysis .ka-progress-bar-wrap { max-width: none; min-width: 200px; }
-.ka-automatic-details { margin-top: 14px; }
+.ka-automatic-details { margin: 16px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.ka-background-help { margin: 10px 0; color: var(--text-muted); font-size: 12px; }
 .ka-automatic-details .ka-analysis-context { padding-top: 10px; }
 .ka-scan-errors { margin-bottom: 12px; color: var(--danger); }
 .ka-idle-status, .ka-stop-status { font-size: 12px; color: var(--text-muted); margin: 8px 0; }
@@ -1196,7 +1197,6 @@
 .ka-current-analysis { margin-top: 10px; padding-top: 10px; }
 .ka-current-analysis .ka-section-title { font-size: 13px; margin-bottom: 6px; }
 .ka-current-analysis .ka-scan-progress:empty { display: none; }
-.ka-current-analysis .ka-automatic-details { margin-top: 8px; }
 
 .ka-current-header { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; margin-bottom: 10px; }
 .ka-current-analysis .ka-current-header .ka-section-title { margin: 0; }
