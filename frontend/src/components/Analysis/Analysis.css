@@ -1212,3 +1212,50 @@
 /* Tab panels share one persistent analysis workspace and its scroll surface. */
 .ta-analysis-workspace .ka-root > :is(.ka-overview, .ka-panel, .ka-toolbar, .ka-header-row, .ka-track-list, .ka-pagination, .ka-load-error, .ka-analysis-details) { margin-inline: 0; }
 .ta-analysis-workspace .ka-root > .ka-overview { margin-top: 0; }
+
+
+/* Preparation workspace: clear hierarchy, quiet surfaces and consistent spacing. */
+.ta-analysis-workspace .ka-root--overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 18px; }
+.ta-analysis-workspace .ka-overview { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; overflow: visible; }
+.ka-overview-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 4px 0 2px; }
+.ka-eyebrow { color: var(--accent); text-transform: uppercase; letter-spacing: .12em; font-weight: 650; font-size: 10px; }
+.ka-overview-heading .ka-section-title { margin: 5px 0 6px; font-size: 25px; letter-spacing: -.035em; font-weight: 700; }
+.ka-overview-heading p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
+.ka-overview-heading .ka-btn { flex-shrink: 0; padding-inline: 15px; }
+.ta-analysis-workspace .ka-readiness { gap: 14px; }
+.ta-analysis-workspace .ka-readiness .ka-stat { display: flex; flex-direction: column; gap: 12px; padding: 22px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 3px 12px color-mix(in srgb, var(--text-primary) 3%, transparent); }
+.ta-analysis-workspace .ka-readiness .ka-stat-label { order: -1; display: flex; align-items: center; gap: 9px; font-size: 12px; font-weight: 600; letter-spacing: 0; color: var(--text-secondary); }
+.ta-analysis-workspace .ka-readiness .ka-stat-label svg { color: var(--accent); }
+.ta-analysis-workspace .ka-readiness .ka-stat-value { font-size: 36px; line-height: 1.15; font-weight: 650; letter-spacing: -.04em; color: var(--text-primary); }
+.ka-stat-description { color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.ka-readiness progress { appearance: none; width: 100%; height: 5px; border: 0; border-radius: 10px; overflow: hidden; background: var(--bg-elevated); margin-top: 2px; }
+.ka-readiness progress::-webkit-progress-bar { background: var(--bg-elevated); }
+.ka-readiness progress::-webkit-progress-value { background: var(--accent); border-radius: 10px; }
+.ka-readiness progress::-moz-progress-bar { background: var(--accent); border-radius: 10px; }
+.ta-analysis-workspace .ka-freshness-details { padding: 0 2px; font-size: 11px; }
+.ta-analysis-workspace .ka-coverage-details { padding: 15px 18px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 10px; }
+.ta-analysis-workspace .ka-coverage-details > summary { color: var(--text-secondary); font-weight: 600; }
+.ta-analysis-workspace :is(.ka-automatic-details, .ka-background-queue) { align-self: start; min-width: 0; margin: 0; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); }
+.ta-analysis-workspace :is(.ka-automatic-details, .ka-background-queue) > summary { cursor: pointer; color: var(--text-primary); font-size: 13px; font-weight: 600; line-height: 1.6; }
+.ta-analysis-workspace :is(.ka-automatic-details, .ka-background-queue) > summary::marker { color: var(--text-muted); }
+.ta-analysis-workspace :is(.ka-automatic-details, .ka-background-queue) summary small { display: block; margin-top: 6px; color: var(--text-muted); font-size: 12px; font-weight: 400; }
+.ka-background-state { display: inline-block; margin-left: 5px; border: 1px solid var(--border); border-radius: 6px; padding: 0 7px; color: var(--text-secondary); background: var(--bg-primary); font-size: 11px; }
+.ta-analysis-workspace .ka-root > .ka-panel { margin-bottom: 18px; border-radius: 12px; background: var(--bg-surface); overflow: hidden; }
+.ta-analysis-workspace .ka-root > .ka-panel .ka-panel-header { padding: 14px 18px; background: transparent; border-bottom: 1px solid var(--border); font-size: 13px; }
+.ta-analysis-workspace .ka-root > .ka-panel .ka-panel-body { padding: 14px 18px; }
+.ta-analysis-workspace .ka-toolbar { padding: 16px; }
+.ta-analysis-workspace .ka-folder-icon { background: color-mix(in srgb, var(--accent) 6%, var(--bg-surface)); border-color: color-mix(in srgb, var(--accent) 15%, var(--border)); }
+.ta-analysis-workspace .ka-search { background: var(--bg-primary); border-radius: 8px; min-height: 36px; }
+@media (max-width: 700px) {
+  .ta-analysis-workspace .ka-root--overview { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .ka-overview-heading { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .ka-overview-heading .ka-section-title { font-size: 23px; }
+  .ta-analysis-workspace .ka-readiness { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .ta-analysis-workspace .ka-readiness .ka-stat { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 7px 12px; padding: 16px; }
+  .ta-analysis-workspace .ka-readiness .ka-stat-label { grid-column: 1; order: 0; }
+  .ta-analysis-workspace .ka-readiness .ka-stat-value { grid-column: 2; grid-row: 1 / 3; font-size: 28px; }
+  .ka-readiness .ka-stat-description { grid-column: 1; font-size: 11px; }
+  .ka-readiness progress { grid-column: 1 / -1; }
+  .ta-analysis-workspace :is(.ka-automatic-details, .ka-background-queue) { padding: 16px; }
+}
+.ta-analysis-workspace .ka-background-queue > summary { padding: 0; }

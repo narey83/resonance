@@ -146,13 +146,36 @@ const enhancedFeatureValue = (coverage, feature) => {
   return count;
 };
 
-const MetricCard = ({ label, title, value }) => (
+const MetricCard = ({
+  description,
+  icon: Icon,
+  label,
+  progress,
+  title,
+  value,
+}) => (
   <div
     className="ka-stat"
     title={title}
   >
     <span className="ka-stat-value">{formatCount(value) ?? '—'}</span>
-    <span className="ka-stat-label">{label}</span>
+    <span className="ka-stat-label">
+      {Icon && (
+        <Icon
+          aria-hidden="true"
+          size={18}
+        />
+      )}
+      {label}
+    </span>
+    {description && <span className="ka-stat-description">{description}</span>}
+    {typeof progress === 'number' && (
+      <progress
+        aria-label={`${label} coverage`}
+        max={100}
+        value={progress}
+      />
+    )}
   </div>
 );
 
@@ -692,6 +715,7 @@ const FolderGroup = ({
 // eslint-disable-next-line complexity
 const Analysis = ({
   activeView = 'all',
+  onNavigate,
   onScanState,
   statusHost,
   viewState,
@@ -1760,24 +1784,63 @@ const Analysis = ({
 
   return (
     <div
-      className={`ka-root${expandedFolders.size > 0 ? ' ka-root--expanded' : ''}`}
+      className={`ka-root ka-root--${activeView}${expandedFolders.size > 0 ? ' ka-root--expanded' : ''}`}
       ref={scrollRef}
     >
       {statusHost ? createPortal(currentAnalysis, statusHost) : currentAnalysis}
       {(activeView === 'all' || activeView === 'overview') && (
         <section className="ka-overview">
-          <h2 className="ka-section-title">Library readiness</h2>
+          <div className="ka-overview-heading">
+            <div>
+              <span className="ka-eyebrow">Preparation overview</span>
+              <h2 className="ka-section-title">Library readiness</h2>
+              <p>See what’s ready, then choose what to analyse next.</p>
+            </div>
+            {onNavigate && (
+              <button
+                className="ka-btn ka-btn--primary"
+                onClick={() => onNavigate('analysis')}
+                type="button"
+              >
+                Choose tracks{' '}
+                <ChevronRight
+                  aria-hidden="true"
+                  size={16}
+                />
+              </button>
+            )}
+          </div>
           <div className="ka-readiness">
             <MetricCard
+              description="Tracks in your library"
+              icon={Music}
               label="Total tracks"
               value={coverage.total}
             />
             <MetricCard
+              description="BPM, key, waveform & loudness"
+              icon={CheckCircle2}
               label="Basic ready"
+              progress={
+                coverage.total > 0 && typeof coverage.complete === 'number'
+                  ? Math.min(100, (coverage.complete / coverage.total) * 100)
+                  : undefined
+              }
               value={coverage.complete}
             />
             <MetricCard
+              description="Grids, vocals, structure & more"
+              icon={AudioWaveform}
               label="Enhanced ready"
+              progress={
+                coverage.total > 0 &&
+                typeof stats?.enhanced?.complete === 'number'
+                  ? Math.min(
+                      100,
+                      (stats.enhanced.complete / coverage.total) * 100,
+                    )
+                  : undefined
+              }
               value={stats?.enhanced?.complete}
             />
           </div>
@@ -1954,7 +2017,14 @@ const Analysis = ({
           <details className="ka-automatic-details">
             <summary>
               <strong>Background auto-analysis:</strong>{' '}
-              {preparation ? (preparation.paused ? 'Off' : 'On') : 'Checking…'}
+              <span className="ka-background-state">
+                {preparation
+                  ? preparation.paused
+                    ? 'Off'
+                    : 'On'
+                  : 'Checking…'}
+              </span>
+              <small>Prepare new music automatically in the background.</small>
             </summary>
             <p className="ka-background-help">
               Automatically analyses tracks in the background. This setting does
@@ -2010,7 +2080,10 @@ const Analysis = ({
               setBackgroundQueueOpen(event.currentTarget.open)
             }
           >
-            <summary>Background queue and metadata enrichment</summary>
+            <summary>
+              <span>Background queue and metadata enrichment</span>
+              <small>Review waiting tracks and metadata updates.</small>
+            </summary>
             {backgroundQueueOpen && (
               <BackgroundAnalysisQueue
                 onRefresh={() => loadSummary(true, true)}

@@ -2003,3 +2003,26 @@ keyboard navigation, no horizontal overflow and no scan mutations. The real sign
 Administrator browser verified Overview, Analyse tracks, real failure records,
 Waveform Inspector and shared progress/controls; mobile Overview fit at 390px.
 The temporary viewport override was reset and the page left on Overview.
+
+## Track Analysis visual refinement — 2 November 2026
+
+Refined the four-tab workspace with a lighter shared scan strip, softer navigation,
+consistent gutters, rounded content cards and stronger typography. Overview now
+has a heading, a Choose tracks action, icon-labelled totals and measured coverage
+bars; background settings form matching cards. Mobile uses compact readiness rows
+and a two-by-two tab grid. Failure dates, refresh/paging buttons and failure cards
+now follow the application theme. Waveform search and its empty state use matching
+surfaces. Fixed shared-shell padding/background conflicts and scan text contrast
+in dark mode. The new navigation action only changes tabs; it starts no analysis.
+
+Delivered five application source/style files through the existing laptop HMR
+watcher, plus the updated test. ESLint passed; 66 regression tests and 11 dependency
+security tests passed; npm audit reported zero vulnerabilities. Development
+compilation completed with the existing 14 source-map warnings. No dependencies,
+private configuration, scan controls, backups or backend/service restarts changed.
+
+Browser verification covers all four tabs at 1440px and 390px in light and dark
+fixtures, including scan text colour, no error overlay, keyboard/tab persistence,
+search retention and no analysis mutations. The signed-in Administrator browser
+also verified live readiness, real failure details, waveform search and the phone
+layout. Temporary viewport overrides were reset; the page was left on Overview.

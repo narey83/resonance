@@ -1,6 +1,6 @@
 .ka-failures {
   margin: 14px 0;
-  border: 1px solid var(--border-color, #d9e2e8);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
 }
@@ -24,7 +24,7 @@
 }
 .ka-failure-list > li {
   padding: 12px;
-  border: 1px solid var(--border-color, #d9e2e8);
+  border: 1px solid var(--border);
   border-radius: 6px;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -47,4 +47,26 @@
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.ta-root .ka-failures { margin: 0; padding: 22px; border-radius: 12px; background: var(--bg-surface); }
+.ka-failures > .ka-section-title { font-size: 22px; letter-spacing: -.025em; }
+.ka-failures > div > p { color: var(--text-secondary); max-width: 720px; line-height: 1.6; }
+.ka-failures label { color: var(--text-secondary); font-weight: 500; font-size: 12px; }
+.ka-failures input, .ka-failures button { font: inherit; color: var(--text-primary); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; min-height: 36px; padding: 7px 11px; }
+.ka-failures input { margin: 4px 8px; }
+.ka-failures button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.ka-failure-list { margin: 20px 0; gap: 10px; }
+.ka-failure-list > li { padding: 18px; border-radius: 10px; border-left: 3px solid color-mix(in srgb, var(--danger, #b42318) 55%, var(--border)); background: color-mix(in srgb, var(--bg-primary) 30%, var(--bg-surface)); }
+.ka-failure-list > li > strong { font-size: 14px; }
+.ka-failure-list > li > span { color: var(--text-secondary); opacity: 1; margin-top: 6px; font-size: 11px; }
+.ka-failure-path { color: var(--text-muted); opacity: 1; margin: 8px 0 12px; }
+.ka-failure-list details { color: var(--text-secondary); margin-top: 12px; font-size: 12px; }
+.ka-failure-list details summary { cursor: pointer; }
+.ka-failure-pages { padding-top: 14px; border-top: 1px solid var(--border); justify-content: flex-end; font-size: 12px; }
+@media (max-width: 600px) {
+  .ta-root .ka-failures { padding: 16px; }
+  .ka-failures label { display: block; margin-bottom: 8px; }
+  .ka-failures input { margin-right: 0; max-width: 100%; }
+  .ka-failure-pages { justify-content: flex-start; }
 }

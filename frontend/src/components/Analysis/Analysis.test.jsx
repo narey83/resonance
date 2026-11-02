@@ -132,6 +132,30 @@ describe('analysis folder loading', () => {
     container.remove();
   });
 
+  it('shows measured coverage and opens track selection from the overview', async () => {
+    expect.hasAssertions();
+    musicLibraryApi.getAnalysisStats.mockResolvedValue({
+      total: 4,
+      complete: 3,
+      enhanced: { complete: 1, features: {} },
+    });
+    const onNavigate = jest.fn();
+    await render({ activeView: 'overview', onNavigate });
+    expect(
+      container.querySelector('[aria-label="Basic ready coverage"]').value,
+    ).toBe(75);
+    expect(
+      container.querySelector('[aria-label="Enhanced ready coverage"]').value,
+    ).toBe(25);
+    act(() =>
+      [...container.querySelectorAll('button')]
+        .find((button) => button.textContent.includes('Choose tracks'))
+        .click(),
+    );
+    expect(onNavigate).toHaveBeenCalledWith('analysis');
+    expect(analysisApi.startScan).not.toHaveBeenCalled();
+  });
+
   it('separates views while keeping scan controls and selected folders', async () => {
     expect.hasAssertions();
     analysisApi.getScanState.mockResolvedValue({

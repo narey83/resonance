@@ -35,69 +35,79 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
-}
-
-.ta-tabs {
-  display: flex;
-  gap: 2px;
-  padding: 8px 16px 0;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-elevated);
-  flex-shrink: 0;
-}
-
-.ta-tab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: none;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  border-radius: 4px 4px 0 0;
-  transition: color 0.15s, border-color 0.15s;
-  margin-bottom: -1px;
-}
-
-.ta-tab:hover {
-  color: var(--text-primary);
-}
-
-.ta-tab--active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
   background: var(--bg-primary);
 }
-
-.ta-panel {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+.ta-scan-status {
+  flex-shrink: 0;
+  margin: 20px 24px 14px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--text-primary) 3%, transparent);
 }
-
-.ta-analysis-workspace { flex: 1; min-height: 0; overflow: hidden; }
-.ta-analysis-workspace[hidden] { display: none; }
-.ta-analysis-workspace > .ka-root { padding-inline: var(--page-gutter); }
-.ta-analysis-workspace .ka-overview { margin-inline: 0; border: 0; }
-.ta-scan-status { flex-shrink: 0; padding: 10px var(--page-gutter); border-bottom: 1px solid var(--border); background: var(--bg-surface); }
 .ta-scan-status:empty { display: none; }
 .ta-scan-status .ka-current-analysis { margin: 0; padding: 0; border: 0; }
-.ta-scan-status .ka-current-header { margin-bottom: 6px; }
-.ta-scan-status .ka-progress-bar-wrap { flex: 1; }
-.ta-scan-status .ka-enhanced-status { margin: 6px 0; }
-.ta-failure-count { border-radius: 10px; padding: 1px 6px; background: var(--bg-surface); color: var(--danger, #b42318); font-size: 11px; }
+.ta-scan-status .ka-current-header { margin: 0; }
+.ta-scan-status .ka-current-header .ka-section-title { color: var(--text-muted); font-size: 11px; font-weight: 600; }
+.ta-scan-status .ka-scan-progress { margin-top: 4px; }
+.ta-scan-status .ka-progress-bar-wrap { flex: 1; gap: 8px; }
+.ta-scan-status .ka-progress-bar-wrap > strong { font-size: 14px; font-weight: 650; }
+.ta-scan-status .ka-progress-bar { display: block; flex: none; height: 4px; background: var(--bg-elevated); }
+.ta-scan-status .ka-progress-chip { font-size: 11px; }
+.ta-scan-status .ka-progress-chip--done { color: var(--text-secondary); background: transparent; border-color: transparent; }
+.ta-scan-status .ka-enhanced-status { margin: 8px 0; }
+.ta-tabs { display: flex; flex-shrink: 0; flex-wrap: wrap; gap: 6px; margin: 0 24px 18px; padding: 0; border: 0; background: transparent; }
+.ta-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 16px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.ta-tab:hover { background: color-mix(in srgb, var(--bg-surface) 65%, transparent); color: var(--text-primary); }
+.ta-tab--active { color: var(--accent); background: var(--bg-surface); border-color: var(--border); box-shadow: 0 2px 5px color-mix(in srgb, var(--text-primary) 4%, transparent); }
+.ta-tab:focus-visible, .ta-root button:focus-visible, .ta-root input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.ta-failure-count { border-radius: 6px; padding: 1px 6px; background: color-mix(in srgb, var(--danger, #b42318) 9%, var(--bg-surface)); color: var(--danger, #b42318); font-size: 11px; }
+.ta-panel { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.ta-analysis-workspace { flex: 1; min-height: 0; overflow: hidden; }
+.ta-analysis-workspace[hidden] { display: none; }
+.ta-analysis-workspace > .ka-root { padding: 0 24px 24px; background: transparent; }
+.ta-analysis-workspace .ka-overview { margin: 0; border: 0; border-radius: 0; background: transparent; }
+.ta-root .ka-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border-radius: 8px; min-height: 36px; font-weight: 600; box-shadow: none; }
+.ta-root .ka-btn--primary { background: var(--accent); color: var(--on-accent, var(--bg-surface)); border-color: var(--accent); }
+.ta-root .ka-btn--end { background: transparent; }
 @media (max-width: 600px) {
-  .ta-tabs { flex-wrap: wrap; padding: 4px 8px 0; gap: 0; }
-  .ta-tab { padding: 8px; font-size: 12px; }
-  .ta-scan-status { padding: 8px 12px; }
+  .ta-scan-status { margin: 12px 12px 10px; padding: 12px; }
   .ta-scan-status .ka-current-header { gap: 6px; }
   .ta-scan-status .ka-scan-actions { gap: 6px; }
-  .ta-scan-status .ka-btn { font-size: 11px; padding: 5px 8px; }
-  .ta-scan-status .ka-progress-stats { gap: 3px 6px; }
+  .ta-scan-status .ka-btn { font-size: 11px; padding: 5px 8px; min-height: 32px; }
+  .ta-scan-status .ka-progress-stats { gap: 3px 5px; }
+  .ta-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 0 12px 14px; }
+  .ta-tab { padding: 9px 6px; gap: 6px; font-size: 12px; }
+  .ta-analysis-workspace > .ka-root { padding: 0 12px 20px; }
 }
+@media (prefers-reduced-motion: reduce) { .ta-tab { transition: none; } }
+
+.ta-panel > .wa-root { min-height: 0; overflow-y: auto; padding: 0 24px 24px; }
+.ta-root .wa-picker-input { min-height: 44px; border-radius: 10px; background: var(--bg-surface); border-color: var(--border); }
+.ta-root .wa-empty { margin-top: 8px; min-height: 240px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); }
+.ta-root .wa-empty > svg { color: var(--accent); opacity: .75; }
+.ta-root .wa-empty p { color: var(--text-secondary); }
+@media (max-width: 600px) { .ta-panel > .wa-root { padding: 0 12px 20px; } }
+
+/* Override the shared workspace shell so only content cards carry a surface. */
+.dj-workspace .ta-root { padding: 0; background: var(--bg-primary); }
+.dj-workspace .ta-root .ta-tabs { padding: 0; border: 0; background: transparent; }
+.dj-workspace .ta-root .ta-panel { background: transparent; }
+.ta-scan-status, .ta-scan-status .ka-progress-bar-wrap > strong, .ta-scan-status .ka-progress-stats { color: var(--text-primary); }

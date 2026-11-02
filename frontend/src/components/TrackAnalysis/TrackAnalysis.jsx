@@ -136,6 +136,7 @@ const TrackAnalysis = () => {
         >
           <Analysis
             activeView={activeTab}
+            onNavigate={selectTab}
             onScanState={setScanState}
             statusHost={statusHost}
             viewState={analysisView}
