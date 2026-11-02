@@ -27,10 +27,10 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { toast } from '../../lib/activityNotices';
 import { getStatus } from '../../lib/metadataLookup';
 import { Loader2 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
-import { toast } from 'react-toastify';
 
 // Polls metadata enrichment and renders its active progress in the status strip.
 // The user is also made

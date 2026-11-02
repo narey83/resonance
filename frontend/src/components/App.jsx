@@ -33,7 +33,6 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import 'react-toastify/dist/ReactToastify.css';
 import './App.css';
 import './MusicWorkspace.css';
 import './PageLayout.css';
@@ -44,6 +43,7 @@ import {
 } from '../context/LibraryActivityContext';
 import { PlayerProvider, usePlayer } from '../context/PlayerContext';
 import { TagEditActivityProvider } from '../context/TagEditActivityContext';
+import { subscribeNotices } from '../lib/activityNotices';
 import * as applicationAPI from '../lib/application';
 import { applyBlockedUsers } from '../lib/blockedUsers';
 import * as chatAPI from '../lib/chat';
@@ -58,10 +58,7 @@ import { createApplicationHubConnection } from '../lib/hubFactory';
 import { createHubRetryLoop } from '../lib/hubRetryLoop';
 import { createMessageBadgeSync } from '../lib/messageBadgeSync';
 import * as networkAPI from '../lib/network';
-import {
-  formatNotification,
-  loadNotificationSettings,
-} from '../lib/notificationTypes';
+import { loadNotificationSettings } from '../lib/notificationTypes';
 import * as prefs from '../lib/prefs';
 import * as roomsAPI from '../lib/rooms';
 import { connect, disconnect } from '../lib/server';
@@ -138,7 +135,6 @@ import React, {
 } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
 import { Link, Redirect, Route, Switch, withRouter } from 'react-router-dom';
-import { toast, ToastContainer } from 'react-toastify';
 import { Button, Loader, Modal } from 'semantic-ui-react';
 
 // ── Small always-rendered helpers ────────────────────────────────────────────
@@ -386,45 +382,26 @@ const App = () => {
   notifSettingsRef.current = notificationSettings;
 
   // ── addNotification (stable ref pattern) ────────────────────────────────────
-  // Every live notification — hub pushes, blocked-user alerts — flows through
-  // here and is formatted by the same lib/notificationTypes table used for
-  // the persisted event log, so the bell panel and toasts never drift from it.
-  const addNotification = useCallback(
-    (
+  // Hub events and action feedback share the notification centre and preferences.
+  const addNotification = useCallback((type, data, { sound = false } = {}) => {
+    if (!notifSettingsRef.current[type]) return;
+    const notification = {
+      id: `${Date.now()}-${Math.random()}`,
       type,
       data,
-      {
-        skipToast = false,
-        sound = false,
-        toastId,
-        toastOptions = {},
-        toastType = 'info',
-      } = {},
-    ) => {
-      if (!notifSettingsRef.current[type]) return;
-      const notification = {
-        id: `${Date.now()}-${Math.random()}`,
-        type,
-        data,
-        timestamp: new Date(),
-        read: false,
-      };
-      setNotifications((previous) => [notification, ...previous].slice(0, 100));
-      if (sound) playMessageReceived();
-      if (!skipToast) {
-        const { sub, text } = formatNotification(type, data);
-        const message = sub ? `${text}: ${sub}` : text;
-        // A stable toastId collapses a burst of the same alert into one
-        // updating toast instead of stacking a new one per event — every
-        // event is still recorded in full in the bell panel regardless.
-        if (toastId && toast.isActive(toastId)) {
-          toast.update(toastId, { render: message });
-        } else {
-          toast[toastType](message, { toastId, ...toastOptions });
-        }
-      }
-    },
-    [],
+      timestamp: new Date(),
+      read: false,
+    };
+    setNotifications((previous) => [notification, ...previous].slice(0, 100));
+    if (sound) playMessageReceived();
+  }, []);
+
+  useEffect(
+    () =>
+      subscribeNotices((type, data) => {
+        addNotification(type, data);
+      }),
+    [addNotification],
   );
 
   const addNotificationRef = useRef(addNotification);
@@ -625,11 +602,7 @@ const App = () => {
     });
     hub.on('BLOCKED_USERS', applyBlockedUsers);
     hub.on('BLOCKED_USER_ALERT', ({ ip, username }) => {
-      addNotificationRef.current(
-        'UserBlocked',
-        { ip, username },
-        { toastId: 'blocked-user-alert', toastType: 'warn' },
-      );
+      addNotificationRef.current('UserBlocked', { ip, username });
     });
 
     hub.onreconnecting(() => {
@@ -690,28 +663,15 @@ const App = () => {
     });
 
     hub.on('SERVER_RESTARTING', () => {
-      if (toast.isActive('connection-status')) {
-        toast.update('connection-status', {
-          render: 'Server is restarting...',
-          type: toast.TYPE.WARNING,
-          autoClose: false,
-        });
-      } else {
-        toast.warn('Server is restarting...', {
-          toastId: 'connection-status',
-          autoClose: false,
-        });
-      }
+      addNotificationRef.current('ServerStatus', {
+        message: 'Server is restarting…',
+      });
     });
 
     hub.on('SERVER_READY', () => {
-      if (toast.isActive('connection-status')) {
-        toast.update('connection-status', {
-          render: 'Server is back online',
-          type: toast.TYPE.SUCCESS,
-          autoClose: 4_000,
-        });
-      }
+      addNotificationRef.current('ServerStatus', {
+        message: 'Server is back online',
+      });
     });
 
     hub.on('SESSION_REVOKED', async (revokedIds) => {
@@ -742,6 +702,7 @@ const App = () => {
 
     const load = async () => {
       await prefs.load();
+      if (!cancelled) setNotificationSettings(loadNotificationSettings());
 
       const savedTheme = prefs.get('resonance-theme', null);
       if (!cancelled && savedTheme) setTheme(savedTheme);
@@ -762,7 +723,15 @@ const App = () => {
           const loaded = events
             .map((e) => notificationFromEventRecord(e, lastReadAt))
             .filter((n) => n && notifSettingsRef.current[n.type] !== false);
-          setNotifications(loaded);
+          // Keep action feedback received while the event history was loading.
+          setNotifications((previous) =>
+            [
+              ...previous.filter(
+                (n) => n.type.startsWith('Action') || n.type === 'ServerStatus',
+              ),
+              ...loaded,
+            ].slice(0, 100),
+          );
         }
       } catch {
         /* silently ignore */
@@ -1638,18 +1607,6 @@ const App = () => {
               settings={notificationSettings}
             />
           )}
-
-          <ToastContainer
-            autoClose={5_000}
-            closeOnClick
-            draggable={false}
-            hideProgressBar={false}
-            newestOnTop
-            pauseOnFocusLoss
-            pauseOnHover
-            position="bottom-right"
-            rtl={false}
-          />
         </TagEditActivityProvider>
       </PlayerProvider>
     </LibraryActivityProvider>

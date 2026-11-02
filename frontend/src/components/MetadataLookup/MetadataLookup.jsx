@@ -28,6 +28,7 @@
 // </copyright>
 
 import './MetadataLookup.css';
+import { toast } from '../../lib/activityNotices';
 import { getStatus, runNow, stopNow } from '../../lib/metadataLookup';
 import MetadataLookupActivity from './MetadataLookupActivity';
 import {
@@ -41,7 +42,6 @@ import {
   Square,
 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
-import { toast } from 'react-toastify';
 
 const PROVIDER_LABEL = {
   musicbrainz: 'MusicBrainz',

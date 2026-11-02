@@ -1,8 +1,8 @@
 import { rootUrl } from '../config';
+import { toast } from '../lib/activityNotices';
 import { getToken, isAdmin } from '../lib/token';
 import { Wrench } from 'lucide-react';
 import React, { useState } from 'react';
-import { toast } from 'react-toastify';
 
 const MaintenanceButton = ({
   className = 'status-strip-btn status-strip-btn--label',

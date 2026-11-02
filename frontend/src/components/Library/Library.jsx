@@ -40,6 +40,7 @@ import useDebounce from '../../hooks/useDebounce';
 import useLibraryHomeData, {
   HOME_RECENT_ALBUM_LIMIT,
 } from '../../hooks/useLibraryHomeData';
+import { toast } from '../../lib/activityNotices';
 import { createMixtapesHubConnection } from '../../lib/hubFactory';
 import {
   djQuery,
@@ -152,7 +153,6 @@ import { createPortal } from 'react-dom';
 // eslint-disable-next-line import/no-named-as-default
 import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
 import { Link, useHistory, useLocation } from 'react-router-dom';
-import { toast } from 'react-toastify';
 import { v4 as uuidv4 } from 'uuid';
 
 // ── Constants ─────────────────────────────────────────────────────────────────

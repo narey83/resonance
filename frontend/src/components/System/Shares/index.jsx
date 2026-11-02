@@ -33,13 +33,13 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { toast } from '../../../lib/activityNotices';
 import * as sharesLibrary from '../../../lib/shares';
 import { LoaderSegment, ShrinkableButton, Switch } from '../../Shared';
 import ContentsModal from './ContentsModal';
 import ExclusionTable from './ExclusionTable';
 import ShareTable from './ShareTable';
 import React, { useEffect, useState } from 'react';
-import { toast } from 'react-toastify';
 
 const ScanButton = ({ rescan, scanPending, working }) => (
   <ShrinkableButton

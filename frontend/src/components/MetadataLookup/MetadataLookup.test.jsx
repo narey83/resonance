@@ -10,7 +10,7 @@ jest.mock('../../lib/metadataLookup', () => ({
   runNow: jest.fn(),
   stopNow: jest.fn(),
 }));
-jest.mock('react-toastify', () => ({
+jest.mock('../../lib/activityNotices', () => ({
   toast: { info: jest.fn(), error: jest.fn() },
 }));
 

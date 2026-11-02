@@ -34,6 +34,7 @@
 // </copyright>
 
 import './Search.css';
+import { toast } from '../../lib/activityNotices';
 import { createSearchHubConnection } from '../../lib/hubFactory';
 import { createHubRetryLoop } from '../../lib/hubRetryLoop';
 import * as library from '../../lib/searches';
@@ -42,7 +43,6 @@ import SearchList from './List/SearchList';
 import SearchWizard from './SearchWizard';
 import { Plus, Search } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { toast } from 'react-toastify';
 import { v4 as uuidv4 } from 'uuid';
 
 const Searches = ({ server } = {}) => {

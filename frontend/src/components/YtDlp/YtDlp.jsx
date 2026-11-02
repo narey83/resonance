@@ -28,6 +28,7 @@
 // </copyright>
 
 import './YtDlp.css';
+import { toast } from '../../lib/activityNotices';
 import { createYtDlpHubConnection } from '../../lib/hubFactory';
 import * as ytdlp from '../../lib/ytdlp';
 import EventsPane from './EventsPane';
@@ -37,7 +38,6 @@ import SubscriptionsPane from './SubscriptionsPane';
 import TagErrorList from './TagErrorList';
 import { AlertTriangle, Bell, List, RotateCcw, ScrollText } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { toast } from 'react-toastify';
 
 const TABS = [
   { icon: List, id: 'downloads', label: 'Downloads' },

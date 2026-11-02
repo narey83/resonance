@@ -33,10 +33,10 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { toast } from '../../../lib/activityNotices';
 import { getCurrentDebugView } from '../../../lib/options';
 import { CodeEditor, PlaceholderSegment, Switch } from '../../Shared';
 import React, { useEffect, useState } from 'react';
-import { toast } from 'react-toastify';
 import { Button, Icon, Modal } from 'semantic-ui-react';
 
 const DebugModal = ({ onClose, open, theme }) => {

@@ -31,6 +31,7 @@ import './Analysis.css';
 import { useLibraryActivity } from '../../context/LibraryActivityContext';
 import { usePlayer } from '../../context/PlayerContext';
 import useDebounce from '../../hooks/useDebounce';
+import { toast } from '../../lib/activityNotices';
 import * as analysisApi from '../../lib/analysis';
 import { METRICS } from '../../lib/analysis';
 import { CAMELOT_KEYS, camelotColour, toCamelot } from '../../lib/camelot';
@@ -76,7 +77,6 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { toast } from 'react-toastify';
 
 // Fill the folder view in bounded batches.
 const PAGE_SIZE = 10_000;

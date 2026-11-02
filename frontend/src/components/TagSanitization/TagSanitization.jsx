@@ -28,10 +28,10 @@
 // </copyright>
 
 import './TagSanitization.css';
+import { toast } from '../../lib/activityNotices';
 import { runNow as runEnrichment } from '../../lib/metadataLookup';
 import * as api from '../../lib/tagSanitization';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { toast } from 'react-toastify';
 
 const POLL_INTERVAL = 1_500;
 

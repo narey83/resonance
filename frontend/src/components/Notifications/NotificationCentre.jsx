@@ -450,7 +450,7 @@ const NotificationCentre = ({
               <SlidersHorizontal size={22} />
               <h3>Make room for what matters.</h3>
               <p>
-                Choose which events appear here and raise an alert. Transfer
+                Choose which events and action notices appear here. Transfer
                 completion alerts are optional.
               </p>
             </div>

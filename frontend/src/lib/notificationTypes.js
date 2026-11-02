@@ -52,6 +52,26 @@ const truncate = (text, max = 60) => {
 };
 
 export const NOTIFICATION_TYPES = [
+  ...[
+    [
+      'ActionSuccess',
+      'Successful actions',
+      'Confirmations when an action completes',
+    ],
+    ['ActionInfo', 'Information', 'Action updates and informational notices'],
+    ['ActionWarning', 'Warnings', 'Actions that need attention'],
+    ['ActionError', 'Errors', 'Failed actions and error details'],
+    ['ServerStatus', 'Server status', 'Server restarts and recovery'],
+  ].map(([key, label, description]) => ({
+    key,
+    label,
+    description,
+    Icon: ShieldAlert,
+    category: 'system',
+    defaultEnabled: true,
+    format: (d) => ({ text: d.message || label, sub: '', link: null }),
+  })),
+
   {
     key: 'PrivateMessageReceived',
     label: 'Private messages',

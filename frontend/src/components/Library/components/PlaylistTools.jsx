@@ -1,6 +1,6 @@
+import { toast } from '../../../lib/activityNotices';
 import * as mixtapes from '../../../lib/mixtapes';
 import React, { useEffect, useRef, useState } from 'react';
-import { toast } from 'react-toastify';
 
 export const addTracksToMixtape = async (id, paths) => {
   let added = 0;

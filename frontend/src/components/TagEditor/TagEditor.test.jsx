@@ -1,3 +1,4 @@
+import { toast } from '../../lib/activityNotices';
 import { lookup } from '../../lib/metadataLookup';
 import { getTagged, getUntagged, writeTags } from '../../lib/tags';
 import TagEditor from './TagEditor';
@@ -5,7 +6,6 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import { act, Simulate } from 'react-dom/test-utils';
 import { MemoryRouter } from 'react-router-dom';
-import { toast } from 'react-toastify';
 
 jest.mock('../../lib/metadataLookup', () => ({ lookup: jest.fn() }));
 jest.mock('../../lib/tags', () => ({
@@ -16,7 +16,7 @@ jest.mock('../../lib/tags', () => ({
 jest.mock('../../context/TagEditActivityContext', () => ({
   useTagEditActivity: () => ({ jobs: {} }),
 }));
-jest.mock('react-toastify', () => ({
+jest.mock('../../lib/activityNotices', () => ({
   toast: { info: jest.fn(), success: jest.fn(), error: jest.fn() },
 }));
 const files = ['one', 'two'].map((name) => ({

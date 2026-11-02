@@ -1,11 +1,11 @@
 import { usePlayer } from '../../context/PlayerContext';
+import { toast } from '../../lib/activityNotices';
 import { resolveLibraryTracks } from '../../lib/libraryWorkbench';
 import * as mixtapes from '../../lib/mixtapes';
 import { MixtapesView } from './Library';
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { act, Simulate } from 'react-dom/test-utils';
-import { toast } from 'react-toastify';
 
 jest.mock('../../context/PlayerContext', () => ({ usePlayer: jest.fn() }));
 jest.mock('../../lib/libraryWorkbench', () => ({
@@ -14,7 +14,7 @@ jest.mock('../../lib/libraryWorkbench', () => ({
 }));
 jest.mock('../../lib/mixtapes', () => ({ remove: jest.fn() }));
 jest.mock('../../lib/prepareMixAudio', () => ({ renderMixDeck: jest.fn() }));
-jest.mock('react-toastify', () => ({
+jest.mock('../../lib/activityNotices', () => ({
   toast: { success: jest.fn(), error: jest.fn() },
 }));
 

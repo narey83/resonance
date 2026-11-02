@@ -33,6 +33,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { toast } from '../../lib/activityNotices';
 import { findDuplicates } from '../../lib/dedup';
 import * as transfers from '../../lib/transfers';
 import { getDirectoryContents, getStatus } from '../../lib/users';
@@ -41,7 +42,6 @@ import FileList from '../Shared/FileList';
 import UsernameLink from '../Shared/UsernameLink';
 import { AlertTriangle, Download, Search, X } from 'lucide-react';
 import React, { Component } from 'react';
-import { toast } from 'react-toastify';
 
 const presenceCache = {};
 

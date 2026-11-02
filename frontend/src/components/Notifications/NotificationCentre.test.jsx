@@ -65,7 +65,9 @@ describe('notification activity inbox', () => {
     render();
   });
   afterEach(() => {
-    act(() => ReactDOM.unmountComponentAtNode(container));
+    act(() => {
+      ReactDOM.unmountComponentAtNode(container);
+    });
     container.remove();
     launcher.remove();
   });
@@ -108,7 +110,9 @@ describe('notification activity inbox', () => {
   });
 
   it('restores the saved filter on reopen and saves Show all activity', () => {
-    act(() => ReactDOM.unmountComponentAtNode(container));
+    act(() => {
+      ReactDOM.unmountComponentAtNode(container);
+    });
     prefs.get.mockReturnValue(true);
     props.notifications = events.filter((n) => n.read);
     render();
@@ -156,6 +160,22 @@ describe('notification activity inbox', () => {
     );
   });
 
+  it('offers switches for action notices and server status', () => {
+    click(button('Preferences'));
+    for (const [label, key] of [
+      ['Successful actions', 'ActionSuccess'],
+      ['Information', 'ActionInfo'],
+      ['Warnings', 'ActionWarning'],
+      ['Errors', 'ActionError'],
+      ['Server status', 'ServerStatus'],
+    ]) {
+      const input = container.querySelector(`[aria-label="${label}"]`);
+      expect(input.checked).toBe(true);
+      act(() => Simulate.change(input, { target: { checked: false } }));
+      expect(props.onSettingsChange).toHaveBeenLastCalledWith(key, false);
+    }
+  });
+
   it('traps keyboard focus and closes with Escape', () => {
     const close = container.querySelector('[aria-label="Close notifications"]');
     expect(document.activeElement).toBe(close);
@@ -181,7 +201,9 @@ describe('notification activity inbox', () => {
   });
 
   it('returns focus to the launcher when closed', () => {
-    act(() => ReactDOM.unmountComponentAtNode(container));
+    act(() => {
+      ReactDOM.unmountComponentAtNode(container);
+    });
     expect(document.activeElement).toBe(launcher);
     render();
   });

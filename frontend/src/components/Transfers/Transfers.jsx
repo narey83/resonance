@@ -34,6 +34,7 @@
 // </copyright>
 
 import './Transfers.css';
+import { toast } from '../../lib/activityNotices';
 import { getCompleteUploadsQueue } from '../../lib/completeUploadQueue';
 import * as filesLibrary from '../../lib/files';
 import * as transfersLibrary from '../../lib/transfers';
@@ -49,7 +50,6 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { toast } from 'react-toastify';
 
 const findTransferByFilename = (transfers, username, filename) => {
   const user = transfers.find((u) => u.username === username);

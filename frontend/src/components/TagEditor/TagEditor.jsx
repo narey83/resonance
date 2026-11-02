@@ -29,6 +29,7 @@
 
 import './TagEditor.css';
 import { useTagEditActivity } from '../../context/TagEditActivityContext';
+import { toast } from '../../lib/activityNotices';
 import { lookup as lookupMetadata } from '../../lib/metadataLookup';
 import { guessFromFilename } from '../../lib/tagGuess';
 import {
@@ -63,7 +64,6 @@ import React, {
   useState,
 } from 'react';
 import { useLocation } from 'react-router-dom';
-import { toast } from 'react-toastify';
 
 const EMPTY_FORM = {
   album: '',

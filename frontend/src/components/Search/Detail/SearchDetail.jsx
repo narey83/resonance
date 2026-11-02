@@ -35,6 +35,7 @@
 
 import { usePlayer } from '../../../context/PlayerContext';
 import useDebounce from '../../../hooks/useDebounce';
+import { toast } from '../../../lib/activityNotices';
 import {
   saveRecentFolder,
   suggestDestinationFolder,
@@ -85,7 +86,6 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { toast } from 'react-toastify';
 import { Dropdown } from 'semantic-ui-react';
 
 const AUDIO_EXTENSIONS = new Set([

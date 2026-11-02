@@ -27,10 +27,10 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { toast } from '../../../lib/activityNotices';
 import * as transfers from '../../../lib/transfers';
 import { ChevronRight, Download, Folder, FolderPlus, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { toast } from 'react-toastify';
 import { Modal } from 'semantic-ui-react';
 
 const FolderPickerModal = ({

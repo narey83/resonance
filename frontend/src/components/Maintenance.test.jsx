@@ -8,7 +8,7 @@ jest.mock('../lib/token', () => ({
   isAdmin: jest.fn(),
   getToken: () => 'test-admin-token',
 }));
-jest.mock('react-toastify', () => ({
+jest.mock('../lib/activityNotices', () => ({
   toast: { info: jest.fn(), error: jest.fn() },
 }));
 

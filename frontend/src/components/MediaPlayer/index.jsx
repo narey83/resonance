@@ -39,6 +39,7 @@ import { usePlayer } from '../../context/PlayerContext';
 import { useCast } from '../../hooks/useCast';
 import usePlayerMetadata from '../../hooks/usePlayerMetadata';
 import useTrackLoudness from '../../hooks/useTrackLoudness';
+import { toast } from '../../lib/activityNotices';
 import {
   applyAmbientColour,
   clearAmbientColour,
@@ -84,7 +85,6 @@ import {
 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { toast } from 'react-toastify';
 
 const RESUME_POSITION_KEY = 'resonance-player-position';
 

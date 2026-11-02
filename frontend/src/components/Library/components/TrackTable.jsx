@@ -32,6 +32,7 @@ import { useLibraryActivity } from '../../../context/LibraryActivityContext';
 import { usePlayer } from '../../../context/PlayerContext';
 import { useSetPlanner } from '../../../context/SetPlannerContext';
 import useAnalysisQueue from '../../../hooks/useAnalysisQueue';
+import { toast } from '../../../lib/activityNotices';
 import { getMaskedFilename } from '../../../lib/analysis';
 import { analysisStatus, djSummary } from '../../../lib/libraryWorkbench';
 import { mixPath } from '../../../lib/mixCompatibility';
@@ -72,7 +73,6 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useHistory } from 'react-router-dom';
-import { toast } from 'react-toastify';
 
 const toQueue = (track) => ({
   album: track.album,

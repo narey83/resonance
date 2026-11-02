@@ -33,9 +33,9 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { toast } from '../../../lib/activityNotices';
 import { clearCompleted } from '../../../lib/transfers';
 import React, { useState } from 'react';
-import { toast } from 'react-toastify';
 import { Button, Divider, Header, Icon } from 'semantic-ui-react';
 
 const clear = async ({ direction, setState }) => {

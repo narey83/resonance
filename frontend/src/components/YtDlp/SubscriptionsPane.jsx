@@ -27,10 +27,10 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { toast } from '../../lib/activityNotices';
 import * as ytdlp from '../../lib/ytdlp';
 import { Bell, Pause, Play, RefreshCw, Trash2 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
-import { toast } from 'react-toastify';
 
 const INTERVAL_PRESETS = [
   { value: 0, label: 'Default' },

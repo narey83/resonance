@@ -28,6 +28,7 @@
 // </copyright>
 
 import './Duplicates.css';
+import { toast } from '../../lib/activityNotices';
 import { deleteTrackBatch } from '../../lib/musicLibrary';
 import { browseAll, getTags } from '../../lib/shares';
 import { Copy, RefreshCw, Search, Trash2, X } from 'lucide-react';
@@ -38,7 +39,6 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { toast } from 'react-toastify';
 
 const AUDIO_EXTS = new Set([
   'mp3',

@@ -28,6 +28,7 @@
 // </copyright>
 
 import { urlBase } from '../../config';
+import { toast } from '../../lib/activityNotices';
 import { connectionStatus } from '../../lib/connectionStatus';
 import * as serverAPI from '../../lib/server';
 import * as session from '../../lib/session';
@@ -59,7 +60,6 @@ import {
 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
-import { toast } from 'react-toastify';
 
 const readCachedStatus = (key, fallback) => {
   try {

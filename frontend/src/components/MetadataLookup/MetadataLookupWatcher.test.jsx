@@ -1,12 +1,12 @@
+import { toast } from '../../lib/activityNotices';
 import { getStatus } from '../../lib/metadataLookup';
 import MetadataLookupWatcher from './MetadataLookupWatcher';
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { act } from 'react-dom/test-utils';
-import { toast } from 'react-toastify';
 
 jest.mock('../../lib/metadataLookup', () => ({ getStatus: jest.fn() }));
-jest.mock('react-toastify', () => ({
+jest.mock('../../lib/activityNotices', () => ({
   toast: { info: jest.fn(), success: jest.fn(), warn: jest.fn() },
 }));
 describe('Enrichment progress', () => {

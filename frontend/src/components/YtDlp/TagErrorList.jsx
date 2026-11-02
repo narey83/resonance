@@ -27,10 +27,10 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { toast } from '../../lib/activityNotices';
 import * as ytdlp from '../../lib/ytdlp';
 import { Pencil, RefreshCw } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { toast } from 'react-toastify';
 
 const TagErrorList = ({ jobs, onRetryTags }) => {
   const [retryingAll, setRetryingAll] = useState(false);
