@@ -56,7 +56,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/upload-sidebar-26aa744/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/upload-folders-33f4637/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -1321,3 +1321,39 @@ setting change. Snapshot/logs and browser evidence:
 `/home/narey/resonance-builds/upload-sidebar-20261102`.
 Rollback config/link/record: new gateway release's `rollback` directory points to
 `upload-full-5c6bb67`. Private Mac deployment helpers: `.dev/upload-sidebar/`.
+
+
+## Collapsed upload folders — 2 November 2026
+
+Active web/gateway: `upload-folders-33f4637`, frontend source
+`33f4637389387fcb1baad3cb5f3c5c3ae200cb8e`, tree
+`175ae2e0b456a774c9ad08b734055592d7bb2798`. Activated at 16:28 GMT.
+Backend PID 1206121 and Caddy PID 3992646 remain unchanged.
+
+At the user's request, each recipient's complete queue is rolled up into folders,
+closed by default. Clicking the folder name or arrow expands/collapses every track
+in it; the button also supports keyboard activation and exposes aria-expanded.
+Folder counts always cover the complete folder, including hidden tracks, and active
+sending/connecting counts remain visible while closed. Refreshes retain expansion;
+selecting another recipient starts closed. The live side list, single top name and
+controls, complete counts, folder block and cancellation actions are preserved.
+
+Dev-laptop verification: clean npm 11 install; 29 frontend tests; changed-file lint;
+11 dependency-security tests; zero audit findings; production build; remote staged
+source gate. Existing source-map, bundle-size and deprecation warnings remain.
+Authenticated isolated/public browser checks at desktop and phone sizes used the
+real 8,053-track skurk-1 queue, verified closed defaults, mouse and keyboard toggles,
+last-track scrolling, matching header/side totals and recipient switching with
+closed defaults. Screenshots were inspected; no browser page errors or transfer
+mutations. Public artifact hashes and readiness checks passed; 184 older static
+assets were retained. No backend restart, database copy, schema or slot changes.
+
+Snapshot/logs/evidence: `/home/narey/resonance-builds/upload-folders-20261102`.
+Rollback config/link/record: new gateway's `rollback` points to
+`upload-sidebar-26aa744`. Private Mac helpers: `.dev/upload-folders/`.
+
+User preference for future UI work: preserve the approved live side list and
+single recipient controls; favor coherent hierarchy and consistent spacing over
+successive competing layouts. Use desktop/narrow browser and screenshot checks.
+If tool access fails, attempt recovery and explicitly report any renewed access
+needed from the user. The working private QA login/renewal procedure is above.
