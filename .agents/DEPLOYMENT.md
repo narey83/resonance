@@ -1945,3 +1945,33 @@ Evidence and source: `/home/narey/resonance-builds/measurement-failure-20261102`
 including `build-verified.log`, `tests-verified.log`, `detector-preflight.log`,
 `activation/result.json`, `runtime-cpu-check.json` and `audit.json`.
 Private Mac orchestration: `.dev/measurement-failure/`.
+
+## Track Analysis failure history — 2 November 2026
+
+Frontend change `e499a3c` adds **Failed tracks · measurements and reasons** under
+Current analysis. It groups persisted Basic/Enhanced warning/error records by
+track and mode, names failed measurements when recorded, shows reasons and original
+messages, and pages through the selected UTC day's logs. Today is the default;
+querying all retained history timed out during live verification. Today's first
+page refreshes while expanded; older days/pages require explicit refresh. Historical
+logs without measurement names show “Not recorded”. This is log history, so an old
+failure may remain visible after a later successful retry. Existing Administrator
+log permissions are preserved.
+
+Delivered only the four changed application source files to the existing
+`upload-folder-label-20261102/frontend` development directory. Web service PID
+1228101 compiled through its watcher with the existing 14 `react-simple-maps`
+source-map warnings. No backend/service restart, scan-control request, database
+backup, configuration or dependency change was needed. The active Basic scan
+continued during verification; backend readiness returned available.
+
+Validation on the dev laptop: ESLint passed for all five changed JavaScript files;
+62 focused/regression tests and 11 dependency-security tests passed; npm audit
+reported zero vulnerabilities. Headless fixture checks cover lazy loading,
+pagination, refresh failure/recovery, long-path wrapping and desktop/390px layouts.
+The authenticated Brave Administrator session showed real failed tracks and Loudness
+failures at desktop and 390px widths, without pane overflow. Earlier ReadWrite
+headless verification confirmed the panel makes no administrator-log requests for
+that role. The saved QA refresh token subsequently expired (HTTP 401), so repeat
+headless authentication checks require a fresh sign-in; real signed-in browser
+verification was completed separately.
