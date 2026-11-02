@@ -16,10 +16,13 @@ const UploadQueuePagination = ({
     >
       <div>
         <strong>
-          All users — pending tracks: {first.toLocaleString()}–
-          {last.toLocaleString()} of {total.toLocaleString()}
+          Queue page {page + 1} of {pages}
         </strong>
-        <div>Browse the remaining queue across all users.</div>
+        <div>
+          {total === 0
+            ? 'No tracks left to send'
+            : `Tracks ${first.toLocaleString()}–${last.toLocaleString()} of ${total.toLocaleString()} · up to ${pageSize} per page`}
+        </div>
       </div>
       <div className="ul-pagination">
         <button
@@ -31,9 +34,6 @@ const UploadQueuePagination = ({
         >
           Previous
         </button>
-        <span>
-          {page + 1} / {pages}
-        </span>
         <button
           aria-label="Next pending uploads page"
           className="ul-page-btn"

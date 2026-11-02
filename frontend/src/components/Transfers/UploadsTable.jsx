@@ -26,7 +26,6 @@
 //   │ SPDX-License-Identifier: AGPL-3.0-only
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
-import { lookupIp } from '../../lib/network';
 import { isStateCancellable, isStateRemovable } from '../../lib/transfers';
 import { getStatus } from '../../lib/users';
 import { formatBitrate, formatBytes, getFileName } from '../../lib/util';
@@ -36,12 +35,9 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Ban,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Folder,
-  FolderOpen,
   Trash2,
-  Upload,
   User,
   X,
 } from 'lucide-react';
@@ -51,7 +47,7 @@ const pageSize_OPTIONS = [15, 30, 50, 100, 150];
 
 /* Cap file rows rendered per expanded directory — a single directory can hold
    thousands of files and rendering them all freezes the page on every poll. */
-const FILE_RENDER_CHUNK = 200;
+const FILE_RENDER_CHUNK = 20;
 
 /* ─── State helpers ──────────────────────────────────────────────────────── */
 
@@ -72,25 +68,21 @@ const STATE_META = {
   'Completed, TimedOut': { cls: 'error', dot: '#f85149', label: 'Timed Out' },
   Initializing: { cls: 'initializing', dot: '#39d5d5', label: 'Initializing' },
   InProgress: { cls: 'inprogress', dot: '#388bfd', label: 'Uploading' },
-  Queued: { cls: 'queued', dot: '#a371f7', label: 'Queued' },
-  'Queued, Locally': { cls: 'queued', dot: '#a371f7', label: 'Queued (local)' },
+  Queued: { cls: 'queued', dot: '#a371f7', label: 'Waiting' },
+  'Queued, Locally': { cls: 'queued', dot: '#a371f7', label: 'Waiting' },
   'Queued, Remotely': {
     cls: 'queued',
     dot: '#a371f7',
-    label: 'Queued (remote)',
+    label: 'Waiting',
   },
-  Requested: { cls: 'queued', dot: '#a371f7', label: 'Requested' },
+  Requested: { cls: 'queued', dot: '#a371f7', label: 'Waiting' },
 };
 
 const getMeta = (state) =>
   STATE_META[state] ?? { cls: 'error', dot: '#f85149', label: state };
 
-const isQueued = (state) =>
-  Boolean(state?.includes('Queued') || state === 'Requested');
-
 /* ─── Module-level caches ────────────────────────────────────────────────── */
 
-const netInfoCache = {};
 const presenceCache = {};
 
 /* Collapse state lives outside the components so virtualized rows keep their
@@ -122,39 +114,26 @@ const byStateThenTime = (a, b) => {
 };
 
 const isCompletedState = (state) => Boolean(state?.startsWith('Completed'));
-/* A folder only moves to "Uploaded" once every file in it has finished
-   sending to that user. One straggler keeps the whole folder in "Uploading",
-   matching how Downloads gates folders. */
-const isDirectoryActive = (files) =>
-  files.some((f) => !isCompletedState(f.state));
-const isDirectoryCompleted = (files) =>
-  files.every((f) => isCompletedState(f.state));
+const isSending = (file) =>
+  file.state === 'InProgress' || file.state === 'Initializing';
+const isWaiting = (file) => !isCompletedState(file.state) && !isSending(file);
 
-const buildGroups = (transfers, directoryFilter) =>
+const buildGroups = (transfers, fileFilter) =>
   (transfers ?? [])
     .map((user) => ({
       ...user,
       directories: (user.directories ?? [])
         .map((directory) => {
           const uploads = (directory.files ?? []).filter(
-            (file) => file.direction?.toLowerCase() === 'upload',
+            (file) =>
+              file.direction?.toLowerCase() === 'upload' && fileFilter(file),
           );
           return {
             ...directory,
-            failedTotal: uploads.filter(
-              (file) =>
-                isCompletedState(file.state) &&
-                file.state !== 'Completed, Succeeded',
-            ).length,
-            fileTotal: uploads.length,
-            sentTotal: uploads.filter(
-              (file) => file.state === 'Completed, Succeeded',
-            ).length,
             files: uploads.sort(byStateThenTime),
           };
         })
         .filter((directory) => directory.files.length > 0)
-        .filter((directory) => directoryFilter(directory.files))
         .sort((a, b) => maxTime(b.files) - maxTime(a.files)),
     }))
     .filter((user) => user.directories.length > 0)
@@ -245,7 +224,7 @@ const FileProgress = ({ file }) => {
   );
 };
 
-const FileRow = ({ file, onCancel, onRemove }) => {
+const FileRow = ({ file, mode, onCancel, onRemove }) => {
   const meta = getMeta(file.state);
   const canCancel = isStateCancellable(file.state);
   const canRemove = isStateRemovable(file.state);
@@ -258,20 +237,38 @@ const FileRow = ({ file, onCancel, onRemove }) => {
       >
         <span className="dl-filename">{getFileName(file.filename)}</span>
       </td>
-      <td className="dl-cell dl-cell--state">
-        <StateBadge file={file} />
-      </td>
-      <td className="dl-cell dl-cell--progress">
-        <FileProgress file={file} />
-      </td>
-      <td className="dl-cell dl-cell--size">
+      {mode !== 'waiting' && (
+        <td
+          className="dl-cell dl-cell--state"
+          data-label="Status"
+        >
+          <StateBadge file={file} />
+        </td>
+      )}
+      {mode === 'sending' && (
+        <td
+          className="dl-cell dl-cell--progress"
+          data-label="Progress"
+        >
+          <FileProgress file={file} />
+        </td>
+      )}
+      <td
+        className="dl-cell dl-cell--size"
+        data-label="Size"
+      >
         {file.state === 'InProgress'
           ? `${formatBytes(file.bytesTransferred)} / ${formatBytes(file.size)}`
           : formatBytes(file.size)}
       </td>
-      <td className="dl-cell dl-cell--speed">
-        {file.averageSpeed > 0 ? formatBitrate(file.averageSpeed) : '—'}
-      </td>
+      {mode === 'sending' && (
+        <td
+          className="dl-cell dl-cell--speed"
+          data-label="Speed"
+        >
+          {file.averageSpeed > 0 ? formatBitrate(file.averageSpeed) : '—'}
+        </td>
+      )}
       <td className="dl-cell dl-cell--actions">
         {canCancel && (
           <button
@@ -307,6 +304,7 @@ const FileRow = ({ file, onCancel, onRemove }) => {
 const DirectoryGroup = ({
   cacheKey,
   directory,
+  mode,
   onCancel,
   onCancelDirectory,
   onRemove,
@@ -314,124 +312,61 @@ const DirectoryGroup = ({
 }) => {
   const collapseKey = `${cacheKey}|${directory.directory}`;
   const [collapsed, setCollapsed] = useState(
-    directoryCollapsedCache[collapseKey] ?? true,
+    directoryCollapsedCache[collapseKey] ?? false,
   );
-  const toggleCollapsed = () =>
-    setCollapsed((c) => {
-      directoryCollapsedCache[collapseKey] = !c;
-      return !c;
-    });
   const [visibleCount, setVisibleCount] = useState(FILE_RENDER_CHUNK);
   const { files } = directory;
   const directoryName =
     directory.directory.split(/[/\\]/u).filter(Boolean).at(-1) ??
     directory.directory;
-
-  const totalSize = files.reduce((s, f) => s + (f.size ?? 0), 0);
-  const totalTransferred = files.reduce(
-    (s, f) => s + (f.bytesTransferred ?? 0),
-    0,
-  );
-  const totalSpeed = files
-    .filter((f) => f.state === 'InProgress')
-    .reduce((s, f) => s + (f.averageSpeed ?? 0), 0);
-  const overallPercent =
-    totalSize > 0 ? Math.round((totalTransferred / totalSize) * 100) : 0;
-  const completedCount = files.filter((f) =>
-    f.state?.startsWith('Completed'),
-  ).length;
-  const sentTotal =
-    directory.sentTotal ??
-    files.filter((f) => f.state === 'Completed, Succeeded').length;
-  const failedTotal = directory.failedTotal ?? 0;
-  const fileTotal = directory.fileTotal ?? files.length;
-  const allCompleted = completedCount === files.length;
-  const allSucceeded = files.every((f) => f.state === 'Completed, Succeeded');
-  const anyActive = files.some((f) => f.state === 'InProgress');
-
-  const progressColor = allSucceeded
-    ? 'var(--success)'
-    : anyActive
-      ? 'var(--accent)'
-      : 'var(--text-muted)';
-
+  const columns = mode === 'sending' ? 6 : mode === 'history' ? 4 : 3;
   return (
     <tbody>
-      <tr className="dl-dir-row">
-        <td className="dl-cell dl-cell--file dl-dir-name">
-          <button
-            aria-expanded={!collapsed}
-            className="dl-dir-toggle"
-            onClick={toggleCollapsed}
-            type="button"
-          >
-            {collapsed ? (
-              <Folder
-                color="var(--warning)"
-                size={13}
-                strokeWidth={1.75}
-              />
-            ) : (
-              <FolderOpen
-                color="var(--warning)"
-                size={13}
-                strokeWidth={1.75}
-              />
-            )}
-            <span className="dl-dir-label">{directoryName}</span>
-            <span className="ul-track-toggle">
-              {collapsed ? 'Show tracks' : 'Hide tracks'}
-            </span>
-            <span className="dl-dir-count">
-              {files.length} file{files.length === 1 ? '' : 's'}
-            </span>
-          </button>
-        </td>
-        <td className="dl-cell dl-cell--state">
-          <span className="dl-dir-stat">
-            {sentTotal} of {fileTotal} sent
-            {failedTotal > 0 && (
-              <span className="dl-dir-stat-failed">
-                {' '}
-                · {failedTotal} failed
-              </span>
-            )}
-          </span>
-        </td>
-        <td className="dl-cell dl-cell--progress">
-          <ProgressBar
-            background={progressColor}
-            percent={overallPercent}
-          />
-        </td>
-        <td className="dl-cell dl-cell--size">
-          {allCompleted
-            ? formatBytes(totalSize)
-            : `${formatBytes(totalTransferred)} / ${formatBytes(totalSize)}`}
-        </td>
-        <td className="dl-cell dl-cell--speed">
-          {totalSpeed > 0 ? formatBitrate(totalSpeed) : '—'}
-        </td>
-        <td className="dl-cell dl-cell--actions">
-          {!allCompleted && (
+      <tr className="ul-folder-row">
+        <td colSpan={columns}>
+          <div className="ul-folder-heading">
             <button
-              className="dl-action-btn dl-action-btn--cancel"
+              aria-expanded={!collapsed}
+              className="dl-dir-toggle"
               onClick={() =>
-                onCancelDirectory({
-                  directory: directory.directory,
-                  files,
-                  username,
+                setCollapsed((value) => {
+                  directoryCollapsedCache[collapseKey] = !value;
+                  return !value;
                 })
               }
-              title="Cancel this folder"
               type="button"
             >
-              <X
-                size={13}
-                strokeWidth={2}
-              />
+              {collapsed ? (
+                <ChevronRight size={14} />
+              ) : (
+                <ChevronDown size={14} />
+              )}
+              <Folder size={15} />
+              <span className="ul-folder-name">{directoryName}</span>
+              <span className="ul-folder-count">
+                {files.length} track{files.length === 1 ? '' : 's'}
+              </span>
+              <span className="ul-track-toggle">
+                {collapsed ? 'Show tracks' : 'Hide tracks'}
+              </span>
             </button>
-          )}
+            {mode !== 'history' && (
+              <button
+                className="ul-folder-block"
+                onClick={() =>
+                  onCancelDirectory({
+                    directory: directory.directory,
+                    files,
+                    username,
+                  })
+                }
+                title="Cancel all requests for this folder and permanently block it for this person"
+                type="button"
+              >
+                Block folder
+              </button>
+            )}
+          </div>
         </td>
       </tr>
       {!collapsed &&
@@ -439,20 +374,22 @@ const DirectoryGroup = ({
           <FileRow
             file={file}
             key={file.id}
+            mode={mode}
             onCancel={onCancel}
             onRemove={onRemove}
           />
         ))}
       {!collapsed && files.length > visibleCount && (
         <tr className="dl-show-more-row">
-          <td colSpan={6}>
+          <td colSpan={columns}>
             <button
               className="dl-show-more-btn"
               onClick={() => setVisibleCount((n) => n + FILE_RENDER_CHUNK)}
               type="button"
             >
               Show {Math.min(FILE_RENDER_CHUNK, files.length - visibleCount)}{' '}
-              more ({files.length - visibleCount} hidden)
+              more tracks · {Math.min(visibleCount, files.length)} of{' '}
+              {files.length} shown
             </button>
           </td>
         </tr>
@@ -464,6 +401,7 @@ const DirectoryGroup = ({
 const UserGroup = ({
   cacheKey,
   defaultCollapsed = false,
+  mode,
   onCancel,
   onCancelDirectory,
   onCancelUser,
@@ -478,47 +416,16 @@ const UserGroup = ({
       userCollapsedCache[cacheKey] = !c;
       return !c;
     });
-  const [netInfo, setNetInfo] = useState(netInfoCache[user.username] ?? null);
   const [presence, setPresence] = useState(
     presenceCache[user.username] ?? null,
   );
   const allFiles = user.directories.flatMap((directory) => directory.files);
 
-  const inProgressCount = allFiles.filter(
-    (file) => file.state === 'InProgress',
-  ).length;
-  const queuedCount = allFiles.filter((file) => isQueued(file.state)).length;
-  const succeededCount = allFiles.filter(
-    (file) => file.state === 'Completed, Succeeded',
-  ).length;
-  const totalSpeed = allFiles
-    .filter((f) => f.state === 'InProgress')
-    .reduce((sum, file) => sum + (file.averageSpeed ?? 0), 0);
-  const activeCount = allFiles.filter(
-    (file) => !isCompletedState(file.state),
-  ).length;
-
-  useEffect(() => {
-    const ip = user.peerAddress;
-    if (!ip) return undefined;
-    if (netInfoCache[user.username]) {
-      setNetInfo(netInfoCache[user.username]);
-      return undefined;
-    }
-
-    let cancelled = false;
-    lookupIp(ip)
-      .then((info) => {
-        if (!cancelled) {
-          netInfoCache[user.username] = info;
-          setNetInfo(info);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [user.username, user.peerAddress]); // eslint-disable-line react-hooks/exhaustive-deps
+  const totalSpeed = allFiles.reduce(
+    (sum, file) =>
+      sum + (file.state === 'InProgress' ? file.averageSpeed ?? 0 : 0),
+    0,
+  );
 
   useEffect(() => {
     if (presenceCache[user.username]) {
@@ -548,6 +455,8 @@ const UserGroup = ({
         onClick={toggleCollapsed}
       >
         <button
+          aria-expanded={!collapsed}
+          aria-label={`${collapsed ? 'Show' : 'Hide'} tracks for ${user.username}`}
           className="dl-user-toggle"
           onClick={(e) => {
             e.stopPropagation();
@@ -585,20 +494,10 @@ const UserGroup = ({
               />
             </span>
           </div>
-          {netInfo && (
-            <div className="dl-user-net">
-              <span className="dl-user-net-ip">{netInfo.ip}</span>
-              <span className="dl-user-net-sep">·</span>
-              <span className="dl-user-net-isp">{netInfo.isp}</span>
-              <span className="dl-user-net-sep">·</span>
-              <span className="dl-user-net-loc">
-                {[netInfo.city, netInfo.country].filter(Boolean).join(', ')}
-              </span>
-            </div>
-          )}
         </div>
-        {activeCount > 0 && (
+        {mode !== 'history' && (
           <button
+            aria-label={`Cancel all uploads to ${user.username}`}
             className="dl-action-btn dl-action-btn--cancel"
             onClick={(e) => {
               e.stopPropagation();
@@ -607,7 +506,7 @@ const UserGroup = ({
                 username: user.username,
               });
             }}
-            title="Cancel all uploads to this user"
+            title="Cancel all uploads to this person, including other pages"
             type="button"
           >
             <Ban
@@ -618,53 +517,39 @@ const UserGroup = ({
         )}
       </div>
 
-      <div className="dl-user-stats ul-user-queue">
-        {inProgressCount > 0 && (
-          <span className="dl-user-stat dl-user-stat--active">
-            <span className="dl-user-stat-dot" />
-            {inProgressCount} uploading
-          </span>
-        )}
-        {queuedCount > 0 && (
-          <span className="dl-user-stat dl-user-stat--queued">
-            {queuedCount} queued track{queuedCount === 1 ? '' : 's'} on this
-            page
-          </span>
-        )}
-        {succeededCount > 0 && (
-          <span
-            className="dl-user-stat"
-            style={{ color: 'var(--success)' }}
-          >
-            {succeededCount} sent
-          </span>
-        )}
-        {totalSpeed > 0 && (
-          <span className="dl-user-stat dl-user-stat--speed">
-            {formatBitrate(totalSpeed)}
-          </span>
-        )}
-        <span className="dl-user-stat">
-          {allFiles.length} file{allFiles.length === 1 ? '' : 's'}
+      <div className="ul-person-summary">
+        <strong>
+          {allFiles.length}{' '}
+          {mode === 'waiting'
+            ? 'waiting'
+            : mode === 'sending'
+              ? 'uploading or connecting'
+              : 'finished'}
+        </strong>
+        <span>
+          {mode === 'history' ? 'in recent history' : 'on this queue page'}
         </span>
-        {activeCount > 0 && (
-          <span className="ul-user-queue-note">
-            Expand a folder to see its tracks. Counts cover this queue page;
-            cancelling this user or a folder includes their other queue pages.
-          </span>
-        )}
+        {totalSpeed > 0 && <span>{formatBitrate(totalSpeed)}</span>}
       </div>
 
       {!collapsed && (
-        <div className="dl-user-body">
+        <div className={`dl-user-body ul-tracks--${mode}`}>
           <table className="dl-table">
             <thead>
               <tr className="dl-thead-row">
-                <th className="dl-cell dl-cell--file">File</th>
-                <th className="dl-cell dl-cell--state">State</th>
-                <th className="dl-cell dl-cell--progress">Progress</th>
+                <th className="dl-cell dl-cell--file">Track</th>
+                {mode !== 'waiting' && (
+                  <th className="dl-cell dl-cell--state">
+                    {mode === 'history' ? 'Outcome' : 'Status'}
+                  </th>
+                )}
+                {mode === 'sending' && (
+                  <th className="dl-cell dl-cell--progress">Progress</th>
+                )}
                 <th className="dl-cell dl-cell--size">Size</th>
-                <th className="dl-cell dl-cell--speed">Speed</th>
+                {mode === 'sending' && (
+                  <th className="dl-cell dl-cell--speed">Speed</th>
+                )}
                 <th className="dl-cell dl-cell--actions" />
               </tr>
             </thead>
@@ -673,6 +558,7 @@ const UserGroup = ({
                 cacheKey={cacheKey}
                 directory={directory}
                 key={directory.directory}
+                mode={mode}
                 onCancel={onCancel}
                 onCancelDirectory={onCancelDirectory}
                 onRemove={onRemove}
@@ -686,84 +572,7 @@ const UserGroup = ({
   );
 };
 
-/* ─── Toolbar ────────────────────────────────────────────────────────────── */
-
-const Toolbar = ({
-  allFiles,
-  onCancel,
-  onClearCompleted,
-  onPageSizeChange,
-  pageSize,
-}) => {
-  const cancellableFiles = allFiles.filter((file) =>
-    isStateCancellable(file.state),
-  );
-  const succeededFiles = allFiles.filter(
-    (file) => file.state === 'Completed, Succeeded',
-  );
-
-  return (
-    <div className="ul-toolbar">
-      <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-        {allFiles.length} file{allFiles.length === 1 ? '' : 's'}
-      </span>
-      <div className="ul-toolbar-actions">
-        <label className="ul-page-size-label">
-          Per page
-          <select
-            className="ul-page-size-select"
-            onChange={(e) => onPageSizeChange(Number(e.target.value))}
-            value={pageSize}
-          >
-            {pageSize_OPTIONS.map((n) => (
-              <option
-                key={n}
-                value={n}
-              >
-                {n}
-              </option>
-            ))}
-          </select>
-        </label>
-        {cancellableFiles.length > 0 && (
-          <button
-            className="ul-quick-btn ul-quick-btn--cancel"
-            onClick={() => {
-              for (const file of cancellableFiles) onCancel({ file });
-            }}
-            type="button"
-          >
-            <X
-              size={12}
-              strokeWidth={2}
-            />
-            Cancel listed
-          </button>
-        )}
-        {succeededFiles.length > 0 && (
-          <button
-            className="ul-quick-btn ul-quick-btn--remove"
-            onClick={onClearCompleted}
-            type="button"
-          >
-            <Trash2
-              size={12}
-              strokeWidth={2}
-            />
-            Clear done
-          </button>
-        )}
-      </div>
-    </div>
-  );
-};
-
-/* ─── Main component ─────────────────────────────────────────────────────── */
-
-const SectionHeader = ({ children }) => (
-  <div className="transfer-section-header">{children}</div>
-);
-
+/* Queue pages contain unfinished requests; recent history is independent. */
 const UploadsTable = ({
   onCancel,
   onCancelDirectory,
@@ -775,225 +584,207 @@ const UploadsTable = ({
   totalPending,
   transfers,
 }) => {
+  const [view, setView] = useState('queue');
   const [completedPage, setCompletedPage] = useState(0);
   const [pageSize, setPageSize] = useState(15);
-
-  const activeGroups = useMemo(
-    () => buildGroups(transfers, isDirectoryActive),
+  const sending = useMemo(() => buildGroups(transfers, isSending), [transfers]);
+  const waiting = useMemo(() => buildGroups(transfers, isWaiting), [transfers]);
+  const history = useMemo(
+    () => buildGroups(transfers, (file) => isCompletedState(file.state)),
     [transfers],
   );
-  const completedGroups = useMemo(
-    () => buildGroups(transfers, isDirectoryCompleted),
-    [transfers],
+  const pendingFiles = [...sending, ...waiting].flatMap((user) =>
+    user.directories.flatMap((directory) => directory.files),
   );
-
-  const totalCompletedPages = Math.ceil(completedGroups.length / pageSize);
-
+  const historyFiles = history.flatMap((user) =>
+    user.directories.flatMap((directory) => directory.files),
+  );
+  const historyPages = Math.max(1, Math.ceil(history.length / pageSize));
   useEffect(() => {
-    if (totalCompletedPages > 0 && completedPage >= totalCompletedPages) {
-      setCompletedPage(totalCompletedPages - 1);
-    }
-  }, [completedPage, totalCompletedPages]);
-
-  const completedPageGroups = useMemo(
-    () =>
-      completedGroups.slice(
-        completedPage * pageSize,
-        completedPage * pageSize + pageSize,
-      ),
-    [completedGroups, completedPage, pageSize],
-  );
-
-  const allFiles = useMemo(
-    () =>
-      [...activeGroups, ...completedGroups].flatMap((user) =>
-        user.directories.flatMap((directory) => directory.files),
-      ),
-    [activeGroups, completedGroups],
-  );
-
-  /* Flatten sections, groups, and pagination into one list so the whole
-     scroll area can be virtualized. A user can appear in both sections,
-     hence the per-section key prefix. */
+    setCompletedPage((page) => Math.min(page, historyPages - 1));
+  }, [historyPages]);
   const rows = useMemo(() => {
     const result = [];
-    if (activeGroups.length > 0 || totalPending > 0) {
-      result.push({
-        key: 'section-active',
-        label: 'Uploading',
-        type: 'section',
-      });
-      for (const user of activeGroups) {
+    const section = (groups, mode, title, description) => {
+      result.push({ key: mode, type: 'section', title, description });
+      if (groups.length === 0)
         result.push({
-          defaultCollapsed: false,
-          key: `group-active-${user.username}`,
-          type: 'group',
+          key: `${mode}-empty`,
+          type: 'empty',
+          title:
+            mode === 'sending'
+              ? 'No tracks uploading on this page.'
+              : mode === 'waiting'
+                ? 'No waiting tracks on this page.'
+                : 'No recent upload history.',
+        });
+      for (const user of groups)
+        result.push({
+          key: `${mode}-${user.username}`,
+          type: 'person',
+          mode,
           user,
         });
-      }
+    };
 
-      if (Number.isInteger(totalPending)) {
-        result.push({ key: 'pending-pagination', type: 'pending-pagination' });
-      }
-    }
-
-    if (completedGroups.length > 0) {
-      result.push({
-        key: 'section-done',
-        label: 'Uploaded',
-        pageInfo:
-          totalCompletedPages > 1
-            ? `${completedPage + 1} / ${totalCompletedPages}`
-            : null,
-        type: 'section',
-      });
-      for (const user of completedPageGroups) {
-        result.push({
-          defaultCollapsed: true,
-          key: `group-done-${user.username}`,
-          type: 'group',
-          user,
-        });
-      }
-
-      if (totalCompletedPages > 1)
-        result.push({ key: 'pagination', type: 'pagination' });
+    if (view === 'queue') {
+      section(
+        sending,
+        'sending',
+        'Uploading now',
+        'Tracks currently sending or connecting on this queue page.',
+      );
+      section(
+        waiting,
+        'waiting',
+        'Waiting to upload',
+        'These requested tracks have not started sending yet.',
+      );
+    } else {
+      section(
+        history.slice(completedPage * pageSize, (completedPage + 1) * pageSize),
+        'history',
+        'Recent history',
+        'The most recent 500 finished requests, including sent, failed and cancelled tracks.',
+      );
     }
 
     return result;
-  }, [
-    activeGroups,
-    completedGroups,
-    completedPage,
-    completedPageGroups,
-    totalCompletedPages,
-    totalPending,
-  ]);
-
+  }, [completedPage, history, pageSize, sending, view, waiting]);
   const scrollRef = useRef(null);
   const virtualizer = useVirtualizer({
     count: rows.length,
-    estimateSize: (index) => {
-      if (rows[index].type === 'pending-pagination') return 90;
-      return rows[index].type === 'group' ? 64 : 36;
-    },
     getItemKey: (index) => rows[index].key,
     getScrollElement: () => scrollRef.current,
-    overscan: 6,
+    estimateSize: (index) => (rows[index].type === 'person' ? 240 : 76),
+    overscan: 3,
   });
-
-  if (
-    activeGroups.length === 0 &&
-    completedGroups.length === 0 &&
-    !totalPending
-  ) {
-    return (
-      <div className="dl-empty">
-        <Upload
-          opacity={0.15}
-          size={40}
-          strokeWidth={1.25}
-        />
-        <p style={{ color: 'var(--text-muted)', marginTop: 12 }}>No uploads</p>
-      </div>
-    );
-  }
-
-  const renderPagination = () => (
-    <div className="ul-pagination">
-      <button
-        className="ul-page-btn"
-        disabled={completedPage === 0}
-        onClick={() => setCompletedPage((p) => p - 1)}
-        type="button"
-      >
-        <ChevronLeft
-          size={14}
-          strokeWidth={2}
-        />
-        Prev
-      </button>
-      {totalCompletedPages <= 10 && (
-        <div className="ul-page-numbers">
-          {Array.from({ length: totalCompletedPages }, (_, index) => (
-            <button
-              className={`ul-page-num${index === completedPage ? ' ul-page-num--active' : ''}`}
-              key={index}
-              onClick={() => setCompletedPage(index)}
-              type="button"
-            >
-              {index + 1}
-            </button>
-          ))}
-        </div>
-      )}
-      <button
-        className="ul-page-btn"
-        disabled={completedPage === totalCompletedPages - 1}
-        onClick={() => setCompletedPage((p) => p + 1)}
-        type="button"
-      >
-        Next
-        <ChevronRight
-          size={14}
-          strokeWidth={2}
-        />
-      </button>
-    </div>
-  );
-
-  const renderRow = (row) => {
-    switch (row.type) {
-      case 'pending-pagination':
-        return (
-          <UploadQueuePagination
-            onPageChange={onPendingPageChange}
-            page={pendingPage}
-            total={totalPending}
-          />
-        );
-      case 'section':
-        return (
-          <SectionHeader>
-            {row.label}
-            {row.pageInfo && (
-              <span className="ul-page-info">{row.pageInfo}</span>
-            )}
-          </SectionHeader>
-        );
-      case 'group':
-        return (
-          <UserGroup
-            cacheKey={row.key}
-            defaultCollapsed={row.defaultCollapsed}
-            onCancel={onCancel}
-            onCancelDirectory={onCancelDirectory}
-            onCancelUser={onCancelUser}
-            onRemove={onRemove}
-            user={row.user}
-          />
-        );
-      default:
-        return renderPagination();
-    }
-  };
-
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [completedPage, pendingPage, view]);
   return (
-    <div className="dl-root">
-      <Toolbar
-        allFiles={allFiles}
-        onCancel={onCancel}
-        onClearCompleted={onClearCompleted}
-        onPageSizeChange={(n) => {
-          setPageSize(n);
-          setCompletedPage(0);
-        }}
-        onRemove={onRemove}
-        pageSize={pageSize}
-      />
+    <div className="dl-root ul-redesign">
+      <header className="ul-page-heading">
+        <div>
+          <h1>Uploads</h1>
+          <p>Tracks you share with other people.</p>
+        </div>
+        <div className="ul-queue-total">
+          <strong>
+            {(totalPending ?? pendingFiles.length).toLocaleString()}
+          </strong>
+          <span>tracks left to send</span>
+        </div>
+      </header>
       <div
+        aria-label="Upload views"
+        className="ul-view-tabs"
+        onKeyDown={(event) => {
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key))
+            return;
+          event.preventDefault();
+          const nextView =
+            event.key === 'Home'
+              ? 'queue'
+              : event.key === 'End'
+                ? 'history'
+                : view === 'queue'
+                  ? 'history'
+                  : 'queue';
+          setView(nextView);
+          event.currentTarget.querySelector(`#ul-${nextView}-tab`).focus();
+        }}
+        role="tablist"
+        tabIndex={-1}
+      >
+        <button
+          aria-controls="ul-upload-panel"
+          aria-selected={view === 'queue'}
+          id="ul-queue-tab"
+          onClick={() => setView('queue')}
+          role="tab"
+          tabIndex={view === 'queue' ? 0 : -1}
+          type="button"
+        >
+          Upload queue
+        </button>
+        <button
+          aria-controls="ul-upload-panel"
+          aria-selected={view === 'history'}
+          id="ul-history-tab"
+          onClick={() => setView('history')}
+          role="tab"
+          tabIndex={view === 'history' ? 0 : -1}
+          type="button"
+        >
+          History
+        </button>
+      </div>
+      <div className="ul-view-tools">
+        {view === 'queue' ? (
+          <>
+            <p>
+              Track counts below belong to the person and folder shown. Larger
+              queues continue on the next page.
+            </p>
+            {pendingFiles.length > 0 && (
+              <button
+                className="ul-quick-btn ul-quick-btn--cancel"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Cancel the ${pendingFiles.length} unfinished requests on this page? Requests on other pages will stay queued.`,
+                    )
+                  )
+                    for (const file of pendingFiles)
+                      if (isStateCancellable(file.state)) onCancel({ file });
+                }}
+                type="button"
+              >
+                Cancel requests on this page
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <label>
+              People per history page{' '}
+              <select
+                onChange={(event) => {
+                  setPageSize(Number(event.target.value));
+                  setCompletedPage(0);
+                }}
+                value={pageSize}
+              >
+                {pageSize_OPTIONS.map((size) => (
+                  <option
+                    key={size}
+                    value={size}
+                  >
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {historyFiles.length > 0 && (
+              <button
+                className="ul-quick-btn ul-quick-btn--remove"
+                onClick={onClearCompleted}
+                type="button"
+              >
+                Clear all finished history
+              </button>
+            )}
+          </>
+        )}
+      </div>
+      <div
+        aria-labelledby={`ul-${view}-tab`}
         className="dl-groups"
+        id="ul-upload-panel"
         ref={scrollRef}
+        role="tabpanel"
+        tabIndex={0}
       >
         <div
           style={{
@@ -1002,25 +793,80 @@ const UploadsTable = ({
             width: '100%',
           }}
         >
-          {virtualizer.getVirtualItems().map((vi) => (
-            <div
-              className="dl-virtual-row"
-              data-index={vi.index}
-              key={vi.key}
-              ref={virtualizer.measureElement}
-              style={{
-                left: 0,
-                position: 'absolute',
-                top: 0,
-                transform: `translateY(${vi.start}px)`,
-                width: '100%',
-              }}
-            >
-              {renderRow(rows[vi.index])}
-            </div>
-          ))}
+          {virtualizer.getVirtualItems().map((item) => {
+            const row = rows[item.index];
+            return (
+              <div
+                className="dl-virtual-row"
+                data-index={item.index}
+                key={item.key}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${item.start}px)`,
+                }}
+              >
+                {row.type === 'section' ? (
+                  <div className="ul-section-heading">
+                    <h2>{row.title}</h2>
+                    <p>{row.description}</p>
+                  </div>
+                ) : row.type === 'empty' ? (
+                  <p className="ul-section-empty">{row.title}</p>
+                ) : (
+                  <UserGroup
+                    cacheKey={row.key}
+                    defaultCollapsed={row.mode === 'history'}
+                    mode={row.mode}
+                    onCancel={onCancel}
+                    onCancelDirectory={onCancelDirectory}
+                    onCancelUser={onCancelUser}
+                    onRemove={onRemove}
+                    user={row.user}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
+      <footer className="ul-view-footer">
+        {view === 'queue' && Number.isInteger(totalPending) ? (
+          <UploadQueuePagination
+            onPageChange={onPendingPageChange}
+            page={pendingPage}
+            total={totalPending}
+          />
+        ) : view === 'history' ? (
+          <nav
+            aria-label="History pages"
+            className="ul-pagination"
+          >
+            <button
+              className="ul-page-btn"
+              disabled={completedPage === 0}
+              onClick={() => setCompletedPage((page) => page - 1)}
+              type="button"
+            >
+              Previous
+            </button>
+            <span>
+              History page {completedPage + 1} of {historyPages}
+            </span>
+            <button
+              className="ul-page-btn"
+              disabled={completedPage + 1 >= historyPages}
+              onClick={() => setCompletedPage((page) => page + 1)}
+              type="button"
+            >
+              Next
+            </button>
+          </nav>
+        ) : null}
+      </footer>
     </div>
   );
 };
