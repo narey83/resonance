@@ -3443,7 +3443,6 @@ html.amoled {
 .status-strip { position: relative; overflow: visible; gap: 12px; padding: 0 18px; }
 .status-strip > .status-strip-sep { display: none; }
 .status-strip > .status-user-wrap { min-width: 0; }
-.status-strip > .status-user-wrap .status-comment-chip,
 .status-strip > .status-user-wrap .privilege { display: none; }
 .status-strip > .status-user-wrap .status-strip-username-btn { max-width: 220px; }
 .status-strip > .status-user-wrap .status-strip-text { overflow: hidden; text-overflow: ellipsis; }
@@ -3487,7 +3486,7 @@ html.amoled {
 /* Header controls share a quiet surface and consistent hit area. */
 .status-strip > .status-user-wrap .status-strip-username-btn {
   height: 34px;
-  max-width: 270px;
+  max-width: 380px;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0 10px;
@@ -3516,4 +3515,30 @@ html.amoled {
   .status-transfer-group { order: 5; flex: 1 0 100%; }
   .status-transfer-link { flex: 1; justify-content: center; }
   .status-strip-view-label { display: none; }
+}
+
+/* Personal Soulseek tags stay visible alongside the account identity. */
+.status-strip > .status-user-wrap .status-comment-chip {
+  display: inline-block;
+  min-width: 0;
+  flex-shrink: 1;
+  max-width: 160px;
+}
+.status-strip > .status-user-wrap .status-avatar,
+.status-strip > .status-user-wrap .status-icon { flex-shrink: 0; }
+@media (max-width: 700px) {
+  .status-strip > .status-user-wrap .status-strip-username-btn:has(.status-comment-chip) {
+    height: auto;
+    min-height: 34px;
+    max-width: 210px;
+    flex-wrap: wrap;
+    padding-block: 5px;
+    gap: 4px 6px;
+  }
+  .status-strip > .status-user-wrap .status-comment-chip {
+    order: 2;
+    flex-basis: 100%;
+    max-width: 100%;
+    text-align: left;
+  }
 }

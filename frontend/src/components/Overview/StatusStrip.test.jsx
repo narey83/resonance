@@ -75,6 +75,27 @@ describe('Status and controls explanations', () => {
     expect(bar.textContent).not.toContain('13150 transfers queued');
   });
 
+  it('shows a personal Soulseek tag when one is set', () => {
+    localStorage.setItem(
+      'resonance-status-profile',
+      JSON.stringify({ description: 'Sharing good music' }),
+    );
+    try {
+      const panel = renderPanel({
+        isLoggedIn: true,
+        server: { isLoggedIn: true },
+        user: { username: 'MusicFan' },
+      });
+      const tag = panel
+        .closest('.status-strip')
+        .querySelector('.status-comment-chip');
+      expect(tag.textContent).toBe('Sharing good music');
+      expect(tag.title).toBe('Sharing good music');
+    } finally {
+      localStorage.removeItem('resonance-status-profile');
+    }
+  });
+
   it('uses the whole-queue counter with only active byte samples', () => {
     const panel = renderPanel({
       queuedTransferCount: 35_007,
