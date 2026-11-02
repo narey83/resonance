@@ -1732,3 +1732,34 @@ Snapshot/evidence: `/home/narey/resonance-builds/download-loading-20261102`, inc
 `evidence/`. Private helpers: `.dev/download-loading/`. Frontend provenance records
 this change as a file-hash-verified patch so concurrent unrelated frontend work is
 preserved.
+
+## Album-card contributing artist summaries — 2 November 2026
+
+Deployed backend commit `5ad6aba` to
+`/home/narey/resonance-releases/album-cards-5ad6aba`; the native backend PID
+at activation was `1333333`. Multi-artist album summaries now take precedence
+over an album-artist curator credit. Home and Recently Added cards consume the
+same summary as Albums cards. No schema or tag changes.
+
+Prepared, tested and published on the dev laptop in
+`/home/narey/resonance-builds/album-cards-20261102`. Six SQLite album-summary
+regression cases, four frontend album tests, eleven dependency security checks,
+changed-file ESLint, whitespace verification and NuGet vulnerability checks passed.
+Release compilation/publish succeeded; the existing optional FFmpeg download-helper
+path warning remains. The configured native BPM/key detector passed its real
+preflight, and all 418 native artifact hashes verified after startup.
+
+Paused and drained Basic analysis before activation, retained the original remaining
+selection, and resumed it with completed results preserved. The resumed scan admitted
+13,060 still-incomplete tracks and was verified with eight workers, successful new
+completions and no failures at that check. Background preparation remains paused.
+Verified all 13,389 captured unfinished upload identities across graceful shutdown
+and recovery. Preserved private state, Caddy configuration, frontend development
+service and browser health monitor; no database backup, copy or schema change.
+
+Direct and public readiness passed. The live album API returned Various Artists
+summaries; authenticated desktop and narrow browser checks rendered real album cards
+with that label and no page errors. Deployment evidence is in `activation/`,
+`runtime-cpu-check.json`, `detector-preflight.log`, and `verify-live.cjs` within the
+source snapshot above. The frontend remains the existing hot-reloading development
+service, not a production bundle.
