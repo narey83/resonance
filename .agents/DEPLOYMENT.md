@@ -56,7 +56,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/upload-redesign-01ae5ee/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/upload-people-1ce4e09/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -1169,3 +1169,57 @@ Snapshot, source manifest and verification logs:
 `rollback` directory preserves the previous web configuration/link/record for
 `upload-user-queue-d78a746`; no database is included. Mac helper evidence is under
 `.dev/upload-user-queue/`. Source behavior is documented in `docs/upload-queue-paging.md`.
+
+
+## Upload counts reconciled by recipient — 2 November 2026
+
+Active backend: `upload-people-1ce4e09-retry1`, PID 1206121. Active web/gateway:
+`upload-people-1ce4e09`, source `1ce4e09f1f6e17d982889133ec10ab30f3a3b2b7`,
+frontend tree `e9060f7aa3feed79e4c3dc82215725737068a6cf`. Web activated at 15:19 GMT.
+
+Uploads now shows every recipient's full waiting count. Those counts sum to the
+upload total; active transfers are separate. Selecting a recipient loads only that
+person's bounded track page. The new authenticated `GET /api/v0/transfers/upload-queue`
+aggregates recipient counts in SQLite without loading all queued file records.
+It returns no completed history. The History tab was removed, as requested; the
+existing History page remains. Header upload/download waiting counts link to their
+respective queues. While Uploads is mounted, its recipient summary supplies the
+header upload count, avoiding disagreement between independent refresh intervals.
+Legacy transfer endpoints remain compatible. See `docs/upload-queue-paging.md`.
+
+Dev-laptop verification: clean npm 11 install; 19 frontend tests; 615 backend tests
+passed with the optional PostgreSQL-provider test skipped (no dedicated test DB);
+Release/StyleCop with zero warnings; changed frontend lint/formatting; 11 dependency
+security tests; zero npm/NuGet advisory findings; production builds and self-contained
+native publish. Real native BPM/key detector checks passed. Exact staged source
+passed remote pre-commit gates. Browser fixtures at 1440/390 checked that 249 +
+12,894 = 13,143, active uploads are separate, the header remains synchronized even
+when compact status returns a stale count, person selection and scoped paging work,
+History is absent, and navigation fits the viewport. Isolated/public screenshots
+were inspected. Real authenticated browser/API QA remains blocked by the expired
+saved QA session (renewal returned 401). Read-only live SQLite verification confirmed
+all six recipients and their reconciled counts; the later snapshot was 13,051 waiting.
+Existing source-map/bundle-size/deprecation and missing FFmpeg helper notices remain.
+
+The first backend activation's reconciliation guard stopped deployment after an
+active upload became errored with a peer-reset write failure. The old backend was
+restored and remained healthy. Audit found zero missing IDs and zero changed
+identities; three captured records subsequently had terminal transport/timeout
+errors, retained without resurrecting ambiguous terminal history. No manual DB
+repair or queue rewrite was performed. A separately staged retry waited for an idle
+sending window before graceful shutdown. It verified all 13,146 captured unfinished
+IDs and metadata after restart, with no terminal transitions during that activation.
+Source, queue identity and rollback evidence is retained for both attempts.
+
+Direct/public/browser-monitor readiness and public HTML/entrypoint/retained-asset
+hashes passed. Retained 169 older static files. Caddy PID 3992646, protocol/security
+settings and private runtime state were preserved. No database backup, schema
+migration or private-state replacement. Native startup confirmed Soulseek login and
+share-cache readiness. The web activation retained the new backend PID.
+
+Snapshot and logs: `/home/narey/resonance-builds/upload-people-20261102`.
+Backend activation/queue audits: `backend-deployment` and
+`backend-deployment-retry1` inside that snapshot. Previous backend remains
+`analysis-metadata-54c933e`; preserve its current deployment record/PID when using
+rollback helpers. New gateway `rollback` preserves previous web configuration/link
+for `upload-redesign-01ae5ee`. Private Mac helpers: `.dev/upload-people/`.
