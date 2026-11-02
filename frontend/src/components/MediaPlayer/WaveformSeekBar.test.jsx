@@ -9,6 +9,11 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import { act } from 'react-dom/test-utils';
 
+let mockLibraryRevision = 0;
+jest.mock('../../context/LibraryActivityContext', () => ({
+  useLibraryActivity: () => ({ libraryRevision: mockLibraryRevision }),
+}));
+
 jest.mock('../../lib/api', () => ({ get: jest.fn() }));
 jest.mock('../../lib/analysis', () => ({ getWaveform: jest.fn() }));
 jest.mock('../Shared/WaveformPreview', () => ({
@@ -30,6 +35,7 @@ describe('WaveformSeekBar waveform loading', () => {
     container = document.createElement('div');
     document.body.append(container);
     jest.clearAllMocks();
+    mockLibraryRevision = 0;
     api.get.mockResolvedValue({ data: { available: false } });
     jest.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
     jest.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
@@ -46,10 +52,11 @@ describe('WaveformSeekBar waveform loading', () => {
     jest.restoreAllMocks();
   });
 
-  const render = async (track) => {
+  const render = async (track, props = {}) => {
     await act(async () => {
       ReactDOM.render(
         <WaveformSeekBar
+          {...props}
           duration={180}
           onReady={jest.fn()}
           onSeek={jest.fn()}
@@ -79,6 +86,98 @@ describe('WaveformSeekBar waveform loading', () => {
     expect(api.get).toHaveBeenCalledWith('/analysis/candidates/enhanced', {
       params: { path: '/music/enhanced.flac' },
     });
+  });
+
+  it('keeps drawing the enhanced grid during a same-track refresh and a failed refresh', async () => {
+    expect.hasAssertions();
+    const context = Object.fromEntries(
+      [
+        'beginPath',
+        'clearRect',
+        'clip',
+        'fillRect',
+        'fillText',
+        'lineTo',
+        'moveTo',
+        'rect',
+        'restore',
+        'save',
+        'setTransform',
+        'stroke',
+        'translate',
+      ].map((name) => [name, jest.fn()]),
+    );
+    jest
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue(context);
+    analysisApi.getWaveform.mockResolvedValue(response);
+    api.get.mockResolvedValueOnce({
+      data: { available: true, beats: [150, 150.5, 151] },
+    });
+    const track = { path: '/music/enhanced.flac' };
+    const props = { getCurrentTime: () => 150, zoom: 16 };
+    await render(track, props);
+    const canvas = container.querySelector('canvas');
+    Object.defineProperty(canvas, 'clientWidth', { value: 800 });
+    Object.defineProperty(canvas, 'clientHeight', { value: 40 });
+    act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
+    const strokes = context.stroke.mock.calls.length;
+    expect(strokes).toBeGreaterThan(0);
+
+    let fail;
+    api.get.mockReturnValueOnce(
+      new Promise((resolve, reject) => {
+        fail = reject;
+      }),
+    );
+    mockLibraryRevision += 1;
+    await render(track, props);
+    context.stroke.mockClear();
+    act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
+    expect(context.stroke).toHaveBeenCalledTimes(strokes);
+    expect(container.querySelector('.mp-vocal-legend')).not.toBeNull();
+
+    await act(async () => {
+      fail(new Error('Temporary network failure'));
+    });
+    context.stroke.mockClear();
+    act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
+    expect(context.stroke).toHaveBeenCalledTimes(strokes);
+    expect(container.querySelector('.mp-vocal-legend')).not.toBeNull();
+  });
+
+  it('clears the old track while loading a new one and ignores stale responses', async () => {
+    expect.hasAssertions();
+    analysisApi.getWaveform.mockResolvedValue(response);
+    api.get.mockResolvedValueOnce({ data: { available: true } });
+    await render({ path: '/music/first.flac' });
+    let finishOld;
+    api.get.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishOld = resolve;
+      }),
+    );
+    mockLibraryRevision += 1;
+    await render({ path: '/music/first.flac' });
+    api.get.mockReturnValueOnce(new Promise(() => {}));
+    await render({ path: '/music/second.flac' });
+    expect(container.querySelector('.mp-vocal-legend')).toBeNull();
+    await act(async () => {
+      finishOld({ data: { available: true } });
+    });
+    expect(container.querySelector('.mp-vocal-legend')).toBeNull();
+  });
+
+  it('removes invalidated analysis when a successful refresh says it is unavailable', async () => {
+    expect.hasAssertions();
+    analysisApi.getWaveform.mockResolvedValue(response);
+    api.get.mockResolvedValueOnce({ data: { available: true } });
+    await render({ path: '/music/first.flac' });
+    expect(container.querySelector('.mp-vocal-legend')).not.toBeNull();
+    api.get.mockResolvedValueOnce({ data: { available: false } });
+    mockLibraryRevision += 1;
+    await render({ path: '/music/first.flac' });
+    expect(container.querySelector('.mp-vocal-legend')).toBeNull();
   });
 
   it('uses an existing cached waveform without starting analysis', async () => {

@@ -1666,3 +1666,29 @@ Source snapshot, native publish and evidence:
 `runtime-cpu-check.json`, `browser-after.log`, desktop/phone full-grid screenshots,
 `detector-preflight.log`, tests/build/format/security logs and the private remaining
 selection. Private operational helpers are in `.dev/beatgrid-deploy/`.
+
+
+## Keep the player grid visible during refresh — 2 November 2026
+
+Hot-loaded the player refresh fix into the existing frontend development service.
+Library revision events now keep the current track's Enhanced analysis visible
+until its refresh response arrives, including during a transient request failure.
+Switching tracks clears the previous analysis immediately; cancelled responses
+cannot install an old track's grid. An authoritative unavailable response still
+invalidates the grid. Beat timing/rendering algorithms are unchanged.
+
+Dev-laptop checks: nine focused waveform tests, including actual canvas strokes
+beyond the Basic sample cutoff during pending/failed refreshes, track changes,
+stale responses and successful invalidation; changed-file ESLint and 11 dependency
+security checks passed. Development compilation succeeded with existing source-map
+warnings. Authenticated desktop/narrow browser checks observed real library update
+requests during the running Basic scan, delayed one refresh by five seconds and
+returned a controlled 503, and then observed successful refreshes. Both final
+18-second observations recorded zero missing-grid/header samples. Screenshots
+inspected. An initial browser probe included initial-loading time and failed the
+visibility assertion; the subsequent fresh-page observations passed.
+
+The backend, Basic queue and private state were not restarted or paused. Evidence
+and the browser helper are in
+`/home/narey/resonance-builds/beatgrid-full-20261102/grid-refresh/`; source remains
+`/home/narey/resonance-builds/upload-folder-label-20261102/frontend`.

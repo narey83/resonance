@@ -79,12 +79,19 @@ const WaveformSeekBar = ({
 }) => {
   const canvasRef = useRef(null);
   const enhancedRef = useRef(null);
+  const enhancedPathRef = useRef(null);
   const [enhanced, setEnhanced] = useState(null);
   const libraryRevision = useLibraryActivity()?.libraryRevision ?? 0;
   useEffect(() => {
     let cancelled = false;
-    enhancedRef.current = null;
-    setEnhanced(null);
+    // Library-wide updates refresh this track too. Keep its current grid visible
+    // until the response arrives; only a different track must clear it immediately.
+    if (enhancedPathRef.current !== track?.path) {
+      enhancedPathRef.current = track?.path;
+      enhancedRef.current = null;
+      setEnhanced(null);
+    }
+
     if (track?.path)
       api
         .get('/analysis/candidates/enhanced', { params: { path: track.path } })
@@ -95,7 +102,8 @@ const WaveformSeekBar = ({
           }
         })
         .catch(() => {
-          if (!cancelled) setEnhanced({ available: false });
+          if (!cancelled && !enhancedRef.current)
+            setEnhanced({ available: false });
         });
     return () => {
       cancelled = true;
