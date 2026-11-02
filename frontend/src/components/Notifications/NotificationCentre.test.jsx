@@ -1,8 +1,11 @@
+import * as prefs from '../../lib/prefs';
 import NotificationCentre from './NotificationCentre';
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { act, Simulate } from 'react-dom/test-utils';
 import { MemoryRouter } from 'react-router-dom';
+
+jest.mock('../../lib/prefs', () => ({ get: jest.fn(), set: jest.fn() }));
 
 const events = [
   {
@@ -44,6 +47,8 @@ describe('notification activity inbox', () => {
       );
     });
   beforeEach(() => {
+    prefs.get.mockReset().mockReturnValue(false);
+    prefs.set.mockReset();
     launcher = document.createElement('button');
     document.body.append(launcher);
     launcher.focus();
@@ -88,6 +93,37 @@ describe('notification activity inbox', () => {
     const unread = container.querySelector('.nc-filter-line input');
     act(() => Simulate.change(unread, { target: { checked: true } }));
     expect(container.querySelectorAll('.nc-item')).toHaveLength(1);
+  });
+
+  it('saves both checkbox choices', () => {
+    const input = container.querySelector('.nc-filter-line input');
+    expect(input.checked).toBe(false);
+    for (const checked of [true, false]) {
+      act(() => Simulate.change(input, { target: { checked } }));
+      expect(prefs.set).toHaveBeenLastCalledWith(
+        'resonance-notifications-unread-only',
+        checked,
+      );
+    }
+  });
+
+  it('restores the saved filter on reopen and saves Show all activity', () => {
+    act(() => ReactDOM.unmountComponentAtNode(container));
+    prefs.get.mockReturnValue(true);
+    props.notifications = events.filter((n) => n.read);
+    render();
+    expect(prefs.get).toHaveBeenCalledWith(
+      'resonance-notifications-unread-only',
+      false,
+    );
+    expect(container.querySelector('.nc-filter-line input').checked).toBe(true);
+    expect(container.querySelectorAll('.nc-item')).toHaveLength(0);
+    click(button('Show all activity'));
+    expect(prefs.set).toHaveBeenLastCalledWith(
+      'resonance-notifications-unread-only',
+      false,
+    );
+    expect(container.querySelectorAll('.nc-item')).toHaveLength(2);
   });
 
   it('groups history and handles unknown events or missing timestamps', () => {

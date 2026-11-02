@@ -37,6 +37,7 @@ import {
   NOTIFICATION_TYPES,
   relativeTime,
 } from '../../lib/notificationTypes';
+import * as prefs from '../../lib/prefs';
 import { parseUtcDate } from '../../lib/util';
 import {
   ArrowDownUp,
@@ -98,7 +99,14 @@ const NotificationCentre = ({
   const [tab, setTab] = useState('feed');
   const [category, setCategory] = useState('all');
   const [query, setQuery] = useState('');
-  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [unreadOnly, setUnreadOnly] = useState(
+    () => prefs.get('resonance-notifications-unread-only', false) === true,
+  );
+  const changeUnreadOnly = (value) => {
+    setUnreadOnly(value);
+    prefs.set('resonance-notifications-unread-only', value);
+  };
+
   const [now, setNow] = useState(Date.now);
   const panel = useRef(null);
   const unread = notifications.filter((n) => !n.read).length;
@@ -301,7 +309,7 @@ const NotificationCentre = ({
                 <label>
                   <input
                     checked={unreadOnly}
-                    onChange={(e) => setUnreadOnly(e.target.checked)}
+                    onChange={(e) => changeUnreadOnly(e.target.checked)}
                     type="checkbox"
                   />{' '}
                   Unread only
@@ -334,7 +342,7 @@ const NotificationCentre = ({
                       onClick={() => {
                         setQuery('');
                         setCategory('all');
-                        setUnreadOnly(false);
+                        changeUnreadOnly(false);
                       }}
                       type="button"
                     >
