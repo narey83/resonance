@@ -2,6 +2,21 @@
 
 Use this page to orient yourself before changing, building or deploying Resonance. `AGENTS.md` remains authoritative for safety and host restrictions.
 
+## Web development mode — user instruction, 2 November 2026
+
+The current web instance must run as a **development build with hot reload**.
+Do not rebuild and publish production bundles for routine UI edits. The active
+`resonance-web-dev.service` on the dev laptop runs `npm start` from
+`/home/narey/resonance-builds/upload-folder-label-20261102/frontend`; the normal
+public URL proxies to its loopback port 18770, including the `/ws` HMR socket.
+Edit on the Mac, deliberately transfer only changed source files to that isolated
+source directory, and let the running watcher update the browser. Do not enable
+automatic source mirroring. Preserve the existing backend and private state.
+Run relevant lint/tests and authenticated desktop/narrow browser checks; verify
+hot reload for changes to the development delivery path. Dependency/configuration
+changes may need a deliberate dev-service restart. A production build is required
+only when the user explicitly requests production/release delivery.
+
 ## Current workflow — updated 30 October 2026
 
 - The Mac checkout at `/Users/narey/Projects/resonance` is the source of truth.
@@ -20,7 +35,7 @@ A Git push publishes source; it does not deploy a running service. Do not access
 | Changed area | Required local verification |
 | --- | --- |
 | Documentation or Git synchronization only | Review the diff, check referenced paths and Git state. Runtime builds and deployment are not required. |
-| `frontend/` | Relevant tests and lint, production build, then headless interaction and visual checks at desktop and narrow/mobile sizes against the build served on the dev laptop. Use authenticated state for protected routes. |
+| `frontend/` | Relevant tests and lint, successful development compilation/hot reload, then headless interaction and visual checks at desktop and narrow/mobile sizes on the dev laptop. Run a production build only for an explicitly requested production release. Use authenticated state for protected routes. |
 | Backend/server code | Relevant .NET tests and build; exercise changed behavior against the dev-laptop backend. Include client checks when the API contract changes. |
 | Bridge | Relevant Go/UI tests and build; make the affected native application available for local testing. |
 | `mobile/` TypeScript/styles | Relevant mobile lint/tests and current JS served through Metro on the dev laptop to a compatible installed development client, or a new native development build. |

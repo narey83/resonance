@@ -56,7 +56,7 @@ does not authorize publishing to app stores or an unrelated distribution channel
 | Web releases | `/home/narey/resonance-web-releases/` |
 | Caddy executable | `/home/narey/projects/resonance/.dev/caddy` |
 | Caddy main configuration | `/home/narey/projects/resonance/.dev/Caddyfile` |
-| Imported native site configuration | `/home/narey/resonance-gateway/releases/upload-current-748ee58/site.native.caddy` |
+| Imported native site configuration | `/home/narey/resonance-gateway/releases/web-development-20261102/site.native.caddy` |
 | Caddy administration API | `http://127.0.0.1:2019` on that server |
 | Server backups | `/home/narey/resonance-backups/` and existing gateway backup directories |
 
@@ -71,7 +71,38 @@ The Mac source of truth is `/Users/narey/Projects/resonance`, repository
 Prepare isolated source snapshots on the dev laptop and build/test there. Keep its
 existing checkout and private state intact; never reset it to perform a deployment.
 
-## Web deployment
+## Current web mode — development with hot reload
+
+**Explicit user instruction, 2 November 2026:** this is a development instance.
+Use a development build with hot reload for web iteration. Do not perform a full
+production build/deployment for each UI edit; production delivery requires an
+explicit production/release request. This overrides earlier routine web-build gates.
+
+The usual public URL now proxies the web frontend to the persistent user service
+`resonance-web-dev.service` on `127.0.0.1:18770`. Its isolated source directory is
+`/home/narey/resonance-builds/upload-folder-label-20261102/frontend`; it runs
+`npm start` (CRACO/webpack development mode), bound only to loopback. Explicit
+allowed hosts are localhost, 127.0.0.1 and the established public hostname.
+The current gateway is `web-development-20261102`. API, hub, health, backend routes
+and private runtime state remain unchanged. `/ws` reaches the dev server for HMR.
+
+For routine UI edits: edit in the Mac source of truth; deliberately copy only the
+changed files to that existing isolated source directory; run appropriate remote
+lint/tests; check the running dev page at desktop and narrow sizes. Do not reinstall
+dependencies, make a fresh build snapshot or restart the dev server for each small
+source edit. Do not use automatic source mirroring. Dependency and dev-config
+changes may require a clean dependency install and/or deliberate service restart.
+Keep source synchronized with Git using the existing staged-source verification.
+Use `systemctl --user status resonance-web-dev.service` and its journal for service
+health. Do not restart the backend for frontend changes.
+
+`current/deployment.json` records `frontendRuntime.mode: development`, the source
+path, service, loopback origin and gateway. Previous static web metadata and the
+`wwwroot` symlink describe the preserved fallback artifact, not the active dev
+frontend. The previous static release is `upload-current-748ee58`. The gateway's
+`rollback` retains prior configuration/record; no database backup was made.
+
+## Production web deployment (only when explicitly requested)
 
 1. Read `AGENTS.md` and `.agents/BUILD_AND_DEPLOY.md`. Verify the source commit,
    relevant tests, lint, security checks and production build on the dev laptop.
@@ -1392,3 +1423,31 @@ static assets retained. No backend restart, database copy, schema or slot change
 Snapshot/logs/evidence: `/home/narey/resonance-builds/upload-current-20261102`.
 Rollback config/link/record: new gateway's `rollback` points to
 `upload-folders-33f4637`. Private Mac helpers: `.dev/upload-current/`.
+
+
+## Development frontend activation and short source labels — 2 November 2026
+
+Activated `web-development-20261102` at 16:45 GMT. The user explicitly corrected the
+production-build workflow: retain development mode and hot reload going forward.
+The in-flight production build for the source-label change was intentionally
+cancelled; no production-build success is claimed for this change.
+
+Frontend source: `975c072` (full source provenance in the runtime record).
+The From line now uses the source folder name, e.g. `From: Prisoner`, without
+`downloads\` or other parent directories. Windows/Unix/trailing-slash cases have
+regression coverage. Dev host allowlist configuration is explicit and tested.
+
+Dev-laptop verification: clean install before activation, 37 relevant frontend
+and dev-config tests, lint, 11 dependency-security tests and zero audit findings.
+The initial test-only conditional lint issue was corrected before successful gates.
+Development compilation succeeded, with existing dependency source-map warnings.
+Authenticated desktop/phone checks use actual API traffic through the dev proxy
+and public gateway, including active source labels, complete 8,053-track queue,
+folder toggles, user switching, single controls and matching totals. HMR was tested
+with a temporary unused CSS property: the open document updated without navigation,
+and exact source bytes were restored afterward. No transfer mutations occurred.
+Backend PID 1206121 and Caddy PID 3992646 were preserved. No database copy, schema
+change or slot setting change. Browser health monitor remains active.
+
+Snapshot/tests/browser/HMR evidence: `/home/narey/resonance-builds/upload-folder-label-20261102`.
+Private Mac operational helpers: `.dev/web-development/`.
