@@ -959,6 +959,23 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         publishLock.Dispose();
     }
 
+    internal static string GetEntryPageUrl(JsonElement entry, string videoId)
+    {
+        // Full extraction's "url" is a temporary media URL without video metadata.
+        // Re-extract the page at download time so duration filters see the real duration.
+        var url = entry.TryGetProperty("webpage_url", out var page) && page.ValueKind == JsonValueKind.String
+            ? page.GetString() : null;
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            url = entry.TryGetProperty("url", out var media) && media.ValueKind == JsonValueKind.String
+                ? media.GetString() : null;
+        }
+
+        return url?.StartsWith("http", StringComparison.OrdinalIgnoreCase) == true
+            ? url
+            : !string.IsNullOrEmpty(videoId) ? $"https://www.youtube.com/watch?v={videoId}" : string.Empty;
+    }
+
     internal static (string YtDlp, string Deno) DependencyAssets(string os, Architecture architecture, bool musl = false)
     {
         if (architecture is not (Architecture.X64 or Architecture.Arm64))
@@ -1307,12 +1324,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 return null;
             }
 
-            var url = root.TryGetProperty("url", out var urlProp) ? urlProp.GetString() ?? string.Empty : string.Empty;
-            if (!url.StartsWith("http"))
-            {
-                url = $"https://www.youtube.com/watch?v={videoId}";
-            }
-
+            var url = GetEntryPageUrl(root, videoId);
             var title = root.TryGetProperty("title", out var titleProp) ? titleProp.GetString() ?? string.Empty : string.Empty;
 
             // Resolve the channel/uploader name for the subscription title. Flat-playlist of a
@@ -1871,7 +1883,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             var root = doc.RootElement;
 
             var videoId = root.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? string.Empty : string.Empty;
-            var url = root.TryGetProperty("url", out var urlProp) ? urlProp.GetString() ?? string.Empty : string.Empty;
+            var url = GetEntryPageUrl(root, videoId);
             var title = root.TryGetProperty("title", out var titleProp) ? titleProp.GetString() ?? string.Empty : string.Empty;
             var uploader = root.TryGetProperty("uploader", out var uploaderProp) ? uploaderProp.GetString() ?? string.Empty : string.Empty;
             var thumbnail = root.TryGetProperty("thumbnail", out var thumbProp) ? thumbProp.GetString() : null;
@@ -1890,12 +1902,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             // non-Number element — so the ValueKind check is required, not just belt-and-braces.
             var duration = root.TryGetProperty("duration", out var durProp) && durProp.ValueKind == JsonValueKind.Number && durProp.TryGetInt32(out var dur) ? (int?)dur : null;
             var playlistIndex = root.TryGetProperty("playlist_index", out var idxProp) && idxProp.ValueKind == JsonValueKind.Number && idxProp.TryGetInt32(out var idx) ? (int?)idx : null;
-
-            // If the URL is just a video ID, build the full URL
-            if (!url.StartsWith("http") && videoId.Length > 0)
-            {
-                url = $"https://www.youtube.com/watch?v={videoId}";
-            }
 
             // Populate job title/uploader if not set. A single-video job shows the video title;
             // a playlist/channel job shows the channel name.
@@ -2974,7 +2980,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             var root = doc.RootElement;
 
             var videoId = root.TryGetProperty("id", out var id) ? id.GetString() ?? string.Empty : string.Empty;
-            var url = root.TryGetProperty("url", out var u) ? u.GetString() ?? string.Empty : string.Empty;
+            var url = GetEntryPageUrl(root, videoId);
             var title = root.TryGetProperty("title", out var t) ? t.GetString() ?? string.Empty : string.Empty;
             var uploader = root.TryGetProperty("uploader", out var up) ? up.GetString() ?? string.Empty : string.Empty;
             var thumbnail = SelectThumbnail(root);
@@ -2983,11 +2989,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             var duration = root.TryGetProperty("duration", out var dur) && dur.ValueKind == JsonValueKind.Number
                 ? (int?)(int)dur.GetDouble()
                 : null;
-
-            if (!url.StartsWith("http") && videoId.Length > 0)
-            {
-                url = $"https://www.youtube.com/watch?v={videoId}";
-            }
 
             // Channels and playlists both come back as "YoutubeTab" entries; videos are "Youtube"
             var ieKey = root.TryGetProperty("ie_key", out var ie) ? ie.GetString() : null;
