@@ -34,14 +34,14 @@
   display: grid;
   grid-template-rows: 0fr;
   flex-shrink: 0;
-  transition: grid-template-rows 500ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: grid-template-rows 650ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .media-player-dock--open { grid-template-rows: 1fr; }
 .media-player-dock-clip { min-height: 0; overflow: hidden; }
 .media-player-dock .media-player {
   transform: translateY(100%);
   opacity: 0;
-  transition: transform 500ms cubic-bezier(0.4, 0, 0.2, 1), opacity 500ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 650ms cubic-bezier(0.4, 0, 0.2, 1), opacity 650ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .media-player-dock--open .media-player { transform: translateY(0); opacity: 1; }
 @starting-style {

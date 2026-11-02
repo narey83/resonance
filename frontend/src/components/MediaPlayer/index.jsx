@@ -307,7 +307,7 @@ const MediaPlayer = () => {
     const timeout = setTimeout(() => {
       dockContentRef.current = null;
       setRetainDock(false);
-    }, 500);
+    }, 650);
     return () => clearTimeout(timeout);
   }, [track]);
   const repeatRef = useRef(false);
