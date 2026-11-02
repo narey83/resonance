@@ -56,6 +56,10 @@ public class WorkspaceTests : IDisposable
         Assert.Equal(2, stats.Keyed);
         Assert.Equal(2, stats.Bpmed);
         Assert.Equal(2, stats.Complete);
+        Assert.Equal(2, repository.GetFolders(analysis: "complete").Sum(folder => folder.TrackCount));
+        Assert.Equal(1, repository.GetFolders(analysis: "incomplete").Sum(folder => folder.TrackCount));
+        var rows = repository.Query(null!, null!, null!, null!, null!, null!, false, false, false, false, false, 10, 0, analysis: "incomplete");
+        Assert.Equal(MusicPath.ToAbsolute(stale.Path), Assert.Single(rows.Tracks).Path);
     }
 
     [Fact]

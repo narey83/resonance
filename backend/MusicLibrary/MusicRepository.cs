@@ -65,8 +65,8 @@ namespace resonance.MusicLibrary
         private string TA => UsePostgres ? "analysis.track_analysis" : "track_analysis";
 
         // Preserve explicit tags; expose no-tag-write analysis in normal library rows.
-        private string CachedBpm => $"COALESCE(NULLIF({T}.bpm, 0), (SELECT c.detected_bpm FROM {TA} c WHERE {CacheMatch("c")}), CAST(ROUND(CAST({SummaryFact("bpm")} AS DOUBLE PRECISION)) AS INTEGER))";
-        private string CachedKey => $"COALESCE(NULLIF({T}.key_sig, ''), (SELECT c.detected_key FROM {TA} c WHERE {CacheMatch("c")}), {SummaryFact("key")})";
+        private string CachedBpm => $"COALESCE(NULLIF({T}.bpm, 0), (SELECT c.detected_bpm FROM {CacheSource("c")} WHERE {CacheMatch("c")}), CAST(ROUND(CAST({SummaryFact("bpm")} AS DOUBLE PRECISION)) AS INTEGER))";
+        private string CachedKey => $"COALESCE(NULLIF({T}.key_sig, ''), (SELECT c.detected_key FROM {CacheSource("c")} WHERE {CacheMatch("c")}), {SummaryFact("key")})";
 
         // Case-insensitive LIKE operator
         private string Like => UsePostgres ? "ILIKE" : "LIKE";
@@ -76,7 +76,7 @@ namespace resonance.MusicLibrary
         // named cache alias, so the list filter (correlated subquery) and the stats count (join)
         // apply the identical rule.
         private string FullyAnalysedExists =>
-            $"EXISTS (SELECT 1 FROM {TA} fa WHERE {CacheMatch("fa")} AND {FullyAnalysed("fa")})";
+            $"EXISTS (SELECT 1 FROM {CacheSource("fa")} WHERE {CacheMatch("fa")} AND {FullyAnalysed("fa")})";
 
         // Shared by Upsert and UpsertMany so the column/conflict handling can't drift between them.
         private string UpsertSql => $@"
@@ -449,7 +449,7 @@ namespace resonance.MusicLibrary
 
             if (hasGenre)
             {
-                conditions.Add(UsePostgres ? $"(LOWER(TRIM(genre)) = LOWER(TRIM(@genre)) OR LOWER(TRIM((SELECT c.dj_summary::jsonb->>'genre' FROM {TA} c WHERE {CacheMatch("c")}))) = LOWER(TRIM(@genre)))" : $"(LOWER(TRIM(genre)) = LOWER(TRIM(@genre)) OR LOWER(TRIM((SELECT json_extract(c.dj_summary,'$.genre') FROM {TA} c WHERE {CacheMatch("c")}))) = LOWER(TRIM(@genre)))");
+                conditions.Add(UsePostgres ? $"(LOWER(TRIM(genre)) = LOWER(TRIM(@genre)) OR LOWER(TRIM((SELECT c.dj_summary::jsonb->>'genre' FROM {CacheSource("c")} WHERE {CacheMatch("c")}))) = LOWER(TRIM(@genre)))" : $"(LOWER(TRIM(genre)) = LOWER(TRIM(@genre)) OR LOWER(TRIM((SELECT json_extract(c.dj_summary,'$.genre') FROM {CacheSource("c")} WHERE {CacheMatch("c")}))) = LOWER(TRIM(@genre)))");
             }
 
             if (hasYear)
@@ -497,7 +497,7 @@ namespace resonance.MusicLibrary
                 conditions.Add(CrateAnalysisExists);
             }
 
-            var summary = $"(SELECT c.dj_summary FROM {TA} c WHERE {CacheMatch("c")})";
+            var summary = $"(SELECT c.dj_summary FROM {CacheSource("c")} WHERE {CacheMatch("c")})";
             if (dj?.AddedAfter.HasValue == true)
             {
                 conditions.Add("indexed_at >= @addedAfter");
@@ -723,14 +723,14 @@ namespace resonance.MusicLibrary
                 SELECT path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
                        title, artist, album_artist, album, year, track_number, disc_number,
                        genre, {CachedBpm} AS bpm, {CachedKey} AS key_sig, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth,
-                       EXISTS (SELECT 1 FROM {TA} a
+                       EXISTS (SELECT 1 FROM {CacheSource("a")}
                                WHERE a.masked_filename = {T}.path
                                  AND a.file_size = {T}.file_size
-                                 AND a.overall_peaks IS NOT NULL) AS has_waveform,
-                       (SELECT a.lufs FROM {TA} a
+                                 AND {HasWaveform("a")}) AS has_waveform,
+                       (SELECT a.lufs FROM {CacheSource("a")}
                         WHERE a.masked_filename = {T}.path
                           AND a.file_size = {T}.file_size) AS lufs,
-                       {$"(SELECT c.dj_summary FROM {TA} c WHERE {CacheMatch("c")})"} AS dj_summary
+                       {$"(SELECT c.dj_summary FROM {CacheSource("c")} WHERE {CacheMatch("c")})"} AS dj_summary
                 FROM {T} {where}
                 ORDER BY {orderBy}
                 LIMIT @limit OFFSET @offset";
@@ -953,7 +953,7 @@ namespace resonance.MusicLibrary
             var summaryBpm = UsePostgres ? "a.dj_summary::jsonb->>'bpm'" : "json_extract(a.dj_summary,'$.bpm')";
             var key = $"COALESCE(NULLIF({T}.key_sig, ''), a.detected_key, {summaryKey})";
             var bpm = $"COALESCE(NULLIF({T}.bpm, 0), a.detected_bpm, CAST(ROUND(CAST({summaryBpm} AS DOUBLE PRECISION)) AS INTEGER))";
-            var cacheTable = UsePostgres ? $"{TA} a" : $"{TA} a INDEXED BY IX_TrackAnalysis_Coverage";
+            var cacheTable = CacheSource("a");
             var hasWaveform = HasWaveform("a");
             cmd.CommandText = $@"
                 SELECT COUNT(*),
@@ -975,7 +975,7 @@ namespace resonance.MusicLibrary
 
             // Read only saved enhanced summaries with the same indexed content guard.
             // This streams compact rows, without parsing audio or allocating a library dump.
-            cmd.CommandText = $@"SELECT a.dj_summary FROM {TA} a
+            cmd.CommandText = $@"SELECT a.dj_summary FROM {CacheSource("a")}
                 JOIN {T} ON {CacheMatch("a")} WHERE a.dj_summary IS NOT NULL";
             using var reader = cmd.ExecuteReader();
             IEnumerable<string> Summaries()
@@ -1371,9 +1371,9 @@ namespace resonance.MusicLibrary
                 SELECT path, filename, directory, extension, file_size, file_modified, indexed_at, duration,
                        title, artist, album_artist, album, year, track_number, disc_number,
                        genre, {CachedBpm}, {CachedKey}, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth,
-                       EXISTS (SELECT 1 FROM {TA} a WHERE {CacheMatch("a")} AND a.overall_peaks IS NOT NULL),
-                       (SELECT a.lufs FROM {TA} a WHERE {CacheMatch("a")}),
-                       (SELECT c.dj_summary FROM {TA} c WHERE {CacheMatch("c")})
+                       EXISTS (SELECT 1 FROM {CacheSource("a")} WHERE {CacheMatch("a")} AND {HasWaveform("a")}),
+                       (SELECT a.lufs FROM {CacheSource("a")} WHERE {CacheMatch("a")}),
+                       (SELECT c.dj_summary FROM {CacheSource("c")} WHERE {CacheMatch("c")})
                 FROM {T} {(afterPath == null ? string.Empty : "WHERE path > @after")}
                 ORDER BY path LIMIT @limit";
             if (afterPath != null)
@@ -1433,7 +1433,7 @@ namespace resonance.MusicLibrary
 
         private string AnalysisCondition(string analysis)
         {
-            var summary = $"(SELECT c.dj_summary FROM {TA} c WHERE {CacheMatch("c")})";
+            var summary = $"(SELECT c.dj_summary FROM {CacheSource("c")} WHERE {CacheMatch("c")})";
             return analysis?.Trim().ToLowerInvariant() switch
             {
                 "enhanced" => UsePostgres ? $"({summary})::jsonb->>'complete' = 'true'" : $"json_extract({summary},'$.complete') = 1",
@@ -1443,6 +1443,12 @@ namespace resonance.MusicLibrary
                 _ => null,
             };
         }
+
+        // SQLite otherwise prefers the unique path index, which fetches the large
+        // waveform row even for a small metadata lookup.
+        private string CacheSource(string alias) => UsePostgres
+            ? $"{TA} {alias}"
+            : $"{TA} {alias} INDEXED BY IX_TrackAnalysis_Coverage";
 
         // Joins an analysis-cache row to its track. The file_size guard is what makes a stale
         // cache entry (file replaced since it was analysed) not count as analysed.

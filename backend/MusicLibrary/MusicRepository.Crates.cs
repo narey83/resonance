@@ -38,7 +38,7 @@ using resonance.MusicLibrary.Workspace;
 /// <summary>Automatic analysed-track collections.</summary>
 public partial class MusicRepository
 {
-    private string CrateAnalysisExists => $"EXISTS (SELECT 1 FROM {TA} ca WHERE {CacheMatch("ca")} AND (ca.overall_peaks IS NOT NULL OR ca.lufs IS NOT NULL OR ca.detected_bpm > 0 OR NULLIF(ca.detected_key, '') IS NOT NULL OR ca.dj_summary IS NOT NULL))";
+    private string CrateAnalysisExists => $"EXISTS (SELECT 1 FROM {CacheSource("ca")} WHERE {CacheMatch("ca")} AND ({HasWaveform("ca")} OR ca.lufs IS NOT NULL OR ca.detected_bpm > 0 OR NULLIF(ca.detected_key, '') IS NOT NULL OR ca.dj_summary IS NOT NULL))";
 
     // Aggregate just labels and counts, never waveform blobs or the full track list.
     public IReadOnlyList<SmartCrate> AutomaticCrates()
@@ -46,8 +46,8 @@ public partial class MusicRepository
         using var connection = OpenConnection();
         using var command = connection.CreateCommand();
         var summaryGenre = UsePostgres
-            ? $"(SELECT c.dj_summary::jsonb->>'genre' FROM {TA} c WHERE {CacheMatch("c")})"
-            : $"(SELECT json_extract(c.dj_summary,'$.genre') FROM {TA} c WHERE {CacheMatch("c")})";
+            ? $"(SELECT c.dj_summary::jsonb->>'genre' FROM {CacheSource("c")} WHERE {CacheMatch("c")})"
+            : $"(SELECT json_extract(c.dj_summary,'$.genre') FROM {CacheSource("c")} WHERE {CacheMatch("c")})";
         command.CommandText = $@"WITH facts AS (
             SELECT path, NULLIF(TRIM(genre), '') AS tag_genre, NULLIF(TRIM({summaryGenre}), '') AS predicted_genre,
                 {CachedKey} AS musical_key, {CachedBpm} AS tempo FROM {T} WHERE {CrateAnalysisExists}),
@@ -83,6 +83,6 @@ public partial class MusicRepository
     }
 
     private string SummaryFact(string name) => UsePostgres
-        ? $"(SELECT c.dj_summary::jsonb->>'{name}' FROM {TA} c WHERE {CacheMatch("c")})"
-        : $"(SELECT json_extract(c.dj_summary,'$.{name}') FROM {TA} c WHERE {CacheMatch("c")})";
+        ? $"(SELECT c.dj_summary::jsonb->>'{name}' FROM {CacheSource("c")} WHERE {CacheMatch("c")})"
+        : $"(SELECT json_extract(c.dj_summary,'$.{name}') FROM {CacheSource("c")} WHERE {CacheMatch("c")})";
 }
