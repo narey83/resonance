@@ -1247,9 +1247,11 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
     private static void AppendPluginDirs(System.Text.StringBuilder args, resonance.Options.IntegrationsOptions.YtDlpOptions opts)
     {
-        args.Append(PluginDirsFlag(opts));
-        args.Append(PoTokenProviderFlag(opts));
+        args.Append(PluginArguments(opts));
     }
+
+    private static string PluginArguments(resonance.Options.IntegrationsOptions.YtDlpOptions opts) =>
+        ManagedBgutil.Arguments() ?? (PluginDirsFlag(opts) + PoTokenProviderFlag(opts));
 
     // yt-dlp rewrites the cookie file on every run to persist updated cookies, so concurrent
     // workers sharing the master file corrupt it. Each invocation gets a private throwaway
@@ -1728,7 +1730,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             {
                 StartInfo = new ProcessStartInfo(Executable(opts))
                 {
-                    Arguments = $"{flat}--dump-json{(jsRuntimeArg != null ? " " + jsRuntimeArg : string.Empty)}{ExtractorArgsFlag(opts)}{PluginDirsFlag(opts)}{PoTokenProviderFlag(opts)} \"{job.Url}\"",
+                    Arguments = $"{flat}--dump-json{(jsRuntimeArg != null ? " " + jsRuntimeArg : string.Empty)}{ExtractorArgsFlag(opts)}{PluginArguments(opts)} \"{job.Url}\"",
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardOutput = true,

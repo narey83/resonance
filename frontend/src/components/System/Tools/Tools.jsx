@@ -12,7 +12,7 @@ const descriptions = {
     'Converts media into your chosen audio format and reads details such as duration and codecs.',
   deno: 'Runs the JavaScript needed to resolve YouTube playback links so downloads can start.',
   bgutil:
-    'Generates the playback tokens YouTube may require for downloads. Node runs this helper inside the backend.',
+    'Generates the playback tokens YouTube may require for downloads. This tool uses the server’s Node.js runtime.',
 };
 
 const Tools = () => {
@@ -132,7 +132,9 @@ const Tools = () => {
                 {busy === tool.id
                   ? 'Installing…'
                   : tool.updateAvailable === true
-                    ? 'Update available'
+                    ? tool.current
+                      ? 'Update available'
+                      : 'Ready to install'
                     : tool.updateAvailable === false
                       ? 'Up to date'
                       : 'Not checked'}
@@ -155,22 +157,19 @@ const Tools = () => {
                 onClick={() => update([tool])}
                 type="button"
               >
-                {busy === tool.id ? 'Installing…' : 'Update tool'}
+                {busy === tool.id
+                  ? 'Installing…'
+                  : tool.current
+                    ? 'Update tool'
+                    : 'Install tool'}
               </button>
-            ) : (
-              <span className="tool-bundled">
-                Backend image update required
-              </span>
-            )}
+            ) : null}
           </article>
         ))}
       </div>
       <p className="tools-footnote">
-        Tools are installed automatically on first startup. Docker includes them
-        in the image; missing standalone tools are downloaded and verified.
-        Updates use verified upstream downloads. yt-dlp, Deno and FFmpeg retain
-        their existing automatic-update settings. Bundled bgutil, its plugin and
-        Node are updated together through the backend image.
+        yt-dlp, Deno and FFmpeg retain their automatic update settings.
+        Installing or updating bgutil also installs its matching yt-dlp plugin.
       </p>
     </section>
   );

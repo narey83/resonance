@@ -50,6 +50,10 @@ using Resonance.Integrations.YtDlp;
 [Authorize(Policy = AuthPolicy.JwtOnly, Roles = AuthRole.AdministratorOnly)]
 public sealed class ToolsController(IYtDlpService youtube, IFfmpegService ffmpeg, IHttpClientFactory clients) : ControllerBase
 {
+    private static string BgutilRequirements => ManagedBgutil.IsBundled
+        ? "Update the backend image to upgrade the bundled bgutil provider and plugin."
+        : "Native installation requires Node.js 22 or newer, npm and git on the backend PATH.";
+
     [HttpGet]
     public async Task<IActionResult> Get(bool check = false, CancellationToken cancellationToken = default)
     {
@@ -69,7 +73,7 @@ public sealed class ToolsController(IYtDlpService youtube, IFfmpegService ffmpeg
                     throw;
                 }
 
-                rows.Add(new(id, Name(id), null, null, id != "bgutil", null, "Version check unavailable. Retry when the server has network access."));
+                rows.Add(new(id, Name(id), null, null, id != "bgutil" || ManagedBgutil.CanUpdate, null, "Version check unavailable. Retry when the server has network access."));
             }
         }
 
@@ -79,9 +83,14 @@ public sealed class ToolsController(IYtDlpService youtube, IFfmpegService ffmpeg
     [HttpPost("{id}/update")]
     public async Task<IActionResult> Update(string id, CancellationToken cancellationToken)
     {
-        if (id is not ("ytdlp" or "ffmpeg" or "deno"))
+        if (id is not ("ytdlp" or "ffmpeg" or "deno" or "bgutil"))
         {
-            return BadRequest(new { message = id == "bgutil" ? "Update bgutil and its matching plugin by rebuilding the backend image." : "Unknown managed tool." });
+            return BadRequest(new { message = "Unknown managed tool." });
+        }
+
+        if (id == "bgutil" && !ManagedBgutil.CanUpdate)
+        {
+            return BadRequest(new { message = BgutilRequirements });
         }
 
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -92,15 +101,16 @@ public sealed class ToolsController(IYtDlpService youtube, IFfmpegService ffmpeg
             {
                 "ytdlp" => await youtube.UpdateYtDlpAsync(deadline.Token),
                 "ffmpeg" => await ffmpeg.UpdateAsync(deadline.Token),
+                "bgutil" => await new ManagedBgutil(clients).UpdateAsync(deadline.Token),
                 _ => await youtube.UpdateJavaScriptRuntimeAsync(deadline.Token),
             };
             return Ok(new { version });
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
-            return Conflict(new { message = "This tool could not be replaced. Check whether it is externally managed and review the backend logs." });
+            return Conflict(new { message = id == "bgutil" ? ex.Message : "This tool could not be replaced. Check whether it is externally managed and review the backend logs." });
         }
-        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or System.IO.IOException)
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or System.IO.IOException or System.ComponentModel.Win32Exception or JsonException)
         {
             return StatusCode(503, new { message = "The update did not complete. Retry later; the installed tool has been retained where possible." });
         }
@@ -150,15 +160,56 @@ public sealed class ToolsController(IYtDlpService youtube, IFfmpegService ffmpeg
         }
         else
         {
-            using var client = clients.CreateClient();
-            var result = await client.GetFromJsonAsync<JsonElement>("http://127.0.0.1:4416/ping", token);
-            current = result.GetProperty("version").GetString();
-            latest = check ? await new ManagedToolInstaller(clients).LatestVersionAsync("Brainicism/bgutil-ytdlp-pot-provider", token) : null;
+            return await BgutilStatus(check, token);
         }
 
         var available = latest != null ? current?.Trim().TrimStart('v') != latest.Trim().TrimStart('v') : (bool?)null;
-        var note = id == "bgutil" ? "Bundled with the backend. Update its image and matching yt-dlp plugin together; the Node runtime is included." : null;
-        return new(id, Name(id), current, latest, id != "bgutil", available, note);
+        return new(id, Name(id), current, latest, true, available, null);
+    }
+
+    private async Task<ToolStatus> BgutilStatus(bool check, CancellationToken token)
+    {
+        var directory = ManagedBgutil.ActiveDirectory();
+        var current = ManagedBgutil.InstalledVersion(directory);
+        var canUpdate = ManagedBgutil.CanUpdate;
+        var note = canUpdate ? null : BgutilRequirements;
+        if (current == null)
+        {
+            using var probe = CancellationTokenSource.CreateLinkedTokenSource(token);
+            probe.CancelAfter(TimeSpan.FromSeconds(2));
+            try
+            {
+                using var client = clients.CreateClient();
+                var result = await client.GetFromJsonAsync<JsonElement>("http://127.0.0.1:4416/ping", probe.Token);
+                current = result.TryGetProperty("version", out var version) ? version.GetString() : null;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException or InvalidOperationException)
+            {
+                token.ThrowIfCancellationRequested();
+            }
+        }
+
+        string? latest = null;
+        if (check)
+        {
+            try
+            {
+                latest = await new ManagedToolInstaller(clients).LatestVersionAsync(ManagedBgutil.Repository, token);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException or InvalidOperationException or KeyNotFoundException)
+            {
+                note = "Could not check the latest bgutil release. Try again later.";
+            }
+        }
+
+        bool? available = null;
+        if (Version.TryParse(latest?.TrimStart('v'), out var release))
+        {
+            available = (canUpdate && directory == null) ||
+                !Version.TryParse(current?.TrimStart('v'), out var installed) || installed < release;
+        }
+
+        return new("bgutil", Name("bgutil"), current, latest, canUpdate, available, note);
     }
 
     public sealed record ToolStatus(string Id, string Name, string? Current, string? Latest, bool CanUpdate, bool? UpdateAvailable, string? Note);

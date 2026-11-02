@@ -74,7 +74,7 @@ describe('Administrator tools page', () => {
     expect.hasAssertions();
     await render();
     expect(button('Update available').disabled).toBe(true);
-    expect(container.textContent).toContain('Backend image update required');
+    expect(container.textContent).toContain('Update the backend image.');
     await check();
     expect(button('Update available').textContent).toContain('(2)');
     expect(button('Update available').disabled).toBe(false);
@@ -96,6 +96,23 @@ describe('Administrator tools page', () => {
     ]);
     expect(container.textContent).toContain('Download unavailable');
     expect(container.textContent).toContain('1 of 2 updates completed.');
+  });
+
+  it('installs the native bgutil provider when no version is installed', async () => {
+    expect.hasAssertions();
+    await render();
+    api.get.mockResolvedValueOnce({
+      data: [{ ...rows[2], current: null, canUpdate: true, note: null }],
+    });
+    await check();
+    await act(async () => {
+      Simulate.click(button('Install tool'));
+    });
+    expect(api.post).toHaveBeenCalledWith(
+      '/tools/bgutil/update',
+      {},
+      expect.any(Object),
+    );
   });
 
   it('shows a failed inventory request and allows checking again', async () => {

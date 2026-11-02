@@ -164,7 +164,7 @@ internal sealed class ManagedToolInstaller(IHttpClientFactory clients)
 
     internal async Task<string> InstallAsync(string repository, string directory, Asset[] requested, CancellationToken token)
     {
-        if (repository is not ("yt-dlp/yt-dlp" or "denoland/deno"))
+        if (repository is not ("yt-dlp/yt-dlp" or "denoland/deno" or ManagedBgutil.Repository))
         {
             throw new ArgumentException("Unsupported dependency repository.", nameof(repository));
         }
