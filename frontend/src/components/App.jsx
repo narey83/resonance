@@ -338,7 +338,11 @@ const App = () => {
     }
 
     document.addEventListener('visibilitychange', recordActivity, options);
-    recordActivity();
+
+    // Recovery and session reloads can happen while the tab is idle.
+    if (performance.getEntriesByType('navigation')[0]?.type !== 'reload') {
+      recordActivity();
+    }
 
     return () => controller.abort();
   }, [initialized, isLoggedIn, setup.required]);
