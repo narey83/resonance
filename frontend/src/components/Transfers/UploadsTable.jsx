@@ -145,6 +145,38 @@ const UploadsTable = ({
   const selected = queueUsers.find(
     (recipient) => recipient.username === selectedUsername,
   );
+  const downloadingUsers = [];
+  const connectingUsers = [];
+  const waitingUsers = [];
+  for (const recipient of queueUsers) {
+    const sending = recipient.sendingCount ?? recipient.activeCount;
+    const group =
+      sending > 0
+        ? downloadingUsers
+        : recipient.activeCount > 0
+          ? connectingUsers
+          : waitingUsers;
+    group.push(recipient);
+  }
+
+  const hasUnclassifiedActivity = downloadingUsers.some(
+    (recipient) => recipient.sendingCount == null,
+  );
+  const userGroups = [
+    {
+      label: hasUnclassifiedActivity ? 'Active uploads' : 'Downloading now',
+      empty: 'No users downloading.',
+      users: downloadingUsers,
+    },
+    ...(connectingUsers.length > 0
+      ? [{ label: 'Connecting', users: connectingUsers }]
+      : []),
+    {
+      label: 'Waiting',
+      empty: 'No users waiting.',
+      users: waitingUsers,
+    },
+  ];
   const user = useMemo(
     () => ({
       username: selectedUsername,
@@ -223,27 +255,43 @@ const UploadsTable = ({
           aria-label="Users requesting uploads"
           className="ul-live-users"
         >
-          <h2>
-            Users <span>{queueUsers.length}</span>
-          </h2>
-          {queueUsers.length === 0 && <p>No queued uploads.</p>}
           <div className="ul-live-user-list">
-            {queueUsers.map((recipient) => (
-              <button
-                aria-pressed={recipient.username === selectedUsername}
-                className="ul-live-user"
-                key={recipient.username}
-                onClick={() => onSelectUploadUser(recipient.username)}
-                type="button"
+            {userGroups.map(({ empty, label, users }) => (
+              <section
+                aria-label={label}
+                className="ul-live-user-group"
+                key={label}
               >
-                <strong>{recipient.username}</strong>
-                <span>
-                  {recipient.waitingCount.toLocaleString()} waiting
-                  {recipient.activeCount > 0
-                    ? ` · ${recipient.activeCount} sending/connecting`
-                    : ''}
-                </span>
-              </button>
+                <h2>
+                  {label} <span>{users.length}</span>
+                </h2>
+                {users.length === 0 && <p>{empty}</p>}
+                {users.map((recipient) => {
+                  const { activeCount, sendingCount, waitingCount } = recipient;
+                  const connectingCount = activeCount - (sendingCount ?? 0);
+                  const summary = [
+                    sendingCount > 0 && `${sendingCount} downloading`,
+                    connectingCount > 0 &&
+                      `${connectingCount} ${sendingCount == null ? 'sending/connecting' : 'connecting'}`,
+                    waitingCount > 0 &&
+                      `${waitingCount.toLocaleString()} waiting`,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ');
+                  return (
+                    <button
+                      aria-pressed={recipient.username === selectedUsername}
+                      className="ul-live-user"
+                      key={recipient.username}
+                      onClick={() => onSelectUploadUser(recipient.username)}
+                      type="button"
+                    >
+                      <strong>{recipient.username}</strong>
+                      <span>{summary}</span>
+                    </button>
+                  );
+                })}
+              </section>
             ))}
           </div>
         </aside>

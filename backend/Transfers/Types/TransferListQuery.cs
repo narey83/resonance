@@ -214,7 +214,10 @@ internal static class TransferListQuery
             ? context.Transfers.FromSqlRaw("SELECT * FROM \"Transfers\" WHERE \"Direction\"='Upload' AND \"Removed\"=0 AND (" + CompletedFlagSql + ")=0").AsNoTracking()
             : context.Transfers.AsNoTracking().Where(t => t.Direction == TransferDirection.Upload && !t.Removed && !completed.Contains(t.State));
         var users = pending.GroupBy(t => t.Username)
-            .Select(g => new UploadQueueUser(g.Key, g.Count(), g.Count(t => t.State == TransferStates.InProgress || t.State == TransferStates.Initializing)))
+            .Select(g => new UploadQueueUser(g.Key, g.Count(), g.Count(t => t.State == TransferStates.InProgress || t.State == TransferStates.Initializing))
+            {
+                SendingCount = g.Count(t => t.State == TransferStates.InProgress),
+            })
             .ToList().OrderByDescending(u => u.WaitingCount).ThenByDescending(u => u.ActiveCount).ThenBy(u => u.Username, StringComparer.Ordinal).ToList();
         username ??= users.FirstOrDefault()?.Username;
         var total = users.FirstOrDefault(u => u.Username == username)?.PendingCount ?? 0;

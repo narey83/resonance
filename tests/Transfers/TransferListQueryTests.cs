@@ -281,6 +281,7 @@ public class TransferListQueryTests
         }
 
         pending[0].State = TransferStates.InProgress;
+        pending.First(t => t.Username == "alice").State = TransferStates.Initializing;
         context.SaveChanges();
         TransferListQuery.EnsureSqliteIndexes(context);
         var page = TransferListQuery.UploadQueuePage(context, "alice", 1, 50);
@@ -290,6 +291,9 @@ public class TransferListQueryTests
         Assert.Equal(1001, page.Users.Single(u => u.Username == "bob").PendingCount);
         Assert.Equal(1000, page.Users.Single(u => u.Username == "bob").WaitingCount);
         Assert.Equal(1, page.Users.Single(u => u.Username == "bob").ActiveCount);
+        Assert.Equal(1, page.Users.Single(u => u.Username == "bob").SendingCount);
+        Assert.Equal(1, page.Users.Single(u => u.Username == "alice").ActiveCount);
+        Assert.Equal(0, page.Users.Single(u => u.Username == "alice").SendingCount);
         Assert.Equal(50, page.Transfers.Count);
         Assert.All(page.Transfers, transfer => Assert.Equal("alice", transfer.Username));
         Assert.DoesNotContain(page.Transfers, transfer => global::resonance.Transfers.TransferStateCategories.Completed.Contains(transfer.State));

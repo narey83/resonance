@@ -47,6 +47,9 @@ public sealed record UploadQueueUser(string Username, int PendingCount, int Acti
     /// <summary>Gets requests waiting to send.</summary>
     public int WaitingCount => PendingCount - ActiveCount;
 
+    /// <summary>Gets uploads currently sending data, excluding connection setup.</summary>
+    public int SendingCount { get; init; }
+
     /// <summary>Gets the earliest time another attempt can start while the recipient is paused.</summary>
     public DateTimeOffset? RetryAt { get; init; }
 }

@@ -49,6 +49,9 @@ const users = [
   { username: 'listener', waitingCount: 45, activeCount: 0, pendingCount: 45 },
   { username: 'other', waitingCount: 19, activeCount: 0, pendingCount: 19 },
 ];
+const findGroup = (container, name) =>
+  container.querySelector(`section[aria-label="${name}"]`);
+
 describe('One complete upload list and one user header', () => {
   let container;
   const render = async (props = {}) => {
@@ -150,6 +153,52 @@ describe('One complete upload list and one user header', () => {
     ).toContain('listener');
     act(() => Simulate.click(container.querySelectorAll('.ul-live-user')[1]));
     expect(onSelectUploadUser).toHaveBeenCalledWith('other');
+  });
+  it('moves recipients between downloading, connecting and waiting as the queue changes', async () => {
+    expect.hasAssertions();
+    const downloading = {
+      ...users[0],
+      activeCount: 1,
+      pendingCount: 46,
+      sendingCount: 1,
+    };
+    const connecting = { ...downloading, sendingCount: 0 };
+    const waiting = { ...users[1], sendingCount: 0 };
+    await render({ queueUsers: [downloading, waiting] });
+    expect(findGroup(container, 'Downloading now').textContent).toContain(
+      '1 downloading · 45 waiting',
+    );
+    expect(findGroup(container, 'Waiting').textContent).toContain('other');
+    expect(findGroup(container, 'Waiting').textContent).not.toContain(
+      'listener',
+    );
+
+    await render({ queueUsers: [connecting, waiting] });
+    expect(findGroup(container, 'Downloading now').textContent).toContain(
+      'No users downloading.',
+    );
+    expect(findGroup(container, 'Connecting').textContent).toContain(
+      '1 connecting',
+    );
+    expect(
+      findGroup(container, 'Connecting').querySelector('[aria-pressed="true"]'),
+    ).not.toBeNull();
+
+    await render({ queueUsers: users });
+    expect(findGroup(container, 'Connecting')).toBeNull();
+    expect(
+      findGroup(container, 'Waiting').querySelector('[aria-pressed="true"]'),
+    ).not.toBeNull();
+  });
+  it('labels combined activity when the server has no sending count', async () => {
+    expect.hasAssertions();
+    await render({
+      queueUsers: [{ ...users[0], activeCount: 1, pendingCount: 46 }, users[1]],
+    });
+    expect(findGroup(container, 'Active uploads').textContent).toContain(
+      '1 sending/connecting',
+    );
+    expect(findGroup(container, 'Downloading now')).toBeNull();
   });
   it('adds new users to the live side list while retaining the selected user and tracks', async () => {
     expect.hasAssertions();
