@@ -171,6 +171,55 @@ public sealed partial class UploadEnqueueTests : IDisposable
         Assert.Equal(successCount, context.Transfers.Count());
     }
 
+    [Theory]
+    [InlineData(3, 35, false)]
+    [InlineData(6, 35, true)]
+    [InlineData(6, 65, false)]
+    [InlineData(9, 65, true)]
+    [InlineData(12, 125, true)]
+    [InlineData(15, 245, false)]
+    [InlineData(15, 1441, false)]
+    public async Task EndOfFileResumesEscalateCooldownWithACap(int count, int newestAgeMinutes, bool blocked)
+    {
+        var now = DateTime.UtcNow;
+        using (var db = factory.CreateDbContext())
+        {
+            for (var i = 0; i < count; i++)
+            {
+                var endedAt = now.AddMinutes(-newestAgeMinutes - 10 * i);
+                db.Add(new Transfer
+                {
+                    Id = Guid.NewGuid(),
+                    Username = "alice",
+                    Filename = "album/track.mp3",
+                    Direction = TransferDirection.Upload,
+                    RequestedAt = endedAt,
+                    EndedAt = endedAt,
+                    State = TransferStates.Completed | TransferStates.Succeeded,
+                    Size = 100,
+                    StartOffset = 100,
+                    BytesTransferred = 100,
+                    Removed = true,
+                });
+            }
+
+            db.SaveChanges();
+        }
+
+        var service = CreateService([], new IOException("share lookup reached"));
+        if (blocked)
+        {
+            await Assert.ThrowsAsync<DownloadEnqueueException>(() => service.EnqueueAsync("alice", "album/track.mp3"));
+        }
+        else
+        {
+            await Assert.ThrowsAsync<IOException>(() => service.EnqueueAsync("alice", "album/track.mp3"));
+        }
+
+        using var context = factory.CreateDbContext();
+        Assert.Equal(count, context.Transfers.Count());
+    }
+
     private void SeedAttempts(string username, string filename, params TransferStates[] outcomes)
     {
         using var db = factory.CreateDbContext();

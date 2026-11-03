@@ -591,23 +591,11 @@ namespace resonance.Transfers.Uploads
                         "Upload cancelled after repeated transfer errors; please retry later.");
                 }
 
-                // Use completed history so the cooldown survives a restart. Rejected requests
-                // do not create records or extend the cooldown.
-                var now = DateTime.UtcNow;
-                var window = TimeSpan.FromMinutes(30);
-                var recentSuccesses = existingRecords
-                    .Where(t => t.State == (TransferStates.Completed | TransferStates.Succeeded) && t.EndedAt <= now)
-                    .OrderByDescending(t => t.EndedAt)
-                    .Take(3)
-                    .ToArray();
-
-                if (recentSuccesses.Length == 3
-                    && recentSuccesses[0].EndedAt > now - window
-                    && recentSuccesses[0].EndedAt - recentSuccesses[2].EndedAt <= window)
+                var repeatBlockUntil = RepeatedUploadBlockedUntil(existingRecords, DateTime.UtcNow);
+                if (repeatBlockUntil is not null)
                 {
-                    var retryAt = recentSuccesses[0].EndedAt.Value + window;
                     Log.Information("Upload of {Filename} to {Username} deferred after repeated successes until {RetryAt:u}",
-                        filename, username, retryAt);
+                        filename, username, repeatBlockUntil.Value);
                     throw new DownloadEnqueueException("This file was recently transferred several times; please retry later.");
                 }
 
@@ -1119,6 +1107,44 @@ namespace resonance.Transfers.Uploads
                 .FirstOrDefault();
 
             return stats ?? new UserUploadStatistics();
+        }
+
+        private static DateTime? RepeatedUploadBlockedUntil(IEnumerable<Transfer> records, DateTime utcNow)
+        {
+            // The history is already scoped to a single peer and full shared path.
+            // Use a bounded lookback so old EOF loops do not penalize a future request.
+            var lookback = TimeSpan.FromHours(24);
+            var baseCooldown = TimeSpan.FromMinutes(30);
+            var successes = records
+                .Where(t => t.State == (TransferStates.Completed | TransferStates.Succeeded)
+                    && t.EndedAt > utcNow - lookback && t.EndedAt <= utcNow)
+                .OrderByDescending(t => t.EndedAt)
+                .ToArray();
+
+            DateTime? blockedUntil = null;
+            if (successes.Length >= 3 && successes[0].EndedAt - successes[2].EndedAt <= baseCooldown)
+            {
+                blockedUntil = successes[0].EndedAt.Value + baseCooldown;
+            }
+
+            var endOfFileResumes = successes
+                .Where(t => t.Size > 0 && t.StartOffset == t.Size && t.BytesTransferred == t.StartOffset)
+                .ToArray();
+
+            if (endOfFileResumes.Length >= 3)
+            {
+                // Three more completed EOF handshakes move up one tier. Denied requests
+                // create no history entry, so they cannot move the deadline.
+                var tier = Math.Min((endOfFileResumes.Length / 3) - 1, 3);
+                var eofCooldown = baseCooldown * (1 << tier);
+                var eofBlockedUntil = endOfFileResumes[0].EndedAt.Value + eofCooldown;
+                if (blockedUntil is null || eofBlockedUntil > blockedUntil)
+                {
+                    blockedUntil = eofBlockedUntil;
+                }
+            }
+
+            return blockedUntil > utcNow ? blockedUntil : null;
         }
 
         /// <summary>

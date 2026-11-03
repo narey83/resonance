@@ -1,0 +1,241 @@
+diff --git a/src/Messaging/Handlers/PeerMessageHandler.cs b/src/Messaging/Handlers/PeerMessageHandler.cs
+index ba28f45..191202d 100644
+--- a/src/Messaging/Handlers/PeerMessageHandler.cs
++++ b/src/Messaging/Handlers/PeerMessageHandler.cs
+@@ -265,7 +265,7 @@ namespace Soulseek.Messaging.Handlers
+
+                         if (queueRejected)
+                         {
+-                            await connection.WriteAsync(new UploadDenied(queueDownloadRequest.Filename, queueRejectionMessage)).ConfigureAwait(false);
++                            await SendUploadDeniedAsync(connection, queueDownloadRequest.Filename, queueRejectionMessage).ConfigureAwait(false);
+                         }
+                         else
+                         {
+@@ -297,7 +297,7 @@ namespace Soulseek.Messaging.Handlers
+                             if (transferRejected)
+                             {
+                                 await connection.WriteAsync(new TransferResponse(transferRequest.Token, transferRejectionMessage)).ConfigureAwait(false);
+-                                await connection.WriteAsync(new UploadDenied(transferRequest.Filename, transferRejectionMessage)).ConfigureAwait(false);
++                                await SendUploadDeniedAsync(connection, transferRequest.Filename, transferRejectionMessage).ConfigureAwait(false);
+                             }
+                             else
+                             {
+@@ -390,6 +390,19 @@ namespace Soulseek.Messaging.Handlers
+             Diagnostic.Debug($"Peer message sent: {code} ({connection.IPEndPoint}) (id: {connection.Id})");
+         }
+
++        private async Task SendUploadDeniedAsync(IMessageConnection connection, string filename, string reason)
++        {
++            try
++            {
++                await connection.WriteAsync(new UploadDenied(filename, reason)).ConfigureAwait(false);
++                Diagnostic.Info($"Wrote UploadDenied to {connection.Username} for {filename}: {reason}");
++            }
++            catch (Exception ex)
++            {
++                Diagnostic.Warning($"Failed to write UploadDenied to {connection.Username} for {filename}: {reason}; {ex.Message}", ex);
++            }
++        }
++
+         private async Task<(bool Rejected, string RejectionMessage)> TryEnqueueDownloadAsync(string username, IPEndPoint ipEndPoint, string filename)
+         {
+             bool rejected = false;
+diff --git a/src/SoulseekClient.cs b/src/SoulseekClient.cs
+index 322f33f..5ac5a6c 100644
+--- a/src/SoulseekClient.cs
++++ b/src/SoulseekClient.cs
+@@ -4451,6 +4451,15 @@ namespace Soulseek
+                     throw new TransferException($"Requested start offset of {upload.StartOffset} bytes exceeds file length of {upload.Size} bytes");
+                 }
+
++                if (upload.StartOffset == upload.Size)
++                {
++                    cancellationToken.ThrowIfCancellationRequested();
++                    UpdateProgress(upload.StartOffset);
++                    UpdateState(TransferStates.Completed | TransferStates.Succeeded);
++                    Diagnostic.Info($"Upload of {Path.GetFileName(upload.Filename)} to {username} already complete at offset {upload.StartOffset}; 0 bytes sent.");
++                    return new Transfer(upload); // The finally block closes the transfer connection.
++                }
++
+                 Diagnostic.Debug($"Resolving input stream for upload of {Path.GetFileName(upload.Filename)} to {username}");
+                 inputStream = await inputStreamFactory(upload.StartOffset).ConfigureAwait(false);
+
+@@ -4468,32 +4477,22 @@ namespace Soulseek
+                 UpdateState(TransferStates.InProgress);
+                 UpdateProgress(upload.StartOffset);
+
+-                Task writeTask;
+-
+-                // don't try to write to the connection if the peer is re-requesting a file that's already complete
+-                if (upload.Size.Value - upload.StartOffset > 0)
+-                {
+-                    var tokenBucket = UploadTokenBucket;
++                var tokenBucket = UploadTokenBucket;
+
+-                    writeTask = upload.Connection.WriteAsync(
+-                        length: upload.Size.Value - upload.StartOffset,
+-                        inputStream: inputStream,
+-                        governor: async (requestedBytes, cancelToken) =>
+-                        {
+-                            var bytesGrantedByCaller = await options.Governor(new Transfer(upload), requestedBytes, cancelToken).ConfigureAwait(false);
+-                            return await tokenBucket.GetAsync(Math.Min(requestedBytes, bytesGrantedByCaller), cancellationToken).ConfigureAwait(false);
+-                        },
+-                        reporter: (attemptedBytes, grantedBytes, actualBytes) =>
+-                        {
+-                            options.Reporter?.Invoke(new Transfer(upload), attemptedBytes, grantedBytes, actualBytes);
+-                            tokenBucket.Return(grantedBytes - actualBytes);
+-                        },
+-                        cancellationToken: cancellationToken);
+-                }
+-                else
+-                {
+-                    writeTask = Task.CompletedTask;
+-                }
++                var writeTask = upload.Connection.WriteAsync(
++                    length: upload.Size.Value - upload.StartOffset,
++                    inputStream: inputStream,
++                    governor: async (requestedBytes, cancelToken) =>
++                    {
++                        var bytesGrantedByCaller = await options.Governor(new Transfer(upload), requestedBytes, cancelToken).ConfigureAwait(false);
++                        return await tokenBucket.GetAsync(Math.Min(requestedBytes, bytesGrantedByCaller), cancellationToken).ConfigureAwait(false);
++                    },
++                    reporter: (attemptedBytes, grantedBytes, actualBytes) =>
++                    {
++                        options.Reporter?.Invoke(new Transfer(upload), attemptedBytes, grantedBytes, actualBytes);
++                        tokenBucket.Return(grantedBytes - actualBytes);
++                    },
++                    cancellationToken: cancellationToken);
+
+                 var firstTask = await Task.WhenAny(
+                     writeTask,
+diff --git a/tests/Soulseek.Tests.Unit/Client/UploadAsyncTests.cs b/tests/Soulseek.Tests.Unit/Client/UploadAsyncTests.cs
+index e947bfa..196c058 100644
+--- a/tests/Soulseek.Tests.Unit/Client/UploadAsyncTests.cs
++++ b/tests/Soulseek.Tests.Unit/Client/UploadAsyncTests.cs
+@@ -1198,8 +1198,10 @@ namespace Soulseek.Tests.Unit.Client
+         }
+
+         [Trait("Category", "UploadFromFileAsync")]
+-        [Theory(DisplayName = "UploadFromFileAsync disconnects at MaximumLingerTime when the receiver goes silent"), AutoData]
+-        public async Task UploadFromFileAsync_Disconnects_At_MaximumLingerTime_When_The_Receiver_Goes_Silent(string username, IPEndPoint endpoint, string filename, byte[] data, int token, int size)
++        [Theory(DisplayName = "UploadFromFileAsync bounds linger and skips it at EOF")]
++        [InlineAutoData(false)]
++        [InlineAutoData(true)]
++        public async Task UploadFromFileAsync_Bounds_Linger_And_Skips_It_At_Eof(bool atEof, string username, IPEndPoint endpoint, string filename, byte[] data, int token, int size)
+         {
+             using (var testFile = new TestFile(data))
+             {
+@@ -1220,12 +1222,10 @@ namespace Soulseek.Tests.Unit.Client
+
+                 var transferConn = new Mock<IConnection>();
+                 transferConn.Setup(m => m.ReadAsync(It.Is<long>(l => l == 8), It.IsAny<CancellationToken?>()))
+-                    .Returns(Task.FromResult(BitConverter.GetBytes(0L)));
++                    .Returns(Task.FromResult(BitConverter.GetBytes(atEof ? data.LongLength : 0L)));
+
+-                // the receiver never sends anything and never hangs up, so this read never returns. a peer
+-                // re-requesting a file it already holds in full behaves exactly like this: the start offset equals
+-                // the size, so neither side has anything left to send. the linger deadline has to be enforceable
+-                // against it, otherwise the connection is held until the inactivity timeout fires instead.
++                // The receiver never hangs up. A normal transfer must honor its deadline
++                // and an EOF resume must never enter the linger read.
+                 transferConn.Setup(m => m.ReadAsync(It.Is<long>(l => l == 1), It.IsAny<CancellationToken?>()))
+                     .Returns(new TaskCompletionSource<byte[]>().Task);
+
+@@ -1243,14 +1243,26 @@ namespace Soulseek.Tests.Unit.Client
+                 {
+                     s.SetProperty("State", SoulseekClientStates.Connected | SoulseekClientStates.LoggedIn);
+
+-                    var upload = Record.ExceptionAsync(() => s.InvokeMethod<Task>("UploadFromFileAsync", username, filename, testFile.Path, token, txOptions, null));
++                    var upload = s.InvokeMethod<Task<Transfer>>("UploadFromFileAsync", username, filename, testFile.Path, token, txOptions, null);
+
+                     Assert.Same(upload, await Task.WhenAny(upload, Task.Delay(10000)));
+-                    Assert.Null(await upload);
++                    var completed = await upload;
++                    Assert.Equal(TransferStates.Completed | TransferStates.Succeeded, completed.State);
++                    Assert.Equal(atEof ? data.LongLength : 0L, completed.StartOffset);
++                    if (atEof)
++                    {
++                        Assert.Equal(data.LongLength, completed.BytesTransferred);
++                    }
+                 }
+
+-                transferConn.Verify(m => m.Disconnect(It.Is<string>(s => s.ContainsInsensitive("maximum linger time")), null), Times.Once);
+-                diagnostic.Verify(m => m.Warning(It.Is<string>(s => s.ContainsInsensitive("maximum linger time")), null), Times.Once);
++                transferConn.Verify(m => m.Disconnect(It.Is<string>(s => s.ContainsInsensitive("maximum linger time")), null), atEof ? Times.Never() : Times.Once());
++                if (atEof)
++                {
++                    transferConn.Verify(m => m.ReadAsync(1, It.IsAny<CancellationToken?>()), Times.Never);
++                    transferConn.Verify(m => m.Dispose(), Times.Once);
++                }
++
++                diagnostic.Verify(m => m.Warning(It.Is<string>(s => s.ContainsInsensitive("maximum linger time")), null), atEof ? Times.Never() : Times.Once());
+             }
+         }
+
+@@ -1564,11 +1576,11 @@ namespace Soulseek.Tests.Unit.Client
+         }
+
+         [Trait("Category", "UploadFromStreamAsync")]
+-        [Theory(DisplayName = "UploadFromStreamAsync skips write if offset equals size"), AutoData]
+-        public async Task UploadFromStreamAsync_Skips_Write_If_Offset_Equals_Size(string username, IPEndPoint endpoint, string filename, int token)
++        [Theory(DisplayName = "UploadFromStreamAsync does not open the stream if offset equals size"), AutoData]
++        public async Task UploadFromStreamAsync_Does_Not_Open_The_Stream_If_Offset_Equals_Size(string username, IPEndPoint endpoint, string filename, int token)
+         {
+             var options = new SoulseekClientOptions(messageTimeout: 5);
+-            long size = new Random().Next(100);
++            const long size = 100;
+             long offset = size;
+
+             var response = new TransferResponse(token, size);
+@@ -1594,17 +1606,18 @@ namespace Soulseek.Tests.Unit.Client
+             connManager.Setup(m => m.GetTransferConnectionAsync(username, endpoint, token, It.IsAny<CancellationToken>()))
+                 .Returns(Task.FromResult(transferConn.Object));
+
+-            using (var stream = new MemoryStream(new byte[size]))
+             using (var s = new SoulseekClient(minorVersion: 9999, options: options, waiter: waiter.Object, serverConnection: conn.Object, peerConnectionManager: connManager.Object))
+             {
+                 s.SetProperty("State", SoulseekClientStates.Connected | SoulseekClientStates.LoggedIn);
+
+                 var txoptions = new TransferOptions(disposeInputStreamOnCompletion: false, maximumLingerTime: 0);
+
+-                var ex = await Record.ExceptionAsync(() => s.InvokeMethod<Task>("UploadFromStreamAsync", username, filename, size, new Func<long, Task<Stream>>((_) => Task.FromResult((Stream)stream)), token, txoptions, null));
++                Func<long, Task<Stream>> openStream = _ => throw new InvalidOperationException("EOF resume must not open the source stream");
++                var completed = await s.InvokeMethod<Task<Transfer>>("UploadFromStreamAsync", username, filename, size, openStream, token, txoptions, null);
+
+-                Assert.Null(ex);
+-                Assert.Equal(offset, stream.Position);
++                Assert.Equal(TransferStates.Completed | TransferStates.Succeeded, completed.State);
++                Assert.Equal(size, completed.BytesTransferred);
++                Assert.Equal(offset, completed.StartOffset);
+             }
+         }
+
+diff --git a/tests/Soulseek.Tests.Unit/Messaging/Handlers/PeerMessageHandlerTests.cs b/tests/Soulseek.Tests.Unit/Messaging/Handlers/PeerMessageHandlerTests.cs
+index e06f003..065d9d7 100644
+--- a/tests/Soulseek.Tests.Unit/Messaging/Handlers/PeerMessageHandlerTests.cs
++++ b/tests/Soulseek.Tests.Unit/Messaging/Handlers/PeerMessageHandlerTests.cs
+@@ -992,6 +992,24 @@ namespace Soulseek.Tests.Unit.Messaging.Handlers
+             mocks.PeerConnection.Verify(m => m.WriteAsync(It.Is<IOutgoingMessage>(o => Encoding.UTF8.GetString(o.ToByteArray()) == Encoding.UTF8.GetString(expectedQueueFailedResponse)), null), Times.Once);
+         }
+
++        [Trait("Category", "Message")]
++        [Theory(DisplayName = "Logs the result of writing UploadDenied")]
++        [InlineAutoData(false)]
++        [InlineAutoData(true)]
++        public void Logs_The_Result_Of_Writing_UploadDenied(bool writeFails, string username, IPEndPoint endpoint, string filename)
++        {
++            var options = new SoulseekClientOptions(enqueueDownload: (u, f, i) => { throw new DownloadEnqueueException("Cooldown"); });
++            var (handler, mocks) = GetFixture(username, endpoint, options);
++            var write = mocks.PeerConnection.Setup(m => m.WriteAsync(It.Is<IOutgoingMessage>(message => message is UploadDenied), null));
++            var failure = new InvalidOperationException("Disconnected");
++            write.Returns(writeFails ? Task.FromException(failure) : Task.CompletedTask);
++
++            handler.HandleMessageRead(mocks.PeerConnection.Object, new QueueDownloadRequest(filename).ToByteArray());
++
++            mocks.Diagnostic.Verify(m => m.Info(It.Is<string>(s => s.Contains("Wrote UploadDenied") && s.Contains(filename))), writeFails ? Times.Never() : Times.Once());
++            mocks.Diagnostic.Verify(m => m.Warning(It.Is<string>(s => s.Contains("Failed to write UploadDenied") && s.Contains(filename)), failure), writeFails ? Times.Once() : Times.Never());
++        }
++
+         [Trait("Category", "Message")]
+         [Theory(DisplayName = "Completes TransferRequest wait on upload request if transfer is tracked"), AutoData]
+         public void Completes_TransferRequest_Wait_On_Upload_Request_If_Transfer_Is_Tracked(string username, IPEndPoint endpoint, int token, string filename)

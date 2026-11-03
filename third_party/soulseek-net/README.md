@@ -1,9 +1,10 @@
 # Patched Soulseek.NET
 
-`backend/resonance.csproj` references `Soulseek 10.0.2-resonance.1`, which is
-[`third_party/packages/Soulseek.10.0.2-resonance.1.nupkg`](../packages) — upstream
+`backend/resonance.csproj` references `Soulseek 10.0.2-resonance.2`, which is
+[`third_party/packages/Soulseek.10.0.2-resonance.2.nupkg`](../packages) — upstream
 [Soulseek.NET](https://github.com/jpdillingham/Soulseek.NET) `10.0.2` plus
-[`enforce-upload-linger-deadline.patch`](enforce-upload-linger-deadline.patch). `nuget.config` at the repo root adds
+[`enforce-upload-linger-deadline.patch`](enforce-upload-linger-deadline.patch) and
+[`close-eof-and-log-denials.patch`](close-eof-and-log-denials.patch). `nuget.config` at the repo root adds
 `third_party/packages` as a package source so restore finds it.
 
 ## Why
@@ -20,7 +21,10 @@ offset equal to the file size, the write is skipped, and neither side has anythi
 to hang up. In the 30 days before this patch, 18,572 such transfers across 158 peers burned ~317 hours of
 upload-slot time, each one recorded as a 60-second success that moved zero bytes.
 
-The patch races the read against the time remaining, so the deadline is enforceable.
+The first patch races the read against the time remaining, so the deadline is enforceable.
+The second patch completes exact end-of-file resumes before opening the stream or lingering.
+It also logs success or failure of writing an enqueue denial to the peer connection. A successful
+local write is not an acknowledgement from the peer.
 
 ## Rebuilding
 
@@ -28,9 +32,10 @@ The patch races the read against the time remaining, so the deadline is enforcea
 git clone --depth 1 --branch 10.0.2 https://github.com/jpdillingham/Soulseek.NET.git
 cd Soulseek.NET
 git apply /path/to/resonance/third_party/soulseek-net/enforce-upload-linger-deadline.patch
-dotnet build src/Soulseek.csproj -c Release -p:Version=10.0.2-resonance.1
-dotnet pack  src/Soulseek.csproj -c Release -p:Version=10.0.2-resonance.1 --no-build -o ./nupkg
-cp nupkg/Soulseek.10.0.2-resonance.1.nupkg /path/to/resonance/third_party/packages/
+git apply /path/to/resonance/third_party/soulseek-net/close-eof-and-log-denials.patch
+dotnet build src/Soulseek.csproj -c Release -p:Version=10.0.2-resonance.2
+dotnet pack  src/Soulseek.csproj -c Release -p:Version=10.0.2-resonance.2 --no-build -o ./nupkg
+cp nupkg/Soulseek.10.0.2-resonance.2.nupkg /path/to/resonance/third_party/packages/
 ```
 
 Bump the `-resonance.N` suffix when the patch changes — NuGet caches by version, so reusing a version leaves
@@ -38,6 +43,6 @@ stale copies in `~/.nuget/packages` and on the server.
 
 ## Dropping this
 
-The patch is upstreamable as-is and isn't Resonance-specific. Once it lands in a released Soulseek.NET, point
+Once both patches land in a released Soulseek.NET, point
 `backend/resonance.csproj` back at the official package and delete this directory, the `resonance-local`
 source in `nuget.config`, and `third_party/packages`.
