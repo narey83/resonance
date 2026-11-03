@@ -721,6 +721,11 @@ const Analysis = ({
   viewState,
 }) => {
   const [scanState, setScanState] = useState(null);
+  const [sawActiveScan, setSawActiveScan] = useState(false);
+  const scanActive = scanState?.scanning === true;
+  useEffect(() => {
+    if (scanActive) setSawActiveScan(true);
+  }, [scanActive]);
   useEffect(() => {
     onScanState?.(scanState);
   }, [onScanState, scanState]);
@@ -1120,6 +1125,7 @@ const Analysis = ({
     setScanState(null);
     try {
       await analysisApi.startScan({ ...request, onlyPaths: paths });
+      if (mountedRef.current) setSawActiveScan(true);
       const state = await analysisApi.getScanState();
       if (!mountedRef.current) return;
       wasScanningRef.current = Boolean(state?.scanning);
@@ -1618,6 +1624,10 @@ const Analysis = ({
     : 0;
   const coverage = stats ?? {};
 
+  const showCurrentAnalysis =
+    scanning ||
+    sawActiveScan ||
+    (!scanState?.completed && !scanState?.cancelled);
   const currentAnalysis = (
     <div className="ka-current-analysis">
       <header className="ka-current-header">
@@ -1825,7 +1835,10 @@ const Analysis = ({
       className={`ka-root ka-root--${activeView}${expandedFolders.size > 0 ? ' ka-root--expanded' : ''}`}
       ref={scrollRef}
     >
-      {statusHost ? createPortal(currentAnalysis, statusHost) : currentAnalysis}
+      {showCurrentAnalysis &&
+        (statusHost
+          ? createPortal(currentAnalysis, statusHost)
+          : currentAnalysis)}
       {(activeView === 'all' || activeView === 'overview') && (
         <section className="ka-overview">
           <div className="ka-overview-heading">

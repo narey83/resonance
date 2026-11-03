@@ -1287,6 +1287,19 @@ describe('analysis folder loading', () => {
       jest.useRealTimers();
     }
   });
+  it('hides the previous scan summary when returning to Track Analysis', async () => {
+    expect.hasAssertions();
+    analysisApi.getScanState.mockResolvedValue({
+      scanning: false,
+      completed: true,
+      total: 3,
+      analysed: 3,
+    });
+    await render();
+    expect(
+      container.querySelector('[aria-label="Current scan progress"]'),
+    ).toBeNull();
+  });
   it('handles a scan that finishes just before Stop is pressed', async () => {
     expect.hasAssertions();
     analysisApi.getScanState.mockResolvedValue({
