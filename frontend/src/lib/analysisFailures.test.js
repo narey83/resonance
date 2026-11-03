@@ -1,4 +1,7 @@
-import { failedTracksFromLogs } from './analysisFailures';
+import {
+  basicRecoveryCandidates,
+  failedTracksFromLogs,
+} from './analysisFailures';
 
 const event = (
   properties,
@@ -64,5 +67,52 @@ describe('analysis failure history', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].path).toBe('old.mp3');
     expect(rows[0].failures[0].measurement).toBe('Not recorded');
+  });
+});
+
+describe('Basic analysis recovery', () => {
+  it('identifies only newer full Basic successes and requires resolution for legacy names', () => {
+    const tracks = [
+      {
+        key: 'a',
+        mode: 'Basic',
+        path: 'song.mp3',
+        timestamp: '2026-11-01T12:00:00Z',
+      },
+      {
+        key: 'b',
+        mode: 'Basic',
+        path: '/music/song.mp3',
+        timestamp: '2026-11-03T12:00:00Z',
+      },
+      {
+        key: 'c',
+        mode: 'Enhanced',
+        path: '/music/song.mp3',
+        timestamp: '2026-11-01T12:00:00Z',
+      },
+    ];
+    const saved = {
+      message: 'Analysis saved for song',
+      timestamp: '2026-11-02T12:00:00Z',
+      properties: { File: '/music/song.mp3', Metrics: 'All' },
+    };
+    expect(basicRecoveryCandidates(tracks, [saved])).toEqual([
+      { track: tracks[0], path: '/music/song.mp3', needsResolution: true },
+    ]);
+    expect(
+      basicRecoveryCandidates(tracks, [
+        saved,
+        {
+          ...saved,
+          properties: { ...saved.properties, File: '/other/song.mp3' },
+        },
+      ]),
+    ).toEqual([]);
+    expect(
+      basicRecoveryCandidates(tracks, [
+        { ...saved, properties: { ...saved.properties, Metrics: 'Loudness' } },
+      ]),
+    ).toEqual([]);
   });
 });

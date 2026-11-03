@@ -1,5 +1,8 @@
 import './AnalysisFailures.css';
-import { failedTracksFromLogs } from '../../lib/analysisFailures';
+import {
+  basicRecoveryCandidates,
+  failedTracksFromLogs,
+} from '../../lib/analysisFailures';
 import { resolveFailedTrackPaths } from '../../lib/analysisRetry';
 import { getLogs } from '../../lib/logs';
 import AppContext from '../AppContext';
@@ -91,8 +94,48 @@ const FailureHistory = ({
           level: ['Warning', 'Error'],
           context: ['Music / Analysis', 'Music / Enhanced Analysis'],
         });
+        const pageTracks = failedTracksFromLogs(next.logs);
+        const oldest = [...pageTracks]
+          .reverse()
+          .find((track) => track.mode === 'Basic')?.timestamp;
+        let visible = pageTracks;
+        if (oldest) {
+          try {
+            const { logs } = await getLogs({
+              limit: 1_000,
+              level: ['Information'],
+              context: ['Music / Analysis'],
+              search: 'Analysis saved for ',
+              from: oldest,
+            });
+            const recovered = new Set();
+            const candidates = basicRecoveryCandidates(pageTracks, logs);
+            for (const candidate of candidates) {
+              if (disposed) return;
+              if (!candidate.needsResolution) {
+                recovered.add(candidate.track.key);
+                continue;
+              }
+
+              try {
+                const [resolved] = await resolveFailedTrackPaths([
+                  candidate.track,
+                ]);
+                if (resolved?.replaceAll('\\', '/') === candidate.path)
+                  recovered.add(candidate.track.key);
+              } catch {
+                // Keep historical rows when the filename cannot be resolved.
+              }
+            }
+
+            visible = pageTracks.filter((track) => !recovered.has(track.key));
+          } catch {
+            // Preserve the failure rows if recovery lookup is unavailable.
+          }
+        }
+
         if (!disposed) {
-          setData({ ...next, offset });
+          setData({ ...next, offset, tracks: visible });
           setError(false);
         }
       } catch {
@@ -109,7 +152,7 @@ const FailureHistory = ({
       if (timer) clearInterval(timer);
     };
   }, [offset, open, revision, standalone]);
-  const tracks = data?.offset === offset ? failedTracksFromLogs(data.logs) : [];
+  const tracks = data?.offset === offset ? data.tracks : [];
   const Container = standalone ? 'section' : 'details';
   return (
     <Container

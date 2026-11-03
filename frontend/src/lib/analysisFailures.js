@@ -101,3 +101,39 @@ export const failedTracksFromLogs = (logs) => {
       : track.failures,
   }));
 };
+
+export const basicRecoveryCandidates = (tracks, logs) => {
+  const latest = new Map();
+  for (const log of logs) {
+    if (!log.message?.startsWith('Analysis saved for ')) continue;
+    let properties;
+    try {
+      properties =
+        typeof log.properties === 'string'
+          ? JSON.parse(log.properties)
+          : log.properties;
+    } catch {
+      continue;
+    }
+
+    const path = properties?.File?.replaceAll('\\', '/');
+    if (!path?.includes('/') || properties.Metrics !== 'All') continue;
+    const name = path.split('/').pop();
+    if (!latest.has(name)) latest.set(name, new Map());
+    const results = latest.get(name);
+    if (!results.has(path)) results.set(path, log.timestamp);
+  }
+
+  return tracks.flatMap((track) => {
+    if (track.mode !== 'Basic') return [];
+    const path = track.path.replaceAll('\\', '/');
+    const fullPath = path.includes('/');
+    const results = latest.get(path.split('/').pop());
+    if (!results || (!fullPath && results.size !== 1)) return [];
+    const [[savedPath]] = results;
+    const candidate = fullPath ? path : savedPath;
+    return Date.parse(results.get(candidate)) > Date.parse(track.timestamp)
+      ? [{ track, path: candidate, needsResolution: !fullPath }]
+      : [];
+  });
+};
