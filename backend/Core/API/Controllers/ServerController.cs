@@ -196,7 +196,7 @@ namespace resonance.Core.API
         }
 
         [HttpPost("status/activity")]
-        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         public async Task<IActionResult> RecordPresenceActivity()
         {
             await PresenceService.RecordActivityAsync();

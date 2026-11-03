@@ -65,7 +65,12 @@ import { connect, disconnect } from '../lib/server';
 import * as session from '../lib/session';
 import { siteAvailability } from '../lib/siteAvailability';
 import { enableNotificationAudio, playNotificationSound } from '../lib/sound';
-import { getSessionId, isAdmin, isPassthroughEnabled } from '../lib/token';
+import {
+  getRole,
+  getSessionId,
+  isAdmin,
+  isPassthroughEnabled,
+} from '../lib/token';
 import { emitTransferComplete } from '../lib/transferEvents';
 import * as transfersAPI from '../lib/transfers';
 import { parseUtcDate } from '../lib/util';
@@ -309,7 +314,12 @@ const App = () => {
     required: null,
   });
   useEffect(() => {
-    if (!isLoggedIn || !initialized || setup.required || !isAdmin())
+    if (
+      !isLoggedIn ||
+      !initialized ||
+      setup.required ||
+      !(isAdmin() || getRole() === 'ReadWrite')
+    )
       return undefined;
 
     let lastSent = Number.NEGATIVE_INFINITY;
