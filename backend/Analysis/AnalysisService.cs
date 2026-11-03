@@ -670,6 +670,14 @@ namespace resonance.Analysis
                                 continue;
                             }
 
+                            var missing = result.MissingMetrics(metrics);
+                            if (missing != AnalysisMetrics.None)
+                            {
+                                Log.Warning("Analysis failed for '{File}'; missing requested measurements: {Metrics}", track.Filename, missing);
+                                Interlocked.Increment(ref failed);
+                                continue;
+                            }
+
                             var produced = PersistAnalysisResult(track, result, options.WriteToTags);
                             if (produced)
                             {
@@ -706,13 +714,7 @@ namespace resonance.Analysis
                                 }
                             }
 
-                            var missing = result.MissingMetrics(metrics);
-                            if (missing != AnalysisMetrics.None)
-                            {
-                                Log.Warning("Analysis failed for '{File}'; missing requested measurements: {Metrics}", track.Filename, missing);
-                                Interlocked.Increment(ref failed);
-                            }
-                            else if (produced)
+                            if (produced)
                             {
                                 Log.Information(
                                     "Analysis saved for '{File}': BPM={Bpm}, Key={Key}, Waveform={HasWaveform}, LUFS={Lufs}; measured {Metrics}",
