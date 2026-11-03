@@ -1,7 +1,12 @@
+import { getStatuses } from '../../lib/users';
 import UploadsTable from './UploadsTable';
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { act, Simulate } from 'react-dom/test-utils';
+
+jest.mock('../../lib/users', () => ({
+  getStatuses: jest.fn().mockResolvedValue({}),
+}));
 
 jest.mock('../Shared', () => ({
   UsernameLink: ({ username }) => (
@@ -81,6 +86,27 @@ describe('One complete upload list and one user header', () => {
     });
     container.remove();
   });
+  it('shows known waiting-user presence and keeps missing results unknown', async () => {
+    expect.hasAssertions();
+    getStatuses.mockResolvedValueOnce({
+      listener: { presence: 'Online' },
+      other: { presence: 'Offline' },
+    });
+    await render({
+      queueUsers: [...users, { ...users[1], username: 'unknown-user' }],
+    });
+    const rows = Array.from(container.querySelectorAll('.ul-live-user'));
+    expect(rows.map((row) => row.textContent)).toEqual([
+      'listener45 waiting · Online',
+      'other19 waiting · Offline',
+      'unknown-user19 waiting · Status unknown',
+    ]);
+    expect(container.querySelector('.ul-complete-header h1')).toBeNull();
+    expect(
+      container.querySelector('.ul-complete-header .test-user-controls'),
+    ).not.toBeNull();
+  });
+
   it('shows the retry time only for the paused recipient', async () => {
     expect.hasAssertions();
     const retryAt = '2026-11-03T10:35:00+00:00';

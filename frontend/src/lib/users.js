@@ -46,6 +46,14 @@ export const getStatus = ({ username }) => {
   return api.get(`/users/${encodeURIComponent(username)}/status`);
 };
 
+export const getStatuses = async ({ usernames, signal }) =>
+  (
+    await api.post('/users/statuses', usernames, {
+      signal,
+      timeout: 10_000,
+    })
+  ).data;
+
 export const getEndpoint = ({ username }) => {
   return api.get(`/users/${encodeURIComponent(username)}/endpoint`);
 };

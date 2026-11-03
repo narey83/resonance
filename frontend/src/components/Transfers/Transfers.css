@@ -1023,7 +1023,6 @@
 .app-content > .view:has(> .ul-complete) { height: 100%; min-height: 0; overflow: hidden; }
 .ul-complete { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 .ul-complete-header { align-items: center; display: flex; flex-shrink: 0; flex-wrap: wrap; gap: 12px; padding: 8px 0 18px; }
-.ul-complete-header h1 { font-size: 21px; margin: 0 8px 0 0; }
 .ul-recipient-controls { align-items: center; display: flex; }
 .ul-change-recipient { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 5px; color: var(--text-primary); font: inherit; font-size: 12px; max-width: 230px; padding: 6px 8px; }
 .ul-complete-count { color: var(--text-muted); font-size: 12px; margin-left: auto; }
@@ -1047,7 +1046,6 @@
 }
 @media (max-width: 700px) {
   .ul-complete-header { gap: 10px; padding-bottom: 12px; }
-  .ul-complete-header h1 { font-size: 18px; }
   .ul-complete-count { margin-left: 0; }
   .ul-complete-columns { display: none; }
   .ul-complete-file { gap: 6px 12px; grid-template-columns: minmax(0, 1fr) auto; padding: 10px 12px; }
@@ -1080,7 +1078,6 @@
   .ul-live-user { font-size: 11px; padding: 10px 7px; }
   .ul-live-user span { font-size: 10px; }
   .ul-complete-file { grid-template-columns: minmax(0, 1fr) auto; }
-  .ul-complete-header h1 { font-size: 16px; }
   .ul-complete-header { gap: 8px; }
   .ul-complete-count { font-size: 11px; }
 }

@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 import { isStateCancellable } from '../../lib/transfers';
+import { getStatuses } from '../../lib/users';
 import { formatBitrate, formatBytes, getFileName } from '../../lib/util';
 import { UsernameLink } from '../Shared';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -133,6 +134,43 @@ const FileCells = ({ file, onCancel, sourceFolder }) => {
   );
 };
 
+const useWaitingPresence = (waitingUsers) => {
+  const [statuses, setStatuses] = useState({});
+  const usernamesKey = JSON.stringify(
+    waitingUsers.map((recipient) => recipient.username).sort(),
+  );
+
+  useEffect(() => {
+    const usernames = JSON.parse(usernamesKey);
+    if (usernames.length === 0) return undefined;
+    const controller = new AbortController();
+    let timer;
+    const refresh = async () => {
+      if (!document.hidden) {
+        try {
+          const next = await getStatuses({
+            signal: controller.signal,
+            usernames,
+          });
+          if (!controller.signal.aborted) setStatuses(next);
+        } catch {
+          if (!controller.signal.aborted) setStatuses({});
+        }
+      }
+
+      if (!controller.signal.aborted) timer = setTimeout(refresh, 30_000);
+    };
+
+    refresh();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [usernamesKey]);
+
+  return statuses;
+};
+
 const UploadsTable = ({
   onCancel,
   onCancelDirectory,
@@ -159,6 +197,7 @@ const UploadsTable = ({
     group.push(recipient);
   }
 
+  const waitingPresence = useWaitingPresence(waitingUsers);
   const hasUnclassifiedActivity = downloadingUsers.some(
     (recipient) => recipient.sendingCount == null,
   );
@@ -278,6 +317,14 @@ const UploadsTable = ({
                   ]
                     .filter(Boolean)
                     .join(' · ');
+                  const presence =
+                    waitingPresence?.[recipient.username]?.presence;
+                  const status = ['Online', 'Offline', 'Away'].includes(
+                    presence,
+                  )
+                    ? presence
+                    : 'Status unknown';
+
                   return (
                     <button
                       aria-pressed={recipient.username === selectedUsername}
@@ -287,7 +334,10 @@ const UploadsTable = ({
                       type="button"
                     >
                       <strong>{recipient.username}</strong>
-                      <span>{summary}</span>
+                      <span>
+                        {summary}
+                        {label === 'Waiting' && ` · ${status}`}
+                      </span>
                     </button>
                   );
                 })}
@@ -297,7 +347,6 @@ const UploadsTable = ({
         </aside>
         <div className="ul-live-track-pane">
           <header className="ul-complete-header">
-            <h1>Uploads</h1>
             {selectedUsername && (
               <div className="ul-recipient-controls">
                 <UsernameLink username={selectedUsername} />
