@@ -1178,10 +1178,10 @@ const Analysis = ({
     if (retryEnhanced && !preparation?.enhancedEnabled)
       throw new Error('The Enhanced analysis worker is not available.');
     await analysisApi.startScan({
-      metrics: METRICS.join(', '),
+      metrics: 'All',
       onlyPaths: paths,
       enhanced: retryEnhanced,
-      skipAnalysed: true,
+      skipAnalysed: false,
       resetAll: false,
     });
     finalizingRef.current = false;

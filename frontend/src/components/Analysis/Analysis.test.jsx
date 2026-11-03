@@ -148,7 +148,7 @@ describe('analysis folder loading', () => {
     ['Basic', false, 'Music / Analysis'],
     ['Enhanced', true, 'Music / Enhanced Analysis'],
   ])(
-    'retries only the chosen %s failed track and preserves existing results',
+    'retries only the chosen %s failed track and reruns every measurement without a reset',
     async (mode, enhanced, context) => {
       expect.hasAssertions();
       getLogs.mockResolvedValue({
@@ -170,10 +170,10 @@ describe('analysis folder loading', () => {
           .click(),
       );
       expect(analysisApi.startScan).toHaveBeenCalledWith({
-        metrics: 'Key, Bpm',
+        metrics: 'All',
         onlyPaths: ['/music/Album/song.mp3'],
         enhanced,
-        skipAnalysed: true,
+        skipAnalysed: false,
         resetAll: false,
       });
       expect(container.textContent).toContain(

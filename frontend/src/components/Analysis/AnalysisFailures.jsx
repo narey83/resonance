@@ -164,7 +164,7 @@ const FailureHistory = ({
             <div className="ka-failure-retry-controls">
               <p>
                 {retryReason ||
-                  'Retry missing results in the original Basic or Enhanced mode. Existing results are kept; history entries remain visible.'}
+                  'Rerun measurements in the original Basic or Enhanced mode. Previous failures remain in the history.'}
               </p>
               {['Basic', 'Enhanced'].map((mode) => {
                 const rows = tracks.filter((track) => track.mode === mode);
