@@ -72,9 +72,11 @@ namespace resonance.Core.API
             IOptionsSnapshot<Options> optionsSnapshot,
             IStateSnapshot<State> stateSnapshot,
             IStateMutator<State> stateMutator,
-            IHttpClientFactory httpClientFactory)
+            IHttpClientFactory httpClientFactory,
+            SoulseekPresenceService presenceService)
         {
             Client = soulseekClient;
+            PresenceService = presenceService;
             ConnectionWatchdog = connectionWatchdog;
             HttpClientFactory = httpClientFactory;
             OptionsSnapshot = optionsSnapshot;
@@ -88,6 +90,7 @@ namespace resonance.Core.API
         private static string ManagedPicturePath => Program.ProfilePicturePath;
 
         private ISoulseekClient Client { get; }
+        private SoulseekPresenceService PresenceService { get; }
         private ConnectionWatchdog ConnectionWatchdog { get; }
         private IHttpClientFactory HttpClientFactory { get; }
         private IOptionsSnapshot<Options> OptionsSnapshot { get; }
@@ -192,6 +195,14 @@ namespace resonance.Core.API
             });
         }
 
+        [HttpPost("status/activity")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
+        public async Task<IActionResult> RecordPresenceActivity()
+        {
+            await PresenceService.RecordActivityAsync();
+            return NoContent();
+        }
+
         [HttpPut("status")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(200)]
@@ -208,15 +219,7 @@ namespace resonance.Core.API
 
                 var presence = request.Presence == "Away" ? UserPresence.Away : UserPresence.Online;
 
-                if (Client.State.HasFlag(SoulseekClientStates.LoggedIn))
-                {
-                    await Client.SetStatusAsync(presence);
-                }
-
-                StateMutator.SetValue(state => state with
-                {
-                    User = state.User with { Presence = request.Presence },
-                });
+                await PresenceService.SetManualAsync(presence);
             }
 
             if (request.Description is not null)

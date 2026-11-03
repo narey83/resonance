@@ -60,7 +60,7 @@ public class DiagnosticAvailabilityTests
     private static ServerController CreatePortController(HttpMessageHandler handler)
     {
         var options = DispatchProxy.Create<IOptionsSnapshot<resonance.Options>, OptionsStub>();
-        return new ServerController(null!, null!, options, null!, null!, new HttpFactory(handler));
+        return new ServerController(null!, null!, options, null!, null!, new HttpFactory(handler), null!);
     }
 
     public class OfflineClient : DispatchProxy

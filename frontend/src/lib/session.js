@@ -187,6 +187,9 @@ export const getStatus = async () => {
   return (await api.get('/server/status')).data;
 };
 
+export const recordPresenceActivity = () =>
+  api.post('/server/status/activity', {});
+
 export const setStatus = async ({ presence, description }) => {
   return (await api.put('/server/status', { presence, description })).data;
 };

@@ -79,6 +79,18 @@ describe('Status and controls explanations', () => {
     expect(bar.textContent).not.toContain('13150 transfers queued');
   });
 
+  it('shows the current Soulseek presence from the server', () => {
+    const panel = renderPanel({
+      isLoggedIn: true,
+      server: { isLoggedIn: true },
+      user: { presence: 'Away' },
+    });
+    expect(
+      panel.closest('.status-strip').querySelector('.status-account-presence')
+        .textContent,
+    ).toBe('Away');
+  });
+
   it('shows a personal Soulseek tag when one is set', () => {
     localStorage.setItem(
       'resonance-status-profile',

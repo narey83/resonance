@@ -308,6 +308,31 @@ const App = () => {
     pending: false,
     required: null,
   });
+  useEffect(() => {
+    if (!isLoggedIn || !initialized || setup.required || !isAdmin())
+      return undefined;
+
+    let lastSent = Number.NEGATIVE_INFINITY;
+    const recordActivity = () => {
+      const now = performance.now();
+      if (document.hidden || now - lastSent < 5_000) return;
+      lastSent = now;
+      session.recordPresenceActivity().catch(() => {});
+    };
+
+    const events = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'focus'];
+    const controller = new AbortController();
+    const options = { signal: controller.signal, passive: true };
+    for (const event of events) {
+      window.addEventListener(event, recordActivity, options);
+    }
+
+    document.addEventListener('visibilitychange', recordActivity, options);
+    recordActivity();
+
+    return () => controller.abort();
+  }, [initialized, isLoggedIn, setup.required]);
+
   const [login, setLogin] = useState({ error: undefined, pending: false });
 
   // ── Hub-derived state ───────────────────────────────────────────────────────

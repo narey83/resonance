@@ -103,9 +103,10 @@ const StatusStrip = ({
   const [rescanning, setRescanning] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
-  const [presence, setPresence] = useState(
+  const [profilePresence, setProfilePresence] = useState(
     () => cachedProfile.presence ?? 'Online',
   );
+  const presence = user?.presence ?? profilePresence;
   const [description, setDescription] = useState(
     () => cachedProfile.description ?? '',
   );
@@ -160,7 +161,7 @@ const StatusStrip = ({
           hasPicture: Boolean(hp),
           presence: p ?? 'Online',
         });
-        setPresence(p ?? 'Online');
+        setProfilePresence(p ?? 'Online');
         setDescription(d ?? '');
         setDescDraft(d ?? '');
         setHasPicture(Boolean(hp));
@@ -222,7 +223,7 @@ const StatusStrip = ({
   const handleSetPresence = async (p) => {
     try {
       const result = await session.setStatus({ presence: p });
-      setPresence(result.presence);
+      setProfilePresence(result.presence);
     } catch {
       toast.error('Failed to set status');
     }
