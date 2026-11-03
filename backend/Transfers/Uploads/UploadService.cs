@@ -591,6 +591,26 @@ namespace resonance.Transfers.Uploads
                         "Upload cancelled after repeated transfer errors; please retry later.");
                 }
 
+                // Use completed history so the cooldown survives a restart. Rejected requests
+                // do not create records or extend the cooldown.
+                var now = DateTime.UtcNow;
+                var window = TimeSpan.FromMinutes(30);
+                var recentSuccesses = existingRecords
+                    .Where(t => t.State == (TransferStates.Completed | TransferStates.Succeeded) && t.EndedAt <= now)
+                    .OrderByDescending(t => t.EndedAt)
+                    .Take(3)
+                    .ToArray();
+
+                if (recentSuccesses.Length == 3
+                    && recentSuccesses[0].EndedAt > now - window
+                    && recentSuccesses[0].EndedAt - recentSuccesses[2].EndedAt <= window)
+                {
+                    var retryAt = recentSuccesses[0].EndedAt.Value + window;
+                    Log.Information("Upload of {Filename} to {Username} deferred after repeated successes until {RetryAt:u}",
+                        filename, username, retryAt);
+                    throw new DownloadEnqueueException("This file was recently transferred several times; please retry later.");
+                }
+
                 /*
                     no existing transfers. next, check to see if they are requesting a file we are sharing
 

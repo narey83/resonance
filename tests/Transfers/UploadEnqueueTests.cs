@@ -139,6 +139,38 @@ public sealed partial class UploadEnqueueTests : IDisposable
         await Assert.ThrowsAsync<IOException>(() => service.EnqueueAsync("alice", "album/track.mp3"));
     }
 
+    [Theory]
+    [InlineData("alice", "album/track.mp3", 0, 3, true)]
+    [InlineData("alice", "album/track.mp3", 0, 2, false)]
+    [InlineData("alice", "album/track.mp3", 31, 3, false)]
+    [InlineData("bob", "album/track.mp3", 0, 3, false)]
+    [InlineData("alice", "other/track.mp3", 0, 3, false)]
+    public async Task RepeatSuccessCooldownAppliesOnlyToTheSamePeerAndPath(
+        string username, string filename, int ageMinutes, int successCount, bool blocked)
+    {
+        SeedAttempts("alice", "album/track.mp3", Enumerable.Repeat(TransferStates.Succeeded, successCount).ToArray());
+        using (var db = factory.CreateDbContext())
+        {
+            foreach (var attempt in db.Transfers)
+                attempt.EndedAt = attempt.EndedAt!.Value.AddMinutes(-ageMinutes);
+            db.SaveChanges();
+        }
+
+        var service = CreateService([], new IOException("share lookup reached"));
+        if (blocked)
+        {
+            var error = await Assert.ThrowsAsync<DownloadEnqueueException>(() => service.EnqueueAsync(username, filename));
+            Assert.Contains("recently transferred", error.Message);
+        }
+        else
+        {
+            await Assert.ThrowsAsync<IOException>(() => service.EnqueueAsync(username, filename));
+        }
+
+        using var context = factory.CreateDbContext();
+        Assert.Equal(successCount, context.Transfers.Count());
+    }
+
     private void SeedAttempts(string username, string filename, params TransferStates[] outcomes)
     {
         using var db = factory.CreateDbContext();

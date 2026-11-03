@@ -65,6 +65,28 @@ describe('Transfer history loading', () => {
     });
   };
 
+  it('shows the resume offset and excludes it from bytes sent', async () => {
+    expect.hasAssertions();
+    reports.getTransferHistory.mockResolvedValue({
+      items: [
+        {
+          ...row('resumed'),
+          size: 4_096,
+          startOffset: 3_072,
+          bytesTransferred: 4_096,
+        },
+      ],
+      total: 1,
+    });
+    await render();
+    act(() => {
+      Simulate.click(container.querySelector('.th-transfer-row'));
+    });
+    const details = document.querySelector('.th-detail-grid');
+    expect(details.textContent).toContain('Resume offset3 KB');
+    expect(details.textContent).toContain('Bytes sent1 KB');
+  });
+
   it('coalesces completion bursts and polling while a request is pending', async () => {
     expect.hasAssertions();
     const pending = deferred();

@@ -135,7 +135,16 @@ const TransferDetail = ({ item, onClose }) => {
     ['Finished', formatWhen(item.endedAt)],
     ['Duration', transferDuration(item)],
     ['File size', formatBytes(item.size)],
-    ['Transferred', formatBytes(item.bytesTransferred)],
+    [
+      'Resume offset',
+      item.startOffset == null ? '—' : formatBytes(item.startOffset),
+    ],
+    [
+      item.direction === 'Upload' ? 'Bytes sent' : 'Bytes received',
+      item.startOffset == null
+        ? '—'
+        : formatBytes(Math.max(0, item.bytesTransferred - item.startOffset)),
+    ],
     ['Average speed', formatSpeed(item.averageSpeed)],
     ['Transfer ID', item.id],
     ['Retry of', item.retryOfId || '—'],

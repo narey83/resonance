@@ -80,6 +80,7 @@ public record UserTransferRecord
     public DateTime? EnqueuedAt { get; init; }
     public DateTime? StartedAt { get; init; }
     public DateTime? EndedAt { get; init; }
+    public long? StartOffset { get; init; }
     public long BytesTransferred { get; init; }
     public double AverageSpeed { get; init; }
 

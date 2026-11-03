@@ -1263,6 +1263,7 @@ public class ReportsService
                     t.""StartedAt"",
                     t.""EndedAt"",
                     t.""BytesTransferred"",
+                    t.""StartOffset"",
                     t.""AverageSpeed"",
                     t.""RetryOfId""::text AS ""RetryOfId""
                 FROM transfers.""Transfers"" t
@@ -1321,6 +1322,7 @@ public class ReportsService
                     t.StartedAt,
                     t.EndedAt,
                     t.BytesTransferred,
+                    t.StartOffset,
                     t.AverageSpeed,
                     t.RetryOfId
                 FROM Transfers t
@@ -1407,6 +1409,7 @@ public class ReportsService
                     ""StartedAt"",
                     ""EndedAt"",
                     ""BytesTransferred"",
+                    ""StartOffset"",
                     ""AverageSpeed"",
                     ""RetryOfId""::text AS ""RetryOfId""
                 FROM chain
@@ -1441,6 +1444,7 @@ public class ReportsService
                     StartedAt,
                     EndedAt,
                     BytesTransferred,
+                    StartOffset,
                     AverageSpeed,
                     RetryOfId
                 FROM chain

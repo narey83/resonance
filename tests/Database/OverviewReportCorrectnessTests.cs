@@ -127,6 +127,18 @@ public class OverviewReportCorrectnessTests : IDisposable
     }
 
     [Fact]
+    public void HistoryAndAttemptsExposeStoredResumeOffset()
+    {
+        Add("resumed", TransferStates.Succeeded, 1000, 1000);
+        context.SaveChanges();
+
+        var history = Assert.Single(reports.GetTransferHistory(start: start, end: end).Items);
+        Assert.Equal(1000L, history.StartOffset);
+        Assert.Equal(history.StartOffset, history.BytesTransferred);
+        Assert.Equal(history.StartOffset, Assert.Single(reports.GetTransferAttempts(history.Id)).StartOffset);
+    }
+
+    [Fact]
     public void HistoryPartialStateAndEscapedFilenameSearchStillWork()
     {
         Add("literal", TransferStates.Succeeded, 100, 0, filename: "music/100%_literal.flac");
