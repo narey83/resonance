@@ -266,6 +266,15 @@ const UploadsTable = ({
                   : ''}
               </span>
             )}
+            {selected?.retryAt &&
+              Number.isFinite(Date.parse(selected.retryAt)) && (
+                <span className="ul-complete-count">
+                  Paused after connection failures. Retry from{' '}
+                  <time dateTime={selected.retryAt}>
+                    {new Date(selected.retryAt).toLocaleString()}
+                  </time>
+                </span>
+              )}
             {fileCount > 0 && (
               <button
                 className="ul-quick-btn ul-quick-btn--cancel"

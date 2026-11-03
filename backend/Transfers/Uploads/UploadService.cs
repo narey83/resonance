@@ -46,6 +46,7 @@ namespace resonance.Transfers.Uploads
     using System.IO;
     using System.Linq;
     using System.Linq.Expressions;
+    using System.Net.Sockets;
     using System.Threading;
     using System.Threading.Tasks;
     using Dapper;
@@ -841,7 +842,11 @@ namespace resonance.Transfers.Uploads
         public UploadQueueSnapshot ListQueuePage(string username, int page, int pageSize)
         {
             using var context = ContextFactory.CreateDbContext();
-            return TransferListQuery.UploadQueuePage(context, username, page, pageSize);
+            var snapshot = TransferListQuery.UploadQueuePage(context, username, page, pageSize);
+            return snapshot with
+            {
+                Users = snapshot.Users.Select(user => user with { RetryAt = PeerCooldown.GetRetryAt(user.Username) }).ToArray(),
+            };
         }
 
         /// <inheritdoc/>
@@ -1146,6 +1151,27 @@ namespace resonance.Transfers.Uploads
                 }
 
                 if (ex is ConnectionException or TimeoutException)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsInterruptedUploadWrite(Exception exception)
+        {
+            for (var error = exception; error is not null; error = error.InnerException)
+            {
+                if (error is SocketException { SocketErrorCode: SocketError.ConnectionReset })
+                {
+                    return true;
+                }
+
+                // Soulseek.NET can surface the transport error as text on a TransferException.
+                if (error is TransferException && error.Message.Contains("Write error:", StringComparison.OrdinalIgnoreCase)
+                    && (error.Message.Contains("Connection reset by peer", StringComparison.OrdinalIgnoreCase)
+                        || error.Message.Contains("Broken pipe", StringComparison.OrdinalIgnoreCase)))
                 {
                     return true;
                 }
@@ -1467,7 +1493,8 @@ namespace resonance.Transfers.Uploads
                 return new UploadAttempt(null, null);
             }
             catch (Exception ex) when (connectionAttemptStarted && !cancellationToken.IsCancellationRequested
-                && !transferStarted && transfer.BytesTransferred == 0 && (IsConnectionFailure(ex) || IsUserOffline(ex)))
+                && (IsInterruptedUploadWrite(ex)
+                    || (!transferStarted && transfer.BytesTransferred == 0 && (IsConnectionFailure(ex) || IsUserOffline(ex)))))
             {
                 syncRoot.Wait(CancellationToken.None);
                 try
@@ -1477,7 +1504,9 @@ namespace resonance.Transfers.Uploads
                     transfer.StartedAt = null;
                     transfer.EndedAt = null;
                     transfer.Exception = null;
+                    transfer.BytesTransferred = 0;
                     transfer.AverageSpeed = 0;
+                    transfer.PlaceInQueue = null;
                     Update(transfer);
                 }
                 finally

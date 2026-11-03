@@ -51,6 +51,16 @@ namespace resonance.Transfers.Uploads
         private readonly TimeProvider clock = clock ?? TimeProvider.System;
         private DateTimeOffset nextSweep;
 
+        internal DateTimeOffset? GetRetryAt(string username)
+        {
+            lock (gate)
+            {
+                return peers.TryGetValue(username, out var peer) && peer.RetryAt > clock.GetUtcNow()
+                    ? peer.RetryAt
+                    : null;
+            }
+        }
+
         internal async Task<Lease> EnterAsync(string username, CancellationToken cancellationToken)
         {
             PeerState state;
@@ -135,7 +145,10 @@ namespace resonance.Transfers.Uploads
             internal void RecordSuccess()
             {
                 state.Failures.Clear();
-                state.RetryAt = null;
+                lock (owner.gate)
+                {
+                    state.RetryAt = null;
+                }
             }
 
             internal DateTimeOffset? RecordConnectionFailure()
@@ -152,7 +165,10 @@ namespace resonance.Transfers.Uploads
                 // Once open, allow one probe after each pause. Only a successful upload closes it.
                 if (state.RetryAt is not null || state.Failures.Count >= 3)
                 {
-                    state.RetryAt = now + Cooldown;
+                    lock (owner.gate)
+                    {
+                        state.RetryAt = now + Cooldown;
+                    }
                 }
 
                 return state.RetryAt;

@@ -78,6 +78,17 @@ describe('One complete upload list and one user header', () => {
     });
     container.remove();
   });
+  it('shows the retry time only for the paused recipient', async () => {
+    expect.hasAssertions();
+    const retryAt = '2026-11-03T10:35:00+00:00';
+    const queueUsers = [{ ...users[0], retryAt }, users[1]];
+    await render({ queueUsers });
+    expect(container.querySelector('time').dateTime).toBe(retryAt);
+    expect(container.textContent).toContain('Paused after connection failures');
+    await render({ queueUsers, selectedUsername: 'other' });
+    expect(container.querySelector('time')).toBeNull();
+  });
+
   it('defaults to closed folders and expands every track without pagination or duplicate headings', async () => {
     expect.hasAssertions();
     await render({

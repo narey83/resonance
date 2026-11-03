@@ -10,8 +10,11 @@ using Transfer = global::resonance.Transfers.Transfer;
 
 public sealed partial class UploadEnqueueTests
 {
-    [Fact]
-    public async Task FailuresAcrossFilesPauseThePeerKeepExistingAndNewFilesQueuedAndAllowOtherPeers()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("Connection reset by peer")]
+    [InlineData("Broken pipe")]
+    public async Task FailuresAcrossFilesPauseThePeerKeepExistingAndNewFilesQueuedAndAllowOtherPeers(string? writeError)
     {
         var clock = new ManualUploadClock();
         var calls = new UploadCalls();
@@ -23,20 +26,19 @@ public sealed partial class UploadEnqueueTests
             tasks.Add(service.UploadAsync(rows[0]));
             var first = await calls.Next();
             tasks.AddRange(rows.Skip(1).Select(service.UploadAsync));
-            first.ChangeState(TransferStates.Completed | TransferStates.Errored, started: clock.GetUtcNow().UtcDateTime);
-            first.FailConnection();
+            Fail(first);
             for (var i = 1; i < 3; i++)
             {
                 var next = await calls.Next();
                 Assert.Equal(rows[i].Filename, next.Filename);
-                next.ChangeState(TransferStates.Completed | TransferStates.Errored, started: clock.GetUtcNow().UtcDateTime);
-                next.FailConnection();
+                Fail(next);
             }
 
             Assert.Equal(TimeSpan.FromMinutes(5), await clock.NextDelay());
             Assert.Equal(3, calls.Count);
             Assert.Equal(0, service.Queue.GetGroupInfo(Application.DefaultGroup).UsedSlots);
             AssertAllQueued(rows);
+            Assert.Equal(clock.GetUtcNow().AddMinutes(5), Assert.Single(service.ListQueuePage("alice", 0, 10).Users).RetryAt);
             Assert.Null(await service.EnqueueAsync("alice", rows[0].Filename));
             var newRow = await service.EnqueueAsync("alice", "album/new.mp3");
             Assert.NotNull(newRow);
@@ -60,6 +62,7 @@ public sealed partial class UploadEnqueueTests
             var resumed = await calls.Next();
             Assert.Equal("alice", resumed.Username);
             Assert.Equal(rows[0].Filename, resumed.Filename);
+            Assert.Null(Assert.Single(service.ListQueuePage("alice", 0, 10).Users).RetryAt);
         }
         finally
         {
@@ -68,6 +71,22 @@ public sealed partial class UploadEnqueueTests
         }
 
         AssertAllQueued(rows.Take(3));
+
+        void Fail(PendingUpload call)
+        {
+            var started = clock.GetUtcNow().UtcDateTime;
+            if (writeError is null)
+            {
+                call.ChangeState(TransferStates.Completed | TransferStates.Errored, started: started);
+                call.FailConnection();
+                return;
+            }
+
+            call.ChangeState(TransferStates.InProgress, bytes: 10, started: started);
+            call.ChangeState(TransferStates.Completed | TransferStates.Errored, bytes: 10, started: started);
+            call.Completion.SetException(new TransferException(
+                $"Transfer failed: Write error: Unable to write data to the transport connection: {writeError}."));
+        }
     }
 
     [Theory]
@@ -346,6 +365,7 @@ public sealed partial class UploadEnqueueTests
             Assert.Null(saved.StartedAt);
             Assert.Null(saved.EndedAt);
             Assert.Null(saved.Exception);
+            Assert.Equal(0, saved.BytesTransferred);
             Assert.False(saved.Removed);
         }
     }
