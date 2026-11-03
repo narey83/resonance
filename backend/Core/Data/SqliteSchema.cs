@@ -45,7 +45,12 @@ public static class SqliteSchema
         }
 
         var name = context.GetType().Name;
-        var requiredVersion = name == nameof(Transfers.TransfersDbContext) ? 3 : 1;
+        var requiredVersion = name switch
+        {
+            nameof(Transfers.TransfersDbContext) => 3,
+            nameof(Core.LogStore.LogsDbContext) => 2,
+            _ => 1,
+        };
         context.Database.OpenConnection();
 
         // WAL readers can check a current schema while background services are writing.
@@ -77,29 +82,41 @@ public static class SqliteSchema
 
         if (version.Count != 0 && version[0] < requiredVersion)
         {
-            context.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Transfers_ReportWindow ON Transfers(EndedAt, State, Direction) WHERE EndedAt IS NOT NULL");
-            context.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Transfers_Overview ON Transfers(Direction, State, EndedAt, Username, BytesTransferred, StartOffset, AverageSpeed) WHERE EndedAt IS NOT NULL");
-
-            // Legacy sampled statistics understated direction cardinality and made
-            // the planner prefer full-history scans over the reporting date index.
-            foreach (var (indexName, analyzeSql) in new[]
+            if (name == nameof(Core.LogStore.LogsDbContext))
             {
-                ("IX_Transfers_Overview", "ANALYZE IX_Transfers_Overview"),
-                ("IX_Transfers_ReportWindow", "ANALYZE IX_Transfers_ReportWindow"),
-                ("IDX_Transfers_State", "ANALYZE IDX_Transfers_State"),
-                ("IDX_Transfers_Direction", "ANALYZE IDX_Transfers_Direction"),
-                ("IX_Transfers_ListDirectionRemovedCompletionTime", "ANALYZE IX_Transfers_ListDirectionRemovedCompletionTime"),
-            })
+                context.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_LogEntries_SourceContext_Level_Timestamp ON LogEntries(SourceContext, Level, Timestamp DESC, Id DESC)");
+            }
+            else
             {
-                if (context.Database.SqlQuery<int>($"SELECT COUNT(*) AS Value FROM sqlite_master WHERE type='index' AND name={indexName}").Single() > 0)
-                {
-                    context.Database.ExecuteSqlRaw(analyzeSql);
-                }
+                UpgradeTransfers(context);
             }
 
             context.Database.ExecuteSqlInterpolated($"UPDATE __ResonanceSchema SET Version={requiredVersion} WHERE Context={name}");
         }
 
         transaction.Commit();
+    }
+
+    private static void UpgradeTransfers(DbContext context)
+    {
+        context.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Transfers_ReportWindow ON Transfers(EndedAt, State, Direction) WHERE EndedAt IS NOT NULL");
+        context.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Transfers_Overview ON Transfers(Direction, State, EndedAt, Username, BytesTransferred, StartOffset, AverageSpeed) WHERE EndedAt IS NOT NULL");
+
+        // Legacy sampled statistics understated direction cardinality and made
+        // the planner prefer full-history scans over the reporting date index.
+        foreach (var (indexName, analyzeSql) in new[]
+        {
+            ("IX_Transfers_Overview", "ANALYZE IX_Transfers_Overview"),
+            ("IX_Transfers_ReportWindow", "ANALYZE IX_Transfers_ReportWindow"),
+            ("IDX_Transfers_State", "ANALYZE IDX_Transfers_State"),
+            ("IDX_Transfers_Direction", "ANALYZE IDX_Transfers_Direction"),
+            ("IX_Transfers_ListDirectionRemovedCompletionTime", "ANALYZE IX_Transfers_ListDirectionRemovedCompletionTime"),
+        })
+        {
+            if (context.Database.SqlQuery<int>($"SELECT COUNT(*) AS Value FROM sqlite_master WHERE type='index' AND name={indexName}").Single() > 0)
+            {
+                context.Database.ExecuteSqlRaw(analyzeSql);
+            }
+        }
     }
 }

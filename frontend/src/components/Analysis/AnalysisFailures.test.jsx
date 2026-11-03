@@ -89,12 +89,13 @@ describe('failed tracks disclosure', () => {
     await render();
     expect(getLogs).not.toHaveBeenCalled();
     await expand();
-    expect(getLogs).toHaveBeenCalledWith(
-      expect.objectContaining({
-        from: `${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`,
-        to: `${new Date().toISOString().slice(0, 10)}T23:59:59.999Z`,
-      }),
-    );
+    expect(getLogs).toHaveBeenCalledWith({
+      offset: 0,
+      limit: 100,
+      level: ['Warning', 'Error'],
+      context: ['Music / Analysis', 'Music / Enhanced Analysis'],
+    });
+    expect(container.querySelector('input[type="date"]')).toBeNull();
     expect(container.textContent).toContain('song.mp3');
     expect(container.textContent).toContain('Energy:');
     expect(container.textContent).toContain('Model missing');

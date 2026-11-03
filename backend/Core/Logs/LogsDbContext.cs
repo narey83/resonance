@@ -100,6 +100,9 @@ public class LogsDbContext : DbContext
             entry.HasKey(e => e.Id);
             entry.Property(e => e.Id).ValueGeneratedOnAdd();
             entry.HasIndex(e => e.Timestamp);
+            entry.HasIndex(e => new { e.SourceContext, e.Level, e.Timestamp, e.Id })
+                .HasDatabaseName("IX_LogEntries_SourceContext_Level_Timestamp")
+                .IsDescending(false, false, true, true);
         }
 
         entry.Property(e => e.Timestamp)

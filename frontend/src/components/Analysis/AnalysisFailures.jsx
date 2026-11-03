@@ -15,7 +15,6 @@ const FailureHistory = ({
 }) => {
   const [open, setOpen] = useState(false);
   const [offset, setOffset] = useState(0);
-  const [day, setDay] = useState(() => new Date().toISOString().slice(0, 10));
   const [revision, setRevision] = useState(0);
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
@@ -91,8 +90,6 @@ const FailureHistory = ({
           limit: PAGE_SIZE,
           level: ['Warning', 'Error'],
           context: ['Music / Analysis', 'Music / Enhanced Analysis'],
-          from: `${day}T00:00:00.000Z`,
-          to: `${day}T23:59:59.999Z`,
         });
         if (!disposed) {
           setData({ ...next, offset });
@@ -106,15 +103,12 @@ const FailureHistory = ({
     };
 
     void load();
-    const timer =
-      offset === 0 && day === new Date().toISOString().slice(0, 10)
-        ? setInterval(load, 10_000)
-        : null;
+    const timer = offset === 0 ? setInterval(load, 10_000) : null;
     return () => {
       disposed = true;
       if (timer) clearInterval(timer);
     };
-  }, [day, offset, open, revision, standalone]);
+  }, [offset, open, revision, standalone]);
   const tracks = data?.offset === offset ? failedTracksFromLogs(data.logs) : [];
   const Container = standalone ? 'section' : 'details';
   return (
@@ -132,26 +126,10 @@ const FailureHistory = ({
       {(standalone || open) && (
         <div>
           <p>
-            Failure history for the selected day (UTC), including earlier scans
-            and retries. A track may have succeeded since its failure was
-            logged. Older logs may not name the measurement. History follows the
-            server’s log retention settings.
+            Failed tracks across all retained logs, newest first. A track may
+            have succeeded since its failure was logged. Older logs may omit the
+            measurement.
           </p>
-          <label>
-            Failure date (UTC){' '}
-            <input
-              disabled={retrying}
-              max={new Date().toISOString().slice(0, 10)}
-              onChange={(event) => {
-                if (!event.target.value) return;
-                setDay(event.target.value);
-                setOffset(0);
-                setData(null);
-              }}
-              type="date"
-              value={day}
-            />
-          </label>{' '}
           <button
             aria-busy={loading}
             aria-label="Refresh failures"
@@ -230,7 +208,7 @@ const FailureHistory = ({
                         dateTime={track.timestamp}
                         title={new Date(track.timestamp).toLocaleString()}
                       >
-                        {new Date(track.timestamp).toLocaleTimeString()}
+                        {new Date(track.timestamp).toLocaleString()}
                       </time>
                     </span>
                   </div>

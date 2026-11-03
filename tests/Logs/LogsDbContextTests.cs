@@ -1,9 +1,26 @@
 namespace Resonance.Tests.Logs;
 
 using global::resonance.Core.LogStore;
+using Microsoft.EntityFrameworkCore;
 
 public class LogsDbContextTests
 {
+    [Fact]
+    public void SqliteSchema_UpgradesExistingLogsWithHistoryIndex()
+    {
+        using var connection = LogsTestSupport.OpenConnection();
+        using var context = new LogsDbContext(LogsTestSupport.Options(connection));
+        global::resonance.SqliteSchema.Initialize(context);
+        context.Database.ExecuteSqlRaw("DROP INDEX IX_LogEntries_SourceContext_Level_Timestamp");
+        context.Database.ExecuteSqlRaw("UPDATE __ResonanceSchema SET Version = 1 WHERE Context = 'LogsDbContext'");
+
+        using var upgraded = new LogsDbContext(LogsTestSupport.Options(connection));
+        global::resonance.SqliteSchema.Initialize(upgraded);
+
+        Assert.Equal(1, upgraded.Database.SqlQueryRaw<int>(
+            "SELECT COUNT(*) AS Value FROM sqlite_master WHERE type = 'index' AND name = 'IX_LogEntries_SourceContext_Level_Timestamp'").Single());
+    }
+
     // Id is a real GENERATED ALWAYS AS IDENTITY column in Postgres (production) -- verified against
     // the actual dev database, not here. A composite primary key (Id, Timestamp), which Postgres
     // requires on a partitioned table, disables SQLite's single-column autoincrement convention, so
