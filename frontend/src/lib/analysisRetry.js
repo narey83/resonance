@@ -4,9 +4,9 @@ const normalise = (path) => path.replaceAll('\\', '/').toLowerCase();
 
 // Old Basic logs recorded basenames. Enumerate directory names, then resolve
 // candidate paths in bounded batches; title search cannot prove filename uniqueness.
-export const resolveFailedTrackPaths = async (entries, { signal } = {}) => {
+export const findFailedTrackMatches = async (entries, { signal } = {}) => {
   const references = [...new Set(entries.map((entry) => entry.path))];
-  if (!references.length || references.length > 100)
+  if (references.length > 100)
     throw new Error('Choose between 1 and 100 failed tracks to retry.');
   const names = references.filter((path) => !/[/\\]/.test(path));
   const candidates = references.filter((path) => /[/\\]/.test(path));
@@ -43,24 +43,39 @@ export const resolveFailedTrackPaths = async (entries, { signal } = {}) => {
     }
   }
 
+  return new Map(
+    references.map((reference) => {
+      const wanted = normalise(reference);
+      const full = /[/\\]/.test(reference);
+      const relative =
+        full && !wanted.startsWith('/') && !/^[a-z]:/.test(wanted);
+      const matches = [...resolved.values()].filter((track) => {
+        const path = normalise(track.path);
+        return full
+          ? path === wanted || (relative && path.endsWith(`/${wanted}`))
+          : path.split('/').pop() === wanted;
+      });
+
+      return [reference, matches.map((track) => track.path)];
+    }),
+  );
+};
+
+export const resolveFailedTrackPaths = async (entries, options) => {
+  if (!entries.length)
+    throw new Error('Choose between 1 and 100 failed tracks to retry.');
   const paths = [];
-  for (const reference of references) {
-    const wanted = normalise(reference);
-    const full = /[/\\]/.test(reference);
-    const relative = full && !wanted.startsWith('/') && !/^[a-z]:/.test(wanted);
-    const matches = [...resolved.values()].filter((track) => {
-      const path = normalise(track.path);
-      return full
-        ? path === wanted || (relative && path.endsWith(`/${wanted}`))
-        : path.split('/').pop() === wanted;
-    });
+  for (const [reference, matches] of await findFailedTrackMatches(
+    entries,
+    options,
+  )) {
     if (matches.length !== 1)
       throw new Error(
         matches.length > 1
           ? `Several library tracks match ${reference}. Select the correct file in Analyse tracks instead.`
           : `${reference} could not be found in the library. No retry was started.`,
       );
-    paths.push(matches[0].path);
+    paths.push(matches[0]);
   }
 
   return [...new Set(paths)];

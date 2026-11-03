@@ -17,6 +17,7 @@ import { act } from 'react-dom/test-utils';
 
 jest.mock('../../lib/logs', () => ({ getLogs: jest.fn() }));
 jest.mock('../../lib/analysisRetry', () => ({
+  findFailedTrackMatches: jest.fn(async () => new Map()),
   resolveFailedTrackPaths: jest.fn(),
 }));
 jest.mock('../Library/components/BackgroundAnalysisQueue', () => () => (

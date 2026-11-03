@@ -1,4 +1,7 @@
-import { resolveFailedTrackPaths } from '../../lib/analysisRetry';
+import {
+  findFailedTrackMatches,
+  resolveFailedTrackPaths,
+} from '../../lib/analysisRetry';
 import { getLogs } from '../../lib/logs';
 import AppContext from '../AppContext';
 import AnalysisFailures from './AnalysisFailures';
@@ -7,6 +10,7 @@ import ReactDOM from 'react-dom';
 import { act } from 'react-dom/test-utils';
 
 jest.mock('../../lib/analysisRetry', () => ({
+  findFailedTrackMatches: jest.fn(async () => new Map()),
   resolveFailedTrackPaths: jest.fn(),
 }));
 jest.mock('../../lib/logs', () => ({ getLogs: jest.fn() }));
@@ -129,6 +133,21 @@ describe('failed tracks disclosure', () => {
     expect(getLogs).toHaveBeenCalledTimes(1);
     await render(true, { scanning: false, standalone: true });
     expect(getLogs).toHaveBeenCalledTimes(2);
+  });
+  it('hides removed files and keeps failures for tracks still in the library', async () => {
+    expect.hasAssertions();
+    retryLogs();
+    findFailedTrackMatches.mockResolvedValueOnce(
+      new Map([
+        ['/music/one.mp3', []],
+        ['/music/two.mp3', ['/music/two.mp3']],
+        ['/music/enhanced.mp3', ['/music/enhanced.mp3']],
+      ]),
+    );
+    await render(true, { standalone: true });
+    expect(container.textContent).not.toContain('one.mp3');
+    expect(container.textContent).toContain('two.mp3');
+    expect(container.textContent).toContain('enhanced.mp3');
   });
   it('preserves administrator-only log access', async () => {
     expect.hasAssertions();

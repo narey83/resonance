@@ -3,7 +3,10 @@ import {
   basicRecoveryCandidates,
   failedTracksFromLogs,
 } from '../../lib/analysisFailures';
-import { resolveFailedTrackPaths } from '../../lib/analysisRetry';
+import {
+  findFailedTrackMatches,
+  resolveFailedTrackPaths,
+} from '../../lib/analysisRetry';
 import { getLogs } from '../../lib/logs';
 import AppContext from '../AppContext';
 import React, { useContext, useEffect, useRef, useState } from 'react';
@@ -87,6 +90,7 @@ const FailureHistory = ({
   useEffect(() => {
     if (!open && !standalone) return undefined;
     let disposed = false;
+    const controller = new AbortController();
     let busy = false;
     const finish = () => {
       busy = false;
@@ -104,7 +108,20 @@ const FailureHistory = ({
           level: ['Warning', 'Error'],
           context: ['Music / Analysis', 'Music / Enhanced Analysis'],
         });
-        const pageTracks = failedTracksFromLogs(next.logs);
+        let pageTracks = failedTracksFromLogs(next.logs);
+        let matches;
+        try {
+          matches = await findFailedTrackMatches(pageTracks, {
+            signal: controller.signal,
+          });
+          pageTracks = pageTracks.filter(
+            (track) => matches.get(track.path)?.length !== 0,
+          );
+        } catch {
+          // Keep the rows when the library cannot confirm whether they exist.
+        }
+
+        if (disposed) return;
         const oldest = [...pageTracks]
           .reverse()
           .find((track) => track.mode === 'Basic')?.timestamp;
@@ -127,15 +144,12 @@ const FailureHistory = ({
                 continue;
               }
 
-              try {
-                const [resolved] = await resolveFailedTrackPaths([
-                  candidate.track,
-                ]);
-                if (resolved?.replaceAll('\\', '/') === candidate.path)
-                  recovered.add(candidate.track.key);
-              } catch {
-                // Keep historical rows when the filename cannot be resolved.
-              }
+              const paths = matches?.get(candidate.track.path);
+              if (
+                paths?.length === 1 &&
+                paths[0].replaceAll('\\', '/') === candidate.path
+              )
+                recovered.add(candidate.track.key);
             }
 
             visible = pageTracks.filter((track) => !recovered.has(track.key));
@@ -159,6 +173,7 @@ const FailureHistory = ({
     const timer = setInterval(load, 10_000);
     return () => {
       disposed = true;
+      controller.abort();
       clearInterval(timer);
     };
   }, [offset, open, revision, standalone]);
