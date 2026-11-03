@@ -2153,6 +2153,7 @@ const Analysis = ({
                 ? 'Retry is available when the current scan has finished.'
                 : ''
           }
+          scanning={scanning}
           standalone={activeView !== 'all'}
         />
       )}

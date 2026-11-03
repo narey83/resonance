@@ -14,6 +14,7 @@ const FailureHistory = ({
   onRetry,
   retryDisabled = false,
   retryReason = '',
+  scanning = false,
   standalone = false,
 }) => {
   const [open, setOpen] = useState(false);
@@ -35,6 +36,15 @@ const FailureHistory = ({
       retryController.current?.abort();
     };
   }, []);
+  const wasScanning = useRef(scanning);
+  useEffect(() => {
+    if (wasScanning.current && !scanning) {
+      setRevision((value) => value + 1);
+    }
+
+    wasScanning.current = scanning;
+  }, [scanning]);
+
   const finishRetry = () => {
     retryLock.current = false;
     if (alive.current) setRetrying(false);
@@ -146,10 +156,10 @@ const FailureHistory = ({
     };
 
     void load();
-    const timer = offset === 0 ? setInterval(load, 10_000) : null;
+    const timer = setInterval(load, 10_000);
     return () => {
       disposed = true;
-      if (timer) clearInterval(timer);
+      clearInterval(timer);
     };
   }, [offset, open, revision, standalone]);
   const tracks = data?.offset === offset ? data.tracks : [];
@@ -332,6 +342,7 @@ const AnalysisFailures = ({
   onRetry,
   retryDisabled,
   retryReason,
+  scanning,
   standalone = false,
 }) => {
   const { isAdmin } = useContext(AppContext) || {};
@@ -341,6 +352,7 @@ const AnalysisFailures = ({
       onRetry={onRetry}
       retryDisabled={retryDisabled}
       retryReason={retryReason}
+      scanning={scanning}
       standalone={standalone}
     />
   ) : standalone ? (

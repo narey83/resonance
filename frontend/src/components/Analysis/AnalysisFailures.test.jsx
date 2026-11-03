@@ -123,6 +123,13 @@ describe('failed tracks disclosure', () => {
       'Failed tracks',
     );
   });
+  it('refreshes the visible page immediately when analysis finishes', async () => {
+    expect.hasAssertions();
+    await render(true, { scanning: true, standalone: true });
+    expect(getLogs).toHaveBeenCalledTimes(1);
+    await render(true, { scanning: false, standalone: true });
+    expect(getLogs).toHaveBeenCalledTimes(2);
+  });
   it('preserves administrator-only log access', async () => {
     expect.hasAssertions();
     await render(false);
