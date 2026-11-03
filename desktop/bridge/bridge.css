@@ -165,18 +165,9 @@ strong {
   letter-spacing: -0.5px;
 }
 .brand-mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-shrink: 0;
   width: 37px;
   height: 37px;
-  border-radius: 11px;
-  color: var(--on-accent);
-  background: var(--accent);
-  font-size: 38px;
-  line-height: 1;
-  font-weight: 400;
-  padding-bottom: 4px;
 }
 .brand-subtitle {
   display: block;
@@ -949,8 +940,6 @@ progress {
   .brand-mark {
     width: 31px;
     height: 31px;
-    font-size: 32px;
-    border-radius: 9px;
   }
   .brand-subtitle {
     font-size: 9px;
@@ -1153,26 +1142,6 @@ select {
     transition: none !important;
     animation: none !important;
   }
-}
-
-.brand-mark {
-  color: var(--accent);
-  background: var(--tint);
-  border: 1px solid var(--line);
-}
-.resonance-mark {
-  flex-shrink: 0;
-  overflow: visible;
-}
-.resonance-mark-ring {
-  opacity: 0.65;
-}
-.resonance-mark-highlight,
-.resonance-mark-core {
-  opacity: 0.9;
-}
-.resonance-mark-wave {
-  filter: drop-shadow(0 0 2px currentColor);
 }
 
 .appearance-card + .support-card {

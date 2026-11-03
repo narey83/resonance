@@ -13,7 +13,7 @@
     "android": {
       "package": "com.resonance.mobile",
       "adaptiveIcon": {
-        "backgroundColor": "#0C1020",
+        "backgroundColor": "#121F20",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -31,12 +31,12 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0C1020",
+          "backgroundColor": "#121F20",
           "image": "./assets/splash-icon.png",
           "imageWidth": 160,
           "resizeMode": "contain",
           "dark": {
-            "backgroundColor": "#0C1020",
+            "backgroundColor": "#121F20",
             "image": "./assets/splash-icon.png"
           }
         }

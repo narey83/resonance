@@ -79,7 +79,7 @@ Section "Resonance Bridge"
  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
  WriteUninstaller "$INSTDIR\Uninstall.exe"
  CreateDirectory "$SMPROGRAMS\Resonance Bridge"
- CreateShortcut "$SMPROGRAMS\Resonance Bridge\Resonance Bridge.lnk" "$INSTDIR\resonance-bridge.exe"
+ CreateShortcut "$SMPROGRAMS\Resonance Bridge\Resonance Bridge.lnk" "$INSTDIR\resonance-bridge.exe" "" "$INSTDIR\source\assets\favicon.ico"
  CreateShortcut "$SMPROGRAMS\Resonance Bridge\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
  WriteRegStr HKCU "Software\Resonance\Bridge" "InstallDir" "$INSTDIR"
  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ResonanceBridge" "DisplayName" "Resonance Bridge"

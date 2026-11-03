@@ -15,7 +15,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[2]
 FONT_REVISION = "6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec"
-INK = "#0C1020"
+TILE_COLOR = "#121F20"
 NS = "http://www.w3.org/2000/svg"
 
 
@@ -30,39 +30,50 @@ def generate(destination):
 
     master = (ROOT / "branding/mark.svg").read_text()
     # Export no text, external resources, filters or fonts in the symbol.
-    def svg(scale=1, background=None, monochrome=False):
-        content = master[master.index("<defs>"):master.rindex("</svg>")]
-        if monochrome:
-            content = content.replace('stroke="url(#resonance)"', 'stroke="#FFFFFF"')
+    def svg(scale=1, background=None, color=None, radius=0):
+        content = master[master.index(">") + 1:master.rindex("</svg>")].strip()
+        if color:
+            content = content.replace('fill="#9BE3D1"', f'fill="{color}"')
         inset = (96 - 96 * scale) / 2
-        bg = f'<rect width="96" height="96" fill="{background}"/>' if background else ''
+        bg = f'<rect width="96" height="96" rx="{radius}" fill="{background}"/>' if background else ''
         return f'<svg xmlns="{NS}" viewBox="0 0 96 96" fill="none">{bg}<g transform="translate({inset} {inset}) scale({scale})">{content}</g></svg>\n'
 
     def png(vector, size):
         return cairosvg.svg2png(bytestring=vector.encode(), output_width=size, output_height=size)
 
     write("frontend/public/assets/brand/mark.svg", master)
-    write("frontend/src/assets/resonance-mark.svg", master)
-    write("frontend/public/assets/brand/mark-mono.svg", svg(monochrome=True))
-    tile = svg(.82, INK)
-    write("frontend/public/favicon.svg", tile)
-    icon = Image.open(BytesIO(png(tile, 256)))
+    badge = svg(background=TILE_COLOR, radius=21)
+    write("frontend/src/assets/resonance-mark.svg", badge)
+    write("frontend/public/assets/brand/mark-mono.svg", svg(color="#FFFFFF"))
+    tile = svg(background=TILE_COLOR)
+    write("frontend/public/favicon.svg", badge)
+    write("desktop/bridge/assets/favicon.svg", badge)
+    icon = Image.open(BytesIO(png(badge, 256)))
     ico = BytesIO()
     icon.save(ico, format="ICO", sizes=[(16, 16), (32, 32), (48, 48), (64, 64)])
     write("frontend/public/favicon.ico", ico.getvalue())
+    # NSIS installer icons use bitmap entries rather than PNG-compressed entries.
+    bridge_ico = BytesIO()
+    icon.save(bridge_ico, format="ICO", bitmap_format="bmp", sizes=[(16, 16), (32, 32), (48, 48)])
+    write("desktop/bridge/assets/favicon.ico", bridge_ico.getvalue())
+    write("desktop/bridge/assets/tray.png", png(badge, 32))
+    write("desktop/bridge/assets/tray-template.png", png(svg(color="#000000"), 36))
+    icns = BytesIO()
+    Image.open(BytesIO(png(badge, 1024))).save(icns, format="ICNS")
+    write("desktop/bridge/assets/bridge.icns", icns.getvalue())
     write("frontend/public/apple-touch-icon.png", png(tile, 180))
     for size in (192, 512):
         write(f"frontend/public/assets/brand/icon-{size}.png", png(tile, size))
     for name, size, vector in (
         ("icon.png", 1024, tile),
         ("icon-dev.png", 1024, tile),
-        ("splash-icon.png", 512, svg()),
+        ("splash-icon.png", 512, badge),
         ("android-icon-foreground.png", 1080, svg(.5)),
-        ("android-icon-monochrome.png", 1080, svg(.5, monochrome=True)),
-        ("android-icon-background.png", 1080, svg(0, INK)),
-        ("android-icon-background-dev.png", 1080, svg(0, INK)),
-        ("aa-icon-foreground.png", 1080, svg(.5)),
-        ("aa-app-icon.png", 512, svg(.75, "#FFFFFF")),
+        ("android-icon-monochrome.png", 1080, svg(.5, color="#FFFFFF")),
+        ("android-icon-background.png", 1080, svg(0, TILE_COLOR)),
+        ("android-icon-background-dev.png", 1080, svg(0, TILE_COLOR)),
+        ("aa-icon-foreground.png", 1080, svg(.5, color="#24685A")),
+        ("aa-app-icon.png", 512, svg(background="#FFFFFF", color="#24685A")),
         ("favicon.png", 64, tile),
     ):
         write(f"mobile/assets/{name}", png(vector, size))
@@ -97,8 +108,8 @@ def generate(destination):
                     x += glyph.width - units * .015
                 scale = 58 / units
                 width = round(118 + x * scale)
-                for variant, color in (("light", INK), ("dark", "#F7F8FC"), ("mono", "#FFFFFF")):
-                    mark = svg(monochrome=variant == "mono")
+                for variant, color in (("light", "#0C1020"), ("dark", "#F7F8FC"), ("mono", "#FFFFFF")):
+                    mark = svg(color={"light": "#24685A", "dark": None, "mono": "#FFFFFF"}[variant])
                     body = mark[mark.index('>') + 1:mark.rindex('</svg>')]
                     wordmark = f'<svg xmlns="{NS}" viewBox="0 0 {width} 96" fill="none" role="img" aria-label="Resonance">{body}<g fill="{color}" transform="translate(112 68) scale({scale} {-scale})">{"".join(paths)}</g></svg>\n'
                     write(f"frontend/public/assets/brand/wordmark-{variant}.svg", wordmark)

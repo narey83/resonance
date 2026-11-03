@@ -38,8 +38,12 @@ with tempfile.TemporaryDirectory() as tmp:
   target=stage/('resonance-bridge.exe' if goos=='windows' else 'resonance-bridge')
   if goos=='darwin':
    app=stage/'Resonance Bridge.app'/'Contents';(app/'MacOS').mkdir(parents=True)
+   resources=app/'Resources'
+   resources.mkdir()
+   for icon in ('bridge.icns','tray-template.png'):
+    shutil.copy2(root/'assets'/icon,resources/icon)
    target=app/'MacOS'/'resonance-bridge'
-   (app/'Info.plist').write_bytes(plistlib.dumps({'CFBundleName':'Resonance Bridge','CFBundleIdentifier':'app.resonance.bridge','CFBundleExecutable':target.name,'CFBundleVersion':version,'CFBundleShortVersionString':version,'NSLocalNetworkUsageDescription':'Discover compatible DJ players and serve your Resonance music library on the selected local network.','CFBundlePackageType':'APPL','LSMinimumSystemVersion':'12.0'}))
+   (app/'Info.plist').write_bytes(plistlib.dumps({'CFBundleName':'Resonance Bridge','CFBundleIdentifier':'app.resonance.bridge','CFBundleExecutable':target.name,'CFBundleVersion':version,'CFBundleShortVersionString':version,'NSLocalNetworkUsageDescription':'Discover compatible DJ players and serve your Resonance music library on the selected local network.','CFBundlePackageType':'APPL','CFBundleIconFile':'bridge.icns','LSMinimumSystemVersion':'12.0'}))
   prebuilt=os.environ.get('RESONANCE_HELPER_PREBUILT_DIR')
   if prebuilt:
    info=json.loads((Path(prebuilt)/'build-info.json').read_text())

@@ -4,12 +4,8 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fyne.io/systray"
-	"image"
-	"image/color"
-	"image/png"
 	"log"
 	"os"
 	"runtime"
@@ -20,16 +16,7 @@ func trayImage() []byte {
 	if runtime.GOOS == "windows" {
 		return trayICO
 	}
-	img := image.NewRGBA(image.Rect(0, 0, 32, 32))
-	for x := 5; x < 27; x++ {
-		height := 4 + (x*7)%19
-		for y := (32 - height) / 2; y < (32+height)/2; y++ {
-			img.Set(x, y, color.RGBA{R: 106, G: 216, B: 196, A: 255})
-		}
-	}
-	var b bytes.Buffer
-	_ = png.Encode(&b, img)
-	return b.Bytes()
+	return trayPNG
 }
 func runDesktop(ctx context.Context, h *helper, address string) {
 	if runtime.GOOS == "linux" && os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" {

@@ -13,7 +13,13 @@ final class LinkApplication: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Resonance Bridge")
+        if let url = Bundle.main.url(forResource: "tray-template", withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            image.size = NSSize(width: 18, height: 18)
+            image.isTemplate = true
+            image.accessibilityDescription = "Resonance Bridge"
+            item.button?.image = image
+        }
         let menu = NSMenu()
         statusMenu = menu.addItem(withTitle: "Resonance Bridge", action: nil, keyEquivalent: "")
         menu.addItem(withTitle: "Open dashboard", action: #selector(showDashboard), keyEquivalent: "")

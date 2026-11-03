@@ -295,13 +295,13 @@ test("Appearance restores a local theme across page loads", async (t) => {
   assert.equal(d.documentElement.dataset.theme, "ember");
 });
 
-test("Bridge uses the Resonance ring and wave mark and app favicon", async (t) => {
+test("Bridge uses the Big Play favicon as the dashboard mark", async (t) => {
   const { document: d } = launch(t, "/settings");
   await until(() => d.querySelector("#version").textContent === "Bridge 0.3.2");
-  assert.ok(d.querySelector(".brand-mark .resonance-mark-ring"));
-  const canonical = webSource("Shared/ResonanceMark.jsx");
-  const wave = d.querySelector(".resonance-mark-wave").getAttribute("d");
-  assert.ok(canonical.includes(wave), "Bridge mark diverged from Resonance");
+  assert.equal(
+    d.querySelector("img.brand-mark").getAttribute("src"),
+    "/assets/favicon.svg",
+  );
   assert.equal(
     d.querySelector('link[rel="icon"]').getAttribute("href"),
     "/assets/favicon.svg",

@@ -47,8 +47,8 @@ class BrandingTests(unittest.TestCase):
                 png = cairosvg.svg2png(bytestring=(ROOT / f"frontend/public/assets/brand/wordmark-{variant}.svg").read_bytes())
                 with Image.open(BytesIO(png)) as image:
                     pixels = image.convert("RGBA")
-                    self.assertEqual(pixels.getpixel((55, 34))[3], 0)
-                    self.assertEqual(pixels.getpixel((35, 34))[3], 255)
+                    self.assertEqual(pixels.getpixel((43, 39))[3], 0)
+                    self.assertEqual(pixels.getpixel((29, 40))[3], 255)
                     self.assertIsNotNone(pixels.crop((112, 0, image.width, 96)).getchannel("A").getbbox())
 
     def test_fonts_are_real_faces_with_expected_weight_and_brand_glyphs(self):
