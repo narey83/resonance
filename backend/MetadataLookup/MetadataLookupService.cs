@@ -73,8 +73,9 @@ namespace resonance.MetadataLookup
         {
         }
 
-        internal MetadataLookupService(IShareService shareService, IOptionsMonitor<resonance.Options> optionsMonitor, MusicBrainzClient musicBrainz, DiscogsClient discogs, LastfmClient lastfm, DeezerClient deezer, EventBus eventBus, IMusicLibraryService musicLibrary, string dataDirectory)
+        internal MetadataLookupService(IShareService shareService, IOptionsMonitor<resonance.Options> optionsMonitor, MusicBrainzClient musicBrainz, DiscogsClient discogs, LastfmClient lastfm, DeezerClient deezer, EventBus eventBus, IMusicLibraryService musicLibrary, string dataDirectory, ILogger logger = null)
         {
+            Log = logger ?? Serilog.Log.ForContext("SourceContext", Logs.Music.Metadata);
             ShareService = shareService;
             IndexGate = new EnrichmentIndexGate(() => ShareService.StateMonitor.CurrentValue);
             Options = optionsMonitor;
@@ -139,7 +140,7 @@ namespace resonance.MetadataLookup
         private MetadataAttemptCache AttemptCache { get; }
         private MetadataActivityStore Activity { get; }
         private ConcurrentDictionary<string, PendingMatch> PendingMatches { get; } = new();
-        private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Metadata);
+        private ILogger Log { get; }
 
         private Channel<bool> RunSignal { get; } = Channel.CreateBounded<bool>(new BoundedChannelOptions(1)
         {
@@ -780,6 +781,7 @@ namespace resonance.MetadataLookup
 
                 if (candidates.Count == 0)
                 {
+                    Log.Debug("Metadata enrichment check found no eligible tracks");
                     return;
                 }
 
@@ -811,7 +813,11 @@ namespace resonance.MetadataLookup
                     MusicLibrary?.DeregisterQueue("metadata");
                 }
 
-                AttemptCache.Save();
+                if (registered)
+                {
+                    AttemptCache.Save();
+                }
+
                 lock (StateLock)
                 {
                     Scanning = false;
@@ -819,7 +825,10 @@ namespace resonance.MetadataLookup
                     InFlightItems.Clear();
                 }
 
-                Log.Information("Metadata enrichment pass complete. Written: {Written}, Skipped: {Skipped}, Failed: {Failed}", Written, Skipped, Failed);
+                if (registered)
+                {
+                    Log.Information("Metadata enrichment pass complete. Written: {Written}, Skipped: {Skipped}, Failed: {Failed}", Written, Skipped, Failed);
+                }
             }
         }
 
@@ -866,6 +875,11 @@ namespace resonance.MetadataLookup
                     var written = result.Tags;
                     var changed = result.Fields.Count > 0;
                     Log.Debug("Online lookup confirmed {ChangedCount} changed fields: {ChangedFields}", result.Fields.Count, result.Fields.Keys);
+                    if (changed)
+                    {
+                        Log.Information("Metadata enriched for {Track}. Updated fields: {ChangedFields}", candidate.Filename, result.Fields.Keys);
+                    }
+
                     AddActivity(candidate.OriginalPath, changed ? "Updated" : "Unchanged", "Automatic",
                         changed ? "Saved online metadata" : "Match supplied no changed fields confirmed on disk", result.Fields);
 
