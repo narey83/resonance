@@ -18,7 +18,9 @@ describe('message badge reconciliation', () => {
     const update = jest.fn();
     const sync = createMessageBadgeSync({
       getRoomCounts,
-      getConversations: async () => [{ hasUnAcknowledgedMessages: true }],
+      getConversations: async () => [
+        { username: 'alice', unAcknowledgedMessageCount: 3 },
+      ],
       getPage: () => 'library',
       isVisible: () => true,
       baselines: {},
@@ -29,7 +31,8 @@ describe('message badge reconciliation', () => {
     await flush();
     expect(getRoomCounts).toHaveBeenCalledTimes(1);
     expect(update).toHaveBeenLastCalledWith({
-      chats: 1,
+      chats: 3,
+      chatUnreadCounts: { alice: 3 },
       rooms: 0,
       roomUnreadCounts: { music: 0 },
     });
@@ -37,7 +40,8 @@ describe('message badge reconciliation', () => {
     sync.refresh();
     await flush();
     expect(update).toHaveBeenLastCalledWith({
-      chats: 1,
+      chats: 3,
+      chatUnreadCounts: { alice: 3 },
       rooms: 45,
       roomUnreadCounts: { music: 45 },
     });
@@ -67,6 +71,7 @@ describe('message badge reconciliation', () => {
     await flush();
     expect(update).toHaveBeenLastCalledWith({
       chats: 0,
+      chatUnreadCounts: {},
       rooms: 0,
       roomUnreadCounts: { music: 0 },
     });
@@ -97,6 +102,7 @@ describe('message badge reconciliation', () => {
     await flush();
     expect(update).toHaveBeenLastCalledWith({
       chats: 0,
+      chatUnreadCounts: {},
       rooms: 20,
       roomUnreadCounts: { music: 0, other: 20 },
     });
@@ -106,6 +112,7 @@ describe('message badge reconciliation', () => {
     await flush();
     expect(update).toHaveBeenLastCalledWith({
       chats: 0,
+      chatUnreadCounts: {},
       rooms: 0,
       roomUnreadCounts: { music: 0, other: 0 },
     });
@@ -115,6 +122,7 @@ describe('message badge reconciliation', () => {
     await flush();
     expect(update).toHaveBeenLastCalledWith({
       chats: 0,
+      chatUnreadCounts: {},
       rooms: 0,
       roomUnreadCounts: { music: 0 },
     });
@@ -127,7 +135,9 @@ describe('message badge reconciliation', () => {
       getRoomCounts: async () => {
         throw new Error('offline');
       },
-      getConversations: async () => [{ hasUnAcknowledgedMessages: true }],
+      getConversations: async () => [
+        { username: 'alice', unAcknowledgedMessageCount: 3 },
+      ],
       getPage: () => 'library',
       isVisible: () => true,
       baselines: {},
@@ -135,7 +145,10 @@ describe('message badge reconciliation', () => {
     });
     sync.refresh();
     await flush();
-    expect(update).toHaveBeenLastCalledWith({ chats: 1 });
+    expect(update).toHaveBeenLastCalledWith({
+      chats: 3,
+      chatUnreadCounts: { alice: 3 },
+    });
     sync.stop();
   });
 });
@@ -159,6 +172,7 @@ describe('stored room baselines', () => {
     await flush();
     expect(update).toHaveBeenLastCalledWith({
       chats: 0,
+      chatUnreadCounts: {},
       rooms: 8,
       roomUnreadCounts: { music: 8 },
     });

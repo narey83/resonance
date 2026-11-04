@@ -57,6 +57,10 @@ import * as eventsAPI from '../lib/events';
 import { createApplicationHubConnection } from '../lib/hubFactory';
 import { createHubRetryLoop } from '../lib/hubRetryLoop';
 import { createMessageBadgeSync } from '../lib/messageBadgeSync';
+import {
+  notificationUnreadCount,
+  syncMessageNotifications,
+} from '../lib/messageNotifications';
 import * as networkAPI from '../lib/network';
 import { loadNotificationSettings } from '../lib/notificationTypes';
 import * as prefs from '../lib/prefs';
@@ -369,7 +373,8 @@ const App = () => {
   );
   const [roomUnread, setRoomUnread] = useState(0);
   // Share per-room counts between the room list and navigation.
-  const [roomUnreadCounts, setRoomUnreadCounts] = useState({});
+  const [roomUnreadCounts, setRoomUnreadCounts] = useState(null);
+  const [chatUnreadCounts, setChatUnreadCounts] = useState(null);
   const readRoomRef = useRef(null);
   const badgeSyncRef = useRef(null);
   const handleConversationRead = useCallback(() => {
@@ -378,6 +383,14 @@ const App = () => {
   const handleRoomRead = useCallback((roomName) => {
     if (readRoomRef.current === roomName) return;
     readRoomRef.current = roomName;
+    if (roomName)
+      setNotifications((previous) =>
+        previous.map((n) =>
+          n.type === 'RoomMention' && n.data?.roomName === roomName
+            ? { ...n, read: true }
+            : n,
+        ),
+      );
     badgeSyncRef.current?.refresh();
   }, []);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
@@ -432,7 +445,11 @@ const App = () => {
         type,
         data,
         timestamp: new Date(),
-        read: false,
+        read:
+          type === 'RoomMention' &&
+          !document.hidden &&
+          getPage() === 'rooms' &&
+          readRoomRef.current === data.roomName,
       };
       if (type.startsWith('Action') || type === 'ServerStatus') {
         try {
@@ -954,9 +971,15 @@ const App = () => {
           /* Storage may be unavailable. */
         }
       },
-      update: ({ chats, roomUnreadCounts: counts, rooms }) =>
+      update: ({
+        chatUnreadCounts: chatCounts,
+        chats,
+        roomUnreadCounts: counts,
+        rooms,
+      }) =>
         unstable_batchedUpdates(() => {
           if (chats !== undefined) setChatUnread(chats);
+          if (chatCounts !== undefined) setChatUnreadCounts(chatCounts);
           if (rooms !== undefined) setRoomUnread(rooms);
           if (counts !== undefined) setRoomUnreadCounts(counts);
         }),
@@ -1019,21 +1042,55 @@ const App = () => {
     setNotificationPanelOpen((previous) => !previous);
   }, []);
 
-  const handleMarkAllNotificationsRead = useCallback(() => {
+  const syncedNotifications = useMemo(
+    () =>
+      syncMessageNotifications(
+        notifications,
+        chatUnreadCounts,
+        roomUnreadCounts,
+        notificationSettings,
+      ),
+    [chatUnreadCounts, notificationSettings, notifications, roomUnreadCounts],
+  );
+
+  const handleMarkAllNotificationsRead = useCallback(async () => {
     localStorage.setItem(
       'resonance-notifications-last-read',
       new Date().toISOString(),
     );
     setNotifications((previous) => previous.map((n) => ({ ...n, read: true })));
-  }, []);
+    const rooms = Object.keys(roomUnreadCounts ?? {}).filter(
+      (name) =>
+        notificationSettings.RoomMessageReceived !== false ||
+        (notificationSettings.RoomMention !== false &&
+          notifications.some(
+            (n) =>
+              n.type === 'RoomMention' && !n.read && n.data?.roomName === name,
+          )),
+    );
+    badgeSyncRef.current?.markRoomsRead(rooms);
+    if (notificationSettings.PrivateMessageReceived !== false) {
+      const results = await Promise.allSettled(
+        Object.entries(chatUnreadCounts ?? {})
+          .filter(([, count]) => count > 0)
+          .map(([username]) => chatAPI.acknowledge({ username })),
+      );
+      emitPrivateMessage({ reconcile: true });
+      if (results.some((result) => result.status === 'rejected'))
+        addNotificationRef.current('ActionError', {
+          message: 'Some conversations could not be marked read.',
+        });
+    }
+  }, [chatUnreadCounts, notificationSettings, notifications, roomUnreadCounts]);
 
   const handleClearNotifications = useCallback(() => {
+    void handleMarkAllNotificationsRead();
     localStorage.setItem(
       'resonance-notifications-cleared-at',
       new Date().toISOString(),
     );
     setNotifications([]);
-  }, []);
+  }, [handleMarkAllNotificationsRead]);
 
   const handleNotificationSettingsChange = useCallback((key, value) => {
     setNotificationSettings((previous) => {
@@ -1160,7 +1217,7 @@ const App = () => {
     'converter',
   ].includes(page);
   const hasPending = pendingReconnect || pendingRestart || pendingShareRescan;
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const unreadCount = notificationUnreadCount(syncedNotifications);
 
   if (window.location.pathname.endsWith('/map') && isAdmin()) {
     return (
@@ -1590,7 +1647,7 @@ const App = () => {
                             <Rooms
                               {...props}
                               onRoomRead={handleRoomRead}
-                              unreadCounts={roomUnreadCounts}
+                              unreadCounts={roomUnreadCounts ?? undefined}
                             />
                           )}
                         />
@@ -1696,7 +1753,7 @@ const App = () => {
 
           {notificationPanelOpen && (
             <NotificationCentre
-              notifications={notifications}
+              notifications={syncedNotifications}
               onClear={handleClearNotifications}
               onClose={handleToggleNotificationPanel}
               onMarkAllRead={handleMarkAllNotificationsRead}

@@ -29,6 +29,7 @@
 
 import './NotificationCentre.css';
 import { urlBase } from '../../config';
+import { notificationUnreadCount } from '../../lib/messageNotifications';
 import {
   categoryOf,
   formatNotification,
@@ -80,7 +81,13 @@ const actionFor = (type, link, data) => {
   }
 
   if (type === 'RoomMention' || type === 'RoomMessageReceived')
-    return { link, label: 'Open rooms' };
+    return {
+      link:
+        data?.message?.roomName ?? data?.roomName
+          ? `${link}?room=${encodeURIComponent(data?.message?.roomName ?? data?.roomName)}`
+          : link,
+      label: 'Open rooms',
+    };
   if ((type || '').startsWith('Download'))
     return { link: `${urlBase}/downloads`, label: 'View downloads' };
   if ((type || '').startsWith('Upload'))
@@ -109,7 +116,7 @@ const NotificationCentre = ({
 
   const [now, setNow] = useState(Date.now);
   const panel = useRef(null);
-  const unread = notifications.filter((n) => !n.read).length;
+  const unread = notificationUnreadCount(notifications);
 
   useEffect(() => {
     const previous = document.activeElement;
@@ -226,7 +233,7 @@ const NotificationCentre = ({
             onClick={() => setTab('feed')}
             type="button"
           >
-            <Bell size={16} /> Activity <span>{notifications.length}</span>
+            <Bell size={16} /> Activity <span>{unread}</span>
           </button>
           <button
             aria-pressed={tab === 'settings'}
@@ -294,17 +301,20 @@ const NotificationCentre = ({
                     {label}
                     <span>
                       {key === 'all'
-                        ? notifications.length
-                        : notifications.filter(
-                            (n) => (categoryOf(n.type) || 'system') === key,
-                          ).length}
+                        ? unread
+                        : notificationUnreadCount(
+                            notifications.filter(
+                              (n) => (categoryOf(n.type) || 'system') === key,
+                            ),
+                          )}
                     </span>
                   </button>
                 ))}
               </div>
               <div className="nc-filter-line">
                 <span>
-                  {filtered.length} {filtered.length === 1 ? 'event' : 'events'}
+                  {filtered.length}{' '}
+                  {filtered.length === 1 ? 'entry' : 'entries'}
                 </span>
                 <label>
                   <input
@@ -406,6 +416,14 @@ const NotificationCentre = ({
                                   </time>
                                 </div>
                                 <h4>{text}</h4>
+                                {n.messageCount > 0 && (
+                                  <p>
+                                    {n.messageCount} unread{' '}
+                                    {n.messageCount === 1
+                                      ? 'message'
+                                      : 'messages'}
+                                  </p>
+                                )}
                                 {sub && <p>{sub}</p>}
                                 {n.saveFailed && (
                                   <p role="status">
@@ -439,7 +457,10 @@ const NotificationCentre = ({
               )}
             </div>
             <footer className="nc-footer">
-              <span>Showing your latest {notifications.length} events</span>
+              <span>
+                Showing your latest {notifications.length}{' '}
+                {notifications.length === 1 ? 'entry' : 'entries'}
+              </span>
               <button
                 className="nc-text-btn nc-clear"
                 disabled={!notifications.length}

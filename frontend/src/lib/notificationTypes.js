@@ -109,7 +109,9 @@ export const NOTIFICATION_TYPES = [
     tone: 'message',
     defaultEnabled: true,
     format: (d) => ({
-      text: `${d.message?.username ?? '?'} in ${d.message?.roomName ?? '?'}`,
+      text: d.message?.username
+        ? `${d.message.username} in ${d.message?.roomName ?? '?'}`
+        : d.message?.roomName ?? 'Chatroom',
       sub: truncate(d.message?.message),
       link: `${urlBase}/rooms`,
     }),

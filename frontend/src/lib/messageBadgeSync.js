@@ -14,6 +14,7 @@ export const createMessageBadgeSync = ({
   let pending = false;
   let running = false;
   let timer;
+  let lastRoomCounts = [];
   const poll = async () => {
     if (stopped || !isVisible()) return;
     if (running) {
@@ -33,12 +34,20 @@ export const createMessageBadgeSync = ({
         conversations.status === 'fulfilled' &&
         Array.isArray(conversations.value)
       ) {
-        result.chats = conversations.value.filter(
-          (c) => c.hasUnAcknowledgedMessages,
-        ).length;
+        result.chatUnreadCounts = Object.fromEntries(
+          conversations.value.map((c) => [
+            c.username,
+            c.unAcknowledgedMessageCount ?? 0,
+          ]),
+        );
+        result.chats = Object.values(result.chatUnreadCounts).reduce(
+          (sum, count) => sum + count,
+          0,
+        );
       }
 
       if (counts.status === 'fulfilled' && Array.isArray(counts.value)) {
+        lastRoomCounts = counts.value;
         let rooms = 0;
         const joined = new Set();
         const roomUnreadCounts = {};
@@ -85,6 +94,13 @@ export const createMessageBadgeSync = ({
 
   return {
     refresh,
+    markRoomsRead: (names) => {
+      const selected = new Set(names);
+      for (const { room, count } of lastRoomCounts)
+        if (selected.has(room)) baselines[room] = count;
+      saveBaselines({ ...baselines });
+      refresh();
+    },
     stop: () => {
       stopped = true;
       clearTimeout(timer);

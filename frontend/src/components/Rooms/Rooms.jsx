@@ -141,7 +141,7 @@ export const RoomListItem = ({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-const Rooms = ({ history, onRoomRead, unreadCounts = {} }) => {
+const Rooms = ({ history, location, onRoomRead, unreadCounts = {} }) => {
   const [joinedNames, setJoinedNames] = useState([]);
   const [availableRooms, setAvailableRooms] = useState([]);
   const [active, setActive] = useState('');
@@ -306,7 +306,8 @@ const Rooms = ({ history, onRoomRead, unreadCounts = {} }) => {
         savedActive && (names || []).includes(savedActive)
           ? savedActive
           : (names || [])[0] || '';
-      if (initial) selectRoom(initial);
+      if (initial && !new URLSearchParams(location?.search).has('room'))
+        selectRoom(initial);
     })();
 
     const joinedInterval = window.setInterval(fetchJoined, JOINED_POLL_MS);
@@ -336,6 +337,21 @@ const Rooms = ({ history, onRoomRead, unreadCounts = {} }) => {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const requested = new URLSearchParams(location?.search).get('room');
+    if (!requested) return undefined;
+    let cancelled = false;
+    rooms
+      .getJoined()
+      .then((names) => {
+        if (!cancelled && names?.includes(requested)) selectRoom(requested);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [location?.search, selectRoom]);
 
   useEffect(() => {
     translationsRef.current = translations;
