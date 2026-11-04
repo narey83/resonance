@@ -90,6 +90,16 @@ public sealed class RemainingSecurityTests
         Assert.Equal(new[] { "*****" }, integrations.Scripts["test"].Run.Arglist);
     }
 
+    [Fact]
+    public void DisabledMetricsCanRetainAnEmptyPasswordDuringRecursiveValidation()
+    {
+        var authentication = new Options.MetricsOptions.MetricsAuthenticationOptions();
+        var results = new List<ValidationResult>();
+        Assert.True(Validator.TryValidateObject(authentication, new ValidationContext(authentication), results, validateAllProperties: true));
+        var options = new Options();
+        Assert.DoesNotContain(options.Validate(new ValidationContext(options)), result => result.ErrorMessage!.Contains("metrics"));
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("resonance")]

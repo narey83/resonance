@@ -2137,7 +2137,7 @@ namespace resonance
                 [Argument(default, "metrics-password")]
                 [EnvironmentVariable("METRICS_PASSWORD")]
                 [Description("password for metrics")]
-                [StringLength(255, MinimumLength = 1)]
+                [StringLength(255)]
                 [Secret]
                 [RequiresRestart]
                 public string Password { get; init; } = string.Empty;
