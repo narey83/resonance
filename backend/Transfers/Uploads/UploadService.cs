@@ -430,7 +430,24 @@ namespace resonance.Transfers.Uploads
                     // reaches the SDK. This also gates files queued before the circuit opens.
                     Queue.Enqueue(transfer.Username, transfer.Filename);
                     using var peer = await PeerCooldown.EnterAsync(transfer.Username, cts.Token);
-                    var attempt = await UploadAttemptAsync(transfer, cts.Token);
+                    UploadAttempt attempt;
+                    try
+                    {
+                        attempt = await UploadAttemptAsync(transfer, cts.Token);
+                    }
+                    catch (Exception ex) when (!cts.IsCancellationRequested && IsPeerCancellation(ex))
+                    {
+                        // The cancelled file remains terminal. Hold this peer's lease until the
+                        // cooldown is recorded so the next queued file cannot bypass the pause.
+                        var cancellationRetryAt = peer.RecordFailure();
+                        if (cancellationRetryAt.HasValue)
+                        {
+                            Log.Warning("Pausing uploads to {Username} after repeated peer cancellations or connection failures until {RetryAt:u}; remaining files stay queued", transfer.Username, cancellationRetryAt.Value);
+                        }
+
+                        throw;
+                    }
+
                     if (attempt.ConnectionFailure is null)
                     {
                         if (attempt.Transfer?.State.HasFlag(TransferStates.Succeeded) == true)
@@ -441,10 +458,10 @@ namespace resonance.Transfers.Uploads
                         return attempt.Transfer;
                     }
 
-                    var retryAt = peer.RecordConnectionFailure();
+                    var retryAt = peer.RecordFailure();
                     if (retryAt.HasValue)
                     {
-                        Log.Warning("Pausing uploads to {Username} after repeated connection failures until {RetryAt:u}; files remain queued. Last error: {Message}", transfer.Username, retryAt.Value, attempt.ConnectionFailure.Message);
+                        Log.Warning("Pausing uploads to {Username} after repeated connection failures or peer cancellations until {RetryAt:u}; files remain queued. Last error: {Message}", transfer.Username, retryAt.Value, attempt.ConnectionFailure.Message);
                     }
                     else
                     {
@@ -1199,6 +1216,28 @@ namespace resonance.Transfers.Uploads
             // Count the most recent streak only; the block expires 30 minutes after
             // its latest failure and does not extend merely because the peer polls.
             return failures[0].EndedAt.Value + window;
+        }
+
+        private static bool IsPeerCancellation(Exception exception)
+        {
+            for (var error = exception; error is not null; error = error.InnerException)
+            {
+                if (error is AggregateException aggregate)
+                {
+                    return aggregate.InnerExceptions.Count > 0
+                        && aggregate.Flatten().InnerExceptions.All(IsPeerCancellation);
+                }
+
+                // Only a remote rejection with this reason counts. Local cancellation,
+                // "Complete" and other rejection reasons must not pause the recipient.
+                if (error is TransferRejectedException
+                    && string.Equals(error.Message, "Transfer rejected: Cancelled", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool IsConnectionFailure(Exception exception)

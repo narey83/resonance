@@ -337,6 +337,160 @@ public sealed partial class UploadEnqueueTests
         Assert.Equal(1, calls.Count);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PeerCancellationsPauseRemainingQueueAndCancelledProbePausesAgain(bool wrapped)
+    {
+        var clock = new ManualUploadClock();
+        var calls = new UploadCalls();
+        await using var service = CreateService([], upload: calls.Upload, cooldown: new UploadPeerCooldown(clock));
+        var rows = Enumerable.Range(0, 5).Select(i => QueueTransfer("alice", $"album/cancel-{i}.mp3")).ToArray();
+        var tasks = new List<Task<Transfer>>();
+        try
+        {
+            tasks.Add(service.UploadAsync(rows[0]));
+            var first = await calls.Next();
+            tasks.AddRange(rows.Skip(1).Select(service.UploadAsync));
+            Reject(first);
+            await Assert.ThrowsAnyAsync<Exception>(() => tasks[0]);
+            for (var i = 1; i < 3; i++)
+            {
+                Reject(await calls.Next());
+                await Assert.ThrowsAnyAsync<Exception>(() => tasks[i]);
+            }
+
+            Assert.Equal(TimeSpan.FromMinutes(5), await clock.NextDelay());
+            Assert.Equal(3, calls.Count);
+            AssertAllQueued(rows.Skip(3));
+            Assert.Equal(0, service.Queue.GetGroupInfo(Application.DefaultGroup).UsedSlots);
+            Assert.Equal(clock.GetUtcNow().AddMinutes(5), Assert.Single(service.ListQueuePage("alice", 0, 10).Users).RetryAt);
+            var added = await service.EnqueueAsync("alice", "album/added-during-pause.mp3");
+            Assert.NotNull(added);
+            AssertAllQueued([added!]);
+            using (var db = factory.CreateDbContext())
+            {
+                Assert.Equal(6, db.Transfers.Count());
+                Assert.All(db.Transfers.Where(t => t.EndedAt != null), t =>
+                    Assert.Equal(TransferStates.Completed | TransferStates.Rejected, t.State));
+            }
+
+            var bob = service.UploadAsync(QueueTransfer("bob", "album/other.mp3"));
+            (await calls.Next()).Succeed(clock);
+            Assert.NotNull(await bob.WaitAsync(TimeSpan.FromSeconds(5)));
+
+            clock.Advance(TimeSpan.FromMinutes(5));
+            var probe = await calls.Next();
+            Assert.Equal(rows[3].Filename, probe.Filename);
+            Reject(probe);
+            await Assert.ThrowsAnyAsync<Exception>(() => tasks[3]);
+            Assert.Equal(TimeSpan.FromMinutes(5), await clock.NextDelay());
+            Assert.Equal(5, calls.Count);
+            AssertAllQueued([rows[4], added!]);
+
+            clock.Advance(TimeSpan.FromMinutes(5));
+            (await calls.Next()).Succeed(clock);
+            Assert.NotNull(await tasks[4].WaitAsync(TimeSpan.FromSeconds(5)));
+            var resumed = await calls.Next();
+            Assert.Equal(added!.Filename, resumed.Filename);
+            Assert.Null(Assert.Single(service.ListQueuePage("alice", 0, 10).Users).RetryAt);
+        }
+        finally
+        {
+            await service.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            foreach (var task in tasks)
+            {
+                try
+                {
+                    await task.WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                catch (Exception) when (task.IsFaulted || task.IsCanceled)
+                {
+                    // Rejections were asserted above; shutdown may cancel the remaining work.
+                }
+            }
+        }
+
+        void Reject(PendingUpload call)
+        {
+            call.ChangeState(TransferStates.Completed | TransferStates.Rejected);
+            Exception rejection = new TransferRejectedException("Transfer rejected: Cancelled");
+            call.Completion.SetException(wrapped ? new InvalidOperationException("upload failed", rejection) : rejection);
+        }
+    }
+
+    [Fact]
+    public async Task SuccessfulUploadClearsTheRecipientCancellationStreak()
+    {
+        var clock = new ManualUploadClock();
+        var calls = new UploadCalls();
+        var cooldown = new UploadPeerCooldown(clock);
+        await using var service = CreateService([], upload: calls.Upload, cooldown: cooldown);
+        for (var i = 0; i < 6; i++)
+        {
+            var task = service.UploadAsync(QueueTransfer("alice", $"album/reset-{i}.mp3"));
+            var call = await calls.Next();
+            if (i % 3 == 2)
+            {
+                call.Succeed(clock);
+                Assert.NotNull(await task.WaitAsync(TimeSpan.FromSeconds(5)));
+            }
+            else
+            {
+                call.Completion.SetException(new TransferRejectedException("Transfer rejected: Cancelled"));
+                await Assert.ThrowsAsync<TransferRejectedException>(() => task);
+            }
+
+            Assert.Null(cooldown.GetRetryAt("alice"));
+        }
+    }
+
+    [Fact]
+    public async Task CancellationAndConnectionFailuresShareTheRecipientThreshold()
+    {
+        var clock = new ManualUploadClock();
+        var calls = new UploadCalls();
+        var cooldown = new UploadPeerCooldown(clock);
+        await using var service = CreateService([], upload: calls.Upload, cooldown: cooldown);
+        var row = QueueTransfer("alice", "album/mixed.mp3");
+        var task = service.UploadAsync(row);
+        (await calls.Next()).FailConnection();
+        (await calls.Next()).FailConnection();
+        (await calls.Next()).Completion.SetException(new TransferRejectedException("Transfer rejected: Cancelled"));
+        await Assert.ThrowsAsync<TransferRejectedException>(() => task);
+        Assert.Equal(clock.GetUtcNow().AddMinutes(5), cooldown.GetRetryAt("alice"));
+        Assert.Equal(3, calls.Count);
+    }
+
+    [Theory]
+    [InlineData("Complete")]
+    [InlineData("File not shared")]
+    [InlineData("local")]
+    [InlineData("mixed")]
+    public async Task OtherRejectionsAndLocalCancellationDoNotPauseRecipient(string reason)
+    {
+        var clock = new ManualUploadClock();
+        var calls = new UploadCalls();
+        var cooldown = new UploadPeerCooldown(clock);
+        await using var service = CreateService([], upload: calls.Upload, cooldown: cooldown);
+        for (var i = 0; i < 4; i++)
+        {
+            var task = service.UploadAsync(QueueTransfer("alice", $"album/other-{i}.mp3"));
+            var call = await calls.Next();
+            Exception failure = reason switch
+            {
+                "local" => new OperationCanceledException(),
+                "mixed" => new AggregateException(new TransferRejectedException("Transfer rejected: Cancelled"), new IOException("local failure")),
+                _ => new TransferRejectedException($"Transfer rejected: {reason}"),
+            };
+            call.Completion.SetException(failure);
+            Assert.Same(failure, await Assert.ThrowsAnyAsync<Exception>(() => task));
+        }
+
+        Assert.Equal(4, calls.Count);
+        Assert.Null(cooldown.GetRetryAt("alice"));
+    }
+
     private Transfer QueueTransfer(string username, string filename)
     {
         var transfer = new Transfer

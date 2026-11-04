@@ -37,7 +37,7 @@ public sealed class UploadPeerCooldownTests
         clock.Advance(TimeSpan.FromMinutes(5));
         using (var lease = await probe)
         {
-            Assert.Equal(clock.GetUtcNow().AddMinutes(5), lease.RecordConnectionFailure());
+            Assert.Equal(clock.GetUtcNow().AddMinutes(5), lease.RecordFailure());
         }
 
         using var cancellation = new CancellationTokenSource();
@@ -56,14 +56,14 @@ public sealed class UploadPeerCooldownTests
         for (var i = 0; i < 2; i++)
         {
             using var lease = await cooldown.EnterAsync("alice", CancellationToken.None);
-            Assert.Null(lease.RecordConnectionFailure());
+            Assert.Null(lease.RecordFailure());
         }
 
         using (var success = await cooldown.EnterAsync("alice", CancellationToken.None)) { success.RecordSuccess(); }
-        using (var next = await cooldown.EnterAsync("alice", CancellationToken.None)) { Assert.Null(next.RecordConnectionFailure()); }
+        using (var next = await cooldown.EnterAsync("alice", CancellationToken.None)) { Assert.Null(next.RecordFailure()); }
         clock.Advance(TimeSpan.FromMinutes(5));
-        using (var next = await cooldown.EnterAsync("alice", CancellationToken.None)) { Assert.Null(next.RecordConnectionFailure()); }
-        using (var next = await cooldown.EnterAsync("alice", CancellationToken.None)) { Assert.Null(next.RecordConnectionFailure()); }
+        using (var next = await cooldown.EnterAsync("alice", CancellationToken.None)) { Assert.Null(next.RecordFailure()); }
+        using (var next = await cooldown.EnterAsync("alice", CancellationToken.None)) { Assert.Null(next.RecordFailure()); }
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public sealed class UploadPeerCooldownTests
         for (var i = 0; i < 3; i++)
         {
             using var lease = await cooldown.EnterAsync("alice", CancellationToken.None);
-            var retry = lease.RecordConnectionFailure();
+            var retry = lease.RecordFailure();
             Assert.Equal(i == 2, retry.HasValue);
         }
     }

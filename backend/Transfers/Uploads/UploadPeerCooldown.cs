@@ -41,7 +41,7 @@ namespace resonance.Transfers.Uploads
     using System.Threading;
     using System.Threading.Tasks;
 
-    /// <summary>Serializes peer connection attempts and pauses a failing peer without dropping queued work.</summary>
+    /// <summary>Serializes peer upload attempts and pauses repeated connection failures or remote cancellations without dropping queued work.</summary>
     internal sealed class UploadPeerCooldown(TimeProvider clock = null)
     {
         private static readonly TimeSpan FailureWindow = TimeSpan.FromMinutes(5);
@@ -151,7 +151,7 @@ namespace resonance.Transfers.Uploads
                 }
             }
 
-            internal DateTimeOffset? RecordConnectionFailure()
+            internal DateTimeOffset? RecordFailure()
             {
                 var now = owner.clock.GetUtcNow();
                 while (state.Failures.TryPeek(out var failure) && failure <= now - FailureWindow)
