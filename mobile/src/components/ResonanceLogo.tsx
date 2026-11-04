@@ -27,10 +27,35 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import React from 'react';
-import { Image } from 'react-native';
+import { Image } from 'expo-image';
+import React, { useEffect, useState } from 'react';
+import { AccessibilityInfo } from 'react-native';
 
-/** The same vector master as web, rasterised at 512px for native asset loading. */
 export function ResonanceLogo({ size = 72 }: { size?: number }) {
-  return <Image accessible={false} source={require('../../assets/splash-icon.png')} style={{ width: size, height: size }} resizeMode="contain" />;
+  const [reduceMotion, setReduceMotion] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    let receivedChange = false;
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled) => {
+      receivedChange = true;
+      setReduceMotion(enabled);
+    });
+    AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (active && !receivedChange) setReduceMotion(enabled);
+    }).catch(() => {});
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
+
+  return (
+    <Image
+      accessible={false}
+      source={reduceMotion ? require('../../assets/splash-icon.png') : require('../../assets/big-play-impact.gif')}
+      style={{ width: size, height: size }}
+      contentFit="contain"
+    />
+  );
 }

@@ -295,11 +295,15 @@ test("Appearance restores a local theme across page loads", async (t) => {
   assert.equal(d.documentElement.dataset.theme, "ember");
 });
 
-test("Bridge uses the Big Play favicon as the dashboard mark", async (t) => {
+test("Bridge uses Big Play Impact in the dashboard and a static favicon", async (t) => {
   const { document: d } = launch(t, "/settings");
   await until(() => d.querySelector("#version").textContent === "Bridge 0.3.2");
   assert.equal(
     d.querySelector("img.brand-mark").getAttribute("src"),
+    "/assets/impact.svg",
+  );
+  assert.equal(
+    d.querySelector('.brand picture source[media="(prefers-reduced-motion: reduce)"]').getAttribute("srcset"),
     "/assets/favicon.svg",
   );
   assert.equal(

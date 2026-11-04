@@ -43,7 +43,10 @@ def generate(destination):
 
     write("frontend/public/assets/brand/mark.svg", master)
     badge = svg(background=TILE_COLOR, radius=21)
-    write("frontend/src/assets/resonance-mark.svg", badge)
+    impact = (ROOT / "branding/impact.svg").read_text()
+    write("frontend/src/assets/resonance-mark.svg", impact)
+    write("frontend/src/assets/resonance-mark-static.svg", badge)
+    write("desktop/bridge/assets/impact.svg", impact)
     write("frontend/public/assets/brand/mark-mono.svg", svg(color="#FFFFFF"))
     tile = svg(background=TILE_COLOR)
     write("frontend/public/favicon.svg", badge)

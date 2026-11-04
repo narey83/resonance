@@ -36,6 +36,9 @@ var dashboard []byte
 //go:embed bridge.css
 var bridgeStyles []byte
 
+//go:embed assets/impact.svg
+var bridgeImpact []byte
+
 //go:embed assets/favicon.svg
 var bridgeFavicon []byte
 
@@ -335,6 +338,10 @@ func (h *helper) routes(address string) http.Handler {
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(dashboard)
+	})
+	mux.HandleFunc("GET /assets/impact.svg", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Write(bridgeImpact)
 	})
 	mux.HandleFunc("GET /assets/favicon.svg", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/svg+xml")

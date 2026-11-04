@@ -11,15 +11,13 @@
   <body>
     <div class="app-shell">
       <aside class="sidebar">
-        <a class="brand" href="/" aria-label="Resonance Bridge home"
-          ><img
-            class="brand-mark"
-            src="/assets/favicon.svg"
-            alt=""
-            width="37"
-            height="37"
-          /><span>Resonance<span class="brand-subtitle">Bridge</span></span></a
-        >
+        <a class="brand" href="/" aria-label="Resonance Bridge home">
+          <picture>
+            <source media="(prefers-reduced-motion: reduce)" srcset="/assets/favicon.svg" />
+            <img class="brand-mark" src="/assets/impact.svg" alt="" width="37" height="37" />
+          </picture>
+          <span>Resonance<span class="brand-subtitle">Bridge</span></span>
+        </a>
         <div class="nav-label">WORKSPACE</div>
         <nav aria-label="Bridge navigation">
           <a class="nav-item" href="/" data-nav="network"

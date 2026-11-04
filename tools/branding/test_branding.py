@@ -8,12 +8,26 @@ import xml.etree.ElementTree as ET
 
 import cairosvg
 from fontTools.ttLib import TTFont
-from PIL import Image
+from PIL import Image, ImageSequence
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class BrandingTests(unittest.TestCase):
+    def test_mobile_impact_is_a_loop_with_a_visible_burst(self):
+        with Image.open(ROOT / "mobile/assets/big-play-impact.gif") as gif:
+            self.assertEqual(gif.info["loop"], 0)
+            duration = 0
+            mint_counts = []
+            for frame in ImageSequence.Iterator(gif):
+                duration += frame.info["duration"]
+                # GIF palettes can round the mint colour slightly.
+                pixels = frame.convert("RGBA").get_flattened_data()
+                mint_counts.append(sum(alpha > 128 and green > 140
+                                       for _, green, _, alpha in pixels))
+            self.assertEqual(duration, 3600)
+            self.assertLess(min(mint_counts), mint_counts[0] * 0.75)
+
     def test_ios_icon_is_square_opaque_and_high_resolution(self):
         icon = Image.open(ROOT / "mobile/assets/icon.png").convert("RGBA")
         self.assertEqual(icon.size, (1024, 1024))

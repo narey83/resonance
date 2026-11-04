@@ -4,6 +4,17 @@ Big Play is the Resonance identity. The mint `#9BE3D1` R has a transparent play 
 
 `mark.svg` is the editable vector master. The outlined Outfit SemiBold wordmarks in `frontend/public/assets/brand/` include light, dark and monochrome variants and require no installed fonts. The frontend imports the generated rounded badge, which also serves as the bridge dashboard icon. The bridge uses a monochrome template in the macOS menu bar.
 
+Big Play Impact animates the in-app logo on web, mobile and the Bridge dashboard. The browser logos share `impact.svg`, and mobile uses a GIF rendered from its timeline. The in-app logos fall back to the original pose for reduced motion. Launcher icons, favicons, native splash art and tray icons use static exports.
+
+To regenerate the GIF, use the frontend's installed Playwright Chromium and the branding Python environment on the development host:
+
+```sh
+frames="$(mktemp -d)"
+node tools/branding/export-impact.mjs "$frames"
+.venv/branding/bin/python tools/branding/export-impact.py "$frames" mobile/assets/big-play-impact.gif
+```
+
+
 Web typography uses self-hosted variable Outfit for headings/brand and Inter for body text and controls. Mobile bundles static Inter Regular/Medium/SemiBold/Bold and Outfit SemiBold via the existing Expo Font runtime. App-owned `Text` and `TextInput` primitives preserve native props and refs, select actual face weights, inherit nested text styles and fall back to system fonts if loading fails. Monospaced technical labels and third-party icon fonts retain their intended families.
 
 ## Exports and regeneration

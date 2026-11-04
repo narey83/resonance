@@ -29,18 +29,25 @@
 
 import './ResonanceMark.css';
 import mark from '../../assets/resonance-mark.svg';
+import still from '../../assets/resonance-mark-static.svg';
 import React from 'react';
 
-// A single static asset avoids duplicated SVG gradient IDs in repeated marks.
+// Loading the SVG as an image keeps its animation IDs scoped to each logo.
 const ResonanceMark = ({ size = 24 }) => (
-  <img
-    alt=""
-    aria-hidden="true"
-    className="resonance-mark"
-    height={size}
-    src={mark}
-    width={size}
-  />
+  <picture>
+    <source
+      media="(prefers-reduced-motion: reduce)"
+      srcSet={still}
+    />
+    <img
+      alt=""
+      aria-hidden="true"
+      className="resonance-mark"
+      height={size}
+      src={mark}
+      width={size}
+    />
+  </picture>
 );
 
 export default ResonanceMark;
