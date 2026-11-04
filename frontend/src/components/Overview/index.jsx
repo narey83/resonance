@@ -53,6 +53,7 @@ import PersonalSummary from './PersonalSummary';
 import PopularDirectories from './PopularDirectories';
 import QueueWaitCard from './QueueWaitCard';
 import RatioCard from './RatioCard';
+import RecentUploadHistory from './RecentUploadHistory';
 import RetryFunnel from './RetryFunnel';
 import SocialPulse from './SocialPulse';
 import SystemStatsCard from './SystemStatsCard';
@@ -461,7 +462,9 @@ const AdminOverview = () => {
                   </section>
                 )}
                 {direction && section === 'glance' && (
-                  <section className="overview-section">
+                  <section
+                    className={`overview-section${direction === 'upload' ? ' overview-upload-glance' : ''}`}
+                  >
                     <KpiCards
                       direction={direction}
                       liveRates={liveRates}
@@ -469,6 +472,12 @@ const AdminOverview = () => {
                       prevSummary={prevSummary}
                       summary={summary}
                     />
+                    {direction === 'upload' && (
+                      <RecentUploadHistory
+                        range={range}
+                        refreshKey={analyticsRefresh}
+                      />
+                    )}
                   </section>
                 )}
 

@@ -6,6 +6,7 @@ import Overview from '.';
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { act, Simulate } from 'react-dom/test-utils';
+import { MemoryRouter } from 'react-router-dom';
 
 /* eslint-disable unicorn/consistent-function-scoping -- Hoisted Jest module factories must remain self-contained. */
 jest.mock('../../lib/reports');
@@ -67,7 +68,9 @@ describe('Overview card placement and view changes', () => {
     await act(async () => {
       ReactDOM.render(
         <AppContext.Provider value={{ isAdmin: true }}>
-          <Overview />
+          <MemoryRouter>
+            <Overview />
+          </MemoryRouter>
         </AppContext.Provider>,
         container,
       );
@@ -84,6 +87,12 @@ describe('Overview card placement and view changes', () => {
     expect.hasAssertions();
     await render();
     expect(container.textContent).toContain('Successful uploads');
+    expect(
+      container.querySelector('.overview-upload-glance .recent-uploads'),
+    ).not.toBeNull();
+    expect(reports.getTransferHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ direction: 'Upload', limit: 8 }),
+    );
     expect(transfers.getAll).not.toHaveBeenCalled();
     expect(transfers.getStatus).not.toHaveBeenCalled();
     expect(container.textContent).not.toContain(
@@ -102,6 +111,7 @@ describe('Overview card placement and view changes', () => {
     expect(container.textContent).not.toContain('Lifetime library sharing');
     await click('Downloads');
     expect(container.textContent).toContain('Successful downloads');
+    expect(container.querySelector('.recent-uploads')).toBeNull();
     expect(container.textContent).not.toContain('Community activity panel');
     await click('Sharing & community');
     expect(container.textContent).toContain('Lifetime library sharing');

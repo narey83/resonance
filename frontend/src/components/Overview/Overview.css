@@ -3608,3 +3608,33 @@ html.amoled {
 .status-details-panel > .status-strip-btn--label svg { width: 14px; height: 14px; stroke-width: 1.75; }
 .status-details-panel .status-strip-item--shares > .status-strip-btn { min-height: 28px; padding: 0 8px; white-space: nowrap; }
 .status-details-rates { display: flex; flex-direction: column; }
+
+/* Keep the upload figures and a quiet, bounded history preview together. */
+.overview-upload-glance { display: grid; grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.4fr); align-items: start; gap: 20px; }
+.overview-upload-glance .kpi-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.overview-upload-glance .kpi-card-group,
+.overview-upload-glance .kpi-card:last-child { grid-column: 1 / -1; }
+.recent-uploads { min-width: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); overflow: hidden; }
+.recent-uploads-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 20px; border-bottom: 1px solid var(--border); }
+.recent-uploads-header h2 { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; margin: 0; color: var(--text-primary); }
+.recent-uploads-header p { color: var(--text-muted); font-size: 11px; margin: 6px 0 0; }
+.recent-uploads-header a { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: 12px; }
+.recent-uploads-header a:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.recent-uploads-list { list-style: none; padding: 0; margin: 0; }
+.recent-uploads-list li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 20px; }
+.recent-uploads-list li + li { border-top: 1px solid var(--border); }
+.recent-upload-file { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.recent-upload-file strong { color: var(--text-primary); font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-upload-file > span { color: var(--text-muted); font-size: 11px; overflow-wrap: anywhere; }
+.recent-upload-result { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; font-size: 11px; color: var(--text-muted); }
+.recent-upload-outcome.th-state-ok { color: var(--success, #4ade80); }
+.recent-upload-outcome.th-state-error { color: var(--danger, #f87171); }
+.recent-uploads-message { padding: 20px; margin: 0; color: var(--text-muted); font-size: 12px; }
+@media (max-width: 1000px) {
+  .overview-upload-glance { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 480px) {
+  .recent-uploads-header { padding: 16px; }
+  .recent-uploads-list li { align-items: flex-start; gap: 8px; padding: 12px 16px; }
+  .recent-upload-result { max-width: 110px; text-align: right; }
+}
