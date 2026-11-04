@@ -1,6 +1,6 @@
 # Features
 
-Resonance combines a Soulseek client with a desktop music library, analysis and metadata tools, DJ preparation, set rehearsal and multi-user administration. The separate mobile app provides companion access.
+Resonance is a self-hosted music streaming app with library management, analysis and metadata tools, DJ preparation, set rehearsal and multi-user administration. Its Soulseek integration provides network search, shared-folder browsing, transfers and community features. The separate mobile app provides companion access.
 
 Updated **21 October 2026**. This inventory describes the current source and can change at any time. It is not a fixed roadmap or a claim that every optional integration is configured in a fresh installation.
 

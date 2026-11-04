@@ -2,7 +2,7 @@
   <PropertyGroup>
     <RepositoryUrl>https://github.com/narey83/resonance</RepositoryUrl>
     <PackageProjectUrl>https://github.com/narey83/resonance</PackageProjectUrl>
-    <Description>Resonance — a Soulseek client. A modified version of slskd; not maintained by, endorsed by, or affiliated with the slskd project or its author(s).</Description>
+    <Description>Resonance — a self-hosted music streaming app with library management, DJ tools and a Soulseek integration. A modified version of slskd; not maintained by, endorsed by, or affiliated with the slskd project or its author(s).</Description>
     <Authors>John Narey</Authors>
     <Copyright>Copyright (c) JP Dillingham. Modifications Copyright (c) 2026 John Narey.</Copyright>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>

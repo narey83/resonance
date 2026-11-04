@@ -1497,7 +1497,7 @@ namespace resonance
                     {
                         Version = "v0",
                         Title = AppName,
-                        Description = "A modern client-server application for the Soulseek file sharing network",
+                        Description = "A self-hosted music streaming app with library management, DJ tools and a Soulseek integration.",
                         Contact = new OpenApiContact
                         {
                             Name = "GitHub",

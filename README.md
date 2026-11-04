@@ -1,8 +1,8 @@
 <div align="center">
   <img src="frontend/public/favicon.svg" width="96" height="96" alt="Resonance logo">
   <h1>Resonance</h1>
-  <p><strong>A self-hosted music library and DJ workspace with Soulseek built in.</strong></p>
-  <p>Find music, prepare your collection, plan sets and rehearse transitions.</p>
+  <p><strong>A self-hosted music streaming app with library management and DJ tools.</strong></p>
+  <p>Stream your music, organise your collection, plan sets and rehearse transitions.</p>
   <p>
     <a href="#what-resonance-does">Features</a> ·
     <a href="#screenshots">Screenshots</a> ·
@@ -22,7 +22,7 @@
 
 ---
 
-Resonance combines search and transfer management with a persistent music catalogue, automatic preparation, metadata enrichment, set planning and browser playback. The web workspace is designed for desktop screens; a separate Expo/React Native app provides mobile access. New installations use SQLite, with PostgreSQL available for existing or explicitly configured deployments.
+Resonance brings together music streaming, a persistent music catalogue, automatic preparation, metadata enrichment and set planning. Its Soulseek integration provides network search, shared-folder browsing, transfers and community features. The web workspace is designed for desktop screens; a separate Expo/React Native app provides mobile access. New installations use SQLite, with PostgreSQL available for existing or explicitly configured deployments.
 
 Documentation updated **21 October 2026**. This is a snapshot of the current source, not a fixed feature commitment. Features, defaults, interfaces and compatibility can change as development continues.
 
