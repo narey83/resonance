@@ -1,9 +1,11 @@
 import copy
+import json
 from pathlib import Path
 import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 import yaml
 
@@ -12,6 +14,38 @@ import provision
 
 
 class NativeAnalysisTests(unittest.TestCase):
+    def test_read_only_gate_rejects_old_installer_and_accepts_locked_installer(self):
+        versions = dict(provision.re.findall(r'^([\w-]+)==([^\s]+)',
+                                             (provision.HERE / 'requirements.txt').read_text(),
+                                             provision.re.MULTILINE))
+        for installer, expected in (({'pip': '25.1.1'}, False), ({'pip': '26.2'}, True)):
+            result = {**self.result, 'packages': versions, 'installer': installer}
+            runner = lambda *a, **k: SimpleNamespace(stdout=provision.SENTINEL + json.dumps(result))
+            if expected:
+                self.assertEqual(result, provision.check(Path('/python'), runner=runner))
+            else:
+                with self.assertRaisesRegex(RuntimeError, 'Installer tooling'):
+                    provision.check(Path('/python'), runner=runner)
+
+    def test_provision_updates_hash_locked_installer_before_detector_packages(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            environment = Path(temporary)
+            (environment / 'pyvenv.cfg').touch()
+            with patch('sys.argv', ['provision.py', '--venv', temporary]), \
+                    patch.object(provision.sys, 'version_info', (3, 14)), \
+                    patch.object(provision.sys, 'platform', 'linux'), \
+                    patch.object(provision.platform, 'machine', return_value='x86_64'), \
+                    patch.object(provision.subprocess, 'run') as run, \
+                    patch.object(provision, 'check', return_value={}), patch('builtins.print'):
+                provision.main()
+            commands = [call.args[0] for call in run.call_args_list]
+            self.assertEqual([str(provision.HERE / name) for name in
+                              ('installer-requirements.txt', 'requirements.txt')],
+                             [command[-1] for command in commands])
+            for command in commands:
+                self.assertIn('--require-hashes', command)
+                self.assertIn('--only-binary=:all:', command)
+
     def setUp(self):
         self.versions = {'essentia': 'locked'}
         self.result = {'bpm': 120, 'key': 'A', 'scale': 'major', 'beats': 58,

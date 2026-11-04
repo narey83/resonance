@@ -40,7 +40,7 @@ jobs:
         run: dotnet test tests/Resonance.Tests.csproj --configuration Release --no-build --verbosity normal
       - name: Native analysis provisioning is included in backend artifacts
         run: |
-          for file in provision.py configure.py probe.py requirements.txt README.md; do
+          for file in provision.py configure.py probe.py requirements.txt installer-requirements.txt README.md; do
             test -s "backend/bin/Release/net10.0/tools/native-analysis/$file"
           done
 

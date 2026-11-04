@@ -39,6 +39,10 @@ def check(python, runner=subprocess.run):
         raise RuntimeError('BPM/key detector did not return a verified result')
     result = json.loads(lines[0])
     validate_probe(result, versions)
+    installer = dict(re.findall(r'^([\w-]+)==([^\s]+)',
+                                (HERE / 'installer-requirements.txt').read_text(), re.MULTILINE))
+    if result.get('installer') != installer:
+        raise RuntimeError('Installer tooling differs from the published lockfile; rerun provisioning')
     return result
 
 
@@ -61,6 +65,8 @@ def main():
             parser.error('Refusing to overwrite a directory that is not a Python virtual environment')
         if not environment.exists():
             subprocess.run([sys.executable, '-m', 'venv', str(environment)], check=True)
+        subprocess.run([str(python), '-m', 'pip', 'install', '--only-binary=:all:', '--require-hashes',
+                        '-r', str(HERE / 'installer-requirements.txt')], check=True)
         subprocess.run([str(python), '-m', 'pip', 'install', '--only-binary=:all:', '--require-hashes',
                         '-r', str(HERE / 'requirements.txt')], check=True)
     result = check(python)

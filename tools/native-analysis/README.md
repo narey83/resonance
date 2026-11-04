@@ -44,6 +44,10 @@ configured in the running server**:
 python3 tools/native-analysis/provision.py --venv "$HOME/resonance-analysis/keyenv" --check
 ```
 
+Provisioning installs the separately hash-locked pip version before detector
+packages. The read-only gate checks both locks. If installer tooling is outdated,
+wait for active analysis to finish, then rerun provisioning without `--check`.
+
 Keep that environment and `analysis.essentia_python` across release changes and
 backups. The Docker default `/opt/keyenv/bin/python` is not a native prerequisite.
 Do not rebuild an environment during an active analysis scan. Changing the

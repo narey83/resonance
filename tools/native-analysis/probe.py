@@ -22,6 +22,7 @@ def probe():
         'bpm': float(bpm), 'key': key, 'scale': scale, 'beats': len(ticks),
         'packages': {name: importlib.metadata.version(name)
                      for name in ('essentia', 'numpy', 'PyYAML', 'six')},
+        'installer': {'pip': importlib.metadata.version('pip')},
     }
 
 

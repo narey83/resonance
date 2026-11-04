@@ -33,7 +33,7 @@
   <ItemGroup>
     <Content Include="../third_party/skia-sharp/LICENSE.txt" Link="licenses/SkiaSharp.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="tools/yt-dlp-plugins/**/*.py;tools/yt-dlp-plugins/SOURCE.txt;tools/yt-dlp-plugins/LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="../tools/native-analysis/provision.py;../tools/native-analysis/probe.py;../tools/native-analysis/configure.py;../tools/native-analysis/requirements.txt;../tools/native-analysis/README.md" Link="tools/native-analysis/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../tools/native-analysis/provision.py;../tools/native-analysis/probe.py;../tools/native-analysis/configure.py;../tools/native-analysis/requirements.txt;../tools/native-analysis/installer-requirements.txt;../tools/native-analysis/README.md" Link="tools/native-analysis/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <AdditionalFiles Include="Properties\stylecop.json" />
     <Content Update="wwwroot\**\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
