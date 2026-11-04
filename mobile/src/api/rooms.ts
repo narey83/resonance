@@ -62,7 +62,7 @@ export interface Room {
   isPrivate: boolean;
   owner: string | null;
   operatorCount: number | null;
-  operators: string[];
+  operators: string[] | null;
   users: RoomUser[];
   messages: RoomMessage[];
 }

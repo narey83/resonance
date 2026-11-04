@@ -36,6 +36,16 @@ export function startMessagingSync(hub: HubConnection, current: () => boolean) {
     // Fetch the authoritative, bounded history (also handles our own echoed sends).
     refresh(`room:${roomName}`, () => useRoomStore.getState().loadMessages(roomName));
   };
+  let membership: string | undefined;
+  const stateChanged = (state: { rooms?: string[] }) => {
+    if (!alive() || !Array.isArray(state?.rooms) || !state.rooms.every((name) => typeof name === 'string')) return;
+    // STATE also carries frequent unrelated updates. Only reload for membership
+    // changes; sorting avoids requests when the same names arrive in a new order.
+    const next = JSON.stringify([...new Set(state.rooms)].sort());
+    if (next === membership) return;
+    membership = next;
+    refresh('joined', () => useRoomStore.getState().loadJoined(true));
+  };
   const reconcile = () => {
     if (!alive()) return;
     refresh('conversations', () => useConversationStore.getState().loadConversations());
@@ -48,6 +58,7 @@ export function startMessagingSync(hub: HubConnection, current: () => boolean) {
   hub.on('CONVERSATION_CHANGED', conversation);
   hub.on('ROOM_MESSAGE', room);
   hub.on('ROOM_MENTION', room); // Also works against older servers.
+  hub.on('STATE', stateChanged);
   let timer: ReturnType<typeof setTimeout>;
   const poll = () => {
     if (!alive()) return;
@@ -64,6 +75,7 @@ export function startMessagingSync(hub: HubConnection, current: () => boolean) {
       hub.off('CONVERSATION_CHANGED', conversation);
       hub.off('ROOM_MESSAGE', room);
       hub.off('ROOM_MENTION', room);
+      hub.off('STATE', stateChanged);
     },
   };
 }

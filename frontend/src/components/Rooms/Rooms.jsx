@@ -84,6 +84,20 @@ const SIDEBAR_MAX = 420;
 const USERS_POLL_MS = 1_000;
 const JOINED_POLL_MS = 3_000;
 const AVAILABLE_POLL_MS = 15_000;
+const ROOM_NAME_MAX_LENGTH = 24;
+
+export const RoomSearchInput = ({ onChange, value }) => (
+  <input
+    aria-describedby="room-name-limit"
+    aria-label="Search rooms"
+    className="sr-input"
+    maxLength={ROOM_NAME_MAX_LENGTH}
+    onChange={onChange}
+    placeholder="Search rooms…"
+    type="text"
+    value={value}
+  />
+);
 
 const baseLang = (code) => (code || '').toUpperCase().split('-')[0];
 
@@ -688,14 +702,16 @@ const Rooms = ({ history, location, onRoomRead, unreadCounts = {} }) => {
                   className="sr-input-icon"
                   size={13}
                 />
-                <input
-                  aria-label="Search rooms"
-                  className="sr-input"
+                <RoomSearchInput
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search rooms…"
-                  type="text"
                   value={search}
                 />
+              </div>
+              <div
+                className="room-name-limit"
+                id="room-name-limit"
+              >
+                {search.length}/{ROOM_NAME_MAX_LENGTH} characters
               </div>
             </div>
 

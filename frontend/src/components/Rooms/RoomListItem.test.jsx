@@ -1,4 +1,4 @@
-import { RoomListItem } from './Rooms';
+import { RoomListItem, RoomSearchInput } from './Rooms';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -30,5 +30,20 @@ describe('Room unread message indicator', () => {
     expect(
       renderItem(150).querySelector('[aria-label="150 new messages in music"]'),
     ).not.toBeNull();
+  });
+});
+
+describe('Custom room name input', () => {
+  it('limits room names to Soulseek’s 24 characters and describes the limit', () => {
+    const container = document.createElement('div');
+    container.innerHTML = renderToStaticMarkup(
+      <RoomSearchInput
+        onChange={() => {}}
+        value=""
+      />,
+    );
+    const input = container.querySelector('input');
+    expect(input.maxLength).toBe(24);
+    expect(input.getAttribute('aria-describedby')).toBe('room-name-limit');
   });
 });

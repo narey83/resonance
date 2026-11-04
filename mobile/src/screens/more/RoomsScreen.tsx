@@ -42,6 +42,7 @@ import type { RoomsStackParamList } from '../../navigation/MainTabs';
 import BottomSheet from '../../components/BottomSheet';
 
 type Props = NativeStackScreenProps<RoomsStackParamList, 'Rooms'>;
+const ROOM_NAME_MAX_LENGTH = 24;
 
 // ─── memoised row component ─────────────────────────────────────────────────
 
@@ -107,7 +108,7 @@ export default function RoomsScreen({ navigation }: Props) {
 
   const handleCustomJoin = useCallback(async () => {
     const name = customRoom.trim();
-    if (!name) return;
+    if (!name || name.length > ROOM_NAME_MAX_LENGTH) return;
     setShowCustom(false);
     setCustomRoom('');
     await handleJoin(name);
@@ -166,6 +167,8 @@ export default function RoomsScreen({ navigation }: Props) {
             autoCapitalize="none"
             autoCorrect={false}
             autoFocus
+            accessibilityLabel="Room name"
+            maxLength={ROOM_NAME_MAX_LENGTH}
             onChangeText={setCustomRoom}
             onSubmitEditing={handleCustomJoin}
             placeholder="Room name"
@@ -174,11 +177,12 @@ export default function RoomsScreen({ navigation }: Props) {
             style={s.sheetInput}
             value={customRoom}
           />
+          <Text style={s.sheetHint}>{customRoom.length}/{ROOM_NAME_MAX_LENGTH} characters</Text>
           <View style={s.sheetActions}>
             <Pressable onPress={() => { setShowCustom(false); setCustomRoom(''); }} style={s.sheetCancel}>
               <Text style={s.sheetCancelText}>Cancel</Text>
             </Pressable>
-            <Pressable disabled={joining === customRoom.trim()} onPress={handleCustomJoin} style={s.sheetJoin}>
+            <Pressable disabled={!customRoom.trim() || customRoom.trim().length > ROOM_NAME_MAX_LENGTH || joining === customRoom.trim()} onPress={handleCustomJoin} style={s.sheetJoin}>
               <Text style={s.sheetJoinText}>{joining === customRoom.trim() ? 'Joining…' : 'Create'}</Text>
             </Pressable>
           </View>
@@ -262,6 +266,7 @@ function makeStyles(c: ThemeColors) {
       gap: Spacing.md,
     },
     sheetTitle: { fontSize: Typography.md, color: c.textPrimary, ...Editorial.heading },
+    sheetHint: { fontSize: Typography.sm, color: c.textMuted },
     sheetInput: {
       backgroundColor: c.bgElevated,
       borderRadius: Radius.md,

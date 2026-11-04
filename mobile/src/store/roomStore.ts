@@ -55,8 +55,11 @@ function reconcileJoined(prev: Room[], next: Room[]): Room[] {
   const map = new Map(prev.map((r) => [r.name, r]));
   const result = next.map((r) => {
     const p = map.get(r.name);
+    if (p === r) return p;
+    const previousOperators = p?.operators ?? [];
+    const operators = r.operators ?? [];
     if (p && p.isPrivate === r.isPrivate && p.owner === r.owner && p.operatorCount === r.operatorCount &&
-        p.operators.length === r.operators.length && p.operators.every((name, index) => name === r.operators[index]) &&
+        previousOperators.length === operators.length && previousOperators.every((name, index) => name === operators[index]) &&
         sameItems(p.users, r.users) && sameItems(p.messages, r.messages)) return p;
     return r;
   });
