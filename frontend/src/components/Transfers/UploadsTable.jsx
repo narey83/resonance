@@ -453,7 +453,7 @@ const UploadsTable = ({
             {selected?.retryAt &&
               Number.isFinite(Date.parse(selected.retryAt)) && (
                 <span className="ul-complete-count">
-                  Paused after connection failures. Retry from{' '}
+                  Paused after repeated transfer failures. Retry from{' '}
                   <time dateTime={selected.retryAt}>
                     {new Date(selected.retryAt).toLocaleString()}
                   </time>

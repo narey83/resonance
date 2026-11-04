@@ -6,9 +6,9 @@ serializes attempts per peer before handing them to Soulseek.NET, so a pause als
 covers files that were queued before the failures occurred. Other peers keep using
 their own connections and the existing global/group upload limits.
 
-Three consecutive connection-establishment failures within five minutes pause that
-peer for five minutes. At expiry, one queued file probes the connection. A failed
-probe opens another five-minute pause; a successful upload clears the failure
+Three connection-establishment failures or remote `Cancelled` rejections within
+five minutes, without an intervening success, pause that peer for five minutes.
+At expiry, one queued file probes the connection. A failed probe opens another five-minute pause; a successful upload clears the failure
 streak and resumes the backlog. Success on any file resets that peer's streak.
 
 Connection-establishment failures retain the original transfer ID and queued
@@ -17,10 +17,12 @@ peer's waiting work. New requests and duplicate requests during a pause do not
 bypass the gate. Waiting work does not hold global/group upload slots. Users may
 still cancel queued files, and application shutdown cancels and drains waits.
 
-Only SDK connection exceptions or timeouts before transfer progress count, including
-wrapped exceptions. Offline parking, local filesystem errors, cancellation and
-mixed application/network exception aggregates do not count. Failures after a
-transfer has started retain the existing terminal-error handling. Late callbacks
+SDK connection exceptions or timeouts before transfer progress and remote
+`Transfer rejected: Cancelled` rejections count, including wrapped exceptions.
+Cancelled files remain terminal; the recipient’s remaining files stay queued.
+Offline parking, local filesystem errors, local cancellation, other remote rejection
+reasons (including `Complete`) and mixed application/network exception aggregates
+do not count. Failures after a transfer has started retain the existing terminal-error handling. Late callbacks
 from a failed SDK attempt cannot overwrite a queued retry or its eventual success.
 
 The cooldown timer is process-local and requires no schema or API changes. The
@@ -47,9 +49,9 @@ These are preparation requirements, not an instruction to deploy or restart now.
    request times and counts. After it exits, reconcile those IDs against the final
    database: allow genuine completions and explicit user cancellation/removal, but
    abort if records disappeared or became shutdown-only failures. Refresh the
-   retained-ID manifest and take a verified consistent SQLite backup through its
-   backup API, including committed WAL content. Copying only the live `.db` file is
-   insufficient. Abort if either reconciliation or a verified backup fails.
+   retained-ID manifest. Abort if reconciliation fails. For the development instance,
+   the user's 2 November instruction prohibits routine database backups unless
+   explicitly requested; preserve existing backups and private state.
 3. Start the new executable against that same application directory. Verify every
    captured pending ID still exists and is queued, active or legitimately completed;
    check Soulseek login and readiness. Files explicitly cancelled/removed during
@@ -71,3 +73,35 @@ restart tests cover a 4,250-file legacy backlog, interrupted/cancelled recovery,
 recovery idempotence, resumed completion under the same IDs, offline peers,
 terminal/removed records, malformed terminal flags, cancellation between recovery
 and login, and login/share-readiness ordering.
+
+
+## Live cancellation cooldown verification — 4 November 2026
+
+Backend `96e337f` was deployed to the dev laptop at 19:22 GMT. All 37,440
+pending upload identities and request metadata survived graceful shutdown and
+recovery, with no shutdown failures. Analysis was already idle; automatic
+preparation stayed paused. The gateway and frontend services were preserved.
+No database backup or schema change was performed.
+
+The upload pause banner now covers repeated transfer failures, including remote
+cancellations. It was delivered through the existing frontend hot reload service.
+Authenticated desktop, 390px auto-size and 390px manual-100% browser checks passed:
+the recipient's pause and retry time were visible, waiting files remained present,
+folder expansion worked, and no page errors occurred. Screenshots were inspected.
+
+Verification passed: 218 transfer/security tests, 17 upload component tests,
+11 frontend dependency-security tests, ESLint/formatting, staged Release/StyleCop,
+and the NuGet dependency audit. The configured real BPM/key detector preflight
+passed, all 419 native artifact hashes matched after startup, and direct, public
+and frontend-monitor readiness passed. The existing optional FFmpeg download-helper
+diagnostic and 14 frontend dependency source-map warnings remain.
+
+B_Side naturally cancelled three different files, triggering a pause at 19:22:58
+GMT with 8,820 files still queued. No further attempt occurred for 301.691 seconds.
+Exactly one probe then ran; its cancellation immediately opened another pause at
+19:28:03 GMT until 19:33:03 GMT, preserving the remaining 8,819 queued files. Four
+uploads to other recipients succeeded during this observation.
+
+Private queue manifests, activation results, browser screenshots and live cooldown
+observations are retained under
+`/home/narey/resonance-builds/upload-cancellations-20261104/`.

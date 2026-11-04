@@ -119,7 +119,9 @@ describe('One complete upload list and one user header', () => {
     const queueUsers = [{ ...users[0], retryAt }, users[1]];
     await render({ queueUsers });
     expect(container.querySelector('time').dateTime).toBe(retryAt);
-    expect(container.textContent).toContain('Paused after connection failures');
+    expect(container.textContent).toContain(
+      'Paused after repeated transfer failures',
+    );
     await render({ queueUsers, selectedUsername: 'other' });
     expect(container.querySelector('time')).toBeNull();
   });
