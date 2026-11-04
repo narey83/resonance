@@ -3,12 +3,14 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import type { ThemeColors } from '../theme';
 import { ServerProfile, useServerProfiles } from '../store/serverProfilesStore';
 import { useAuthStore } from '../store/auth';
 import { biometricSignIn } from '../services/serverSignIn';
 
-export default function RecentServers({ onSelect, disabled = false, onBusyChange, onForgetCurrent }: { onSelect(profile: ServerProfile): void | Promise<void>; disabled?: boolean; onBusyChange?(busy: boolean): void; onForgetCurrent?(): void }) {
-  const { colors: c } = useTheme();
+export default function RecentServers({ onSelect, disabled = false, onBusyChange, onForgetCurrent, colors }: { onSelect(profile: ServerProfile): void | Promise<void>; disabled?: boolean; onBusyChange?(busy: boolean): void; onForgetCurrent?(): void; colors?: ThemeColors }) {
+  const theme = useTheme();
+  const c = colors ?? theme.colors;
   const { profiles, error: storageError, load } = useServerProfiles();
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   useEffect(() => { void load().catch(() => {}); }, [load]);

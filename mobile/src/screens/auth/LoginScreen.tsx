@@ -28,34 +28,36 @@
 // </copyright>
 
 import { Text, TextInput } from '../../components/Typography';
-import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
+import { Editorial, Spacing, ThemeColors, Typography } from '../../theme';
 
 import { isMaintenanceResponse } from '../../lib/maintenance';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   Switch,
   Pressable,
   StyleSheet,
   View,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
-import { ResonanceLogo } from '../../components/ResonanceLogo';
+import LoginHero, { loginColors as colors } from '../../components/LoginHero';
+import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { enterLocalMode } from '../../services/appMode';
-import { useTheme } from '../../context/ThemeContext';
 import RecentServers from '../../components/RecentServers';
 import { biometricSignIn, signInToServer } from '../../services/serverSignIn';
 import { biometricsAvailable, useServerProfiles } from '../../store/serverProfilesStore';
 import { useAuthStore } from '../../store/auth';
+import type { TextInput as NativeTextInput } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/AuthStack';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
 export default function LoginScreen({ navigation }: Props) {
-  const { colors } = useTheme();
-  const s = useMemo(() => makeStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
 
   const serverUrl    = useAuthStore((s) => s.serverUrl)!;
   const clearAll     = useAuthStore((s) => s.clearAll);
@@ -66,9 +68,17 @@ export default function LoginScreen({ navigation }: Props) {
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
   const [saveBiometric, setSaveBiometric] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
+  const [preferPassword, setPreferPassword] = useState(false);
+  const passwordRef = useRef<NativeTextInput>(null);
   const profiles = useServerProfiles(state => state.profiles);
+  const loadProfiles = useServerProfiles(state => state.load);
   const available = biometricsAvailable();
-  const savedProfile = profiles.find(profile => profile.url === serverUrl);
+  const savedProfile = profiles.find(profile => profile.url === serverUrl && (!username || profile.username === username));
+  const canUseBiometric = !!savedProfile?.biometric && available;
+  const showPassword = preferPassword || !canUseBiometric;
+  useEffect(() => { void loadProfiles().catch(() => {}); }, [loadProfiles]);
+  useEffect(() => { setPreferPassword(false); setShowOptions(false); }, [serverUrl]);
   useEffect(() => {
     const profile = profiles.find(p => p.url === serverUrl);
     if (profile) setUsername(value => value || profile.username);
@@ -94,102 +104,144 @@ export default function LoginScreen({ navigation }: Props) {
     }
   };
 
+  const handleBiometricLogin = async () => {
+    if (loading || !canUseBiometric || !savedProfile) return;
+    setLoading(true);
+    setError('');
+    try { await biometricSignIn(savedProfile.id); }
+    catch (e) {
+      setPreferPassword(true);
+      setError((e as Error).message || 'Use your password to sign in.');
+    } finally { setLoading(false); }
+  };
+
   return (
     // KeyboardAwareScrollView, not KeyboardAvoidingView: the latter was passing behavior=undefined
     // on Android, which makes it inert, so the keyboard simply covered the Sign in button.
     <KeyboardAwareScrollView
       bottomOffset={120}
-      contentContainerStyle={s.inner}
+      contentContainerStyle={[s.inner, { paddingBottom: insets.bottom + Spacing.xxl }]}
       keyboardShouldPersistTaps="handled"
       style={s.container}
     >
-      <View style={s.header}>
-        <ResonanceLogo />
-        <Text style={s.logo}>Resonance</Text>
-      </View>
+      <StatusBar style="light" />
+      <LoginHero />
 
-      <View>
-        <Text style={s.title}>{sessionExpired ? 'Sign in again' : 'Sign in'}</Text>
+      <View style={s.panel}>
+        <Text accessibilityRole="header" style={s.title}>{sessionExpired ? 'Sign in again' : 'Welcome back'}</Text>
         {sessionExpired && <Text accessibilityRole="alert" style={s.error}>Your session has expired or was revoked. Sign in again to reconnect. Your saved server and downloaded music are still available.</Text>}
-        <Text style={s.sub}>{serverUrl}</Text>
+        {showPassword && <Text style={s.sub}>Sign in to your account to continue.</Text>}
+        <Text style={s.server}>{serverUrl}</Text>
 
         <View style={s.form}>
-          <Pressable accessibilityRole="button" disabled={loading} onPress={() => { void enterLocalMode().catch(() => setError('Could not open local music. Try again.')); }} style={{ paddingVertical: 12 }}><Text style={{ color: colors.accent }}>Use music on this device</Text></Pressable>
-          {savedProfile?.biometric && <Pressable accessibilityRole="button" disabled={loading || !available} onPress={async () => {
-            setLoading(true); setError('');
-            try { await biometricSignIn(savedProfile.id); }
-            catch (e) { setError((e as Error).message || 'Use your password to sign in.'); }
-            finally { setLoading(false); }
-          }} style={s.scanBtn}><Ionicons name="finger-print" size={20} color={colors.accent} /><Text style={s.scanBtnText}>Sign in with biometrics</Text></Pressable>}
-          <View style={s.field}>
-            <Text style={s.label}>Username</Text>
-            <TextInput
-              editable={!loading}
-              autoCapitalize="none"
-              autoCorrect={false}
-              onChangeText={setUsername}
-              onSubmitEditing={() => {}}
-              placeholder="username"
-              placeholderTextColor={colors.textDim}
-              returnKeyType="next"
-              style={s.input}
-              value={username}
-            />
-          </View>
+          {error ? <Text accessibilityRole="alert" style={s.error}>{error}</Text> : null}
+          {showPassword ? <>
+            <View style={s.field}>
+              <Text style={s.label}>Username</Text>
+              <TextInput
+                editable={!loading}
+                accessibilityLabel="Username"
+                selectionColor={colors.accent}
+                autoCapitalize="none"
+                autoCorrect={false}
+                onChangeText={value => { setUsername(value); setPreferPassword(true); }}
+                onSubmitEditing={() => passwordRef.current?.focus()}
+                placeholder="username"
+                placeholderTextColor={colors.textDim}
+                returnKeyType="next"
+                style={s.input}
+                value={username}
+              />
+            </View>
 
-          <View style={s.field}>
-            <Text style={s.label}>Password</Text>
-            <TextInput
-              editable={!loading}
-              autoCapitalize="none"
-              autoCorrect={false}
-              onChangeText={setPassword}
-              onSubmitEditing={handleLogin}
-              placeholder="password"
-              placeholderTextColor={colors.textDim}
-              returnKeyType="go"
-              secureTextEntry
-              style={s.input}
-              value={password}
-            />
-          </View>
+            <View style={s.field}>
+              <Text style={s.label}>Password</Text>
+              <TextInput
+                editable={!loading}
+                accessibilityLabel="Password"
+                ref={passwordRef}
+                selectionColor={colors.accent}
+                autoCapitalize="none"
+                autoCorrect={false}
+                onChangeText={value => { setPassword(value); setPreferPassword(true); }}
+                onSubmitEditing={handleLogin}
+                placeholder="password"
+                placeholderTextColor={colors.textDim}
+                returnKeyType="go"
+                secureTextEntry
+                style={s.input}
+                value={password}
+              />
+            </View>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <View style={{ flex: 1 }}><Text style={s.label}>Save this sign-in with Face ID / fingerprint</Text><Text style={{ color: colors.textMuted, fontSize: 11 }}>Optional, for this server on this handset.</Text></View>
-            <Switch accessibilityLabel="Save biometric sign-in for this server" disabled={loading || !available} value={saveBiometric} onValueChange={setSaveBiometric} trackColor={{ true: colors.accent, false: colors.bgElevated }} />
-          </View>
-          {!available && <Text style={{ color: colors.textMuted, fontSize: 11 }}>Set up Face ID or a secure fingerprint on this handset to enable biometric sign-in.</Text>}
+            <Pressable
+              accessibilityRole="button"
+              disabled={loading}
+              onPress={handleLogin}
+              style={({ pressed }) => [s.btn, pressed && s.btnPressed]}
+            >
+              {loading
+                ? <ActivityIndicator color="#09231e" />
+                : <Text style={s.btnText}>Sign in</Text>
+              }
+            </Pressable>
 
-          {error ? <Text style={s.error}>{error}</Text> : null}
+            {canUseBiometric && <Pressable accessibilityRole="button" disabled={loading} onPress={() => { setPreferPassword(false); setError(''); }} style={s.optionsToggle}>
+              <Text style={s.link}>Use biometric sign-in</Text>
+            </Pressable>}
+          </> : <>
+            <Pressable accessibilityRole="button" disabled={loading} onPress={handleBiometricLogin} style={({ pressed }) => [s.btn, s.biometricBtn, pressed && s.btnPressed]}>
+              {loading ? <ActivityIndicator color="#09231e" /> : <>
+                <Ionicons name="finger-print" size={22} color="#09231e" accessible={false} />
+                <Text style={s.btnText}>Sign in with biometrics</Text>
+              </>}
+            </Pressable>
+            <Pressable accessibilityRole="button" disabled={loading} onPress={() => setPreferPassword(true)} style={s.optionsToggle}>
+              <Text style={s.link}>Use password instead</Text>
+            </Pressable>
+          </>}
 
           <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showOptions }}
+            accessibilityLabel={showOptions ? 'Fewer sign-in options' : 'More sign-in options'}
             disabled={loading}
-            onPress={handleLogin}
-            style={({ pressed }) => [s.btn, pressed && s.btnPressed]}
+            onPress={() => setShowOptions(value => !value)}
+            style={s.optionsToggle}
           >
-            {loading
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={s.btnText}>Sign in</Text>
-            }
+            <Text style={s.optionsLabel}>{showOptions ? 'Fewer sign-in options' : 'More sign-in options'}</Text>
+            <Ionicons name={showOptions ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
           </Pressable>
+          {showOptions && <View style={s.options}>
+            <Pressable accessibilityRole="button" disabled={loading} onPress={() => { void enterLocalMode().catch(() => setError('Could not open local music. Try again.')); }} style={{ paddingVertical: 12 }}><Text style={{ color: colors.accent }}>Use music on this device</Text></Pressable>
+            {showPassword && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={{ flex: 1 }}><Text style={s.label}>Save this sign-in with Face ID / fingerprint</Text><Text style={{ color: colors.textMuted, fontSize: 11 }}>Optional, for this server on this handset.</Text></View>
+              <Switch accessibilityLabel="Save biometric sign-in for this server" disabled={loading || !available} value={saveBiometric} onValueChange={setSaveBiometric} trackColor={{ true: colors.accent, false: colors.bgElevated }} />
+            </View>}
+            {showPassword && !available && <Text style={{ color: colors.textMuted, fontSize: 11 }}>Set up Face ID or a secure fingerprint on this handset to enable biometric sign-in.</Text>}
 
-          {/* Also here, not just on Connect. With a server address already stored, signing out
-              lands straight on this screen and Connect is never shown — so putting the scanner
-              only there made it unreachable for exactly the people who'd already set the app up. */}
-          <Pressable
-            disabled={loading}
-            onPress={() => navigation.navigate('Scan')}
-            style={({ pressed }) => [s.scanBtn, pressed && s.btnPressed]}
-          >
-            <Ionicons color={colors.accent} name="qr-code-outline" size={17} />
-            <Text style={s.scanBtnText}>Scan QR from Resonance</Text>
-          </Pressable>
+            {/* Also here, not just on Connect. With a server address already stored, signing out
+                lands straight on this screen and Connect is never shown — so putting the scanner
+                only there made it unreachable for exactly the people who'd already set the app up. */}
+            <Pressable
+              disabled={loading}
+              onPress={() => navigation.navigate('Scan')}
+              style={({ pressed }) => [s.scanBtn, pressed && s.btnPressed]}
+            >
+              <Ionicons color={colors.accent} name="qr-code-outline" size={17} />
+              <Text style={s.scanBtnText}>Scan QR from Resonance</Text>
+            </Pressable>
 
-          <Pressable disabled={loading} onPress={() => { void clearAll().then(() => navigation.replace('Connect')).catch(() => setError('Could not change server. Try again.')); }}>
-            <Text style={s.link}>Change server</Text>
-          </Pressable>
-          <RecentServers disabled={loading} onBusyChange={setLoading} onSelect={async profile => { await useAuthStore.getState().setServerUrl(profile.url); setUsername(profile.username); setPassword(''); setSaveBiometric(false); }} onForgetCurrent={() => navigation.replace('Connect')} />
+            <Pressable disabled={loading} onPress={() => { void clearAll().then(() => navigation.replace('Connect')).catch(() => setError('Could not change server. Try again.')); }}>
+              <Text style={s.link}>Change server</Text>
+            </Pressable>
+            <RecentServers colors={colors} disabled={loading} onBusyChange={setLoading} onSelect={async profile => { await useAuthStore.getState().setServerUrl(profile.url); setUsername(profile.username); setPassword(''); setSaveBiometric(false); setPreferPassword(false); setShowOptions(false); }} onForgetCurrent={() => navigation.replace('Connect')} />
+            <Text style={s.description}>Resonance is a music streaming app with library management, DJ tools and a Soulseek integration.</Text>
+          </View>}
         </View>
+        <Text style={s.legal}>
+          Built from a modified version of <Text accessibilityRole="link" style={s.legalLink} onPress={() => { void Linking.openURL('https://github.com/slskd/slskd').catch(() => setError('Could not open the link.')); }}>slskd</Text>. Not maintained by, endorsed by, or affiliated with the slskd project or its authors. Licensed under <Text accessibilityRole="link" style={s.legalLink} onPress={() => { void Linking.openURL('https://www.gnu.org/licenses/agpl-3.0.html').catch(() => setError('Could not open the link.')); }}>AGPL-3.0</Text> with <Text accessibilityRole="link" style={s.legalLink} onPress={() => { void Linking.openURL('https://github.com/narey83/resonance/blob/main/LICENSE').catch(() => setError('Could not open the link.')); }}>additional terms</Text>. <Text accessibilityRole="link" style={s.legalLink} onPress={() => { void Linking.openURL('https://github.com/narey83/resonance').catch(() => setError('Could not open the link.')); }}>Source code</Text>.
+        </Text>
       </View>
     </KeyboardAwareScrollView>
   );
@@ -198,12 +250,18 @@ export default function LoginScreen({ navigation }: Props) {
 function makeStyles(c: ThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: c.bgPrimary },
-    inner: { flexGrow: 1, paddingBottom: Spacing.xxl, paddingHorizontal: Spacing.xl, paddingTop: Spacing.xxl * 2 },
-    header:  { alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.xxl },
-    logo:    { fontFamily: Typography.display, color: c.textPrimary, fontSize: Typography.xxl, fontWeight: '600', letterSpacing: -0.5 },
+    inner: { flexGrow: 1 },
+    panel: { padding: Spacing.xl, width: '100%', maxWidth: 560, alignSelf: 'center' },
     title: { fontSize: Typography.xxl, color: c.textPrimary, marginBottom: Spacing.xs, ...Editorial.heading },
-    sub:   { fontSize: Typography.sm, color: c.textMuted, marginBottom: Spacing.xxl },
+    sub:   { fontSize: Typography.sm, color: c.textMuted, marginBottom: Spacing.sm },
+    server: { fontSize: Typography.xs, color: c.textMuted, marginBottom: Spacing.md },
+    description: { fontSize: Typography.sm, lineHeight: 20, color: c.textMuted, marginTop: Spacing.xl },
+    legal: { fontSize: 11, lineHeight: 17, color: '#8eaaaa', borderTopWidth: 1, borderTopColor: c.border, paddingTop: Spacing.md, marginTop: Spacing.md },
+    legalLink: { color: c.accent },
     form:  { gap: Spacing.md },
+    optionsToggle: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
+    optionsLabel: { color: c.textMuted, fontSize: Typography.sm },
+    options: { gap: Spacing.md, borderTopWidth: 1, borderTopColor: c.border, paddingTop: Spacing.md },
     field: { gap: Spacing.xs },
     label: { fontSize: Typography.sm, color: c.textMuted, fontWeight: '500' },
     input: {
@@ -215,14 +273,16 @@ function makeStyles(c: ThemeColors) {
       fontSize: Typography.base,
       color: c.textPrimary,
       ...Editorial.control,
+      borderRadius: 6,
     },
     error:      { fontSize: Typography.sm, color: c.danger, marginTop: -Spacing.xs },
-    btn: { backgroundColor: c.accent, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.xs, ...Editorial.control },
+    btn: { backgroundColor: c.accent, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.xs, ...Editorial.control, borderRadius: 6 },
     btnPressed: { opacity: 0.8 },
+    biometricBtn: { flexDirection: 'row', justifyContent: 'center', gap: Spacing.sm, minHeight: 48 },
     scanBtn: {
       alignItems: 'center',
       borderColor: c.border,
-      borderRadius: Radius.sm,
+      borderRadius: 6,
       borderWidth: 1,
       flexDirection: 'row',
       gap: Spacing.sm,
@@ -231,7 +291,9 @@ function makeStyles(c: ThemeColors) {
       paddingVertical: Spacing.md,
     },
     scanBtnText: { color: c.accent, fontSize: Typography.base, fontWeight: '600' },
-    btnText:    { color: '#fff', fontSize: Typography.base, fontWeight: '600' },
+    btnText:    { color: '#09231e', fontSize: Typography.base, fontWeight: '600' },
     link:       { fontSize: Typography.sm, color: c.accent, textAlign: 'center', marginTop: Spacing.xs },
   });
 }
+
+const s = makeStyles(colors);
