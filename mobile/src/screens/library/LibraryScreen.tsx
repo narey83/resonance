@@ -80,7 +80,7 @@ import { useAppSettings } from '../../store/appSettingsStore';
 import { useLibrarySync } from '../../store/librarySyncStore';
 import { useLibraryViewMode } from '../../store/libraryViewStore';
 import type { LibraryViewMode } from '../../store/libraryViewStore';
-import { peekListCache, readListCache, writeListCache, hasListCache } from '../../services/libraryCache';
+import { peekListCache, readListCache, writeListCache } from '../../services/libraryCache';
 import { dbg, isSyncDebugOn } from '../../api/debugLog';
 import {
   getLocalAlbums, getLocalArtists, getLocalAlbumTracksFor,
@@ -1409,59 +1409,9 @@ function LibrarySettingsModal({ visible, onClose }: { visible: boolean; onClose:
 
 // ── Tab: Artists ──────────────────────────────────────────────────────────────
 
-// First-populate ("downloading") and background-revalidate ("updating") visualizations.
-// loading = cold start, nothing cached yet → full-screen downloading state.
-// refreshing = revalidating already-shown data → slim non-blocking banner above the list.
-function DownloadingLibrary({ label = 'Downloading metadata…', percent, detail }: {
-  label?: string;
-  percent?: number;   // 0-100; when provided, shows a determinate progress bar + %
-  detail?: string;    // e.g. the list currently downloading
-}) {
-  const { s, c } = useLibStyles();
-  const hasPct = typeof percent === 'number' && percent >= 0;
-  return (
-    <View style={[s.flex, { justifyContent: 'center', alignItems: 'center', padding: Spacing.xl }]}>
-      <Ionicons name="cloud-download-outline" size={44} color={c.accent} />
-      <Text style={[s.rowTitle, { marginTop: Spacing.md, textAlign: 'center' }]}>{label}</Text>
-      {hasPct ? (
-        <>
-          <View style={{
-            width: 220, height: 6, borderRadius: 3, marginTop: Spacing.md,
-            backgroundColor: c.bgElevated, overflow: 'hidden',
-          }}>
-            <View style={{
-              width: `${Math.min(100, Math.max(0, percent!))}%`,
-              height: '100%', borderRadius: 3, backgroundColor: c.accent,
-            }} />
-          </View>
-          <Text style={[s.rowMeta, { marginTop: 8 }]}>
-            {Math.round(percent!)}%{detail ? ` · ${detail}` : ''}
-          </Text>
-        </>
-      ) : (
-        <ActivityIndicator color={c.accent} style={{ marginTop: Spacing.md }} />
-      )}
-    </View>
-  );
-}
-
-function UpdatingBanner({ visible, label = 'Updating metadata…' }: { visible: boolean; label?: string }) {
-  const { c } = useLibStyles();
-  if (!visible) return null;
-  return (
-    <View style={{
-      flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-      gap: 8, paddingVertical: 5, backgroundColor: c.bgElevated,
-    }}>
-      <ActivityIndicator size="small" color={c.accent} />
-      <Text style={{ color: c.textMuted, fontSize: 12 }}>{label}</Text>
-    </View>
-  );
-}
-
 // Pure reader over the on-device library cache. The whole library is downloaded in one go by the
 // bulk sync (useLibrarySync), so tabs never fetch individually — they just read their slice and
-// re-read when the sync writes (cacheVersion bumps). loading/refreshing derive from the global
+// re-read when the sync writes (cacheVersion bumps). loading derives from the global
 // sync status. `_fetcher` is unused (the bulk sync owns all network) but kept so call sites read
 // naturally. `enabled=false` is local-only mode (no server slice).
 function useServerCachedList<T>(
@@ -1469,7 +1419,7 @@ function useServerCachedList<T>(
   _fetcher: unknown,
   enabled: boolean,
   seed?: (rows: T[]) => void,
-): { data: T[]; loading: boolean; refreshing: boolean } {
+): { data: T[]; loading: boolean } {
   const cacheVersion = useLibrarySync((st) => st.cacheVersion);
   const syncing = useLibrarySync((st) => st.status === 'syncing');
   const [data, setData] = useState<T[] | undefined>(
@@ -1503,7 +1453,6 @@ function useServerCachedList<T>(
   return {
     data: list,
     loading: enabled && syncing && list.length === 0,
-    refreshing: enabled && syncing && list.length > 0,
   };
 }
 
@@ -1538,7 +1487,7 @@ function ArtistsTab() {
   const grid = useTileGrid(viewMode);
 
   const wantServer = !includeLocalLibrary || mergeLocalAndServer;
-  const { data: serverArtists, loading: serverLoading, refreshing } =
+  const { data: serverArtists, loading: serverLoading } =
     useServerCachedList<MusicArtist>('artists', getArtists, wantServer, seedCoverSignatures);
   const localArtists = useLocalList<MusicArtist>(getLocalArtists, includeLocalLibrary);
 
@@ -1631,23 +1580,18 @@ function ArtistsTab() {
           </>
         }
       />
-      <UpdatingBanner visible={refreshing && !loading} />
-      {loading
-        ? <DownloadingLibrary />
-        : (
-          <FlatList
-            {...LIST_PERF_PROPS}
-            key={listKey(grid)}
-            data={filtered}
-            keyExtractor={(item) => item.artist}
-            renderItem={renderItem}
-            contentContainerStyle={s.listContent}
-            {...(grid ? tileListProps(grid, s) : {})}
-            ListEmptyComponent={
-              <Text style={s.empty}>{search ? 'No artists match' : 'No artists in library'}</Text>
-            }
-          />
-        )}
+      <FlatList
+        {...LIST_PERF_PROPS}
+        key={listKey(grid)}
+        data={filtered}
+        keyExtractor={(item) => item.artist}
+        renderItem={renderItem}
+        contentContainerStyle={s.listContent}
+        {...(grid ? tileListProps(grid, s) : {})}
+        ListEmptyComponent={
+          loading ? null : <Text style={s.empty}>{search ? 'No artists match' : 'No artists in library'}</Text>
+        }
+      />
     </View>
   );
 }
@@ -1667,7 +1611,7 @@ function AlbumsTab() {
   const grid = useTileGrid(viewMode);
 
   const wantServer = !includeLocalLibrary || mergeLocalAndServer;
-  const { data: serverAlbums, loading: serverLoading, refreshing } =
+  const { data: serverAlbums, loading: serverLoading } =
     useServerCachedList<AlbumWithSource>('albums', getAlbums, wantServer, seedCoverSignatures);
   const localAlbumsRaw = useLocalList<MusicAlbum>(getLocalAlbums, includeLocalLibrary);
   const localAlbums = useMemo<AlbumWithSource[]>(
@@ -1778,23 +1722,18 @@ function AlbumsTab() {
           </>
         }
       />
-      <UpdatingBanner visible={refreshing && !loading} />
-      {loading
-        ? <DownloadingLibrary />
-        : (
-          <FlatList
-            {...LIST_PERF_PROPS}
-            key={listKey(grid)}
-            data={filtered}
-            keyExtractor={(item) => `${item.album}-${item.artist}`}
-            renderItem={renderItem}
-            contentContainerStyle={s.listContent}
-            {...(grid ? tileListProps(grid, s) : {})}
-            ListEmptyComponent={
-              <Text style={s.empty}>{search ? 'No albums match' : 'No albums in library'}</Text>
-            }
-          />
-        )}
+      <FlatList
+        {...LIST_PERF_PROPS}
+        key={listKey(grid)}
+        data={filtered}
+        keyExtractor={(item) => `${item.album}-${item.artist}`}
+        renderItem={renderItem}
+        contentContainerStyle={s.listContent}
+        {...(grid ? tileListProps(grid, s) : {})}
+        ListEmptyComponent={
+          loading ? null : <Text style={s.empty}>{search ? 'No albums match' : 'No albums in library'}</Text>
+        }
+      />
       <AlbumActionSheet album={actionAlbum} onClose={() => setActionAlbum(null)} />
     </View>
   );
@@ -2052,29 +1991,24 @@ function TracksTab() {
           />
         }
       />
-      {reloading && displayTracks.length === 0 && !search
-        ? <DownloadingLibrary label="Downloading metadata…" />
-        : (
-          <>
-            <UpdatingBanner visible={reloading && displayTracks.length > 0} />
-            <FlatList
-              {...LIST_PERF_PROPS}
-              data={displayTracks}
-              keyExtractor={(item, index) => `${item.path}-${index}`}
-              renderItem={renderTrack}
-              contentContainerStyle={s.listContent}
-              onEndReached={clientMode ? undefined : () => loadPage(false, searchRef.current)}
-              onEndReachedThreshold={0.4}
-              ListFooterComponent={fetching && !reloading
-                ? <ActivityIndicator color={c.accent} style={{ padding: Spacing.md }} />
-                : null}
-              ListEmptyComponent={
-                serverScanning ? <Text style={s.empty}>{REBUILDING_MSG}</Text>
-                : !fetching ? <Text style={s.empty}>{search ? 'No tracks match' : 'No tracks in library'}</Text>
-                : null}
-            />
-          </>
-        )}
+      <FlatList
+        {...LIST_PERF_PROPS}
+        data={displayTracks}
+        keyExtractor={(item, index) => `${item.path}-${index}`}
+        renderItem={renderTrack}
+        contentContainerStyle={s.listContent}
+        onEndReached={clientMode || reloading || displayTracks.length === 0
+          ? undefined
+          : () => loadPage(false, searchRef.current)}
+        onEndReachedThreshold={0.4}
+        ListFooterComponent={fetching && !reloading
+          ? <ActivityIndicator color={c.accent} style={{ padding: Spacing.md }} />
+          : null}
+        ListEmptyComponent={
+          serverScanning ? <Text style={s.empty}>{REBUILDING_MSG}</Text>
+          : !fetching && !reloading ? <Text style={s.empty}>{search ? 'No tracks match' : 'No tracks in library'}</Text>
+          : null}
+      />
       <TrackActionSheet
         track={actionTrack}
         onClose={() => setActionTrack(null)}
@@ -2116,7 +2050,7 @@ function LovedTab() {
 
   // Fetch only the loved tracks (resolved server-side) rather than the whole 20k+ library.
   // We still filter by the reactive lovedPaths below so unloving updates the list live.
-  const { data: cachedTracks, loading: serverLoading, refreshing } =
+  const { data: cachedTracks, loading: serverLoading } =
     useServerCachedList<MusicTrack>('loved', getLovedTracks, !includeLocalLibrary, seedTrackSignatures);
 
   // The bulk sync only re-downloads that cached list when the LIBRARY changes, so a track loved
@@ -2176,7 +2110,7 @@ function LovedTab() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playQueue, lovedTracks, toggleLove, s, isLocalPath]);
 
-  if (loading) return <DownloadingLibrary label="Downloading metadata…" />;
+  if (loading && !lovedTracks.length) return null;
 
   if (!lovedTracks.length) {
     return (
@@ -2203,7 +2137,6 @@ function LovedTab() {
           onSort={onSort}
         />
       </View>
-      <UpdatingBanner visible={refreshing && !loading} />
       <FlatList
         {...LIST_PERF_PROPS}
         data={lovedTracks}
@@ -2436,7 +2369,7 @@ function FoldersTab() {
   const grid = useTileGrid(viewMode);
 
   const wantServer = !includeLocalLibrary || mergeLocalAndServer;
-  const { data: serverFolders, loading: serverLoading, refreshing } =
+  const { data: serverFolders, loading: serverLoading } =
     useServerCachedList<FolderWithSource>('folders', getFolders, wantServer, seedCoverSignatures);
   const localFoldersRaw = useLocalList<MusicFolder>(getLocalFolders, includeLocalLibrary);
   const localFolders = useMemo<FolderWithSource[]>(
@@ -2593,23 +2526,18 @@ function FoldersTab() {
           </>
         }
       />
-      <UpdatingBanner visible={refreshing && !loading} />
-      {loading
-        ? <DownloadingLibrary />
-        : (
-          <FlatList
-            {...LIST_PERF_PROPS}
-            key={listKey(grid)}
-            data={filtered}
-            keyExtractor={(item, index) => `${item.path}-${index}`}
-            renderItem={renderItem}
-            contentContainerStyle={s.listContent}
-            {...(grid ? tileListProps(grid, s) : {})}
-            ListEmptyComponent={
-              <Text style={s.empty}>{search ? 'No folders match' : 'No folders in library'}</Text>
-            }
-          />
-        )}
+      <FlatList
+        {...LIST_PERF_PROPS}
+        key={listKey(grid)}
+        data={filtered}
+        keyExtractor={(item, index) => `${item.path}-${index}`}
+        renderItem={renderItem}
+        contentContainerStyle={s.listContent}
+        {...(grid ? tileListProps(grid, s) : {})}
+        ListEmptyComponent={
+          loading ? null : <Text style={s.empty}>{search ? 'No folders match' : 'No folders in library'}</Text>
+        }
+      />
     </View>
   );
 }
@@ -2626,7 +2554,7 @@ function GenresTab() {
   const { includeLocalLibrary, mergeLocalAndServer } = useLibrarySettings();
 
   const wantServer = !includeLocalLibrary || mergeLocalAndServer;
-  const { data: serverGenres, loading: serverLoading, refreshing } =
+  const { data: serverGenres, loading: serverLoading } =
     useServerCachedList<GenreWithSource>('genres', getGenres, wantServer);
   const localGenresRaw = useLocalList<MusicGenre>(getLocalGenres, includeLocalLibrary);
   const localGenres = useMemo<GenreWithSource[]>(
@@ -2689,21 +2617,16 @@ function GenresTab() {
           />
         }
       />
-      <UpdatingBanner visible={refreshing && !loading} />
-      {loading
-        ? <DownloadingLibrary />
-        : (
-          <FlatList
-            {...LIST_PERF_PROPS}
-            data={filtered}
-            keyExtractor={(item) => `${item.genre}-${item._local ? 'l' : 's'}`}
-            renderItem={renderItem}
-            contentContainerStyle={s.listContent}
-            ListEmptyComponent={
-              <Text style={s.empty}>{search ? 'No genres match' : 'No genres in library'}</Text>
-            }
-          />
-        )}
+      <FlatList
+        {...LIST_PERF_PROPS}
+        data={filtered}
+        keyExtractor={(item) => `${item.genre}-${item._local ? 'l' : 's'}`}
+        renderItem={renderItem}
+        contentContainerStyle={s.listContent}
+        ListEmptyComponent={
+          loading ? null : <Text style={s.empty}>{search ? 'No genres match' : 'No genres in library'}</Text>
+        }
+      />
     </View>
   );
 }
@@ -2939,10 +2862,6 @@ function LibraryHome({ navigation }: HomeProps) {
   // only when the backend library actually changes (libraryRevision), not on every screen visit.
   const libraryRevision = useLibraryActivityStore((s) => s.libraryRevision);
   const sync = useLibrarySync((s) => s.sync);
-  const syncStatus = useLibrarySync((s) => s.status);
-  const syncPercent = useLibrarySync((s) => s.percent);
-  const syncLabel = useLibrarySync((s) => s.currentLabel);
-  const hasSyncedOnce = useLibrarySync((s) => s.hasSyncedOnce);
 
   // Background server scans are silent on the phone. Keep the running state only
   // to defer cache reads until the server is ready; avoid progress-tick rerenders.
@@ -2993,25 +2912,6 @@ function LibraryHome({ navigation }: HomeProps) {
     return () => clearInterval(id);
   }, []);
 
-  // The cached metadata persists across app restarts (SQLite). If it's already there, never block
-  // with the full-screen overlay — render tabs instantly from cache and let the (incremental, mostly
-  // 304) re-sync run quietly. The overlay is only for the genuine first populate.
-  const [cachePresent, setCachePresent] = useState<boolean | null>(null);
-  useEffect(() => {
-    const t0 = Date.now();
-    hasListCache('artists')
-      .then((p) => { setCachePresent(p); dbg(`[home] hasCache=${p} in ${Date.now() - t0}ms`); })
-      .catch(() => setCachePresent(false));
-  }, []);
-  // Only block with the overlay when the cache is CONFIRMED absent (genuine first install). While
-  // cachePresent is still null (checking) we must NOT show it: the cached library renders in a few
-  // ms, and if the app is backgrounded during that check the overlay would otherwise freeze
-  // on-screen until the app resumes — hiding a library that was actually ready instantly.
-  const showFirstSync = remote && syncStatus === 'syncing' && !hasSyncedOnce && cachePresent === false;
-  useEffect(() => {
-    dbg(`[home] render showFirstSync=${showFirstSync} (status=${syncStatus} hasSynced=${hasSyncedOnce} cachePresent=${cachePresent})`);
-  }, [showFirstSync, syncStatus, hasSyncedOnce, cachePresent]);
-
   useEffect(() => {
     if (settingsLoaded && !visibleTabs.includes(tab)) {
       setTab(visibleTabs[0]);
@@ -3028,14 +2928,6 @@ function LibraryHome({ navigation }: HomeProps) {
       ),
     });
   }, [navigation, c]);
-
-  if (showFirstSync) {
-    return (
-      <View style={s.flex}>
-        <DownloadingLibrary percent={syncPercent} detail={syncLabel || undefined} />
-      </View>
-    );
-  }
 
   return (
     <View style={s.flex}>
@@ -3622,7 +3514,7 @@ function YearsTab() {
   const { includeLocalLibrary, mergeLocalAndServer } = useLibrarySettings();
 
   const wantServer = !includeLocalLibrary || mergeLocalAndServer;
-  const { data: serverYears, loading: serverLoading, refreshing } =
+  const { data: serverYears, loading: serverLoading } =
     useServerCachedList<YearWithSource>('years', getYears, wantServer);
   const localYearsRaw = useLocalList<MusicYear>(getLocalYears, includeLocalLibrary);
   const localYears = useMemo<YearWithSource[]>(
@@ -3678,21 +3570,16 @@ function YearsTab() {
           onSort={onSort}
         />
       </View>
-      <UpdatingBanner visible={refreshing && !loading} />
-      {loading
-        ? <DownloadingLibrary />
-        : (
-          <FlatList
-            {...LIST_PERF_PROPS}
-            data={sorted}
-            keyExtractor={(item) => `${item.year}-${item._local ? 'l' : 's'}`}
-            renderItem={renderItem}
-            contentContainerStyle={s.listContent}
-            ListEmptyComponent={
-              <Text style={s.empty}>No years in library</Text>
-            }
-          />
-        )}
+      <FlatList
+        {...LIST_PERF_PROPS}
+        data={sorted}
+        keyExtractor={(item) => `${item.year}-${item._local ? 'l' : 's'}`}
+        renderItem={renderItem}
+        contentContainerStyle={s.listContent}
+        ListEmptyComponent={
+          loading ? null : <Text style={s.empty}>No years in library</Text>
+        }
+      />
     </View>
   );
 }
