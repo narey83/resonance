@@ -209,16 +209,7 @@ internal static class TransferListQuery
             throw new ArgumentOutOfRangeException(nameof(page));
         }
 
-        var completed = TransferStateCategories.Completed;
-        var pending = context.Database.IsSqlite()
-            ? context.Transfers.FromSqlRaw("SELECT * FROM \"Transfers\" WHERE \"Direction\"='Upload' AND \"Removed\"=0 AND (" + CompletedFlagSql + ")=0").AsNoTracking()
-            : context.Transfers.AsNoTracking().Where(t => t.Direction == TransferDirection.Upload && !t.Removed && !completed.Contains(t.State));
-        var users = pending.GroupBy(t => t.Username)
-            .Select(g => new UploadQueueUser(g.Key, g.Count(), g.Count(t => t.State == TransferStates.InProgress || t.State == TransferStates.Initializing))
-            {
-                SendingCount = g.Count(t => t.State == TransferStates.InProgress),
-            })
-            .ToList().OrderByDescending(u => u.WaitingCount).ThenByDescending(u => u.ActiveCount).ThenBy(u => u.Username, StringComparer.Ordinal).ToList();
+        var users = UploadQueueUsers(context);
         username ??= users.FirstOrDefault()?.Username;
         var total = users.FirstOrDefault(u => u.Username == username)?.PendingCount ?? 0;
         page = Math.Min(page, Math.Max(0, (total - 1) / pageSize));
@@ -226,6 +217,44 @@ internal static class TransferListQuery
         // An empty queue uses an impossible recipient predicate; completed history has its own page.
         var files = ListPage(context, TransferDirection.Upload, false, true, 0, page, pageSize, username ?? string.Empty);
         return new UploadQueueSnapshot(users, username, page, users.Sum(u => u.PendingCount), total, files.Transfers);
+    }
+
+    internal static UploadQueueSnapshot UploadQueueFolders(TransfersDbContext context, string username)
+    {
+        var users = UploadQueueUsers(context);
+        username ??= users.FirstOrDefault()?.Username;
+        var pending = PendingUploads(context).Where(t => t.Username == username);
+        var folders = pending.OrderBy(t => t.State == TransferStates.InProgress ? 0
+                : t.State == TransferStates.Initializing ? 1 : 2)
+            .ThenBy(t => t.RequestedAt).ThenBy(t => t.Id)
+            .Select(t => new { t.Filename, t.State })
+            .AsEnumerable()
+            .GroupBy(t => t.Filename.DirectoryName(), StringComparer.Ordinal)
+            .Select(group => new UploadQueueFolder(group.Key, group.Count(),
+                group.Count(t => t.State == TransferStates.InProgress || t.State == TransferStates.Initializing)))
+            .ToArray();
+        var active = pending.Where(t => t.State == TransferStates.InProgress || t.State == TransferStates.Initializing).ToList();
+        return new UploadQueueSnapshot(users, username, 0, users.Sum(u => u.PendingCount),
+            users.FirstOrDefault(u => u.Username == username)?.PendingCount ?? 0, active)
+        {
+            Folders = folders,
+        };
+    }
+
+    internal static List<Transfer> UploadQueueFolderTracks(TransfersDbContext context, string username, string directory)
+    {
+        var pending = PendingUploads(context).Where(t => t.Username == username);
+        if (directory.Length > 0)
+        {
+            var slashPrefix = directory + "/";
+            var backslashPrefix = directory + "\\";
+            pending = pending.Where(t => t.Filename.StartsWith(slashPrefix) || t.Filename.StartsWith(backslashPrefix));
+        }
+
+        // Keep the same separator and case rules as the summary, including mixed paths.
+        var ids = pending.Select(t => new { t.Id, t.Filename }).AsEnumerable()
+            .Where(t => t.Filename.DirectoryName() == directory).Select(t => t.Id).ToList();
+        return ids.Count == 0 ? [] : pending.Where(t => ids.Contains(t.Id)).ToList();
     }
 
     /// <summary>Reads aggregate counts without materializing the queued files.</summary>
@@ -255,6 +284,24 @@ internal static class TransferListQuery
             counts.Where(c => c.State == TransferStates.InProgress || c.State == TransferStates.Initializing).Sum(c => c.Count),
             counts.Where(c => TransferStateCategories.Queued.Contains(c.State) || c.State.ToString() == "Requested").Sum(c => c.Count),
             active);
+    }
+
+    private static IQueryable<Transfer> PendingUploads(TransfersDbContext context)
+    {
+        var completed = TransferStateCategories.Completed;
+        return context.Database.IsSqlite()
+            ? context.Transfers.FromSqlRaw("SELECT * FROM \"Transfers\" WHERE \"Direction\"='Upload' AND \"Removed\"=0 AND (" + CompletedFlagSql + ")=0").AsNoTracking()
+            : context.Transfers.AsNoTracking().Where(t => t.Direction == TransferDirection.Upload && !t.Removed && !completed.Contains(t.State));
+    }
+
+    private static List<UploadQueueUser> UploadQueueUsers(TransfersDbContext context)
+    {
+        return PendingUploads(context).GroupBy(t => t.Username)
+            .Select(g => new UploadQueueUser(g.Key, g.Count(), g.Count(t => t.State == TransferStates.InProgress || t.State == TransferStates.Initializing))
+            {
+                SendingCount = g.Count(t => t.State == TransferStates.InProgress),
+            })
+            .ToList().OrderByDescending(u => u.WaitingCount).ThenByDescending(u => u.ActiveCount).ThenBy(u => u.Username, StringComparer.Ordinal).ToList();
     }
 
     private static List<Transfer> ListSqlite(TransfersDbContext context, TransferDirection direction,

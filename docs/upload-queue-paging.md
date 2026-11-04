@@ -17,19 +17,23 @@ Parent path prefixes such as `downloads\` are omitted from the From line.
 It stays visible with folders closed and updates with the queue snapshot. An idle
 recipient gets a compact “Nothing uploading to this user right now” message.
 
-The frontend automatically assembles the selected recipient's complete queue from
-500-record transport pages, with at most two requests in flight. No partial list is
-published: IDs are deduplicated, the final count and leading identities are checked,
-and a moving queue is retried once. A failed reconciliation keeps the last complete
-view with a retry notice. The UI virtualizes individual track rows, so all records
-are scrollable without mounting thousands of DOM elements.
+The frontend loads the selected recipient's folder counts and active tracks in
+one request. Expanding a folder fetches its unfinished tracks automatically.
+The browser virtualizes folder and track rows, and refreshes open folders when
+their counts change and periodically while they remain open. Recipient changes,
+collapsing folders and navigation cancel obsolete detail requests. Hidden tabs
+pause polling. The active progress shown in expanded rows comes from the same
+response as Uploading now.
 
-Unchanged membership is reused for up to 30 seconds while the leading sample
-refreshes active progress. Changed counts, new sampled IDs or a previously active
-ID missing from the sample force a complete reload. Periodic reconciliation catches
-membership changes whose total stayed the same. Recipient changes and navigation
-abort unfinished requests; hidden tabs pause polling. Only the selected recipient's
-full files are loaded; other recipients still use compact aggregate counts.
+`GET /api/v0/transfers/upload-queue?folders=true` includes the recipient totals
+and a `folders` array with the exact path, pending track count and active count
+for each folder. Only sending and connecting tracks are included in
+`transfers`. `GET /api/v0/transfers/upload-queue?username=peer&folder=/album`
+returns all unfinished tracks in that exact folder. The folder key starts with
+an extra slash so `folder=/` selects tracks whose directory is empty.
+
+The web client falls back to assembling the full recipient queue from bounded
+pages when it connects to an older backend.
 
 Legacy API contracts remain available:
 
@@ -84,8 +88,8 @@ Browser performance boundaries:
 
 - Process queues and analysis on the server; opening a page must not fetch a queue
   proportional to its entire backlog just to display totals.
-- Fetch transport pages with bounded concurrency for the selected recipient; render
-  individual virtual rows for the complete list.
+- Load folder summaries and active uploads first. Fetch the tracks in open
+  folders and render them as virtual rows.
 - Share small status samples, serialize polls, pause hidden tabs, and cancel
   obsolete requests so background UI refreshes cannot pile up.
 - Start audio from the user's playback request independently of transfer refreshes

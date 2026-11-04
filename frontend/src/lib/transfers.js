@@ -84,12 +84,13 @@ const isQueueCount = (value) => Number.isSafeInteger(value) && value >= 0;
 
 export const getUploadsQueue = async ({
   username,
+  folders,
   page = 0,
   pageSize = 250,
   signal,
 } = {}) => {
   const { data } = await api.get('/transfers/upload-queue', {
-    params: { username: username ?? undefined, page, pageSize },
+    params: { username: username ?? undefined, page, pageSize, folders },
     signal,
     timeout: 10_000,
   });
@@ -115,6 +116,16 @@ export const getUploadsQueue = async ({
     throw new Error('Invalid upload recipient queue response');
   }
 
+  return data;
+};
+
+export const getUploadFolder = async ({ directory, signal, username }) => {
+  const { data } = await api.get('/transfers/upload-queue', {
+    params: { username, folder: `/${directory}` },
+    signal,
+    timeout: 10_000,
+  });
+  if (!Array.isArray(data)) throw new Error('Invalid upload folder response');
   return data;
 };
 

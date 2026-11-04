@@ -274,6 +274,12 @@ namespace resonance.Transfers.API
                 return Forbid();
             }
 
+            // Model binding converts empty or whitespace values to null.
+            if (directory is null && Request?.Query.TryGetValue("directory", out var suppliedDirectory) == true)
+            {
+                directory = suppliedDirectory.ToString();
+            }
+
             var matches = Transfers.Uploads.List(t => t.Username == username, includeRemoved: false)
                 .Where(t => !TransferStateCategories.Completed.Contains(t.State))
                 .Where(t => directory is null || t.Filename.DirectoryName() == directory)
@@ -708,7 +714,7 @@ namespace resonance.Transfers.API
         [HttpGet("upload-queue")]
         [Authorize(Policy = AuthPolicy.Any)]
         [ProducesResponseType(200)]
-        public async Task<IActionResult> GetUploadQueue([FromQuery] string username = null, [FromQuery] int page = 0, [FromQuery] int pageSize = 250)
+        public async Task<IActionResult> GetUploadQueue([FromQuery] string username = null, [FromQuery] int page = 0, [FromQuery] int pageSize = 250, [FromQuery] bool folders = false, [FromQuery] string folder = null)
         {
             if (Program.IsRelayAgent)
             {
@@ -720,6 +726,12 @@ namespace resonance.Transfers.API
                 return BadRequest(new { code = "invalid_pagination", message = "Page must be nonnegative and page size must be between 1 and 500." });
             }
 
+            // The leading slash marks an explicit folder, including the empty root folder.
+            if (folder is not null && (folders || string.IsNullOrWhiteSpace(username) || !folder.StartsWith('/')))
+            {
+                return BadRequest(new { code = "invalid_folder", message = "A recipient and folder key are required." });
+            }
+
             if (!await ListRequestLimiter.WaitAsync(TimeSpan.FromMilliseconds(500), HttpContext?.RequestAborted ?? CancellationToken.None))
             {
                 Response.Headers.RetryAfter = "2";
@@ -728,7 +740,14 @@ namespace resonance.Transfers.API
 
             try
             {
-                var result = Transfers.Uploads.ListQueuePage(username, page, pageSize);
+                if (folder is not null)
+                {
+                    return Ok(Transfers.Uploads.ListQueueFolderTracks(username, folder[1..]));
+                }
+
+                var result = folders
+                    ? Transfers.Uploads.ListQueueFolders(username)
+                    : Transfers.Uploads.ListQueuePage(username, page, pageSize);
                 var transfers = result.Transfers.GroupBy(t => t.Username).Select(group => new UserResponse
                 {
                     Username = group.Key,
@@ -739,6 +758,11 @@ namespace resonance.Transfers.API
                         Files = directory.ToList(),
                     }),
                 });
+                if (folders)
+                {
+                    return Ok(new { result.Users, result.Username, result.Page, result.TotalPending, result.UserTotalPending, Transfers = transfers, result.Folders });
+                }
+
                 return Ok(new { result.Users, result.Username, result.Page, result.TotalPending, result.UserTotalPending, Transfers = transfers });
             }
             finally

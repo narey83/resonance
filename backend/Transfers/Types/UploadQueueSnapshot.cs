@@ -62,4 +62,14 @@ public sealed record UploadQueueUser(string Username, int PendingCount, int Acti
 /// <param name="UserTotalPending">Unfinished requests for the selected recipient.</param>
 /// <param name="Transfers">Selected pending tracks.</param>
 public sealed record UploadQueueSnapshot(IReadOnlyList<UploadQueueUser> Users, string Username, int Page,
-    int TotalPending, int UserTotalPending, List<Transfer> Transfers);
+    int TotalPending, int UserTotalPending, List<Transfer> Transfers)
+{
+    /// <summary>Gets folder counts for the selected recipient when requested.</summary>
+    public IReadOnlyList<UploadQueueFolder> Folders { get; init; }
+}
+
+/// <summary>Counts for one folder in a recipient's pending queue.</summary>
+/// <param name="Directory">The exact folder path.</param>
+/// <param name="FileCount">The number of pending tracks.</param>
+/// <param name="ActiveCount">The number of sending and connecting tracks.</param>
+public sealed record UploadQueueFolder(string Directory, int FileCount, int ActiveCount);

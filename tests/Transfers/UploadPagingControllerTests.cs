@@ -2,6 +2,7 @@ namespace Resonance.Tests.Transfers;
 
 using global::resonance.Transfers;
 using global::resonance.Transfers.API;
+using Transfer = global::resonance.Transfers.Transfer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
@@ -49,6 +50,42 @@ public sealed partial class UploadEnqueueTests
         Assert.Equal(2, json.RootElement.GetProperty("users").GetArrayLength());
         Assert.All(json.RootElement.GetProperty("transfers").EnumerateArray(), user => Assert.Equal("peer", user.GetProperty("username").GetString()));
         Assert.Equal(5, json.RootElement.GetProperty("transfers").EnumerateArray().SelectMany(user => user.GetProperty("directories").EnumerateArray()).Sum(directory => directory.GetProperty("files").GetArrayLength()));
+    }
+
+    [Fact]
+    public async Task Folder_Summary_And_Expansion_Keep_Exact_Paths_And_Recipient_Scopes()
+    {
+        await using var service = CreateService([]);
+        QueueTransfer("peer", "album/a.mp3");
+        QueueTransfer("peer", "album\\b.mp3");
+        QueueTransfer("peer", "album/sub/c.mp3");
+        QueueTransfer("peer", "Album/d.mp3");
+        QueueTransfer("peer", "root.mp3");
+        QueueTransfer("other", "album/a.mp3");
+        var controller = new TransfersController(new TransferService(service), null!, null!, null!, null!)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
+        };
+        var result = Assert.IsType<OkObjectResult>(await controller.GetUploadQueue(folders: true));
+        using var json = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(result.Value, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)));
+        Assert.Equal("peer", json.RootElement.GetProperty("username").GetString());
+        Assert.Equal(0, json.RootElement.GetProperty("transfers").GetArrayLength());
+        var folders = json.RootElement.GetProperty("folders").EnumerateArray().ToDictionary(
+            folder => folder.GetProperty("directory").GetString()!,
+            folder => folder.GetProperty("fileCount").GetInt32());
+        Assert.Equal(4, folders.Count);
+        Assert.Equal(2, folders["album"]);
+        Assert.Equal(1, folders["album/sub"]);
+        Assert.Equal(1, folders["Album"]);
+        Assert.Equal(1, folders[string.Empty]);
+
+        var album = Assert.IsType<OkObjectResult>(await controller.GetUploadQueue(username: "peer", folder: "/album"));
+        var tracks = Assert.IsType<List<Transfer>>(album.Value);
+        Assert.Equal(2, tracks.Count);
+        Assert.All(tracks, track => Assert.Equal("peer", track.Username));
+        var root = Assert.IsType<OkObjectResult>(await controller.GetUploadQueue(username: "peer", folder: "/"));
+        Assert.Equal("root.mp3", Assert.Single(Assert.IsType<List<Transfer>>(root.Value)).Filename);
+        Assert.IsType<BadRequestObjectResult>(await controller.GetUploadQueue(folder: "/album"));
     }
 
     [Fact]

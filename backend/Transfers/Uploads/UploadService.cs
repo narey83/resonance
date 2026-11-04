@@ -168,6 +168,14 @@ namespace resonance.Transfers.Uploads
         /// <returns>Full recipient counts and bounded transfer details.</returns>
         UploadQueueSnapshot ListQueuePage(string username, int page, int pageSize);
 
+        /// <summary>Lists folder counts and active uploads for one recipient.</summary>
+        /// <returns>The compact upload queue snapshot.</returns>
+        UploadQueueSnapshot ListQueueFolders(string username);
+
+        /// <summary>Lists all pending tracks in an exact folder for one recipient.</summary>
+        /// <returns>The pending tracks.</returns>
+        List<Transfer> ListQueueFolderTracks(string username, string directory);
+
         /// <summary>Lists dangling transfers, including removed records, for startup recovery.</summary>
         /// <returns>Transfers that are unfinished or lack a completed state, including removed records.</returns>
         List<Transfer> ListForRecovery() => List(t => t.EndedAt == null || !TransferStateCategories.Completed.Contains(t.State), includeRemoved: true);
@@ -851,10 +859,21 @@ namespace resonance.Transfers.Uploads
         {
             using var context = ContextFactory.CreateDbContext();
             var snapshot = TransferListQuery.UploadQueuePage(context, username, page, pageSize);
-            return snapshot with
-            {
-                Users = snapshot.Users.Select(user => user with { RetryAt = PeerCooldown.GetRetryAt(user.Username) }).ToArray(),
-            };
+            return WithCooldowns(snapshot);
+        }
+
+        /// <inheritdoc/>
+        public UploadQueueSnapshot ListQueueFolders(string username)
+        {
+            using var context = ContextFactory.CreateDbContext();
+            return WithCooldowns(TransferListQuery.UploadQueueFolders(context, username));
+        }
+
+        /// <inheritdoc/>
+        public List<Transfer> ListQueueFolderTracks(string username, string directory)
+        {
+            using var context = ContextFactory.CreateDbContext();
+            return TransferListQuery.UploadQueueFolderTracks(context, username, directory);
         }
 
         /// <inheritdoc/>
@@ -1280,6 +1299,14 @@ namespace resonance.Transfers.Uploads
             }
 
             return false;
+        }
+
+        private UploadQueueSnapshot WithCooldowns(UploadQueueSnapshot snapshot)
+        {
+            return snapshot with
+            {
+                Users = snapshot.Users.Select(user => user with { RetryAt = PeerCooldown.GetRetryAt(user.Username) }).ToArray(),
+            };
         }
 
         private async Task<UploadAttempt> UploadAttemptAsync(Transfer transfer, CancellationToken cancellationToken)

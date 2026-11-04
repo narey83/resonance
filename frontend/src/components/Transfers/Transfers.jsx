@@ -149,9 +149,8 @@ const cancelUserDownloads = async ({ directories, username }) => {
   await Promise.all(active.map((d) => deleteLocalFolder(d.directory)));
 };
 
-const cancelUploadDirectory = async ({ directory, files, username }) => {
-  const count = files.filter(isActive).length;
-  if (count === 0) return;
+const cancelUploadDirectory = async ({ directory, fileCount, username }) => {
+  if (fileCount === 0) return;
   if (
     !window.confirm(
       `Cancel all queued/active uploads of this folder to ${username}? This folder will be permanently denied to them — they won't be able to request it again.`,
@@ -164,12 +163,8 @@ const cancelUploadDirectory = async ({ directory, files, username }) => {
     .catch(() => {});
 };
 
-const cancelUserUploads = async ({ directories, username }) => {
-  const count = directories.reduce(
-    (n, d) => n + d.files.filter(isActive).length,
-    0,
-  );
-  if (count === 0) return;
+const cancelUserUploads = async ({ fileCount, username }) => {
+  if (fileCount === 0) return;
   if (
     !window.confirm(
       `Cancel all queued/active uploads to ${username}? They can request them again later.`,
@@ -216,15 +211,16 @@ const Transfers = ({ direction }) => {
 
   const [connecting, setConnecting] = useState(true);
   const [transfers, setTransfers] = useState([]);
+  const [uploadFolders, setUploadFolders] = useState(null);
   const [queueUsers, setQueueUsers] = useState([]);
   const [requestedUploadUser, setRequestedUploadUser] = useState(null);
   const [selectedUploadUser, setSelectedUploadUser] = useState(null);
   const [loadError, setLoadError] = useState(false);
   const [findAlternate, setFindAlternate] = useState(null);
   const replacementsRef = useRef([]);
-  const completeUploadRef = useRef(null);
-  const rememberCompleteUpload = useCallback((snapshot) => {
-    completeUploadRef.current = snapshot;
+  const uploadQueueRef = useRef(null);
+  const rememberUploadQueue = useCallback((snapshot) => {
+    uploadQueueRef.current = snapshot;
   }, []);
 
   useEffect(() => {
@@ -235,6 +231,7 @@ const Transfers = ({ direction }) => {
     let controller;
     setConnecting(true);
     setTransfers([]);
+    setUploadFolders(null);
     setLoadError(false);
 
     const poll = async () => {
@@ -259,18 +256,34 @@ const Transfers = ({ direction }) => {
             setSelectedUploadUser(username);
           };
 
-          const result = await getCompleteUploadsQueue({
-            username:
-              requestedUploadUser ?? completeUploadRef.current?.username,
-            previous: completeUploadRef.current,
-            onSummary: (summary) => {
-              if (mounted && !hasCompleteUpload) updateSummary(summary);
-            },
-            signal: controller.signal,
-          });
-          response = result.transfers;
+          const previous = uploadQueueRef.current;
+          const recipient = requestedUploadUser ?? previous?.username;
+          let result;
+          if (!previous || Array.isArray(previous.folders)) {
+            result = await transfersLibrary.getUploadsQueue({
+              folders: true,
+              pageSize: 1,
+              signal: controller.signal,
+              username: recipient,
+            });
+          }
+
+          // The web and backend can be updated independently.
+          if (mounted && !Array.isArray(result?.folders)) {
+            result = await getCompleteUploadsQueue({
+              onSummary: (summary) => {
+                if (mounted && !hasCompleteUpload) updateSummary(summary);
+              },
+              previous,
+              signal: controller.signal,
+              username: recipient,
+            });
+          }
+
+          response = result?.transfers;
           if (mounted) {
-            rememberCompleteUpload(result);
+            rememberUploadQueue(result);
+            setUploadFolders(result.folders ?? null);
             hasCompleteUpload = true;
             updateSummary(result);
           }
@@ -418,6 +431,7 @@ const Transfers = ({ direction }) => {
         )}
         {(!loadError || queueUsers.length > 0) && (
           <UploadsTable
+            folders={uploadFolders}
             onCancel={cancel}
             onCancelDirectory={cancelUploadDirectory}
             onCancelUser={cancelUserUploads}

@@ -1,8 +1,14 @@
+import { getUploadFolder } from '../../lib/transfers';
 import { getStatuses } from '../../lib/users';
 import UploadsTable from './UploadsTable';
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { act, Simulate } from 'react-dom/test-utils';
+
+jest.mock('../../lib/transfers', () => ({
+  ...jest.requireActual('../../lib/transfers'),
+  getUploadFolder: jest.fn(),
+}));
 
 jest.mock('../../lib/users', () => ({
   getStatuses: jest.fn().mockResolvedValue({}),
@@ -253,6 +259,34 @@ describe('One complete upload list and one user header', () => {
     expect(container.querySelector('[data-file-id="one"]')).not.toBeNull();
     expect(container.querySelectorAll('.test-user-controls')).toHaveLength(1);
   });
+  it('shows folder counts and live uploads before requesting the expanded tracks', async () => {
+    expect.hasAssertions();
+    getUploadFolder.mockResolvedValueOnce([
+      file('waiting'),
+      file('sending', 'InProgress'),
+    ]);
+    await render({
+      folders: [{ directory: 'Music/Album', fileCount: 2, activeCount: 1 }],
+      transfers: transfers([file('sending', 'InProgress')]),
+    });
+
+    expect(container.querySelector('.ul-folder-toggle').textContent).toContain(
+      '2 tracks',
+    );
+    expect(
+      container.querySelector('[data-current-upload-id="sending"]'),
+    ).not.toBeNull();
+    expect(getUploadFolder).not.toHaveBeenCalled();
+    await act(async () => {
+      Simulate.click(container.querySelector('.ul-folder-toggle'));
+    });
+    expect(getUploadFolder).toHaveBeenCalledWith({
+      directory: 'Music/Album',
+      signal: expect.any(AbortSignal),
+      username: 'listener',
+    });
+    expect(container.querySelector('[data-file-id="waiting"]')).not.toBeNull();
+  });
   it('keeps whole-user cancellation beside the single header', async () => {
     expect.hasAssertions();
     const onCancelUser = jest.fn();
@@ -265,7 +299,7 @@ describe('One complete upload list and one user header', () => {
     );
     expect(onCancelUser).toHaveBeenCalledWith({
       username: 'listener',
-      directories: [{ directory: 'Music/Album', files }],
+      fileCount: 2,
     });
   });
   it('preserves individual file and permanent folder-block actions', async () => {
@@ -289,7 +323,7 @@ describe('One complete upload list and one user header', () => {
     expect(onCancelDirectory).toHaveBeenCalledWith({
       username: 'listener',
       directory: 'Music/Album',
-      files: [track],
+      fileCount: 1,
     });
   });
   it('shows live progress in the same list while excluding finished records', async () => {

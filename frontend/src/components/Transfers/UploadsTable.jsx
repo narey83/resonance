@@ -26,7 +26,7 @@
 //   │ SPDX-License-Identifier: AGPL-3.0-only
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
-import { isStateCancellable } from '../../lib/transfers';
+import { getUploadFolder, isStateCancellable } from '../../lib/transfers';
 import { getStatuses } from '../../lib/users';
 import { formatBitrate, formatBytes, getFileName } from '../../lib/util';
 import { UsernameLink } from '../Shared';
@@ -171,7 +171,62 @@ const useWaitingPresence = (waitingUsers) => {
   return statuses;
 };
 
+const useFolderTracks = (username, expanded, folders) => {
+  const openFolders = JSON.stringify(
+    (folders ?? []).filter(({ directory }) => expanded.folders.has(directory)),
+  );
+  const [details, setDetails] = useState(null);
+
+  useEffect(() => {
+    const open = JSON.parse(openFolders);
+    if (expanded.username !== username || open.length === 0) return undefined;
+
+    const controller = new AbortController();
+    let timer;
+    const refresh = async () => {
+      let failed = false;
+      for (const { directory } of open) {
+        if (controller.signal.aborted || document.hidden) break;
+        let result;
+        try {
+          const files = await getUploadFolder({
+            directory,
+            signal: controller.signal,
+            username,
+          });
+          result = { files: files.filter(isPending).sort(byStateThenTime) };
+        } catch {
+          failed = true;
+          result = { failed: true };
+        }
+
+        if (controller.signal.aborted) return;
+        setDetails((previous) => {
+          const loaded = new Map(
+            previous?.username === username ? previous.folders : [],
+          );
+          const files = result.files ?? loaded.get(directory)?.files;
+          loaded.set(directory, { ...result, files });
+          return { folders: loaded, username };
+        });
+      }
+
+      if (!controller.signal.aborted)
+        timer = setTimeout(refresh, failed ? 2_000 : 30_000);
+    };
+
+    refresh();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [expanded.username, openFolders, username]);
+
+  return details?.username === username ? details?.folders : null;
+};
+
 const UploadsTable = ({
+  folders,
   onCancel,
   onCancelDirectory,
   onCancelUser,
@@ -217,7 +272,7 @@ const UploadsTable = ({
       users: waitingUsers,
     },
   ];
-  const user = useMemo(
+  const transferDetails = useMemo(
     () => ({
       username: selectedUsername,
       directories: (transfers ?? [])
@@ -233,10 +288,14 @@ const UploadsTable = ({
     }),
     [selectedUsername, transfers],
   );
-  const activeFiles = user.directories.flatMap((directory) =>
-    directory.files
-      .filter(isSending)
-      .map((file) => ({ file, sourceFolder: directory.directory })),
+  const activeFiles = useMemo(
+    () =>
+      transferDetails.directories.flatMap((directory) =>
+        directory.files
+          .filter(isSending)
+          .map((file) => ({ file, sourceFolder: directory.directory })),
+      ),
+    [transferDetails],
   );
   const [expanded, setExpanded] = useState({
     username: null,
@@ -244,33 +303,57 @@ const UploadsTable = ({
   });
   const toggleFolder = (directory) => {
     setExpanded((previous) => {
-      const folders = new Set(
+      const open = new Set(
         previous.username === selectedUsername ? previous.folders : [],
       );
-      if (folders.has(directory)) folders.delete(directory);
-      else folders.add(directory);
-      return { username: selectedUsername, folders };
+      if (open.has(directory)) open.delete(directory);
+      else open.add(directory);
+      return { username: selectedUsername, folders: open };
     });
   };
 
+  const folderTracks = useFolderTracks(selectedUsername, expanded, folders);
+  const directories = useMemo(
+    () =>
+      folders ??
+      transferDetails.directories.map((directory) => ({
+        ...directory,
+        activeCount: directory.files.filter(isSending).length,
+        fileCount: directory.files.length,
+      })),
+    [folders, transferDetails],
+  );
+  const activeById = useMemo(
+    () => new Map(activeFiles.map(({ file }) => [file.id, file])),
+    [activeFiles],
+  );
   const rows = useMemo(
     () =>
-      user.directories.flatMap((directory) => [
+      directories.flatMap((directory) => [
         { key: `folder-${directory.directory}`, type: 'folder', directory },
         ...(expanded.username === selectedUsername &&
         expanded.folders.has(directory.directory)
-          ? directory.files
+          ? (folders
+              ? folderTracks?.get(directory.directory)?.files
+              : directory.files) ?? []
           : []
         ).map((file) => ({
           key: file.id,
           type: 'file',
-          file,
+          file: activeById.get(file.id) ?? file,
         })),
       ]),
-    [expanded, selectedUsername, user],
+    [
+      activeById,
+      directories,
+      expanded,
+      folderTracks,
+      folders,
+      selectedUsername,
+    ],
   );
-  const fileCount = user.directories.reduce(
-    (sum, directory) => sum + directory.files.length,
+  const fileCount = directories.reduce(
+    (sum, directory) => sum + directory.fileCount,
     0,
   );
   const scrollRef = useRef(null);
@@ -379,7 +462,9 @@ const UploadsTable = ({
             {fileCount > 0 && (
               <button
                 className="ul-quick-btn ul-quick-btn--cancel"
-                onClick={() => onCancelUser(user)}
+                onClick={() =>
+                  onCancelUser({ fileCount, username: selectedUsername })
+                }
                 type="button"
               >
                 Cancel all uploads
@@ -523,30 +608,47 @@ const UploadsTable = ({
                                   .at(-1) ?? row.directory.directory}
                               </strong>
                               <span>
-                                {row.directory.files.length.toLocaleString()}{' '}
+                                {row.directory.fileCount.toLocaleString()}{' '}
                                 tracks
                               </span>
-                              {row.directory.files.some(isSending) && (
+                              {folders &&
+                                expanded.username === selectedUsername &&
+                                expanded.folders.has(
+                                  row.directory.directory,
+                                ) && (
+                                  <span role="status">
+                                    {folderTracks?.get(row.directory.directory)
+                                      ?.failed
+                                      ? 'Unable to load tracks. Retrying…'
+                                      : !folderTracks?.get(
+                                            row.directory.directory,
+                                          )?.files
+                                        ? 'Loading tracks…'
+                                        : null}
+                                  </span>
+                                )}
+                              {row.directory.activeCount > 0 && (
                                 <span>
-                                  {row.directory.files.filter(isSending).length}{' '}
-                                  sending/connecting
+                                  {row.directory.activeCount} sending/connecting
                                 </span>
                               )}
                             </button>
-                            <button
-                              className="ul-folder-block"
-                              onClick={() =>
-                                onCancelDirectory({
-                                  directory: row.directory.directory,
-                                  files: row.directory.files,
-                                  username: selectedUsername,
-                                })
-                              }
-                              title="Cancel all requests for this folder and permanently block it for this person"
-                              type="button"
-                            >
-                              Block folder
-                            </button>
+                            {(folders || row.directory.directory.trim()) && (
+                              <button
+                                className="ul-folder-block"
+                                onClick={() =>
+                                  onCancelDirectory({
+                                    directory: row.directory.directory,
+                                    fileCount: row.directory.fileCount,
+                                    username: selectedUsername,
+                                  })
+                                }
+                                title="Cancel all requests for this folder and permanently block it for this person"
+                                type="button"
+                              >
+                                Block folder
+                              </button>
+                            )}
                           </div>
                         ) : (
                           <FileCells
