@@ -54,6 +54,11 @@ async function syncCookies() {
   if (!serverUrl || !apiKey) return;
 
   try {
+    const server = new URL(serverUrl);
+    if (server.protocol !== 'https:' || server.username || server.password || server.search || server.hash) {
+      throw new Error('Cookie sync requires an HTTPS server URL without embedded credentials, query or fragment.');
+    }
+
     const cookies = await chrome.cookies.getAll({ domain: '.youtube.com' });
     const lines = ['# Netscape HTTP Cookie File'];
     for (const c of cookies) {
@@ -68,6 +73,7 @@ async function syncCookies() {
 
     const response = await fetch(`${serverUrl.replace(/\/$/, '')}/api/v0/ytdlp/cookies`, {
       method: 'POST',
+      redirect: 'error',
       headers: { 'X-API-Key': apiKey },
       body: formData,
     });

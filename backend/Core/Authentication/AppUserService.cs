@@ -31,6 +31,7 @@ namespace resonance.Authentication;
 
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Cryptography.KeyDerivation;
@@ -64,26 +65,32 @@ public class AppUserService
         return db.Users.Any();
     }
 
+    public AppUser? TryCreateInitialAdministrator(string username, string password)
+    {
+        try
+        {
+            using var db = ContextFactory.CreateDbContext();
+            using var transaction = db.Database.BeginTransaction(IsolationLevel.Serializable);
+            if (db.Users.Any())
+            {
+                return null;
+            }
+
+            var user = Create(db, username, password, Role.Administrator, null);
+            transaction.Commit();
+            return user;
+        }
+        catch (DbUpdateException) when (IsInitialized())
+        {
+            // A concurrent setup committed the first account.
+            return null;
+        }
+    }
+
     public AppUser Create(string username, string password, Role role = Role.ReadWrite, string fullName = null)
     {
         using var db = ContextFactory.CreateDbContext();
-
-        if (db.Users.Any(u => u.Username == username))
-        {
-            throw new InvalidOperationException($"A user with the name '{username}' already exists");
-        }
-
-        var user = new AppUser
-        {
-            Username = username,
-            PasswordHash = HashPassword(password),
-            Role = role,
-            FullName = string.IsNullOrWhiteSpace(fullName) ? null : fullName.Trim(),
-        };
-
-        db.Users.Add(user);
-        db.SaveChanges();
-        return user;
+        return Create(db, username, password, role, fullName);
     }
 
     /// <summary>Returns the authenticated user, or null if credentials are invalid.</summary>
@@ -195,6 +202,26 @@ public class AppUserService
 
         db.Users.Remove(user);
         db.SaveChanges();
+    }
+
+    private static AppUser Create(UsersDbContext db, string username, string password, Role role, string fullName)
+    {
+        if (db.Users.Any(u => u.Username == username))
+        {
+            throw new InvalidOperationException($"A user with the name '{username}' already exists");
+        }
+
+        var user = new AppUser
+        {
+            Username = username,
+            PasswordHash = HashPassword(password),
+            Role = role,
+            FullName = string.IsNullOrWhiteSpace(fullName) ? null : fullName.Trim(),
+        };
+
+        db.Users.Add(user);
+        db.SaveChanges();
+        return user;
     }
 
     private static string HashPassword(string password)

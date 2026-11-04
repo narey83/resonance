@@ -41,6 +41,7 @@ namespace resonance
     public static class AuthPolicy
     {
         public const string JwtOnly = "Jwt";
+        public const string UserSession = "UserSession";
         public const string ApiKeyOnly = "ApiKey";
         public const string Any = "Any";
 

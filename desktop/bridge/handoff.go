@@ -3,6 +3,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 )
 
@@ -17,12 +18,16 @@ func documentView(c *connection) string {
 }
 func (h *helper) handoffRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/handoff", func(w http.ResponseWriter, r *http.Request) {
+		sealed, e := io.ReadAll(http.MaxBytesReader(w, r.Body, 65536+64))
+		var data []byte
+		if e == nil {
+			data, e = openHandoff(h.HandoffKey, sealed)
+		}
 		var c connection
-		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 65536)).Decode(&c) != nil {
-			jsonReply(w, 400, map[string]string{"error": "invalid Resonance handoff file"})
+		if e != nil || json.Unmarshal(data, &c) != nil {
+			jsonReply(w, 400, map[string]string{"error": "Update and restart the Bridge app to use private handoffs."})
 			return
 		}
-		var e error
 		if isUSB(c) {
 			e = h.receiveUSB(c)
 		} else {

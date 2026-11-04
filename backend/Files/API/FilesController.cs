@@ -100,7 +100,8 @@ namespace resonance.Files.API
                     .Replace('/', Path.DirectorySeparatorChar)
                     .TrimStart(Path.DirectorySeparatorChar)));
 
-            if (!localPath.StartsWith(downloadsRoot + Path.DirectorySeparatorChar) && localPath != downloadsRoot)
+            localPath = FileService.ResolveManagedPath([downloadsRoot], localPath, allowRoot: false);
+            if (localPath == null)
             {
                 return Forbid();
             }
@@ -170,7 +171,7 @@ namespace resonance.Files.API
         /// <response code="403">Access to the specified subdirectory was denied.</response>
         /// <response code="404">The specified subdirectory does not exist.</response>
         [HttpDelete("downloads/directories/{base64SubdirectoryName}")]
-        [Authorize(Policy = AuthPolicy.Any)]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [ProducesResponseType(204)]
         public Task<IActionResult> DeleteDownloadSubdirectoryAsync([FromRoute] string base64SubdirectoryName)
             => DeleteSubdirectoryAsync(rootDirectory: OptionsSnapshot.Value.Directories.Downloads, base64SubdirectoryName);
@@ -185,7 +186,7 @@ namespace resonance.Files.API
         /// <response code="403">Access to the specified subdirectory was denied.</response>
         /// <response code="404">The specified subdirectory does not exist.</response>
         [HttpDelete("downloads/files/{base64FileName}")]
-        [Authorize(Policy = AuthPolicy.Any)]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [ProducesResponseType(204)]
         public Task<IActionResult> DeleteDownloadFileAsync([FromRoute] string base64FileName)
             => DeleteFileAsync(rootDirectory: OptionsSnapshot.Value.Directories.Downloads, base64FileName);
@@ -229,7 +230,7 @@ namespace resonance.Files.API
         /// <response code="403">Access to the specified subdirectory was denied.</response>
         /// <response code="404">The specified subdirectory does not exist.</response>
         [HttpDelete("incomplete/directories/{base64SubdirectoryName}")]
-        [Authorize(Policy = AuthPolicy.Any)]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [ProducesResponseType(204)]
         public Task<IActionResult> DeleteIncompleteSubdirectoryAsync([FromRoute] string base64SubdirectoryName)
             => DeleteSubdirectoryAsync(rootDirectory: OptionsSnapshot.Value.Directories.Incomplete, base64SubdirectoryName);
@@ -244,7 +245,7 @@ namespace resonance.Files.API
         /// <response code="403">Access to the specified subdirectory was denied.</response>
         /// <response code="404">The specified subdirectory does not exist.</response>
         [HttpDelete("incomplete/files/{base64FileName}")]
-        [Authorize(Policy = AuthPolicy.Any)]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
         [ProducesResponseType(204)]
         public Task<IActionResult> DeleteIncompleteFileAsync([FromRoute] string base64FileName)
             => DeleteFileAsync(rootDirectory: OptionsSnapshot.Value.Directories.Incomplete, base64FileName);
@@ -254,7 +255,7 @@ namespace resonance.Files.API
         /// </summary>
         /// <returns></returns>
         [HttpGet("directories")]
-        [Authorize(Policy = AuthPolicy.Any)]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
         [ProducesResponseType(200)]
         [ProducesResponseType(401)]
         [ProducesResponseType(404)]
@@ -300,7 +301,7 @@ namespace resonance.Files.API
         /// </summary>
         /// <returns></returns>
         [HttpPost("directories")]
-        [Authorize(Policy = AuthPolicy.Any)]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.AdministratorOnly)]
         [ProducesResponseType(200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(401)]
@@ -345,7 +346,7 @@ namespace resonance.Files.API
                     directory: requestedDir,
                     enumerationOptions: new EnumerationOptions
                     {
-                        AttributesToSkip = FileAttributes.System,
+                        AttributesToSkip = FileAttributes.System | FileAttributes.ReparsePoint,
                         RecurseSubdirectories = recursive,
                     });
 

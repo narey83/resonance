@@ -137,6 +137,31 @@ namespace resonance.Dlna
             httpListener?.Close();
         }
 
+        internal static Uri? ParseCallbackUrl(string? header, IPAddress peer)
+        {
+            if (string.IsNullOrEmpty(header))
+            {
+                return null;
+            }
+
+            var start = header.IndexOf('<');
+            var end = header.IndexOf('>');
+            if (start != 0 || end != header.Length - 1 ||
+                !Uri.TryCreate(header[1..end], UriKind.Absolute, out var callback) ||
+                (callback.Scheme != Uri.UriSchemeHttp && callback.Scheme != Uri.UriSchemeHttps) ||
+                callback.UserInfo.Length != 0 || IPAddress.IsLoopback(peer))
+            {
+                return null;
+            }
+
+            if (IPAddress.TryParse(callback.DnsSafeHost, out var address) && !address.MapToIPv6().Equals(peer.MapToIPv6()))
+            {
+                return null;
+            }
+
+            return callback;
+        }
+
         private static string? ExtractHeader(string message, string header)
         {
             var prefix = header + ":";
@@ -232,18 +257,6 @@ namespace resonance.Dlna
 
             ArtCache[localPath] = MakeThumbnail(pic.Data.Data);
         });
-
-        private static string? ParseCallbackUrl(string? header)
-        {
-            if (string.IsNullOrEmpty(header))
-            {
-                return null;
-            }
-
-            var start = header.IndexOf('<');
-            var end = header.IndexOf('>');
-            return start >= 0 && end > start ? header[(start + 1)..end] : null;
-        }
 
         private static async Task ServeXmlAsync(HttpListenerResponse resp, string xml)
         {
@@ -413,7 +426,8 @@ namespace resonance.Dlna
                 {
                     await ServeArtworkAsync(context);
                 }
-                else if (req.HttpMethod == "SUBSCRIBE" || req.HttpMethod == "UNSUBSCRIBE")
+                else if ((req.HttpMethod == "SUBSCRIBE" || req.HttpMethod == "UNSUBSCRIBE") &&
+                    (path == "/ContentDirectory/events" || path == "/ConnectionManager/events"))
                 {
                     HandleSubscribe(context);
                 }
@@ -882,25 +896,43 @@ namespace resonance.Dlna
 
         private void HandleSubscribe(HttpListenerContext context)
         {
-            var callbackHeader = context.Request.Headers["CALLBACK"];
-            var sid = $"uuid:{Guid.NewGuid()}";
-            log.Information("DLNA SUBSCRIBE callback={Callback}", callbackHeader);
+            if (context.Request.HttpMethod == "UNSUBSCRIBE")
+            {
+                context.Response.StatusCode = 200;
+                context.Response.Close();
+                return;
+            }
 
+            var callbackHeader = context.Request.Headers["CALLBACK"];
+            var existingSid = context.Request.Headers["SID"];
+            if (callbackHeader == null && existingSid?.StartsWith("uuid:", StringComparison.Ordinal) == true &&
+                Guid.TryParse(existingSid[5..], out _))
+            {
+                context.Response.Headers["SID"] = existingSid;
+                context.Response.Headers["TIMEOUT"] = "Second-1800";
+                context.Response.StatusCode = 200;
+                context.Response.Close();
+                return;
+            }
+
+            var peer = context.Request.RemoteEndPoint.Address;
+            var callback = ParseCallbackUrl(callbackHeader, peer);
+            if (callback == null)
+            {
+                context.Response.StatusCode = 412;
+                context.Response.Close();
+                return;
+            }
+
+            var sid = $"uuid:{Guid.NewGuid()}";
             context.Response.Headers["SID"] = sid;
             context.Response.Headers["TIMEOUT"] = "Second-1800";
             context.Response.StatusCode = 200;
             context.Response.Close();
-
-            // UPnP requires the server to immediately send an initial event NOTIFY to the callback URL.
-            // Google TV and many other clients wait for this before they start browsing.
-            var callbackUrl = ParseCallbackUrl(callbackHeader);
-            if (callbackUrl != null)
-            {
-                _ = SendEventNotifyAsync(callbackUrl, sid);
-            }
+            _ = SendEventNotifyAsync(callback, peer, sid);
         }
 
-        private async Task SendEventNotifyAsync(string callbackUrl, string sid)
+        private async Task SendEventNotifyAsync(Uri callbackUrl, IPAddress peer, string sid)
         {
             var body = $"""
                 <?xml version="1.0"?>
@@ -913,7 +945,32 @@ namespace resonance.Dlna
             try
             {
                 var bytes = Encoding.UTF8.GetBytes(body);
-                using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+                using var handler = new System.Net.Http.SocketsHttpHandler
+                {
+                    AllowAutoRedirect = false,
+                    UseProxy = false,
+                    ConnectCallback = async (connection, token) =>
+                    {
+                        var addresses = await Dns.GetHostAddressesAsync(connection.DnsEndPoint.Host, token);
+                        if (!addresses.Any(address => address.MapToIPv6().Equals(peer.MapToIPv6())))
+                        {
+                            throw new IOException("DLNA callbacks must resolve to the subscribing peer.");
+                        }
+
+                        var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+                        try
+                        {
+                            await socket.ConnectAsync(new IPEndPoint(peer, connection.DnsEndPoint.Port), token);
+                            return new NetworkStream(socket, ownsSocket: true);
+                        }
+                        catch
+                        {
+                            socket.Dispose();
+                            throw;
+                        }
+                    },
+                };
+                using var client = new System.Net.Http.HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
                 using var req = new System.Net.Http.HttpRequestMessage(new System.Net.Http.HttpMethod("NOTIFY"), callbackUrl);
                 req.Headers.TryAddWithoutValidation("NT", "upnp:event");
                 req.Headers.TryAddWithoutValidation("NTS", "upnp:propchange");

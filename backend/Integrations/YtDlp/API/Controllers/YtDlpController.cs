@@ -335,6 +335,7 @@ public class YtDlpController : ControllerBase
     }
 
     [HttpPost("cookies")]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> UploadCookies(IFormFile file, CancellationToken cancellationToken)
     {
@@ -370,6 +371,7 @@ public class YtDlpController : ControllerBase
     }
 
     [HttpDelete("cookies")]
+    [Authorize(Policy = AuthPolicy.JwtOnly, Roles = AuthRole.AdministratorOnly)]
     public IActionResult DeleteCookies()
     {
         var cookiePath = Path.Combine(resonance.Program.AppDirectory, "ytdlp-cookies.txt");

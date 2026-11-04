@@ -278,7 +278,8 @@ public sealed class SessionService : IDisposable
     /// <summary>
     ///     Revokes a specific session by its ID, scoped to the given username.
     /// </summary>
-    public void RevokeById(string username, Guid sessionId)
+    /// <returns>Whether an owned active session was revoked.</returns>
+    public bool RevokeById(string username, Guid sessionId)
     {
         using var db = ContextFactory.CreateDbContext();
         var session = db.Sessions.FirstOrDefault(s => s.Id == sessionId && s.Username == username && !s.IsRevoked);
@@ -288,7 +289,10 @@ public sealed class SessionService : IDisposable
             session.IsRevoked = true;
             db.SaveChanges();
             CacheRevocation(session.Id);
+            return true;
         }
+
+        return false;
     }
 
     /// <summary>

@@ -431,6 +431,12 @@ namespace resonance
             }
 #pragma warning restore CS0618 // Type or member is obsolete
 
+            if (Metrics.Enabled && !Metrics.Authentication.Disabled &&
+                (string.IsNullOrWhiteSpace(Metrics.Authentication.Password) || Metrics.Authentication.Password == Program.AppName))
+            {
+                results.Add(new ValidationResult("Authenticated metrics require an explicit, non-default password."));
+            }
+
             return results;
         }
 
@@ -1562,6 +1568,7 @@ namespace resonance
                 /// <summary>
                 ///     Gets the Last.fm API key (last.fm/api/account/create). Required for Last.fm lookups.
                 /// </summary>
+                [Secret]
                 public string ApiKey { get; init; } = string.Empty;
             }
 
@@ -1590,6 +1597,7 @@ namespace resonance
                 ///     Gets the Discogs personal access token (discogs.com → Settings → Developers).
                 ///     Required for Discogs lookups.
                 /// </summary>
+                [Secret]
                 public string Token { get; init; } = string.Empty;
             }
         }
@@ -2132,7 +2140,7 @@ namespace resonance
                 [StringLength(255, MinimumLength = 1)]
                 [Secret]
                 [RequiresRestart]
-                public string Password { get; init; } = Program.AppName;
+                public string Password { get; init; } = string.Empty;
             }
         }
 
@@ -3225,6 +3233,7 @@ namespace resonance
                 ///     Gets the fully qualified URL for the webhook.
                 /// </summary>
                 [NotNullOrWhiteSpace]
+                [Secret]
                 public string Url { get; init; }
 
                 /// <summary>
@@ -3261,6 +3270,7 @@ namespace resonance
                 /// <summary>
                 ///     Gets the header's value.
                 /// </summary>
+                [Secret]
                 public string Value { get; init; }
             }
 
@@ -3301,6 +3311,7 @@ namespace resonance
                 /// <summary>
                 ///     Gets the shell command to run.
                 /// </summary>
+                [Secret]
                 public string Command { get; init; }
 
                 /// <summary>
@@ -3314,6 +3325,7 @@ namespace resonance
                 /// <remarks>
                 ///     Mutually exclusive with <see cref="Arglist"/>.
                 /// </remarks>
+                [Secret]
                 public string Args { get; init; }
 
                 /// <summary>
@@ -3322,6 +3334,7 @@ namespace resonance
                 /// <remarks>
                 ///     Mutually exclusive with <see cref="Args"/>.
                 /// </remarks>
+                [Secret]
                 public string[] Arglist { get; init; } = null;
 
                 public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)

@@ -22,7 +22,7 @@ Automatically syncs your YouTube cookies to the Resonance backend so yt-dlp can 
 
 ## Setup
 
-- **Server URL**: The full base URL of your Resonance server, e.g. `http://192.168.0.254:5030`
+- **Server URL**: The full base URL of your Resonance server, e.g. `https://resonance.example.com`
 - **API Key**: Found in System → Options → Web Server → API Key
 
 ## How it works

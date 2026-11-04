@@ -167,7 +167,7 @@ namespace resonance.Files
             }
 
             // important! we must fully expand the given paths with GetFullPath() to resolve a given relative directory, like '..'
-            bool IsAllowed(string path) => AllowedDirectories.Any(allowed => path.StartsWith(allowed));
+            bool IsAllowed(string path) => IsManagedPath(path, allowRoot: false);
 
             // if any of the resolved directory paths aren't rooted in one of the allowed directories, forbid the entire request
             if (!directories.All(directory => IsAllowed(directory)))
@@ -225,7 +225,7 @@ namespace resonance.Files
             }
 
             // important! we must fully expand the given paths with GetFullPath() to resolve a given relative directory, like '..'
-            bool IsAllowed(string path) => AllowedDirectories.Any(allowed => path.StartsWith(allowed));
+            bool IsAllowed(string path) => IsManagedPath(path, allowRoot: false);
 
             // if any of the resolved file paths aren't rooted in one of the allowed directories, forbid the entire request
             if (!files.All(file => IsAllowed(file)))
@@ -278,7 +278,7 @@ namespace resonance.Files
             }
 
             // important! we must fully expand the path with GetFullPath() to resolve a given relative directory, like '..'
-            if (!AllowedDirectories.Any(allowed => directory.StartsWith(allowed)))
+            if (!IsManagedPath(directory, allowRoot: true))
             {
                 throw new UnauthorizedException($"Only application-controlled directories can be deleted");
             }
@@ -504,5 +504,91 @@ namespace resonance.Files
                 throw new IOException($"Failed to move file {Path.GetFileName(sourceFilename)}: {ex.Message}", ex);
             }
         }
+
+        internal static string ResolveManagedPath(IEnumerable<string> roots, string path, bool allowRoot)
+        {
+            try
+            {
+                var candidate = ResolveExistingParent(path);
+                var resolvedRoots = new List<string>();
+                foreach (var root in roots)
+                {
+                    try
+                    {
+                        resolvedRoots.Add(ResolveExistingParent(root));
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+                    {
+                        // An unavailable root cannot authorize the requested path.
+                    }
+                }
+
+                var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+                if (resolvedRoots.Any(root => string.Equals(root, candidate, comparison)))
+                {
+                    return allowRoot ? candidate : null;
+                }
+
+                return resolvedRoots.Any(root => candidate.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, comparison))
+                    ? candidate : null;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+            {
+                return null;
+            }
+        }
+
+        private static string ResolveExistingParent(string path)
+        {
+            var remaining = new Stack<string>();
+            var current = Path.GetFullPath(path);
+            if (current.Length > Path.GetPathRoot(current).Length)
+            {
+                current = current.TrimEnd(Path.DirectorySeparatorChar);
+            }
+
+            var links = 0;
+            while (true)
+            {
+                try
+                {
+                    current = resonance.Common.LibraryPathSecurity.Resolve(current);
+                    break;
+                }
+                catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+                {
+                    var parent = Path.GetDirectoryName(current);
+                    if (parent == null)
+                    {
+                        throw;
+                    }
+
+                    if (new FileInfo(current).LinkTarget is { } target)
+                    {
+                        if (++links > 40)
+                        {
+                            throw new IOException("Too many symbolic links.");
+                        }
+
+                        current = Path.GetFullPath(Path.IsPathRooted(target) ? target : Path.Combine(parent, target));
+                    }
+                    else
+                    {
+                        remaining.Push(Path.GetFileName(current));
+                        current = parent;
+                    }
+                }
+            }
+
+            foreach (var segment in remaining)
+            {
+                current = Path.Combine(current, segment);
+            }
+
+            return current;
+        }
+
+        private bool IsManagedPath(string path, bool allowRoot)
+            => ResolveManagedPath(AllowedDirectories, path, allowRoot) != null;
     }
 }

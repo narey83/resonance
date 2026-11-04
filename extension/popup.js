@@ -51,7 +51,7 @@ function renderSetup() {
     <div class="body">
       <div class="field">
         <label>Resonance Server URL</label>
-        <input id="serverUrl" placeholder="http://192.168.0.254:5030" type="url" />
+        <input id="serverUrl" placeholder="https://resonance.example.com" type="url" />
       </div>
       <div class="field">
         <label>API Key</label>
@@ -72,6 +72,16 @@ function renderSetup() {
 
     if (!serverUrl || !apiKey) {
       errEl.innerHTML = '<div class="status status--error">Both fields are required.</div>';
+      return;
+    }
+
+    try {
+      const server = new URL(serverUrl);
+      if (server.protocol !== 'https:' || server.username || server.password || server.search || server.hash) {
+        throw new Error('invalid server URL');
+      }
+    } catch {
+      errEl.textContent = 'Enter an HTTPS server URL without embedded credentials, query or fragment.';
       return;
     }
 

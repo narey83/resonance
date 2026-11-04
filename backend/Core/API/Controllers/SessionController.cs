@@ -131,12 +131,11 @@ namespace resonance.Core.API
                 return BadRequest("Username and password are required");
             }
 
-            if (Users.IsInitialized())
+            var user = Users.TryCreateInitialAdministrator(request.Username, request.Password);
+            if (user == null)
             {
                 return Conflict("An account already exists");
             }
-
-            var user = Users.Create(request.Username, request.Password, Role.Administrator);
 
             var (refreshToken, sessionId) = Sessions.CreateSession(user.Username, request.DeviceName, request.DeviceId, GetCallerIp(), request.ExistingSessionId);
             var jwt = Security.GenerateJwt(user.Username, user.Role, sessionId: sessionId);
@@ -204,7 +203,7 @@ namespace resonance.Core.API
         /// <response code="403">Mobile pairing is disabled.</response>
         [HttpPost]
         [Route("pair")]
-        [Authorize(Policy = AuthPolicy.Any)]
+        [Authorize(Policy = AuthPolicy.UserSession)]
         [ProducesResponseType(typeof(PairingResponse), 200)]
         [ProducesResponseType(403)]
         public IActionResult CreatePairing()
@@ -383,7 +382,7 @@ namespace resonance.Core.API
         /// <returns></returns>
         [HttpGet]
         [Route("sessions")]
-        [Authorize(Policy = AuthPolicy.Any)]
+        [Authorize(Policy = AuthPolicy.UserSession)]
         [ProducesResponseType(typeof(IEnumerable<SessionInfo>), 200)]
         [ProducesResponseType(401)]
         public IActionResult GetSessions()
@@ -416,7 +415,7 @@ namespace resonance.Core.API
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         [HttpDelete]
         [Route("sessions")]
-        [Authorize(Policy = AuthPolicy.Any)]
+        [Authorize(Policy = AuthPolicy.UserSession)]
         [ProducesResponseType(200)]
         [ProducesResponseType(401)]
         public async Task<IActionResult> RevokeAllSessions()
@@ -438,14 +437,17 @@ namespace resonance.Core.API
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         [HttpDelete]
         [Route("sessions/{id:guid}")]
-        [Authorize(Policy = AuthPolicy.Any)]
+        [Authorize(Policy = AuthPolicy.UserSession)]
         [ProducesResponseType(200)]
         [ProducesResponseType(401)]
         public async Task<IActionResult> RevokeSession([FromRoute] Guid id)
         {
             var username = User.FindFirstValue(ClaimTypes.Name);
-            Sessions.RevokeById(username, id);
-            await Hub.BroadcastSessionRevokedAsync(id);
+            if (Sessions.RevokeById(username, id))
+            {
+                await Hub.BroadcastSessionRevokedAsync(id);
+            }
+
             return Ok();
         }
 

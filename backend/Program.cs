@@ -1255,6 +1255,13 @@ namespace resonance
                         policy.RequireAuthenticatedUser();
                     });
 
+                    options.AddPolicy(AuthPolicy.UserSession, policy =>
+                    {
+                        policy.AuthenticationSchemes.Add(JwtBearerDefaults.AuthenticationScheme);
+                        policy.RequireAuthenticatedUser();
+                        policy.RequireClaim("sid");
+                    });
+
                     options.AddPolicy(AuthPolicy.ApiKeyOnly, policy =>
                     {
                         policy.AuthenticationSchemes.Add(ApiKeyAuthentication.AuthenticationScheme);
@@ -1395,6 +1402,12 @@ namespace resonance
                         policy.AuthenticationSchemes.Add(PassthroughAuthentication.AuthenticationScheme);
                         policy.RequireAuthenticatedUser();
                     });
+                    options.AddPolicy(AuthPolicy.UserSession, policy =>
+                    {
+                        policy.AuthenticationSchemes.Add(PassthroughAuthentication.AuthenticationScheme);
+                        policy.RequireAssertion(_ => false);
+                    });
+
                     foreach (var feature in resonance.Authentication.Feature.All)
                     {
                         options.AddPolicy(AuthPolicy.Feature(feature), policy => policy.RequireAuthenticatedUser());
@@ -1748,9 +1761,11 @@ namespace resonance
                             var providedCreds = auth?.Split(' ').Last();
                             var validCreds = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{options.Authentication.Username}:{options.Authentication.Password}"));
 
-                            if (string.IsNullOrEmpty(auth) ||
+                            if (string.IsNullOrWhiteSpace(options.Authentication.Password) ||
+                                options.Authentication.Password == AppName ||
+                                string.IsNullOrEmpty(auth) ||
                                 !auth.StartsWith("Basic", StringComparison.InvariantCultureIgnoreCase) ||
-                                !string.Equals(providedCreds, validCreds, StringComparison.InvariantCultureIgnoreCase))
+                                !string.Equals(providedCreds, validCreds, StringComparison.Ordinal))
                             {
                                 context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
                                 return;

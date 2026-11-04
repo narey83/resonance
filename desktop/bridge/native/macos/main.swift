@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import Cocoa
+import CryptoKit
 
 final class LinkApplication: NSObject, NSApplicationDelegate {
     private var engine: Process?
@@ -63,8 +64,22 @@ final class LinkApplication: NSObject, NSApplicationDelegate {
             }
             ensureEngine {
                 var request = URLRequest(url: self.dashboard.appendingPathComponent("api/handoff"))
-                request.httpMethod = "POST"; request.httpBody = data
-                request.setValue("application/json", forHTTPHeaderField:"Content-Type")
+                do {
+                    let directory = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
+                    let keyURL = directory.appendingPathComponent("Resonance/Bridge/handoff-key.json")
+                    let encoded = try JSONDecoder().decode(String.self, from: Data(contentsOf: keyURL))
+                    guard let key = Data(base64Encoded: encoded), key.count == 32 else {
+                        self.showError("Restart Bridge to enable private handoffs.")
+                        return
+                    }
+                    let sealed = try AES.GCM.seal(data, using: SymmetricKey(data: key), authenticating: Data("resonance-bridge-handoff-v1".utf8))
+                    request.httpBody = sealed.combined
+                } catch {
+                    self.showError("Restart Bridge to enable private handoffs.")
+                    return
+                }
+                request.httpMethod = "POST"
+                request.setValue("application/octet-stream", forHTTPHeaderField:"Content-Type")
                 request.setValue("1", forHTTPHeaderField:"X-Resonance-Link")
                 URLSession.shared.dataTask(with: request) { body, response, error in
                     DispatchQueue.main.async {

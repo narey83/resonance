@@ -105,6 +105,7 @@ type helper struct {
 	Session          *session
 	Error            string
 	PairingDirectory string
+	HandoffKey       []byte
 	Cache            string
 	AllowLoopback    bool
 	Diagnostics      *bridgeDiagnostics
@@ -567,7 +568,8 @@ func main() {
 	}
 	ln, e := net.Listen("tcp4", addr)
 	if e != nil {
-		client := &http.Client{Timeout: time.Second}
+		client := &http.Client{Timeout: time.Second, Transport: &http.Transport{Proxy: nil},
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 		if response, err := client.Get("http://" + addr + "/api/status"); err == nil {
 			var status struct {
 				Application string `json:"application"`
@@ -577,9 +579,13 @@ func main() {
 			if status.Application == "resonance-bridge" || status.Application == "resonance-pioneer-link" {
 				if document != nil {
 					data, _ := json.Marshal(document)
+					data, err := h.sealLocalHandoff(data)
+					if err != nil {
+						log.Fatal(err)
+					}
 					endpoint := "/api/handoff"
 					req, _ := http.NewRequest("POST", "http://"+addr+endpoint, bytes.NewReader(data))
-					req.Header.Set("Content-Type", "application/json")
+					req.Header.Set("Content-Type", "application/octet-stream")
 					req.Header.Set("X-Resonance-Link", "1")
 					response, err := client.Do(req)
 					if err != nil {
@@ -597,6 +603,10 @@ func main() {
 			}
 		}
 		log.Fatal(e)
+	}
+	if e := h.initializeHandoffKey(); e != nil {
+		ln.Close()
+		log.Fatal("Unable to initialize private handoff channel: ", e)
 	}
 	if document != nil {
 		var e error

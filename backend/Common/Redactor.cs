@@ -49,7 +49,7 @@ namespace resonance
         ///     Recursively scans the <paramref name="target"/> for properties marked with <see cref="SecretAttribute"/> and redacts the values by overwriting them.
         /// </summary>
         /// <remarks>
-        ///     Only works on properties of type <see cref="string"/>.
+        ///     Supports secret strings and string arrays.
         /// </remarks>
         /// <param name="target">The object to redact.</param>
         /// <param name="redactWith">The string with which to replace redacted values.</param>
@@ -71,9 +71,10 @@ namespace resonance
                     continue;
                 }
 
-                if (prop.GetCustomAttributes().Any(attr => attr.GetType() == typeof(SecretAttribute)) && prop.PropertyType == typeof(string))
+                if (prop.GetCustomAttributes().Any(attr => attr.GetType() == typeof(SecretAttribute)) &&
+                    (prop.PropertyType == typeof(string) || prop.PropertyType == typeof(string[])))
                 {
-                    prop.SetValue(target, redactWith);
+                    prop.SetValue(target, prop.PropertyType == typeof(string) ? redactWith : new[] { redactWith });
                 }
                 else
                 {
