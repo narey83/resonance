@@ -64,7 +64,7 @@ const LoginForm = ({ error, loading, onLoginAttempt }) => {
             </div>
             <div className="auth-brand-title">Resonance</div>
             <div className="auth-brand-tagline">
-              Music streaming, built for DJs
+              Your music, ready to stream
             </div>
           </div>
         </div>
