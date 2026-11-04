@@ -64,7 +64,7 @@ const LoginForm = ({ error, loading, onLoginAttempt }) => {
             </div>
             <div className="auth-brand-title">Resonance</div>
             <div className="auth-brand-tagline">
-              Your personal Soulseek client
+              Music streaming, built for DJs
             </div>
           </div>
         </div>
