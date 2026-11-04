@@ -60,7 +60,7 @@
 @media (max-width: 480px) { .dj-workspace .status-strip { height: auto; } }
 
 
-.dj-workspace .status-strip-item { width: auto; padding: 0 14px; }
+.dj-workspace .status-strip > .status-strip-item { width: auto; padding: 0 14px; }
 .dj-workspace .status-brand { padding-right: 18px; }
 .dj-workspace .app-nav-section { overflow-x: hidden; }
 
@@ -86,8 +86,8 @@
   .dj-workspace .tag-manager-tabs { flex-wrap: wrap; }
 }
 @container (max-width: 800px) {
-  .dj-workspace .status-strip-item--queue,
-  .dj-workspace .status-strip-item--shares { display: none; }
+  .dj-workspace .status-strip > .status-strip-item--queue,
+  .dj-workspace .status-strip > .status-strip-item--shares { display: none; }
 }
 
 .dj-workspace .jb-root { min-height: 0; }

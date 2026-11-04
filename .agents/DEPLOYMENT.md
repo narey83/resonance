@@ -7,6 +7,25 @@ development servers, including temporary web QA and Metro, until the user explic
 says Mac runtime use is OK.** Keep source editing and Git on the Mac; SSH/ADB
 forwarding and artifact transfer are transport, not Mac application runtimes.
 
+## Statistics dropdown formatting deployed — 4 November 2026
+
+Follow-up at 17:14:20 UTC: unified the Statistics dropdown's row insets, icon
+sizes, text sizing and line heights. Queue rows now match the other statistics
+without their separate border, heavier counts or smaller waiting suffix. Upload
+and download speeds occupy separate rows. Rescan uses a button wide enough for
+its icon and label. Older workspace rules for compact headers now target direct
+top-bar children, so they no longer add padding to or hide shared-collection and
+fallback queue rows inside the dropdown on narrow screens.
+
+Dev-laptop verification: 19 StatusStrip tests, changed-file ESLint and 11 dependency
+security tests passed. Public browser checks passed at desktop/mobile sizes,
+manual mobile 100% scale and AMOLED: matching 12px/18px value typography,
+aligned 14px icons, visible shared statistics, unclipped Rescan text, viewport
+bounds and Tab-key focus. Screenshots were inspected. Four frontend files were
+checksum-verified during hot-reload activation; backend, frontend service and
+Caddy remained running. The existing 14 dependency source-map warnings remain.
+Evidence: `/home/narey/resonance-builds/statistics-formatting-20261104/`.
+
 ## Top-bar layout and loading logos deployed — 4 November 2026
 
 Deployed the verified Mac frontend changes to the existing development source

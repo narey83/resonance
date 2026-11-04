@@ -712,7 +712,7 @@ const StatusStrip = ({
               )}
               <button
                 aria-label="Rescan shared files"
-                className="status-strip-btn"
+                className="status-strip-btn status-strip-btn--label"
                 disabled={scanning || rescanning}
                 onClick={handleRescan}
                 title="Rescan shared files"
@@ -765,23 +765,27 @@ const StatusStrip = ({
 
             <div className="status-strip-sep" />
             <div className="status-details-label">Current transfer speed</div>
-            <div className="status-strip-item status-strip-item--rates">
-              <ArrowDown
-                className="status-icon"
-                size={12}
-                strokeWidth={1.75}
-              />
-              <span className="status-strip-text status-strip-speed">
-                Download: {formatBitrate(dlSpeed)}
-              </span>
-              <ArrowUp
-                className="status-icon"
-                size={12}
-                strokeWidth={1.75}
-              />
-              <span className="status-strip-text status-strip-speed">
-                Upload: {formatBitrate(ulSpeed)}
-              </span>
+            <div className="status-details-rates">
+              <div className="status-strip-item status-strip-item--rates">
+                <ArrowDown
+                  className="status-icon"
+                  size={14}
+                  strokeWidth={1.75}
+                />
+                <span className="status-strip-text status-strip-speed">
+                  Download: {formatBitrate(dlSpeed)}
+                </span>
+              </div>
+              <div className="status-strip-item status-strip-item--rates">
+                <ArrowUp
+                  className="status-icon"
+                  size={14}
+                  strokeWidth={1.75}
+                />
+                <span className="status-strip-text status-strip-speed">
+                  Upload: {formatBitrate(ulSpeed)}
+                </span>
+              </div>
             </div>
 
             {/* Free disk space on the downloads volume */}

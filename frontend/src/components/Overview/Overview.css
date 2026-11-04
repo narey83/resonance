@@ -3583,3 +3583,28 @@ html.amoled {
   .status-strip-actions > .status-details > summary { padding-inline: 7px; font-size: 11px; gap: 5px; }
   .status-strip-actions .app-zoom-controls button { padding-inline: 4px; font-size: 11px; }
 }
+
+/* Statistics use one row rhythm, including the queue links and connection check. */
+.status-details-panel { font-size: 12px; line-height: 1.5; }
+.status-details-panel .status-strip-item,
+.status-details-panel .status-transfer-link,
+.status-details-panel > .status-strip-btn--label {
+  min-height: 28px;
+  padding: 0 10px;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 18px;
+}
+.status-details-panel > .status-strip-btn--label { align-self: stretch; }
+.status-details-panel .status-transfer-group { border: 0; border-radius: 0; background: transparent; overflow: visible; }
+.status-details-panel .status-transfer-link + .status-transfer-link { border-top: 0; }
+.status-details-panel .status-transfer-link { border-radius: 4px; }
+.status-details-panel .status-transfer-link svg { color: var(--text-muted); }
+.status-details-panel .status-transfer-link strong { font-weight: 400; }
+.status-details-panel .status-transfer-waiting { font-size: inherit; }
+.status-details-panel .status-strip-text { font-size: inherit; line-height: inherit; }
+.status-details-panel .status-strip-item svg,
+.status-details-panel .status-transfer-link svg,
+.status-details-panel > .status-strip-btn--label svg { width: 14px; height: 14px; stroke-width: 1.75; }
+.status-details-panel .status-strip-item--shares > .status-strip-btn { min-height: 28px; padding: 0 8px; white-space: nowrap; }
+.status-details-rates { display: flex; flex-direction: column; }

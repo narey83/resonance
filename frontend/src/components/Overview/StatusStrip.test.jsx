@@ -183,6 +183,21 @@ describe('Status and controls explanations', () => {
     },
   );
 
+  it('uses separate speed rows and a label-sized rescan control', () => {
+    const panel = renderPanel();
+    const rows = panel.querySelectorAll(
+      '.status-details-rates .status-strip-item',
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain('Download:');
+    expect(rows[1].textContent).toContain('Upload:');
+    expect(
+      panel
+        .querySelector('[aria-label="Rescan shared files"]')
+        .classList.contains('status-strip-btn--label'),
+    ).toBe(true);
+  });
+
   it('uses the whole-queue counter with only active byte samples', () => {
     const panel = renderPanel({
       queuedTransferCount: 35_007,
