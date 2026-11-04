@@ -118,6 +118,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   hydrate: () => {
     if (hydration) return hydration;
+    // Remounts/Fast Refresh must not restart an already loaded login: doing so
+    // invalidates in-flight token rotations and leaves the old refresh token saved.
+    if (get().isReady && !get().hydrationError) return Promise.resolve();
     const started = getSessionGeneration();
     set({ hydrationError: null, isReady: false });
     hydration = storeCredentials(async () => {

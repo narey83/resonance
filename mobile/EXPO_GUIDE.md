@@ -123,6 +123,10 @@ ExpoModulesJSI 57.1.3 includes Swift-interface cleanup for Swift 6.4's `__ObjC::
 
 Recent-server biometric sign-in uses the existing `expo-secure-store` native module, with `requireAuthentication: true` and a dedicated keychain service. Its config-plugin Face ID description explains saved-server sign-in. No new biometric library is required; rebuild an older client if its Face ID usage description is missing. Real-device verification requires an enrolled Face ID / Touch ID / strong Android biometric.
 
+Remote sessions renew silently while the app is active and when it resumes. Temporary network/server failures preserve credentials for retry. Session lifetime and idle timeout remain controlled by the server; definitive rejection of refresh credentials still requires sign-in.
+
+Restore saved credentials only once per loaded app, retrying if secure storage failed. Remounts and Fast Refresh must preserve the current session generation: resetting it during a token rotation can discard the successful response and leave an old refresh token saved.
+
 ### macOS emulator launcher stability
 
 The custom Android Emulator app bundle must launch the SDK's `emulator` launcher with the SDK and AVD directories configured, rather than invoking `qemu-system-aarch64` directly. Direct launches produced repeated macOS DYLD failures for `libandroid-emu-tracing.dylib`. The launcher establishes the emulator library paths and selects the test AVD.

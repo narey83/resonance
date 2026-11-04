@@ -24,6 +24,20 @@ test('storage failure finishes startup and permits a successful retry', async ()
   assert.equal(auth.getState().isAdmin, true);
 });
 
+test('restoration is idempotent after successful startup and does not interrupt the authenticated UI', async () => {
+  const storage = secureStorage({ resonance_server_url: 'https://one', resonance_access_token: jwt('alice'), resonance_refresh_token: 'saved-refresh' });
+  const { auth, session } = setup(storage);
+  await auth.getState().hydrate();
+  const before = auth.getState();
+  const generation = session.getSessionGeneration();
+  let reads = 0;
+  storage.getItemAsync = async () => { reads++; throw new Error('No second storage read expected'); };
+  await auth.getState().hydrate();
+  assert.equal(reads, 0);
+  assert.equal(auth.getState(), before);
+  assert.equal(session.getSessionGeneration(), generation);
+});
+
 test('credential writes cannot restore a logged-out session or overwrite a new login', async () => {
   const { auth, storage, session } = setup();
   await auth.getState().setServerUrl('https://one');

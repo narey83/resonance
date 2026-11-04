@@ -35,6 +35,40 @@ test('concurrent proactive refreshes share one request', async () => {
   assert.equal(auth.getState().refreshToken, 'rotated');
 });
 
+test('restoring an already loaded app does not discard an in-flight background refresh', async () => {
+  const gate = deferred();
+  const token = jwt('alice');
+  const { client, auth, load } = await setup(async config => {
+    await gate.promise;
+    return response(config, { token, refreshToken: 'rotated', sessionId: 'alice-session' });
+  });
+  const generation = load('src/lib/sessionScope.ts').getSessionGeneration();
+  const pending = client.getValidToken();
+  await tick();
+  await auth.getState().hydrate();
+  gate.resolve();
+  assert.equal(await pending, token);
+  assert.equal(auth.getState().refreshToken, 'rotated');
+  assert.equal(auth.getState().sessionExpired, false);
+  assert.equal(load('src/lib/sessionScope.ts').getSessionGeneration(), generation);
+});
+
+test('temporary refresh connection failures stay signed in and recover silently on retry', async () => {
+  let attempts = 0;
+  const token = jwt('alice');
+  const { client, auth } = await setup(async config => {
+    attempts++;
+    if (attempts === 1) throw new axios.AxiosError('offline', 'ERR_NETWORK', config);
+    return response(config, { token, refreshToken: 'rotated' });
+  });
+  assert.equal(await client.getValidToken(), '');
+  assert.equal(auth.getState().sessionExpired, false);
+  assert.equal(auth.getState().refreshToken, 'alice-refresh');
+  assert.equal(await client.getValidToken(), token);
+  assert.equal(auth.getState().refreshToken, 'rotated');
+  assert.equal(auth.getState().sessionExpired, false);
+});
+
 test('a successful old refresh cannot undo logout', async () => {
   const gate = deferred();
   const { client, auth } = await setup(async (config) => {
