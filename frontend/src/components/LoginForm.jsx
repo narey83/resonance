@@ -33,7 +33,9 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import LoginScene from './LoginScene';
 import ResonanceMark from './Shared/ResonanceMark';
+import { Pause, Play } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 
 const LoginForm = ({ error, loading, onLoginAttempt }) => {
@@ -41,6 +43,7 @@ const LoginForm = ({ error, loading, onLoginAttempt }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
+  const [motionPaused, setMotionPaused] = useState(false);
 
   useEffect(() => {
     usernameRef.current?.focus();
@@ -57,16 +60,32 @@ const LoginForm = ({ error, loading, onLoginAttempt }) => {
     <div className="auth-shell">
       <div className="auth-split">
         {/* ── Left brand panel ── */}
-        <div className="auth-brand-panel">
+        <div
+          className="auth-brand-panel auth-brand-panel--cinematic"
+          data-motion-paused={motionPaused}
+        >
+          <LoginScene />
           <div className="auth-brand-panel-inner">
             <div className="auth-brand-logo">
-              <ResonanceMark size={56} />
+              <ResonanceMark size={72} />
             </div>
             <div className="auth-brand-title">Resonance</div>
             <div className="auth-brand-tagline">
               Your music, ready to stream
             </div>
           </div>
+          <button
+            aria-label={
+              motionPaused
+                ? 'Play background animation'
+                : 'Pause background animation'
+            }
+            className="login-motion-toggle"
+            onClick={() => setMotionPaused((paused) => !paused)}
+            type="button"
+          >
+            {motionPaused ? <Play size={14} /> : <Pause size={14} />}
+          </button>
         </div>
 
         {/* ── Right form panel ── */}

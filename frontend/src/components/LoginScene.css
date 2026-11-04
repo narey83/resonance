@@ -1,0 +1,141 @@
+.auth-brand-panel--cinematic {
+  background: #090f19;
+  isolation: isolate;
+  overflow: hidden;
+  position: relative;
+}
+
+.login-scene {
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  z-index: -1;
+}
+
+.login-scene-halo {
+  animation: login-halo-drift 24s ease-in-out infinite alternate;
+  background: radial-gradient(ellipse at 28% 65%, #327b7145, transparent 48%),
+    radial-gradient(ellipse at 80% 30%, #73609635, transparent 48%),
+    radial-gradient(ellipse at 70% 95%, #a2784420, transparent 40%);
+  inset: -15%;
+  position: absolute;
+}
+
+.login-scene-ribbon {
+  height: 120%;
+  left: -10%;
+  position: absolute;
+  top: -10%;
+  width: 120%;
+}
+
+.login-scene-ribbon--front {
+  animation: login-ribbon-drift 20s ease-in-out infinite alternate;
+  transform: translateY(12%) rotate(-12deg) scale(1.1);
+}
+
+.login-scene-ribbon--back {
+  animation: login-ribbon-return 28s ease-in-out infinite alternate;
+  opacity: 0.3;
+  transform: translateY(-10%) rotate(165deg) scale(1.15);
+}
+
+.login-scene-shade {
+  background: radial-gradient(ellipse at 50% 46%, #090f19c4, transparent 48%),
+    linear-gradient(180deg, #090f1920, transparent 70%, #090f1980);
+  inset: 0;
+  position: absolute;
+}
+
+.auth-brand-panel--cinematic .auth-brand-panel-inner {
+  position: relative;
+  text-shadow: 0 2px 24px #090f19;
+}
+
+.auth-brand-panel--cinematic .auth-brand-title {
+  font-size: clamp(32px, 3.4vw, 48px);
+  letter-spacing: -1.5px;
+  line-height: 1.2;
+  margin-bottom: 16px;
+}
+
+.auth-brand-panel--cinematic .auth-brand-tagline {
+  color: #d0e5e2;
+  font-size: 15px;
+  letter-spacing: 0.2px;
+  opacity: 0.85;
+}
+
+.login-motion-toggle {
+  align-items: center;
+  background: #ffffff08;
+  border: 1px solid #ffffff24;
+  border-radius: 50%;
+  bottom: 28px;
+  color: #d0e5e2;
+  cursor: pointer;
+  display: flex;
+  height: 44px;
+  justify-content: center;
+  left: 28px;
+  position: absolute;
+  width: 44px;
+}
+
+.login-motion-toggle:hover {
+  background: #ffffff18;
+}
+
+.login-motion-toggle:focus-visible {
+  outline: 2px solid #87dec7;
+  outline-offset: 4px;
+}
+
+[data-motion-paused='true'] .login-scene-halo,
+[data-motion-paused='true'] .login-scene-ribbon {
+  animation-play-state: paused;
+}
+
+@keyframes login-halo-drift {
+  to {
+    transform: translate(5%, -4%) scale(1.08);
+  }
+}
+
+@keyframes login-ribbon-drift {
+  to {
+    transform: translate(3%, 4%) rotate(-4deg) scale(1.18);
+  }
+}
+
+@keyframes login-ribbon-return {
+  to {
+    transform: translate(-4%, -3%) rotate(175deg) scale(1.05);
+  }
+}
+
+@media (max-width: 640px) {
+  .auth-brand-panel--cinematic {
+    padding: 44px 24px;
+  }
+  .auth-brand-panel--cinematic .auth-brand-tagline {
+    font-size: 14px;
+  }
+  .login-motion-toggle {
+    bottom: 12px;
+    height: 36px;
+    left: 12px;
+    width: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-scene-halo,
+  .login-scene-ribbon {
+    animation: none;
+  }
+  .login-motion-toggle {
+    display: none;
+  }
+}
