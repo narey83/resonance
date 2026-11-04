@@ -23,4 +23,17 @@ public class YtDlpEntryUrlTests
         using var entry = JsonDocument.Parse("{}");
         Assert.Empty(YtDlpService.GetEntryPageUrl(entry.RootElement, string.Empty));
     }
+
+    [Theory]
+    [InlineData("https://example.com/watch?v=video-id")]
+    [InlineData("https://example.com/video\" --extra-option \"value")]
+    [InlineData("--option-shaped-input")]
+    public void ProcessArgumentsKeepTheUrlAfterTheOptionTerminator(string url)
+    {
+        var args = new List<string> { "--dump-json" };
+
+        YtDlpService.AppendUrl(args, url);
+
+        Assert.Equal(new[] { "--dump-json", "--", url }, args);
+    }
 }

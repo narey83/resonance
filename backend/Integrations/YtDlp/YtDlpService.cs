@@ -105,7 +105,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     private DateTime lastRescanAt = DateTime.MinValue;
     private SemaphoreSlim workerSlots;
     private CancellationTokenSource cts = new();
-    private string? jsRuntimeArg;
+    private string? jsRuntime;
     private string? resolvedExecutable;
 
     public YtDlpService(
@@ -539,28 +539,26 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             searchUrl += $"&sp={Uri.EscapeDataString(sp)}";
         }
 
-        var args = new System.Text.StringBuilder($"--flat-playlist --dump-json -I 1:{limit}");
-        if (jsRuntimeArg != null)
+        var args = new List<string> { "--flat-playlist", "--dump-json", "-I", $"1:{limit}" };
+        if (jsRuntime != null)
         {
-            args.Append($" {jsRuntimeArg}");
+            args.AddRange(["--js-runtimes", jsRuntime]);
         }
 
-        AppendExtractorArgs(args, opts);
-        AppendPluginDirs(args, opts);
+        AppendExtractorAndPluginArgs(args, opts);
 
         var cookieFile = AcquireCookieFile();
         if (cookieFile != null)
         {
-            args.Append($" --cookies \"{cookieFile}\"");
+            args.AddRange(["--cookies", cookieFile]);
         }
 
-        args.Append($" \"{searchUrl}\"");
+        AppendUrl(args, searchUrl);
 
         var process = new Process
         {
             StartInfo = new ProcessStartInfo(Executable(opts))
             {
-                Arguments = args.ToString(),
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
@@ -570,6 +568,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         try
         {
+            AddArguments(process.StartInfo, args);
             process.Start();
 
             // Read stderr concurrently — if unread, the pipe buffer fills and the process deadlocks
@@ -613,8 +612,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         await EnsureDependenciesAsync(cancellationToken);
         var opts = options.CurrentValue.Integrations.YtDlp;
 
-        // The url is interpolated into the argument string, so reject anything that could
-        // escape the quotes and smuggle extra yt-dlp options (e.g. --exec)
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
             || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
             || url.Any(c => c == '"' || char.IsWhiteSpace(c)))
@@ -624,28 +621,26 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         // --playlist-items 1 keeps channel/playlist resolution to a single cheap entry;
         // --ignore-no-formats-error dumps video metadata even when format selection fails
-        var args = new System.Text.StringBuilder("--flat-playlist --dump-single-json --playlist-items 1 --ignore-no-formats-error");
-        if (jsRuntimeArg != null)
+        var args = new List<string> { "--flat-playlist", "--dump-single-json", "--playlist-items", "1", "--ignore-no-formats-error" };
+        if (jsRuntime != null)
         {
-            args.Append($" {jsRuntimeArg}");
+            args.AddRange(["--js-runtimes", jsRuntime]);
         }
 
-        AppendExtractorArgs(args, opts);
-        AppendPluginDirs(args, opts);
+        AppendExtractorAndPluginArgs(args, opts);
 
         var cookieFile = AcquireCookieFile();
         if (cookieFile != null)
         {
-            args.Append($" --cookies \"{cookieFile}\"");
+            args.AddRange(["--cookies", cookieFile]);
         }
 
-        args.Append($" \"{url}\"");
+        AppendUrl(args, url);
 
         var process = new Process
         {
             StartInfo = new ProcessStartInfo(Executable(opts))
             {
-                Arguments = args.ToString(),
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
@@ -655,6 +650,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         try
         {
+            AddArguments(process.StartInfo, args);
             process.Start();
 
             var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
@@ -959,6 +955,8 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         publishLock.Dispose();
     }
 
+    internal static void AppendUrl(List<string> args, string url) => args.AddRange(["--", url]);
+
     internal static string GetEntryPageUrl(JsonElement entry, string videoId)
     {
         // Full extraction's "url" is a temporary media URL without video metadata.
@@ -1212,46 +1210,35 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         };
     }
 
-    // Operator-controlled config value (not user input), so it's trusted the same as
-    // ExecutablePath/BandwidthLimit elsewhere in this file — interpolated as-is.
-    private static string ExtractorArgsFlag(resonance.Options.IntegrationsOptions.YtDlpOptions opts) =>
-        string.IsNullOrWhiteSpace(opts.ExtractorArgs) ? string.Empty : $" --extractor-args \"{opts.ExtractorArgs}\"";
-
-    private static void AppendExtractorArgs(System.Text.StringBuilder args, resonance.Options.IntegrationsOptions.YtDlpOptions opts) =>
-        args.Append(ExtractorArgsFlag(opts));
-
-    // yt-dlp only auto-discovers plugins under its OS config dir or PYTHONPATH, neither of
-    // which applies to our standalone binary — so point it at the folder next to the binary
-    // itself. --plugin-dirs takes the *parent* of a "yt-dlp-plugins" folder, matching how
-    // yt-dlp's own default search dirs work. Currently ships the bgutil PO-token provider
-    // (backend/tools/yt-dlp-plugins), which talks to the backend-owned loopback token provider. No-ops if the executable is a bare PATH name or the
-    // plugins folder isn't present next to it.
-    private static string PluginDirsFlag(resonance.Options.IntegrationsOptions.YtDlpOptions opts)
+    private static void AddArguments(ProcessStartInfo startInfo, IEnumerable<string> args)
     {
-        var dir = new[] { Path.GetDirectoryName(opts.ExecutablePath), Path.Combine(resonance.Program.AppDirectory, "tools"), Path.Combine(AppContext.BaseDirectory, "tools") }.FirstOrDefault(path => !string.IsNullOrWhiteSpace(path) && Directory.Exists(Path.Combine(path, "yt-dlp-plugins")));
-        if (string.IsNullOrEmpty(dir) || !Directory.Exists(Path.Combine(dir, "yt-dlp-plugins")))
+        foreach (var arg in args)
         {
-            return string.Empty;
+            startInfo.ArgumentList.Add(arg);
+        }
+    }
+
+    private static void AppendExtractorAndPluginArgs(List<string> args, resonance.Options.IntegrationsOptions.YtDlpOptions opts)
+    {
+        if (!string.IsNullOrWhiteSpace(opts.ExtractorArgs))
+        {
+            args.AddRange(["--extractor-args", opts.ExtractorArgs]);
         }
 
-        return $" --plugin-dirs \"{dir}\"";
+        if (ManagedBgutil.Arguments() is { } managed)
+        {
+            args.AddRange(managed);
+            return;
+        }
+
+        // yt-dlp expects the parent of the yt-dlp-plugins directory.
+        var dir = new[] { Path.GetDirectoryName(opts.ExecutablePath), Path.Combine(resonance.Program.AppDirectory, "tools"), Path.Combine(AppContext.BaseDirectory, "tools") }
+            .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path) && Directory.Exists(Path.Combine(path, "yt-dlp-plugins")));
+        if (dir != null)
+        {
+            args.AddRange(["--plugin-dirs", dir, "--extractor-args", "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416"]);
+        }
     }
-
-    // The bundled provider runs inside the backend container and listens on loopback only.
-    // yt-dlp allows repeating --extractor-args for different extractors, so this is additive to
-    // ExtractorArgsFlag's user-configurable value, never a conflict with it.
-    private static string PoTokenProviderFlag(resonance.Options.IntegrationsOptions.YtDlpOptions opts) =>
-        string.IsNullOrEmpty(PluginDirsFlag(opts))
-            ? string.Empty
-            : " --extractor-args \"youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416\"";
-
-    private static void AppendPluginDirs(System.Text.StringBuilder args, resonance.Options.IntegrationsOptions.YtDlpOptions opts)
-    {
-        args.Append(PluginArguments(opts));
-    }
-
-    private static string PluginArguments(resonance.Options.IntegrationsOptions.YtDlpOptions opts) =>
-        ManagedBgutil.Arguments() ?? (PluginDirsFlag(opts) + PoTokenProviderFlag(opts));
 
     // yt-dlp rewrites the cookie file on every run to persist updated cookies, so concurrent
     // workers sharing the master file corrupt it. Each invocation gets a private throwaway
@@ -1306,7 +1293,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
             var path = ManagedToolInstaller.FindExecutable(runtime);
             if (path != null && await ManagedToolInstaller.IsUsableAsync(path, "--version", CancellationToken.None))
             {
-                return $"--js-runtimes \"{runtime}:{path}\"";
+                return $"{runtime}:{path}";
             }
         }
 
@@ -1410,7 +1397,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         try
         {
             var opts = options.CurrentValue.Integrations.YtDlp;
-            if (resolvedExecutable != null && File.Exists(Executable(opts)) && jsRuntimeArg != null)
+            if (resolvedExecutable != null && File.Exists(Executable(opts)) && jsRuntime != null)
             {
                 return;
             }
@@ -1453,9 +1440,9 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 await ManagedToolInstaller.SeedAsync(Path.GetFileName(bundledRuntime), managedTools, "--version", token);
             }
 
-            jsRuntimeArg = File.Exists(bundledRuntime) && await ManagedToolInstaller.IsUsableAsync(bundledRuntime, "--version", token)
-                ? $"--js-runtimes \"deno:{bundledRuntime}\"" : await DetectJsRuntimeAsync();
-            if (jsRuntimeArg == null)
+            jsRuntime = File.Exists(bundledRuntime) && await ManagedToolInstaller.IsUsableAsync(bundledRuntime, "--version", token)
+                ? $"deno:{bundledRuntime}" : await DetectJsRuntimeAsync();
+            if (jsRuntime == null)
             {
                 var runtimeName = OperatingSystem.IsWindows() ? "deno.exe" : "deno";
                 var runtimePath = Path.Combine(managedTools, runtimeName);
@@ -1473,7 +1460,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                     }
                 }
 
-                jsRuntimeArg = $"--js-runtimes \"deno:{runtimePath}\"";
+                jsRuntime = $"deno:{runtimePath}";
             }
 
             await ffmpeg.GetFfmpegPathAsync(token);
@@ -1503,13 +1490,11 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         try
         {
             var ffprobePath = await ffmpeg.GetFfprobePathAsync(cancellationToken);
-            var args = $"-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{filePath}\"";
-
             using var process = new Process
             {
                 StartInfo = new ProcessStartInfo(ffprobePath)
                 {
-                    Arguments = args,
+                    ArgumentList = { "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", "-i", filePath },
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardOutput = true,
@@ -1547,9 +1532,9 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
     {
         await resonance.Program.DatabaseInitialization.WaitAsync(cancellationToken);
         await EnsureDependenciesAsync(cancellationToken);
-        if (jsRuntimeArg != null)
+        if (jsRuntime != null)
         {
-            Log.Information("YtDlp: using JS runtime {Arg}", jsRuntimeArg);
+            Log.Information("YtDlp: using JS runtime {Arg}", jsRuntime);
         }
         else
         {
@@ -1724,13 +1709,25 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
             // Flat enumeration lists a playlist/channel cheaply but omits per-video title. For a
             // single video that title is exactly what we want to show, so extract it fully (one video).
-            var flat = IsSingleVideoUrl(job.Url) ? string.Empty : "--flat-playlist ";
+            var args = new List<string>();
+            if (!IsSingleVideoUrl(job.Url))
+            {
+                args.Add("--flat-playlist");
+            }
+
+            args.Add("--dump-json");
+            if (jsRuntime != null)
+            {
+                args.AddRange(["--js-runtimes", jsRuntime]);
+            }
+
+            AppendExtractorAndPluginArgs(args, opts);
+            AppendUrl(args, job.Url);
 
             var process = new Process
             {
                 StartInfo = new ProcessStartInfo(Executable(opts))
                 {
-                    Arguments = $"{flat}--dump-json{(jsRuntimeArg != null ? " " + jsRuntimeArg : string.Empty)}{ExtractorArgsFlag(opts)}{PluginArguments(opts)} \"{job.Url}\"",
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardOutput = true,
@@ -1738,6 +1735,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
                 },
             };
 
+            AddArguments(process.StartInfo, args);
             process.Start();
 
             // Read stderr concurrently — if unread, the pipe buffer fills and the process deadlocks
@@ -2071,7 +2069,6 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         {
             StartInfo = new ProcessStartInfo(Executable(opts))
             {
-                Arguments = args,
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
@@ -2087,6 +2084,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         try
         {
+            AddArguments(process.StartInfo, args);
             process.Start();
 
             // Read stderr concurrently — if unread, the pipe buffer fills and the process deadlocks
@@ -2891,40 +2889,39 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         }
     }
 
-    private string BuildDownloadArgs(string url, resonance.Options.IntegrationsOptions.YtDlpOptions opts, string outputTemplate, string? cookieFile, string ffmpegLocation)
+    private List<string> BuildDownloadArgs(string url, resonance.Options.IntegrationsOptions.YtDlpOptions opts, string outputTemplate, string? cookieFile, string ffmpegLocation)
     {
-        var args = new System.Text.StringBuilder();
+        var args = new List<string>();
 
-        args.Append("--extract-audio");
-        args.Append($" --audio-format {opts.AudioFormat}");
-        args.Append($" --audio-quality {opts.AudioQuality}");
-        args.Append(" --no-embed-metadata");
-        args.Append(" --write-thumbnail");
+        args.Add("--extract-audio");
+        args.AddRange(["--audio-format", opts.AudioFormat]);
+        args.AddRange(["--audio-quality", opts.AudioQuality.ToString(CultureInfo.InvariantCulture)]);
+        args.Add("--no-embed-metadata");
+        args.Add("--write-thumbnail");
 
         // YouTube serves webp thumbnails, which TagLib# fails to embed (silently, no APIC frame).
         // Convert to jpg via ffmpeg so the tag writer can reliably embed cover art.
-        args.Append(" --convert-thumbnails jpg");
-        args.Append(" --no-playlist");
-        args.Append(" --newline");
+        args.AddRange(["--convert-thumbnails", "jpg"]);
+        args.Add("--no-playlist");
+        args.Add("--newline");
         if (!string.IsNullOrEmpty(ffmpegLocation))
         {
-            args.Append($" --ffmpeg-location \"{ffmpegLocation}\"");
+            args.AddRange(["--ffmpeg-location", ffmpegLocation]);
         }
 
-        if (jsRuntimeArg != null)
+        if (jsRuntime != null)
         {
-            args.Append($" {jsRuntimeArg}");
+            args.AddRange(["--js-runtimes", jsRuntime]);
         }
 
-        AppendExtractorArgs(args, opts);
-        AppendPluginDirs(args, opts);
+        AppendExtractorAndPluginArgs(args, opts);
 
-        args.Append(" --progress-template \"download:%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.speed)s|%(progress.eta)s|%(progress._percent_str)s\"");
-        args.Append($" --output \"{outputTemplate}\"");
+        args.AddRange(["--progress-template", "download:%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.speed)s|%(progress.eta)s|%(progress._percent_str)s"]);
+        args.AddRange(["--output", outputTemplate]);
 
         if (!string.IsNullOrWhiteSpace(opts.BandwidthLimit))
         {
-            args.Append($" --limit-rate {opts.BandwidthLimit}");
+            args.AddRange(["--limit-rate", opts.BandwidthLimit]);
         }
 
         // Duration filter applied by yt-dlp before downloading — prevents fetching a full file just to discard it
@@ -2941,11 +2938,10 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         if (matchParts.Count > 0)
         {
-            args.Append($" --match-filter \"{string.Join(" & ", matchParts)}\"");
+            args.AddRange(["--match-filter", string.Join(" & ", matchParts)]);
         }
 
-        // Upload-date lower bound for channel/playlist downloads. Whitelisted to fixed relative
-        // values so nothing user-supplied is interpolated into the yt-dlp argument string.
+        // Upload-date lower bound for channel/playlist downloads.
         var dateAfter = opts.UploadedAfter switch
         {
             "today" => "today",
@@ -2957,21 +2953,21 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         if (dateAfter != null)
         {
-            args.Append($" --dateafter {dateAfter}");
+            args.AddRange(["--dateafter", dateAfter]);
         }
 
         if (opts.SponsorBlock)
         {
-            args.Append(" --sponsorblock-remove sponsor,intro,outro");
+            args.AddRange(["--sponsorblock-remove", "sponsor,intro,outro"]);
         }
 
         if (cookieFile != null)
         {
-            args.Append($" --cookies \"{cookieFile}\"");
+            args.AddRange(["--cookies", cookieFile]);
         }
 
-        args.Append($" \"{url}\"");
-        return args.ToString();
+        AppendUrl(args, url);
+        return args;
     }
 
     private YtDlpSearchResult? ParseSearchResult(string json)
@@ -3231,28 +3227,26 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
         var opts = options.CurrentValue.Integrations.YtDlp;
         var entries = new List<ChannelEntry>();
 
-        var args = new System.Text.StringBuilder($"--flat-playlist --dump-json --playlist-end {count}");
-        if (jsRuntimeArg != null)
+        var args = new List<string> { "--flat-playlist", "--dump-json", "--playlist-end", count.ToString(CultureInfo.InvariantCulture) };
+        if (jsRuntime != null)
         {
-            args.Append($" {jsRuntimeArg}");
+            args.AddRange(["--js-runtimes", jsRuntime]);
         }
 
-        AppendExtractorArgs(args, opts);
-        AppendPluginDirs(args, opts);
+        AppendExtractorAndPluginArgs(args, opts);
 
         var cookieFile = AcquireCookieFile();
         if (cookieFile != null)
         {
-            args.Append($" --cookies \"{cookieFile}\"");
+            args.AddRange(["--cookies", cookieFile]);
         }
 
-        args.Append($" \"{channelUrl}\"");
+        AppendUrl(args, channelUrl);
 
         var process = new Process
         {
             StartInfo = new ProcessStartInfo(Executable(opts))
             {
-                Arguments = args.ToString(),
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
@@ -3262,6 +3256,7 @@ public sealed class YtDlpService : IYtDlpService, IDisposable
 
         try
         {
+            AddArguments(process.StartInfo, args);
             process.Start();
 
             var stderr = new System.Text.StringBuilder();

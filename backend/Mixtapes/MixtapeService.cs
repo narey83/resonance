@@ -234,11 +234,12 @@ namespace resonance.Mixtapes
 
             var oldDir = MixtapeDir(old);
             var newDir = MixtapeDir(updated);
-            if (oldDir != newDir && Directory.Exists(oldDir) && !Directory.Exists(newDir))
+            if (newDir != null && oldDir != newDir && Directory.Exists(oldDir) && !Directory.Exists(newDir))
             {
                 try
                 {
                     Directory.Move(oldDir, newDir);
+                    File.Delete(Path.Combine(newDir, $"{SafeFileName(old.Name)}.m3u"));
                 }
                 catch (Exception ex)
                 {
@@ -255,11 +256,18 @@ namespace resonance.Mixtapes
 
         public void Delete(string id)
         {
-            var m = Repository.GetById(id);
-            var dir = m != null ? MixtapeDir(m) : LegacyMixtapeDir(id);
-            DeleteArtwork(id);
-            Repository.DeleteMixtape(id);
-            RemoveMixtapeFolder(dir);
+            lock (FolderSyncRoot)
+            {
+                var m = Repository.GetById(id) ?? throw new KeyNotFoundException($"Playlist {id} not found");
+                DeleteArtwork(m.Id);
+                Repository.DeleteMixtape(m.Id);
+                var dir = MixtapeDir(m);
+                if (dir != null && !Repository.GetAll().Any(other => string.Equals(dir, MixtapeDir(other), StringComparison.OrdinalIgnoreCase)))
+                {
+                    RemoveMixtapeFolder(dir, m.Name);
+                }
+            }
+
             _ = Hub.BroadcastUpdatedAsync();
         }
 
@@ -267,7 +275,8 @@ namespace resonance.Mixtapes
         {
             var m = Repository.GetById(mixtapeId) ?? throw new KeyNotFoundException($"Playlist {mixtapeId} not found");
 
-            var libraryTrack = MusicRepository.GetByPath(filePath);
+            var libraryTrack = MusicRepository.GetByPath(filePath)
+                ?? throw new KeyNotFoundException("Track not found in the music library");
             var existing = Repository.GetTracks(mixtapeId);
 
             if (existing.Any(t => t.FilePath == filePath))
@@ -281,10 +290,10 @@ namespace resonance.Mixtapes
                 Guid.NewGuid().ToString("N"),
                 mixtapeId,
                 filePath,
-                libraryTrack?.Title,
-                libraryTrack?.Artist,
-                libraryTrack?.Album,
-                libraryTrack?.Duration,
+                libraryTrack.Title,
+                libraryTrack.Artist,
+                libraryTrack.Album,
+                libraryTrack.Duration,
                 sortOrder);
 
             Repository.InsertTrack(track);
@@ -434,7 +443,7 @@ namespace resonance.Mixtapes
 
         private static string MixtapeFolderName(Mixtape m) => SafeFileName(m.Name);
 
-        private static void RemoveMixtapeFolder(string dir)
+        private static void RemoveMixtapeFolder(string dir, string name)
         {
             if (!Directory.Exists(dir))
             {
@@ -443,7 +452,11 @@ namespace resonance.Mixtapes
 
             try
             {
-                Directory.Delete(dir, recursive: true);
+                File.Delete(Path.Combine(dir, $"{SafeFileName(name)}.m3u"));
+                if (!Directory.EnumerateFileSystemEntries(dir).Any())
+                {
+                    Directory.Delete(dir);
+                }
             }
             catch (Exception ex)
             {
@@ -472,17 +485,8 @@ namespace resonance.Mixtapes
         {
             Directory.CreateDirectory(dir);
 
-            foreach (var old in Directory.GetFiles(dir, "*.m3u"))
-            {
-                try
-                {
-                    File.Delete(old);
-                }
-                catch
-                { /* non-fatal */
-                }
-            }
-
+            var m3uPath = Path.Combine(dir, $"{SafeFileName(name)}.m3u");
+            File.Delete(m3uPath);
             if (tracks.Count == 0)
             {
                 return;
@@ -490,16 +494,34 @@ namespace resonance.Mixtapes
 
             // Entries are sibling file names rather than server-local paths, which resolve nowhere
             // else; see ExportM3u for the playlist that streams back to a player over HTTP.
-            var m3uPath = Path.Combine(dir, $"{SafeFileName(name)}.m3u");
             var content = BuildM3uContent(tracks, PlaylistLeafName);
 
             // No BOM: strict M3U parsers don't recognise a "﻿#EXTM3U" header.
             File.WriteAllText(m3uPath, content, new UTF8Encoding(false));
         }
 
-        private string MixtapeDir(Mixtape m) => Path.Combine(MixtapesBaseDir, MixtapeFolderName(m));
+        private string? MixtapeDir(Mixtape m) => ResolveMixtapeFolder(MixtapeFolderName(m));
 
-        private string LegacyMixtapeDir(string id) => Path.Combine(MixtapesBaseDir, id);
+        private string? LegacyMixtapeDir(string id) => ResolveMixtapeFolder(id);
+
+        private string? ResolveMixtapeFolder(string name)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                name = name.TrimEnd(' ', '.');
+            }
+
+            if (name is "" or "." or ".." || name != Path.GetFileName(name) || Path.IsPathRooted(name))
+            {
+                return null;
+            }
+
+            var path = Path.Combine(MixtapesBaseDir, name);
+
+            // A playlist owns a direct child directory, never a link to another folder.
+            return new DirectoryInfo(MixtapesBaseDir).LinkTarget == null && new DirectoryInfo(path).LinkTarget == null
+                ? path : null;
+        }
 
         private string ArtworkFilePath(string id) => Path.Combine(ArtworkDir, id);
 
@@ -542,8 +564,11 @@ namespace resonance.Mixtapes
                 try
                 {
                     var dir = MixtapeDir(m);
-                    Directory.CreateDirectory(dir);
-                    WriteM3U(dir, m.Name, tracks);
+                    if (dir != null)
+                    {
+                        Directory.CreateDirectory(dir);
+                        WriteM3U(dir, m.Name, tracks);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -572,7 +597,7 @@ namespace resonance.Mixtapes
 
                     var legacyDir = LegacyMixtapeDir(m.Id);
                     var friendlyDir = MixtapeDir(m);
-                    if (legacyDir != friendlyDir && Directory.Exists(legacyDir) && !Directory.Exists(friendlyDir))
+                    if (friendlyDir != null && legacyDir != friendlyDir && Directory.Exists(legacyDir) && !Directory.Exists(friendlyDir))
                     {
                         try
                         {

@@ -37,6 +37,7 @@ namespace resonance.Mixtapes.API
     using Asp.Versioning;
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Mvc;
+    using resonance.MusicLibrary;
 
     [ApiController]
     [ApiVersion("0")]
@@ -45,12 +46,15 @@ namespace resonance.Mixtapes.API
     [AllowAnonymous]
     public class PublicMixtapesController : ControllerBase
     {
-        public PublicMixtapesController(IMixtapeService service)
+        public PublicMixtapesController(IMixtapeService service, IMusicLibraryService library)
         {
             Service = service;
+            Library = library;
         }
 
         private IMixtapeService Service { get; }
+
+        private IMusicLibraryService Library { get; }
 
         [HttpGet("{token}")]
         [ProducesResponseType(typeof(Mixtape), 200)]
@@ -118,7 +122,7 @@ namespace resonance.Mixtapes.API
                 return NotFound();
             }
 
-            var tracks = (m.Tracks ?? []).Where(t => System.IO.File.Exists(t.FilePath)).ToList();
+            var tracks = (m.Tracks ?? []).Select(t => (Track: t, Path: ResolveTrack(t))).Where(t => t.Path != null).ToList();
             if (tracks.Count == 0)
             {
                 return NotFound();
@@ -128,7 +132,7 @@ namespace resonance.Mixtapes.API
 
             // Build M3U content with relative paths so it works inside the zip
             var m3uSb = new StringBuilder("#EXTM3U\n");
-            foreach (var t in tracks)
+            foreach (var (t, _) in tracks)
             {
                 var dur = (int)(t.Duration ?? 0);
                 var display = string.IsNullOrEmpty(t.Artist)
@@ -149,11 +153,11 @@ namespace resonance.Mixtapes.API
                 }
 
                 // Audio files
-                foreach (var t in tracks)
+                foreach (var (t, path) in tracks)
                 {
                     var entryName = $"{safeName}/{Path.GetFileName(t.FilePath)}";
                     var entry = zip.CreateEntry(entryName, CompressionLevel.NoCompression);
-                    using var src = System.IO.File.OpenRead(t.FilePath);
+                    using var src = System.IO.File.OpenRead(path);
                     using var dst = entry.Open();
                     src.CopyTo(dst);
                 }
@@ -175,7 +179,8 @@ namespace resonance.Mixtapes.API
             }
 
             var track = m.Tracks?.FirstOrDefault(t => t.Id == trackId);
-            if (track == null || !System.IO.File.Exists(track.FilePath))
+            var path = track == null ? null : ResolveTrack(track);
+            if (path == null)
             {
                 return NotFound();
             }
@@ -194,14 +199,20 @@ namespace resonance.Mixtapes.API
             };
 
             // Range processing on: players seek, and AVPlayer (iOS/Safari) refuses a stream without it.
-            return PhysicalFile(track.FilePath, contentType, Path.GetFileName(track.FilePath), enableRangeProcessing: true);
+            return PhysicalFile(path, contentType, Path.GetFileName(track.FilePath), enableRangeProcessing: true);
         }
 
         private static string SanitizeName(string name)
         {
             var invalid = Path.GetInvalidFileNameChars();
             var safe = string.Concat(name.Select(c => invalid.Contains(c) ? '_' : c)).Trim();
-            return string.IsNullOrEmpty(safe) ? "playlist" : safe;
+            return safe is "" or "." or ".." ? "playlist" : safe;
+        }
+
+        private string ResolveTrack(MixtapeTrack track)
+        {
+            var path = Library.GetTrack(track.FilePath) == null ? null : Library.ResolveLibraryPath(track.FilePath);
+            return System.IO.File.Exists(path) ? path : null;
         }
     }
 }

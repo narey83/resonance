@@ -72,12 +72,13 @@ internal sealed class ManagedBgutil(IHttpClientFactory clients)
     internal static string? InstalledVersion(string? directory) =>
         directory == null ? null : File.ReadAllText(Path.Combine(directory, Package + "-release.txt"));
 
-    internal static string? Arguments()
+    internal static string[]? Arguments()
     {
         var directory = ActiveDirectory();
         var node = Node;
         return directory == null || node == null ? null :
-            $" --plugin-dirs \"{Path.Combine(directory, "yt-dlp-plugins")}\" --js-runtimes \"node:{node}\" --extractor-args \"youtubepot-bgutilscript:server_home={Path.Combine(directory, "source", "server")}\"";
+            ["--plugin-dirs", Path.Combine(directory, "yt-dlp-plugins"), "--js-runtimes", $"node:{node}",
+             "--extractor-args", $"youtubepot-bgutilscript:server_home={Path.Combine(directory, "source", "server")}"];
     }
 
     internal async Task<string> UpdateAsync(CancellationToken token)
