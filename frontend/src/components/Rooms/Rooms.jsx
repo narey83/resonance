@@ -155,7 +155,13 @@ export const RoomListItem = ({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-const Rooms = ({ history, location, onRoomRead, unreadCounts = {} }) => {
+const Rooms = ({
+  history,
+  joinedRoomNames,
+  location,
+  onRoomRead,
+  unreadCounts = {},
+}) => {
   const [joinedNames, setJoinedNames] = useState([]);
   const [availableRooms, setAvailableRooms] = useState([]);
   const [active, setActive] = useState('');
@@ -192,6 +198,16 @@ const Rooms = ({ history, location, onRoomRead, unreadCounts = {} }) => {
   const dividerMoveRef = useRef(null);
   const activeRef = useRef('');
   const mountedRef = useRef(true);
+  const membershipKey = Array.isArray(joinedRoomNames)
+    ? JSON.stringify([...joinedRoomNames].sort())
+    : null;
+  const latestMembershipRef = useRef({ key: membershipKey });
+  if (latestMembershipRef.current.key !== membershipKey)
+    latestMembershipRef.current = { key: membershipKey };
+
+  useEffect(() => {
+    if (membershipKey !== null) setJoinedNames(JSON.parse(membershipKey));
+  }, [membershipKey]);
 
   useEffect(() => {
     activeRef.current = active;
@@ -200,9 +216,11 @@ const Rooms = ({ history, location, onRoomRead, unreadCounts = {} }) => {
   // ── Fetching ─────────────────────────────────────────────────────────────
 
   const fetchJoined = useCallback(async () => {
+    const membership = latestMembershipRef.current;
     try {
       const names = (await rooms.getJoined()) || [];
-      if (mountedRef.current) setJoinedNames(names);
+      if (mountedRef.current && membership === latestMembershipRef.current)
+        setJoinedNames(names);
     } catch {
       // best-effort poll; next tick recovers
     }

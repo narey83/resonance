@@ -1646,6 +1646,7 @@ const App = () => {
                           render={(props) => (
                             <Rooms
                               {...props}
+                              joinedRoomNames={applicationState.rooms}
                               onRoomRead={handleRoomRead}
                               unreadCounts={roomUnreadCounts ?? undefined}
                             />
